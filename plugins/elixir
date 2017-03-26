@@ -1,3 +1,1 @@
 repository = https://github.com/asdf-vm/asdf-elixir
-maintainer = ???
-description = Manage elixir versions using asdf
