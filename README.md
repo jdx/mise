@@ -29,6 +29,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 | PHP  | [odarriba/asdf-php](https://github.com/odarriba/asdf-php) | [![Build Status](https://travis-ci.org/odarriba/asdf-php.svg?branch=master)](https://travis-ci.org/odarriba/asdf-php)
 | Postgres  | [smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-postgres.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-postgres)
 | Python    | [tuvistavie/asdf-python](https://github.com/tuvistavie/asdf-python) | [![Build Status](https://travis-ci.org/tuvistavie/asdf-python.svg?branch=master)](https://travis-ci.org/tuvistavie/asdf-python)
+| R         | [iroddis/asdf-R](https://github.com/iroddis/asdf-R) | [![Build Status](https://travis-ci.org/iroddis/asdf-R.svg?branch=master)](https://travis-ci.org/iroddis/asdf-R)
 | Racket    | [vic/asdf-racket](https://github.com/vic/asdf-racket) | [![Build Status](https://travis-ci.org/vic/asdf-racket.svg?branch=master)](https://travis-ci.org/vic/asdf-racket)
 | Rebar     | [Stratus3D/asdf-rebar](https://github.com/Stratus3D/asdf-rebar) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-rebar.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-rebar)
 | Redis     | [smashedtoatoms/asdf-redis](https://github.com/smashedtoatoms/asdf-redis) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-redis.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-redis)
