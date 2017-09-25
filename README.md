@@ -41,6 +41,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 | Scala     | [mtatheonly/asdf-scala](https://github.com/mtatheonly/asdf-scala)| [![Build Status](https://travis-ci.org/mtatheonly/asdf-scala.svg?branch=master)](https://travis-ci.org/mtatheonly/asdf-scala)
 | Swift     | [fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift)| [![Build Status](https://travis-ci.org/fcrespo82/asdf-swift.svg?branch=master)](https://travis-ci.org/fcrespo82/asdf-swift)
 | Terraform | [neerfri/asdf-terraform](https://github.com/neerfri/asdf-terraform) | [![Build Status](https://travis-ci.org/neerfri/asdf-terraform.svg?branch=master)](https://travis-ci.org/neerfri/asdf-terraform)
+| Vault | [nikolay/asdf-vault](https://github.com/nikolay/asdf-vault) | [![Build Status](https://travis-ci.org/nikolay/asdf-vault.svg?branch=master)](https://travis-ci.org/nikolay/asdf-vault)
 
 Adding a new plugin
 -------------------
