@@ -1,0 +1,3 @@
+language: c
+script:
+  - bash test.sh
