@@ -4,10 +4,11 @@ fails=0
 for i in $(grep -o 'travis.*\.svg' README.md); do
   url=$(echo $i | sed "s/\//\/repositories\//" | sed "s/svg/json/")
   curl -sq https://api.$url | grep 'last_build_result":0' > /dev/null
-  if [ $? != 0 ]; then
-    let "fails += $?"
+  status=$?
+  if [ "$status" != "0" ]; then
+    fails=$((fails+${status}))
     url=$(echo $i | sed 's/\.svg//')
-    echo "Plugin travis build failed: $url"
+    echo "Plugin build failed: https://$url"
   fi
 done
 
