@@ -58,6 +58,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 | Terragrunt | [td7x/asdf/terragrunt/](https://gitlab.com/td7x/asdf/terragrunt/) | [![pipeline status](https://gitlab.com/td7x/asdf/terragrunt/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/terragrunt/commits/master)
 | TFLint | [RykHawthorn/asdf-tflint](https://github.com/RykHawthorn/asdf-tflint) | [![Build Status](https://travis-ci.org/RykHawthorn/asdf-tflint.svg?branch=master)](https://travis-ci.org/RykHawthorn/asdf-tflint)
 | Vault     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| .Net Core | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) | [![Build Status](https://travis-ci.org/emersonsoares/asdf-dotnet-core.svg?branch=master)](https://travis-ci.org/emersonsoares/asdf-dotnet-core)
 
 Adding a new plugin
 -------------------
