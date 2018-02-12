@@ -5,6 +5,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
+| adr-tools | [td7x/asdf/adr-tools/](https://gitlab.com/td7x/asdf/adr-tools/) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | Bazel     | [mrinalwadhwa/asdf-bazel](https://github.com/mrinalwadhwa/asdf-bazel) | [![Build Status](https://travis-ci.org/mrinalwadhwa/asdf-bazel.svg?branch=master)](https://travis-ci.org/mrinalwadhwa/asdf-bazel)
 | Clojure   | [vic/asdf-clojure](https://github.com/vic/asdf-clojure) | [![Build Status](https://travis-ci.org/vic/asdf-clojure.svg?branch=master)](https://travis-ci.org/vic/asdf-clojure)
 | Consul    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
@@ -49,6 +50,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 | Serf      | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | Swift     | [fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift)| [![Build Status](https://travis-ci.org/fcrespo82/asdf-swift.svg?branch=master)](https://travis-ci.org/fcrespo82/asdf-swift)
 | Terraform | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| Terragrunt | [td7x/asdf/terragrunt/](https://gitlab.com/td7x/asdf/terragrunt/) | [![pipeline status](https://gitlab.com/td7x/asdf/terragrunt/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/terragrunt/commits/master)
 | Vault     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 
 Adding a new plugin
