@@ -20,6 +20,7 @@ This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is
 | Idris     | [vic/asdf-idris](https://github.com/vic/asdf-idris) | [![Build Status](https://travis-ci.org/vic/asdf-idris.svg?branch=master)](https://travis-ci.org/vic/asdf-idris)
 | Java     | [skotchpine/asdf-java](https://github.com/skotchpine/asdf-java) | [![Build Status](https://travis-ci.org/skotchpine/asdf-java.svg?branch=master)](https://travis-ci.org/skotchpine/asdf-java)
 | Julia     | [rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) | [![Build Status](https://travis-ci.org/rkyleg/asdf-julia.svg?branch=master)](https://travis-ci.org/rkyleg/asdf-julia)
+| Kops      | [Antiarchitect/asdf-kops](https://github.com/Antiarchitect/asdf-kops) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-kops.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-kops)
 | Kubecfg   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
 | Kubectl   | [Banno/asdf-kubectl](https://github.com/Banno/asdf-kubectl) | [![Build Status](https://travis-ci.org/Banno/asdf-kubectl.svg?branch=master)](https://travis-ci.org/Banno/asdf-kubectl)
 | LFE       | [vic/asdf-lfe](https://github.com/vic/asdf-lfe) | [![Build Status](https://travis-ci.org/vic/asdf-lfe.svg?branch=master)](https://travis-ci.org/vic/asdf-lfe)
