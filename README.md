@@ -1,7 +1,27 @@
 asdf plugins repository
 =======================
 
-This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository. Below is a list of currently supported plugins.
+This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository, it's purpose is
+to serve a list of community maintained _stable_ plugins. 
+
+Maintaining this list is just a convenience for helping new asdf users so that listed plugins
+can be installed by just `asdf plugin-add NAME` without having to lookup for the actual plugin repo.
+
+Thus, this list should be updated when a plugin is broken or when someone has forked a better version.
+Just remember that you can actually use any repo with asdf, and this list is just for having a central
+place for people (and asdf itself) to look for plugins.
+
+
+## Contributing a new Plugin
+
+* Be sure to read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/creating-plugins.md)
+* Test the plugin locally and make sure you can execute the new tool successfully (your shell scripts should work at least on osx and ubuntu linux)
+* Create a travis build for your tool, the build should install and execute your tool with `--version` or similar to test it works.
+* Update the README.md file on this repo to add your new plugin. The list is alphabetically ordered.
+* Create a pull request once your plugin's travis build is green. The CI for this repo checks all listed plugin badges are green.
+
+
+## Plugin List
 
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
