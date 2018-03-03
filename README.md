@@ -18,8 +18,9 @@ place for people (and asdf itself) to look for plugins.
 * Test the plugin locally and make sure you can execute the new tool successfully (your shell scripts should work at least on osx and ubuntu linux)
 * Create a travis build for your tool, the build should install and execute your tool with `--version` or similar to test it works.
 * Update the README.md file on this repo to add your new plugin. The list is alphabetically ordered.
-* Create a file in `plugins/` with the same name as your plugin. The contents of the file should be `repository = <your repo>`.
-* Create a pull request once your plugin's travis build is green. The CI for this repo checks all listed plugin badges are green.
+* Create a file in `plugins/` with the same name as your plugin. The contents of the file should be 
+`repository = <your repo>`.
+* Create a pull request showing your plugin's travis build is green. The CI for this repo checks all listed plugin badges are green.
 
 
 ## Plugin List
@@ -83,11 +84,3 @@ place for people (and asdf itself) to look for plugins.
 | Vault     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | .Net Core | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) | [![Build Status](https://travis-ci.org/emersonsoares/asdf-dotnet-core.svg?branch=master)](https://travis-ci.org/emersonsoares/asdf-dotnet-core)
 
-Adding a new plugin
--------------------
-
-To add a plugin to this repository, open a pull request with a new file in ./plugins with the contents:
-
-```
-repository = YOUR-PACKAGE-URL
-```
