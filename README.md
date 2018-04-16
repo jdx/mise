@@ -2,7 +2,7 @@ asdf plugins repository
 =======================
 
 This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository, it's purpose is
-to serve a list of community maintained _stable_ plugins. 
+to serve a list of community maintained _stable_ plugins.
 
 Maintaining this list is just a convenience for helping new asdf users so that listed plugins
 can be installed by just `asdf plugin-add NAME` without having to lookup for the actual plugin repo.
@@ -18,7 +18,7 @@ place for people (and asdf itself) to look for plugins.
 * Test the plugin locally and make sure you can execute the new tool successfully (your shell scripts should work at least on osx and ubuntu linux)
 * Create a travis build for your tool, the build should install and execute your tool with `--version` or similar to test it works.
 * Update the README.md file on this repo to add your new plugin. The list is alphabetically ordered.
-* Create a file in `plugins/` with the same name as your plugin. The contents of the file should be 
+* Create a file in `plugins/` with the same name as your plugin. The contents of the file should be
 `repository = <your repo>`.
 * Create a pull request showing your plugin's travis build is green. The CI for this repo checks all listed plugin badges are green.
 
@@ -30,6 +30,7 @@ place for people (and asdf itself) to look for plugins.
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | Bazel     | [mrinalwadhwa/asdf-bazel](https://github.com/mrinalwadhwa/asdf-bazel) | [![Build Status](https://travis-ci.org/mrinalwadhwa/asdf-bazel.svg?branch=master)](https://travis-ci.org/mrinalwadhwa/asdf-bazel)
 | Clojure   | [vic/asdf-clojure](https://github.com/vic/asdf-clojure) | [![Build Status](https://travis-ci.org/vic/asdf-clojure.svg?branch=master)](https://travis-ci.org/vic/asdf-clojure)
+| Conduit   | [gmcabrita/asdf-conduit](https://github.com/gmcabrita/asdf-conduit) | [![Build Status](https://travis-ci.org/gmcabrita/asdf-conduit.svg?branch=master)](https://travis-ci.org/gmcabrita/asdf-conduit)
 | Consul    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | Coq       | [gingerhot/asdf-coq](https://github.com/gingerhot/asdf-coq) | [![Build Status](https://travis-ci.org/gingerhot/asdf-coq.svg?branch=master)](https://travis-ci.org/gingerhot/asdf-coq)
 | Crystal   | [marciogm/asdf-crystal](https://github.com/marciogm/asdf-crystal) | [![Build Status](https://travis-ci.org/marciogm/asdf-crystal.svg?branch=master)](https://travis-ci.org/marciogm/asdf-crystal)
