@@ -44,6 +44,7 @@ place for people (and asdf itself) to look for plugins.
 | Haskell   | [vic/asdf-haskell](https://github.com/vic/asdf-haskell) | [![Build Status](https://travis-ci.org/vic/asdf-haskell.svg?branch=master)](https://travis-ci.org/vic/asdf-haskell)
 | Helm      | [Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-helm.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-helm)
 | Idris     | [vic/asdf-idris](https://github.com/vic/asdf-idris) | [![Build Status](https://travis-ci.org/vic/asdf-idris.svg?branch=master)](https://travis-ci.org/vic/asdf-idris)
+| ImageMagick     | [mangalakader/asdf-imagemagick](https://github.com/mangalakader/asdf-imagemagick) | [![Build Status](https://travis-ci.org/mangalakader/asdf-imagemagick.svg?branch=master)](https://travis-ci.org/mangalakader/asdf-imagemagick)
 | Jsonnet   | [Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-jsonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-jsonnet)
 | Java      | [skotchpine/asdf-java](https://github.com/skotchpine/asdf-java) | [![Build Status](https://travis-ci.org/skotchpine/asdf-java.svg?branch=master)](https://travis-ci.org/skotchpine/asdf-java)
 | Julia     | [rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) | [![Build Status](https://travis-ci.org/rkyleg/asdf-julia.svg?branch=master)](https://travis-ci.org/rkyleg/asdf-julia)
