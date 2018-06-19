@@ -54,6 +54,7 @@ place for people (and asdf itself) to look for plugins.
 | Ksonnet   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
 | Kubecfg   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
 | Kubectl   | [Banno/asdf-kubectl](https://github.com/Banno/asdf-kubectl) | [![Build Status](https://travis-ci.org/Banno/asdf-kubectl.svg?branch=master)](https://travis-ci.org/Banno/asdf-kubectl)
+| Kubesec   | [vitalis/asdf-kubesec](https://github.com/vitalis/asdf-kubesec) | [![Build Status](https://travis-ci.org/vitalis/asdf-kubesec.svg?branch=master)](https://travis-ci.org/vitalis/asdf-kubesec)
 | LFE       | [vic/asdf-lfe](https://github.com/vic/asdf-lfe) | [![Build Status](https://travis-ci.org/vic/asdf-lfe.svg?branch=master)](https://travis-ci.org/vic/asdf-lfe)
 | Link (system tools) | [vic/asdf-link](https://github.com/vic/asdf-link) | [![Build Status](https://travis-ci.org/vic/asdf-link.svg?branch=master)](https://travis-ci.org/vic/asdf-link)
 | Logtalk   | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) | [![Build Status](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk.svg?branch=master)](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk)
