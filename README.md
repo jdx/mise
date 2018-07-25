@@ -36,6 +36,7 @@ place for people (and asdf itself) to look for plugins.
 | Coq       | [gingerhot/asdf-coq](https://github.com/gingerhot/asdf-coq) | [![Build Status](https://travis-ci.org/gingerhot/asdf-coq.svg?branch=master)](https://travis-ci.org/gingerhot/asdf-coq)
 | Crystal   | [marciogm/asdf-crystal](https://github.com/marciogm/asdf-crystal) | [![Build Status](https://travis-ci.org/marciogm/asdf-crystal.svg?branch=master)](https://travis-ci.org/marciogm/asdf-crystal)
 | D (DMD)   | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) | [![Build Status](https://travis-ci.org/sylph01/asdf-dmd.svg?branch=master)](https://travis-ci.org/sylph01/asdf-dmd)
+| docker-slim | [everpeace/asdf-docker-slim](https://github.com/everpeace/asdf-docker-slim.git) | [![Build Status](https://travis-ci.org/everpeace/asdf-docker-slim.svg?branch=master)](https://travis-ci.org/everpeace/asdf-docker-slim)
 | Elasticsearch | [mikestephens/asdf-elasticsearch](https://github.com/mikestephens/asdf-elasticsearch) | [![Build Status](https://travis-ci.org/mikestephens/asdf-elasticsearch.svg?branch=master)](https://travis-ci.org/mikestephens/asdf-elasticsearch)
 | Elixir    | [asdf-vm/asdf-elixir](https://github.com/asdf-vm/asdf-elixir) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-elixir.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-elixir)
 | Elm       | [vic/asdf-elm](https://github.com/vic/asdf-elm) | [![Build Status](https://travis-ci.org/vic/asdf-elm.svg?branch=master)](https://travis-ci.org/vic/asdf-elm)
