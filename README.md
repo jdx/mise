@@ -43,6 +43,7 @@ place for people (and asdf itself) to look for plugins.
 | Erlang    | [asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-erlang.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-erlang)
 | Go        | [kennyp/asdf-golang](https://github.com/kennyp/asdf-golang) | [![Build Status](https://travis-ci.org/kennyp/asdf-golang.svg?branch=master)](https://travis-ci.org/kennyp/asdf-golang)
 | GoHugo    | [mgladdish/asdf-gohugo](https://bitbucket.org/mgladdish/asdf-gohugo) | [![Build Status](https://bitbucket-badges.atlassian.io/badge/mgladdish/asdf-gohugo.svg?ref=master)](https://bitbucket.org/mgladdish/asdf-gohugo/addon/pipelines/home)
+| GraalVM    | [vic/asdf-graalvm](https://github.com/vic/asdf-graalvm) | [![Build Status](https://travis-ci.org/vic/asdf-graalvm.svg?branch=master)](https://travis-ci.org/vic/asdf-graalvm)
 | Gradle    | [rfrancis/asdf-gradle](https://github.com/rfrancis/asdf-gradle) | [![Build Status](https://travis-ci.org/rfrancis/asdf-gradle.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-gradle)
 | Haskell   | [vic/asdf-haskell](https://github.com/vic/asdf-haskell) | [![Build Status](https://travis-ci.org/vic/asdf-haskell.svg?branch=master)](https://travis-ci.org/vic/asdf-haskell)
 | Helm      | [Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-helm.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-helm)
