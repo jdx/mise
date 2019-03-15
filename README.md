@@ -96,6 +96,7 @@ place for people (and asdf itself) to look for plugins.
 | SBT       | [lerencao/asdf-sbt](https://github.com/lerencao/asdf-sbt) | [![Build Status](https://travis-ci.org/lerencao/asdf-sbt.svg?branch=master)](https://travis-ci.org/lerencao/asdf-sbt)
 | Scala     | [mtatheonly/asdf-scala](https://github.com/mtatheonly/asdf-scala)| [![Build Status](https://travis-ci.org/mtatheonly/asdf-scala.svg?branch=master)](https://travis-ci.org/mtatheonly/asdf-scala)
 | Serf      | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| Sops | [feniix/asdf-sops](https://github.com/feniix/asdf-sops) | [![Build Status](https://travis-ci.org/feniix/asdf-sops.svg?branch=master)](https://travis-ci.org/feniix/asdf-sops)
 | SQLite    | [cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) | [![Build Status](https://travis-ci.org/cLupus/asdf-sqlite.svg?branch=master)](https://travis-ci.org/cLupus/asdf-sqlite) 
 | SWIProlog | [mracos/asdf-swiprolog](https://github.com/mracos/asdf-swiprolog) | [![Build Status](https://travis-ci.org/mracos/asdf-swiprolog.svg?branch=master)](https://travis-ci.org/mracos/asdf-swiprolog)
 | Terraform | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
