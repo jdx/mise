@@ -39,6 +39,7 @@ place for people (and asdf itself) to look for plugins.
 | Crystal   | [marciogm/asdf-crystal](https://github.com/marciogm/asdf-crystal) | [![Build Status](https://travis-ci.org/marciogm/asdf-crystal.svg?branch=master)](https://travis-ci.org/marciogm/asdf-crystal)
 | D (DMD)   | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) | [![Build Status](https://travis-ci.org/sylph01/asdf-dmd.svg?branch=master)](https://travis-ci.org/sylph01/asdf-dmd)
 | Dart      | [PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) | [![Build Status](https://travis-ci.org/PatOConnor43/asdf-dart.svg?branch=master)](https://travis-ci.org/PatOConnor43/asdf-dart)
+| Draft     | [kristoflemmens/asdf-draft](https://github.com/kristoflemmens/asdf-draft) | [![Build Status](https://travis-ci.org/kristoflemmens/asdf-draft.svg?branch=master)](https://travis-ci.org/kristoflemmens/asdf-draft)
 | Dep       | [paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) | [![Build Status](https://travis-ci.com/paxosglobal/asdf-dep.svg?branch=master)](https://travis-ci.com/paxosglobal/asdf-dep)
 | Desk      | [endorama/asdf-desk](https://github.com/endorama/asdf-desk) | [![Build Status](https://travis-ci.org/endorama/asdf-desk.svg?branch=master)](https://travis-ci.org/endorama/asdf-desk)
 | docker-slim | [everpeace/asdf-docker-slim](https://github.com/everpeace/asdf-docker-slim.git) | [![Build Status](https://travis-ci.org/everpeace/asdf-docker-slim.svg?branch=master)](https://travis-ci.org/everpeace/asdf-docker-slim)
