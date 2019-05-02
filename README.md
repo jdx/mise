@@ -98,6 +98,7 @@ place for people (and asdf itself) to look for plugins.
 | SBT       | [lerencao/asdf-sbt](https://github.com/lerencao/asdf-sbt) | [![Build Status](https://travis-ci.org/lerencao/asdf-sbt.svg?branch=master)](https://travis-ci.org/lerencao/asdf-sbt)
 | Scala     | [mtatheonly/asdf-scala](https://github.com/mtatheonly/asdf-scala)| [![Build Status](https://travis-ci.org/mtatheonly/asdf-scala.svg?branch=master)](https://travis-ci.org/mtatheonly/asdf-scala)
 | Serf      | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| Shfmt     | [Luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt)         | [![Build Status](https://travis-ci.org/Luizm/asdf-shfmt.svg?branch=master)](https://travis-ci.org/luizm/asdf-shfmt)
 | Skaffold   | [kristoflemmens/asdf-skaffold](https://github.com/kristoflemmens/asdf-skaffold) | [![Build Status](https://travis-ci.org/kristoflemmens/asdf-skaffold.svg?branch=master)](https://travis-ci.org/kristoflemmens/asdf-skaffold)
 | Sops | [feniix/asdf-sops](https://github.com/feniix/asdf-sops) | [![Build Status](https://travis-ci.org/feniix/asdf-sops.svg?branch=master)](https://travis-ci.org/feniix/asdf-sops)
 | SQLite    | [cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) | [![Build Status](https://travis-ci.org/cLupus/asdf-sqlite.svg?branch=master)](https://travis-ci.org/cLupus/asdf-sqlite) 
