@@ -33,6 +33,7 @@ place for people (and asdf itself) to look for plugins.
 | cf        | [mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) | [![Build Status](https://travis-ci.org/mattysweeps/asdf-cf.svg?branch=master)](https://travis-ci.org/mattysweeps/asdf-cf)
 | Clojure   | [halcyon/asdf-clojure](https://github.com/halcyon/asdf-clojure) | [![Build Status](https://travis-ci.org/halcyon/asdf-clojure.svg?branch=master)](https://travis-ci.org/halcyon/asdf-clojure)
 | CMake     | [srivathsanmurali/asdf-cmake](https://github.com/srivathsanmurali/asdf-cmake) | [![Build Status](https://travis-ci.org/srivathsanmurali/asdf-cmake.svg?branch=master)](https://travis-ci.org/srivathsanmurali/asdf-cmake)
+| Concourse | [mattysweeps/asdf-concourse](https://github.com/mattysweeps/asdf-concourse) | [![Build Status](https://travis-ci.org/mattysweeps/asdf-concourse.svg?branch=master)](https://travis-ci.org/mattysweeps/asdf-concourse)
 | Conduit   | [gmcabrita/asdf-conduit](https://github.com/gmcabrita/asdf-conduit) | [![Build Status](https://travis-ci.org/gmcabrita/asdf-conduit.svg?branch=master)](https://travis-ci.org/gmcabrita/asdf-conduit)
 | Consul    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | Coq       | [gingerhot/asdf-coq](https://github.com/gingerhot/asdf-coq) | [![Build Status](https://travis-ci.org/gingerhot/asdf-coq.svg?branch=master)](https://travis-ci.org/gingerhot/asdf-coq)
