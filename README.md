@@ -45,6 +45,7 @@ place for people (and asdf itself) to look for plugins.
 | docker-slim | [everpeace/asdf-docker-slim](https://github.com/everpeace/asdf-docker-slim.git) | [![Build Status](https://travis-ci.org/everpeace/asdf-docker-slim.svg?branch=master)](https://travis-ci.org/everpeace/asdf-docker-slim)
 | doctl     | [maristgeek/asdf-doctl](https://github.com/maristgeek/asdf-doctl) | [![Build Status](https://travis-ci.org/maristgeek/asdf-doctl.svg?branch=master)](https://travis-ci.org/maristgeek/asdf-doctl)
 | Dotty     | [vic/asdf-dotty](https://github.com/vic/asdf-dotty) | [![Build Status](https://travis-ci.org/vic/asdf-dotty.svg?branch=master)](https://travis-ci.org/vic/asdf-dotty)
+| Draft     | [kristoflemmens/asdf-draft](https://github.com/kristoflemmens/asdf-draft) | [![Build Status](https://travis-ci.org/kristoflemmens/asdf-draft.svg?branch=master)](https://travis-ci.org/kristoflemmens/asdf-draft)
 | Elasticsearch | [mikestephens/asdf-elasticsearch](https://github.com/mikestephens/asdf-elasticsearch) | [![Build Status](https://travis-ci.org/mikestephens/asdf-elasticsearch.svg?branch=master)](https://travis-ci.org/mikestephens/asdf-elasticsearch)
 | Elixir    | [asdf-vm/asdf-elixir](https://github.com/asdf-vm/asdf-elixir) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-elixir.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-elixir)
 | Elm       | [vic/asdf-elm](https://github.com/vic/asdf-elm) | [![Build Status](https://travis-ci.org/vic/asdf-elm.svg?branch=master)](https://travis-ci.org/vic/asdf-elm)
