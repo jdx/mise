@@ -50,6 +50,7 @@ place for people (and asdf itself) to look for plugins.
 | Elixir    | [asdf-vm/asdf-elixir](https://github.com/asdf-vm/asdf-elixir) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-elixir.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-elixir)
 | Elm       | [vic/asdf-elm](https://github.com/vic/asdf-elm) | [![Build Status](https://travis-ci.org/vic/asdf-elm.svg?branch=master)](https://travis-ci.org/vic/asdf-elm)
 | Erlang    | [asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-erlang.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-erlang)
+| Flutter   | [oae/asdf-flutter](https://github.com/oae/asdf-flutter) | [![Build Status](https://travis-ci.com/oae/asdf-flutter.svg?branch=master)](https://travis-ci.com/oae/asdf-flutter)
 | Fluxctl    | [stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) | [![Build Status](https://travis-ci.com/stefansedich/asdf-fluxctl.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-fluxctl)
 | Go        | [kennyp/asdf-golang](https://github.com/kennyp/asdf-golang) | [![Build Status](https://travis-ci.org/kennyp/asdf-golang.svg?branch=master)](https://travis-ci.org/kennyp/asdf-golang)
 | GoHugo    | [mgladdish/asdf-gohugo](https://bitbucket.org/mgladdish/asdf-gohugo) | [![Build Status](https://img.shields.io/bitbucket/pipelines/mgladdish/asdf-gohugo.svg)](https://bitbucket.org/mgladdish/asdf-gohugo/addon/pipelines/home)
