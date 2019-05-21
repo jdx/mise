@@ -63,6 +63,7 @@ place for people (and asdf itself) to look for plugins.
 | Idris     | [vic/asdf-idris](https://github.com/vic/asdf-idris) | [![Build Status](https://travis-ci.org/vic/asdf-idris.svg?branch=master)](https://travis-ci.org/vic/asdf-idris)
 | ImageMagick     | [mangalakader/asdf-imagemagick](https://github.com/mangalakader/asdf-imagemagick) | [![Build Status](https://travis-ci.org/mangalakader/asdf-imagemagick.svg?branch=master)](https://travis-ci.org/mangalakader/asdf-imagemagick)
 | Io        | [mracos/asdf-io](https://github.com/mracos/asdf-io) | [![Build](https://travis-ci.org/mracos/asdf-io.svg?branch=master)](https://travis-ci.org/mracos/asdf-io)
+| Istioctl  | [rafik8/asdf-istioctl](https://github.com/rafik8/asdf-istioctl) | [![Build](https://travis-ci.org/rafik8/asdf-istioctl.svg?branch=master)](https://travis-ci.org/rafik8/asdf-istioctl)
 | Jsonnet   | [Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-jsonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-jsonnet)
 | Java      | [halcyon/asdf-java](https://github.com/halcyon/asdf-java) | [![Build Status](https://travis-ci.org/halcyon/asdf-java.svg?branch=master)](https://travis-ci.org/halcyon/asdf-java)
 | Julia     | [rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) | [![Build Status](https://travis-ci.org/rkyleg/asdf-julia.svg?branch=master)](https://travis-ci.org/rkyleg/asdf-julia)
