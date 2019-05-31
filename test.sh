@@ -6,9 +6,7 @@ while read -r -a plugin; do
   total=$((total+1))
   travis_web_url="https://${plugin[0]}/${plugin[1]}"
   url="https://api.${plugin[0]}/repos/${plugin[1]}/branches/${plugin[2]}"
-  curl -sq -H 'Accept: application/vnd.travis-ci.2.1+json' ${url} | grep '"state":"passed"' &> /dev/null
-  status=$?
-  if [[ ${status} != 0 ]]; then
+  if ! curl -sq -H 'Accept: application/vnd.travis-ci.2.1+json' ${url} | grep -q '"state":"passed"'; then
     fails=$((fails+1))
     echo "Plugin build check failed:  ${travis_web_url}"
   fi
