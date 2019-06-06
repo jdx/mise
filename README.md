@@ -28,7 +28,7 @@ place for people (and asdf itself) to look for plugins.
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
-| Bazel     | [mrinalwadhwa/asdf-bazel](https://github.com/mrinalwadhwa/asdf-bazel) | [![Build Status](https://travis-ci.org/mrinalwadhwa/asdf-bazel.svg?branch=master)](https://travis-ci.org/mrinalwadhwa/asdf-bazel)
+| Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
 | Brig      | [Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) | [![Build Status](https://travis-ci.com/Ibotta/asdf-brig.svg?branch=master)](https://travis-ci.com/Ibotta/asdf-brig)
 | cf        | [mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) | [![Build Status](https://travis-ci.org/mattysweeps/asdf-cf.svg?branch=master)](https://travis-ci.org/mattysweeps/asdf-cf)
 | Clojure   | [halcyon/asdf-clojure](https://github.com/halcyon/asdf-clojure) | [![Build Status](https://travis-ci.org/halcyon/asdf-clojure.svg?branch=master)](https://travis-ci.org/halcyon/asdf-clojure)
