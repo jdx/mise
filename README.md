@@ -83,6 +83,7 @@ place for people (and asdf itself) to look for plugins.
 | Lua       | [Stratus3D/asdf-lua](https://github.com/Stratus3D/asdf-lua) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-lua.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-lua)
 | LuaJIT    | [smashedtoatoms/asdf-luaJIT](https://github.com/smashedtoatoms/asdf-luaJIT) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-luaJIT.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-luaJIT)
 | Maven     | [skotchpine/asdf-maven](https://github.com/skotchpine/asdf-maven) | [![Build Status](https://travis-ci.org/skotchpine/asdf-maven.svg?branch=master)](https://travis-ci.org/skotchpine/asdf-maven)
+| Micronaut | [weibemoura/asdf-micronaut](https://github.com/weibemoura/asdf-micronaut) | [![Build Status](https://travis-ci.org/weibemoura/asdf-micronaut.svg?branch=master)](https://travis-ci.org/weibemoura/asdf-micronaut)
 | Mill      | [vic/asdf-mill](https://github.com/vic/asdf-mill) | [![Build Status](https://travis-ci.org/vic/asdf-mill.svg?branch=master)](https://travis-ci.org/vic/asdf-mill)
 | Minikube  | [alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) | [![Build Status](https://travis-ci.org/alvarobp/asdf-minikube.svg?branch=master)](https://travis-ci.org/alvarobp/asdf-minikube)
 | MongoDB   | [sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) | [![Build Status](https://travis-ci.org/sylph01/asdf-mongodb.svg?branch=master)](https://travis-ci.org/sylph01/asdf-mongodb)
