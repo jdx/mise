@@ -78,7 +78,7 @@ place for people (and asdf itself) to look for plugins.
 | Kubeseal   | [stefansedich/asdf-kubeseal](https://github.com/stefansedich/asdf-kubeseal) | [![Build Status](https://travis-ci.com/stefansedich/asdf-kubeseal.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-kubeseal)
 | Kubesec   | [vitalis/asdf-kubesec](https://github.com/vitalis/asdf-kubesec) | [![Build Status](https://travis-ci.org/vitalis/asdf-kubesec.svg?branch=master)](https://travis-ci.org/vitalis/asdf-kubesec)
 | Kubeval   | [stefansedich/asdf-kubeval](https://github.com/stefansedich/asdf-kubeval) | [![Build Status](https://travis-ci.com/stefansedich/asdf-kubeval.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-kubeval)
-| Kustomize | [Banno/asdf-kustomize](https://github.com/Banno/asdf-kubectl) | [![Build Status](https://travis-ci.com/Banno/asdf-kustomize.svg?branch=master)](https://travis-ci.com/Banno/asdf-kustomize)
+| Kustomize | [Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) | [![Build Status](https://travis-ci.com/Banno/asdf-kustomize.svg?branch=master)](https://travis-ci.com/Banno/asdf-kustomize)
 | LFE       | [vic/asdf-lfe](https://github.com/vic/asdf-lfe) | [![Build Status](https://travis-ci.org/vic/asdf-lfe.svg?branch=master)](https://travis-ci.org/vic/asdf-lfe)
 | Link (system tools) | [vic/asdf-link](https://github.com/vic/asdf-link) | [![Build Status](https://travis-ci.org/vic/asdf-link.svg?branch=master)](https://travis-ci.org/vic/asdf-link)
 | Logtalk   | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) | [![Build Status](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk.svg?branch=master)](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk)
