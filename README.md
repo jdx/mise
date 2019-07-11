@@ -76,7 +76,6 @@ place for people (and asdf itself) to look for plugins.
 | Kops      | [Antiarchitect/asdf-kops](https://github.com/Antiarchitect/asdf-kops) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-kops.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-kops)
 | Kotlin    | [missingcharacter/asdf-kotlin](https://github.com/missingcharacter/asdf-kotlin) | [![Build Status](https://travis-ci.org/missingcharacter/asdf-kotlin.svg?branch=master)](https://travis-ci.org/missingcharacter/asdf-kotlin)
 | Ksonnet   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
-| Kubecfg   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
 | Kubectl   | [Banno/asdf-kubectl](https://github.com/Banno/asdf-kubectl) | [![Build Status](https://travis-ci.org/Banno/asdf-kubectl.svg?branch=master)](https://travis-ci.org/Banno/asdf-kubectl)
 | Kubefedctl    | [kvokka/asdf-kubefedctl](https://github.com/kvokka/asdf-kubefedctl) | [![Build Status](https://travis-ci.org/kvokka/asdf-kubefedctl.svg?branch=master)](https://travis-ci.org/kvokka/asdf-kubefedctl)
 | Kubeseal   | [stefansedich/asdf-kubeseal](https://github.com/stefansedich/asdf-kubeseal) | [![Build Status](https://travis-ci.com/stefansedich/asdf-kubeseal.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-kubeseal)
