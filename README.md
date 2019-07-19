@@ -31,6 +31,7 @@ place for people (and asdf itself) to look for plugins.
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
 | Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
 | Brig      | [Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) | [![Build Status](https://travis-ci.com/Ibotta/asdf-brig.svg?branch=master)](https://travis-ci.com/Ibotta/asdf-brig)
+| CHICKEN   | [evhan/asdf-chicken](https://github.com/evhan/asdf-chicken) | [![Build Status](https://travis-ci.org/evhan/asdf-chicken.svg?branch=master)](https://travis-ci.org/evhan/asdf-chicken)
 | cf        | [mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) | [![Build Status](https://travis-ci.org/mattysweeps/asdf-cf.svg?branch=master)](https://travis-ci.org/mattysweeps/asdf-cf)
 | Clojure   | [halcyon/asdf-clojure](https://github.com/halcyon/asdf-clojure) | [![Build Status](https://travis-ci.org/halcyon/asdf-clojure.svg?branch=master)](https://travis-ci.org/halcyon/asdf-clojure)
 | CMake     | [srivathsanmurali/asdf-cmake](https://github.com/srivathsanmurali/asdf-cmake) | [![Build Status](https://travis-ci.org/srivathsanmurali/asdf-cmake.svg?branch=master)](https://travis-ci.org/srivathsanmurali/asdf-cmake)
