@@ -123,6 +123,7 @@ place for people (and asdf itself) to look for plugins.
 | SQLite    | [cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) | [![Build Status](https://travis-ci.org/cLupus/asdf-sqlite.svg?branch=master)](https://travis-ci.org/cLupus/asdf-sqlite)
 | SWIProlog | [mracos/asdf-swiprolog](https://github.com/mracos/asdf-swiprolog) | [![Build Status](https://travis-ci.org/mracos/asdf-swiprolog.svg?branch=master)](https://travis-ci.org/mracos/asdf-swiprolog)
 | Terraform | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| Terraform-validator | [looztra/asdf-terraform-validator](https://github.com/looztra/asdf-terraform-validator) | [![Build Status](https://travis-ci.org/looztra/asdf-terraform-validator.svg?branch=master)](https://travis-ci.org/looztra/asdf-terraform-validator)
 | Terragrunt | [td7x/asdf/terragrunt/](https://gitlab.com/td7x/asdf/terragrunt/) | [![pipeline status](https://gitlab.com/td7x/asdf/terragrunt/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/terragrunt/commits/master)
 | TFLint | [RykHawthorn/asdf-tflint](https://github.com/RykHawthorn/asdf-tflint) | [![Build Status](https://travis-ci.org/RykHawthorn/asdf-tflint.svg?branch=master)](https://travis-ci.org/RykHawthorn/asdf-tflint)
 | Tmux      | [aphecetche/asdf-tmux](https://github.com/aphecetche/asdf-tmux) | [![Build Status](https://travis-ci.org/aphecetche/asdf-tmux.svg?branch=master)](https://travis-ci.org/aphecetche/asdf-tmux)
