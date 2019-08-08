@@ -65,6 +65,7 @@ place for people (and asdf itself) to look for plugins.
 | Gradle    | [rfrancis/asdf-gradle](https://github.com/rfrancis/asdf-gradle) | [![Build Status](https://travis-ci.org/rfrancis/asdf-gradle.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-gradle)
 | Grails    | [weibemoura/asdf-grails](https://github.com/weibemoura/asdf-grails) | [![Build Status](https://travis-ci.org/weibemoura/asdf-grails.svg?branch=master)](https://travis-ci.org/weibemoura/asdf-grails)
 | Groovy    | [weibemoura/asdf-groovy](https://github.com/weibemoura/asdf-groovy) | [![Build Status](https://travis-ci.org/weibemoura/asdf-groovy.svg?branch=master)](https://travis-ci.org/weibemoura/asdf-groovy)
+| hadolint | [looztra/asdf-hadolint](https://github.com/looztra/asdf-hadolint) | [![Build Status](https://travis-ci.org/looztra/asdf-hadolint.svg?branch=master)](https://travis-ci.org/looztra/asdf-hadolint)
 | Haskell   | [vic/asdf-haskell](https://github.com/vic/asdf-haskell) | [![Build Status](https://travis-ci.org/vic/asdf-haskell.svg?branch=master)](https://travis-ci.org/vic/asdf-haskell)
 | Helm      | [Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-helm.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-helm)
 | Helmfile  | [feniix/asdf-helmfile](https://github.com/feniix/asdf-helmfile) | [![Build Status](https://travis-ci.org/feniix/asdf-helmfile.svg?branch=master)](https://travis-ci.org/feniix/asdf-helmfile)
