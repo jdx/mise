@@ -135,5 +135,6 @@ place for people (and asdf itself) to look for plugins.
 | Tmux      | [aphecetche/asdf-tmux](https://github.com/aphecetche/asdf-tmux) | [![Build Status](https://travis-ci.org/aphecetche/asdf-tmux.svg?branch=master)](https://travis-ci.org/aphecetche/asdf-tmux)
 | V         | [ndac-todoroki/asdf-v](https://github.com/ndac-todoroki/asdf-v) | [![Build Status](https://travis-ci.com/ndac-todoroki/asdf-v.svg?branch=master)](https://travis-ci.com/ndac-todoroki/asdf-v)
 | Vault     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
+| Velero | [looztra/asdf-velero](https://github.com/looztra/asdf-velero) | [![Build Status](https://travis-ci.org/looztra/asdf-velero.svg?branch=master)](https://travis-ci.org/looztra/asdf-velero)
 | Yarn      | [twuni/asdf-yarn](https://github.com/twuni/asdf-yarn) | [![Build Status](https://travis-ci.org/twuni/asdf-yarn.svg?branch=master)](https://travis-ci.org/twuni/asdf-yarn)
 | .Net Core | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) | [![Build Status](https://travis-ci.org/emersonsoares/asdf-dotnet-core.svg?branch=master)](https://travis-ci.org/emersonsoares/asdf-dotnet-core)
