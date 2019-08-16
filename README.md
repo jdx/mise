@@ -115,6 +115,7 @@ place for people (and asdf itself) to look for plugins.
 | Rancher    | [abinet/asdf-rancher](https://github.com/abinet/asdf-rancher) | [![Build Status](https://travis-ci.org/abinet/asdf-rancher.svg?branch=master)](https://travis-ci.org/abinet/asdf-rancher)
 | Rebar     | [Stratus3D/asdf-rebar](https://github.com/Stratus3D/asdf-rebar) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-rebar.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-rebar)
 | Redis     | [smashedtoatoms/asdf-redis](https://github.com/smashedtoatoms/asdf-redis) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-redis.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-redis)
+| Reg       | [looztra/asdf-reg](https://github.com/looztra/asdf-reg) | [![Build Status](https://travis-ci.org/looztra/asdf-reg.svg?branch=master)](https://travis-ci.org/looztra/asdf-reg)
 | Riak      | [smashedtoatoms/asdf-riak](https://github.com/smashedtoatoms/asdf-riak) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-riak.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-riak)
 | Riff      | [abinet/asdf-riff](https://github.com/abinet/asdf-riff) | [![Build Status](https://travis-ci.org/abinet/asdf-riff.svg?branch=master)](https://travis-ci.org/abinet/asdf-riff)
 | Ruby      | [asdf-vm/asdf-ruby](https://github.com/asdf-vm/asdf-ruby) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-ruby.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-ruby)
