@@ -130,6 +130,7 @@ place for people (and asdf itself) to look for plugins.
 | Sops | [feniix/asdf-sops](https://github.com/feniix/asdf-sops) | [![Build Status](https://travis-ci.org/feniix/asdf-sops.svg?branch=master)](https://travis-ci.org/feniix/asdf-sops)
 | SQLite    | [cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) | [![Build Status](https://travis-ci.org/cLupus/asdf-sqlite.svg?branch=master)](https://travis-ci.org/cLupus/asdf-sqlite)
 | Stern | [looztra/asdf-stern](https://github.com/looztra/asdf-stern) | [![Build Status](https://travis-ci.org/looztra/asdf-stern.svg?branch=master)](https://travis-ci.org/looztra/asdf-stern)
+| Swiftlint | [klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint) | [![Build Status](https://travis-ci.org/klundberg/asdf-swiftlint.svg?branch=master)](https://travis-ci.org/klundberg/asdf-swiftlint)
 | SWIProlog | [mracos/asdf-swiprolog](https://github.com/mracos/asdf-swiprolog) | [![Build Status](https://travis-ci.org/mracos/asdf-swiprolog.svg?branch=master)](https://travis-ci.org/mracos/asdf-swiprolog)
 | Terraform | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | Terragrunt | [td7x/asdf/terragrunt/](https://gitlab.com/td7x/asdf/terragrunt/) | [![pipeline status](https://gitlab.com/td7x/asdf/terragrunt/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/terragrunt/commits/master)
