@@ -115,6 +115,7 @@ place for people (and asdf itself) to look for plugins.
 | R         | [iroddis/asdf-R](https://github.com/iroddis/asdf-R) | [![Build Status](https://travis-ci.org/iroddis/asdf-R.svg?branch=master)](https://travis-ci.org/iroddis/asdf-R)
 | Racket    | [vic/asdf-racket](https://github.com/vic/asdf-racket) | [![Build Status](https://travis-ci.org/vic/asdf-racket.svg?branch=master)](https://travis-ci.org/vic/asdf-racket)
 | Rancher    | [abinet/asdf-rancher](https://github.com/abinet/asdf-rancher) | [![Build Status](https://travis-ci.org/abinet/asdf-rancher.svg?branch=master)](https://travis-ci.org/abinet/asdf-rancher)
+| Rbac-lookup       | [looztra/asdf-rbac-lookup](https://github.com/looztra/asdf-rbac-lookup) | [![Build Status](https://travis-ci.org/looztra/asdf-rbac-lookup.svg?branch=master)](https://travis-ci.org/looztra/asdf-rbac-lookup)
 | Rebar     | [Stratus3D/asdf-rebar](https://github.com/Stratus3D/asdf-rebar) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-rebar.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-rebar)
 | Redis     | [smashedtoatoms/asdf-redis](https://github.com/smashedtoatoms/asdf-redis) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-redis.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-redis)
 | Reg       | [looztra/asdf-reg](https://github.com/looztra/asdf-reg) | [![Build Status](https://travis-ci.org/looztra/asdf-reg.svg?branch=master)](https://travis-ci.org/looztra/asdf-reg)
