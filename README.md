@@ -107,6 +107,7 @@ place for people (and asdf itself) to look for plugins.
 | Nomad     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | OCaml     | [vic/asdf-ocaml](https://github.com/vic/asdf-ocaml) | [![Build Status](https://travis-ci.org/vic/asdf-ocaml.svg?branch=master)](https://travis-ci.org/vic/asdf-ocaml)
 | OpenResty | [smashedtoatoms/asdf-openresty](https://github.com/smashedtoatoms/asdf-openresty) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-openresty.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-openresty)
+| osctl | [particledecay/asdf-osctl](https://github.com/particledecay/asdf-osctl) | [![Build Status](https://travis-ci.org/particledecay/asdf-osctl.svg?branch=master)](https://travis-ci.org/particledecay/asdf-osctl)
 | Packer    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | PHP       | [odarriba/asdf-php](https://github.com/odarriba/asdf-php) | [![Build Status](https://travis-ci.org/odarriba/asdf-php.svg?branch=master)](https://travis-ci.org/odarriba/asdf-php)
 | Postgres  | [smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-postgres.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-postgres)
