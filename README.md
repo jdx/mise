@@ -105,7 +105,7 @@ place for people (and asdf itself) to look for plugins.
 | Nim       | [rfrancis/asdf-nim](https://github.com/rfrancis/asdf-nim) | [![Build Status](https://travis-ci.org/rfrancis/asdf-nim.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-nim)
 | Node.js   | [asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-nodejs.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-nodejs)
 | Nomad     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
-| OCaml     | [vic/asdf-ocaml](https://github.com/vic/asdf-ocaml) | [![Build Status](https://travis-ci.org/vic/asdf-ocaml.svg?branch=master)](https://travis-ci.org/vic/asdf-ocaml)
+| OCaml     | [vic/asdf-ocaml](https://github.com/vic/asdf-ocaml) | [![Build Status](https://github.com/asdf-ocaml/asdf-ocaml/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-ocaml/asdf-ocaml/actions)
 | OpenResty | [smashedtoatoms/asdf-openresty](https://github.com/smashedtoatoms/asdf-openresty) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-openresty.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-openresty)
 | osctl | [particledecay/asdf-osctl](https://github.com/particledecay/asdf-osctl) | [![Build Status](https://travis-ci.org/particledecay/asdf-osctl.svg?branch=master)](https://travis-ci.org/particledecay/asdf-osctl)
 | Packer    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
