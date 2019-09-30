@@ -58,6 +58,7 @@ place for people (and asdf itself) to look for plugins.
 | Elixir    | [asdf-vm/asdf-elixir](https://github.com/asdf-vm/asdf-elixir) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-elixir.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-elixir)
 | Elm       | [vic/asdf-elm](https://github.com/vic/asdf-elm) | [![Build Status](https://travis-ci.org/vic/asdf-elm.svg?branch=master)](https://travis-ci.org/vic/asdf-elm)
 | Erlang    | [asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-erlang.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-erlang)
+| Esy    | [asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) | [![Build Status](https://github.com/asdf-community/asdf-esy/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-esy/actions)
 | Flutter   | [oae/asdf-flutter](https://github.com/oae/asdf-flutter) | [![Build Status](https://travis-ci.com/oae/asdf-flutter.svg?branch=master)](https://travis-ci.com/oae/asdf-flutter)
 | Fluxctl   | [stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) | [![Build Status](https://travis-ci.com/stefansedich/asdf-fluxctl.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-fluxctl)
 | Gauche    | [sakuro/asdf-gauche](https://github.com/sakuro/asdf-gauche) | [![Build Status](https://travis-ci.org/sakuro/asdf-gauche.svg?branch=master)](https://travis-ci.org/sakuro/asdf-gauche)
