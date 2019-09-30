@@ -105,6 +105,7 @@ place for people (and asdf itself) to look for plugins.
 | MongoDB   | [sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) | [![Build Status](https://travis-ci.org/sylph01/asdf-mongodb.svg?branch=master)](https://travis-ci.org/sylph01/asdf-mongodb)
 | MySQL     | [iroddis/asdf-mysql](https://github.com/iroddis/asdf-mysql) | [![Build Status](https://travis-ci.org/iroddis/asdf-mysql.svg?branch=master)](https://travis-ci.org/iroddis/asdf-mysql)
 | Nim       | [rfrancis/asdf-nim](https://github.com/rfrancis/asdf-nim) | [![Build Status](https://travis-ci.org/rfrancis/asdf-nim.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-nim)
+| Ninja     | [asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) | [![Build Status](https://github.com/asdf-community/asdf-ninja/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-ninja/actions)
 | Node.js   | [asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-nodejs.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-nodejs)
 | Nomad     | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | OCaml     | [asdf-community/asdf-ocaml](https://github.com/asdf-community/asdf-ocaml) | [![Build Status](https://github.com/asdf-community/asdf-ocaml/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-ocaml/actions)
