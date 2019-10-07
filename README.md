@@ -27,6 +27,7 @@ place for people (and asdf itself) to look for plugins.
 
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
+| 1password | [samtgarson/asdf-1password](https://gitlab.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions) 
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
 | Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
