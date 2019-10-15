@@ -107,6 +107,7 @@ place for people (and asdf itself) to look for plugins.
 | Minikube  | [alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) | [![Build Status](https://travis-ci.org/alvarobp/asdf-minikube.svg?branch=master)](https://travis-ci.org/alvarobp/asdf-minikube)
 | MongoDB   | [sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) | [![Build Status](https://travis-ci.org/sylph01/asdf-mongodb.svg?branch=master)](https://travis-ci.org/sylph01/asdf-mongodb)
 | MySQL     | [iroddis/asdf-mysql](https://github.com/iroddis/asdf-mysql) | [![Build Status](https://travis-ci.org/iroddis/asdf-mysql.svg?branch=master)](https://travis-ci.org/iroddis/asdf-mysql)
+| Neovim       | [richin13/asdf-neovim](https://github.com/richin13/asdf-neovim) | [![Build Status](https://travis-ci.org/richin13/asdf-neovim.svg?branch=master)](https://travis-ci.org/richin13/asdf-neovim)
 | Nim       | [rfrancis/asdf-nim](https://github.com/rfrancis/asdf-nim) | [![Build Status](https://travis-ci.org/rfrancis/asdf-nim.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-nim)
 | Ninja     | [asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) | [![Build Status](https://github.com/asdf-community/asdf-ninja/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-ninja/actions)
 | Node.js   | [asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-nodejs.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-nodejs)
