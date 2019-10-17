@@ -135,6 +135,7 @@ itself) to look for plugins.
 | Riak      | [smashedtoatoms/asdf-riak](https://github.com/smashedtoatoms/asdf-riak) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-riak.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-riak)
 | Riff      | [abinet/asdf-riff](https://github.com/abinet/asdf-riff) | [![Build Status](https://travis-ci.org/abinet/asdf-riff.svg?branch=master)](https://travis-ci.org/abinet/asdf-riff)
 | RKE    | [particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) | [![Build Status](https://travis-ci.org/particledecay/asdf-rke.svg?branch=master)](https://travis-ci.org/particledecay/asdf-rke)
+| rlwrap | [asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) | [![Main workflow](https://github.com/asdf-community/asdf-rlwrap/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-rlwrap/actions)
 | Ruby      | [asdf-vm/asdf-ruby](https://github.com/asdf-vm/asdf-ruby) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-ruby.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-ruby)
 | Rust      | [code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) | [![Build Status](https://travis-ci.org/code-lever/asdf-rust.svg?branch=master)](https://travis-ci.org/code-lever/asdf-rust)
 | SBT       | [gabrielelana/asdf-sbt](https://github.com/gabrielelana/asdf-sbt) | [![Build Status](https://travis-ci.org/gabrielelana/asdf-sbt.svg?branch=master)](https://travis-ci.org/gabrielelana/asdf-sbt)
