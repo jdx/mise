@@ -1,33 +1,37 @@
-asdf plugins repository
-=======================
+# asdf plugins repository
 
-This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository, it's purpose is
-to serve a list of community maintained _stable_ plugins.
+This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository, it's
+purpose is to serve a list of community maintained _stable_ plugins.
 
-Maintaining this list is just a convenience for helping new asdf users so that listed plugins
-can be installed by just `asdf plugin-add NAME` without having to lookup for the actual plugin repo.
+Maintaining this list is just a convenience for helping new asdf users so that
+listed plugins can be installed by just `asdf plugin-add NAME` without having to
+lookup for the actual plugin repo.
 
-Thus, this list should be updated when a plugin is broken or when someone has forked a better version.
-Just remember that you can actually use any repo with asdf, and this list is just for having a central
-place for people (and asdf itself) to look for plugins.
-
+Thus, this list should be updated when a plugin is broken or when someone has
+forked a better version. Just remember that you can actually use any repo with
+asdf, and this list is just for having a central place for people (and asdf
+itself) to look for plugins.
 
 ## Contributing a new Plugin
 
-* Be sure to read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
-* Test the plugin locally and make sure you can execute the new tool successfully (your shell scripts should work at least on osx and ubuntu linux)
-* Create a travis build for your tool, the build should install and execute your tool with `--version` or similar to test it works.
-* Update the README.md file on this repo to add your new plugin. The list is alphabetically ordered.
-* Create a file in `plugins/` with the same name as your plugin. The contents of the file should be
-`repository = <your repo>`.
-* Create a pull request showing your plugin's travis build is green. The CI for this repo checks all listed plugin badges are green.
-
+- Be sure to read the
+  [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
+- Test the plugin locally and make sure you can execute the new tool
+  successfully (your shell scripts should work at least on osx and ubuntu linux)
+- Create a travis build for your tool, the build should install and execute your
+  tool with `--version` or similar to test it works.
+- Update the README.md file on this repo to add your new plugin. The list is
+  alphabetically ordered.
+- Create a file in `plugins/` with the same name as your plugin. The contents of
+  the file should be `repository = <your repo>`.
+- Create a pull request showing your plugin's travis build is green. The CI for
+  this repo checks all listed plugin badges are green.
 
 ## Plugin List
 
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
-| 1password | [samtgarson/asdf-1password](https://gitlab.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions) 
+| 1password | [samtgarson/asdf-1password](https://gitlab.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions)
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
 | Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
