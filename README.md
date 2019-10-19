@@ -105,7 +105,7 @@ itself) to look for plugins.
 | Logtalk   | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) | [![Build Status](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk.svg?branch=master)](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk)
 | Lua       | [Stratus3D/asdf-lua](https://github.com/Stratus3D/asdf-lua) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-lua.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-lua)
 | LuaJIT    | [smashedtoatoms/asdf-luaJIT](https://github.com/smashedtoatoms/asdf-luaJIT) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-luaJIT.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-luaJIT)
-| Maven     | [skotchpine/asdf-maven](https://github.com/skotchpine/asdf-maven) | [![Build Status](https://travis-ci.org/skotchpine/asdf-maven.svg?branch=master)](https://travis-ci.org/skotchpine/asdf-maven)
+| Maven     | [halcyon/asdf-maven](https://github.com/halcyon/asdf-maven) | [![Build Status](https://travis-ci.org/halcyon/asdf-maven.svg?branch=master)](https://travis-ci.org/halcyon/asdf-maven)
 | Meson     | [asdf-community/asdf-meson](https://github.com/asdf-community/asdf-meson) | [![Build Status](https://github.com/asdf-community/asdf-meson/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-meson/actions)
 | Micronaut | [weibemoura/asdf-micronaut](https://github.com/weibemoura/asdf-micronaut) | [![Build Status](https://travis-ci.org/weibemoura/asdf-micronaut.svg?branch=master)](https://travis-ci.org/weibemoura/asdf-micronaut)
 | Mill      | [vic/asdf-mill](https://github.com/vic/asdf-mill) | [![Build Status](https://travis-ci.org/vic/asdf-mill.svg?branch=master)](https://travis-ci.org/vic/asdf-mill)
