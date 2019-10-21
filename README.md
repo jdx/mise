@@ -34,6 +34,7 @@ itself) to look for plugins.
 | 1password | [samtgarson/asdf-1password](https://gitlab.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions)
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
+| aria2 | [asdf-community/asdf-aria2](https://github.com/asdf-community/asdf-aria2) | [![Build Status](https://github.com/asdf-community/asdf-aria2/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-aria2/actions)
 | Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
 | Bitwarden | [vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) | [![Build Status](https://travis-ci.com/vixus0/asdf-bitwarden.svg?branch=master)](https://travis-ci.com/vixus0/asdf-bitwarden)
 | Brig      | [Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) | [![Build Status](https://travis-ci.com/Ibotta/asdf-brig.svg?branch=master)](https://travis-ci.com/Ibotta/asdf-brig)
