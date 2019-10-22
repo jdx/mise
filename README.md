@@ -111,6 +111,7 @@ itself) to look for plugins.
 | Micronaut | [weibemoura/asdf-micronaut](https://github.com/weibemoura/asdf-micronaut) | [![Build Status](https://travis-ci.org/weibemoura/asdf-micronaut.svg?branch=master)](https://travis-ci.org/weibemoura/asdf-micronaut)
 | Mill      | [vic/asdf-mill](https://github.com/vic/asdf-mill) | [![Build Status](https://travis-ci.org/vic/asdf-mill.svg?branch=master)](https://travis-ci.org/vic/asdf-mill)
 | Minikube  | [alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) | [![Build Status](https://travis-ci.org/alvarobp/asdf-minikube.svg?branch=master)](https://travis-ci.org/alvarobp/asdf-minikube)
+| Minio     | [aeons/asdf-minio](https://github.com/aeons/asdf-minio) | [![Build Status](https://travis-ci.org/aeons/asdf-minio.svg?branch=master)](https://travis-ci.org/aeons/asdf-minio)
 | MongoDB   | [sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) | [![Build Status](https://travis-ci.org/sylph01/asdf-mongodb.svg?branch=master)](https://travis-ci.org/sylph01/asdf-mongodb)
 | MySQL     | [iroddis/asdf-mysql](https://github.com/iroddis/asdf-mysql) | [![Build Status](https://travis-ci.org/iroddis/asdf-mysql.svg?branch=master)](https://travis-ci.org/iroddis/asdf-mysql)
 | Nim       | [rfrancis/asdf-nim](https://github.com/rfrancis/asdf-nim) | [![Build Status](https://travis-ci.org/rfrancis/asdf-nim.svg?branch=master)](https://travis-ci.org/rfrancis/asdf-nim)
