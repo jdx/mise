@@ -131,6 +131,7 @@ itself) to look for plugins.
 | Rancher    | [abinet/asdf-rancher](https://github.com/abinet/asdf-rancher) | [![Build Status](https://travis-ci.org/abinet/asdf-rancher.svg?branch=master)](https://travis-ci.org/abinet/asdf-rancher)
 | Rbac-lookup       | [looztra/asdf-rbac-lookup](https://github.com/looztra/asdf-rbac-lookup) | [![Build Status](https://travis-ci.org/looztra/asdf-rbac-lookup.svg?branch=master)](https://travis-ci.org/looztra/asdf-rbac-lookup)
 | Rebar     | [Stratus3D/asdf-rebar](https://github.com/Stratus3D/asdf-rebar) | [![Build Status](https://travis-ci.org/Stratus3D/asdf-rebar.svg?branch=master)](https://travis-ci.org/Stratus3D/asdf-rebar)
+| Reckoner  | [mjhuber/asdf-reckoner](https://github.com/mjhuber/asdf-reckoner) | [![Build Status](https://github.com/mjhuber/asdf-reckoner/workflows/master/badge.svg)](https://github.com/mjhuber/asdf-reckoner/actions)
 | Redis     | [smashedtoatoms/asdf-redis](https://github.com/smashedtoatoms/asdf-redis) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-redis.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-redis)
 | Reg       | [looztra/asdf-reg](https://github.com/looztra/asdf-reg) | [![Build Status](https://travis-ci.org/looztra/asdf-reg.svg?branch=master)](https://travis-ci.org/looztra/asdf-reg)
 | Riak      | [smashedtoatoms/asdf-riak](https://github.com/smashedtoatoms/asdf-riak) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-riak.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-riak)
