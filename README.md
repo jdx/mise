@@ -147,6 +147,7 @@ itself) to look for plugins.
 | Skaffold   | [kristoflemmens/asdf-skaffold](https://github.com/kristoflemmens/asdf-skaffold) | [![Build Status](https://travis-ci.org/kristoflemmens/asdf-skaffold.svg?branch=master)](https://travis-ci.org/kristoflemmens/asdf-skaffold)
 | Sops | [feniix/asdf-sops](https://github.com/feniix/asdf-sops) | [![Build Status](https://travis-ci.org/feniix/asdf-sops.svg?branch=master)](https://travis-ci.org/feniix/asdf-sops)
 | SQLite    | [cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) | [![Build Status](https://travis-ci.org/cLupus/asdf-sqlite.svg?branch=master)](https://travis-ci.org/cLupus/asdf-sqlite)
+| Steel Bank Common Lisp (sbcl) | [smashedtoatoms/asdf-sbcl](https://github.com/smashedtoatoms/asdf-sbcl) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-sbcl.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-sbcl)
 | Stern | [looztra/asdf-stern](https://github.com/looztra/asdf-stern) | [![Build Status](https://travis-ci.org/looztra/asdf-stern.svg?branch=master)](https://travis-ci.org/looztra/asdf-stern)
 | Swiftlint | [klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint) | [![Build Status](https://travis-ci.org/klundberg/asdf-swiftlint.svg?branch=master)](https://travis-ci.org/klundberg/asdf-swiftlint)
 | SWIProlog | [mracos/asdf-swiprolog](https://github.com/mracos/asdf-swiprolog) | [![Build Status](https://travis-ci.org/mracos/asdf-swiprolog.svg?branch=master)](https://travis-ci.org/mracos/asdf-swiprolog)
