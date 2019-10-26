@@ -164,4 +164,5 @@ itself) to look for plugins.
 | Velero | [looztra/asdf-velero](https://github.com/looztra/asdf-velero) | [![Build Status](https://travis-ci.org/looztra/asdf-velero.svg?branch=master)](https://travis-ci.org/looztra/asdf-velero)
 | Yarn      | [twuni/asdf-yarn](https://github.com/twuni/asdf-yarn) | [![Build Status](https://travis-ci.org/twuni/asdf-yarn.svg?branch=master)](https://travis-ci.org/twuni/asdf-yarn)
 | Zig      | [cheetah/asdf-zig](https://github.com/cheetah/asdf-zig) | [![Build Status](https://travis-ci.org/cheetah/asdf-zig.svg?branch=master)](https://travis-ci.org/cheetah/asdf-zig)
+| Zola | [salasrod/asdf-zola](https://github.com/salasrod/asdf-zola) | [![Build Status](https://github.com/salasrod/asdf-zola/workflows/CI/badge.svg)](https://github.com/salasrod/asdf-zola/actions)
 | .Net Core | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) | [![Build Status](https://travis-ci.org/emersonsoares/asdf-dotnet-core.svg?branch=master)](https://travis-ci.org/emersonsoares/asdf-dotnet-core)
