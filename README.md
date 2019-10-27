@@ -58,6 +58,7 @@ itself) to look for plugins.
 | Dep       | [paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) | [![Build Status](https://travis-ci.com/paxosglobal/asdf-dep.svg?branch=master)](https://travis-ci.com/paxosglobal/asdf-dep)
 | Desk      | [endorama/asdf-desk](https://github.com/endorama/asdf-desk) | [![Build Status](https://travis-ci.org/endorama/asdf-desk.svg?branch=master)](https://travis-ci.org/endorama/asdf-desk)
 | dhall     | [aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) | [![Build Status](https://travis-ci.com/aaaaninja/asdf-dhall.svg?branch=master)](https://travis-ci.com/aaaaninja/asdf-dhall)
+| direnv    | [asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) | [![Main workflow](https://github.com/asdf-community/asdf-direnv/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-direnv/actions)
 | dive      | [looztra/asdf-dive](https://github.com/looztra/asdf-dive) | [![Build Status](https://travis-ci.org/looztra/asdf-dive.svg?branch=master)](https://travis-ci.org/looztra/asdf-dive)
 | docker-slim | [everpeace/asdf-docker-slim](https://github.com/everpeace/asdf-docker-slim.git) | [![Build Status](https://travis-ci.org/everpeace/asdf-docker-slim.svg?branch=master)](https://travis-ci.org/everpeace/asdf-docker-slim)
 | doctl     | [maristgeek/asdf-doctl](https://github.com/maristgeek/asdf-doctl) | [![Build Status](https://travis-ci.org/maristgeek/asdf-doctl.svg?branch=master)](https://travis-ci.org/maristgeek/asdf-doctl)
