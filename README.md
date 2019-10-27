@@ -49,6 +49,7 @@ itself) to look for plugins.
 | conftest | [looztra/asdf-conftest](https://github.com/looztra/asdf-conftest) | [![Build Status](https://travis-ci.org/looztra/asdf-conftest.svg?branch=master)](https://travis-ci.org/looztra/asdf-conftest)
 | Consul    | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
 | Coq       | [gingerhot/asdf-coq](https://github.com/gingerhot/asdf-coq) | [![Build Status](https://travis-ci.org/gingerhot/asdf-coq.svg?branch=master)](https://travis-ci.org/gingerhot/asdf-coq)
+| CUE | [asdf-community/asdf-cue](https://github.com/asdf-community/asdf-cue) | [![Build Status](https://github.com/asdf-community/asdf-cue/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-cue/actions)
 | Crystal   | [marciogm/asdf-crystal](https://github.com/marciogm/asdf-crystal) | [![Build Status](https://travis-ci.org/marciogm/asdf-crystal.svg?branch=master)](https://travis-ci.org/marciogm/asdf-crystal)
 | D (DMD)   | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) | [![Build Status](https://travis-ci.org/sylph01/asdf-dmd.svg?branch=master)](https://travis-ci.org/sylph01/asdf-dmd)
 | Dart      | [PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) | [![Build Status](https://travis-ci.org/PatOConnor43/asdf-dart.svg?branch=master)](https://travis-ci.org/PatOConnor43/asdf-dart)
