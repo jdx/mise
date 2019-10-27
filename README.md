@@ -66,7 +66,7 @@ itself) to look for plugins.
 | eksctl    | [elementalvoid/asdf-eksctl](https://github.com/elementalvoid/asdf-eksctl) | [![Build Status](https://travis-ci.org/elementalvoid/asdf-eksctl.svg?branch=master)](https://travis-ci.org/elementalvoid/asdf-eksctl)
 | Elasticsearch | [mikestephens/asdf-elasticsearch](https://github.com/mikestephens/asdf-elasticsearch) | [![Build Status](https://travis-ci.org/mikestephens/asdf-elasticsearch.svg?branch=master)](https://travis-ci.org/mikestephens/asdf-elasticsearch)
 | Elixir    | [asdf-vm/asdf-elixir](https://github.com/asdf-vm/asdf-elixir) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-elixir.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-elixir)
-| Elm       | [vic/asdf-elm](https://github.com/vic/asdf-elm) | [![Build Status](https://travis-ci.org/vic/asdf-elm.svg?branch=master)](https://travis-ci.org/vic/asdf-elm)
+| Elm       | [asdf-community/asdf-elm](https://github.com/asdf-community/asdf-elm) | [![Build Status](https://github.com/asdf-community/asdf-elm/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-elm/actions)
 | Erlang    | [asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-erlang.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-erlang)
 | Esy    | [asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) | [![Build Status](https://github.com/asdf-community/asdf-esy/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-esy/actions)
 | Flutter   | [oae/asdf-flutter](https://github.com/oae/asdf-flutter) | [![Build Status](https://travis-ci.com/oae/asdf-flutter.svg?branch=master)](https://travis-ci.com/oae/asdf-flutter)
