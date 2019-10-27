@@ -103,6 +103,7 @@ itself) to look for plugins.
 | Kubesec   | [vitalis/asdf-kubesec](https://github.com/vitalis/asdf-kubesec) | [![Build Status](https://travis-ci.org/vitalis/asdf-kubesec.svg?branch=master)](https://travis-ci.org/vitalis/asdf-kubesec)
 | Kubeval   | [stefansedich/asdf-kubeval](https://github.com/stefansedich/asdf-kubeval) | [![Build Status](https://travis-ci.com/stefansedich/asdf-kubeval.svg?branch=master)](https://travis-ci.com/stefansedich/asdf-kubeval)
 | Kustomize | [Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) | [![Build Status](https://travis-ci.com/Banno/asdf-kustomize.svg?branch=master)](https://travis-ci.com/Banno/asdf-kustomize)
+| Lean | [asdf-community/asdf-lean](https://github.com/asdf-community/asdf-lean) | [![Build Status](https://github.com/asdf-community/asdf-lean/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-lean/actions)
 | LFE       | [vic/asdf-lfe](https://github.com/vic/asdf-lfe) | [![Build Status](https://travis-ci.org/vic/asdf-lfe.svg?branch=master)](https://travis-ci.org/vic/asdf-lfe)
 | Link (system tools) | [vic/asdf-link](https://github.com/vic/asdf-link) | [![Build Status](https://travis-ci.org/vic/asdf-link.svg?branch=master)](https://travis-ci.org/vic/asdf-link)
 | Logtalk   | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) | [![Build Status](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk.svg?branch=master)](https://travis-ci.org/LogtalkDotOrg/asdf-logtalk)
