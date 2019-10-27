@@ -35,6 +35,7 @@ itself) to look for plugins.
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
 | alp | [asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) | [![Main workflow](https://github.com/asdf-community/asdf-alp/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-alp/actions)
+| aria2 | [asdf-community/asdf-aria2](https://github.com/asdf-community/asdf-aria2) | [![Build Status](https://github.com/asdf-community/asdf-aria2/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-aria2/actions)
 | Bazel     | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) | [![Build Status](https://travis-ci.org/rajatvig/asdf-bazel.svg?branch=master)](https://travis-ci.org/rajatvig/asdf-bazel)
 | binnacle  | [Traackr/asdf-binnacle](https://github.com/Traackr/asdf-binnacle) | [![Build Status](https://travis-ci.org/Traackr/asdf-binnacle.svg?branch=master)](https://travis-ci.org/Traackr/asdf-binnacle)
 | Bitwarden | [vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) | [![Build Status](https://travis-ci.com/vixus0/asdf-bitwarden.svg?branch=master)](https://travis-ci.com/vixus0/asdf-bitwarden)
