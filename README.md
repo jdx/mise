@@ -54,7 +54,7 @@ itself) to look for plugins.
 | Crystal   | [marciogm/asdf-crystal](https://github.com/marciogm/asdf-crystal) | [![Build Status](https://travis-ci.org/marciogm/asdf-crystal.svg?branch=master)](https://travis-ci.org/marciogm/asdf-crystal)
 | D (DMD)   | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) | [![Build Status](https://travis-ci.org/sylph01/asdf-dmd.svg?branch=master)](https://travis-ci.org/sylph01/asdf-dmd)
 | Dart      | [PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) | [![Build Status](https://travis-ci.org/PatOConnor43/asdf-dart.svg?branch=master)](https://travis-ci.org/PatOConnor43/asdf-dart)
-| Deno      | [johnlayton/valdastreet](https://github.com/johnlayton/valdastreet) | [![Build Status](https://travis-ci.org/johnlayton/valdastreet.svg?branch=master)](https://travis-ci.org/johnlayton/valdastreet)
+| Deno      | [asdf-community/asdf-deno](https://github.com/asdf-community/asdf-deno) | [![Main workflow](https://github.com/asdf-community/asdf-deno/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-deno/actions)
 | Dep       | [paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) | [![Build Status](https://travis-ci.com/paxosglobal/asdf-dep.svg?branch=master)](https://travis-ci.com/paxosglobal/asdf-dep)
 | Desk      | [endorama/asdf-desk](https://github.com/endorama/asdf-desk) | [![Build Status](https://travis-ci.org/endorama/asdf-desk.svg?branch=master)](https://travis-ci.org/endorama/asdf-desk)
 | dhall     | [aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) | [![Build Status](https://travis-ci.com/aaaaninja/asdf-dhall.svg?branch=master)](https://travis-ci.com/aaaaninja/asdf-dhall)
