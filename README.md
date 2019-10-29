@@ -146,7 +146,7 @@ itself) to look for plugins.
 | RKE    | [particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) | [![Build Status](https://travis-ci.org/particledecay/asdf-rke.svg?branch=master)](https://travis-ci.org/particledecay/asdf-rke)
 | rlwrap | [asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) | [![Main workflow](https://github.com/asdf-community/asdf-rlwrap/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-rlwrap/actions)
 | Ruby      | [asdf-vm/asdf-ruby](https://github.com/asdf-vm/asdf-ruby) | [![Build Status](https://travis-ci.org/asdf-vm/asdf-ruby.svg?branch=master)](https://travis-ci.org/asdf-vm/asdf-ruby)
-| Rust      | [asdf-community/asdf-rust](https://github.com/asdf-community/asdf-rust) | [![Build status](https://github.com/asdf-community/asdf-rust/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-rust/actions)
+| Rust      | [code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) | [![Build Status](https://travis-ci.org/code-lever/asdf-rust.svg?branch=master)](https://travis-ci.org/code-lever/asdf-rust)
 | SBT       | [gabrielelana/asdf-sbt](https://github.com/gabrielelana/asdf-sbt) | [![Build Status](https://travis-ci.org/gabrielelana/asdf-sbt.svg?branch=master)](https://travis-ci.org/gabrielelana/asdf-sbt)
 | Scala     | [mtatheonly/asdf-scala](https://github.com/mtatheonly/asdf-scala)| [![Build Status](https://travis-ci.org/mtatheonly/asdf-scala.svg?branch=master)](https://travis-ci.org/mtatheonly/asdf-scala)
 | Serf      | [Banno/asdf-hashicorp](https://github.com/Banno/asdf-hashicorp) | [![Build Status](https://travis-ci.org/Banno/asdf-hashicorp.svg?branch=master)](https://travis-ci.org/Banno/asdf-hashicorp)
