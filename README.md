@@ -31,7 +31,7 @@ itself) to look for plugins.
 
 | Language  | Repository  | CI Status
 |-----------|-------------|----------
-| 1password | [samtgarson/asdf-1password](https://gitlab.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions)
+| 1password | [samtgarson/asdf-1password](https://github.com/samtgarson/asdf-1password) | [![Build Status](https://github.com/samtgarson/asdf-1password/workflows/CI/badge.svg)](https://github.com/samtgarson/asdf-1password/actions)
 | adr-tools | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) | [![pipeline status](https://gitlab.com/td7x/asdf/adr-tools/badges/master/pipeline.svg)](https://gitlab.com/td7x/asdf/adr-tools/commits/master)
 | aks-engine | [robsonpeixoto/aks-engine](https://gitlab.com/robsonpeixoto/asdf-aks-engine) | [![Build Status](https://travis-ci.org/robsonpeixoto/asdf-aks-engine.svg?branch=master)](https://travis-ci.org/robsonpeixoto/asdf-aks-engine)
 | alp | [asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) | [![Main workflow](https://github.com/asdf-community/asdf-alp/workflows/Main%20workflow/badge.svg)](https://github.com/asdf-community/asdf-alp/actions)
