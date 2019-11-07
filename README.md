@@ -95,6 +95,7 @@ itself) to look for plugins.
 | Julia     | [rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) | [![Build Status](https://travis-ci.org/rkyleg/asdf-julia.svg?branch=master)](https://travis-ci.org/rkyleg/asdf-julia)
 | k9s       | [looztra/asdf-k9s](https://github.com/looztra/asdf-k9s) | [![Build Status](https://travis-ci.org/looztra/asdf-k9s.svg?branch=master)](https://travis-ci.org/looztra/asdf-k9s)
 | Kops      | [Antiarchitect/asdf-kops](https://github.com/Antiarchitect/asdf-kops) | [![Build Status](https://travis-ci.org/Antiarchitect/asdf-kops.svg?branch=master)](https://travis-ci.org/Antiarchitect/asdf-kops)
+| Kind      | [johnlayton/leesroad](https://github.com/johnlayton/leesroad) | [![Build Status](https://travis-ci.org/johnlayton/leesroad.svg?branch=master)](https://travis-ci.org/johnlayton/leesroad)
 | Kotlin    | [missingcharacter/asdf-kotlin](https://github.com/missingcharacter/asdf-kotlin) | [![Build Status](https://travis-ci.org/missingcharacter/asdf-kotlin.svg?branch=master)](https://travis-ci.org/missingcharacter/asdf-kotlin)
 | Ksonnet   | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) | [![Build Status](https://travis-ci.org/Banno/asdf-ksonnet.svg?branch=master)](https://travis-ci.org/Banno/asdf-ksonnet)
 | kube-capacity | [looztra/asdf-kube-capacity](https://github.com/looztra/asdf-kube-capacity) | [![Build Status](https://travis-ci.org/looztra/asdf-kube-capacity.svg?branch=master)](https://travis-ci.org/looztra/asdf-kube-capacity)
