@@ -135,6 +135,7 @@ itself) to look for plugins.
 | PHP       | [odarriba/asdf-php](https://github.com/odarriba/asdf-php) | [![Build Status](https://travis-ci.org/odarriba/asdf-php.svg?branch=master)](https://travis-ci.org/odarriba/asdf-php)
 | Postgres  | [smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres) | [![Build Status](https://travis-ci.org/smashedtoatoms/asdf-postgres.svg?branch=master)](https://travis-ci.org/smashedtoatoms/asdf-postgres)
 | protoc    | [paxosglobal/asdf-protoc](https://github.com/paxosglobal/asdf-protoc) | [![Build Status](https://travis-ci.com/paxosglobal/asdf-protoc.svg?branch=master)](https://travis-ci.com/paxosglobal/asdf-protoc)
+| Pulumi    | [canha/asdf-pulumi](https://github.com/canha/asdf-pulumi) | [![Build Status](https://travis-ci.org/canha/asdf-pulumi.svg?branch=master)](https://travis-ci.org/canha/asdf-pulumi)
 | Python    | [danhper/asdf-python](https://github.com/danhper/asdf-python) | [![Build Status](https://travis-ci.org/danhper/asdf-python.svg?branch=master)](https://travis-ci.org/danhper/asdf-python)
 | R         | [iroddis/asdf-R](https://github.com/iroddis/asdf-R) | [![Build Status](https://travis-ci.org/iroddis/asdf-R.svg?branch=master)](https://travis-ci.org/iroddis/asdf-R)
 | Racket    | [vic/asdf-racket](https://github.com/vic/asdf-racket) | [![Build Status](https://travis-ci.org/vic/asdf-racket.svg?branch=master)](https://travis-ci.org/vic/asdf-racket)
