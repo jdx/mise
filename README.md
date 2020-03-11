@@ -1,6 +1,6 @@
 # asdf plugins repository
 
-This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository, it's
+This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository; its
 purpose is to serve a list of community maintained _stable_ plugins.
 
 Maintaining this list is just a convenience for helping new asdf users so that
