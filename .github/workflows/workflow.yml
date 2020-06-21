@@ -1,0 +1,17 @@
+name: Main workflow
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/*'
+
+jobs:
+  check_plugin_registration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Check new plugin is registered correctly
+        run: |
+          bash test_plugin.sh --diff "${{github.base_ref}}" "${{github.sha}}"
