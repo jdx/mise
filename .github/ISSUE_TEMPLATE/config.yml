@@ -1,0 +1,2 @@
+# Force users to use one of our predefined issue templates
+blank_issues_enabled: false
