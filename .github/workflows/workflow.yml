@@ -16,4 +16,4 @@ jobs:
 
       - name: Check new plugin is registered correctly
         run: |
-          bash test_plugin.sh --diff "${{github.base_ref}}" "${{github.sha}}"
+          bash test_plugin.sh --diff origin/master "${{github.sha}}"
