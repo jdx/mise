@@ -3,7 +3,10 @@ name: Main workflow
 on:
   pull_request:
     paths:
-      - 'plugins/*'
+      - "plugins/*"
+  push:
+    paths:
+      - "plugins/*"
 
 jobs:
   check_plugin_registration:
@@ -11,9 +14,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Use Node.js 14.x
+        uses: actions/setup-node@v1
         with:
-          fetch-depth: 0
+          node-version: 14.x
+
+      - name: Install Prettier
+        run: npm install --global prettier
+
+      - name: Check formatting
+        run: prettier --check README.md
 
       - name: Check new plugin is registered correctly
-        run: |
-          bash test_plugin.sh --diff origin/master "${{github.sha}}"
+        run: bash test_plugin.sh --diff origin/master ${{ github.sha }}
