@@ -27,4 +27,4 @@ jobs:
         run: prettier --check README.md
 
       - name: Check new plugin is registered correctly
-        run: bash test_plugin.sh --diff origin/master ${{github.sha}}
+        run: bash test_plugin.sh --diff origin/master ${{ github.sha }}
