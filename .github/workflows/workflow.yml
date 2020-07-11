@@ -4,9 +4,6 @@ on:
   pull_request:
     paths:
       - "plugins/*"
-  push:
-    paths:
-      - "plugins/*"
 
 jobs:
   check_plugin_registration:
@@ -14,6 +11,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js 14.x
         uses: actions/setup-node@v1
