@@ -21,13 +21,13 @@ function check_plugin_from_diff() {
 
   # Assert that the PR diff only includes a change to README and a file under plugins/
   {
-    test "2" == "$(echo "$DIFF_CHANGES" | wc -l)" &&
+    test "2" == "$(echo "$DIFF_CHANGES" | wc -l | xargs)" &&
       echo "$DIFF_CHANGES" | grep README.md >/dev/null &&
       echo "$DIFF_CHANGES" | grep plugins/ >/dev/null
   } || fail "Expected git diff ${REF_RANGE} to only include changes for a single plugin"
 
   local PLUGIN_FILE
-  PLUGIN_FILE="$(git diff --name-only --diff-filter=A "${BASE_REF}" "${HEAD_REF}" -- plugins/)"
+  PLUGIN_FILE="$(git diff --name-only "${BASE_REF}" "${HEAD_REF}" -- plugins/)"
 
   check_plugin_from_file "$PLUGIN_FILE"
 }
