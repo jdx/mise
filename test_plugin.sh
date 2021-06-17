@@ -3,7 +3,7 @@
 # See: ./test_plugin.sh --help
 
 function fail() {
-  echo "$*" >&2
+  echo "FAIL: $*" >&2
   exit 1
 }
 
