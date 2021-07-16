@@ -21,11 +21,19 @@ Plugins listed here should be _stable_ and actively _maintained_. If you have is
 - Read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
 - Consider using our [Template](https://github.com/asdf-vm/asdf-plugin-template) which has the core functionality to tools published to GitHub releases and CI for GitHub/GitLab/CircleCI out of the box.
 
+### `asdf-community`
+
+If you're creating a new plugin consider creating it as part of the [`asdf-community`](https://github.com/asdf-community/.github) project. This is a separate community project with consolidated maintenance.
+
 ## Contributing a new Plugin
 
 - Add the plugin to this `README.md`.
 - Create a file with the shortname you wish to be used by asdf in `plugins/<name>`. Then contents should be `repository = <your_repo>`.
 - Create a PR following the instructions in the PR template.
+
+## Security
+
+The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/security/policy) which covers the core `asdf` tool. Plugins are the responsibility of their creators and not covered by the `asdf` policy. It is the responsibility of the user to evaluate each plugin they use for security concerns, even those in the `asdf-community` repositories. You can pin a plugin to a commit of the source repo with `asdf plugin update <name> <git-ref>`, however running `asdf plugin update <name>` or `asdf plugin update --all` will change the `sha` you have previously set.
 
 ## Plugin List
 
