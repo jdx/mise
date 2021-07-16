@@ -1,24 +1,15 @@
-# Checklist
+## Summary
 
-- [ ] Provide a short description and link to your plugin.
-
-- [ ] Make sure you CI tests for your plugin and they are green.
-
-      If you are using github, you might want to use the
-      `plugin_test` action from [asdf-actions](https://github.com/asdf-vm/actions)
-
-- [ ] `asdf-plugins` CI sanity checks are green on your PullRequest.
-
-      You can test locally using:
-
-      ```bash
-      ./test_plugin.sh --file plugins/PLUGIN_FILE
-      ```
+<!-- short description of your plugin or change here -->
 
 
-## Other Information
+## Checklist
 
-If there is anything else that is relevant to your pull request include that
-information here.
+- [ ] CI tests are green. If you are using GitHub, you might want to use the `plugin_test` action from [asdf-actions](https://github.com/asdf-vm/actions)
+- [ ] `asdf-plugins` CI sanity checks are green on your PullRequest. Test locally with:
 
-Thank you for contributing to asdf-plugins!
+```bash
+./test_plugin.sh --file plugins/<PLUGIN_FILE>
+```
+
+<!-- Thank you for contributing to asdf-plugins! -->
