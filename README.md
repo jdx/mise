@@ -1,31 +1,31 @@
 # asdf plugins repository
 
-This is the [asdf](https://github.com/asdf-vm/asdf) plugins repository; its
-purpose is to serve a list of community maintained _stable_ plugins.
+The purpose of the [asdf](https://github.com/asdf-vm/asdf) plugins repository is to enable shorthand installation of plugins with:
 
-Maintaining this list is just a convenience for helping new asdf users so that
-listed plugins can be installed by just `asdf plugin-add NAME` without having to
-lookup for the actual plugin repo.
+```shell
+asdf plugin add <name>
+```
 
-Thus, this list should be updated when a plugin is broken or when someone has
-forked a better version. Just remember that you can actually use any repo with
-asdf, and this list is just for having a central place for people (and asdf
-itself) to look for plugins.
+It is important to know that you can install plugins without them being in this repo with:
+
+```shell
+asdf plugin add <name> <git_url>
+```
+
+## Existing Plugins
+
+Plugins listed here should be _stable_ and actively _maintained_. If you have issues with a specific plugin please raise them on the plugin repository first. If a deprecated plugin is listed here, please let us know and create a PR to add the most used alternative.
+
+## Creating a new Plugin
+
+- Read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
+- Consider using our [Template](https://github.com/asdf-vm/asdf-plugin-template) which has the core functionality to tools published to GitHub releases and CI for GitHub/GitLab/CircleCI out of the box.
 
 ## Contributing a new Plugin
 
-- Be sure to read the
-  [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
-- Test the plugin locally and make sure you can execute the new tool
-  successfully (your shell scripts should work at least on osx and ubuntu linux)
-- Create a travis build for your tool, the build should install and execute your
-  tool with `--version` or similar to test it works.
-- Update the README.md file on this repo to add your new plugin. The list is
-  alphabetically ordered.
-- Create a file in `plugins/` with the same name as your plugin. The contents of
-  the file should be `repository = <your repo>`.
-- Create a pull request showing your plugin's travis build is green. The CI for
-  this repo checks all listed plugin badges are green.
+- Add the plugin to this `README.md`.
+- Create a file with the shortname you wish to be used by asdf in `plugins/<name>`. Then contents should be `repository = <your_repo>`.
+- Create a PR following the instructions in the PR template.
 
 ## Plugin List
 
