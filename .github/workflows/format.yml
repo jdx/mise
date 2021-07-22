@@ -3,7 +3,7 @@ name: Format
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - README.md
 
