@@ -18,7 +18,7 @@ Plugins listed here should be _stable_ and actively _maintained_. If you have is
 
 ## Creating a new Plugin
 
-- Read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins-create.md)
+- Read the [creating plugins guide](https://github.com/asdf-vm/asdf/blob/master/docs/plugins/create.md)
 - Consider using our [Template](https://github.com/asdf-vm/asdf-plugin-template) which has the core functionality to tools published to GitHub releases and CI for GitHub/GitLab/CircleCI out of the box.
 
 ### `asdf-community`
