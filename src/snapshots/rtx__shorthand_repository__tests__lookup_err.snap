@@ -1,0 +1,5 @@
+---
+source: src/shorthand_repository.rs
+expression: err
+---
+No plugin found for xxruby

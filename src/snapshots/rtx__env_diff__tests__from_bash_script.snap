@@ -1,0 +1,10 @@
+---
+source: src/env_diff.rs
+expression: ed.to_patches()
+---
+[
+    Add(
+        "CUSTOM_ENV",
+        "rtx_env",
+    ),
+]

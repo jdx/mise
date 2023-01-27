@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+. ./assert.sh
+
+export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
+
+git checkout ../.tool-versions
+assert_raises "rtx uninstall shfmt@3.6.0 shfmt@3.5.0"
+
+assert "rtx local -p" "#python 3.11.1 3.10.9 # foo
+shellcheck 0.9.0
+shfmt 3.6.0 # test comment
+#nodejs 18.13.0
+nodejs system
+jq latest
+"
+
+assert "rtx local -p shfmt@3.5.0" "#python 3.11.1 3.10.9 # foo
+shellcheck 0.9.0
+shfmt 3.5.0 # test comment
+#nodejs 18.13.0
+nodejs system
+jq latest
+"
+
+rtx exec -- shfmt --version >&2
+if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
+  exit 1
+fi
+
+assert "rtx local shfmt@3.6.0" "shfmt 3.6.0"
+
+rtx exec -- shfmt --version >&2
+if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
+  exit 1
+fi
+
+assert_end

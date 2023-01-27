@@ -1,0 +1,9 @@
+---
+source: src/cli/local.rs
+expression: stdout.content
+---
+-> jq         1.6                (set by /Users/jdx/src/rtx/test/.tool-versions)
+   nodejs     18.0.0 (missing)   (set by /Users/jdx/src/rtx/test/cwd/.node-version)
+-> shellcheck 0.9.0              (set by /Users/jdx/src/rtx/test/cwd/.tool-versions)
+-> shfmt      2.6.4              (set by /Users/jdx/src/rtx/test/cwd/.tool-versions)
+
