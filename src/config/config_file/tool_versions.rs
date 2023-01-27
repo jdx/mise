@@ -78,6 +78,11 @@ impl ToolVersions {
             let (line, post) = line.split_once('#').unwrap_or((line, ""));
             let mut parts = line.split_whitespace();
             if let Some(plugin) = parts.next() {
+                // handle invalid trailing colons in `.tool-versions` files
+                // note that this method will cause the colons to be removed
+                // permanently if saving the file again, but I think that's fine
+                let plugin = plugin.trim_end_matches(':');
+
                 let tvp = ToolVersionPlugin {
                     versions: parts.map(|v| v.to_string()).collect(),
                     post: match post {
@@ -160,7 +165,7 @@ pub(crate) mod tests {
     use std::fmt::Debug;
 
     use indoc::indoc;
-    use insta::assert_display_snapshot;
+    use insta::{assert_display_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
     use crate::dirs;
@@ -191,6 +196,17 @@ pub(crate) mod tests {
         "};
         let tv = ToolVersions::parse_str(orig).unwrap();
         assert_eq!(tv.dump(), orig);
+    }
+
+    #[test]
+    fn test_parse_colon() {
+        let orig = indoc! {"
+        ruby: 3.0.5
+        "};
+        let tv = ToolVersions::parse_str(orig).unwrap();
+        assert_snapshot!(tv.dump(), @r###"
+        ruby 3.0.5
+        "###);
     }
 
     #[derive(Debug)]
