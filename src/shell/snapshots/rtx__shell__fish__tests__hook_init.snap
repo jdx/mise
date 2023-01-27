@@ -1,18 +1,17 @@
 ---
 source: src/shell/fish.rs
-expression: "Fish::default().activate(Path::new(\"rtx\"))"
+expression: "Fish::default().activate(Path::new(\"/some/dir/rtx\"))"
 ---
-fish_add_path -g ;
-
+fish_add_path -g /some/dir
 function __rtx_env_eval --on-event fish_prompt --description 'Update rtx environment when changing directories';
-    rtx hook-env -s fish | source;
+    /some/dir/rtx hook-env -s fish | source;
 
     if test "$rtx_fish_mode" != "disable_arrow";
         function __rtx_cd_hook --on-variable PWD --description 'Update rtx environment when changing directories';
             if test "$rtx_fish_mode" = "eval_after_arrow";
                 set -g __rtx_env_again 0;
             else;
-                rtx hook-env -s fish | source;
+                /some/dir/rtx hook-env -s fish | source;
             end;
         end;
     end;
@@ -21,7 +20,7 @@ end;
 function __rtx_env_eval_2 --on-event fish_preexec --description 'Update rtx environment when changing directories';
     if set -q __rtx_env_again;
         set -e __rtx_env_again;
-        rtx hook-env -s fish | source;
+        /some/dir/rtx hook-env -s fish | source;
         echo;
     end;
 

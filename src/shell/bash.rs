@@ -1,16 +1,21 @@
-use crate::shell::Shell;
-use indoc::formatdoc;
 use std::path::Path;
+
+use indoc::formatdoc;
+
+use crate::shell::{is_dir_in_path, Shell};
 
 #[derive(Default)]
 pub struct Bash {}
 
 impl Shell for Bash {
     fn activate(&self, exe: &Path) -> String {
-        let dir = exe.parent().unwrap().display();
+        let dir = exe.parent().unwrap();
         let exe = exe.display();
-        formatdoc! {r#"
-            export PATH="{dir}:$PATH";
+        let mut out = String::new();
+        if !is_dir_in_path(dir) {
+            out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
+        }
+        out.push_str(&formatdoc! {r#"
             _rtx_hook() {{
               local previous_exit_status=$?;
               trap -- '' SIGINT;
@@ -21,7 +26,9 @@ impl Shell for Bash {
             if ! [[ "${{PROMPT_COMMAND:-}}" =~ _rtx_hook ]]; then
               PROMPT_COMMAND="_rtx_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
-        "#}
+            "#});
+
+        out
     }
 
     fn deactivate(&self) -> String {
@@ -49,7 +56,7 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Bash::default().activate(Path::new("rtx")));
+        insta::assert_snapshot!(Bash::default().activate(Path::new("/some/dir/rtx")));
     }
 
     #[test]
