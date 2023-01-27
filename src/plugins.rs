@@ -423,7 +423,7 @@ impl Plugin {
             return Ok(None);
         }
 
-        Ok(Some(fs::read_to_string(legacy_file)?.trim().into()))
+        Ok(Some(fs::read_to_string(fp)?.trim().into()))
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
@@ -500,4 +500,26 @@ impl Display for PluginSource {
 fn display_path(path: &Path) -> String {
     let home = dirs::HOME.to_string_lossy();
     path.to_string_lossy().replace(home.as_ref(), "~")
+}
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_str_eq;
+
+    use crate::assert_cli;
+
+    use super::*;
+
+    #[test]
+    fn test_legacy_gemfile() {
+        assert_cli!("plugin", "add", "ruby");
+        let plugin = Plugin::load(&PluginName::from("ruby")).unwrap();
+        let gemfile = env::HOME.join("fixtures/Gemfile");
+        let version = plugin.parse_legacy_file(&gemfile).unwrap();
+        assert_str_eq!(version, "3.0.5");
+
+        // do it again to test the cache
+        let version = plugin.parse_legacy_file(&gemfile).unwrap();
+        assert_str_eq!(version, "3.0.5");
+    }
 }

@@ -165,7 +165,7 @@ const AFTER_HELP: &str = indoc! {"
 "};
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
     use crate::config::settings::Settings;
     use crate::output::OutputStream;
