@@ -12,7 +12,7 @@ use crate::plugins::PluginName;
 ///
 /// For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
 ///
-///   [aliases.nodejs]
+///   [alias.nodejs]
 ///   lts = "18.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]

@@ -394,7 +394,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
 
-  [aliases.nodejs]
+  [alias.nodejs]
   lts = "18.0.0"
 
 Usage: ls [OPTIONS]

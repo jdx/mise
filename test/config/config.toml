@@ -5,5 +5,5 @@ disable_plugin_short_name_repository= false
 plugin_repository_last_check_duration = 20
 plugin_autoupdate_last_check_duration = 20
 
-[aliases.shfmt]
+[alias.shfmt]
 "my/alias" = '3.0'
