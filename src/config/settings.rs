@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
 use indexmap::IndexMap;
@@ -22,12 +23,43 @@ impl Default for Settings {
         Self {
             missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
             always_keep_download: false,
-            legacy_version_file: false,
+            legacy_version_file: true,
             disable_plugin_short_name_repository: false,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             plugin_repository_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
         }
+    }
+}
+
+impl Settings {
+    pub fn to_index_map(&self) -> IndexMap<String, String> {
+        let mut map = IndexMap::new();
+        map.insert(
+            "missing_runtime_behavior".to_string(),
+            self.missing_runtime_behavior.to_string(),
+        );
+        map.insert(
+            "always_keep_download".to_string(),
+            self.always_keep_download.to_string(),
+        );
+        map.insert(
+            "legacy_version_file".to_string(),
+            self.legacy_version_file.to_string(),
+        );
+        map.insert(
+            "disable_plugin_short_name_repository".to_string(),
+            self.disable_plugin_short_name_repository.to_string(),
+        );
+        map.insert(
+            "plugin_autoupdate_last_check_duration".to_string(),
+            (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
+        );
+        map.insert(
+            "plugin_repository_last_check_duration".to_string(),
+            (self.plugin_repository_last_check_duration.as_secs() / 60).to_string(),
+        );
+        map
     }
 }
 
@@ -121,9 +153,21 @@ pub enum MissingRuntimeBehavior {
     Ignore,
 }
 
+impl Display for MissingRuntimeBehavior {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MissingRuntimeBehavior::AutoInstall => write!(f, "autoinstall"),
+            MissingRuntimeBehavior::Prompt => write!(f, "prompt"),
+            MissingRuntimeBehavior::Warn => write!(f, "warn"),
+            MissingRuntimeBehavior::Ignore => write!(f, "ignore"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::MissingRuntimeBehavior::{AutoInstall, Ignore, Prompt, Warn};
 
     #[test]
     fn test_settings_merge() {
@@ -138,5 +182,13 @@ mod tests {
             s1.missing_runtime_behavior,
             Some(MissingRuntimeBehavior::AutoInstall)
         );
+    }
+
+    #[test]
+    fn test_missing_runtime_behavior_display() {
+        assert_eq!(AutoInstall.to_string(), "autoinstall");
+        assert_eq!(Prompt.to_string(), "prompt");
+        assert_eq!(Warn.to_string(), "warn");
+        assert_eq!(Ignore.to_string(), "ignore");
     }
 }

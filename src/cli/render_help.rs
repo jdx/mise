@@ -54,6 +54,7 @@ v18.10.9
 ```
 
 > **Note**  
+>
 > `rtx install` is optional, `rtx global` will prompt to install the runtime if it's not
 > already installed. This is configurable in [`~/.config/rtx/config.toml`](#configuration).
 
@@ -71,7 +72,9 @@ For more on how rtx compares to asdf, [see below](#comparison-to-asdf). The goal
 was to create a better front-end to asdf.
 
 It uses the same `.tool-versions` file that asdf uses. It's also compatible with idiomatic version
-files like `.node-version` but you need to enable "legacy version file support" in the config.
+files like `.node-version` and `.ruby-version`. See [Legacy Version Files](#legacy-version-files) below.
+
+Come chat about rtx on [discord](https://discord.gg/mABnUDvP57).
 
 ### How it works
 
@@ -104,6 +107,7 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
 ## Installation
 
 > **Warning**
+>
 > Regardless of the installation method, when uninstalling rtx,
 > remove `RTX_DATA_DIR` folder (usually `~/.local/share/rtx`) to fully clean up.
 
@@ -173,6 +177,7 @@ sudo apt install -y rtx
 ```
 
 > **Warning**
+>
 > If you're on arm64 you'll need to run the following:
 >     echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 
@@ -243,6 +248,42 @@ jq          1.6
 Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local) to create them automatically.
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
 
+### Legacy version files
+
+RTX supports "legacy version files" just like asdf.
+
+It's behind a config setting "legacy_version_file", but it's enabled by default (asdf defaults to disabled).
+You can disable these with `rtx settings set legacy_version_file false`. There is a performance cost
+to having these when they're parsed as it's performed by the plugin in `bin/parse-version-file`. However
+these are [cached](#cache-behavior) so it's not a huge deal. You may not even notice.
+
+These are ideal for setting the runtime version of a project without forcing other developers to
+use a specific tool like rtx/asdf.
+
+They support aliases, which means you can (finally) have an `.nvmrc` file with `lts/hydrogen`
+and it will work in rtx _and_ nvm. This wasn't possible with asdf.
+
+Here are some of the supported legacy version files:
+
+| Plugin    | "Legacy" (Idiomatic) Files                         |
+| --------- | -------------------------------------------------- |
+| crystal   | `.crystal-version`                                 |
+| elixir    | `.exenv-version`                                   |
+| golang    | `.go-version`, `go.mod`                            |
+| java      | `.java-version`                                    |
+| nodejs    | `.nvmrc`, `.node-version`                          |
+| python    | `.python-version`                                  |
+| ruby      | `.ruby-version`, `Gemfile`                         |
+| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
+| yarn      | `.yvmrc`                                           |
+
+> **Note**
+>
+> asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
+> that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
+> version files since they're version files not specific to asdf/rtx and can be used by other tools.
+> (`.npmrc` being a notable exception, which is tied to a specific tool.)
+
 ### Global config: `~/.config/rtx/config.toml`
 
 rtx can be configured in `~/.config/rtx/config.toml`. The following options are available (defaults shown):
@@ -253,7 +294,7 @@ missing_runtime_behavior = 'prompt' # other options: 'ignore', 'warn', 'prompt',
 
 # plugins can read the versions files used by other version managers (if enabled by the plugin)
 # for example, .nvmrc in the case of nodejs's nvm
-legacy_version_file = false         # not enabled by default
+legacy_version_file = true         # enabled by default (different than asdf)
 
 # configure `rtx install` to always keep the downloaded archive
 always_keep_download = false        # deleted after install by default
@@ -274,6 +315,8 @@ disable_plugin_short_name_repository = false
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
                        # this can also be specified in a plugin (see below in "Aliases")
 ```
+
+These settings can also be managed with `rtx settings ls|get|set|unset`.
 
 ### Environment variables
 
@@ -336,6 +379,7 @@ echo "lts/fermium 14"
 ```
 
 > **Note:**
+>
 > Because this is rtx-specific functionality not currently used by asdf it isn't likely to be in any
 > plugin currently, but plugin authors can add this script without impacting asdf users.
 
@@ -534,9 +578,9 @@ cat ~/.local/share/rtx/installs/nodejs/18.13.0/.rtxconf.msgpack | msgpack-cli de
 
 ### Legacy File Cache
 
-If enabled with `legacy_version_file = true` in `~/.config/rtx/config.toml`, rtx will read the legacy
-filenames such as `.node-version` for [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs).
-This leverages cache in 2 places where the plugin is called:
+If enabled, rtx will read the legacy filenames such as `.node-version` for
+[asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs). This leverages cache in 2 places where the
+plugin is called:
 
 - [`list-legacy-filenames`](https://github.com/asdf-vm/asdf-nodejs/blob/master/bin/list-legacy-filenames)
     In every plugin I've seen this simply returns a static list of filenamed like ".nvmrc .node-version".
