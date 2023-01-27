@@ -26,7 +26,7 @@ impl Command for Latest {
         let prefix = match self.runtime.version.as_str() {
             "latest" => match self.asdf_version {
                 Some(version) => version,
-                None => "".to_string(),
+                None => "latest".to_string(),
             },
             v => v.into(),
         };
@@ -58,15 +58,20 @@ mod test {
 
     #[test]
     fn test_latest() {
-        std::env::set_var("NO_COLOR", "1");
         assert_cli!("plugins", "install", "nodejs");
         let Output { stdout, .. } = assert_cli!("latest", "nodejs@12");
         assert_display_snapshot!(stdout.content);
     }
 
     #[test]
+    fn test_latest_ruby() {
+        assert_cli!("plugins", "install", "ruby");
+        let Output { stdout, .. } = assert_cli!("latest", "ruby");
+        assert!(stdout.content.starts_with("3."));
+    }
+
+    #[test]
     fn test_latest_asdf_format() {
-        std::env::set_var("NO_COLOR", "1");
         let Output { stdout, .. } = assert_cli!("latest", "nodejs", "12");
         assert_display_snapshot!(stdout.content);
     }
