@@ -26,6 +26,7 @@ mod local;
 mod ls;
 mod ls_remote;
 mod plugins;
+mod settings;
 mod uninstall;
 mod version;
 mod r#where;
@@ -57,6 +58,7 @@ pub enum Commands {
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
     Plugins(plugins::Plugins),
+    Settings(settings::Settings),
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
     Where(r#where::Where),
@@ -84,6 +86,7 @@ impl Commands {
             Self::LsRemote(cmd) => cmd.run(config, out),
             Self::Local(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
+            Self::Settings(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),
@@ -186,6 +189,14 @@ pub mod test {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
             $crate::cli::test::cli_run(args).unwrap()
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! assert_cli_err {
+        ($($args:expr),+) => {{
+            let args = &vec!["rtx".into(), $($args.into()),+];
+            $crate::cli::test::cli_run(args).unwrap_err()
         }};
     }
 

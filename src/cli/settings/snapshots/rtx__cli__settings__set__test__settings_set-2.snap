@@ -1,0 +1,11 @@
+---
+source: src/cli/settings/set.rs
+expression: stdout.content
+---
+missing_runtime_behavior = autoinstall
+always_keep_download = true
+legacy_version_file = false
+disable_plugin_short_name_repository = true
+plugin_autoupdate_last_check_duration = 1
+plugin_repository_last_check_duration = 2
+
