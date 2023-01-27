@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
-export CUSTOM_ENV=rtx_env
+export UNMODIFIED_VAR="unmodified"
+export MODIFIED_VAR="modified"
+export ADDED_VAR="added"

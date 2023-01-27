@@ -94,4 +94,12 @@ mod test {
                 .as_ref()
         ));
     }
+
+    #[test]
+    fn test_env_golang() {
+        assert_cli!("plugin", "add", "golang");
+        assert_cli!("install", "golang");
+        let Output { stdout, .. } = assert_cli!("env", "golang", "-s", "bash");
+        assert!(stdout.content.contains("GOROOT="));
+    }
 }
