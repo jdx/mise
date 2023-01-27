@@ -1,5 +1,8 @@
 use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 use std::path::Path;
+
+use crate::env;
 
 mod bash;
 mod fish;
@@ -14,7 +17,7 @@ pub enum ShellType {
 
 impl ShellType {
     pub fn load() -> Option<ShellType> {
-        let shell = std::env::var("SHELL").ok()?;
+        let shell = env::var("SHELL").ok()?;
         if shell.ends_with("bash") {
             Some(ShellType::Bash)
         } else if shell.ends_with("fish") {
@@ -51,4 +54,9 @@ pub fn get_shell(shell: Option<ShellType>) -> Box<dyn Shell> {
         Some(ShellType::Fish) => Box::<fish::Fish>::default(),
         _ => panic!("no shell provided, use `--shell=zsh`"),
     }
+}
+
+pub fn is_dir_in_path(dir: &Path) -> bool {
+    let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
+    env::split_paths(env::PATH.deref()).any(|p| p.canonicalize().unwrap_or(p) == dir)
 }

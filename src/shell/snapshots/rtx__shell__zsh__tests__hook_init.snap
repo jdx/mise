@@ -1,11 +1,11 @@
 ---
 source: src/shell/zsh.rs
-expression: "Zsh::default().activate(Path::new(\"rtx\"))"
+expression: "Zsh::default().activate(Path::new(\"/some/dir/rtx\"))"
 ---
-export PATH=":$PATH";
+export PATH="/some/dir:$PATH"
 _rtx_hook() {
   trap -- '' SIGINT;
-  eval "$("rtx" hook-env -s zsh)";
+  eval "$("/some/dir/rtx" hook-env -s zsh)";
   trap - SIGINT;
 }
 typeset -ag precmd_functions;
