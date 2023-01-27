@@ -1,10 +1,11 @@
 ---
 source: src/env_diff.rs
-expression: ed.to_patches()
+expression: ed
 ---
-[
-    Add(
-        "CUSTOM_ENV",
-        "rtx_env",
-    ),
-]
+EnvDiff {
+    old: [],
+    new: [
+        "ADDED_VAR=added",
+        "MODIFIED_VAR=modified",
+    ],
+}
