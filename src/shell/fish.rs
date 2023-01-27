@@ -2,22 +2,25 @@ use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::Shell;
+use crate::shell::{is_dir_in_path, Shell};
 
 #[derive(Default)]
 pub struct Fish {}
 
 impl Shell for Fish {
     fn activate(&self, exe: &Path) -> String {
-        let dir = exe.parent().unwrap().display();
+        let dir = exe.parent().unwrap();
         let exe = exe.display();
         let description = "'Update rtx environment when changing directories'";
+        let mut out = String::new();
+
+        if !is_dir_in_path(dir) {
+            out.push_str(&format!("fish_add_path -g {dir}\n", dir = dir.display()));
+        }
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
-        formatdoc! {r#"
-            fish_add_path -g {dir};
-            
+        out.push_str(&formatdoc! {r#"
             function __rtx_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env -s fish | source;
 
@@ -41,7 +44,9 @@ impl Shell for Fish {
 
                 functions --erase __rtx_cd_hook;
             end;
-        "#}
+        "#});
+
+        out
     }
 
     fn deactivate(&self) -> String {
@@ -71,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Fish::default().activate(Path::new("rtx")));
+        insta::assert_snapshot!(Fish::default().activate(Path::new("/some/dir/rtx")));
     }
 
     #[test]
