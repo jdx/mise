@@ -2,7 +2,7 @@
 source: src/cli/activate.rs
 expression: stdout.content
 ---
-export PATH=":$PATH";
+export PATH=":$PATH"
 _rtx_hook() {
   trap -- '' SIGINT;
   eval "$("rtx" hook-env -s zsh)";
