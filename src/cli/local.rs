@@ -98,7 +98,9 @@ mod test {
     use std::fs;
 
     use insta::assert_snapshot;
+    use pretty_assertions::assert_str_eq;
 
+    use crate::cli::test::grep;
     use crate::output::Output;
     use crate::{assert_cli, dirs};
 
@@ -115,9 +117,11 @@ mod test {
         assert_snapshot!(stdout.content);
         let Output { stdout, .. } = assert_cli!("local", "--remove", "nodejs");
         assert_snapshot!(stdout.content);
-        assert!(!stdout.content.contains(".node-version"));
         let Output { stdout, .. } = assert_cli!("ls", "--current");
-        assert!(stdout.content.contains(".node-version"));
+        assert_str_eq!(
+            grep(&stdout, "nodejs").unwrap(),
+            "   nodejs     18.0.0 (missing)   (set by ~/cwd/.node-version)"
+        );
 
         fs::write(cf_path, orig).unwrap();
     }

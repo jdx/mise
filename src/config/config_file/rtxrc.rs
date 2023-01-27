@@ -241,6 +241,58 @@ impl RTXFile {
             }
         }
     }
+
+    pub fn update_setting<V: Into<toml_edit::Value>>(&mut self, key: &str, value: V) {
+        let doc = self.get_or_create_edit();
+        let key = key.split('.').collect::<Vec<&str>>();
+        let mut table = doc.as_table_mut();
+        for (i, k) in key.iter().enumerate() {
+            if i == key.len() - 1 {
+                table[k] = toml_edit::value(value);
+                break;
+            } else {
+                table = table
+                    .entry(k)
+                    .or_insert(toml_edit::table())
+                    .as_table_mut()
+                    .unwrap();
+            }
+        }
+    }
+
+    pub fn remove_setting(&mut self, key: &str) {
+        let doc = self.get_or_create_edit();
+        let key = key.split('.').collect::<Vec<&str>>();
+        let mut table = doc.as_table_mut();
+        for (i, k) in key.iter().enumerate() {
+            if i == key.len() - 1 {
+                table.remove(k);
+                break;
+            } else {
+                table = table
+                    .entry(k)
+                    .or_insert(toml_edit::table())
+                    .as_table_mut()
+                    .unwrap();
+            }
+        }
+    }
+
+    pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
+        let doc = self.get_or_create_edit();
+        let aliases = doc
+            .as_table_mut()
+            .entry("aliases")
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .unwrap();
+        let plugin_aliases = aliases
+            .entry(plugin)
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .unwrap();
+        plugin_aliases[from] = toml_edit::value(to);
+    }
 }
 
 impl Display for RTXFile {
@@ -458,5 +510,97 @@ nodejs=[true]
         .unwrap_err();
 
         assert_display_snapshot!(err, @"Invalid TOML: true");
+    }
+
+    #[test]
+    fn test_update_setting() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writedoc!(
+            f,
+            r#"
+            legacy_version_file = true
+            [aliases.nodejs]
+            18 = "18.0.0"
+        "#
+        )
+        .unwrap();
+        let mut cf = RTXFile::from_file(f.path()).unwrap();
+        cf.update_setting("legacy_version_file", false);
+        cf.update_setting("something_else", "foo");
+        cf.update_setting("something.nested.very.deeply", 123);
+        cf.update_setting("aliases.nodejs.20", "20.0.0");
+        cf.update_setting("aliases.python.3", "3.9.0");
+        assert_display_snapshot!(cf.dump(), @r###"
+        legacy_version_file = false
+        something_else = "foo"
+        [aliases.nodejs]
+        18 = "18.0.0"
+        20 = "20.0.0"
+
+        [aliases.python]
+        3 = "3.9.0"
+
+        [something]
+
+        [something.nested]
+
+        [something.nested.very]
+        deeply = 123
+        "###);
+    }
+
+    #[test]
+    fn test_remove_setting() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writedoc!(
+            f,
+            r#"
+        [something]
+
+        [something.nested]
+        other = "foo"
+
+        [something.nested.very]
+        deeply = 123
+        "#
+        )
+        .unwrap();
+        let mut cf = RTXFile::from_file(f.path()).unwrap();
+        cf.remove_setting("something.nested.other");
+        assert_display_snapshot!(cf.dump(), @r###"
+        [something]
+
+        [something.nested]
+
+        [something.nested.very]
+        deeply = 123
+        "###);
+    }
+
+    #[test]
+    fn test_set_alias() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writedoc!(
+            f,
+            r#"
+            [aliases.nodejs]
+            16 = "16.0.0"
+            18 = "18.0.0"
+        "#
+        )
+        .unwrap();
+        let mut cf = RTXFile::from_file(f.path()).unwrap();
+        cf.set_alias("nodejs", "18", "18.0.1");
+        cf.set_alias("nodejs", "20", "20.0.0");
+        cf.set_alias("python", "3.10", "3.10.0");
+        assert_display_snapshot!(cf.dump(), @r###"
+        [aliases.nodejs]
+        16 = "16.0.0"
+        18 = "18.0.1"
+        20 = "20.0.0"
+
+        [aliases.python]
+        "3.10" = "3.10.0"
+        "###);
     }
 }

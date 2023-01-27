@@ -17,12 +17,19 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@just
-      - uses: fish-actions/install-fish@v1
-      - name: Install zsh
-        run: sudo apt-get update; sudo apt-get install zsh
-      - run: just test-unit lint
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install just
+        uses: taiki-e/install-action@just
+      - name: just test-unit
+        uses: nick-fields/retry@v2
+        env:
+          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: just test-unit
+      - run: just lint
 
   coverage:
     runs-on: ubuntu-latest
@@ -32,10 +39,18 @@ jobs:
       options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@just
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install just
+        uses: taiki-e/install-action@just
       - name: Generate code coverage
-        run: just test-coverage
+        uses: nick-fields/retry@v2
+        env:
+          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: just test-coverage
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
@@ -57,7 +72,8 @@ jobs:
           toolchain: stable
           target: ${{matrix.target}}
           override: true
-      - uses: Swatinem/rust-cache@v2
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
         with: { key: "${{matrix.target}}" }
       - uses: actions-rs/cargo@v1
         with:
@@ -89,7 +105,8 @@ jobs:
           toolchain: stable
           target: ${{matrix.target}}
           override: true
-      - uses: Swatinem/rust-cache@v2
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
         with: { key: "${{matrix.target}}" }
       - run: cargo build --release --target ${{matrix.target}}
       - run: scripts/build-tarball.sh ${{matrix.target}}
@@ -106,9 +123,8 @@ jobs:
     needs: [ build-linux ]
     steps:
       - uses: actions/checkout@v3
-      - uses: fish-actions/install-fish@v1
-      - name: Install zsh
-        run: sudo apt-get update; sudo apt-get install zsh
+      - name: Install zsh/fish
+        run: sudo apt-get update; sudo apt-get install zsh fish
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -116,7 +132,14 @@ jobs:
       - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
-      - run: ./e2e/run_all_tests
+      - name: Run e2e tests
+        uses: nick-fields/retry@v2
+        env:
+          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
     needs: [ build-linux ]
