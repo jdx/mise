@@ -16,7 +16,7 @@ use crate::cli::args::runtime::RuntimeArg;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtxrc::RTXFile;
 use crate::config::config_file::ConfigFile;
-use crate::config::settings::{Settings, SettingsBuilder};
+use crate::config::settings::Settings;
 use crate::config::toolset::Toolset;
 use crate::plugins::{Plugin, PluginName, PluginSource};
 use crate::{dirs, env, file};
@@ -30,6 +30,7 @@ type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 #[derive(Debug)]
 pub struct Config {
     pub settings: Settings,
+    pub rtxrc: RTXFile,
     pub ts: Toolset,
     pub config_files: Vec<PathBuf>,
     pub aliases: AliasMap,
@@ -37,7 +38,8 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let settings = load_settings()?;
+        let rtxrc = load_rtxrc()?;
+        let settings = rtxrc.settings();
         let mut ts = Toolset::default();
         load_installed_plugins(&mut ts)?;
         load_installed_runtimes(&mut ts)?;
@@ -53,6 +55,7 @@ impl Config {
             ts,
             config_files,
             aliases,
+            rtxrc,
         };
 
         debug!("{}", &config);
@@ -141,20 +144,19 @@ impl Config {
     }
 }
 
-fn load_settings() -> Result<Settings> {
+fn load_rtxrc() -> Result<RTXFile> {
     let settings_path = dirs::CONFIG.join("config.toml");
-    let settings = if !settings_path.exists() {
+    let rtxrc = if !settings_path.exists() {
         trace!("settings does not exist {:?}", settings_path);
-        SettingsBuilder::default().build()
+        RTXFile::init(&settings_path)
     } else {
-        let cf = RTXFile::from_file(&settings_path)
+        let rtxrc = RTXFile::from_file(&settings_path)
             .wrap_err_with(|| err_load_settings(&settings_path))?;
-        let settings = cf.settings();
-        trace!("Settings: {:#?}", &settings);
-        settings
+        trace!("Settings: {:#?}", rtxrc.settings());
+        rtxrc
     };
 
-    Ok(settings)
+    Ok(rtxrc)
 }
 
 fn load_installed_plugins(ts: &mut Toolset) -> Result<()> {
