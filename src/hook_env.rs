@@ -89,11 +89,9 @@ fn apply_patches(
     for patch in patches {
         match patch {
             EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                eprintln!("adding {k}");
                 new_env.insert(k.into(), v.into());
             }
             EnvDiffOperation::Remove(k) => {
-                eprintln!("removing {k}");
                 new_env.remove(k);
             }
         }
