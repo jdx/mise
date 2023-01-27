@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 pub use std::env::*;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 use lazy_static::lazy_static;
+
+use crate::env_diff::EnvDiff;
+use crate::hook_env::get_pristine_env;
 
 lazy_static! {
     pub static ref ARGS: Vec<String> = args().collect();
@@ -72,11 +76,25 @@ lazy_static! {
         var("RTX_MISSING_RUNTIME_BEHAVIOR").ok()
     };
     pub static ref __RTX_DIR: Option<PathBuf> = var_os("__RTX_DIR").map(PathBuf::from);
+    pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
+    pub static ref PRISTINE_ENV: HashMap<String, String> =
+        get_pristine_env(&__RTX_DIFF, vars().collect());
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
         ".tool-versions".into()
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };
+}
+
+fn get_env_diff() -> EnvDiff {
+    let env = vars().collect::<HashMap<_, _>>();
+    match env.get("__RTX_DIFF") {
+        Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
+            warn!("Failed to deserialize __RTX_DIFF: {}", err);
+            EnvDiff::default()
+        }),
+        None => EnvDiff::default(),
+    }
 }
 
 fn var_is_true(key: &str) -> bool {

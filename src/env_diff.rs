@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::io::prelude::*;
 use std::path::Path;
 
@@ -7,11 +8,12 @@ use color_eyre::eyre::Result;
 use flate2::write::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{cmd, env};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {
     #[serde(default)]
     pub old: HashMap<String, String>,
@@ -50,7 +52,7 @@ impl EnvDiff {
     }
 
     pub fn from_bash_script(script: &Path, env: HashMap<String, String>) -> Result<Self> {
-        let mut cmd = cmd!(
+        let out = cmd!(
             "bash",
             "-c",
             indoc::formatdoc! {"
@@ -58,27 +60,30 @@ impl EnvDiff {
                 . {script}
                 env
             ", script = script.display()}
-        );
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
-        }
-        let out = cmd.read()?;
+        )
+        .full_env(&env)
+        .read()?;
 
         let mut additions = HashMap::new();
         for line in out.lines() {
             let (k, v) = line.split_once('=').unwrap_or_default();
-            if k == "_" || k == "SHLVL" || k == "PATH" || env.contains_key(k) {
+            if k == "_" || k == "SHLVL" || k == "PATH" {
                 continue;
+            }
+            if let Some(orig) = env.get(k) {
+                if v == orig {
+                    continue;
+                }
             }
             additions.insert(k.into(), v.into());
         }
         Ok(Self::new(&env::vars().collect(), &additions))
     }
 
-    pub fn deserialize(json: &str) -> Result<EnvDiff> {
+    pub fn deserialize(raw: &str) -> Result<EnvDiff> {
         let mut writer = Vec::new();
         let mut decoder = GzDecoder::new(writer);
-        let bytes = BASE64_STANDARD_NO_PAD.decode(json)?;
+        let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
         decoder.write_all(&bytes[..])?;
         writer = decoder.finish()?;
         Ok(rmp_serde::from_slice(&writer[..])?)
@@ -114,6 +119,22 @@ impl EnvDiff {
             old: self.new.clone(),
             new: self.old.clone(),
         }
+    }
+}
+
+impl Debug for EnvDiff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let print_sorted = |hashmap: &HashMap<String, String>| {
+            hashmap
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .sorted()
+                .collect::<Vec<_>>()
+        };
+        f.debug_struct("EnvDiff")
+            .field("old", &print_sorted(&self.old))
+            .field("new", &print_sorted(&self.new))
+            .finish()
     }
 }
 
@@ -191,7 +212,14 @@ mod tests {
     #[test]
     fn test_from_bash_script() {
         let path = dirs::HOME.join("fixtures/exec-env");
-        let ed = EnvDiff::from_bash_script(path.as_path(), HashMap::new()).unwrap();
-        assert_debug_snapshot!(ed.to_patches());
+        let orig = HashMap::from(
+            [
+                ("UNMODIFIED_VAR", "unmodified"),
+                ("MODIFIED_VAR", "original"),
+            ]
+            .map(|(k, v)| (k.into(), v.into())),
+        );
+        let ed = EnvDiff::from_bash_script(path.as_path(), orig).unwrap();
+        assert_debug_snapshot!(ed);
     }
 }

@@ -203,7 +203,9 @@ impl RuntimeVersion {
         if !self.is_installed() || !script.exists() {
             return Ok(HashMap::new());
         }
-        let ed = EnvDiff::from_bash_script(&script, self.script_env())?;
+        let mut env: HashMap<String, String> = env::PRISTINE_ENV.clone();
+        env.extend(self.script_env());
+        let ed = EnvDiff::from_bash_script(&script, env)?;
         let env = ed
             .to_patches()
             .into_iter()

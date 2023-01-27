@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 
 use color_eyre::eyre::Result;
 
@@ -10,7 +9,7 @@ use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::hook_env::HookEnvWatches;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
-use crate::{dirs, hook_env};
+use crate::{dirs, env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
@@ -28,14 +27,14 @@ impl Command for HookEnv {
         config.settings.missing_runtime_behavior = Ignore;
         config.ensure_installed()?;
 
-        let current_env = self.clear_old_env(env::vars().collect(), out)?;
+        self.clear_old_env(out);
         let mut env: HashMap<String, String> = config
             .env()?
             .iter()
             .map(|(k, v)| (k.to_string_lossy().into(), v.to_string_lossy().into()))
             .collect();
         env.insert("__RTX_DIR".into(), dirs::CURRENT.to_string_lossy().into());
-        let diff = EnvDiff::new(&current_env, &env);
+        let diff = EnvDiff::new(&env::PRISTINE_ENV, &env);
         let mut patches = diff.to_patches();
         patches.push(EnvDiffOperation::Add(
             "__RTX_DIFF".into(),
@@ -81,44 +80,11 @@ impl HookEnv {
         output
     }
 
-    fn clear_old_env(
-        &self,
-        env: HashMap<String, String>,
-        out: &mut Output,
-    ) -> Result<HashMap<String, String>> {
-        let patches = get_env_diff(&env)?.reverse().to_patches();
+    fn clear_old_env(&self, out: &mut Output) {
+        let patches = env::__RTX_DIFF.reverse().to_patches();
         let output = self.build_env_commands(&patches);
         out.stdout.write(output);
-
-        Ok(apply_patches(&env, &patches))
     }
-}
-
-fn get_env_diff(env: &HashMap<String, String>) -> Result<EnvDiff> {
-    let json = env.get("__RTX_DIFF").cloned();
-    match json {
-        Some(json) => Ok(EnvDiff::deserialize(&json)?),
-        None => Ok(EnvDiff::default()),
-    }
-}
-
-fn apply_patches(
-    env: &HashMap<String, String>,
-    patches: &EnvDiffPatches,
-) -> HashMap<String, String> {
-    let mut new_env = env.clone();
-    for patch in patches {
-        match patch {
-            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                new_env.insert(k.into(), v.into());
-            }
-            EnvDiffOperation::Remove(k) => {
-                new_env.remove(k);
-            }
-        }
-    }
-
-    new_env
 }
 
 #[cfg(test)]
