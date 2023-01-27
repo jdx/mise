@@ -15,7 +15,7 @@ Install rtx (other methods [here](#installation)):
 ```sh-session
 $ brew install jdxcode/tap/rtx
 $ rtx --version
-rtx 1.1.0
+rtx 1.1.1
 ```
 
 Hook rtx into to your shell (choose one, and open a new shell session for the changes to take effect):
