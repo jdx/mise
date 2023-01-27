@@ -1,0 +1,7 @@
+[rtx-repo]
+name=RTX Repo
+baseurl=https://rtx.jdxcode.com/rpm
+enabled=1
+gpgcheck=1
+gpgkey=http://rtx.jdxcode.com/gpg-key.pub
+Footer

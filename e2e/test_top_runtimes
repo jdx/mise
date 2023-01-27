@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+set -e
+
+exit 0 # disable for now for faster releases
+
+# top 50 plugins by stargazers:
+# 687 nodejs
+# 507 ruby
+# 469 python
+# 393 direnv
+# 353 elixir
+# 351 erlang
+# 321 golang
+# 285 java
+# 170 hashicorp
+# 160 php
+# 147 postgres
+# 117 rust
+# 113 yarn
+# 102 deno
+# 93 kubectl
+# 81 action-validator
+# 75 dotnet-core
+# 73 flutter
+# 68 crystal
+# 49 neovim
+# 47 poetry
+# 46 haskell
+# 42 link
+# 38 lua
+# 38 bun
+# 35 redis
+# 35 gcloud
+# 34 helm
+# 33 gleam
+# 32 awscli
+# 30 dart
+# 28 pyapp
+# 27 kotlin
+# 26 pnpm
+# 23 ocaml
+# 22 rebar
+# 20 julia
+# 20 elm
+# 18 r
+# 17 nim
+# 17 alias
+# 16 mysql
+# 16 minikube
+# 16 gradle
+# 15 zig
+# 15 shellcheck
+# 15 scala
+# 15 maven
+# 15 kustomize
+# 15 graalvm
+
+rtx exec nodejs -- node -v
+rtx exec python -- python -V
+rtx exec direnv -- direnv --version
+rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+rtx exec elixir erlang -- elixir --version
+rtx exec golang -- go version
+rtx exec java@openjdk -- java -version
+rtx exec terraform -- terraform -v
+rtx exec yarn -- yarn --version
+rtx exec deno -- deno --version
+rtx exec bun -- bun --version
+rtx exec kubectl -- kubectl version --client
+rtx exec dotnet-core -- dotnet --list-sdks
+rtx exec flutter -- flutter --version
+rtx exec crystal -- crystal -v
+rtx exec neovim -- nvim --version
+
+#rtx exec php -- php -v php is a bit slow to install, works fine though
+#rtx exec rust -- rustc -V # does not seem to work correctly
+#rtx exec postgres -- psql -v # hard one to install

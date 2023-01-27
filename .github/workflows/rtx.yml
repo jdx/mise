@@ -1,0 +1,224 @@
+name: rtx
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
+      - uses: fish-actions/install-fish@v1
+      - name: Install zsh
+        run: sudo apt-get update; sudo apt-get install zsh
+      - run: just test-unit lint
+
+  coverage:
+    runs-on: ubuntu-latest
+    #if: false
+    container:
+      image: xd009642/tarpaulin:develop-nightly
+      options: --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
+      - name: Generate code coverage
+        run: just test-coverage
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: false
+
+  build-linux:
+    name: build-${{matrix.target}}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{matrix.target}}
+          override: true
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "${{matrix.target}}" }
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh ${{matrix.target}}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/rtx-*.tar.xz
+            dist/rtx-*.tar.gz
+          if-no-files-found: error
+
+  build-macos:
+    name: build-${{matrix.target}}
+    runs-on: macos-12
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{matrix.target}}
+          override: true
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "${{matrix.target}}" }
+      - run: cargo build --release --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh ${{matrix.target}}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/rtx-*.tar.xz
+            dist/rtx-*.tar.gz
+          if-no-files-found: error
+
+  e2e-linux:
+    runs-on: ubuntu-22.04
+    needs: [ build-linux ]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: fish-actions/install-fish@v1
+      - name: Install zsh
+        run: sudo apt-get update; sudo apt-get install zsh
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx -v
+      - run: ./e2e/run_all_tests
+  rpm:
+    runs-on: ubuntu-22.04
+    needs: [ build-linux ]
+    container: jdxcode/chim:rpm
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: crazy-max/ghaction-import-gpg@v5
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-rpm.sh
+      - uses: actions/upload-artifact@v3
+        with:
+          name: rpm
+          path: dist/rpmrepo
+          if-no-files-found: error
+  deb:
+    runs-on: ubuntu-22.04
+    container: jdxcode/chim:deb
+    if: github.event_name != 'pull_request'
+    needs: [ build-linux ]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: crazy-max/ghaction-import-gpg@v5
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-deb.sh
+      - uses: actions/upload-artifact@v3
+        with:
+          name: deb
+          path: dist/deb
+          if-no-files-found: error
+  release:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.event.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    needs:
+      - e2e-linux
+      - build-linux
+      - build-macos
+      - rpm
+      - deb
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: rtx
+      - uses: actions/checkout@v3
+        with:
+          repository: jdxcode/rtx.jdxcode.com
+          path: rtx.jdxcode.com
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          lfs: 'true'
+      - uses: actions/checkout@v3
+        with:
+          repository: jdxcode/homebrew-tap
+          path: homebrew-tap
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: crazy-max/ghaction-import-gpg@v5
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          workdir: homebrew-tap
+
+      - uses: actions/download-artifact@v3
+        with: { path: artifacts }
+      - run: rtx/scripts/release.sh
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: homebrew-tap push
+        run: git push
+        working-directory: homebrew-tap
+      - name: rtx.jdxcode.com push
+        run: git push
+        working-directory: rtx.jdxcode.com
+
+      - name: GitHub Release Assets
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        with:
+          fail_on_unmatched_files: true
+          draft: false
+          files: releases/${{github.ref_name}}/*
+          generate_release_notes: true

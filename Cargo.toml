@@ -1,0 +1,95 @@
+[package]
+name = "rtx-cli"
+version = "0.0.0-alpha.6"
+edition = "2021"
+description = "Polyglot runtime manager"
+authors = ["Jeff Dickey (@jdxcode)"]
+homepage = "https://github.com/jdxcode/rtx"
+documentation = "https://github.com/jdxcode/rtx"
+repository = "https://github.com/jdxcode/rtx"
+readme = "README.md"
+license = "MIT"
+keywords = ["rtx"]
+categories = ["command-line-utilities"]
+include = ["src/**/*", "/LICENSE", "/README.md"]
+rust-version = "1.66.1"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "rtx"
+path = "src/main.rs"
+
+#[[bench]]
+#name = "config_bench"
+#harness = false
+
+[dependencies]
+atty = "0.2.14"
+base64 = "0.21.0"
+chrono = "0.4.23"
+clap = { version = "4.1.1", features = ["derive", "string"] }
+color-eyre = "0.6.2"
+dirs-next = "2.0.0"
+duct = "0.13.6"
+filetime = "0.2.19"
+flate2 = "1.0.25"
+indexmap = "1.9.2"
+indoc = "1.0.8"
+itertools = "0.10.5"
+lazy_static = "1.4.0"
+log = "0.4.17"
+num_cpus = "1.15.0"
+owo-colors = { version = "3.5.0", features = ["supports-colors"] }
+rayon = "1.6.1"
+regex = "1.7.1"
+rmp-serde = "1.1.1"
+serde = "1.0.152"
+serde_derive = "1.0.152"
+shell-escape = "0.1.5"
+simplelog = "0.12.0"
+thiserror = "1.0.38"
+ctor = "0.1.26"
+toml = "0.6.0"
+toml_edit = "0.18.0"
+url = "2.3.1"
+versions = "4.1.0"
+build-time = "0.1.2"
+
+[target.'cfg(unix)'.dependencies]
+exec = "0.3.1"
+
+[dev-dependencies]
+pretty_assertions = "1.3.0"
+insta = "1.26.0"
+tempfile = "3.3.0"
+env_logger = "0.10.0"
+
+[profile.release]
+opt-level = "z" # optimize for size
+lto = true
+debug = false
+debug-assertions = false
+panic = "abort"
+strip = "symbols"
+
+[package.metadata.release]
+allow-branch = ["main"]
+#sign-tag = true
+#sign-commit = true
+pre-release-replacements = [
+    { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
+    { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
+]
+
+[package.metadata.binstall.overrides]
+bin-dir = "rtx/bin/rtx"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-macos-arm64{ archive-suffix }"
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-macos-x64{ archive-suffix }"
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-arm64{ archive-suffix }"
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-x64{ archive-suffix }"

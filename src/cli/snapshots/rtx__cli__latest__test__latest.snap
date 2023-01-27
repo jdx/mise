@@ -1,0 +1,6 @@
+---
+source: src/cli/latest.rs
+expression: stdout.content
+---
+12.22.12
+

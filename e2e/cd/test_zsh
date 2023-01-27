@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+rtx install nodejs@18.0.0 nodejs@16.0.0
+# shellcheck disable=SC1090
+eval "$(rtx activate -s zsh)"
+_rtx_hook
+
+#rtx install
+test "$(node -v)" = "v18.0.0"
+
+cd 16 && _rtx_hook
+#rtx install
+test "$(node -v)" = "v16.0.0"
+
+cd .. && _rtx_hook
+test "$(node -v)" = "v18.0.0"

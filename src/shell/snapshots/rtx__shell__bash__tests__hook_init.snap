@@ -1,0 +1,16 @@
+---
+source: src/shell/bash.rs
+expression: "Bash::default().activate(Path::new(\"rtx\"))"
+---
+export PATH=":$PATH";
+_rtx_hook() {
+  local previous_exit_status=$?;
+  trap -- '' SIGINT;
+  eval "$("rtx" hook-env -s bash)";
+  trap - SIGINT;
+  return $previous_exit_status;
+};
+if ! [[ "${PROMPT_COMMAND:-}" =~ _rtx_hook ]]; then
+  PROMPT_COMMAND="_rtx_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+fi
+

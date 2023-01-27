@@ -1,0 +1,9 @@
+---
+source: src/cli/local.rs
+expression: stdout.content
+---
+#python 3.11.1 3.10.9 # foo
+shellcheck 0.9.0
+shfmt 2 # test comment
+#nodejs 18.13.0
+

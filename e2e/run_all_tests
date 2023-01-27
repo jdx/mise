@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
+export RTX_DATA_DIR="/tmp/rtx"
+export PATH="$PWD/target/debug:$PATH"
+
+rtx plugin add nodejs
+rtx plugin add shfmt
+
+ROOT="$PWD"
+FILES=$(find e2e -name 'test_*' -type f)
+for f in $FILES; do
+    echo "Running $f"
+    cd "$(dirname "$f")"
+    "./$(basename "$f")"
+    cd "$ROOT"
+    rm -f "$ROOT/e2e/.tool-versions"
+    git checkout "$ROOT/.tool-versions"
+done
