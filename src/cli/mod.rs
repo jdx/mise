@@ -168,6 +168,7 @@ const AFTER_HELP: &str = indoc! {"
 mod test {
     use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
     use crate::config::settings::Settings;
+    use crate::output::OutputStream;
     use crate::plugins::{Plugin, PluginName};
 
     use super::*;
@@ -194,5 +195,12 @@ mod test {
             ..Settings::default()
         };
         Plugin::load_ensure_installed(&PluginName::from(name), &settings).unwrap();
+    }
+
+    pub fn grep<'a>(output: &'a OutputStream, pattern: &str) -> Option<&'a str> {
+        output
+            .content
+            .split('\n')
+            .find(|line| line.contains(pattern))
     }
 }

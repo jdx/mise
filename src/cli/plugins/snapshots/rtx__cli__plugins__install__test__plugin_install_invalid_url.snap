@@ -1,0 +1,5 @@
+---
+source: src/cli/plugins/install.rs
+expression: err
+---
+could not infer plugin name from url: ruby:
