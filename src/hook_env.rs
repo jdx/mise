@@ -9,6 +9,7 @@ use flate2::write::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::{dirs, env};
 
 /// this function will early-exit the application if hook-env is being
@@ -24,6 +25,16 @@ pub fn should_exit_early(current_env: HashMap<String, String>) -> bool {
         return false;
     }
     true
+}
+
+/// this returns the environment as if __RTX_DIFF was reversed
+/// putting the shell back into a state before hook-env was run
+pub fn get_pristine_env(
+    rtx_diff: &EnvDiff,
+    orig_env: HashMap<String, String>,
+) -> HashMap<String, String> {
+    let patches = rtx_diff.reverse().to_patches();
+    apply_patches(&orig_env, &patches)
 }
 
 fn has_rf_path_changed(env: &HashMap<String, String>) -> bool {
@@ -68,6 +79,27 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     decoder.write_all(&bytes[..])?;
     writer = decoder.finish()?;
     Ok(rmp_serde::from_slice(&writer[..])?)
+}
+
+fn apply_patches(
+    env: &HashMap<String, String>,
+    patches: &EnvDiffPatches,
+) -> HashMap<String, String> {
+    let mut new_env = env.clone();
+    for patch in patches {
+        match patch {
+            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                eprintln!("adding {k}");
+                new_env.insert(k.into(), v.into());
+            }
+            EnvDiffOperation::Remove(k) => {
+                eprintln!("removing {k}");
+                new_env.remove(k);
+            }
+        }
+    }
+
+    new_env
 }
 
 #[cfg(test)]
@@ -121,5 +153,21 @@ mod test {
             deserialized.get(PathBuf::from("foo").as_path()).unwrap(),
             &UNIX_EPOCH
         );
+    }
+
+    #[test]
+    fn test_apply_patches() {
+        let mut env = HashMap::new();
+        env.insert("foo".into(), "bar".into());
+        env.insert("baz".into(), "qux".into());
+        let patches = vec![
+            EnvDiffOperation::Add("foo".into(), "bar".into()),
+            EnvDiffOperation::Change("baz".into(), "qux".into()),
+            EnvDiffOperation::Remove("quux".into()),
+        ];
+        let new_env = apply_patches(&env, &patches);
+        assert_eq!(new_env.len(), 2);
+        assert_eq!(new_env.get("foo").unwrap(), "bar");
+        assert_eq!(new_env.get("baz").unwrap(), "qux");
     }
 }

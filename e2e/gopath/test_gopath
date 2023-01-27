@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -e
+eval "$(rtx activate -s bash)"
+_rtx_hook
+
+assert_gopath() {
+  local expected="$1"
+  if [[ "$GOPATH" != "$expected" ]]; then
+    echo "Invalid GOPATH: $GOPATH, expected: $expected"
+    exit 1
+  fi
+}
+
+rtx i golang@1.18.10 golang@1.19.5 && _rtx_hook
+assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
+cd 18 && _rtx_hook
+assert_gopath "$RTX_DATA_DIR/installs/golang/1.18.10/packages"
+cd .. && _rtx_hook
+assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
