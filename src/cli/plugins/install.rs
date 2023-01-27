@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use url::Url;
 
 use crate::cli::command::Command;
@@ -69,14 +69,14 @@ fn get_name_and_url(
 }
 
 fn get_name_from_url(url: &str) -> Result<String> {
-    let name = Url::parse(url)?
-        .path_segments()
-        .unwrap()
-        .last()
-        .unwrap()
-        .to_string();
-
-    Ok(name.strip_prefix("asdf-").unwrap_or(&name).to_string())
+    if let Ok(url) = Url::parse(url) {
+        if let Some(segments) = url.path_segments() {
+            let last = segments.last().unwrap_or_default();
+            let name = last.strip_prefix("asdf-").unwrap_or(last);
+            return Ok(name.to_string());
+        }
+    }
+    Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
 const AFTER_LONG_HELP: &str = r#"
@@ -94,10 +94,38 @@ EXAMPLES:
 
 #[cfg(test)]
 mod test {
+    use insta::assert_display_snapshot;
+    use pretty_assertions::assert_str_eq;
+
     use crate::assert_cli;
+    use crate::cli::test::{cli_run, grep};
+    use crate::output::Output;
 
     #[test]
     fn test_plugin_install() {
         assert_cli!("plugin", "add", "nodejs");
+    }
+
+    #[test]
+    fn test_plugin_install_url() {
+        assert_cli!(
+            "plugin",
+            "add",
+            "-f",
+            "https://github.com/jdxcode/asdf-nodejs"
+        );
+        let Output { stdout, .. } = assert_cli!("plugin", "--urls");
+        let line = grep(&stdout, "nodejs").unwrap();
+        assert_str_eq!(
+            line,
+            "nodejs                        https://github.com/asdf-vm/asdf-nodejs.git"
+        );
+    }
+
+    #[test]
+    fn test_plugin_install_invalid_url() {
+        let args = ["rtx", "plugin", "add", "ruby:"].map(String::from).into();
+        let err = cli_run(&args).unwrap_err();
+        assert_display_snapshot!(err);
     }
 }

@@ -65,11 +65,10 @@ impl ShorthandRepo {
     pub fn create_or_update(&self) -> Result<()> {
         self.ensure_created()?;
         if !self.changed_recently()? {
-            eprint!("rtx: Updating shorthand plugins repository...");
+            eprintln!("rtx: Updating shorthand plugins repository...");
             let git = self.get_git();
             git.update(None)?;
             file::touch_dir(&self.repo_dir)?;
-            eprintln!(" done");
         }
 
         Ok(())
