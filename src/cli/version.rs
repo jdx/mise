@@ -28,15 +28,13 @@ impl Command for Version {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
-
+    use super::*;
     use crate::assert_cli;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_version() {
         let stdout = assert_cli!("version");
-        assert_snapshot!(stdout, @r###"
-        1.2.1 (built on 2023-01-28)
-        "###);
+        assert_str_eq!(stdout, VERSION.to_string() + "\n");
     }
 }
