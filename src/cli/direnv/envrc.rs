@@ -5,8 +5,8 @@ use std::ops::Deref;
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
-use crate::config::settings::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::hash::hash_to_str;
 use crate::output::Output;
 use crate::{dirs, env};

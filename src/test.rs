@@ -31,6 +31,9 @@ fn init() {
     assert_cli!("plugin", "install", "shfmt");
     assert_cli!("plugin", "install", "nodejs");
     assert_cli!("plugin", "install", "jq");
+    assert_cli!("plugin", "install", "golang");
+    assert_cli!("plugin", "install", "python");
+    assert_cli!("plugin", "install", "rust");
     assert_cli!("install");
 }
 

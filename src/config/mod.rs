@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env::{join_paths, split_paths};
-
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -12,17 +11,20 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 
+pub use plugin_source::PluginSource;
+pub use settings::{MissingRuntimeBehavior, Settings};
+
 use crate::cli::args::runtime::RuntimeArg;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtxrc::RTXFile;
 use crate::config::config_file::ConfigFile;
-use crate::config::settings::Settings;
 use crate::config::toolset::Toolset;
-use crate::plugins::{Plugin, PluginName, PluginSource};
+use crate::plugins::{Plugin, PluginName};
 use crate::{dirs, env, file};
 
 pub mod config_file;
-pub mod settings;
+pub mod plugin_source;
+mod settings;
 mod toolset;
 
 type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;

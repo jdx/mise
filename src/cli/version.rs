@@ -28,20 +28,15 @@ impl Command for Version {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::Cli;
+    use insta::assert_snapshot;
 
-    use super::*;
+    use crate::assert_cli;
 
     #[test]
     fn test_version() {
-        let config = Config::load().unwrap();
-        let mut out = Output::tracked();
-
-        Cli::new()
-            .run(config, &vec!["rtx".into(), "version".into()], &mut out)
-            .unwrap();
-
-        let expected = format!("rtx {}", env!("CARGO_PKG_VERSION"));
-        assert!(out.stdout.content.contains(&expected));
+        let stdout = assert_cli!("version");
+        assert_snapshot!(stdout, @r###"
+        1.2.1 (built on 2023-01-28)
+        "###);
     }
 }

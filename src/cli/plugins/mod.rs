@@ -36,7 +36,7 @@ enum Commands {
     Ls(ls::PluginsLs),
     LsRemote(ls_remote::PluginsLsRemote),
     Uninstall(uninstall::PluginsUninstall),
-    Update(update::PluginsUpdate),
+    Update(update::Update),
 }
 
 impl Commands {

@@ -1,26 +1,28 @@
 use std::collections::HashMap;
 use std::error::Error;
-
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::fs::{create_dir_all, remove_dir_all, File};
-use std::io::Write;
+use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
-use duct::Expression;
 use owo_colors::{OwoColorize, Stream};
-use serde_derive::{Deserialize, Serialize};
 
-use crate::config::settings::{MissingRuntimeBehavior, Settings};
+use runtime_conf::RuntimeConf;
+
 use crate::config::Config;
+use crate::config::{MissingRuntimeBehavior, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
-use crate::plugins::Plugin;
+use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
 use crate::ui::prompt;
-use crate::{cmd, dirs, env, fake_asdf, file, ui};
+use crate::{dirs, env, fake_asdf, file};
 
+mod runtime_conf;
+
+/// These represent individual plugin@version pairs of runtimes
+/// installed to ~/.local/share/rtx/runtimes
 #[derive(Debug, Clone)]
 pub struct RuntimeVersion {
     pub version: String,
@@ -28,13 +30,21 @@ pub struct RuntimeVersion {
     pub install_path: PathBuf,
     download_path: PathBuf,
     runtime_conf_path: PathBuf,
+    script_man: ScriptManager,
 }
 
 impl RuntimeVersion {
     pub fn new(plugin: Arc<Plugin>, version: &str) -> Self {
         let install_path = dirs::INSTALLS.join(&plugin.name).join(version);
+        let download_path = dirs::DOWNLOADS.join(&plugin.name).join(version);
         Self {
             runtime_conf_path: install_path.join(".rtxconf.msgpack"),
+            script_man: build_script_man(
+                version,
+                &plugin.plugin_path,
+                &install_path,
+                &download_path,
+            ),
             download_path: dirs::DOWNLOADS.join(&plugin.name).join(version),
             install_path,
             version: version.into(),
@@ -54,23 +64,22 @@ impl RuntimeVersion {
         Ok(versions)
     }
 
-    pub fn install(&self, install_type: &str, config: &Config) -> Result<()> {
-        debug!(
-            "install {} {} {}",
-            self.plugin.name, self.version, install_type
-        );
-
+    pub fn install(&self, install_type: InstallType, config: &Config) -> Result<()> {
+        let plugin = &self.plugin;
         let settings = &config.settings;
+        debug!("install {} {} {}", plugin.name, self.version, install_type);
+
         if !self.plugin.ensure_installed(settings)? {
             return Err(PluginNotInstalled(self.plugin.name.clone()).into());
         }
 
-        fake_asdf::setup(&fake_asdf::get_path(dirs::ROOT.as_path()))?;
         self.create_install_dirs()?;
+        let download = Script::Download(install_type.clone());
+        let install = Script::Install(install_type);
 
-        if self.plugin.plugin_path.join("bin/download").is_file() {
-            self.run_script("download")
-                .env("ASDF_INSTALL_TYPE", install_type)
+        if self.script_man.script_exists(&download) {
+            self.script_man
+                .cmd(download)
                 .stdout_to_stderr()
                 .run()
                 .map_err(|err| {
@@ -79,8 +88,8 @@ impl RuntimeVersion {
                 })?;
         }
 
-        self.run_script("install")
-            .env("ASDF_INSTALL_TYPE", install_type)
+        self.script_man
+            .cmd(install)
             .stdout_to_stderr()
             .run()
             .map_err(|err| {
@@ -126,12 +135,12 @@ impl RuntimeVersion {
         }
         match config.settings.missing_runtime_behavior {
             MissingRuntimeBehavior::AutoInstall => {
-                self.install("version", config)?;
+                self.install(InstallType::Version, config)?;
                 Ok(true)
             }
             MissingRuntimeBehavior::Prompt => {
                 if prompt_for_install(&format!("{self}")) {
-                    self.install("version", config)?;
+                    self.install(InstallType::Version, config)?;
                     Ok(true)
                 } else {
                     Ok(false)
@@ -162,7 +171,7 @@ impl RuntimeVersion {
     pub fn uninstall(&self) -> Result<()> {
         debug!("uninstall {} {}", self.plugin.name, self.version);
         if self.plugin.plugin_path.join("bin/uninstall").exists() {
-            let err = self.run_script("uninstall").run();
+            let err = self.script_man.run(Script::Uninstall);
             if err.is_err() {
                 warn!("Failed to run uninstall script: {}", err.unwrap_err());
             }
@@ -193,9 +202,7 @@ impl RuntimeVersion {
         if !self.is_installed() || !script.exists() {
             return Ok(HashMap::new());
         }
-        let mut env: HashMap<String, String> = env::PRISTINE_ENV.clone();
-        env.extend(self.script_env());
-        let ed = EnvDiff::from_bash_script(&script, env)?;
+        let ed = EnvDiff::from_bash_script(&script, &self.script_man.env)?;
         let env = ed
             .to_patches()
             .into_iter()
@@ -208,44 +215,10 @@ impl RuntimeVersion {
         Ok(env)
     }
 
-    fn run_script(&self, script: &str) -> Expression {
-        let mut cmd = cmd!(self.plugin.plugin_path.join("bin").join(script));
-        for (k, v) in self.script_env() {
-            cmd = cmd.env(k, v);
-        }
-        cmd
-    }
-
-    fn script_env(&self) -> HashMap<String, String> {
-        let path = [
-            fake_asdf::get_path(dirs::ROOT.as_path()).to_string_lossy(),
-            env::PATH.to_string_lossy(),
-        ]
-        .join(":");
-        return HashMap::from([
-            ("RTX".into(), "1".into()),
-            (
-                "RTX_EXE".into(),
-                env::RTX_EXE.as_path().to_string_lossy().into(),
-            ),
-            ("PATH".into(), path),
-            ("ASDF_INSTALL_VERSION".into(), self.version.to_string()),
-            (
-                "ASDF_INSTALL_PATH".into(),
-                self.install_path.to_string_lossy().into(),
-            ),
-            (
-                "ASDF_DOWNLOAD_PATH".into(),
-                self.download_path.to_string_lossy().into(),
-            ),
-            ("ASDF_CONCURRENCY".into(), num_cpus::get().to_string()),
-        ]);
-    }
-
     fn get_bin_paths(&self) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin.plugin_path.join("bin/list-bin-paths");
         if list_bin_paths.exists() {
-            let output = self.run_script("list-bin-paths").read()?;
+            let output = self.script_man.cmd(Script::ListBinPaths).read()?;
             Ok(output.split_whitespace().map(|e| e.into()).collect())
         } else {
             Ok(vec!["bin".into()])
@@ -281,7 +254,7 @@ impl PartialEq for RuntimeVersion {
 }
 
 fn prompt_for_install(thing: &str) -> bool {
-    match ui::is_tty() {
+    match prompt::is_tty() {
         true => {
             eprint!(
                 "rtx: Would you like to install {}? [Y/n] ",
@@ -293,25 +266,23 @@ fn prompt_for_install(thing: &str) -> bool {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct RuntimeConf {
-    bin_paths: Vec<String>,
-}
-
-impl RuntimeConf {
-    fn parse(path: &Path) -> Result<Self> {
-        Ok(rmp_serde::from_read(File::open(path)?)?)
-        // let contents = std::fs::read_to_string(path)
-        //     .wrap_err_with(|| format!("failed to read {}", path.to_string_lossy()))?;
-        // let conf: Self = toml::from_str(&contents)
-        //     .wrap_err_with(|| format!("failed to from_file {}", path.to_string_lossy()))?;
-
-        // Ok(conf)
-    }
-
-    fn write(&self, path: &Path) -> Result<()> {
-        let bytes = rmp_serde::to_vec_named(self)?;
-        File::create(path)?.write_all(&bytes)?;
-        Ok(())
-    }
+fn build_script_man(
+    version: &str,
+    plugin_path: &Path,
+    install_path: &Path,
+    download_path: &Path,
+) -> ScriptManager {
+    ScriptManager::new(plugin_path.to_path_buf())
+        .with_envs(env::PRISTINE_ENV.clone())
+        .with_env("PATH".into(), fake_asdf::get_path_with_fake_asdf())
+        .with_env("ASDF_INSTALL_VERSION".into(), version.to_string())
+        .with_env(
+            "ASDF_INSTALL_PATH".into(),
+            install_path.to_string_lossy().to_string(),
+        )
+        .with_env(
+            "ASDF_DOWNLOAD_PATH".into(),
+            download_path.to_string_lossy().to_string(),
+        )
+        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string())
 }

@@ -8,7 +8,8 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::plugins::{PluginName, PluginSource};
+use crate::config::PluginSource;
+use crate::plugins::PluginName;
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0

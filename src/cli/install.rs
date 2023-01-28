@@ -6,11 +6,12 @@ use owo_colors::{OwoColorize, Stream};
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
-use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
-use crate::config::settings::Settings;
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::AutoInstall;
+use crate::config::Settings;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
+use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 
@@ -89,7 +90,7 @@ impl Install {
                 rtv.to_string()
                     .if_supports_color(Stream::Stderr, |t| t.cyan())
             );
-            rtv.install("version", &config)?;
+            rtv.install(Version, &config)?;
         }
 
         Ok(())
@@ -132,7 +133,7 @@ impl Install {
                 rtv.to_string()
                     .if_supports_color(Stream::Stderr, |t| t.cyan())
             );
-            rtv.install("version", &config)?;
+            rtv.install(Version, &config)?;
         }
         Ok(())
     }

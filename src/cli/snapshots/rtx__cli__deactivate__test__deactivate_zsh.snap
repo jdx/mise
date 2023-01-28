@@ -3,3 +3,4 @@ source: src/cli/deactivate.rs
 expression: stdout
 ---
 unset _rtx_hook;
+

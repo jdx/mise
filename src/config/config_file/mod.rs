@@ -11,9 +11,9 @@ use tool_versions::ToolVersions;
 
 use crate::cli::args::runtime::RuntimeArg;
 use crate::config::Config;
+use crate::config::PluginSource;
 use crate::env;
 use crate::errors::Error::VersionNotInstalled;
-use crate::plugins::PluginSource;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 

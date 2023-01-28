@@ -172,8 +172,8 @@ const AFTER_HELP: &str = indoc! {"
 
 #[cfg(test)]
 pub mod test {
-    use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
-    use crate::config::settings::Settings;
+    use crate::config::MissingRuntimeBehavior::AutoInstall;
+    use crate::config::Settings;
     use crate::dirs;
     use crate::plugins::{Plugin, PluginName};
 

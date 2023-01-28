@@ -932,19 +932,22 @@ updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
 
-Usage: update [PLUGIN]...
+Usage: update [OPTIONS] [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
           plugin(s) to update
 
 Options:
+  -a, --all
+          update all plugins
+
   -h, --help
           Print help (see a summary with '-h')
 
 
 Examples:
-  rtx plugins update         # update all plugins
+  rtx plugins update --all   # update all plugins
   rtx plugins update nodejs  # update only nodejs
 
 ```
