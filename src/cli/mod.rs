@@ -119,7 +119,7 @@ impl Cli {
     pub fn command() -> clap::Command {
         Commands::augment_subcommands(
             clap::Command::new("rtx")
-                .version(env!("CARGO_PKG_VERSION"))
+                .version(version::VERSION.to_string())
                 .about(env!("CARGO_PKG_DESCRIPTION"))
                 .long_about(LONG_ABOUT)
                 .arg_required_else_help(true)
@@ -172,11 +172,9 @@ const AFTER_HELP: &str = indoc! {"
 
 #[cfg(test)]
 pub mod test {
-
     use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
     use crate::config::settings::Settings;
     use crate::dirs;
-
     use crate::plugins::{Plugin, PluginName};
 
     use super::*;
