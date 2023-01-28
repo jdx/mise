@@ -14,6 +14,10 @@ impl Git {
         Self { dir }
     }
 
+    pub fn is_repo(&self) -> bool {
+        self.dir.join(".git").is_dir()
+    }
+
     pub fn remote_default_branch(&self) -> Result<String> {
         let branch = cmd!(
             "git",
@@ -74,8 +78,8 @@ impl Git {
         Ok(sha)
     }
 
-    pub fn get_remote_url(&self) -> Result<String> {
-        let url = cmd!(
+    pub fn get_remote_url(&self) -> Option<String> {
+        let res = cmd!(
             "git",
             "-C",
             &self.dir,
@@ -83,9 +87,21 @@ impl Git {
             "--get",
             "remote.origin.url"
         )
-        .read()?;
-        debug!("remote url for {}: {}", self.dir.display(), &url);
-        Ok(url)
+        .read();
+        match res {
+            Ok(url) => {
+                debug!("remote url for {}: {}", self.dir.display(), &url);
+                Some(url)
+            }
+            Err(err) => {
+                warn!(
+                    "failed to get remote url for {}: {}",
+                    self.dir.display(),
+                    err
+                );
+                None
+            }
+        }
     }
 }
 

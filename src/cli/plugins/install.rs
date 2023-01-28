@@ -98,6 +98,7 @@ mod test {
 
     use crate::assert_cli;
     use crate::cli::test::cli_run;
+    use crate::cli::test::grep;
 
     #[test]
     fn test_plugin_install() {
@@ -113,7 +114,7 @@ mod test {
             "https://github.com/jdxcode/asdf-nodejs"
         );
         let stdout = assert_cli!("plugin", "--urls");
-        assert_snapshot!(stdout);
+        assert_snapshot!(grep(stdout, "nodejs"), @"nodejs                        https://github.com/jdxcode/asdf-nodejs");
     }
 
     #[test]

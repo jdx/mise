@@ -7,8 +7,8 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use versions::Mess;
 
-use crate::config::AliasMap;
-use crate::plugins::{Plugin, PluginName, PluginSource};
+use crate::config::{AliasMap, PluginSource};
+use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 
 #[derive(Debug, Default)]
