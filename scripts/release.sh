@@ -33,6 +33,9 @@ platforms=(
 for platform in "${platforms[@]}"; do
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
+	tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
+  cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
+  cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
 
 pushd "$RELEASE_DIR"
@@ -45,13 +48,15 @@ sha256sum ./* >SHASUMS256.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 popd
 
-./rtx/scripts/render-install.sh >rtx.jdxcode.com/install.sh
+./rtx/scripts/render-install.sh >rtx.jdxcode.com/static/install.sh
 
-rm -rf rtx.jdxcode.com/rpm
-mv artifacts/rpm rtx.jdxcode.com/rpm
+rm -rf rtx.jdxcode.com/static/rpm
+mv artifacts/rpm rtx.jdxcode.com/static/rpm
 
-rm -rf rtx.jdxcode.com/deb
-mv artifacts/deb rtx.jdxcode.com/deb
+rm -rf rtx.jdxcode.com/static/deb
+mv artifacts/deb rtx.jdxcode.com/static/deb
+
+cp -vrf "$RELEASE_DIR/*" rtx.jdxcode.com/static
 
 ./rtx/scripts/release-npm.sh
 
