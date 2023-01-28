@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use lazy_static::lazy_static;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::command::Command;
@@ -9,14 +10,18 @@ use crate::output::Output;
 #[clap(about = "Show rtx version", alias = "-v", alias = "v")]
 pub struct Version {}
 
+lazy_static! {
+    pub static ref VERSION: String = format!(
+        "{} (built on {})",
+        env!("CARGO_PKG_VERSION"),
+        BUILD_TIME.format("%Y-%m-%d")
+    );
+}
+
 impl Command for Version {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        rtxprintln!(
-            out,
-            "rtx {} (built on {})",
-            env!("CARGO_PKG_VERSION"),
-            BUILD_TIME.format("%Y-%m-%d")
-        );
+        let v = VERSION.to_string();
+        rtxprintln!(out, "{v}");
         Ok(())
     }
 }
