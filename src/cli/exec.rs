@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::ffi::OsString;
 
 use color_eyre::eyre::{eyre, Result};
+use indexmap::IndexMap;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -46,13 +46,15 @@ impl Command for Exec {
         config.ensure_installed()?;
 
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
+        let mut env = config.env()?;
+        env.insert("PATH".into(), config.path_env()?);
 
-        exec(program, args, config.env()?)
+        exec(program, args, env)
     }
 }
 
 #[cfg(not(test))]
-fn exec(program: OsString, args: Vec<OsString>, env: HashMap<OsString, OsString>) -> Result<()> {
+fn exec(program: OsString, args: Vec<OsString>, env: IndexMap<OsString, OsString>) -> Result<()> {
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
@@ -61,7 +63,7 @@ fn exec(program: OsString, args: Vec<OsString>, env: HashMap<OsString, OsString>
 }
 
 #[cfg(test)]
-fn exec(program: OsString, args: Vec<OsString>, env: HashMap<OsString, OsString>) -> Result<()> {
+fn exec(program: OsString, args: Vec<OsString>, env: IndexMap<OsString, OsString>) -> Result<()> {
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);

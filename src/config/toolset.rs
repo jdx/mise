@@ -15,7 +15,7 @@ use crate::runtimes::RuntimeVersion;
 pub struct Toolset {
     pub plugins: HashMap<PluginName, Arc<Plugin>>,
     installed_versions: HashMap<PluginName, HashMap<String, Arc<RuntimeVersion>>>,
-    current_versions: HashMap<PluginName, Vec<String>>,
+    current_versions: IndexMap<PluginName, Vec<String>>,
     current_versions_sources: HashMap<PluginName, PluginSource>,
 }
 
@@ -164,7 +164,7 @@ impl Toolset {
             })
             .collect::<Result<Vec<(PluginName, Vec<String>)>>>()?
             .into_iter()
-            .collect::<HashMap<PluginName, Vec<String>>>();
+            .collect::<IndexMap<PluginName, Vec<String>>>();
         trace!("resolved versions: {:?}", self.current_versions);
         Ok(())
         // if plugin.is_installed() {

@@ -63,20 +63,45 @@ impl Config {
         Ok(config)
     }
 
-    pub fn env(&self) -> Result<HashMap<OsString, OsString>> {
-        let mut env = HashMap::new();
-
-        let new_envs = self
+    pub fn env(&self) -> Result<IndexMap<OsString, OsString>> {
+        let mut entries = self
             .ts
             .list_current_installed_versions()
             .into_par_iter()
             .map(|p| p.exec_env())
-            .collect::<Result<Vec<HashMap<OsString, OsString>>>>()?;
-        for new_env in new_envs {
-            env.extend(new_env);
+            .collect::<Result<Vec<HashMap<OsString, OsString>>>>()?
+            .into_iter()
+            .flatten()
+            .collect_vec();
+        entries.par_sort();
+        Ok(entries.into_iter().collect())
+    }
+
+    pub fn list_paths(&self) -> Result<Vec<PathBuf>> {
+        let paths = self
+            .ts
+            .list_current_installed_versions()
+            .into_par_iter()
+            .map(|rtv| rtv.list_bin_paths())
+            .collect::<Result<Vec<Vec<PathBuf>>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<PathBuf>>();
+        Ok(paths)
+    }
+
+    pub fn path_env(&self) -> Result<OsString> {
+        let mut paths = self.list_paths()?;
+        let default_path = String::new();
+        let orig_path = env::PRISTINE_ENV.get("PATH").unwrap_or(&default_path);
+        for p in split_paths(orig_path) {
+            if p.starts_with(dirs::INSTALLS.deref()) {
+                // ignore existing install directories from previous runs
+                continue;
+            }
+            paths.push(p);
         }
-        env.insert("PATH".into(), self.build_env_path()?);
-        Ok(env)
+        Ok(join_paths(paths)?)
     }
 
     pub fn with_runtime_args(mut self, args: &[RuntimeArg]) -> Result<Self> {
@@ -120,27 +145,6 @@ impl Config {
             }
         }
         version
-    }
-
-    fn build_env_path(&self) -> Result<OsString> {
-        let mut paths = self
-            .ts
-            .list_current_installed_versions()
-            .into_par_iter()
-            .map(|rtv| rtv.list_bin_paths())
-            .collect::<Result<Vec<Vec<PathBuf>>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<PathBuf>>();
-
-        for p in split_paths(env::PATH.deref()) {
-            if p.starts_with(dirs::INSTALLS.deref()) {
-                // ignore existing install directories from previous runs
-                continue;
-            }
-            paths.push(p);
-        }
-        Ok(join_paths(paths)?)
     }
 }
 
@@ -224,7 +228,7 @@ fn find_all_config_files(legacy_filenames: &HashMap<String, PluginName>) -> Vec<
         config_files.push(home_config);
     }
 
-    config_files
+    config_files.into_iter().unique().collect()
 }
 
 fn load_config_files(
