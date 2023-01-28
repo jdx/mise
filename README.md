@@ -28,7 +28,7 @@ $ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
 
 > **Warning:**
 >
-> If you use [direnv](https://direnv.net), [see below](#direnv) for direnv-compatible setup.
+> If you use direnv, [see below](#direnv) for direnv-compatible setup.
 
 Install a runtime and set it as the default:
 
@@ -1155,9 +1155,9 @@ That said, there are a lot of great things about asdf. It's the best multi-runti
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
 were very good. I really just have 2 complaints: the shims and the fact it's written in Bash.
 
-## Direnv
+## direnv
 
-Direnv and rtx both manage environment variables based on directory. Because they both analyze
+[direnv](https://direnv.net) and rtx both manage environment variables based on directory. Because they both analyze
 the current environment variables before and after their respective "hook" commands are run, they
 can easily conflict and overwrite each other's environment variables (including, but not limited to, `PATH`).
 
@@ -1177,7 +1177,7 @@ Now in your `.envrc` file add the following:
 use_rtx
 ```
 
-Direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
+direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
 too all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory).
 
 ## Cache Behavior
