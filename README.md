@@ -26,6 +26,10 @@ $ echo 'eval "$(rtx activate -s zsh)"' >> ~/.zshrc
 $ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
+> **Warning:**
+>
+> If you use [direnv](https://direnv.net), [see below](#direnv) for direnv-compatible setup.
+
 Install a runtime and set it as the default:
 
 ```sh-session
@@ -407,15 +411,15 @@ At some point it may be worth exploring an alternate plugin format that would be
 ```
 Enables rtx to automatically modify runtimes when changing directory
 
-This should go into your shell's rc file. Otherwise it will only
-take effect in the current session.
+This should go into your shell's rc file.
+Otherwise, it will only take effect in the current session.
 (e.g. ~/.bashrc)
 
 Usage: activate [OPTIONS]
 
 Options:
   -s, --shell <SHELL>
-          Shell type to generate script for
+          Shell type to generate the script for
           
           [possible values: bash, fish, zsh]
 
@@ -480,6 +484,30 @@ Examples:
     $ eval "$(rtx deactivate -s bash)"
     $ eval "$(rtx deactivate -s zsh)"
     $ rtx deactivate -s fish | source
+
+```
+### `rtx direnv activate`
+
+```
+Output direnv function to use rtx inside direnv
+
+See https://github.com/jdxcode/rtx#direnv for more information
+
+Because this generates the legacy files based on currently installed plugins,
+you should run this command after installing new plugins. Otherwise
+direnv may not know to update environment variables when legacy file versions change.
+
+Usage: activate
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+
+Examples:
+    $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
+    $ echo 'use rtx' > .envrc
+    $ direnv allow
 
 ```
 ### `rtx doctor`
@@ -1123,6 +1151,31 @@ can be passed a flag `rtx list --current` to show the current versions.
 That said, there are a lot of great things about asdf. It's the best multi-runtime manager out there
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
 were very good. I really just have 2 complaints: the shims and the fact it's written in Bash.
+
+## Direnv
+
+Direnv and rtx both manage environment variables based on directory. Because they both analyze
+the current environment variables before and after their respective "hook" commands are run, they
+can easily conflict and overwrite each other's environment variables (including, but not limited to, `PATH`).
+
+To avoid this, **don't** use `rtx activate` alongside direnv. Instead, call rtx from _within_ direnv
+so that it can track the environment variables separately.
+
+To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
+
+```sh-session
+$ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
+# replace ~/.config with XDG_CONFIG_HOME if you've changed it
+```
+
+Now in your `.envrc` file add the following:
+
+```sh-session
+use_rtx
+```
+
+Direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
+too all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory).
 
 ## Cache Behavior
 
