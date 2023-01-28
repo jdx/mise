@@ -482,6 +482,39 @@ Examples:
   $ rtx complete
 
 ```
+### `rtx current`
+
+```
+Shows currently active, and installed runtime versions
+
+This is similar to `rtx list --current`, but this
+only shows the runtime and/or version so it's
+designed to fit into scripts more easily.
+
+Usage: current [PLUGIN]
+
+Arguments:
+  [PLUGIN]
+          plugin to show versions of
+          
+          e.g.: ruby, nodejs
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+
+Examples:
+
+  $ rtx current
+  shfmt@3.6.0
+  shellcheck@0.9.0
+  nodejs@18.13.0
+
+  $ rtx current nodejs
+  18.13.0
+
+```
 ### `rtx deactivate`
 
 ```
