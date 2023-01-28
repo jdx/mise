@@ -1,3 +1,4 @@
+use std::fs::create_dir_all;
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
@@ -68,6 +69,16 @@ impl Git {
 
     pub fn clone(&self, url: &str) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
+        if let Some(parent) = self.dir.parent() {
+            create_dir_all(parent)?;
+        }
+        match get_git_version() {
+            Ok(version) => trace!("git version: {}", version),
+            Err(err) => warn!(
+                "failed to get git version: {}\n Git is required to use rtx.",
+                err
+            ),
+        }
         cmd!("git", "clone", "-q", "--depth", "1", url, &self.dir).run()?;
         Ok(())
     }
@@ -103,6 +114,11 @@ impl Git {
             }
         }
     }
+}
+
+fn get_git_version() -> Result<String> {
+    let version = cmd!("git", "--version").read()?;
+    Ok(version.trim().into())
 }
 
 #[cfg(test)]
