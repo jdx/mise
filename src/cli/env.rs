@@ -32,14 +32,14 @@ impl Command for Env {
 
         let shell = get_shell(self.shell);
         for (k, v) in config.env()? {
-            let k = k.to_string_lossy().to_string();
-            let v = v.to_string_lossy().to_string();
+            let k = k.to_string();
+            let v = v.to_string();
             rtxprint!(out, "{}", shell.set_env(&k, &v));
         }
         rtxprintln!(
             out,
             "{}",
-            shell.set_env("PATH", config.path_env()?.to_string_lossy().as_ref())
+            shell.set_env("PATH", config.path_env()?.as_ref())
         );
 
         Ok(())

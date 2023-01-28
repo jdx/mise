@@ -42,8 +42,8 @@ impl Command for Envrc {
             writeln!(
                 file,
                 "export {}={}",
-                shell_escape::unix::escape(k.to_string_lossy()),
-                shell_escape::unix::escape(v.to_string_lossy()),
+                shell_escape::unix::escape(k.into()),
+                shell_escape::unix::escape(v.into()),
             )?;
         }
         for path in &config.list_paths()? {
