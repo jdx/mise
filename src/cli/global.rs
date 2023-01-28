@@ -46,7 +46,8 @@ impl Command for Global {
             }
         }
         if let Some(runtimes) = &self.runtime {
-            cf.add_runtimes(&config, runtimes, self.fuzzy)?;
+            let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
+            cf.add_runtimes(&config, &runtimes, self.fuzzy)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {
@@ -90,6 +91,8 @@ mod test {
         let stdout = assert_cli!("global", "--fuzzy", "shfmt@2");
         assert_snapshot!(stdout);
         let stdout = assert_cli!("global", "--remove", "nodejs");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("global", "tiny", "2");
         assert_snapshot!(stdout);
 
         if let Some(orig) = orig {

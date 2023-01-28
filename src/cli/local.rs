@@ -62,8 +62,10 @@ impl Command for Local {
                 cf.remove_plugin(plugin);
             }
         }
+
         if let Some(runtimes) = &self.runtime {
-            cf.add_runtimes(&config, runtimes, self.fuzzy)?;
+            let runtimes = RuntimeArg::double_runtime_condition(runtimes);
+            cf.add_runtimes(&config, &runtimes, self.fuzzy)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {
@@ -101,7 +103,6 @@ mod test {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::test::grep;
-
     use crate::{assert_cli, dirs};
 
     #[test]
@@ -122,6 +123,10 @@ mod test {
             grep(stdout, "nodejs"),
             "   nodejs     18.0.0 (missing)   (set by ~/cwd/.node-version)"
         );
+        let stdout = assert_cli!("local", "tiny@1");
+        assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
+        let stdout = assert_cli!("local", "tiny", "2");
+        assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
 
         fs::write(cf_path, orig).unwrap();
     }
