@@ -84,6 +84,8 @@ lazy_static! {
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };
+    pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
+    pub static ref RTX_DISABLE_DIRENV_WARNING: bool = var_is_true("RTX_DISABLE_DIRENV_WARNING");
 }
 
 fn get_env_diff() -> EnvDiff {
