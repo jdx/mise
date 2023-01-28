@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
@@ -28,14 +26,10 @@ impl Command for HookEnv {
         config.ensure_installed()?;
 
         self.clear_old_env(out);
-        let mut env: HashMap<String, String> = config
-            .env()?
-            .iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect();
+        let mut env = config.env()?;
         env.insert("PATH".into(), config.path_env()?);
         env.insert("__RTX_DIR".into(), dirs::CURRENT.to_string_lossy().into());
-        let diff = EnvDiff::new(&env::PRISTINE_ENV, &env);
+        let diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
         patches.push(EnvDiffOperation::Add(
             "__RTX_DIFF".into(),
