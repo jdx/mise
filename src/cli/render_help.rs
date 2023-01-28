@@ -526,9 +526,8 @@ v18.13.0
 I've found asdf to be particularly rigid and difficult to learn. It also made strange decisions like
 having `asdf list all` but `asdf latest --all` (why is one a flag and one a positional argument?).
 `rtx` makes heavy use of aliases so you don't need to remember if it's `rtx plugin add nodejs` or
-`rtx plugin install nodejs`. asdf also just has too many commands. It's hard to remember what the
-difference is between `asdf list` and `asdf current` is. `rtx` has a single command `rtx list` which
-can be passed a flag `rtx list --current` to show the current versions.
+`rtx plugin install nodejs`. If I can guess what you meant, then I'll try to get rtx to respond
+in the right way.
 
 That said, there are a lot of great things about asdf. It's the best multi-runtime manager out there
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
