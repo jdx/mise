@@ -461,6 +461,27 @@ Examples:
   nodejs    lts/hydrogen   18.0.0
 
 ```
+### `rtx complete`
+
+```
+generate shell completions
+
+Usage: complete --shell <SHELL>
+
+Options:
+  -s, --shell <SHELL>
+          shell type
+          
+          [possible values: bash, elvish, fish, powershell, zsh]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+
+Examples:
+  $ rtx complete
+
+```
 ### `rtx deactivate`
 
 ```

@@ -1,0 +1,1371 @@
+#compdef rtx
+
+autoload -U is-at-least
+
+_rtx() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_rtx_commands" \
+"*::: :->rtx" \
+&& ret=0
+    case $state in
+    (rtx)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-command-$line[1]:"
+        case $line[1] in
+            (activate)
+_arguments "${_arguments_options[@]}" \
+'-s+[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'--shell=[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(alias)
+_arguments "${_arguments_options[@]}" \
+'-p+[filter aliases by plugin]:PLUGIN: ' \
+'--plugin=[filter aliases by plugin]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_rtx__alias_commands" \
+"*::: :->alias" \
+&& ret=0
+
+    case $state in
+    (alias)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-alias-command-$line[1]:"
+        case $line[1] in
+            (ls)
+_arguments "${_arguments_options[@]}" \
+'-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
+'--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__alias__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-alias-help-command-$line[1]:"
+        case $line[1] in
+            (ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(asdf)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+'*::args -- all arguments:' \
+&& ret=0
+;;
+(current)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::plugin -- plugin to filter by:' \
+&& ret=0
+;;
+(deactivate)
+_arguments "${_arguments_options[@]}" \
+'-s+[shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'--shell=[shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(direnv)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+":: :_rtx__direnv_commands" \
+"*::: :->direnv" \
+&& ret=0
+
+    case $state in
+    (direnv)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-direnv-command-$line[1]:"
+        case $line[1] in
+            (envrc)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(activate)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__direnv__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-direnv-help-command-$line[1]:"
+        case $line[1] in
+            (envrc)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(activate)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(doctor)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(complete)
+_arguments "${_arguments_options[@]}" \
+'-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
+'--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(env)
+_arguments "${_arguments_options[@]}" \
+'-s+[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
+'--shell=[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtime version to use:' \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" \
+'()-c+[the command string to execute]:C: ' \
+'()--command=[the command string to execute]:C: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtime(s) to start:' \
+'*::command -- the command string to execute (same as --command):' \
+&& ret=0
+;;
+(global)
+_arguments "${_arguments_options[@]}" \
+'*--remove=[remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions, by default, it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtimes:' \
+&& ret=0
+;;
+(hook-env)
+_arguments "${_arguments_options[@]}" \
+'-s+[Shell type to generate script for]:SHELL:(bash fish zsh)' \
+'--shell=[Shell type to generate script for]:SHELL:(bash fish zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(install)
+_arguments "${_arguments_options[@]}" \
+'()*-p+[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
+'()*--plugin=[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-f[force reinstall even if already installed]' \
+'--force[force reinstall even if already installed]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtime(s) to install:' \
+&& ret=0
+;;
+(latest)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':runtime -- Runtime to get the latest version of:' \
+'::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
+&& ret=0
+;;
+(local)
+_arguments "${_arguments_options[@]}" \
+'*--remove=[remove the plugin(s) from .tool-versions]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-p[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
+'--parent[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
+'--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions by default it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtimes to add to .tool-versions:' \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+'-p+[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
+'--plugin=[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-c[Only show runtimes currently specified in .tool-versions]' \
+'--current[Only show runtimes currently specified in .tool-versions]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(ls-remote)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':plugin -- Plugin:' \
+&& ret=0
+;;
+(plugins)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-a[list all available remote plugins]' \
+'--all[list all available remote plugins]' \
+'-u[show the git url for each plugin]' \
+'--urls[show the git url for each plugin]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+":: :_rtx__plugins_commands" \
+"*::: :->plugins" \
+&& ret=0
+
+    case $state in
+    (plugins)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-plugins-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-f[Reinstalls even if plugin exists]' \
+'--force[Reinstalls even if plugin exists]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':name -- The name of the plugin to install:' \
+'::git_url -- The git url of the plugin:_urls' \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-a[list all available remote plugins]' \
+'--all[list all available remote plugins]' \
+'-u[show the git url for each plugin]' \
+'--urls[show the git url for each plugin]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(ls-remote)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-u[show the git url for each plugin]' \
+'--urls[show the git url for each plugin]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':plugin -- plugin to remove:' \
+&& ret=0
+;;
+(update)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::plugin -- plugin(s) to update:' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__plugins__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-plugins-help-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls-remote)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(update)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(settings)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_rtx__settings_commands" \
+"*::: :->settings" \
+&& ret=0
+
+    case $state in
+    (settings)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-settings-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':key -- The setting to show:' \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':key -- The setting to set:' \
+':value -- The value to set:' \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':key -- The setting to remove:' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__settings__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-settings-help-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- runtime(s) to remove:' \
+&& ret=0
+;;
+(version)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(where)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':runtime -- runtime(s) to remove:' \
+'::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
+&& ret=0
+;;
+(render-help)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-command-$line[1]:"
+        case $line[1] in
+            (activate)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(alias)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__alias_commands" \
+"*::: :->alias" \
+&& ret=0
+
+    case $state in
+    (alias)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-alias-command-$line[1]:"
+        case $line[1] in
+            (ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(asdf)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(current)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(deactivate)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(direnv)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__direnv_commands" \
+"*::: :->direnv" \
+&& ret=0
+
+    case $state in
+    (direnv)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-direnv-command-$line[1]:"
+        case $line[1] in
+            (envrc)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(activate)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(doctor)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(complete)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(env)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(global)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(hook-env)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(install)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(latest)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(local)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls-remote)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(plugins)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__plugins_commands" \
+"*::: :->plugins" \
+&& ret=0
+
+    case $state in
+    (plugins)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-plugins-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls-remote)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(update)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(settings)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__settings_commands" \
+"*::: :->settings" \
+&& ret=0
+
+    case $state in
+    (settings)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-settings-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(version)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(where)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(render-help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_rtx_commands] )) ||
+_rtx_commands() {
+    local commands; commands=(
+'activate:Enables rtx to automatically modify runtimes when changing directory' \
+'alias:Manage aliases' \
+'a:Manage aliases' \
+'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'current:Get the latest runtime version available for install' \
+'deactivate:disable rtx for current shell session' \
+'direnv:Output direnv function to use rtx inside direnv' \
+'doctor:Check rtx installation for possible problems.' \
+'complete:generate shell completions' \
+'env:exports environment variables to activate rtx in a single shell session' \
+'e:exports environment variables to activate rtx in a single shell session' \
+'exec:execute a command with runtime(s) set' \
+'x:execute a command with runtime(s) set' \
+'global:sets global .tool-versions to include a specified runtime' \
+'g:sets global .tool-versions to include a specified runtime' \
+'hook-env:\[internal\] called by activate hook to update env vars directory change' \
+'install:install a runtime' \
+'i:install a runtime' \
+'latest:get the latest runtime version of a plugin'\''s runtimes' \
+'local:Sets .tool-versions to include a specific runtime' \
+'l:Sets .tool-versions to include a specific runtime' \
+'ls:list installed runtime versions' \
+'list:list installed runtime versions' \
+'ls-remote:list runtime versions available for install
+note that these versions are cached for commands like `rtx install nodejs@latest`
+however _this_ command will always clear that cache and fetch the latest remote versions' \
+'list-remote:list runtime versions available for install
+note that these versions are cached for commands like `rtx install nodejs@latest`
+however _this_ command will always clear that cache and fetch the latest remote versions' \
+'plugins:Manage plugins' \
+'p:Manage plugins' \
+'settings:Manage settings' \
+'uninstall:removes runtime versions' \
+'version:Show rtx version' \
+'where:Display the installation path for a runtime' \
+'render-help:internal command to generate markdown from help' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx commands' commands "$@"
+}
+(( $+functions[_rtx__activate_commands] )) ||
+_rtx__activate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx activate commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__activate_commands] )) ||
+_rtx__direnv__activate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv activate commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__help__activate_commands] )) ||
+_rtx__direnv__help__activate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv help activate commands' commands "$@"
+}
+(( $+functions[_rtx__help__activate_commands] )) ||
+_rtx__help__activate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help activate commands' commands "$@"
+}
+(( $+functions[_rtx__help__direnv__activate_commands] )) ||
+_rtx__help__direnv__activate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help direnv activate commands' commands "$@"
+}
+(( $+functions[_rtx__alias_commands] )) ||
+_rtx__alias_commands() {
+    local commands; commands=(
+'ls:List aliases
+Shows the aliases that can be specified.
+These can come from user config or from plugins in `bin/list-aliases`.' \
+'list:List aliases
+Shows the aliases that can be specified.
+These can come from user config or from plugins in `bin/list-aliases`.' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx alias commands' commands "$@"
+}
+(( $+functions[_rtx__help__alias_commands] )) ||
+_rtx__help__alias_commands() {
+    local commands; commands=(
+'ls:List aliases
+Shows the aliases that can be specified.
+These can come from user config or from plugins in `bin/list-aliases`.' \
+    )
+    _describe -t commands 'rtx help alias commands' commands "$@"
+}
+(( $+functions[_rtx__asdf_commands] )) ||
+_rtx__asdf_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx asdf commands' commands "$@"
+}
+(( $+functions[_rtx__help__asdf_commands] )) ||
+_rtx__help__asdf_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help asdf commands' commands "$@"
+}
+(( $+functions[_rtx__complete_commands] )) ||
+_rtx__complete_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx complete commands' commands "$@"
+}
+(( $+functions[_rtx__help__complete_commands] )) ||
+_rtx__help__complete_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help complete commands' commands "$@"
+}
+(( $+functions[_rtx__current_commands] )) ||
+_rtx__current_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx current commands' commands "$@"
+}
+(( $+functions[_rtx__help__current_commands] )) ||
+_rtx__help__current_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help current commands' commands "$@"
+}
+(( $+functions[_rtx__deactivate_commands] )) ||
+_rtx__deactivate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx deactivate commands' commands "$@"
+}
+(( $+functions[_rtx__help__deactivate_commands] )) ||
+_rtx__help__deactivate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help deactivate commands' commands "$@"
+}
+(( $+functions[_rtx__direnv_commands] )) ||
+_rtx__direnv_commands() {
+    local commands; commands=(
+'envrc:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'exec:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'activate:Output direnv function to use rtx inside direnv' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx direnv commands' commands "$@"
+}
+(( $+functions[_rtx__help__direnv_commands] )) ||
+_rtx__help__direnv_commands() {
+    local commands; commands=(
+'envrc:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'exec:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'activate:Output direnv function to use rtx inside direnv' \
+    )
+    _describe -t commands 'rtx help direnv commands' commands "$@"
+}
+(( $+functions[_rtx__doctor_commands] )) ||
+_rtx__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx doctor commands' commands "$@"
+}
+(( $+functions[_rtx__help__doctor_commands] )) ||
+_rtx__help__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help doctor commands' commands "$@"
+}
+(( $+functions[_rtx__env_commands] )) ||
+_rtx__env_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx env commands' commands "$@"
+}
+(( $+functions[_rtx__help__env_commands] )) ||
+_rtx__help__env_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help env commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__envrc_commands] )) ||
+_rtx__direnv__envrc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv envrc commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__help__envrc_commands] )) ||
+_rtx__direnv__help__envrc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv help envrc commands' commands "$@"
+}
+(( $+functions[_rtx__help__direnv__envrc_commands] )) ||
+_rtx__help__direnv__envrc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help direnv envrc commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__exec_commands] )) ||
+_rtx__direnv__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv exec commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__help__exec_commands] )) ||
+_rtx__direnv__help__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv help exec commands' commands "$@"
+}
+(( $+functions[_rtx__exec_commands] )) ||
+_rtx__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx exec commands' commands "$@"
+}
+(( $+functions[_rtx__help__direnv__exec_commands] )) ||
+_rtx__help__direnv__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help direnv exec commands' commands "$@"
+}
+(( $+functions[_rtx__help__exec_commands] )) ||
+_rtx__help__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help exec commands' commands "$@"
+}
+(( $+functions[_rtx__help__settings__get_commands] )) ||
+_rtx__help__settings__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help settings get commands' commands "$@"
+}
+(( $+functions[_rtx__settings__get_commands] )) ||
+_rtx__settings__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings get commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help__get_commands] )) ||
+_rtx__settings__help__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings help get commands' commands "$@"
+}
+(( $+functions[_rtx__global_commands] )) ||
+_rtx__global_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx global commands' commands "$@"
+}
+(( $+functions[_rtx__help__global_commands] )) ||
+_rtx__help__global_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help global commands' commands "$@"
+}
+(( $+functions[_rtx__alias__help_commands] )) ||
+_rtx__alias__help_commands() {
+    local commands; commands=(
+'ls:List aliases
+Shows the aliases that can be specified.
+These can come from user config or from plugins in `bin/list-aliases`.' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx alias help commands' commands "$@"
+}
+(( $+functions[_rtx__alias__help__help_commands] )) ||
+_rtx__alias__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias help help commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__help_commands] )) ||
+_rtx__direnv__help_commands() {
+    local commands; commands=(
+'envrc:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'exec:\[internal\] This is an internal command that writes an envrc file
+for direnv to consume.' \
+'activate:Output direnv function to use rtx inside direnv' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx direnv help commands' commands "$@"
+}
+(( $+functions[_rtx__direnv__help__help_commands] )) ||
+_rtx__direnv__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx direnv help help commands' commands "$@"
+}
+(( $+functions[_rtx__help_commands] )) ||
+_rtx__help_commands() {
+    local commands; commands=(
+'activate:Enables rtx to automatically modify runtimes when changing directory' \
+'alias:Manage aliases' \
+'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'current:Get the latest runtime version available for install' \
+'deactivate:disable rtx for current shell session' \
+'direnv:Output direnv function to use rtx inside direnv' \
+'doctor:Check rtx installation for possible problems.' \
+'complete:generate shell completions' \
+'env:exports environment variables to activate rtx in a single shell session' \
+'exec:execute a command with runtime(s) set' \
+'global:sets global .tool-versions to include a specified runtime' \
+'hook-env:\[internal\] called by activate hook to update env vars directory change' \
+'install:install a runtime' \
+'latest:get the latest runtime version of a plugin'\''s runtimes' \
+'local:Sets .tool-versions to include a specific runtime' \
+'ls:list installed runtime versions' \
+'ls-remote:list runtime versions available for install
+note that these versions are cached for commands like `rtx install nodejs@latest`
+however _this_ command will always clear that cache and fetch the latest remote versions' \
+'plugins:Manage plugins' \
+'settings:Manage settings' \
+'uninstall:removes runtime versions' \
+'version:Show rtx version' \
+'where:Display the installation path for a runtime' \
+'render-help:internal command to generate markdown from help' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx help commands' commands "$@"
+}
+(( $+functions[_rtx__help__help_commands] )) ||
+_rtx__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help help commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help_commands] )) ||
+_rtx__plugins__help_commands() {
+    local commands; commands=(
+'install:install a plugin' \
+'ls:List installed plugins' \
+'ls-remote:List all available remote plugins' \
+'uninstall:removes a plugin' \
+'update:updates a plugin to the latest version' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx plugins help commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__help_commands] )) ||
+_rtx__plugins__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help help commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help_commands] )) ||
+_rtx__settings__help_commands() {
+    local commands; commands=(
+'get:Show a current setting' \
+'ls:Show current settings' \
+'set:Add/update a setting' \
+'unset:Clears a setting' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx settings help commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help__help_commands] )) ||
+_rtx__settings__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings help help commands' commands "$@"
+}
+(( $+functions[_rtx__help__hook-env_commands] )) ||
+_rtx__help__hook-env_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help hook-env commands' commands "$@"
+}
+(( $+functions[_rtx__hook-env_commands] )) ||
+_rtx__hook-env_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx hook-env commands' commands "$@"
+}
+(( $+functions[_rtx__help__install_commands] )) ||
+_rtx__help__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help install commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__install_commands] )) ||
+_rtx__help__plugins__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins install commands' commands "$@"
+}
+(( $+functions[_rtx__install_commands] )) ||
+_rtx__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx install commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__install_commands] )) ||
+_rtx__plugins__help__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help install commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__install_commands] )) ||
+_rtx__plugins__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins install commands' commands "$@"
+}
+(( $+functions[_rtx__help__latest_commands] )) ||
+_rtx__help__latest_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help latest commands' commands "$@"
+}
+(( $+functions[_rtx__latest_commands] )) ||
+_rtx__latest_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx latest commands' commands "$@"
+}
+(( $+functions[_rtx__help__local_commands] )) ||
+_rtx__help__local_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help local commands' commands "$@"
+}
+(( $+functions[_rtx__local_commands] )) ||
+_rtx__local_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx local commands' commands "$@"
+}
+(( $+functions[_rtx__alias__help__ls_commands] )) ||
+_rtx__alias__help__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias help ls commands' commands "$@"
+}
+(( $+functions[_rtx__alias__ls_commands] )) ||
+_rtx__alias__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias ls commands' commands "$@"
+}
+(( $+functions[_rtx__help__alias__ls_commands] )) ||
+_rtx__help__alias__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help alias ls commands' commands "$@"
+}
+(( $+functions[_rtx__help__ls_commands] )) ||
+_rtx__help__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help ls commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__ls_commands] )) ||
+_rtx__help__plugins__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins ls commands' commands "$@"
+}
+(( $+functions[_rtx__help__settings__ls_commands] )) ||
+_rtx__help__settings__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help settings ls commands' commands "$@"
+}
+(( $+functions[_rtx__ls_commands] )) ||
+_rtx__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx ls commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__ls_commands] )) ||
+_rtx__plugins__help__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help ls commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__ls_commands] )) ||
+_rtx__plugins__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins ls commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help__ls_commands] )) ||
+_rtx__settings__help__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings help ls commands' commands "$@"
+}
+(( $+functions[_rtx__settings__ls_commands] )) ||
+_rtx__settings__ls_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings ls commands' commands "$@"
+}
+(( $+functions[_rtx__help__ls-remote_commands] )) ||
+_rtx__help__ls-remote_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__ls-remote_commands] )) ||
+_rtx__help__plugins__ls-remote_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__ls-remote_commands] )) ||
+_rtx__ls-remote_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__ls-remote_commands] )) ||
+_rtx__plugins__help__ls-remote_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__ls-remote_commands] )) ||
+_rtx__plugins__ls-remote_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins_commands] )) ||
+_rtx__help__plugins_commands() {
+    local commands; commands=(
+'install:install a plugin' \
+'ls:List installed plugins' \
+'ls-remote:List all available remote plugins' \
+'uninstall:removes a plugin' \
+'update:updates a plugin to the latest version' \
+    )
+    _describe -t commands 'rtx help plugins commands' commands "$@"
+}
+(( $+functions[_rtx__plugins_commands] )) ||
+_rtx__plugins_commands() {
+    local commands; commands=(
+'install:install a plugin' \
+'i:install a plugin' \
+'a:install a plugin' \
+'ls:List installed plugins' \
+'list:List installed plugins' \
+'ls-remote:List all available remote plugins' \
+'list-remote:List all available remote plugins' \
+'uninstall:removes a plugin' \
+'update:updates a plugin to the latest version' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx plugins commands' commands "$@"
+}
+(( $+functions[_rtx__help__render-help_commands] )) ||
+_rtx__help__render-help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help render-help commands' commands "$@"
+}
+(( $+functions[_rtx__render-help_commands] )) ||
+_rtx__render-help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx render-help commands' commands "$@"
+}
+(( $+functions[_rtx__help__settings__set_commands] )) ||
+_rtx__help__settings__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help settings set commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help__set_commands] )) ||
+_rtx__settings__help__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings help set commands' commands "$@"
+}
+(( $+functions[_rtx__settings__set_commands] )) ||
+_rtx__settings__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings set commands' commands "$@"
+}
+(( $+functions[_rtx__help__settings_commands] )) ||
+_rtx__help__settings_commands() {
+    local commands; commands=(
+'get:Show a current setting' \
+'ls:Show current settings' \
+'set:Add/update a setting' \
+'unset:Clears a setting' \
+    )
+    _describe -t commands 'rtx help settings commands' commands "$@"
+}
+(( $+functions[_rtx__settings_commands] )) ||
+_rtx__settings_commands() {
+    local commands; commands=(
+'get:Show a current setting' \
+'ls:Show current settings' \
+'list:Show current settings' \
+'set:Add/update a setting' \
+'unset:Clears a setting' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx settings commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__uninstall_commands] )) ||
+_rtx__help__plugins__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__help__uninstall_commands] )) ||
+_rtx__help__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__uninstall_commands] )) ||
+_rtx__plugins__help__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__uninstall_commands] )) ||
+_rtx__plugins__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__uninstall_commands] )) ||
+_rtx__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__help__settings__unset_commands] )) ||
+_rtx__help__settings__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help settings unset commands' commands "$@"
+}
+(( $+functions[_rtx__settings__help__unset_commands] )) ||
+_rtx__settings__help__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings help unset commands' commands "$@"
+}
+(( $+functions[_rtx__settings__unset_commands] )) ||
+_rtx__settings__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx settings unset commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__update_commands] )) ||
+_rtx__help__plugins__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins update commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__update_commands] )) ||
+_rtx__plugins__help__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help update commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__update_commands] )) ||
+_rtx__plugins__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins update commands' commands "$@"
+}
+(( $+functions[_rtx__help__version_commands] )) ||
+_rtx__help__version_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help version commands' commands "$@"
+}
+(( $+functions[_rtx__version_commands] )) ||
+_rtx__version_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx version commands' commands "$@"
+}
+(( $+functions[_rtx__help__where_commands] )) ||
+_rtx__help__where_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help where commands' commands "$@"
+}
+(( $+functions[_rtx__where_commands] )) ||
+_rtx__where_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx where commands' commands "$@"
+}
+
+_rtx "$@"
+
