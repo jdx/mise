@@ -6,7 +6,7 @@ expression: envrc
 watch_file ~/cwd/.tool-versions
 watch_file ~/cwd/.node-version
 watch_file ~/.tool-versions
-PATH_add ~/data/installs/shfmt/3.6.0/bin
+PATH_add ~/data/installs/shfmt/3.5.2/bin
 PATH_add ~/data/installs/jq/1.6/bin
 PATH_add ~/data/installs/shellcheck/0.9.0/bin
 

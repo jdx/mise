@@ -54,16 +54,6 @@ impl RuntimeVersion {
         Ok(versions)
     }
 
-    pub fn find_by_version_prefix(plugin: &str, prefix: &str) -> Result<Self> {
-        let rtv = Self::list()?
-            .into_iter()
-            .rev()
-            .find(|rtv| rtv.plugin.name == plugin && rtv.version.starts_with(prefix))
-            .ok_or_else(|| VersionNotInstalled(plugin.into(), prefix.into()))?;
-
-        Ok(rtv)
-    }
-
     pub fn install(&self, install_type: &str, config: &Config) -> Result<()> {
         debug!(
             "install {} {} {}",
