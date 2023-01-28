@@ -183,7 +183,9 @@ sudo apt install -y rtx
 > **Warning**
 >
 > If you're on arm64 you'll need to run the following:
->     echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> ```
+> echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> ```
 
 ### ~~dnf~~ (coming soon)
 
