@@ -89,6 +89,6 @@ mod test {
     #[test]
     fn test_where_not_found() {
         let err = assert_cli_err!("where", "shfmt@1111");
-        assert_display_snapshot!(err, @"runtime version not installed: shfmt@1111");
+        assert_display_snapshot!(err, @"[shfmt] version 1111 not installed: 1111");
     }
 }

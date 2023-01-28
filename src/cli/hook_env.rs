@@ -1,8 +1,8 @@
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
-use crate::config::settings::MissingRuntimeBehavior::Ignore;
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::Ignore;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::hook_env::HookEnvWatches;
 use crate::output::Output;

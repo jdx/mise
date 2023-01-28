@@ -1,38 +1,37 @@
-use std::fmt::{Display, Formatter};
 use std::fs;
-use std::fs::{remove_file, File};
-use std::io::{Read, Write};
+use std::fs::remove_file;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
-use duct::Expression;
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use owo_colors::{OwoColorize, Stream};
 use regex::Regex;
-use serde_derive::{Deserialize, Serialize};
 use versions::Mess;
 
-use crate::cli::args::runtime::RuntimeArg;
+use cache::PluginCache;
+pub use script_manager::{InstallType, Script, ScriptManager};
+
 use crate::cmd::cmd;
-use crate::config::settings::{MissingRuntimeBehavior, Settings};
+use crate::config::{MissingRuntimeBehavior, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::changed_within;
 use crate::git::Git;
 use crate::hash::hash_to_str;
+use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand_repository::ShorthandRepo;
-use crate::ui::prompt::prompt;
-use crate::{dirs, env, file};
-use crate::{fake_asdf, ui};
+use crate::ui::prompt;
+use crate::{dirs, file};
+
+mod cache;
+mod script_manager;
 
 pub type PluginName = String;
 
+/// This represents a plugin installed to ~/.local/share/rtx/plugins
 #[derive(Debug, Clone)]
 pub struct Plugin {
     pub name: PluginName,
@@ -41,15 +40,7 @@ pub struct Plugin {
     downloads_path: PathBuf,
     installs_path: PathBuf,
     cache: Option<PluginCache>,
-}
-
-#[derive(Debug, Clone)]
-pub enum PluginSource {
-    ToolVersions(PathBuf),
-    RtxRc(PathBuf),
-    LegacyVersionFile(PathBuf),
-    Argument(RuntimeArg),
-    Environment(String, String),
+    script_man: ScriptManager,
 }
 
 impl Plugin {
@@ -58,6 +49,7 @@ impl Plugin {
         Self {
             name: name.into(),
             cache_path: plugin_path.join(".rtxcache.msgpack.gz"),
+            script_man: ScriptManager::new(plugin_path.clone()),
             plugin_path,
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
@@ -93,7 +85,7 @@ impl Plugin {
         self.plugin_path.exists()
     }
 
-    pub fn get_remote_url(&self) -> Result<String> {
+    pub fn get_remote_url(&self) -> Option<String> {
         let git = Git::new(self.plugin_path.to_path_buf());
         git.get_remote_url()
     }
@@ -104,7 +96,6 @@ impl Plugin {
             "rtx: Installing plugin {}...",
             self.name.if_supports_color(Stream::Stderr, |t| t.cyan())
         );
-        fake_asdf::setup(&fake_asdf::get_path(dirs::ROOT.as_path()))?;
 
         if self.is_installed() {
             self.uninstall()?;
@@ -129,7 +120,7 @@ impl Plugin {
                     self.install(&repo)?;
                     Ok(true)
                 }
-                MissingRuntimeBehavior::Prompt => match prompt_for_install(&self.name) {
+                MissingRuntimeBehavior::Prompt => match prompt::prompt_for_install(&self.name) {
                     true => {
                         self.install(&repo)?;
                         Ok(true)
@@ -156,7 +147,16 @@ impl Plugin {
     }
 
     pub fn update(&self, gitref: Option<String>) -> Result<()> {
-        let git = Git::new(self.plugin_path.to_path_buf());
+        let plugin_path = self.plugin_path.to_path_buf();
+        if plugin_path.is_symlink() {
+            warn!("Plugin: {} is a symlink, not updating", self.name);
+            return Ok(());
+        }
+        let git = Git::new(plugin_path);
+        if !git.is_repo() {
+            warn!("Plugin {} is not a git repository not updating", self.name);
+            return Ok(());
+        }
         // TODO: asdf_run_hook "pre_plugin_update"
         let (_pre, _post) = git.update(gitref)?;
         // TODO: asdf_run_hook "post_plugin_update"
@@ -278,23 +278,14 @@ impl Plugin {
         exit(result.status.code().unwrap_or(1));
     }
 
-    fn run_script(&self, script: &str, args: Vec<String>) -> Result<Expression> {
-        if !self.is_installed() {
-            return Err(PluginNotInstalled(self.name.clone()).into());
-        }
-        Ok(cmd(self.plugin_path.join("bin").join(script), args)
-            .env("RTX", "1")
-            .env("RTX_EXE", env::RTX_EXE.as_path()))
-    }
-
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let stdout = self
-            .run_script("list-all", vec![])?
-            .read()
-            .wrap_err_with(|| eyre!("error running list-all script for {}", self.name))?;
-        let versions = stdout.split_whitespace().map(|v| v.into()).collect();
-
-        Ok(versions)
+        Ok(self
+            .script_man
+            .cmd(Script::ListAll)
+            .read()?
+            .split_whitespace()
+            .map(|v| v.into())
+            .collect())
     }
 
     fn get_cache(&self) -> Result<PluginCache> {
@@ -356,31 +347,22 @@ impl Plugin {
     }
 
     fn fetch_legacy_filenames(&self) -> Result<Vec<String>> {
-        if !self
-            .plugin_path
-            .join("bin")
-            .join("list-legacy-filenames")
-            .is_file()
-        {
+        if !self.script_man.script_exists(&Script::ListLegacyFilenames) {
             return Ok(vec![]);
         }
-        let stdout = self
-            .run_script("list-legacy-filenames", vec![])?
-            .read()
-            .wrap_err_with(|| eyre!("running list-legacy-filenames script for {}", self.name))?;
-        let versions = stdout.split_whitespace().map(|v| v.into()).collect();
-
-        Ok(versions)
+        Ok(self
+            .script_man
+            .read(Script::ListLegacyFilenames)?
+            .split_whitespace()
+            .map(|v| v.into())
+            .collect())
     }
 
     fn fetch_aliases(&self) -> Result<Vec<(String, String)>> {
-        if !self.plugin_path.join("bin").join("list-aliases").is_file() {
+        if !self.script_man.script_exists(&Script::ListAliases) {
             return Ok(vec![]);
         }
-        let stdout = self
-            .run_script("list-aliases", vec![])?
-            .read()
-            .wrap_err_with(|| eyre!("running list-aliases script for {}", self.name))?;
+        let stdout = self.script_man.read(Script::ListAliases)?;
         let aliases = stdout
             .lines()
             .filter_map(|line| {
@@ -404,17 +386,8 @@ impl Plugin {
         }
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let legacy_version = self
-            .run_script(
-                "parse-legacy-file",
-                vec![legacy_file.to_string_lossy().into()],
-            )?
-            .read()
-            .wrap_err_with(|| {
-                eyre!(
-                    "error parsing legacy file: {}",
-                    legacy_file.to_string_lossy()
-                )
-            })?
+            .script_man
+            .read(ParseLegacyFile(legacy_file.to_string_lossy().into()))?
             .trim()
             .to_string();
 
@@ -446,72 +419,17 @@ impl Plugin {
     }
 }
 
-fn prompt_for_install(thing: &str) -> bool {
-    match ui::is_tty() {
-        true => {
-            eprint!(
-                "rtx: Would you like to install plugin {}? [Y/n] ",
-                thing.cyan()
-            );
-            matches!(prompt().to_lowercase().as_str(), "" | "y" | "yes")
-        }
-        false => false,
-    }
-}
-
 impl PartialEq for Plugin {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
-struct PluginCache {
-    versions: Vec<String>,
-    legacy_filenames: Vec<String>,
-    aliases: Vec<(String, String)>,
-}
-
-impl PluginCache {
-    fn parse(path: &Path) -> Result<Self> {
-        trace!("reading plugin cache from {}", path.to_string_lossy());
-        let mut gz = GzDecoder::new(File::open(path)?);
-        let mut bytes = Vec::new();
-        gz.read_to_end(&mut bytes)?;
-        Ok(rmp_serde::from_slice(&bytes)?)
-    }
-
-    fn write(&self, path: &Path) -> Result<()> {
-        trace!("writing plugin cache to {}", path.to_string_lossy());
-        let mut gz = GzEncoder::new(File::create(path)?, Compression::fast());
-        gz.write_all(&rmp_serde::to_vec_named(self)?[..])?;
-
-        Ok(())
-    }
-}
-
-impl Display for PluginSource {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self {
-            PluginSource::ToolVersions(path) => write!(f, "{}", display_path(path)),
-            PluginSource::RtxRc(path) => write!(f, "{}", display_path(path)),
-            PluginSource::LegacyVersionFile(path) => write!(f, "{}", display_path(path)),
-            PluginSource::Argument(arg) => write!(f, "--runtime {arg}"),
-            PluginSource::Environment(k, v) => write!(f, "{k}={v}"),
-        }
-    }
-}
-
-fn display_path(path: &Path) -> String {
-    let home = dirs::HOME.to_string_lossy();
-    path.to_string_lossy().replace(home.as_ref(), "~")
-}
-
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
+    use crate::{assert_cli, env};
 
     use super::*;
 

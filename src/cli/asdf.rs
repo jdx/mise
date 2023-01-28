@@ -61,12 +61,15 @@ fn list_versions(out: &mut Output, args: &Vec<String>) -> Result<()> {
 
 #[cfg(test)]
 mod test {
+    use pretty_assertions::assert_str_eq;
+
     use crate::assert_cli;
+    use crate::cli::version::VERSION;
 
     #[test]
     fn test_fake_asdf() {
         let stdout = assert_cli!("asdf", "-v");
-        assert!(stdout.starts_with("rtx "));
+        assert_str_eq!(stdout, VERSION.to_string() + "\n");
     }
 
     #[test]

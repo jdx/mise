@@ -6,7 +6,8 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::plugins::{Plugin, PluginName, PluginSource};
+use crate::config::PluginSource;
+use crate::plugins::{Plugin, PluginName};
 
 #[derive(Debug)]
 pub struct LegacyVersionFile {

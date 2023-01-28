@@ -1021,6 +1021,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num_cpus",
+ "once_cell",
  "owo-colors",
  "pretty_assertions",
  "rayon",

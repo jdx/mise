@@ -7,6 +7,15 @@ use filetime::{set_file_times, FileTime};
 
 use crate::dirs;
 
+pub fn basename(path: &Path) -> Option<String> {
+    path.file_name().map(|f| f.to_string_lossy().to_string())
+}
+
+pub fn display_path(path: &Path) -> String {
+    let home = dirs::HOME.to_string_lossy();
+    path.to_string_lossy().replace(home.as_ref(), "~")
+}
+
 pub fn changed_within(f: &Path, within: Duration) -> Result<bool> {
     let now = std::time::SystemTime::now();
     let last_modified = f.metadata()?.modified()?;
