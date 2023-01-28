@@ -3,3 +3,4 @@ source: src/cli/plugins/uninstall.rs
 expression: stdout
 ---
 uninstalling plugin: nodejs
+

@@ -33,10 +33,12 @@ impl Command for PluginsLs {
 
         for plugin in config.ts.list_installed_plugins() {
             if self.urls {
-                rtxprintln!(out, "{:29} {}", plugin.name, plugin.get_remote_url()?);
-            } else {
-                rtxprintln!(out, "{}", plugin.name);
+                if let Some(url) = plugin.get_remote_url() {
+                    rtxprintln!(out, "{:29} {}", plugin.name, url);
+                    continue;
+                }
             }
+            rtxprintln!(out, "{}", plugin.name);
         }
         Ok(())
     }
@@ -59,9 +61,10 @@ const AFTER_LONG_HELP: &str = indoc! {r#"
 
 #[cfg(test)]
 mod test {
+    use pretty_assertions::assert_str_eq;
+
     use crate::assert_cli;
     use crate::cli::test::grep;
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_plugin_list() {

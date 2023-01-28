@@ -3,8 +3,8 @@ use serde_derive::Deserialize;
 
 use crate::cli::command::Command;
 use crate::cmd;
-use crate::config::settings::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::output::Output;
 
 /// [internal] This is an internal command that writes an envrc file

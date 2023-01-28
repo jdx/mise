@@ -12,8 +12,8 @@ use toml::Value;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::{MissingRuntimeBehavior, Settings, SettingsBuilder};
 use crate::config::AliasMap;
+use crate::config::PluginSource;
 use crate::plugins::PluginName;
-use crate::plugins::PluginSource;
 
 const ENV_SUGGESTION: &str = r#"
 [env]

@@ -8,9 +8,9 @@ use owo_colors::{OwoColorize, Stream};
 use versions::Mess;
 
 use crate::cli::command::Command;
-use crate::config::Config;
+use crate::config::{Config, PluginSource};
 use crate::output::Output;
-use crate::plugins::{PluginName, PluginSource};
+use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
 
 /// list installed runtime versions

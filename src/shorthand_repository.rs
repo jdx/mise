@@ -5,7 +5,7 @@ use std::time::Duration;
 use color_eyre::eyre::{eyre, Result};
 use owo_colors::{OwoColorize, Stream};
 
-use crate::config::settings::Settings;
+use crate::config::Settings;
 use crate::file::changed_within;
 use crate::git::Git;
 use crate::{dirs, file};

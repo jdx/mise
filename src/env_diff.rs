@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Debug;
 use std::io::prelude::*;
 use std::path::Path;
@@ -55,7 +56,14 @@ impl EnvDiff {
         diff
     }
 
-    pub fn from_bash_script(script: &Path, env: HashMap<String, String>) -> Result<Self> {
+    pub fn from_bash_script<T, U, V>(script: &Path, env: T) -> Result<Self>
+    where
+        T: IntoIterator<Item = (U, V)>,
+        U: Into<OsString>,
+        V: Into<OsString>,
+    {
+        let env: HashMap<OsString, OsString> =
+            env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         let out = cmd!(
             "bash",
             "-c",
@@ -74,7 +82,7 @@ impl EnvDiff {
             if k == "_" || k == "SHLVL" || k == "PATH" {
                 continue;
             }
-            if let Some(orig) = env.get(k) {
+            if let Some(orig) = env.get(OsStr::new(k)) {
                 if v == orig {
                     continue;
                 }
@@ -223,7 +231,7 @@ mod tests {
         }
         .into_iter()
         .map(|(k, v)| (k.into(), v.into()))
-        .collect::<HashMap<String, String>>();
+        .collect::<Vec<(String, String)>>();
         let ed = EnvDiff::from_bash_script(path.as_path(), orig).unwrap();
         assert_debug_snapshot!(ed);
     }
