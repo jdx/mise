@@ -169,7 +169,7 @@ $ curl https://github.com/jdxcode/rtx/releases/rtx-latest-macos-arm64.tar.xz | t
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
-### ~~apt~~ (coming soon)
+### apt
 
 For installation on Ubuntu/Debian:
 
@@ -187,7 +187,7 @@ sudo apt install -y rtx
 > echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
-### ~~dnf~~ (coming soon)
+### dnf
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
@@ -197,11 +197,11 @@ dnf config-manager --add-repo https://rtx.jdxcode.com/rpm/rtx.repo
 dnf install -y rtx
 ```
 
-### ~~yum~~ (coming soon)
+### yum
 
 ```sh-session
 yum install -y yum-utils
-yum config-manager --add-repo https://rtx.jdxcode.com/rpm/rtx.repo
+yum-config-manager --add-repo https://rtx.jdxcode.com/rpm/rtx.repo
 yum install -y rtx
 ```
 
