@@ -50,3 +50,8 @@ lint-fix:
 
 render-help:
     ./.bin/rtx render-help > README.md
+
+render-completions:
+    ./.bin/rtx complete -s bash > completions/rtx.bash
+    ./.bin/rtx complete -s zsh > completions/_rtx
+    ./.bin/rtx complete -s fish > completions/rtx.fish

@@ -12,6 +12,7 @@ mod alias;
 pub mod args;
 mod asdf;
 pub mod command;
+mod complete;
 mod current;
 mod deactivate;
 mod direnv;
@@ -46,6 +47,7 @@ pub enum Commands {
     Activate(activate::Activate),
     Alias(alias::Alias),
     Asdf(asdf::Asdf),
+    Complete(complete::Complete),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
@@ -75,6 +77,7 @@ impl Commands {
             Self::Activate(cmd) => cmd.run(config, out),
             Self::Alias(cmd) => cmd.run(config, out),
             Self::Asdf(cmd) => cmd.run(config, out),
+            Self::Complete(cmd) => cmd.run(config, out),
             Self::Current(cmd) => cmd.run(config, out),
             Self::Deactivate(cmd) => cmd.run(config, out),
             Self::Direnv(cmd) => cmd.run(config, out),
