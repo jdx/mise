@@ -37,15 +37,14 @@ const AFTER_LONG_HELP: &str = indoc! {r#"
 mod test {
     use insta::{assert_display_snapshot, assert_snapshot};
 
-    use crate::output::Output;
     use crate::test::reset_config;
     use crate::{assert_cli, assert_cli_err};
 
     #[test]
     fn test_settings_get() {
         reset_config();
-        let Output { stdout, .. } = assert_cli!("settings", "get", "legacy_version_file");
-        assert_snapshot!(stdout.content, @r###"
+        let stdout = assert_cli!("settings", "get", "legacy_version_file");
+        assert_snapshot!(stdout, @r###"
         true
         "###);
     }

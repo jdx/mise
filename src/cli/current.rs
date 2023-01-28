@@ -54,23 +54,21 @@ mod test {
 
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_current() {
         assert_cli!("plugin", "add", "shellcheck");
         assert_cli!("install");
-        let Output { stdout, .. } = assert_cli!("current");
+        let stdout = assert_cli!("current");
         let re = Regex::new(r"-> shellcheck\s+0\.9\.0\s+").unwrap();
-        assert!(re.is_match(&stdout.content));
+        assert!(re.is_match(&stdout));
     }
 
     #[test]
     fn test_current_with_runtimes() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install");
-        let Output { stdout, .. } = assert_cli!("current", "shfmt");
+        let stdout = assert_cli!("current", "shfmt");
         let re = Regex::new(r"-> shfmt\s+3\.5\.2\s+").unwrap();
-        assert!(re.is_match(&stdout.content));
+        assert!(re.is_match(&stdout));
     }
 }

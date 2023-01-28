@@ -101,7 +101,7 @@ mod test {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::test::grep;
-    use crate::output::Output;
+
     use crate::{assert_cli, dirs};
 
     #[test]
@@ -111,15 +111,15 @@ mod test {
 
         assert_cli!("plugin", "add", "nodejs");
         assert_cli!("install", "shfmt@2");
-        let Output { stdout, .. } = assert_cli!("local", "shfmt@2");
-        assert_snapshot!(stdout.content);
-        let Output { stdout, .. } = assert_cli!("local", "--fuzzy", "shfmt@2");
-        assert_snapshot!(stdout.content);
-        let Output { stdout, .. } = assert_cli!("local", "--remove", "nodejs");
-        assert_snapshot!(stdout.content);
-        let Output { stdout, .. } = assert_cli!("ls", "--current");
+        let stdout = assert_cli!("local", "shfmt@2");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("local", "--fuzzy", "shfmt@2");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("local", "--remove", "nodejs");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("ls", "--current");
         assert_str_eq!(
-            grep(&stdout, "nodejs").unwrap(),
+            grep(stdout, "nodejs"),
             "   nodejs     18.0.0 (missing)   (set by ~/cwd/.node-version)"
         );
 

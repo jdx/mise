@@ -54,25 +54,23 @@ mod test {
 
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_latest() {
         assert_cli!("plugins", "install", "nodejs");
-        let Output { stdout, .. } = assert_cli!("latest", "nodejs@12");
-        assert_display_snapshot!(stdout.content);
+        let stdout = assert_cli!("latest", "nodejs@12");
+        assert_display_snapshot!(stdout);
     }
 
     #[test]
     fn test_latest_ruby() {
         assert_cli!("plugins", "install", "ruby");
-        let Output { stdout, .. } = assert_cli!("latest", "ruby");
-        assert!(stdout.content.starts_with("3."));
+        let stdout = assert_cli!("latest", "ruby");
+        assert!(stdout.starts_with("3."));
     }
 
     #[test]
     fn test_latest_asdf_format() {
-        let Output { stdout, .. } = assert_cli!("latest", "nodejs", "12");
-        assert_display_snapshot!(stdout.content);
+        let stdout = assert_cli!("latest", "nodejs", "12");
+        assert_display_snapshot!(stdout);
     }
 }

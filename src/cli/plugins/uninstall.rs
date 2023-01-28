@@ -49,16 +49,15 @@ mod test {
 
     use crate::assert_cli;
     use crate::cli::test::ensure_plugin_installed;
-    use crate::output::Output;
 
     #[test]
     fn test_plugin_uninstall() {
         ensure_plugin_installed("nodejs");
 
-        let Output { stdout, .. } = assert_cli!("plugin", "rm", "nodejs");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("plugin", "rm", "nodejs");
+        assert_snapshot!(stdout);
 
-        let Output { stdout, .. } = assert_cli!("plugin", "rm", "nodejs");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("plugin", "rm", "nodejs");
+        assert_snapshot!(stdout);
     }
 }

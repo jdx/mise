@@ -172,9 +172,11 @@ const AFTER_HELP: &str = indoc! {"
 
 #[cfg(test)]
 pub mod test {
+
     use crate::config::settings::MissingRuntimeBehavior::AutoInstall;
     use crate::config::settings::Settings;
-    use crate::output::OutputStream;
+    use crate::dirs;
+
     use crate::plugins::{Plugin, PluginName};
 
     use super::*;
@@ -191,7 +193,7 @@ pub mod test {
     macro_rules! assert_cli {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::test::cli_run(args).unwrap()
+            $crate::cli::test::cli_run(args).unwrap().stdout.content
         }};
     }
 
@@ -211,10 +213,12 @@ pub mod test {
         Plugin::load_ensure_installed(&PluginName::from(name), &settings).unwrap();
     }
 
-    pub fn grep<'a>(output: &'a OutputStream, pattern: &str) -> Option<&'a str> {
+    pub fn grep(output: String, pattern: &str) -> String {
         output
-            .content
             .split('\n')
             .find(|line| line.contains(pattern))
+            .map(|line| line.to_string())
+            .unwrap_or_default()
+            .replace(dirs::HOME.to_string_lossy().as_ref(), "~")
     }
 }

@@ -49,12 +49,11 @@ const AFTER_LONG_HELP: &str = indoc! {r#"
 mod test {
     use crate::assert_cli;
     use crate::cli::test::ensure_plugin_installed;
-    use crate::output::Output;
 
     #[test]
     fn test_alias_ls() {
         ensure_plugin_installed("shfmt");
-        let Output { stdout, .. } = assert_cli!("aliases");
-        assert!(stdout.content.contains("my/alias"));
+        let stdout = assert_cli!("aliases");
+        assert!(stdout.contains("my/alias"));
     }
 }

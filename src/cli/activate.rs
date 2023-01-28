@@ -48,11 +48,9 @@ mod test {
 
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_activate_zsh() {
-        let Output { stdout, .. } = assert_cli!("activate", "-s", "zsh");
-        assert_display_snapshot!(stdout.content);
+        let stdout = assert_cli!("activate", "-s", "zsh");
+        assert_display_snapshot!(stdout);
     }
 }

@@ -1,6 +1,5 @@
 ---
 source: src/cli/global.rs
-expression: stdout.content
+expression: stdout
 ---
 shfmt 2
-
