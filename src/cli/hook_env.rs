@@ -49,6 +49,9 @@ impl Command for HookEnv {
 
 fn get_watches(config: &Config) -> Result<HookEnvWatches> {
     let mut watches = HookEnvWatches::new();
+    if dirs::ROOT.exists() {
+        watches.insert(dirs::ROOT.clone(), dirs::ROOT.metadata()?.modified()?);
+    }
     for cf in &config.config_files {
         watches.insert(cf.clone(), cf.metadata()?.modified()?);
     }

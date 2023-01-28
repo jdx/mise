@@ -104,8 +104,10 @@ impl RuntimeVersion {
         conf.write(&self.runtime_conf_path)?;
 
         // attempt to touch all the .tool-version files to trigger updates in hook-env
-        for path in &config.config_files {
-            let err = file::touch_dir(path);
+        let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
+        touch_dirs.extend(config.config_files.iter().cloned());
+        for path in touch_dirs {
+            let err = file::touch_dir(&path);
             if let Err(err) = err {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
