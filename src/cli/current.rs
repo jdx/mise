@@ -38,8 +38,9 @@ impl Command for Current {
                 let source = config.ts.get_source_for_plugin(&rtv.plugin.name).unwrap();
                 warn!(
                     "{}@{} is specified in {}, but not installed",
-                    rtv.plugin.name, source, rtv.version
+                    rtv.plugin.name, rtv.version, source
                 );
+                continue;
             }
             if let Some(plugin) = &plugin {
                 if plugin != &rtv.plugin {
