@@ -63,13 +63,13 @@ impl Config {
         Ok(config)
     }
 
-    pub fn env(&self) -> Result<IndexMap<OsString, OsString>> {
+    pub fn env(&self) -> Result<IndexMap<String, String>> {
         let mut entries = self
             .ts
             .list_current_installed_versions()
             .into_par_iter()
             .map(|p| p.exec_env())
-            .collect::<Result<Vec<HashMap<OsString, OsString>>>>()?
+            .collect::<Result<Vec<HashMap<String, String>>>>()?
             .into_iter()
             .flatten()
             .collect_vec();
@@ -90,7 +90,7 @@ impl Config {
         Ok(paths)
     }
 
-    pub fn path_env(&self) -> Result<OsString> {
+    pub fn path_env(&self) -> Result<String> {
         let mut paths = self.list_paths()?;
         let default_path = String::new();
         let orig_path = env::PRISTINE_ENV.get("PATH").unwrap_or(&default_path);
@@ -101,7 +101,7 @@ impl Config {
             }
             paths.push(p);
         }
-        Ok(join_paths(paths)?)
+        Ok(join_paths(paths)?.to_string_lossy().into())
     }
 
     pub fn with_runtime_args(mut self, args: &[RuntimeArg]) -> Result<Self> {

@@ -1,6 +1,7 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 
 use color_eyre::eyre::{eyre, Result};
+use duct::IntoExecutablePath;
 use indexmap::IndexMap;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
@@ -54,16 +55,30 @@ impl Command for Exec {
 }
 
 #[cfg(not(test))]
-fn exec(program: OsString, args: Vec<OsString>, env: IndexMap<OsString, OsString>) -> Result<()> {
+fn exec<T, U, E>(program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+    E: AsRef<OsStr>,
+{
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let program = program.to_executable();
     let err = exec::Command::new(program.clone()).args(&args).exec();
-    Err(eyre!("{:?} {}", program, err))
+    Err(eyre!("{:?} {}", program.to_string_lossy(), err.to_string()))
 }
 
 #[cfg(test)]
-fn exec(program: OsString, args: Vec<OsString>, env: IndexMap<OsString, OsString>) -> Result<()> {
+fn exec<T, U, E>(program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+    E: AsRef<OsStr>,
+{
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);
