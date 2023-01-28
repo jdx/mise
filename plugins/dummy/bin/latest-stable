@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+get_latest_stable() {
+  query=$1
+
+  version_list=(1.0.0 1.1.0 2.0.0)
+  printf "%s\n" "${version_list[@]}" | grep -E "^\s*$query" | tail -1
+}
+
+get_latest_stable "$1"
