@@ -153,21 +153,19 @@ mod test {
 
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_list() {
         assert_cli!("install");
         assert_cli!("install", "shfmt@3.5.0");
-        let Output { stdout, .. } = assert_cli!("list");
+        let stdout = assert_cli!("list");
         let re = Regex::new(r"-> shellcheck\s+0\.9\.0\s+").unwrap();
-        assert!(re.is_match(&stdout.content));
+        assert!(re.is_match(&stdout));
         let re = Regex::new(r" {3}shfmt\s+3\.5\.0\s+").unwrap();
-        assert!(re.is_match(&stdout.content));
+        assert!(re.is_match(&stdout));
 
         assert_cli!("uninstall", "shfmt@3.5.2");
-        let Output { stdout, .. } = assert_cli!("list");
+        let stdout = assert_cli!("list");
         let re = Regex::new(r" {3}shfmt\s+3\.5\.2 \(missing\)\s+").unwrap();
-        assert!(re.is_match(&stdout.content));
+        assert!(re.is_match(&stdout));
     }
 }

@@ -76,7 +76,6 @@ mod test {
 
     use insta::assert_snapshot;
 
-    use crate::output::Output;
     use crate::{assert_cli, dirs};
 
     #[test]
@@ -86,12 +85,12 @@ mod test {
         let _ = fs::remove_file(&cf_path);
 
         assert_cli!("install", "shfmt@2");
-        let Output { stdout, .. } = assert_cli!("global", "shfmt@2");
-        assert_snapshot!(stdout.content);
-        let Output { stdout, .. } = assert_cli!("global", "--fuzzy", "shfmt@2");
-        assert_snapshot!(stdout.content);
-        let Output { stdout, .. } = assert_cli!("global", "--remove", "nodejs");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("global", "shfmt@2");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("global", "--fuzzy", "shfmt@2");
+        assert_snapshot!(stdout);
+        let stdout = assert_cli!("global", "--remove", "nodejs");
+        assert_snapshot!(stdout);
 
         if let Some(orig) = orig {
             fs::write(cf_path, orig).unwrap();

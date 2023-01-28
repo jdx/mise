@@ -34,15 +34,15 @@ mod test {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-    use crate::output::Output;
+
     use crate::test::reset_config;
 
     #[test]
     fn test_settings_unset() {
         reset_config();
 
-        let Output { stdout, .. } = assert_cli!("settings");
-        assert_snapshot!(stdout.content, @r###"
+        let stdout = assert_cli!("settings");
+        assert_snapshot!(stdout, @r###"
         missing_runtime_behavior = autoinstall
         always_keep_download = true
         legacy_version_file = true
@@ -53,8 +53,8 @@ mod test {
 
         assert_cli!("settings", "unset", "legacy_version_file");
 
-        let Output { stdout, .. } = assert_cli!("settings");
-        assert_snapshot!(stdout.content, @r###"
+        let stdout = assert_cli!("settings");
+        assert_snapshot!(stdout, @r###"
         missing_runtime_behavior = autoinstall
         always_keep_download = true
         legacy_version_file = true

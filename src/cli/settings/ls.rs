@@ -35,13 +35,13 @@ mod test {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-    use crate::output::Output;
+
     use crate::test::reset_config;
 
     #[test]
     fn test_settings_ls() {
         reset_config();
-        let Output { stdout, .. } = assert_cli!("settings");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("settings");
+        assert_snapshot!(stdout);
     }
 }

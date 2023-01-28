@@ -44,12 +44,10 @@ mod test {
     use crate::assert_cli;
     use crate::cli::test::ensure_plugin_installed;
 
-    use super::*;
-
     #[test]
     fn test_list_remote() {
         ensure_plugin_installed("nodejs");
-        let Output { stdout, .. } = assert_cli!("list-remote", "nodejs");
-        assert!(stdout.content.contains("18.0.0"));
+        let stdout = assert_cli!("list-remote", "nodejs");
+        assert!(stdout.contains("18.0.0"));
     }
 }

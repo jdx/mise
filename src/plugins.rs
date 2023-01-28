@@ -93,6 +93,11 @@ impl Plugin {
         self.plugin_path.exists()
     }
 
+    pub fn get_remote_url(&self) -> Result<String> {
+        let git = Git::new(self.plugin_path.to_path_buf());
+        git.get_remote_url()
+    }
+
     pub fn install(&self, repository: &String) -> Result<()> {
         debug!("install {} {:?}", self.name, repository);
         eprint!(

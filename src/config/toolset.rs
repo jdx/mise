@@ -73,20 +73,24 @@ impl Toolset {
     }
 
     pub fn list_plugins(&self) -> Vec<Arc<Plugin>> {
-        self.plugins.values().map(Arc::clone).collect()
+        self.plugins
+            .values()
+            .sorted_by_cached_key(|p| p.name.clone())
+            .map(Arc::clone)
+            .collect()
     }
 
     pub fn list_installed_plugins(&self) -> Vec<Arc<Plugin>> {
-        self.plugins
-            .values()
+        self.list_plugins()
+            .into_iter()
             .filter(|p| p.is_installed())
-            .map(Arc::clone)
             .collect()
     }
 
     pub fn list_current_plugins(&self) -> Vec<Arc<Plugin>> {
         self.current_versions
             .keys()
+            .sorted()
             .map(|p| self.find_plugin(p).unwrap())
             .collect()
     }
@@ -94,6 +98,7 @@ impl Toolset {
     pub fn list_installed_versions(&self) -> Vec<Arc<RuntimeVersion>> {
         self.installed_versions
             .iter()
+            .sorted_by_cached_key(|(plugin_name, _)| plugin_name.to_string())
             .flat_map(|(_, versions)| versions.iter().map(|(_, rtv)| rtv.clone()))
             .collect()
     }

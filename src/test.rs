@@ -2,7 +2,7 @@ use std::fs;
 
 use indoc::indoc;
 
-use crate::{cmd, env};
+use crate::{assert_cli, cmd, env};
 
 #[ctor::ctor]
 fn init() {
@@ -20,8 +20,18 @@ fn init() {
     {
         warn!("failed to reset test files: {}", err);
     }
-
     reset_config();
+    assert_cli!(
+        "plugin",
+        "install",
+        "tiny",
+        "https://github.com/jdxcode/asdf-tiny"
+    );
+    assert_cli!("plugin", "install", "shellcheck");
+    assert_cli!("plugin", "install", "shfmt");
+    assert_cli!("plugin", "install", "nodejs");
+    assert_cli!("plugin", "install", "jq");
+    assert_cli!("install");
 }
 
 pub fn reset_config() {

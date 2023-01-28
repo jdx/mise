@@ -1,6 +1,6 @@
 ---
 source: src/cli/activate.rs
-expression: stdout.content
+expression: stdout
 ---
 export PATH=":$PATH"
 _rtx_hook() {
@@ -16,4 +16,3 @@ typeset -ag chpwd_functions;
 if [[ -z "${chpwd_functions[(r)_rtx_hook]+1}" ]]; then
   chpwd_functions=( _rtx_hook ${chpwd_functions[@]} )
 fi
-

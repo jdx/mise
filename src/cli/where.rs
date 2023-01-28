@@ -64,15 +64,13 @@ mod test {
     use crate::dirs;
     use crate::{assert_cli, assert_cli_err};
 
-    use super::*;
-
     #[test]
     fn test_where() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install");
-        let Output { stdout, .. } = assert_cli!("where", "shfmt");
+        let stdout = assert_cli!("where", "shfmt");
         assert_str_eq!(
-            stdout.content.trim(),
+            stdout.trim(),
             dirs::ROOT.join("installs/shfmt/3.5.2").to_string_lossy()
         );
     }
@@ -81,9 +79,9 @@ mod test {
     fn test_where_alias() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install", "shfmt@my/alias");
-        let Output { stdout, .. } = assert_cli!("where", "shfmt@my/alias");
+        let stdout = assert_cli!("where", "shfmt@my/alias");
         assert_str_eq!(
-            stdout.content.trim(),
+            stdout.trim(),
             dirs::ROOT.join("installs/shfmt/3.0.2").to_string_lossy()
         );
     }

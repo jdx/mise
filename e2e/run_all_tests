@@ -4,6 +4,7 @@ set -euo pipefail
 export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
 export RTX_DATA_DIR="/tmp/rtx"
 export PATH="$PWD/target/debug:$PATH"
+unset GOPATH
 
 rtx plugin add nodejs
 rtx plugin add shfmt

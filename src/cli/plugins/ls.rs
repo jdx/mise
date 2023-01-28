@@ -5,7 +5,6 @@ use crate::cli::command::Command;
 use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
-use crate::shorthand_repository::ShorthandRepo;
 
 /// List installed plugins
 ///
@@ -34,9 +33,7 @@ impl Command for PluginsLs {
 
         for plugin in config.ts.list_installed_plugins() {
             if self.urls {
-                let shr = ShorthandRepo::new(&config.settings);
-                let url = shr.lookup(&plugin.name)?;
-                rtxprintln!(out, "{:29} {}", plugin.name, url);
+                rtxprintln!(out, "{:29} {}", plugin.name, plugin.get_remote_url()?);
             } else {
                 rtxprintln!(out, "{}", plugin.name);
             }
@@ -63,31 +60,30 @@ const AFTER_LONG_HELP: &str = indoc! {r#"
 #[cfg(test)]
 mod test {
     use crate::assert_cli;
-    use crate::cli::test::ensure_plugin_installed;
-    use crate::output::Output;
+    use crate::cli::test::grep;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_plugin_list() {
-        ensure_plugin_installed("nodejs");
-        let Output { stdout, .. } = assert_cli!("plugin", "list");
-        assert!(stdout.content.contains("nodejs"));
+        let stdout = assert_cli!("plugin", "list");
+        assert_str_eq!(grep(stdout, "nodejs"), "nodejs");
     }
 
     #[test]
     fn test_plugin_list_urls() {
-        ensure_plugin_installed("nodejs");
-        let Output { stdout, .. } = assert_cli!("plugin", "list", "--urls");
-        assert!(stdout
-            .content
-            .contains("https://github.com/asdf-vm/asdf-nodejs.git"));
+        let stdout = assert_cli!("plugin", "list", "--urls");
+        assert_str_eq!(
+            grep(stdout, "shfmt"),
+            "shfmt                         https://github.com/luizm/asdf-shfmt.git"
+        );
     }
 
     #[test]
     fn test_plugin_list_all() {
-        ensure_plugin_installed("nodejs");
-        let Output { stdout, .. } = assert_cli!("plugin", "list", "--all", "--urls");
-        assert!(stdout
-            .content
-            .contains("https://github.com/asdf-vm/asdf-nodejs.git"));
+        let stdout = assert_cli!("plugin", "list", "--all", "--urls");
+        assert_str_eq!(
+            grep(stdout, "zephyr"),
+            "zephyr                        https://github.com/nsaunders/asdf-zephyr.git"
+        );
     }
 }

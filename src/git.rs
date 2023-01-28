@@ -73,6 +73,20 @@ impl Git {
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
+
+    pub fn get_remote_url(&self) -> Result<String> {
+        let url = cmd!(
+            "git",
+            "-C",
+            &self.dir,
+            "config",
+            "--get",
+            "remote.origin.url"
+        )
+        .read()?;
+        debug!("remote url for {}: {}", self.dir.display(), &url);
+        Ok(url)
+    }
 }
 
 #[cfg(test)]

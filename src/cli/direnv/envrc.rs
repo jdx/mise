@@ -5,11 +5,11 @@ use std::ops::Deref;
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
-use crate::config::settings::MissingRuntimeBehavior::{AutoInstall, Warn};
+use crate::config::settings::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::config::Config;
-use crate::dirs;
 use crate::hash::hash_to_str;
 use crate::output::Output;
+use crate::{dirs, env};
 
 /// [internal] This is an internal command that writes an envrc file
 /// for direnv to consume.
@@ -19,11 +19,11 @@ pub struct Envrc {}
 
 impl Command for Envrc {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        if config.settings.missing_runtime_behavior == AutoInstall {
+        if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
         config.ensure_installed()?;
-        let envrc_path = dirs::ROOT
+        let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
             .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");
 
@@ -67,8 +67,9 @@ mod test {
 
     #[test]
     fn test_direnv_envrc() {
-        let Output { stdout, .. } = assert_cli!("direnv", "envrc");
-        let envrc = fs::read_to_string(stdout.content.trim()).unwrap();
+        assert_cli!("install");
+        let stdout = assert_cli!("direnv", "envrc");
+        let envrc = fs::read_to_string(stdout.trim()).unwrap();
         let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
         assert_display_snapshot!(envrc);
     }
