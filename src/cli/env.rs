@@ -1,5 +1,4 @@
 use color_eyre::eyre::Result;
-use itertools::Itertools;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -32,11 +31,16 @@ impl Command for Env {
         config.ensure_installed()?;
 
         let shell = get_shell(self.shell);
-        for (k, v) in config.env()?.iter().sorted() {
+        for (k, v) in config.env()? {
             let k = k.to_string_lossy().to_string();
             let v = v.to_string_lossy().to_string();
             rtxprint!(out, "{}", shell.set_env(&k, &v));
         }
+        rtxprintln!(
+            out,
+            "{}",
+            shell.set_env("PATH", config.path_env()?.to_string_lossy().as_ref())
+        );
 
         Ok(())
     }

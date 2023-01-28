@@ -14,6 +14,7 @@ mod asdf;
 pub mod command;
 mod current;
 mod deactivate;
+mod direnv;
 mod doctor;
 mod env;
 mod exec;
@@ -47,6 +48,7 @@ pub enum Commands {
     Asdf(asdf::Asdf),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
+    Direnv(direnv::Direnv),
     Doctor(doctor::Doctor),
     Env(env::Env),
     Exec(exec::Exec),
@@ -75,6 +77,7 @@ impl Commands {
             Self::Asdf(cmd) => cmd.run(config, out),
             Self::Current(cmd) => cmd.run(config, out),
             Self::Deactivate(cmd) => cmd.run(config, out),
+            Self::Direnv(cmd) => cmd.run(config, out),
             Self::Doctor(cmd) => cmd.run(config, out),
             Self::Env(cmd) => cmd.run(config, out),
             Self::Exec(cmd) => cmd.run(config, out),

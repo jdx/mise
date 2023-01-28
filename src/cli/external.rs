@@ -13,6 +13,7 @@ pub fn commands(config: &Config) -> Result<Vec<clap::Command>> {
         .collect::<Result<Vec<Vec<Vec<String>>>>>()?
         .into_iter()
         .filter(|commands| !commands.is_empty())
+        .filter(|commands| commands[0][0] != "direnv")
         .map(|commands| {
             clap::Command::new(commands[0][0].to_string()).subcommands(commands.into_iter().map(
                 |cmd| {
