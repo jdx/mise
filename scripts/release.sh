@@ -56,7 +56,7 @@ mv artifacts/rpm rtx.jdxcode.com/static/rpm
 rm -rf rtx.jdxcode.com/static/deb
 mv artifacts/deb rtx.jdxcode.com/static/deb
 
-cp -vrf "$RELEASE_DIR/*" rtx.jdxcode.com/static
+cp -vrf "$RELEASE_DIR/"* rtx.jdxcode.com/static
 
 ./rtx/scripts/release-npm.sh
 
