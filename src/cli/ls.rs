@@ -89,18 +89,16 @@ fn get_runtime_list(
     config: &Config,
     plugin_flag: &Option<PluginName>,
 ) -> Result<Vec<(Arc<RuntimeVersion>, Option<PluginSource>)>> {
-    let mut versions: HashMap<(PluginName, String), Arc<RuntimeVersion>> = match plugin_flag {
-        Some(plugin) => config
-            .ts
-            .list_installed_versions()
-            .into_iter()
-            .filter(|rtv| &rtv.plugin.name == plugin)
-            .collect(),
-        None => config.ts.list_installed_versions(),
-    }
-    .into_iter()
-    .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv))
-    .collect();
+    let mut versions: HashMap<(PluginName, String), Arc<RuntimeVersion>> = config
+        .ts
+        .list_installed_versions()
+        .into_iter()
+        .filter(|rtv| match plugin_flag {
+            Some(plugin) => rtv.plugin.name == *plugin,
+            None => true,
+        })
+        .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv))
+        .collect();
 
     let active = config
         .ts
@@ -113,6 +111,10 @@ fn get_runtime_list(
         active
             .clone()
             .into_iter()
+            .filter(|((plugin_name, _), _)| match plugin_flag {
+                Some(plugin) => plugin_name == plugin,
+                None => true,
+            })
             .collect::<Vec<((PluginName, String), Arc<RuntimeVersion>)>>(),
     );
 
@@ -163,9 +165,9 @@ mod test {
         let re = Regex::new(r" {3}shfmt\s+3\.5\.0\s+").unwrap();
         assert!(re.is_match(&stdout.content));
 
-        assert_cli!("uninstall", "shfmt@3.6.0");
+        assert_cli!("uninstall", "shfmt@3.5.2");
         let Output { stdout, .. } = assert_cli!("list");
-        let re = Regex::new(r" {3}shfmt\s+3\.6\.0 \(missing\)\s+").unwrap();
+        let re = Regex::new(r" {3}shfmt\s+3\.5\.2 \(missing\)\s+").unwrap();
         assert!(re.is_match(&stdout.content));
     }
 }
