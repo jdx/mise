@@ -67,9 +67,10 @@ mod test {
 
     #[test]
     fn test_current_with_runtimes() {
+        assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install");
         let Output { stdout, .. } = assert_cli!("current", "shfmt");
-        let re = Regex::new(r"-> shfmt\s+3\.6\.0\s+").unwrap();
+        let re = Regex::new(r"-> shfmt\s+3\.5\.2\s+").unwrap();
         assert!(re.is_match(&stdout.content));
     }
 }

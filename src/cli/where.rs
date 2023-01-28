@@ -3,8 +3,8 @@ use color_eyre::eyre::Result;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
-use crate::runtimes::RuntimeVersion;
 
 /// Display the installation path for a runtime
 ///
@@ -33,11 +33,20 @@ impl Command for Where {
             v => v.into(),
         };
 
-        let prefix = config.resolve_alias(&self.runtime.plugin, prefix);
-        let rtv = RuntimeVersion::find_by_version_prefix(&self.runtime.plugin, &prefix)?;
+        let rtv = config
+            .ts
+            .find_by_prefix(&config.aliases, &self.runtime.plugin, prefix.as_str());
 
-        rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());
-        Ok(())
+        match rtv {
+            Some(rtv) => {
+                rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());
+                Ok(())
+            }
+            None => Err(VersionNotInstalled(
+                self.runtime.plugin,
+                self.runtime.version,
+            ))?,
+        }
     }
 }
 
@@ -49,10 +58,11 @@ Examples:
 
 #[cfg(test)]
 mod test {
+    use insta::assert_display_snapshot;
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
     use crate::dirs;
+    use crate::{assert_cli, assert_cli_err};
 
     use super::*;
 
@@ -63,7 +73,7 @@ mod test {
         let Output { stdout, .. } = assert_cli!("where", "shfmt");
         assert_str_eq!(
             stdout.content.trim(),
-            dirs::ROOT.join("installs/shfmt/3.6.0").to_string_lossy()
+            dirs::ROOT.join("installs/shfmt/3.5.2").to_string_lossy()
         );
     }
 
@@ -76,5 +86,11 @@ mod test {
             stdout.content.trim(),
             dirs::ROOT.join("installs/shfmt/3.0.2").to_string_lossy()
         );
+    }
+
+    #[test]
+    fn test_where_not_found() {
+        let err = assert_cli_err!("where", "shfmt@1111");
+        assert_display_snapshot!(err, @"runtime version not installed: shfmt@1111");
     }
 }

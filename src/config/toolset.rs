@@ -202,4 +202,21 @@ impl Toolset {
     pub fn get_source_for_plugin(&self, plugin: &PluginName) -> Option<PluginSource> {
         self.current_versions_sources.get(plugin).cloned()
     }
+
+    pub fn find_by_prefix(
+        &self,
+        aliases: &AliasMap,
+        plugin: &str,
+        prefix: &str,
+    ) -> Option<Arc<RuntimeVersion>> {
+        let default_aliases = IndexMap::new();
+        let aliases = aliases.get(plugin).unwrap_or(&default_aliases);
+        let prefix = aliases.get(prefix).cloned().unwrap_or(prefix.to_string());
+
+        let mut versions = self.list_current_versions();
+        versions.extend(self.list_installed_versions());
+        versions
+            .into_iter()
+            .find(|rtv| rtv.plugin.name == plugin && rtv.version.starts_with(&prefix))
+    }
 }
