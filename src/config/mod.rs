@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::env::{join_paths, split_paths};
-use std::ffi::OsString;
+
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::ffi::OsString;
+
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all, File};
@@ -200,8 +200,8 @@ impl RuntimeVersion {
             .to_patches()
             .into_iter()
             .filter_map(|p| match p {
-                EnvDiffOperation::Add(key, value) => Some((key.into(), value.into())),
-                EnvDiffOperation::Change(key, value) => Some((key.into(), value.into())),
+                EnvDiffOperation::Add(key, value) => Some((key, value)),
+                EnvDiffOperation::Change(key, value) => Some((key, value)),
                 _ => None,
             })
             .collect();
