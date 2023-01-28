@@ -1174,7 +1174,7 @@ $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
 Now in your `.envrc` file add the following:
 
 ```sh-session
-use_rtx
+use rtx
 ```
 
 direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
