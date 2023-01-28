@@ -31,19 +31,23 @@ pub enum EnvDiffOperation {
 pub type EnvDiffPatches = Vec<EnvDiffOperation>;
 
 impl EnvDiff {
-    pub fn new(original: &HashMap<String, String>, additions: &HashMap<String, String>) -> EnvDiff {
+    pub fn new<T>(original: &HashMap<String, String>, additions: T) -> EnvDiff
+    where
+        T: IntoIterator<Item = (String, String)>,
+    {
         let mut diff = EnvDiff::default();
 
-        for (key, new_val) in additions.iter() {
-            match original.get(key) {
+        for (key, new_val) in additions.into_iter() {
+            let key: String = key;
+            match original.get(&key) {
                 Some(original_val) => {
-                    if original_val != new_val {
-                        diff.old.insert(key.into(), original_val.into());
-                        diff.new.insert(key.into(), new_val.into());
+                    if original_val != &new_val {
+                        diff.old.insert(key.clone(), original_val.into());
+                        diff.new.insert(key, new_val);
                     }
                 }
                 None => {
-                    diff.new.insert(key.into(), new_val.into());
+                    diff.new.insert(key, new_val);
                 }
             }
         }
@@ -77,7 +81,7 @@ impl EnvDiff {
             }
             additions.insert(k.into(), v.into());
         }
-        Ok(Self::new(&env::vars().collect(), &additions))
+        Ok(Self::new(&env::vars().collect(), additions))
     }
 
     pub fn deserialize(raw: &str) -> Result<EnvDiff> {
@@ -140,6 +144,7 @@ impl Debug for EnvDiff {
 
 #[cfg(test)]
 mod tests {
+    use indexmap::indexmap;
     use insta::assert_debug_snapshot;
 
     use crate::dirs;
@@ -148,13 +153,13 @@ mod tests {
 
     #[test]
     fn test_diff() {
-        let diff = EnvDiff::new(&new_from_hashmap(), &new_to_hashmap());
+        let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         assert_debug_snapshot!(diff.to_patches());
     }
 
     #[test]
     fn test_reverse() {
-        let diff = EnvDiff::new(&new_from_hashmap(), &new_to_hashmap());
+        let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let patches = diff.reverse().to_patches();
         let to_remove = patches
             .iter()
@@ -203,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_serialize() {
-        let diff = EnvDiff::new(&new_from_hashmap(), &new_to_hashmap());
+        let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
         assert_debug_snapshot!(deserialized.to_patches());
@@ -212,13 +217,13 @@ mod tests {
     #[test]
     fn test_from_bash_script() {
         let path = dirs::HOME.join("fixtures/exec-env");
-        let orig = HashMap::from(
-            [
-                ("UNMODIFIED_VAR", "unmodified"),
-                ("MODIFIED_VAR", "original"),
-            ]
-            .map(|(k, v)| (k.into(), v.into())),
-        );
+        let orig = indexmap! {
+            "UNMODIFIED_VAR" => "unmodified",
+            "MODIFIED_VAR" => "original",
+        }
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect::<HashMap<String, String>>();
         let ed = EnvDiff::from_bash_script(path.as_path(), orig).unwrap();
         assert_debug_snapshot!(ed);
     }
