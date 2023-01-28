@@ -61,14 +61,14 @@ pub mod test {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-    use crate::output::Output;
+
     use crate::test::reset_config;
 
     #[test]
     fn test_settings_set() {
         reset_config();
-        let Output { stdout, .. } = assert_cli!("settings");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("settings");
+        assert_snapshot!(stdout);
 
         assert_cli!("settings", "set", "missing_runtime_behavior", "warn");
         assert_cli!("settings", "set", "legacy_version_file", "false");
@@ -92,8 +92,8 @@ pub mod test {
             "2"
         );
 
-        let Output { stdout, .. } = assert_cli!("settings");
-        assert_snapshot!(stdout.content);
+        let stdout = assert_cli!("settings");
+        assert_snapshot!(stdout);
         reset_config();
     }
 }

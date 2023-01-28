@@ -16,12 +16,15 @@ jobs:
   unit:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+      - name: Install direnv
+        run: sudo apt-get update; sudo apt-get install direnv
       - name: Install just
         uses: taiki-e/install-action@just
-      - name: just test-unit
+      - name: Run just test-unit
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
@@ -33,17 +36,19 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    #if: false
     container:
       image: xd009642/tarpaulin:develop-nightly
       options: --security-opt seccomp=unconfined
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+      - name: Install direnv
+        run: curl -sfL https://direnv.net/install.sh | bash
       - name: Install just
         uses: taiki-e/install-action@just
-      - name: Generate code coverage
+      - name: Run tests with coverage
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
@@ -123,8 +128,8 @@ jobs:
     needs: [ build-linux ]
     steps:
       - uses: actions/checkout@v3
-      - name: Install zsh/fish
-        run: sudo apt-get update; sudo apt-get install zsh fish
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu

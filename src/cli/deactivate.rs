@@ -42,12 +42,10 @@ mod test {
 
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_deactivate_zsh() {
         std::env::set_var("NO_COLOR", "1");
-        let Output { stdout, .. } = assert_cli!("deactivate", "-s", "zsh");
-        assert_display_snapshot!(stdout.content);
+        let stdout = assert_cli!("deactivate", "-s", "zsh");
+        assert_display_snapshot!(stdout);
     }
 }

@@ -667,11 +667,9 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
 mod tests {
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_render_help() {
-        let Output { stdout, .. } = assert_cli!("render-help");
-        assert!(stdout.content.contains("Quickstart"));
+        let stdout = assert_cli!("render-help");
+        assert!(stdout.contains("Quickstart"));
     }
 }

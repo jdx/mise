@@ -94,12 +94,10 @@ EXAMPLES:
 
 #[cfg(test)]
 mod test {
-    use insta::assert_display_snapshot;
-    use pretty_assertions::assert_str_eq;
+    use insta::{assert_display_snapshot, assert_snapshot};
 
     use crate::assert_cli;
-    use crate::cli::test::{cli_run, grep};
-    use crate::output::Output;
+    use crate::cli::test::cli_run;
 
     #[test]
     fn test_plugin_install() {
@@ -114,12 +112,8 @@ mod test {
             "-f",
             "https://github.com/jdxcode/asdf-nodejs"
         );
-        let Output { stdout, .. } = assert_cli!("plugin", "--urls");
-        let line = grep(&stdout, "nodejs").unwrap();
-        assert_str_eq!(
-            line,
-            "nodejs                        https://github.com/asdf-vm/asdf-nodejs.git"
-        );
+        let stdout = assert_cli!("plugin", "--urls");
+        assert_snapshot!(stdout);
     }
 
     #[test]

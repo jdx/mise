@@ -121,17 +121,13 @@ mod test {
 
     #[test]
     fn test_exec_ok() {
-        assert_cli!("plugin", "a", "jq");
-        assert_cli!("install");
         assert_cli!("exec", "--", "jq", "--version");
     }
 
     #[test]
     fn test_exec_fail() {
-        assert_cli!("install");
-        assert_cli!("install", "nodejs");
         let _ = cli_run(
-            &vec!["rtx", "exec", "--", "node", "-e", "process.exit(1)"]
+            &vec!["rtx", "exec", "--", "jq", "-invalid"]
                 .into_iter()
                 .map(String::from)
                 .collect::<Vec<String>>(),

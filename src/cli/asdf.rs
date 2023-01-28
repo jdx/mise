@@ -63,19 +63,17 @@ fn list_versions(out: &mut Output, args: &Vec<String>) -> Result<()> {
 mod test {
     use crate::assert_cli;
 
-    use super::*;
-
     #[test]
     fn test_fake_asdf() {
-        let Output { stdout, .. } = assert_cli!("asdf", "-v");
-        assert!(stdout.content.starts_with("rtx "));
+        let stdout = assert_cli!("asdf", "-v");
+        assert!(stdout.starts_with("rtx "));
     }
 
     #[test]
     fn test_fake_asdf_list() {
         assert_cli!("plugin", "install", "shfmt");
         assert_cli!("install", "shfmt@2");
-        let Output { stdout, .. } = assert_cli!("asdf", "list", "shfmt");
-        assert!(stdout.content.contains('2'));
+        let stdout = assert_cli!("asdf", "list", "shfmt");
+        assert!(stdout.contains('2'));
     }
 }
