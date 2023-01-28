@@ -33,7 +33,7 @@ impl Command for HookEnv {
             .iter()
             .map(|(k, v)| (k.into(), v.into()))
             .collect();
-        env.insert("PATH".into(), config.path_env()?.into());
+        env.insert("PATH".into(), config.path_env()?);
         env.insert("__RTX_DIR".into(), dirs::CURRENT.to_string_lossy().into());
         let diff = EnvDiff::new(&env::PRISTINE_ENV, &env);
         let mut patches = diff.to_patches();
