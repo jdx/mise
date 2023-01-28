@@ -195,7 +195,7 @@ For Alpine Linux:
 apk add rtx --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
 ```
 
-### ~~aur~~ (coming soon)
+### aur
 
 For Arch Linux:
 
