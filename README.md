@@ -26,7 +26,7 @@ $ echo 'eval "$(rtx activate -s zsh)"' >> ~/.zshrc
 $ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Warning:**
+> **Warning**
 >
 > If you use direnv, [see below](#direnv) for direnv-compatible setup.
 
