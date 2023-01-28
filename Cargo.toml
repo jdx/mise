@@ -1,6 +1,6 @@
 [package]
 name = "rtx-cli"
-version = "1.2.3"
+version = "1.2.4"
 edition = "2021"
 description = "Polyglot runtime manager"
 authors = ["Jeff Dickey (@jdxcode)"]
