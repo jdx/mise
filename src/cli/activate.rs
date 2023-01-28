@@ -1,5 +1,4 @@
 use color_eyre::eyre::Result;
-use indoc::indoc;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -22,14 +21,6 @@ pub struct Activate {
 
 impl Command for Activate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        if !*env::RTX_DISABLE_DIRENV_WARNING && env::DIRENV_DIR.is_some() {
-            warn!(indoc! {r#"
-                `rtx activate` may conflict with direnv!
-                       See https://github.com/jdxcode/rtx#direnv for more information.
-                       Disable this warning with RTX_DISABLE_DIRENV_WARNING=1
-                "#});
-        }
-
         let shell = get_shell(self.shell);
 
         let exe = if cfg!(test) {

@@ -188,7 +188,7 @@ impl RuntimeVersion {
         Ok(())
     }
 
-    pub fn exec_env(&self) -> Result<HashMap<OsString, OsString>> {
+    pub fn exec_env(&self) -> Result<HashMap<String, String>> {
         let script = self.plugin.plugin_path.join("bin/exec-env");
         if !self.is_installed() || !script.exists() {
             return Ok(HashMap::new());
