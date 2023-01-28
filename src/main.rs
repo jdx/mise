@@ -11,6 +11,9 @@ use crate::output::Output;
 #[macro_use]
 mod output;
 
+#[macro_use]
+mod regex;
+
 pub mod build_time;
 mod cli;
 mod cmd;

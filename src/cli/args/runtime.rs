@@ -2,6 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
 
 use clap::{Arg, Command, Error};
+use regex::Regex;
 
 use crate::plugins::PluginName;
 
@@ -18,6 +19,28 @@ impl RuntimeArg {
             plugin: plugin.into(),
             version: version.into(),
         }
+    }
+
+    /// this handles the case where the user typed in:
+    /// rtx local nodejs 20.0.0
+    /// instead of
+    /// rtx local nodejs 20.0.0
+    ///
+    /// We can detect this, and we know what they meant, so make it work the way
+    /// they expected.
+    pub fn double_runtime_condition(runtimes: &[RuntimeArg]) -> Vec<RuntimeArg> {
+        let mut runtimes = runtimes.to_vec();
+        if runtimes.len() == 2 {
+            let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
+            let a = runtimes[0].clone();
+            let b = runtimes[1].clone();
+            if a.version == "latest" && b.version == "latest" && re.is_match(&b.plugin) {
+                runtimes[1].version = b.plugin;
+                runtimes[1].plugin = a.plugin;
+                runtimes.remove(0);
+            }
+        }
+        runtimes
     }
 }
 
