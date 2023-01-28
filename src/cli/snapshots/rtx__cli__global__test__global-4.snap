@@ -1,0 +1,7 @@
+---
+source: src/cli/global.rs
+expression: stdout
+---
+shfmt 2
+tiny 2.1.0
+

@@ -55,14 +55,14 @@ impl Install {
         &self,
         config: Config,
         out: &mut Output,
-        runtime: &[RuntimeArg],
+        runtimes: &[RuntimeArg],
     ) -> Result<()> {
         let settings = Settings {
             missing_runtime_behavior: AutoInstall,
             ..config.settings.clone()
         };
 
-        for r in runtime {
+        for r in RuntimeArg::double_runtime_condition(runtimes) {
             if r.version == "system" {
                 continue;
             }
@@ -160,8 +160,13 @@ mod test {
     use crate::assert_cli;
 
     #[test]
-    fn test_install() {
+    fn test_install_force() {
         assert_cli!("install", "-f", "shfmt");
+    }
+
+    #[test]
+    fn test_install_asdf_style() {
+        assert_cli!("install", "shfmt", "2");
     }
 
     #[test]
