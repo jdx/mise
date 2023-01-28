@@ -66,7 +66,7 @@ mod test {
         let Output { stdout, .. } = assert_cli!("env", "-s", "bash");
         assert!(stdout.content.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.6.0/bin")
+                .join("installs/shfmt/3.5.2/bin")
                 .to_string_lossy()
                 .as_ref()
         ));
@@ -80,7 +80,7 @@ mod test {
 
         assert!(stdout.content.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.5.1/bin")
+                .join("installs/shfmt/3.5.2/bin")
                 .to_string_lossy()
                 .as_ref()
         ));

@@ -1040,7 +1040,7 @@ Examples:
 ### `rtx uninstall`
 
 ```
-removes a runtime version
+removes runtime versions
 
 Usage: uninstall <RUNTIME>...
 
@@ -1054,7 +1054,8 @@ Options:
 
 
 Examples:
-  $ rtx uninstall nodejs
+  $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions
+  $ rtx uninstall nodejs    # will uninstall ALL nodejs versions
 
 ```
 ### `rtx version`

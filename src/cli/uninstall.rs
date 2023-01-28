@@ -1,14 +1,15 @@
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use itertools::Itertools;
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
-use crate::runtimes::RuntimeVersion;
 
-/// removes a runtime version
+/// removes runtime versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
@@ -18,7 +19,7 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let runtime_versions = self
             .runtime
             .iter()
@@ -27,9 +28,26 @@ impl Command for Uninstall {
                     "latest" => "",
                     v => v,
                 };
-                RuntimeVersion::find_by_version_prefix(&a.plugin, prefix)
+                let prefix = config.resolve_alias(&a.plugin, prefix.to_string());
+                let mut versions = config.ts.list_current_versions();
+                versions.extend(config.ts.list_installed_versions());
+                let versions = versions
+                    .into_iter()
+                    .filter(|rtv| rtv.plugin.name == a.plugin)
+                    .filter(|rtv| rtv.version.starts_with(&prefix))
+                    .unique_by(|rtv| rtv.version.clone())
+                    .collect::<Vec<_>>();
+
+                if versions.is_empty() {
+                    Err(VersionNotInstalled(a.plugin.clone(), a.version.clone()))?
+                } else {
+                    Ok(versions)
+                }
             })
-            .collect::<Result<Vec<RuntimeVersion>>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect_vec();
 
         for rtv in runtime_versions {
             if !rtv.is_installed() {
@@ -51,5 +69,6 @@ impl Command for Uninstall {
 
 const AFTER_LONG_HELP: &str = r#"
 Examples:
-  $ rtx uninstall nodejs
+  $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions
+  $ rtx uninstall nodejs    # will uninstall ALL nodejs versions
 "#;

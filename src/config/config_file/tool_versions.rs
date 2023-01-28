@@ -179,7 +179,7 @@ pub(crate) mod tests {
         assert_display_snapshot!(tv, @r###"
         #python 3.11.1 3.10.9 # foo
         shellcheck 0.9.0
-        shfmt 3.6.0 # test comment
+        shfmt 3.5.2 # test comment
         #nodejs 18.13.0
         nodejs system
         "###);
