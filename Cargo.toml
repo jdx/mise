@@ -69,12 +69,12 @@ tempfile = "3.3.0"
 env_logger = "0.10.0"
 
 [profile.release]
-opt-level = "z" # optimize for size
-lto = true
-debug = false
-debug-assertions = false
-panic = "abort"
-strip = "symbols"
+#opt-level = "z" # optimize for size
+#lto = true
+#debug = false
+#debug-assertions = false
+#panic = "abort"
+#strip = "symbols"
 
 [package.metadata.release]
 allow-branch = ["main"]
