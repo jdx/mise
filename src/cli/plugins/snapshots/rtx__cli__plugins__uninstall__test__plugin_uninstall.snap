@@ -1,6 +1,5 @@
 ---
 source: src/cli/plugins/uninstall.rs
-expression: stdout.content
+expression: stdout
 ---
 uninstalling plugin: nodejs
-

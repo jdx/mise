@@ -48,6 +48,7 @@ lazy_static! {
             .map(PathBuf::from)
             .unwrap_or_else(|| XDG_DATA_HOME.join("rtx"))
     };
+    pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref PATH: OsString = var_os("PATH").unwrap_or_default();
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
     pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());

@@ -56,15 +56,16 @@ Examples:
 #[cfg(test)]
 mod test {
     use crate::assert_cli;
+    use crate::cli::test::grep;
     use crate::dirs;
-    use crate::output::Output;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_env() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install");
-        let Output { stdout, .. } = assert_cli!("env", "-s", "bash");
-        assert!(stdout.content.contains(
+        let stdout = assert_cli!("env", "-s", "bash");
+        assert!(stdout.contains(
             dirs::ROOT
                 .join("installs/shfmt/3.5.2/bin")
                 .to_string_lossy()
@@ -76,9 +77,9 @@ mod test {
     fn test_env_with_runtime_arg() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install", "shfmt@3.5");
-        let Output { stdout, .. } = assert_cli!("env", "shfmt@3.5", "-s", "bash");
+        let stdout = assert_cli!("env", "shfmt@3.5", "-s", "bash");
 
-        assert!(stdout.content.contains(
+        assert!(stdout.contains(
             dirs::ROOT
                 .join("installs/shfmt/3.5.2/bin")
                 .to_string_lossy()
@@ -90,8 +91,8 @@ mod test {
     fn test_env_alias() {
         assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install", "shfmt@my/alias");
-        let Output { stdout, .. } = assert_cli!("env", "shfmt@my/alias", "-s", "bash");
-        assert!(stdout.content.contains(
+        let stdout = assert_cli!("env", "shfmt@my/alias", "-s", "bash");
+        assert!(stdout.contains(
             dirs::ROOT
                 .join("installs/shfmt/3.0.2")
                 .to_string_lossy()
@@ -100,10 +101,8 @@ mod test {
     }
 
     #[test]
-    fn test_env_golang() {
-        assert_cli!("plugin", "add", "golang");
-        assert_cli!("install", "golang");
-        let Output { stdout, .. } = assert_cli!("env", "golang", "-s", "bash");
-        assert!(stdout.content.contains("GOROOT="));
+    fn test_env_tiny() {
+        let stdout = assert_cli!("env", "tiny@1", "-s", "bash");
+        assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=1.0.1");
     }
 }

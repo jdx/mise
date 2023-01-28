@@ -58,12 +58,11 @@ Examples:
 mod test {
     use crate::assert_cli;
     use crate::cli::test::ensure_plugin_installed;
-    use crate::output::Output;
 
     #[test]
     fn test_plugin_list_remote() {
         ensure_plugin_installed("nodejs");
-        let Output { stdout, .. } = assert_cli!("plugin", "ls-remote");
-        assert!(stdout.content.contains("nodejs"));
+        let stdout = assert_cli!("plugin", "ls-remote");
+        assert!(stdout.contains("nodejs"));
     }
 }

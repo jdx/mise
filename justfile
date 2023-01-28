@@ -17,7 +17,6 @@ alias t := test
 test: test-unit test-e2e
 
 test-setup: build
-    rtx install
 
 test-update-snapshots: test-setup
     cargo insta test --accept
@@ -28,11 +27,16 @@ test-unit: test-setup
 test-e2e: test-setup build
     ./e2e/run_all_tests
 
-test-coverage: test-setup
-    rtx --version
+test-coverage: clean test-setup
     cargo +nightly tarpaulin \
       --all-features --workspace \
       --timeout 120 --out Xml --ignore-tests
+
+clean:
+    cargo clean
+    rm -rf target
+    rm -rf *.profraw
+    rm -rf coverage
 
 lint:
     cargo clippy

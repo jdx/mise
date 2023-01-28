@@ -7,6 +7,7 @@ use crate::output::Output;
 
 mod activate;
 mod envrc;
+mod exec;
 
 /// Output direnv function to use rtx inside direnv
 ///
@@ -25,6 +26,7 @@ pub struct Direnv {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Envrc(envrc::Envrc),
+    Exec(exec::DirenvExec),
     Activate(activate::DirenvActivate),
 }
 
@@ -33,6 +35,7 @@ impl Commands {
         match self {
             Self::Activate(cmd) => cmd.run(config, out),
             Self::Envrc(cmd) => cmd.run(config, out),
+            Self::Exec(cmd) => cmd.run(config, out),
         }
     }
 }
