@@ -222,6 +222,11 @@ impl RTXFile {
 
     fn get_or_create_edit(&mut self) -> &mut toml_edit::Document {
         if self.edit.is_none() {
+            if !self.path.exists() {
+                let dir = self.path.parent().unwrap();
+                fs::create_dir_all(dir).expect("could not create directory");
+                fs::write(&self.path, "").expect("could not create new config.toml file");
+            }
             let body = fs::read_to_string(&self.path)
                 .suggestion("ensure file exists and can be read")
                 .unwrap();
@@ -602,5 +607,14 @@ nodejs=[true]
         [aliases.python]
         "3.10" = "3.10.0"
         "###);
+    }
+
+    #[test]
+    fn test_edit_when_file_does_not_exist() {
+        let mut cf = RTXFile::from_str("".to_string()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        cf.path = dir.path().join("subdir").join("does-not-exist.toml");
+        cf.set_alias("nodejs", "18", "18.0.1");
+        cf.save().unwrap();
     }
 }
