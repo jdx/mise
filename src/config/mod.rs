@@ -133,7 +133,9 @@ impl Config {
 
     pub fn ensure_installed(&self) -> Result<()> {
         for rtv in self.ts.list_current_versions() {
-            if rtv.plugin.is_installed() {
+            eprintln!("Ensuring {} is installed {}", rtv.plugin.name , rtv.version);
+            let source = self.ts.get_source_for_plugin(&rtv.plugin.name);
+            if rtv.plugin.is_installed() || matches!(source, Some(PluginSource::Argument(_))) {
                 rtv.ensure_installed(self)?;
             }
         }

@@ -135,6 +135,9 @@ impl RuntimeVersion {
         if self.is_installed() || self.version == "system" {
             return Ok(true);
         }
+        if !self.plugin.ensure_installed(&config.settings)? {
+            return Ok(false);
+        }
         match config.settings.missing_runtime_behavior {
             MissingRuntimeBehavior::AutoInstall => {
                 self.install(InstallType::Version, config)?;
