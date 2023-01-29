@@ -2,7 +2,7 @@
 name = "rtx-cli"
 version = "1.2.6"
 edition = "2021"
-description = "Polyglot runtime manager"
+description = "Polyglot runtime manager (asdf rust clone)"
 authors = ["Jeff Dickey (@jdxcode)"]
 homepage = "https://github.com/jdxcode/rtx"
 documentation = "https://github.com/jdxcode/rtx"
