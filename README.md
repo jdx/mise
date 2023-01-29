@@ -6,7 +6,7 @@
 [![Codecov](https://codecov.io/gh/jdxcode/rtx/branch/main/graph/badge.svg?token=XYH3Q0BOO0)](https://codecov.io/gh/jdxcode/rtx)
 [![Discord](https://img.shields.io/discord/1066429325269794907)](https://discord.gg/mABnUDvP57)
 
-_Polyglot runtime manager_
+_Polyglot runtime manager (asdf rust clone)_
 
 ## Quickstart (macOS)
 
