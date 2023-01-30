@@ -6,6 +6,7 @@ use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 
 /// list runtime versions available for install
+///
 /// note that these versions are cached for commands like `rtx install nodejs@latest`
 /// however _this_ command will always clear that cache and fetch the latest remote versions
 #[derive(Debug, clap::Args)]
