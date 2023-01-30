@@ -82,6 +82,7 @@ allow-branch = ["main"]
 #sign-commit = true
 pre-release-replacements = [
     { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
+    { file = "README.md", search = "https://github.com/jdxcode/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdxcode/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
     { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
 ]
 
