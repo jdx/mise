@@ -1,3 +1,5 @@
+~/src/rtx ~/src/rtx
+~/src/rtx
 # [rtx](https://github.com/jdxcode/rtx)
 
 [![Crates.io](https://img.shields.io/crates/v/rtx-cli.svg)](https://crates.io/crates/rtx-cli)
@@ -435,6 +437,7 @@ This is unlikely to ever happen since this leverages the vast ecosystem of asdf 
 At some point it may be worth exploring an alternate plugin format that would be Windows compatible.
 
 ## Commands
+
 ### `rtx activate`
 
 ```
@@ -613,7 +616,7 @@ Examples:
 ### `rtx env`
 
 ```
-exports environment variables to activate rtx in a single shell session
+exports env vars to activate rtx in a single shell session
 
 It's not necessary to use this if you have `rtx activate` in your shell rc file.
 Use this if you don't want to permanently install rtx.
@@ -863,6 +866,7 @@ Examples:
 
 ```
 list runtime versions available for install
+
 note that these versions are cached for commands like `rtx install nodejs@latest`
 however _this_ command will always clear that cache and fetch the latest remote versions
 

@@ -1,6 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 
 # add this directory to `$PATH` to automatically build/run chim
 # when chims are called in shebangs
 
-cargo run -- "$@"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+pushd "$SCRIPT_DIR/.." || exit 1
+cargo build
+popd && "$SCRIPT_DIR/../target/debug/rtx" "$@"
