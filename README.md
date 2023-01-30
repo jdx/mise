@@ -8,27 +8,27 @@
 
 _Polyglot runtime manager (asdf rust clone)_
 
-## Quickstart (macOS)
+## Quickstart
 
 Install rtx (other methods [here](#installation)):
 
 ```sh-session
-$ brew install jdxcode/tap/rtx
+$ https://rtx.jdxcode.com/rtx-latest-macos-arm64 > ~/bin/rtx
 $ rtx --version
 rtx 1.2.6
 ```
 
-Hook rtx into to your shell (choose one, and open a new shell session for the changes to take effect):
+Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
+(choose one, and open a new shell session for the changes to take effect):
 
 ```sh-session
-$ echo 'eval "$(rtx activate -s bash)"' >> ~/.bashrc
-$ echo 'eval "$(rtx activate -s zsh)"' >> ~/.zshrc
-$ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
+$ echo 'eval "$(~/bin/rtx activate -s bash)"' >> ~/.bashrc
+$ echo 'eval "$(~/bin/rtx activate -s zsh)"' >> ~/.zshrc
+$ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
->
-> If you use direnv, [see below](#direnv) for direnv-compatible setup.
+> > If you use direnv, [see below](#direnv) for direnv-compatible setup.
 
 Install a runtime and set it as the default:
 
@@ -106,6 +106,33 @@ file, rtx will automatically add itself to `PATH`.
 $ curl https://rtx.jdxcode.com/install.sh | sh
 ```
 
+> **Note**
+>
+> There isn't currently an autoupdater in rtx. So if you use this method you'll need to remember
+> to fetch a new version manually for bug/feature fixes. I'm not sure if I'll ever add an autoupdater
+> because it might be disruptive to autoupdate to a major version that has breaking changes.
+
+or if you're allergic to `| sh`:
+
+```sh-session
+$ curl https://rtx.jdxcode.com/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+```
+
+It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/rtx/bin/rtx`
+or whatever.
+
+Supported architectures:
+
+- `x64`
+- `arm64`
+
+Supported platforms:
+
+- `macos`
+- `linux`
+
+If you need something else, compile it with [cargo](#cargo).
+
 ### Homebrew
 
 ```sh-session
@@ -147,7 +174,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/rtx-latest-macos-arm64.tar.xz | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.2.6/rtx-v1.2.6-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
