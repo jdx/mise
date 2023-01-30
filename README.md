@@ -1,5 +1,3 @@
-~/src/rtx ~/src/rtx
-~/src/rtx
 # [rtx](https://github.com/jdxcode/rtx)
 
 [![Crates.io](https://img.shields.io/crates/v/rtx-cli.svg)](https://crates.io/crates/rtx-cli)
