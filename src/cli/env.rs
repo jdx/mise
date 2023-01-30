@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
-/// exports environment variables to activate rtx in a single shell session
+/// exports env vars to activate rtx in a single shell session
 ///
 /// It's not necessary to use this if you have `rtx activate` in your shell rc file.
 /// Use this if you don't want to permanently install rtx.
