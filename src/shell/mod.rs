@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use std::path::Path;
 
 use crate::env;
@@ -58,5 +57,8 @@ pub fn get_shell(shell: Option<ShellType>) -> Box<dyn Shell> {
 
 pub fn is_dir_in_path(dir: &Path) -> bool {
     let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
-    env::split_paths(env::PATH.deref()).any(|p| p.canonicalize().unwrap_or(p) == dir)
+    env::PATH
+        .clone()
+        .into_iter()
+        .any(|p| p.canonicalize().unwrap_or(p) == dir)
 }

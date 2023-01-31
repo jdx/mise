@@ -20,7 +20,7 @@ impl Command for Doctor {
             }
         }
 
-        if env::__RTX_DIR.is_none() {
+        if env::var("__RTX_DIFF").is_err() {
             checks.push(
                 "rtx is not activated, run `rtx help activate` for setup instructions".to_string(),
             );

@@ -27,6 +27,7 @@ complete -c rtx -n "__fish_use_subcommand" -f -a "render-help" -d 'internal comm
 complete -c rtx -n "__fish_use_subcommand" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
+complete -c rtx -n "__fish_seen_subcommand_from activate" -s q -l quiet -d 'Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from help" -s p -l plugin -d 'filter aliases by plugin' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r

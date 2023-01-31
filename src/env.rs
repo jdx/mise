@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use lazy_static::lazy_static;
 
-use crate::env_diff::EnvDiff;
-use crate::hook_env::get_pristine_env;
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 
 lazy_static! {
     pub static ref ARGS: Vec<String> = args().collect();
@@ -49,7 +48,6 @@ lazy_static! {
             .unwrap_or_else(|| XDG_DATA_HOME.join("rtx"))
     };
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
-    pub static ref PATH: OsString = var_os("PATH").unwrap_or_default();
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
     pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
@@ -78,19 +76,21 @@ lazy_static! {
     } else {
         var("RTX_MISSING_RUNTIME_BEHAVIOR").ok()
     };
-    pub static ref __RTX_DIR: Option<PathBuf> = var_os("__RTX_DIR").map(PathBuf::from);
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
+    pub static ref PATH: Vec<PathBuf> =
+        split_paths(&var_os("PATH").unwrap_or(OsString::new())).collect();
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
         ".tool-versions".into()
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
+    pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
 }
 
 fn get_env_diff() -> EnvDiff {
@@ -109,4 +109,49 @@ fn var_is_true(key: &str) -> bool {
         Ok(v) => v == "true" || v == "1",
         Err(_) => false,
     }
+}
+
+/// this returns the environment as if __RTX_DIFF was reversed.
+/// putting the shell back into a state before hook-env was run
+fn get_pristine_env(
+    rtx_diff: &EnvDiff,
+    orig_env: HashMap<String, String>,
+) -> HashMap<String, String> {
+    let patches = rtx_diff.reverse().to_patches();
+    apply_patches(&orig_env, &patches)
+}
+
+fn apply_patches(
+    env: &HashMap<String, String>,
+    patches: &EnvDiffPatches,
+) -> HashMap<String, String> {
+    let mut new_env = env.clone();
+    for patch in patches {
+        match patch {
+            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                new_env.insert(k.into(), v.into());
+            }
+            EnvDiffOperation::Remove(k) => {
+                new_env.remove(k);
+            }
+        }
+    }
+
+    new_env
+}
+
+#[test]
+fn test_apply_patches() {
+    let mut env = HashMap::new();
+    env.insert("foo".into(), "bar".into());
+    env.insert("baz".into(), "qux".into());
+    let patches = vec![
+        EnvDiffOperation::Add("foo".into(), "bar".into()),
+        EnvDiffOperation::Change("baz".into(), "qux".into()),
+        EnvDiffOperation::Remove("quux".into()),
+    ];
+    let new_env = apply_patches(&env, &patches);
+    assert_eq!(new_env.len(), 2);
+    assert_eq!(new_env.get("foo").unwrap(), "bar");
+    assert_eq!(new_env.get("baz").unwrap(), "qux");
 }
