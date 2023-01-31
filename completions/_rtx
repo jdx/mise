@@ -34,6 +34,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
 '--shell=[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-q[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'--quiet[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0

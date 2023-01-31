@@ -12,8 +12,12 @@ pub struct Version {}
 
 lazy_static! {
     pub static ref VERSION: String = format!(
-        "{} (built on {})",
-        env!("CARGO_PKG_VERSION"),
+        "{} (build {})",
+        if cfg!(debug_assertions) {
+            format!("{}-DEBUG", env!("CARGO_PKG_VERSION"))
+        } else {
+            env!("CARGO_PKG_VERSION").to_string()
+        },
         BUILD_TIME.format("%Y-%m-%d")
     );
 }
@@ -28,9 +32,11 @@ impl Command for Version {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::assert_cli;
     use pretty_assertions::assert_str_eq;
+
+    use crate::assert_cli;
+
+    use super::*;
 
     #[test]
     fn test_version() {

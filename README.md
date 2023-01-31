@@ -453,6 +453,9 @@ Options:
           
           [possible values: bash, fish, zsh]
 
+  -q, --quiet
+          Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories
+
   -h, --help
           Print help (see a summary with '-h')
 
