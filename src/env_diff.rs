@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
 use std::fmt::Debug;
 use std::io::prelude::*;
 use std::path::Path;
@@ -12,7 +11,7 @@ use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{cmd, env};
+use crate::cmd;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {
@@ -59,10 +58,10 @@ impl EnvDiff {
     pub fn from_bash_script<T, U, V>(script: &Path, env: T) -> Result<Self>
     where
         T: IntoIterator<Item = (U, V)>,
-        U: Into<OsString>,
-        V: Into<OsString>,
+        U: Into<String>,
+        V: Into<String>,
     {
-        let env: HashMap<OsString, OsString> =
+        let env: HashMap<String, String> =
             env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         let out = cmd!(
             "bash",
@@ -79,17 +78,28 @@ impl EnvDiff {
         let mut additions = HashMap::new();
         for line in out.lines() {
             let (k, v) = line.split_once('=').unwrap_or_default();
-            if k == "_" || k == "SHLVL" || k == "PATH" {
+            if k == "_"
+                || k == "SHLVL"
+                || k == "PATH"
+                || k == "PWD"
+                || k == "OLDPWD"
+                || k == "HOME"
+                || k == "USER"
+                || k == "SHELL"
+                || k == "SHELLOPTS"
+                || k == "COMP_WORDBREAKS"
+                || k == "PS1"
+            {
                 continue;
             }
-            if let Some(orig) = env.get(OsStr::new(k)) {
+            if let Some(orig) = env.get(k) {
                 if v == orig {
                     continue;
                 }
             }
             additions.insert(k.into(), v.into());
         }
-        Ok(Self::new(&env::vars().collect(), additions))
+        Ok(Self::new(&env, additions))
     }
 
     pub fn deserialize(raw: &str) -> Result<EnvDiff> {
