@@ -15,7 +15,7 @@ Install rtx (other methods [here](#installation)):
 ```sh-session
 $ https://rtx.jdxcode.com/rtx-latest-macos-arm64 > ~/bin/rtx
 $ rtx --version
-rtx 1.2.7
+rtx 1.2.8
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
