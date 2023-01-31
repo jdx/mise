@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use itertools::Itertools;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -42,6 +43,13 @@ impl Command for HookEnv {
         ));
         let output = self.build_env_commands(&patches);
         out.stdout.write(output);
+
+        let installed_versions = config.ts.list_current_installed_versions()
+            .into_iter()
+            .map(|v| v.to_string()).collect_vec();
+        if !installed_versions.is_empty() && !*env::RTX_QUIET {
+            out.stderr.writeln(format!("rtx: {}", installed_versions.join(" ")));
+        }
 
         Ok(())
     }

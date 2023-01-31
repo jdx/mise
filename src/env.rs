@@ -78,6 +78,7 @@ lazy_static! {
     };
     pub static ref __RTX_DIR: Option<PathBuf> = var_os("__RTX_DIR").map(PathBuf::from);
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
+    pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
