@@ -100,12 +100,21 @@ _arguments "${_arguments_options[@]}" \
 '*::args -- all arguments:' \
 && ret=0
 ;;
+(complete)
+_arguments "${_arguments_options[@]}" \
+'-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
+'--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (current)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::plugin -- plugin to filter by:' \
+'::plugin -- plugin to show versions of:' \
 && ret=0
 ;;
 (deactivate)
@@ -191,15 +200,6 @@ esac
 ;;
 (doctor)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
-&& ret=0
-;;
-(complete)
-_arguments "${_arguments_options[@]}" \
-'-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
-'--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -358,6 +358,8 @@ _arguments "${_arguments_options[@]}" \
 (update)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'()-a[update all plugins]' \
+'()--all[update all plugins]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::plugin -- plugin(s) to update:' \
@@ -565,6 +567,10 @@ esac
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(complete)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (current)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -602,10 +608,6 @@ _arguments "${_arguments_options[@]}" \
 esac
 ;;
 (doctor)
-_arguments "${_arguments_options[@]}" \
-&& ret=0
-;;
-(complete)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -749,13 +751,13 @@ _rtx_commands() {
 'alias:Manage aliases' \
 'a:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
-'current:Get the latest runtime version available for install' \
+'complete:generate shell completions' \
+'current:Shows currently active, and installed runtime versions' \
 'deactivate:disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
-'complete:generate shell completions' \
-'env:exports environment variables to activate rtx in a single shell session' \
-'e:exports environment variables to activate rtx in a single shell session' \
+'env:exports env vars to activate rtx in a single shell session' \
+'e:exports env vars to activate rtx in a single shell session' \
 'exec:execute a command with runtime(s) set' \
 'x:execute a command with runtime(s) set' \
 'global:sets global .tool-versions to include a specified runtime' \
@@ -768,12 +770,8 @@ _rtx_commands() {
 'l:Sets .tool-versions to include a specific runtime' \
 'ls:list installed runtime versions' \
 'list:list installed runtime versions' \
-'ls-remote:list runtime versions available for install
-note that these versions are cached for commands like `rtx install nodejs@latest`
-however _this_ command will always clear that cache and fetch the latest remote versions' \
-'list-remote:list runtime versions available for install
-note that these versions are cached for commands like `rtx install nodejs@latest`
-however _this_ command will always clear that cache and fetch the latest remote versions' \
+'ls-remote:list runtime versions available for install' \
+'list-remote:list runtime versions available for install' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
 'settings:Manage settings' \
@@ -1018,12 +1016,12 @@ _rtx__help_commands() {
 'activate:Enables rtx to automatically modify runtimes when changing directory' \
 'alias:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
-'current:Get the latest runtime version available for install' \
+'complete:generate shell completions' \
+'current:Shows currently active, and installed runtime versions' \
 'deactivate:disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
-'complete:generate shell completions' \
-'env:exports environment variables to activate rtx in a single shell session' \
+'env:exports env vars to activate rtx in a single shell session' \
 'exec:execute a command with runtime(s) set' \
 'global:sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
@@ -1031,9 +1029,7 @@ _rtx__help_commands() {
 'latest:get the latest runtime version of a plugin'\''s runtimes' \
 'local:Sets .tool-versions to include a specific runtime' \
 'ls:list installed runtime versions' \
-'ls-remote:list runtime versions available for install
-note that these versions are cached for commands like `rtx install nodejs@latest`
-however _this_ command will always clear that cache and fetch the latest remote versions' \
+'ls-remote:list runtime versions available for install' \
 'plugins:Manage plugins' \
 'settings:Manage settings' \
 'uninstall:removes runtime versions' \
@@ -1286,7 +1282,13 @@ _rtx__settings_commands() {
 'ls:Show current settings' \
 'list:Show current settings' \
 'set:Add/update a setting' \
+'add:Add/update a setting' \
+'create:Add/update a setting' \
 'unset:Clears a setting' \
+'rm:Clears a setting' \
+'remove:Clears a setting' \
+'delete:Clears a setting' \
+'del:Clears a setting' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx settings commands' commands "$@"
