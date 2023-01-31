@@ -24,6 +24,9 @@ pub fn should_exit_early(current_env: HashMap<String, String>) -> bool {
     if has_watch_file_been_modified(&current_env) {
         return false;
     }
+    if *env::RTX_TRACE {
+        eprintln!("rtx: early-exit");
+    }
     true
 }
 
