@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::env::{join_paths, split_paths};
+use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ mod toolset;
 
 type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Config {
     pub settings: Settings,
     pub rtxrc: RTXFile,
@@ -93,17 +93,15 @@ impl Config {
     }
 
     pub fn path_env(&self) -> Result<String> {
-        let mut paths = self.list_paths()?;
-        let default_path = String::new();
-        let orig_path = env::PRISTINE_ENV.get("PATH").unwrap_or(&default_path);
-        for p in split_paths(orig_path) {
-            if p.starts_with(dirs::INSTALLS.deref()) {
-                // ignore existing install directories from previous runs
-                continue;
-            }
-            paths.push(p);
-        }
-        Ok(join_paths(paths)?.to_string_lossy().into())
+        let installs = self.list_paths()?;
+        let other = env::PATH
+            .clone()
+            .into_iter()
+            .filter(|p| !p.starts_with(dirs::INSTALLS.deref()))
+            .collect_vec();
+        Ok(join_paths([installs, other].concat())?
+            .to_string_lossy()
+            .into())
     }
 
     pub fn with_runtime_args(mut self, args: &[RuntimeArg]) -> Result<Self> {

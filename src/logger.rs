@@ -36,7 +36,7 @@ fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {
     TermLogger::new(
         level,
         ConfigBuilder::new()
-            .set_thread_level(LevelFilter::Off)
+            .set_thread_level(LevelFilter::Trace)
             .set_time_level(LevelFilter::Off)
             .set_target_level(LevelFilter::Debug)
             .build(),

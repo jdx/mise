@@ -17,11 +17,19 @@ pub struct Activate {
     /// Shell type to generate the script for
     #[clap(long, short)]
     shell: Option<ShellType>,
+
+    /// Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long, short)]
+    quiet: bool,
 }
 
 impl Command for Activate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let shell = get_shell(self.shell);
+
+        if self.quiet {
+            rtxprintln!(out, "{}", shell.set_env("RTX_QUIET", "1"));
+        }
 
         let exe = if cfg!(test) {
             "rtx".into()

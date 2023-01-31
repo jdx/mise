@@ -33,27 +33,28 @@ mod shell;
 pub mod shorthand_repository;
 mod ui;
 
+mod direnv;
 mod hash;
 #[cfg(test)]
 mod test;
 
 fn main() -> Result<()> {
-    if hook_env::should_exit_early(env::vars().collect()) {
-        return Ok(());
-    }
     color_eyre::install()?;
 
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level);
     let config = Config::load()?;
+    if hook_env::should_exit_early(&config) {
+        return Ok(());
+    }
     let cli = Cli::new_with_external_commands(&config)?;
 
     match cli.run(config, &env::ARGS, &mut Output::new()) {
         Err(err) if log_level < log::LevelFilter::Debug => {
-            eprintln!("rtx: error {err}");
-            eprintln!(
+            error!("error {err}");
+            error!(
                 // "rtx error: Run with `--log-level debug` or RTX_DEBUG=1 for more information."
-                "rtx: Run with RTX_DEBUG=1 for more information."
+                "Run with RTX_DEBUG=1 for more information."
             );
             std::process::exit(1);
         }

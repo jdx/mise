@@ -385,7 +385,7 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -h --shell --log-level --help"
+            opts="-s -q -h --shell --quiet --log-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

@@ -845,6 +845,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paris"
+version = "1.5.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eaf2319cd71dd9ff38c72bebde61b9ea657134abcf26ae4205f54f772a32810"
+
+[[package]]
 name = "paste"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1163,6 +1169,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48dfff04aade74dd495b007c831cd6f4e0cee19c344dd9dc0884c0289b70a786"
 dependencies = [
  "log",
+ "paris",
  "termcolor",
  "time 0.3.17",
 ]
