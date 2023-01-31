@@ -39,13 +39,17 @@ for platform in "${platforms[@]}"; do
 done
 
 pushd "$RELEASE_DIR"
-sha256sum ./*.tar.xz ./*.tar.gz >SHASUMS256.txt
+sha256sum ./rtx-latest-* >SHASUMS256.txt
+sha512sum ./rtx-latest-* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
+gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
 
 pushd "$RELEASE_DIR/$RTX_VERSION"
 sha256sum ./* >SHASUMS256.txt
+sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
+gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
 
 ./rtx/scripts/render-install.sh >rtx.jdxcode.com/static/install.sh
@@ -57,6 +61,7 @@ rm -rf rtx.jdxcode.com/static/deb
 mv artifacts/deb rtx.jdxcode.com/static/deb
 
 cp -vrf "$RELEASE_DIR/"* rtx.jdxcode.com/static
+echo "$RTX_VERSION" > rtx.jdxcode.com/static/VERSION
 
 ./rtx/scripts/release-npm.sh
 
