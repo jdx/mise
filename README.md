@@ -28,7 +28,7 @@ $ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
-> > If you use direnv, [see below](#direnv) for direnv-compatible setup.
+> If you use direnv, [see below](#direnv) for direnv-compatible setup.
 
 Install a runtime and set it as the default:
 

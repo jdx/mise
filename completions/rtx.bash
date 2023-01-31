@@ -309,6 +309,18 @@ _rtx() {
             rtx__plugins__help,update)
                 cmd="rtx__plugins__help__update"
                 ;;
+            rtx__settings,add)
+                cmd="rtx__settings__set"
+                ;;
+            rtx__settings,create)
+                cmd="rtx__settings__set"
+                ;;
+            rtx__settings,del)
+                cmd="rtx__settings__unset"
+                ;;
+            rtx__settings,delete)
+                cmd="rtx__settings__unset"
+                ;;
             rtx__settings,get)
                 cmd="rtx__settings__get"
                 ;;
@@ -320,6 +332,12 @@ _rtx() {
                 ;;
             rtx__settings,ls)
                 cmd="rtx__settings__ls"
+                ;;
+            rtx__settings,remove)
+                cmd="rtx__settings__unset"
+                ;;
+            rtx__settings,rm)
+                cmd="rtx__settings__unset"
                 ;;
             rtx__settings,set)
                 cmd="rtx__settings__set"
@@ -349,7 +367,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-h -V --log-level --help --version activate alias asdf current deactivate direnv doctor complete env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="-h -V --log-level --help --version activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -531,7 +549,7 @@ _rtx() {
             return 0
             ;;
         rtx__current)
-            opts="-h --log-level --help [PLUGIN]..."
+            opts="-h --log-level --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -809,7 +827,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf current deactivate direnv doctor complete env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1665,7 +1683,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__update)
-            opts="-h --log-level --help [PLUGIN]..."
+            opts="-a -h --all --log-level --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
