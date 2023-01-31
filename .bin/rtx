@@ -5,6 +5,4 @@ set -e
 # when chims are called in shebangs
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-pushd "$SCRIPT_DIR/.." >/dev/null || exit 1
-cargo build
-popd  >/dev/null && "$SCRIPT_DIR/../target/debug/rtx" "$@"
+cargo run --manifest-path "$SCRIPT_DIR/../Cargo.toml" "$@"

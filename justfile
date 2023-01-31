@@ -55,3 +55,7 @@ render-completions:
     ./.bin/rtx complete -s bash > completions/rtx.bash
     ./.bin/rtx complete -s zsh > completions/_rtx
     ./.bin/rtx complete -s fish > completions/rtx.fish
+
+pre-commit: lint render-help render-completions
+    git add README.md
+    git add completions
