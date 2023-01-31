@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # add this directory to `$PATH` to automatically build/run chim
 # when chims are called in shebangs
