@@ -89,6 +89,11 @@ impl EnvDiff {
                 || k == "SHELLOPTS"
                 || k == "COMP_WORDBREAKS"
                 || k == "PS1"
+                // TODO: consider removing this
+                // this is to make the ruby plugin compatible,
+                // it causes ruby to attempt to call asdf to reshim the binaries
+                // which we don't need or want to happen
+                || k == "RUBYLIB"
             {
                 continue;
             }
