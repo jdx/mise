@@ -10,7 +10,7 @@ use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
-use spinners::{Spinner, Spinners, Stream};
+use spinners_jdxcode::{Spinner, Spinners, Stream};
 use versions::Mess;
 
 use cache::PluginCache;
