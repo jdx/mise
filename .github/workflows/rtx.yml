@@ -45,7 +45,11 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Install direnv
-        run: curl -sfL https://direnv.net/install.sh | bash
+        uses: nick-fields/retry@v2
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: curl -sfL https://direnv.net/install.sh | bash
       - name: Install just
         uses: taiki-e/install-action@just
       - name: Run tests with coverage
