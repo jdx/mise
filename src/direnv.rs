@@ -32,11 +32,19 @@ impl DirenvDiff {
     }
 
     pub fn new_path(&self) -> Vec<PathBuf> {
-        split_paths(&self.new.get("PATH").cloned().unwrap_or_default()).collect()
+        let path = self.new.get("PATH");
+        match path {
+            Some(path) => split_paths(path).collect(),
+            None => vec![],
+        }
     }
 
     pub fn old_path(&self) -> Vec<PathBuf> {
-        split_paths(&self.old.get("PATH").cloned().unwrap_or_default()).collect()
+        let path = self.old.get("PATH");
+        match path {
+            Some(path) => split_paths(path).collect(),
+            None => vec![],
+        }
     }
 
     /// this adds a directory to both the old and new path in DIRENV_DIFF
@@ -114,6 +122,18 @@ mod test {
         let mut diff = DirenvDiff {
             old: HashMap::from([("PATH".to_string(), "/foo:/tmp:/bar:/old".to_string())]),
             new: HashMap::from([("PATH".to_string(), "/foo:/bar:/new".to_string())]),
+        };
+        let path = PathBuf::from("/tmp");
+        diff.add_path_to_old_and_new(&path).unwrap();
+        assert_display_snapshot!(diff.old.get("PATH").unwrap());
+        assert_display_snapshot!(diff.new.get("PATH").unwrap());
+    }
+
+    #[test]
+    fn test_null_path() {
+        let mut diff = DirenvDiff {
+            old: HashMap::from([]),
+            new: HashMap::from([]),
         };
         let path = PathBuf::from("/tmp");
         diff.add_path_to_old_and_new(&path).unwrap();

@@ -101,10 +101,11 @@ impl HookEnv {
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
             match self.update_direnv_diff(input, &installs) {
-                Ok(op) => {
+                Ok(Some(op)) => {
                     ops.push(op);
                 }
                 Err(err) => warn!("failed to update DIRENV_DIFF: {}", err),
+                _ => {}
             }
         }
 
@@ -114,13 +115,23 @@ impl HookEnv {
     /// inserts install path to DIRENV_DIFF both for old and new
     /// this makes direnv think that these paths were added before it ran
     /// that way direnv will not remove the path when it runs the next time
-    fn update_direnv_diff(&self, input: &str, installs: &Vec<PathBuf>) -> Result<EnvDiffOperation> {
+    fn update_direnv_diff(
+        &self,
+        input: &str,
+        installs: &Vec<PathBuf>,
+    ) -> Result<Option<EnvDiffOperation>> {
         let mut diff = DirenvDiff::parse(input)?;
+        if diff.new_path().is_empty() {
+            return Ok(None);
+        }
         for install in installs {
             diff.add_path_to_old_and_new(install)?;
         }
 
-        Ok(EnvDiffOperation::Change("DIRENV_DIFF".into(), diff.dump()?))
+        Ok(Some(EnvDiffOperation::Change(
+            "DIRENV_DIFF".into(),
+            diff.dump()?,
+        )))
     }
 
     fn build_diff_operation(&self, diff: &EnvDiff) -> Result<EnvDiffOperation> {
