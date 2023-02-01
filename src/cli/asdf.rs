@@ -68,7 +68,7 @@ mod test {
 
     #[test]
     fn test_fake_asdf() {
-        let stdout = assert_cli!("asdf", "-v");
+        let stdout = assert_cli!("asdf", "version");
         assert_str_eq!(stdout, VERSION.to_string() + "\n");
     }
 

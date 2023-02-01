@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::output::Output;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Show rtx version", alias = "-v", alias = "v")]
+#[clap(about = "Show rtx version", alias = "v")]
 pub struct Version {}
 
 lazy_static! {
