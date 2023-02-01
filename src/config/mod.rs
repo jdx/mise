@@ -262,7 +262,7 @@ fn load_config_files(
 }
 
 fn load_config_file(ts: &mut Toolset, cf: Box<dyn ConfigFile>) -> Result<()> {
-    trace!("config file: {:#?}", cf);
+    trace!("config file: {}", cf);
     for (plugin, versions) in cf.plugins() {
         ts.set_current_runtime_versions(&plugin, versions.clone(), cf.source())?;
     }
@@ -317,15 +317,30 @@ fn err_load_settings(settings_path: &Path) -> Report {
 
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let plugins = self
+            .ts
+            .list_installed_plugins()
+            .into_iter()
+            .map(|p| p.name.clone())
+            .collect::<Vec<_>>();
+        let versions = self
+            .ts
+            .list_current_installed_versions()
+            .into_iter()
+            .map(|rtv| rtv.to_string())
+            .collect::<Vec<_>>();
+        let config_files = self
+            .config_files
+            .iter()
+            .map(|p| {
+                p.to_string_lossy()
+                    .to_string()
+                    .replace(&dirs::HOME.to_string_lossy().to_string(), "~")
+            })
+            .collect::<Vec<_>>();
         writeln!(f, "Config:")?;
-        writeln!(f, "  Installed Plugins:")?;
-        for plugin in self.ts.list_installed_plugins() {
-            writeln!(f, "    {}", plugin.name)?;
-        }
-        writeln!(f, "  Active Versions:")?;
-        for rtv in self.ts.list_current_versions() {
-            writeln!(f, "    {rtv}")?;
-        }
-        Ok(())
+        writeln!(f, "  Files: {}", config_files.join(", "))?;
+        writeln!(f, "  Installed Plugins: {}", plugins.join(", "))?;
+        write!(f, "  Active Versions: {}", versions.join(", "))
     }
 }

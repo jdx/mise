@@ -6,9 +6,11 @@ use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
 use indexmap::IndexMap;
+use itertools::Itertools;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::PluginSource;
+use crate::file::display_path;
 use crate::plugins::PluginName;
 
 // python 3.11.0 3.10.0
@@ -100,7 +102,17 @@ impl ToolVersions {
 
 impl Display for ToolVersions {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.dump())
+        let plugins = &self
+            .plugins
+            .iter()
+            .map(|(p, v)| format!("{}@{}", p, v.versions.join("|")))
+            .collect_vec();
+        write!(
+            f,
+            "ToolVersions({}): {}",
+            display_path(&self.path),
+            plugins.join(", ")
+        )
     }
 }
 
@@ -177,13 +189,7 @@ pub(crate) mod tests {
     fn test_parse() {
         let tv = ToolVersions::from_file(dirs::CURRENT.join(".tool-versions").as_path()).unwrap();
         assert_eq!(tv.path, dirs::CURRENT.join(".tool-versions"));
-        assert_display_snapshot!(tv, @r###"
-        #python 3.11.1 3.10.9 # foo
-        shellcheck 0.9.0
-        shfmt 3.5.2 # test comment
-        #nodejs 18.13.0
-        nodejs system
-        "###);
+        assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.tool-versions): shellcheck@0.9.0, shfmt@3.5.2, nodejs@system");
     }
 
     #[test]
