@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
-use owo_colors::{OwoColorize, Stream};
+use owo_colors::Stream;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
+use crate::ui::color::cyan;
 
 /// updates a plugin to the latest version
 ///
@@ -30,10 +31,7 @@ impl Command for Update {
                 .into_iter()
                 .map(|p| {
                     config.ts.find_plugin(&p).ok_or_else(|| {
-                        eyre!(
-                            "plugin {} not found",
-                            p.if_supports_color(Stream::Stderr, |t| t.cyan())
-                        )
+                        eyre!("plugin {} not found", cyan(Stream::Stderr, p.as_str()))
                     })
                 })
                 .collect::<Result<Vec<Arc<Plugin>>>>()?,

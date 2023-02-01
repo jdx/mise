@@ -1,8 +1,9 @@
+use atty::Stream::Stderr;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
-use owo_colors::{OwoColorize, Stream};
+use owo_colors::Stream;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -14,6 +15,7 @@ use crate::output::Output;
 use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
+use crate::ui::color::cyan;
 
 /// install a runtime
 ///
@@ -78,8 +80,7 @@ impl Install {
             } else if rtv.is_installed() {
                 warn!(
                     "{} is already installed",
-                    rtv.to_string()
-                        .if_supports_color(Stream::Stderr, |t| t.cyan())
+                    cyan(Stream::Stderr, &rtv.to_string())
                 );
                 continue;
             }
@@ -87,8 +88,7 @@ impl Install {
             rtxprintln!(
                 out,
                 "rtx: Installing runtime: {}",
-                rtv.to_string()
-                    .if_supports_color(Stream::Stderr, |t| t.cyan())
+                cyan(Stderr, &rtv.to_string())
             );
             rtv.install(Version, &config)?;
         }
@@ -130,8 +130,7 @@ impl Install {
             rtxprintln!(
                 out,
                 "rtx: Installing runtime: {}",
-                rtv.to_string()
-                    .if_supports_color(Stream::Stderr, |t| t.cyan())
+                cyan(Stderr, &rtv.to_string())
             );
             rtv.install(Version, &config)?;
         }
@@ -142,7 +141,7 @@ impl Install {
 fn warn_plugin_not_installed(plugin: &Plugin) {
     warn!(
         "plugin {} is not installed. Install it with `rtx plugin add {}`",
-        plugin.name.if_supports_color(Stream::Stderr, |t| t.cyan()),
+        cyan(Stderr, &plugin.name),
         plugin.name,
     );
 }

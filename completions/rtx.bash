@@ -1611,7 +1611,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -h --force --log-level --help <NAME> [GIT_URL]"
+            opts="-f -h --force --all --log-level --help [NAME] [GIT_URL]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
