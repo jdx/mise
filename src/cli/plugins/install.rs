@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::{eyre, Result};
 use url::Url;
 
@@ -19,8 +21,8 @@ pub struct PluginsInstall {
     /// The name of the plugin to install
     ///
     /// e.g.: nodejs, ruby
-    #[clap()]
-    name: String,
+    #[clap(required_unless_present = "all")]
+    name: Option<String>,
 
     /// The git url of the plugin
     ///
@@ -28,14 +30,24 @@ pub struct PluginsInstall {
     #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url)]
     git_url: Option<String>,
 
-    /// Reinstalls even if plugin exists
+    /// Reinstall even if plugin exists
     #[clap(short, long)]
     force: bool,
+
+    /// Install all missing plugins
+    ///
+    /// This will only install plugins that have matching shortnames.
+    /// i.e.: they don't need the full git repo url
+    #[clap(long, conflicts_with_all = ["name", "force"])]
+    all: bool,
 }
 
 impl Command for PluginsInstall {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let (name, git_url) = get_name_and_url(&config, self.name, self.git_url)?;
+        if self.all {
+            return self.install_all_missing_plugins(&config);
+        }
+        let (name, git_url) = get_name_and_url(&config, self.name.unwrap(), self.git_url)?;
         let plugin = Plugin::load(&name)?;
         if self.force {
             plugin.uninstall()?;
@@ -47,6 +59,29 @@ impl Command for PluginsInstall {
         }
 
         Ok(())
+    }
+}
+
+impl PluginsInstall {
+    fn install_all_missing_plugins(&self, config: &Config) -> Result<()> {
+        let missing_plugins = self.missing_plugins(config)?;
+        if missing_plugins.is_empty() {
+            warn!("all plugins already installed");
+        }
+        for plugin in missing_plugins {
+            let (_, git_url) = get_name_and_url(config, plugin.name.clone(), None)?;
+            plugin.install(&git_url)?;
+        }
+        Ok(())
+    }
+
+    fn missing_plugins(&self, config: &Config) -> Result<Vec<Arc<Plugin>>> {
+        Ok(config
+            .ts
+            .list_plugins()
+            .into_iter()
+            .filter(|p| !p.is_installed())
+            .collect::<Vec<_>>())
     }
 }
 
@@ -122,5 +157,13 @@ mod test {
         let args = ["rtx", "plugin", "add", "ruby:"].map(String::from).into();
         let err = cli_run(&args).unwrap_err();
         assert_display_snapshot!(err);
+    }
+
+    #[test]
+    fn test_plugin_install_all() {
+        assert_cli!("plugin", "rm", "nodejs");
+        assert_cli!("plugin", "install", "--all");
+        let stdout = assert_cli!("plugin");
+        assert_snapshot!(grep(stdout, "nodejs"), "nodejs");
     }
 }

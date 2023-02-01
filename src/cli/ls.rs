@@ -1,3 +1,4 @@
+use atty::Stream::Stdout;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use crate::config::{Config, PluginSource};
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
+use crate::ui::color::{cyan, dimmed, green, red};
 
 /// list installed runtime versions
 ///
@@ -42,9 +44,7 @@ impl Command for Ls {
                     true => "->",
                     false => "  ",
                 },
-                &rtv.plugin
-                    .name
-                    .if_supports_color(Stream::Stdout, |t| t.cyan()),
+                cyan(Stdout, &rtv.plugin.name),
                 styled_version(&rtv.version, !rtv.is_installed(), source.is_some()),
                 match source {
                     Some(source) => format!("(set by {source})"),
@@ -62,18 +62,11 @@ fn styled_version(version: &String, missing: bool, active: bool) -> String {
         version
             .if_supports_color(Stream::Stdout, |t| t.strikethrough().red().to_string())
             .to_string()
-            + " (missing)"
-                .if_supports_color(Stream::Stdout, |t| t.red())
-                .to_string()
-                .as_str()
+            + red(Stdout, " (missing)").as_str()
     } else if active {
-        version
-            .if_supports_color(Stream::Stdout, |t| t.green())
-            .to_string()
+        green(Stdout, version)
     } else {
-        version
-            .if_supports_color(Stream::Stdout, |t| t.dimmed())
-            .to_string()
+        dimmed(Stdout, version)
     };
     let unstyled = if missing {
         format!("{version} (missing)")

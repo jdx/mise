@@ -898,10 +898,10 @@ e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin
 
 This behavior can be modified in ~/.rtx/config.toml
 
-Usage: install [OPTIONS] <NAME> [GIT_URL]
+Usage: install [OPTIONS] [NAME] [GIT_URL]
 
 Arguments:
-  <NAME>
+  [NAME]
           The name of the plugin to install
           
           e.g.: nodejs, ruby
@@ -913,7 +913,12 @@ Arguments:
 
 Options:
   -f, --force
-          Reinstalls even if plugin exists
+          Reinstall even if plugin exists
+
+      --all
+          Install all missing plugins
+          
+          This will only install plugins that have matching shortnames. i.e.: they don't need the full git repo url
 
   -h, --help
           Print help (see a summary with '-h')
