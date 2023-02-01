@@ -246,6 +246,14 @@ $ echo 'eval "$(rtx activate -s bash)"' >> ~/.bashrc
 $ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
+### Something else?
+
+Adding a new shell is not hard at all since very little shell code is
+in this project.
+[See here](https://github.com/jdxcode/rtx/tree/main/src/shell) for how
+the others are implemented. If your shell isn't currently supported
+I'd be happy to help you get yours integrated.
+
 ## Configuration
 
 ### `.tool-versions`
