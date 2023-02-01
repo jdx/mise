@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use atty::Stream::Stderr;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all};
@@ -16,7 +17,9 @@ use crate::config::{MissingRuntimeBehavior, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
+use crate::ui::color::cyan;
 use crate::ui::prompt;
+use crate::ui::spinner::Spinner;
 use crate::{dirs, env, fake_asdf, file};
 
 mod runtime_conf;
@@ -68,6 +71,9 @@ impl RuntimeVersion {
         let plugin = &self.plugin;
         let settings = &config.settings;
         debug!("install {} {} {}", plugin.name, self.version, install_type);
+        let rtv_label = cyan(Stderr, &self.to_string());
+        let install_message = format!("Installing runtime: {rtv_label}...");
+        let mut sp = Spinner::start(install_message, config.settings.verbose);
 
         if !self.plugin.ensure_installed(settings)? {
             return Err(PluginNotInstalled(self.plugin.name.clone()).into());
@@ -125,6 +131,7 @@ impl RuntimeVersion {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
+        sp.success(format!("Runtime {rtv_label} installed"));
 
         Ok(())
     }
