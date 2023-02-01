@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 pub use std::env::*;
-use std::ffi::OsString;
 use std::path::PathBuf;
 
 use lazy_static::lazy_static;
@@ -84,10 +83,11 @@ lazy_static! {
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
+    /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
     pub static ref PATH: Vec<PathBuf> =
-        split_paths(&var_os("PATH").unwrap_or(OsString::new())).collect();
+        split_paths(&var_os("PATH").unwrap_or_default()).collect();
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
         ".tool-versions".into()
     } else {
@@ -110,7 +110,16 @@ fn get_env_diff() -> EnvDiff {
 
 fn var_is_true(key: &str) -> bool {
     match var(key) {
-        Ok(v) => v == "true" || v == "1",
+        Ok(v) => {
+            let v = v.to_lowercase();
+            !v.is_empty()
+                && v != "n"
+                && v != "no"
+                && v != "false"
+                && v != "0"
+                && v != "off"
+                && v != " "
+        }
         Err(_) => false,
     }
 }

@@ -8,4 +8,5 @@ legacy_version_file = true
 disable_plugin_short_name_repository = false
 plugin_autoupdate_last_check_duration = 20
 plugin_repository_last_check_duration = 20
+verbose = true
 

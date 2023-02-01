@@ -13,7 +13,7 @@ pub fn cyan(stream: Stream, s: &str) -> String {
 pub fn green(stream: Stream, s: &str) -> String {
     s.if_supports_color(stream, |s| s.green()).to_string()
 }
-pub fn bright_green(stream: Stream, s: &str) -> String {
+pub fn _bright_green(stream: Stream, s: &str) -> String {
     s.if_supports_color(stream, |s| s.bright_green())
         .to_string()
 }

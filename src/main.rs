@@ -51,7 +51,7 @@ fn main() -> Result<()> {
 
     match cli.run(config, &env::ARGS, &mut Output::new()) {
         Err(err) if log_level < log::LevelFilter::Debug => {
-            error!("error {err}");
+            error!("{err}");
             error!(
                 // "rtx error: Run with `--log-level debug` or RTX_DEBUG=1 for more information."
                 "Run with RTX_DEBUG=1 for more information."

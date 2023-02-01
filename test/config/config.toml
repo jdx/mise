@@ -1,3 +1,4 @@
+verbose = true
 missing_runtime_behavior= 'autoinstall'
 always_keep_download= true
 legacy_version_file= true

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
 use owo_colors::Stream;
-use spinners_jdxcode::{Spinner, Spinners};
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -15,7 +14,8 @@ use crate::output::Output;
 use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
-use crate::ui::color::{bright_green, cyan};
+use crate::ui::color::cyan;
+use crate::ui::spinner::Spinner;
 
 /// install a runtime
 ///
@@ -44,9 +44,9 @@ pub struct Install {
     #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"])]
     all: bool,
 
-    /// show installation output
-    #[clap(long, short)]
-    verbose: bool,
+    /// Show installation output
+    #[clap(long, short, action = clap::ArgAction::Count)]
+    verbose: u8,
 }
 
 impl Command for Install {
@@ -135,26 +135,12 @@ impl Install {
         Ok(())
     }
 
-    fn do_install(&self, config: &Config, out: &mut Output, rtv: &RuntimeVersion) -> Result<()> {
+    fn do_install(&self, config: &Config, _out: &mut Output, rtv: &RuntimeVersion) -> Result<()> {
         let rtv_label = cyan(Stderr, &rtv.to_string());
         let install_message = format!("Installing runtime: {rtv_label}...");
-        let sp = if self.verbose {
-            rtxstatusln!(out, "{install_message}");
-            None
-        } else {
-            Some(Spinner::with_stream(
-                Spinners::Dots10,
-                install_message,
-                spinners_jdxcode::Stream::Stderr,
-            ))
-        };
-        rtv.install(Version, config, self.verbose)?;
-        if let Some(mut sp) = sp {
-            sp.stop_and_persist(
-                &bright_green(Stderr, "✔"),
-                format!("Runtime {rtv_label} installed"),
-            );
-        }
+        let mut sp = Spinner::start(install_message, config.settings.verbose);
+        rtv.install(Version, config)?;
+        sp.success(format!("Runtime {rtv_label} installed"));
         Ok(())
     }
 }

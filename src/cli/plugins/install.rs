@@ -40,6 +40,10 @@ pub struct PluginsInstall {
     /// i.e.: they don't need the full git repo url
     #[clap(short, long, conflicts_with_all = ["name", "force"])]
     all: bool,
+
+    /// Show installation output
+    #[clap(long, short, action = clap::ArgAction::Count)]
+    verbose: u8,
 }
 
 impl Command for PluginsInstall {
@@ -55,7 +59,7 @@ impl Command for PluginsInstall {
         if !self.force && plugin.is_installed() {
             warn!("plugin {} already installed", name);
         } else {
-            plugin.install(&git_url)?;
+            plugin.install(&config.settings, &git_url)?;
         }
 
         Ok(())
@@ -70,7 +74,7 @@ impl PluginsInstall {
         }
         for plugin in missing_plugins {
             let (_, git_url) = get_name_and_url(config, plugin.name.clone(), None)?;
-            plugin.install(&git_url)?;
+            plugin.install(&config.settings, &git_url)?;
         }
         Ok(())
     }

@@ -1,27 +1,15 @@
 use clap::builder::ValueParser;
 use clap::Arg;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Result;
-use lazy_static::lazy_static;
-use log::LevelFilter;
+use log::{LevelFilter, ParseLevelError};
+use once_cell::sync::Lazy;
 
 use crate::env;
 
 #[derive(Clone)]
 pub struct LogLevel(pub LevelFilter);
 
-fn parse_log_level(input: &str) -> Result<LevelFilter> {
-    match input {
-        "trace" => Ok(LevelFilter::Trace),
-        "debug" => Ok(LevelFilter::Debug),
-        "info" => Ok(LevelFilter::Info),
-        "warn" => Ok(LevelFilter::Warn),
-        "error" => Ok(LevelFilter::Error),
-        _ => Err(eyre!(
-            "invalid log level: {}\nvalid input: trace, debug, info, warn, error",
-            input
-        )),
-    }
+fn parse_log_level(input: &str) -> core::result::Result<LevelFilter, ParseLevelError> {
+    input.parse::<LevelFilter>()
 }
 
 impl LogLevel {
@@ -37,6 +25,5 @@ impl LogLevel {
     }
 }
 
-lazy_static! {
-    pub static ref DEFAULT_LOG_LEVEL: String = env::RTX_LOG_LEVEL.to_string().to_lowercase();
-}
+pub static DEFAULT_LOG_LEVEL: Lazy<String> =
+    Lazy::new(|| env::RTX_LOG_LEVEL.to_string().to_lowercase());
