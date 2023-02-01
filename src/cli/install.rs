@@ -15,7 +15,6 @@ use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::ui::color::cyan;
-use crate::ui::spinner::Spinner;
 
 /// install a runtime
 ///
@@ -136,11 +135,7 @@ impl Install {
     }
 
     fn do_install(&self, config: &Config, _out: &mut Output, rtv: &RuntimeVersion) -> Result<()> {
-        let rtv_label = cyan(Stderr, &rtv.to_string());
-        let install_message = format!("Installing runtime: {rtv_label}...");
-        let mut sp = Spinner::start(install_message, config.settings.verbose);
         rtv.install(Version, config)?;
-        sp.success(format!("Runtime {rtv_label} installed"));
         Ok(())
     }
 }
