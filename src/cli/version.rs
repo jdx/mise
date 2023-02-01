@@ -12,7 +12,7 @@ pub struct Version {}
 
 lazy_static! {
     pub static ref VERSION: String = format!(
-        "{} (build {})",
+        "{} (built {})",
         if cfg!(debug_assertions) {
             format!("{}-DEBUG", env!("CARGO_PKG_VERSION"))
         } else {
