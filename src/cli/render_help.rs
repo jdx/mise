@@ -46,7 +46,9 @@ $ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
-> If you use direnv, [see below](#direnv) for direnv-compatible setup.
+> [We're working to make `rtx activate` not conflict with direnv.](https://github.com/jdxcode/rtx/issues/8)
+> Hopefully soon you'll be able to use `rtx activate` with direnv.
+> If you use direnv, [see below](#direnv) for direnv-compatible setup that does not require `rtx activate`.
 
 Install a runtime and set it as the default:
 
