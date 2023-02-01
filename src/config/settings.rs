@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use crate::config::AliasMap;
 use crate::env;
 use crate::plugins::PluginName;
+use crate::ui::prompt::is_tty;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -16,6 +17,7 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: Duration,
     pub plugin_repository_last_check_duration: Duration,
     pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
+    pub verbose: bool,
 }
 
 impl Default for Settings {
@@ -28,6 +30,7 @@ impl Default for Settings {
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             plugin_repository_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
+            verbose: !is_tty(),
         }
     }
 }
@@ -59,6 +62,7 @@ impl Settings {
             "plugin_repository_last_check_duration".to_string(),
             (self.plugin_repository_last_check_duration.as_secs() / 60).to_string(),
         );
+        map.insert("verbose".into(), self.verbose.to_string());
         map
     }
 }
@@ -72,6 +76,7 @@ pub struct SettingsBuilder {
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
     pub plugin_repository_last_check_duration: Option<Duration>,
     pub aliases: Option<AliasMap>,
+    pub verbose: Option<bool>,
 }
 
 impl SettingsBuilder {
@@ -101,6 +106,9 @@ impl SettingsBuilder {
         if other.plugin_repository_last_check_duration.is_some() {
             self.plugin_repository_last_check_duration =
                 other.plugin_repository_last_check_duration;
+        }
+        if other.verbose.is_some() {
+            self.verbose = other.verbose;
         }
         if other.aliases.is_some() {
             self.aliases = other.aliases;
@@ -139,6 +147,7 @@ impl SettingsBuilder {
         settings.plugin_autoupdate_last_check_duration = self
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
+        settings.verbose = self.verbose.unwrap_or(settings.verbose);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         settings
@@ -173,15 +182,12 @@ mod tests {
     fn test_settings_merge() {
         let mut s1 = SettingsBuilder::default();
         let s2 = SettingsBuilder {
-            missing_runtime_behavior: Some(MissingRuntimeBehavior::AutoInstall),
+            missing_runtime_behavior: Some(AutoInstall),
             ..SettingsBuilder::default()
         };
         s1._merge(s2);
 
-        assert_eq!(
-            s1.missing_runtime_behavior,
-            Some(MissingRuntimeBehavior::AutoInstall)
-        );
+        assert_eq!(s1.missing_runtime_behavior, Some(AutoInstall));
     }
 
     #[test]

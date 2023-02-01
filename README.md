@@ -333,6 +333,8 @@ plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable u
 # e.g.: nodejs -> https://github.com/asdf-vm/asdf-nodejs.git
 plugin_repository_last_check_duration = 10080 # (one week) set to 0 to disable updates
 
+verbose = false # see explanation under `RTX_VERBOSE`
+
 # disables the short name repository (described above)
 disable_plugin_short_name_repository = false
 
@@ -392,6 +394,12 @@ Output logs to a file.
 
 Same as `RTX_LOG_LEVEL` but for the log file output level. This is useful if you want
 to store the logs but not have them litter your display.
+
+#### `RTX_VERBOSE=1`
+
+This shows the installation output during `rtx install` and `rtx plugin install`.
+This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
+2 configuration for the same thing, but for now it is it's own config.
 
 ## Aliases
 
@@ -777,8 +785,8 @@ Options:
   -a, --all
           install all missing runtimes as well as all plugins for the current directory
 
-  -v, --verbose
-          show installation output
+  -v, --verbose...
+          Show installation output
 
   -h, --help
           Print help (see a summary with '-h')
@@ -950,6 +958,9 @@ Options:
           Install all missing plugins
           
           This will only install plugins that have matching shortnames. i.e.: they don't need the full git repo url
+
+  -v, --verbose...
+          Show installation output
 
   -h, --help
           Print help (see a summary with '-h')

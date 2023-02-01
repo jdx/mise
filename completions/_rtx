@@ -16,6 +16,8 @@ _rtx() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
@@ -36,6 +38,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-q[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--quiet[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -45,6 +49,8 @@ _arguments "${_arguments_options[@]}" \
 '-p+[filter aliases by plugin]:PLUGIN: ' \
 '--plugin=[filter aliases by plugin]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_rtx__alias_commands" \
@@ -62,6 +68,8 @@ _arguments "${_arguments_options[@]}" \
 '-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -97,6 +105,8 @@ esac
 (asdf)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::args -- all arguments:' \
@@ -107,6 +117,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -114,6 +126,8 @@ _arguments "${_arguments_options[@]}" \
 (current)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::plugin -- plugin to show versions of:' \
@@ -124,6 +138,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[shell type to generate the script for]:SHELL:(bash fish zsh)' \
 '--shell=[shell type to generate the script for]:SHELL:(bash fish zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -131,6 +147,8 @@ _arguments "${_arguments_options[@]}" \
 (direnv)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_rtx__direnv_commands" \
@@ -146,6 +164,8 @@ _arguments "${_arguments_options[@]}" \
             (envrc)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -153,6 +173,8 @@ _arguments "${_arguments_options[@]}" \
 (exec)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -160,6 +182,8 @@ _arguments "${_arguments_options[@]}" \
 (activate)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -203,6 +227,8 @@ esac
 (doctor)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -212,6 +238,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
 '--shell=[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtime version to use:' \
@@ -222,6 +250,8 @@ _arguments "${_arguments_options[@]}" \
 '()-c+[the command string to execute]:C: ' \
 '()--command=[the command string to execute]:C: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtime(s) to start:' \
@@ -233,6 +263,8 @@ _arguments "${_arguments_options[@]}" \
 '*--remove=[remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions, by default, it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtimes:' \
@@ -243,6 +275,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate script for]:SHELL:(bash fish zsh)' \
 '--shell=[Shell type to generate script for]:SHELL:(bash fish zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -256,8 +290,8 @@ _arguments "${_arguments_options[@]}" \
 '--force[force reinstall even if already installed]' \
 '(-p --plugin -f --force)-a[install all missing runtimes as well as all plugins for the current directory]' \
 '(-p --plugin -f --force)--all[install all missing runtimes as well as all plugins for the current directory]' \
-'-v[show installation output]' \
-'--verbose[show installation output]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtime(s) to install:' \
@@ -266,6 +300,8 @@ _arguments "${_arguments_options[@]}" \
 (latest)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':runtime -- Runtime to get the latest version of:' \
@@ -279,6 +315,8 @@ _arguments "${_arguments_options[@]}" \
 '-p[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--parent[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions by default it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtimes to add to .tool-versions:' \
@@ -291,6 +329,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show runtimes currently specified in .tool-versions]' \
 '--current[Only show runtimes currently specified in .tool-versions]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -298,6 +338,8 @@ _arguments "${_arguments_options[@]}" \
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- Plugin:' \
@@ -310,6 +352,8 @@ _arguments "${_arguments_options[@]}" \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_rtx__plugins_commands" \
@@ -329,6 +373,8 @@ _arguments "${_arguments_options[@]}" \
 '--force[Reinstall even if plugin exists]' \
 '(-f --force)-a[Install all missing plugins]' \
 '(-f --force)--all[Install all missing plugins]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::name -- The name of the plugin to install:' \
@@ -342,6 +388,8 @@ _arguments "${_arguments_options[@]}" \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -351,6 +399,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -358,6 +408,8 @@ _arguments "${_arguments_options[@]}" \
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- plugin to remove:' \
@@ -368,6 +420,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '()-a[update all plugins]' \
 '()--all[update all plugins]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::plugin -- plugin(s) to update:' \
@@ -420,6 +474,8 @@ esac
 (settings)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_rtx__settings_commands" \
@@ -435,6 +491,8 @@ _arguments "${_arguments_options[@]}" \
             (get)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to show:' \
@@ -443,6 +501,8 @@ _arguments "${_arguments_options[@]}" \
 (ls)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -450,6 +510,8 @@ _arguments "${_arguments_options[@]}" \
 (set)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to set:' \
@@ -459,6 +521,8 @@ _arguments "${_arguments_options[@]}" \
 (unset)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to remove:' \
@@ -507,6 +571,8 @@ esac
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtime(s) to remove:' \
@@ -515,6 +581,8 @@ _arguments "${_arguments_options[@]}" \
 (version)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -522,6 +590,8 @@ _arguments "${_arguments_options[@]}" \
 (where)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':runtime -- runtime(s) to remove:' \
@@ -531,6 +601,8 @@ _arguments "${_arguments_options[@]}" \
 (render-help)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0

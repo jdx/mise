@@ -64,7 +64,7 @@ impl RuntimeVersion {
         Ok(versions)
     }
 
-    pub fn install(&self, install_type: InstallType, config: &Config, verbose: bool) -> Result<()> {
+    pub fn install(&self, install_type: InstallType, config: &Config) -> Result<()> {
         let plugin = &self.plugin;
         let settings = &config.settings;
         debug!("install {} {} {}", plugin.name, self.version, install_type);
@@ -78,7 +78,7 @@ impl RuntimeVersion {
         let install = Script::Install(install_type);
 
         if self.script_man.script_exists(&download) {
-            if verbose {
+            if settings.verbose {
                 self.script_man
                     .cmd(download)
                     .stdout_to_stderr()
@@ -94,7 +94,7 @@ impl RuntimeVersion {
             }
         }
 
-        if verbose {
+        if settings.verbose {
             self.script_man
                 .cmd(install)
                 .stdout_to_stderr()
@@ -150,12 +150,12 @@ impl RuntimeVersion {
         }
         match config.settings.missing_runtime_behavior {
             MissingRuntimeBehavior::AutoInstall => {
-                self.install(InstallType::Version, config, false)?;
+                self.install(InstallType::Version, config)?;
                 Ok(true)
             }
             MissingRuntimeBehavior::Prompt => {
                 if prompt_for_install(&format!("{self}")) {
-                    self.install(InstallType::Version, config, false)?;
+                    self.install(InstallType::Version, config)?;
                     Ok(true)
                 } else {
                     Ok(false)
