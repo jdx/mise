@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let log_level = *env::RTX_LOG_LEVEL;
-    logger::init(log_level);
+    logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
     let config = Config::load()?;
     if hook_env::should_exit_early(&config) {
         return Ok(());

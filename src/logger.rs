@@ -7,13 +7,13 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use simplelog::*;
 
-pub fn init(log_level: LevelFilter) {
+pub fn init(log_level: LevelFilter, log_file_level: LevelFilter) {
     let mut loggers: Vec<Box<dyn SharedLogger>> = vec![];
     loggers.push(init_term_logger(log_level));
 
     if let Ok(log) = env::var("RTX_LOG_FILE") {
         let log_file = PathBuf::from(log);
-        if let Some(logger) = init_write_logger(log_level, log_file) {
+        if let Some(logger) = init_write_logger(log_file_level, log_file) {
             loggers.push(logger)
         }
     }
@@ -50,7 +50,7 @@ fn init_write_logger(level: LevelFilter, log_path: PathBuf) -> Option<Box<dyn Sh
         Ok(log_file) => Some(WriteLogger::new(
             level,
             ConfigBuilder::new()
-                .set_thread_level(LevelFilter::Off)
+                .set_thread_level(LevelFilter::Trace)
                 .build(),
             log_file,
         )),
@@ -68,6 +68,6 @@ mod tests {
 
     #[test]
     fn test_init() {
-        init(LevelFilter::Debug);
+        init(LevelFilter::Debug, LevelFilter::Debug);
     }
 }
