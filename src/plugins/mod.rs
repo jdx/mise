@@ -10,7 +10,6 @@ use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
-use spinners_jdxcode::{Spinner, Spinners, Stream};
 use versions::Mess;
 
 use cache::PluginCache;
@@ -24,8 +23,9 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand_repository::ShorthandRepo;
-use crate::ui::color::{bright_green, cyan};
+use crate::ui::color::cyan;
 use crate::ui::prompt;
+use crate::ui::spinner::Spinner;
 use crate::{dirs, file};
 
 mod cache;
@@ -92,13 +92,10 @@ impl Plugin {
         git.get_remote_url()
     }
 
-    pub fn install(&self, repository: &String) -> Result<()> {
+    pub fn install(&self, settings: &Settings, repository: &String) -> Result<()> {
         debug!("install {} {:?}", self.name, repository);
-        let mut sp = Spinner::with_stream(
-            Spinners::Dots10,
-            format!("Installing plugin {}...", cyan(Stderr, &self.name)),
-            Stream::Stderr,
-        );
+        let install_message = format!("Installing plugin {}...", cyan(Stderr, &self.name));
+        let mut sp = Spinner::start(install_message, settings.verbose);
 
         if self.is_installed() {
             self.uninstall()?;
@@ -106,11 +103,7 @@ impl Plugin {
 
         let git = Git::new(self.plugin_path.to_path_buf());
         git.clone(repository)?;
-        sp.stop_and_persist(
-            &bright_green(Stderr, "✔"),
-            format!("Plugin {} installed", cyan(Stderr, &self.name)),
-        );
-
+        sp.success(format!("Plugin {} installed", cyan(Stderr, &self.name)));
         Ok(())
     }
 
@@ -123,12 +116,12 @@ impl Plugin {
         match shr.lookup(&self.name) {
             Ok(repo) => match settings.missing_runtime_behavior {
                 MissingRuntimeBehavior::AutoInstall => {
-                    self.install(&repo)?;
+                    self.install(settings, &repo)?;
                     Ok(true)
                 }
                 MissingRuntimeBehavior::Prompt => match prompt::prompt_for_install(&self.name) {
                     true => {
-                        self.install(&repo)?;
+                        self.install(settings, &repo)?;
                         Ok(true)
                     }
                     false => Ok(false),

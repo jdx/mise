@@ -100,6 +100,7 @@ impl RTXFile {
             "disable_plugin_short_name_repository" => {
                 self.settings.disable_plugin_short_name_repository = Some(self.parse_bool(k, v)?)
             }
+            "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
             _ => self.parse_plugin(k, v)?,

@@ -129,7 +129,8 @@ impl Cli {
                 .subcommand_required(true)
                 .after_help(AFTER_HELP)
                 .color(ColorChoice::Never)
-                .arg(args::log_level::LogLevel::arg()),
+                .arg(args::log_level::LogLevel::arg())
+                .arg(args::verbose::Verbose::arg()),
         )
     }
 
@@ -139,9 +140,16 @@ impl Cli {
         *matches.get_one::<LevelFilter>("log-level").unwrap()
     }
 
-    pub fn run(self, config: Config, args: &Vec<String>, out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config, args: &Vec<String>, out: &mut Output) -> Result<()> {
         debug!("{}", &args.join(" "));
+        if args[1..] == ["-v"] {
+            // normally this would be considered --verbose
+            return version::Version {}.run(config, out);
+        }
         let matches = self.command.get_matches_from(args);
+        if *matches.get_one::<u8>("verbose").unwrap() > 0 {
+            config.settings.verbose = true;
+        }
         if let Some((command, sub_m)) = matches.subcommand() {
             external::execute(&config, command, sub_m, self.external_commands)?;
         }

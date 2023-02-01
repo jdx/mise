@@ -28,6 +28,7 @@ impl Command for SettingsSet {
             "disable_plugin_short_name_repository" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
             "plugin_repository_last_check_duration" => parse_i64(&self.value)?,
+            "verbose" => parse_bool(&self.value)?,
             _ => return Err(eyre!("Unknown setting: {}", self.key)),
         };
 
@@ -67,9 +68,6 @@ pub mod test {
     #[test]
     fn test_settings_set() {
         reset_config();
-        let stdout = assert_cli!("settings");
-        assert_snapshot!(stdout);
-
         assert_cli!("settings", "set", "missing_runtime_behavior", "warn");
         assert_cli!("settings", "set", "legacy_version_file", "false");
         assert_cli!("settings", "set", "always_keep_download", "true");

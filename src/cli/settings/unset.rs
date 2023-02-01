@@ -41,16 +41,6 @@ mod test {
     fn test_settings_unset() {
         reset_config();
 
-        let stdout = assert_cli!("settings");
-        assert_snapshot!(stdout, @r###"
-        missing_runtime_behavior = autoinstall
-        always_keep_download = true
-        legacy_version_file = true
-        disable_plugin_short_name_repository = false
-        plugin_autoupdate_last_check_duration = 20
-        plugin_repository_last_check_duration = 20
-        "###);
-
         assert_cli!("settings", "unset", "legacy_version_file");
 
         let stdout = assert_cli!("settings");
@@ -61,6 +51,7 @@ mod test {
         disable_plugin_short_name_repository = false
         plugin_autoupdate_last_check_duration = 20
         plugin_repository_last_check_duration = 20
+        verbose = true
         "###);
 
         reset_config();

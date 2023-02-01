@@ -34,6 +34,7 @@ pub fn reset_config() {
     fs::write(
         env::HOME.join("config/config.toml"),
         indoc! {r#"
+                verbose = true
                 missing_runtime_behavior= 'autoinstall'
                 always_keep_download= true
                 legacy_version_file= true
