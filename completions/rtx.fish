@@ -91,6 +91,8 @@ complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print
 complete -c rtx -n "__fish_seen_subcommand_from install" -s p -l plugin -d 'only install runtime(s) for <PLUGIN>' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -s f -l force -d 'force reinstall even if already installed'
+complete -c rtx -n "__fish_seen_subcommand_from install" -s a -l all -d 'install all missing runtimes as well as all plugins for the current directory'
+complete -c rtx -n "__fish_seen_subcommand_from install" -s v -l verbose -d 'show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -117,7 +119,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_sub
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s f -l force -d 'Reinstall even if plugin exists'
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l all -d 'Install all missing plugins'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s a -l all -d 'Install all missing plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'list all available remote plugins'

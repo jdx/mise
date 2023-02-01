@@ -254,6 +254,10 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[force reinstall even if already installed]' \
 '--force[force reinstall even if already installed]' \
+'(-p --plugin -f --force)-a[install all missing runtimes as well as all plugins for the current directory]' \
+'(-p --plugin -f --force)--all[install all missing runtimes as well as all plugins for the current directory]' \
+'-v[show installation output]' \
+'--verbose[show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- runtime(s) to install:' \
@@ -323,6 +327,7 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Reinstall even if plugin exists]' \
 '--force[Reinstall even if plugin exists]' \
+'(-f --force)-a[Install all missing plugins]' \
 '(-f --force)--all[Install all missing plugins]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \

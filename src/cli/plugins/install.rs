@@ -38,7 +38,7 @@ pub struct PluginsInstall {
     ///
     /// This will only install plugins that have matching shortnames.
     /// i.e.: they don't need the full git repo url
-    #[clap(long, conflicts_with_all = ["name", "force"])]
+    #[clap(short, long, conflicts_with_all = ["name", "force"])]
     all: bool,
 }
 
