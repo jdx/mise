@@ -27,11 +27,6 @@ $ echo 'eval "$(~/bin/rtx activate -s zsh)"' >> ~/.zshrc
 $ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Warning**
-> [We're working to make `rtx activate` not conflict with direnv.](https://github.com/jdxcode/rtx/issues/8)
-> Hopefully soon you'll be able to use `rtx activate` with direnv.
-> If you use direnv, [see below](#direnv) for direnv-compatible setup that does not require `rtx activate`.
-
 Install a runtime and set it as the default:
 
 ```sh-session
@@ -1282,11 +1277,14 @@ were very good. I really just have 2 complaints: the shims and the fact it's wri
 ## direnv
 
 [direnv](https://direnv.net) and rtx both manage environment variables based on directory. Because they both analyze
-the current environment variables before and after their respective "hook" commands are run, they
-can easily conflict and overwrite each other's environment variables (including, but not limited to, `PATH`).
+the current environment variables before and after their respective "hook" commands are run, they can conflict with each other.
 
-To avoid this, **don't** use `rtx activate` alongside direnv. Instead, call rtx from _within_ direnv
-so that it can track the environment variables separately.
+There were a [number of issues with direnv](https://github.com/jdxcode/rtx/issues/8).
+However, these _should_ be resolved now and you should be able to use direnv alongside
+rtx.
+
+If you do encounter issues, or just want to use direnv in an alternate way: there
+is a method of calling rtx from within direnv so you do not need to run `rtx activate`. This is a simpler setup that's less likely to cause issues.
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
@@ -1302,7 +1300,20 @@ use rtx
 ```
 
 direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
-too all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory).
+too all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory). You can also add `use rtx` to `~/.config/direnv/direnvrc`.
+
+Note that in this method direnv typically won't know to refresh `.tool-version` files
+unless they're at the same level at a `.envrc` file. You'll likely always want to have
+a `.envrc` file next to your `.tool-versions` for this reason. To make this a little
+easier to manage, I encourage _not_ actually using `.tool-versions` and instead
+setting environment variables entirely in `.envrc`:
+
+```
+export RTX_NODEJS_VERSION=18.0.0
+export RTX_PYTHON_VERSION=3.11
+```
+
+Of course if you use `rtx activate` none of this is necesary.
 
 ## Cache Behavior
 
