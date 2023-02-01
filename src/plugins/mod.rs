@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
+use atty::Stream::Stderr;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use owo_colors::{OwoColorize, Stream};
 use regex::Regex;
+use spinners::{Spinner, Spinners, Stream};
 use versions::Mess;
 
 use cache::PluginCache;
@@ -23,6 +24,7 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand_repository::ShorthandRepo;
+use crate::ui::color::{bright_green, cyan};
 use crate::ui::prompt;
 use crate::{dirs, file};
 
@@ -92,9 +94,10 @@ impl Plugin {
 
     pub fn install(&self, repository: &String) -> Result<()> {
         debug!("install {} {:?}", self.name, repository);
-        eprint!(
-            "rtx: Installing plugin {}...",
-            self.name.if_supports_color(Stream::Stderr, |t| t.cyan())
+        let mut sp = Spinner::with_stream(
+            Spinners::Dots10,
+            format!("rtx: Installing plugin {}...", cyan(Stderr, &self.name)),
+            Stream::Stderr,
         );
 
         if self.is_installed() {
@@ -103,7 +106,10 @@ impl Plugin {
 
         let git = Git::new(self.plugin_path.to_path_buf());
         git.clone(repository)?;
-        eprintln!(" done");
+        sp.stop_and_persist(
+            &bright_green(Stderr, "✔"),
+            format!("Plugin {} installed", cyan(Stderr, &self.name)),
+        );
 
         Ok(())
     }
@@ -173,9 +179,7 @@ impl Plugin {
             fs::remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    dir.to_str()
-                        .unwrap()
-                        .if_supports_color(Stream::Stderr, |t| t.cyan())
+                    cyan(Stderr, &dir.to_string_lossy())
                 )
             })
         };

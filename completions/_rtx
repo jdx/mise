@@ -321,11 +321,12 @@ _arguments "${_arguments_options[@]}" \
             (install)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-f[Reinstalls even if plugin exists]' \
-'--force[Reinstalls even if plugin exists]' \
+'-f[Reinstall even if plugin exists]' \
+'--force[Reinstall even if plugin exists]' \
+'(-f --force)--all[Install all missing plugins]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':name -- The name of the plugin to install:' \
+'::name -- The name of the plugin to install:' \
 '::git_url -- The git url of the plugin:_urls' \
 && ret=0
 ;;
