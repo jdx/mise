@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use lazy_static::lazy_static;
+use log::LevelFilter;
 
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 
@@ -52,12 +53,8 @@ lazy_static! {
     pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
         let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
-        match log_level.as_str() {
-            "trace" => log::LevelFilter::Trace,
-            "debug" => log::LevelFilter::Debug,
-            "info" => log::LevelFilter::Info,
-            "warn" => log::LevelFilter::Warn,
-            "error" => log::LevelFilter::Error,
+        match log_level.parse::<LevelFilter>() {
+            Ok(level) => level,
             _ => {
                 if *RTX_TRACE {
                     log::LevelFilter::Trace
@@ -69,6 +66,13 @@ lazy_static! {
                     log::LevelFilter::Info
                 }
             }
+        }
+    };
+    pub static ref RTX_LOG_FILE_LEVEL: log::LevelFilter = {
+        let log_level = var("RTX_LOG_FILE_LEVEL").unwrap_or_default();
+        match log_level.parse::<log::LevelFilter>() {
+            Ok(level) => level,
+            _ => *RTX_LOG_LEVEL,
         }
     };
     pub static ref RTX_MISSING_RUNTIME_BEHAVIOR: Option<String> = if cfg!(test) {

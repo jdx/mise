@@ -379,6 +379,20 @@ of what is set in `.tool-versions`.
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
 for example, .nvmrc in the case of nodejs's nvm.
 
+#### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
+
+Can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1`. These adjust the log
+output to the screen.
+
+#### `RTX_LOG_FILE=~/.rtx/rtx.log`
+
+Output logs to a file.
+
+#### `RTX_LOG_FILE_LEVEL=trace|debug|info|warn|error`
+
+Same as `RTX_LOG_LEVEL` but for the log file output level. This is useful if you want
+to store the logs but not have them litter your display.
+
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
