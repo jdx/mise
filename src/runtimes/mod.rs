@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::error::Error;
+
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all};
@@ -64,7 +64,7 @@ impl RuntimeVersion {
         Ok(versions)
     }
 
-    pub fn install(&self, install_type: InstallType, config: &Config) -> Result<()> {
+    pub fn install(&self, install_type: InstallType, config: &Config, verbose: bool) -> Result<()> {
         let plugin = &self.plugin;
         let settings = &config.settings;
         debug!("install {} {} {}", plugin.name, self.version, install_type);
@@ -78,25 +78,38 @@ impl RuntimeVersion {
         let install = Script::Install(install_type);
 
         if self.script_man.script_exists(&download) {
+            if verbose {
+                self.script_man
+                    .cmd(download)
+                    .stdout_to_stderr()
+                    .run()
+                    .map_err(|err| {
+                        self.cleanup_install_dirs_on_error(settings);
+                        err
+                    })?;
+            } else {
+                self.script_man.run_with_hidden_output(download, || {
+                    self.cleanup_install_dirs_on_error(settings);
+                })?;
+            }
+        }
+
+        if verbose {
             self.script_man
-                .cmd(download)
+                .cmd(install)
                 .stdout_to_stderr()
                 .run()
                 .map_err(|err| {
-                    self.cleanup_install_dirs(Some(&err), settings);
+                    self.cleanup_install_dirs_on_error(settings);
                     err
                 })?;
-        }
-
-        self.script_man
-            .cmd(install)
-            .stdout_to_stderr()
-            .run()
-            .map_err(|err| {
-                self.cleanup_install_dirs(Some(&err), settings);
-                err
+            self.cleanup_install_dirs(settings);
+        } else {
+            self.script_man.run_with_hidden_output(install, || {
+                self.cleanup_install_dirs_on_error(settings);
             })?;
-        self.cleanup_install_dirs(None, settings);
+        }
+        self.cleanup_install_dirs(settings);
 
         let conf = RuntimeConf {
             bin_paths: self.get_bin_paths()?,
@@ -137,12 +150,12 @@ impl RuntimeVersion {
         }
         match config.settings.missing_runtime_behavior {
             MissingRuntimeBehavior::AutoInstall => {
-                self.install(InstallType::Version, config)?;
+                self.install(InstallType::Version, config, false)?;
                 Ok(true)
             }
             MissingRuntimeBehavior::Prompt => {
                 if prompt_for_install(&format!("{self}")) {
-                    self.install(InstallType::Version, config)?;
+                    self.install(InstallType::Version, config, false)?;
                     Ok(true)
                 } else {
                     Ok(false)
@@ -228,15 +241,18 @@ impl RuntimeVersion {
     }
 
     fn create_install_dirs(&self) -> Result<()> {
+        let _ = remove_dir_all(&self.install_path);
+        let _ = remove_dir_all(&self.download_path);
         create_dir_all(&self.install_path)?;
         create_dir_all(&self.download_path)?;
         Ok(())
     }
 
-    fn cleanup_install_dirs(&self, err: Option<&dyn Error>, settings: &Settings) {
-        if err.is_some() {
-            let _ = remove_dir_all(&self.install_path);
-        }
+    fn cleanup_install_dirs_on_error(&self, settings: &Settings) {
+        let _ = remove_dir_all(&self.install_path);
+        self.cleanup_install_dirs(settings);
+    }
+    fn cleanup_install_dirs(&self, settings: &Settings) {
         if !settings.always_keep_download {
             let _ = remove_dir_all(&self.download_path);
         }

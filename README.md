@@ -750,6 +750,12 @@ Options:
   -f, --force
           force reinstall even if already installed
 
+  -a, --all
+          install all missing runtimes as well as all plugins for the current directory
+
+  -v, --verbose
+          show installation output
+
   -h, --help
           Print help (see a summary with '-h')
 
@@ -759,6 +765,7 @@ Examples:
   $ rtx install nodejs@18      # install fuzzy nodejs version
   $ rtx install nodejs         # install latest nodejs version—or what is specified in .tool-versions
   $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
+  $ rtx install --all          # installs all runtimes and all plugins
 
 ```
 ### `rtx latest`
@@ -915,7 +922,7 @@ Options:
   -f, --force
           Reinstall even if plugin exists
 
-      --all
+  -a, --all
           Install all missing plugins
           
           This will only install plugins that have matching shortnames. i.e.: they don't need the full git repo url

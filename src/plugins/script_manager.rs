@@ -1,5 +1,6 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::io::{stderr, Write};
 use std::path::PathBuf;
 use std::process::Output;
 
@@ -147,5 +148,33 @@ impl ScriptManager {
         self.cmd(script)
             .read()
             .with_context(|| ScriptFailed(self.plugin_name.clone(), None))
+    }
+
+    pub fn run_with_hidden_output<F>(&self, script: Script, on_error: F) -> Result<()>
+    where
+        F: FnOnce(),
+    {
+        let out = self
+            .cmd(script)
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run();
+
+        match out {
+            Err(err) => {
+                on_error();
+                Err(err)?
+            }
+            Ok(out) => match out.status.success() {
+                true => Ok(()),
+                false => {
+                    stderr().write_all(out.stdout.as_slice())?;
+                    on_error();
+                    let err = ScriptFailed(self.plugin_name.clone(), Some(out.status));
+                    Err(err)?
+                }
+            },
+        }
     }
 }
