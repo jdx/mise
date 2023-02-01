@@ -3,7 +3,7 @@ use std::sync::Arc;
 use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
 use owo_colors::Stream;
-use spinners::{Spinner, Spinners};
+use spinners_jdxcode::{Spinner, Spinners};
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -145,7 +145,7 @@ impl Install {
             Some(Spinner::with_stream(
                 Spinners::Dots10,
                 install_message,
-                spinners::Stream::Stderr,
+                spinners_jdxcode::Stream::Stderr,
             ))
         };
         rtv.install(Version, config, self.verbose)?;

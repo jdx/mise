@@ -1054,7 +1054,7 @@ dependencies = [
  "serde_json",
  "shell-escape",
  "simplelog",
- "spinners",
+ "spinners-jdxcode",
  "tempfile",
  "thiserror",
  "toml",
@@ -1188,9 +1188,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "spinners"
+name = "spinners-jdxcode"
 version = "4.1.0"
-source = "git+https://github.com/FGRibreau/spinners?rev=8b4d130#8b4d130e80cc7c8d2111c95bdd6448bf8fc419f0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7bbd00662c4720cbae51a6743924e83c81ea3ef7e80fc991a537988ee0da3bf"
 dependencies = [
  "lazy_static",
  "maplit",
