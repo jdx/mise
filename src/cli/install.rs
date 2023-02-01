@@ -139,7 +139,7 @@ impl Install {
         let rtv_label = cyan(Stderr, &rtv.to_string());
         let install_message = format!("Installing runtime: {rtv_label}...");
         let sp = if self.verbose {
-            out.stderr.writeln(install_message);
+            rtxstatusln!(out, "{install_message}");
             None
         } else {
             Some(Spinner::with_stream(
