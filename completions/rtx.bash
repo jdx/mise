@@ -1385,7 +1385,7 @@ _rtx() {
             return 0
             ;;
         rtx__install)
-            opts="-p -f -h --plugin --force --log-level --help [RUNTIME]..."
+            opts="-p -f -a -v -h --plugin --force --all --verbose --log-level --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1611,7 +1611,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -h --force --all --log-level --help [NAME] [GIT_URL]"
+            opts="-f -a -h --force --all --log-level --help [NAME] [GIT_URL]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

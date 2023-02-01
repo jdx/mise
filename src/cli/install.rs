@@ -1,9 +1,9 @@
-use atty::Stream::Stderr;
-use std::ops::Deref;
 use std::sync::Arc;
 
+use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
 use owo_colors::Stream;
+use spinners::{Spinner, Spinners};
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -15,7 +15,7 @@ use crate::output::Output;
 use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
-use crate::ui::color::cyan;
+use crate::ui::color::{bright_green, cyan};
 
 /// install a runtime
 ///
@@ -39,13 +39,21 @@ pub struct Install {
     /// force reinstall even if already installed
     #[clap(long, short, requires = "runtime")]
     force: bool,
+
+    /// install all missing runtimes as well as all plugins for the current directory
+    #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"])]
+    all: bool,
+
+    /// show installation output
+    #[clap(long, short)]
+    verbose: bool,
 }
 
 impl Command for Install {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match &self.runtime {
             Some(runtime) => self.install_runtimes(config, out, runtime)?,
-            None => self.install_missing_runtimes(config, out, &self.plugin)?,
+            None => self.install_missing_runtimes(config, out)?,
         }
 
         Ok(())
@@ -85,29 +93,25 @@ impl Install {
                 continue;
             }
 
-            rtxprintln!(
-                out,
-                "rtx: Installing runtime: {}",
-                cyan(Stderr, &rtv.to_string())
-            );
-            rtv.install(Version, &config)?;
+            self.do_install(&config, out, &rtv)?;
         }
 
         Ok(())
     }
 
-    fn install_missing_runtimes(
-        &self,
-        config: Config,
-        out: &mut Output,
-        plugin_flag: &Option<Vec<PluginName>>,
-    ) -> Result<()> {
+    fn install_missing_runtimes(&self, mut config: Config, out: &mut Output) -> Result<()> {
         for rtv in config.ts.list_current_versions() {
-            if let Some(plugin_flag) = plugin_flag {
-                if !plugin_flag.contains(&rtv.plugin.name) {
+            let plugins = match self.all {
+                true => Some(get_all_plugin_names(&config)),
+                false => self.plugin.clone(),
+            };
+            if let Some(plugins) = &plugins {
+                // they've specified --all or --plugin, so we already know they want to install
+                config.settings.missing_runtime_behavior = AutoInstall;
+                if !plugins.contains(&rtv.plugin.name) {
                     continue;
                 }
-                // ensure plugin is installed only if explicitly called with --plugin
+                // ensure plugin is installed only if explicitly called with --plugin or using --all
                 if !rtv.plugin.ensure_installed(&config.settings)? {
                     Err(PluginNotInstalled(rtv.plugin.name.to_string()))?;
                 }
@@ -120,19 +124,36 @@ impl Install {
             if rtv.version == "system" || rtv.is_installed() {
                 continue;
             }
-            // need to re-resolve the version in case it was a fuzzy version
-            let mut rtv = rtv.deref().clone();
-            rtv.version = rtv
+            let version = rtv
                 .plugin
                 .latest_version(&rtv.version)?
                 .unwrap_or_else(|| rtv.version.clone());
+            // need to re-create the rtv because the version may have changed
+            let rtv = RuntimeVersion::new(rtv.plugin.clone(), &version);
+            self.do_install(&config, out, &rtv)?;
+        }
+        Ok(())
+    }
 
-            rtxprintln!(
-                out,
-                "rtx: Installing runtime: {}",
-                cyan(Stderr, &rtv.to_string())
+    fn do_install(&self, config: &Config, out: &mut Output, rtv: &RuntimeVersion) -> Result<()> {
+        let rtv_label = cyan(Stderr, &rtv.to_string());
+        let install_message = format!("Installing runtime: {rtv_label}...");
+        let sp = if self.verbose {
+            out.stderr.writeln(install_message);
+            None
+        } else {
+            Some(Spinner::with_stream(
+                Spinners::Dots10,
+                install_message,
+                spinners::Stream::Stderr,
+            ))
+        };
+        rtv.install(Version, config, self.verbose)?;
+        if let Some(mut sp) = sp {
+            sp.stop_and_persist(
+                &bright_green(Stderr, "✔"),
+                format!("Runtime {rtv_label} installed"),
             );
-            rtv.install(Version, &config)?;
         }
         Ok(())
     }
@@ -146,12 +167,22 @@ fn warn_plugin_not_installed(plugin: &Plugin) {
     );
 }
 
+fn get_all_plugin_names(config: &Config) -> Vec<String> {
+    config
+        .ts
+        .list_plugins()
+        .into_iter()
+        .map(|p| p.name.clone())
+        .collect()
+}
+
 const AFTER_LONG_HELP: &str = r#"
 Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
   $ rtx install nodejs         # install latest nodejs version—or what is specified in .tool-versions
   $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
+  $ rtx install --all          # installs all runtimes and all plugins
 "#;
 
 #[cfg(test)]

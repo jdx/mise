@@ -96,7 +96,7 @@ impl Plugin {
         debug!("install {} {:?}", self.name, repository);
         let mut sp = Spinner::with_stream(
             Spinners::Dots10,
-            format!("rtx: Installing plugin {}...", cyan(Stderr, &self.name)),
+            format!("Installing plugin {}...", cyan(Stderr, &self.name)),
             Stream::Stderr,
         );
 
