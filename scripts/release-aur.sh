@@ -2,7 +2,11 @@
 set -euxo pipefail
 
 VERSION=$(curl https://rtx.jdxcode.com/VERSION | sed -e "s/^v//")
-SHA512=$(curl https://rtx.jdxcode.com/SHASUMS512.txt | grep linux-x64.tar.gz | awk '{print $1}')
+SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/v$VERSION.tar.gz" | sha512sum | awk '{print $1}')
+
+if [ ! -d aur ]; then
+  git clone ssh://aur@aur.archlinux.org/rtx.git aur
+fi
 
 cat >aur/PKGBUILD <<EOF
 # Maintainer: Jeff Dickey <releases at chim dot sh>
