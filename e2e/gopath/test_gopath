@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
-eval "$(rtx activate -s bash)"
+eval "$(rtx activate bash)"
 _rtx_hook
 
 assert_gopath() {

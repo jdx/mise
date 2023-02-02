@@ -3,7 +3,7 @@ set -euo pipefail
 
 rtx install nodejs@18.0.0 nodejs@16.0.0
 # shellcheck disable=SC1090
-eval "$(rtx activate zsh)"
+eval "$(rtx activate -s zsh)"
 _rtx_hook
 
 #rtx install

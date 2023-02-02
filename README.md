@@ -22,9 +22,9 @@ Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it
 (choose one, and open a new shell session for the changes to take effect):
 
 ```sh-session
-$ echo 'eval "$(~/bin/rtx activate -s bash)"' >> ~/.bashrc
-$ echo 'eval "$(~/bin/rtx activate -s zsh)"' >> ~/.zshrc
-$ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
+$ echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
+$ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
+$ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 Install a runtime and set it as the default:
@@ -61,7 +61,7 @@ Come chat about rtx on [discord](https://discord.gg/mABnUDvP57).
 
 ### How it works
 
-rtx installs as a shell extension (e.g. `rtx activate -s zsh`) that sets the `PATH`
+rtx installs as a shell extension (e.g. `rtx activate zsh`) that sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
 directory containing a `.tool-versions` file, rtx will automatically activate the correct versions.
 
@@ -234,13 +234,13 @@ makepkg -si
 ### Bash
 
 ```sh-session
-$ echo 'eval "$(rtx activate -s bash)"' >> ~/.bashrc
+$ echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 ```
 
 ### Fish
 
 ```sh-session
-$ echo 'rtx activate -s fish | source' >> ~/.config/fish/config.fish
+$ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 ### Something else?
@@ -484,14 +484,15 @@ This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
 (e.g. ~/.bashrc)
 
-Usage: activate [OPTIONS]
+Usage: rtx activate [OPTIONS] [SHELL_TYPE]
 
-Options:
-  -s, --shell <SHELL>
+Arguments:
+  [SHELL_TYPE]
           Shell type to generate the script for
           
           [possible values: bash, fish, zsh]
 
+Options:
   -q, --quiet
           Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
@@ -500,9 +501,9 @@ Options:
 
 
 Examples:
-    $ eval "$(rtx activate -s bash)"
-    $ eval "$(rtx activate -s zsh)"
-    $ rtx activate -s fish | source
+    $ eval "$(rtx activate bash)"
+    $ eval "$(rtx activate zsh)"
+    $ rtx activate fish | source
 
 ```
 ### `rtx alias ls`
@@ -592,24 +593,23 @@ disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
 
-Usage: deactivate [OPTIONS]
+Usage: rtx deactivate [OPTIONS] [SHELL_TYPE]
 
-Options:
-  -s, --shell <SHELL>
+Arguments:
+  [SHELL_TYPE]
           shell type to generate the script for
-          
-          e.g.: bash, zsh, fish
           
           [possible values: bash, fish, zsh]
 
+Options:
   -h, --help
           Print help (see a summary with '-h')
 
 
 Examples:
-    $ eval "$(rtx deactivate -s bash)"
-    $ eval "$(rtx deactivate -s zsh)"
-    $ rtx deactivate -s fish | source
+    $ eval "$(rtx deactivate bash)"
+    $ eval "$(rtx deactivate zsh)"
+    $ rtx deactivate fish | source
 
 ```
 ### `rtx direnv activate`

@@ -12,15 +12,17 @@ use crate::shell::{get_shell, ShellType};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Deactivate {
     /// shell type to generate the script for
-    ///
-    /// e.g.: bash, zsh, fish
-    #[clap(long, short)]
+    #[clap(long, short, hide = true)]
     shell: Option<ShellType>,
+
+    /// shell type to generate the script for
+    #[clap()]
+    shell_type: Option<ShellType>,
 }
 
 impl Command for Deactivate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell = get_shell(self.shell);
+        let shell = get_shell(self.shell_type.or(self.shell));
 
         let output = shell.deactivate();
         out.stdout.write(output);
@@ -31,9 +33,9 @@ impl Command for Deactivate {
 
 const AFTER_LONG_HELP: &str = r#"
 Examples:
-    $ eval "$(rtx deactivate -s bash)"
-    $ eval "$(rtx deactivate -s zsh)"
-    $ rtx deactivate -s fish | source
+    $ eval "$(rtx deactivate bash)"
+    $ eval "$(rtx deactivate zsh)"
+    $ rtx deactivate fish | source
 "#;
 
 #[cfg(test)]
