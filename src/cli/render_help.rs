@@ -85,7 +85,8 @@ directory containing a `.tool-versions` file, rtx will automatically activate th
 
 Every time your prompt starts it will call `rtx hook-env` to fetch new environment variables. This
 should be very fast and it exits early if the the directory wasn't changed or the `.tool-version`
-files haven't been updated. On my machine this takes 1-2ms even if it _doesn't_ exit early.
+files haven't been updated. On my machine this takes <10ms in the fast case, 30ms in the slow case. This was much faster (2-3ms) but more checks and features have been
+added which have slowed it down a bit. See [Performance](#performance) for more on this topic.
 
 Unlike asdf which uses shim files to dynamically locate runtimes when they're called, rtx modifies
 `PATH` ahead of time so the runtimes are called directly. This is not only faster since it avoids
@@ -516,7 +517,7 @@ asdf made (what I consider) a poor design decision to use shims that go between 
 and the runtime itself. e.g.: when you call `node` it will call an asdf shim file `~/.asdf/shims/node`,
 which then calls `asdf exec`, which then calls the correct version of node.
 
-These shims have terrible performance, adding ~200ms to every call. rtx does not use shims and instead
+These shims have terrible performance, adding ~200ms to every runtime call. rtx does not use shims and instead
 updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this.
 
 I don't think it's possible for asdf to fix thse issues. The author of asdf did a great writeup
@@ -527,8 +528,15 @@ shim design. I don't think it's possible to fix that without a complete rewrite.
 rtx does call an internal command `rtx hook-env` every time the directory has changed, but because
 it's written in Rust, this is very quick—taking ~2ms on my machine.
 
-tl;dr: asdf adds overhead (~200ms) when calling a runtime, rtx adds a tiny amount of overhead (~2ms)
-when changing directories.
+At one point rtx was nearly complete and running <3ms. It's not that fast anymore.
+Now when `rtx hook-env` runs it takes ~30ms on my machine and ~10ms if it can exit
+early. This is with 10 plugins and about as many active runtimes. This is fast enough to not really be noticeable to me, but I think we can do better.
+This slowed down because more checks and more features were added which meant
+loading more things. I will optimize this at some point, but right now in development
+my focus is on stability and compatibility. In this case, "performance" means
+taking shortcuts and caching which are both likely to reduce stability. As long as we're staying <50ms I think it will feel fast enough for now. If we creep above that we'll need to fix something.
+
+tl;dr: asdf adds overhead (~200ms) when calling a runtime, rtx adds a small amount of overhead (~30ms) only when changing directories if they have a `.tool-versions` file.
 
 ### Environment variables
 
