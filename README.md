@@ -396,6 +396,18 @@ This shows the installation output during `rtx install` and `rtx plugin install`
 This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
 2 configuration for the same thing, but for now it is it's own config.
 
+#### `RTX_HIDE_OUTDATED_BUILD=1`
+
+If a release is 12 months old, it will show a warning message every time it launches:
+
+```
+rtx has not been updated in over a year. Please update to the latest version.
+```
+
+You likely do not want to be using rtx if it is that old. I'm doing this instead of
+autoupdating. If, for some reason, you want to stay on some old version, you can hide
+this message with `RTX_HIDE_OUTDATED_BUILD=1`.
+
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
