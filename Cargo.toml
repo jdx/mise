@@ -69,13 +69,14 @@ insta = "1.26.0"
 pretty_assertions = "1.3.0"
 tempfile = "3.3.0"
 
-#[profile.release]
-#opt-level = "z" # optimize for size
-#lto = true
-#debug = false
-#debug-assertions = false
-#panic = "abort"
-#strip = "symbols"
+[profile.release]
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 3
+lto = true
+panic = "abort"
+strip = "symbols"
 
 [package.metadata.release]
 allow-branch = ["main"]
