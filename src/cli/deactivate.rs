@@ -47,6 +47,13 @@ mod test {
     #[test]
     fn test_deactivate_zsh() {
         std::env::set_var("NO_COLOR", "1");
+        let stdout = assert_cli!("deactivate", "zsh");
+        assert_display_snapshot!(stdout);
+    }
+
+    #[test]
+    fn test_deactivate_zsh_legacy() {
+        std::env::set_var("NO_COLOR", "1");
         let stdout = assert_cli!("deactivate", "-s", "zsh");
         assert_display_snapshot!(stdout);
     }
