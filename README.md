@@ -484,7 +484,7 @@ This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
 (e.g. ~/.bashrc)
 
-Usage: rtx activate [OPTIONS] [SHELL_TYPE]
+Usage: activate [OPTIONS] [SHELL_TYPE]
 
 Arguments:
   [SHELL_TYPE]
@@ -593,7 +593,7 @@ disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
 
-Usage: rtx deactivate [OPTIONS] [SHELL_TYPE]
+Usage: deactivate [SHELL_TYPE]
 
 Arguments:
   [SHELL_TYPE]
