@@ -1,6 +1,5 @@
 ---
 source: src/cli/deactivate.rs
-assertion_line: 58
 expression: stdout
 ---
 unset _rtx_hook;
