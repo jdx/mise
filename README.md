@@ -243,6 +243,25 @@ $ echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 $ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
+### Xonsh
+
+Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
+```xsh
+from pathlib        	import Path
+from xonsh.built_ins	import XSH
+
+ctx = XSH.ctx
+rtx_init = subprocess.run([Path('~/bin/rtx').expanduser(),'activate','xonsh'],capture_output=True,encoding="UTF-8").stdout
+XSH.builtins.execx(rtx_init,'exec',ctx,filename='rtx')
+```
+
+Or continue to use `rc.xsh`/`.xonshrc`:
+```xsh
+echo 'execx($(~/bin/rtx activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
+```
+
+Given that `rtx` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs don't have these two set differently (might throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to make sure they match)
+
 ### Something else?
 
 Adding a new shell is not hard at all since very little shell code is
@@ -490,7 +509,7 @@ Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
           
-          [possible values: bash, fish, zsh]
+          [possible values: bash, fish, xonsh, zsh]
 
 Options:
   -q, --quiet
@@ -504,6 +523,7 @@ Examples:
     $ eval "$(rtx activate bash)"
     $ eval "$(rtx activate zsh)"
     $ rtx activate fish | source
+    $ execx($(rtx activate xonsh))
 
 ```
 ### `rtx alias ls`
@@ -599,7 +619,7 @@ Arguments:
   [SHELL_TYPE]
           shell type to generate the script for
           
-          [possible values: bash, fish, zsh]
+          [possible values: bash, fish, xonsh, zsh]
 
 Options:
   -h, --help
@@ -610,6 +630,7 @@ Examples:
     $ eval "$(rtx deactivate bash)"
     $ eval "$(rtx deactivate zsh)"
     $ rtx deactivate fish | source
+    $ execx($(rtx deactivate xonsh))
 
 ```
 ### `rtx direnv activate`
@@ -674,7 +695,7 @@ Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
           
-          [possible values: bash, fish, zsh]
+          [possible values: bash, fish, xonsh, zsh]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -684,6 +705,7 @@ Examples:
   $ eval "$(rtx env -s bash)"
   $ eval "$(rtx env -s zsh)"
   $ rtx env -s fish | source
+  $ execx($(rtx env -s xonsh))
 
 ```
 ### `rtx exec`

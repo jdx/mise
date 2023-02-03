@@ -51,6 +51,7 @@ Examples:
   $ eval "$(rtx env -s bash)"
   $ eval "$(rtx env -s zsh)"
   $ rtx env -s fish | source
+  $ execx($(rtx env -s xonsh))
 "#;
 
 #[cfg(test)]
