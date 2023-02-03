@@ -385,18 +385,18 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -v -h --shell --quiet --log-level --verbose --help bash fish zsh"
+            opts="-s -q -v -h --shell --quiet --log-level --verbose --help bash fish xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --log-level)
@@ -567,18 +567,18 @@ _rtx() {
             return 0
             ;;
         rtx__deactivate)
-            opts="-s -v -h --shell --log-level --verbose --help bash fish zsh"
+            opts="-s -v -h --shell --log-level --verbose --help bash fish xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --log-level)
@@ -760,11 +760,11 @@ _rtx() {
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --log-level)
@@ -1366,11 +1366,11 @@ _rtx() {
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --log-level)
