@@ -385,7 +385,7 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -v -h --shell --quiet --log-level --verbose --help"
+            opts="-s -q -v -h --shell --quiet --log-level --verbose --help bash fish zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -567,7 +567,7 @@ _rtx() {
             return 0
             ;;
         rtx__deactivate)
-            opts="-s -v -h --shell --log-level --verbose --help"
+            opts="-s -v -h --shell --log-level --verbose --help bash fish zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
