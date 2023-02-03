@@ -1,6 +1,5 @@
 ---
 source: src/cli/activate.rs
-assertion_line: 72
 expression: stdout
 ---
 export PATH=":$PATH"
