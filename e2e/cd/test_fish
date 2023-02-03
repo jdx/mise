@@ -4,7 +4,7 @@
 #set -l fish_trace 1
 rtx install nodejs@18.0.0 nodejs@16.0.0; or exit
 
-rtx activate -s fish | source && __rtx_env_eval
+rtx activate fish | source && __rtx_env_eval
 #rtx i
 
 test (node -v) = "v18.0.0"; or exit

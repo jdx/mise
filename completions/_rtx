@@ -42,6 +42,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
+'::shell_type -- Shell type to generate the script for:(bash fish zsh)' \
 && ret=0
 ;;
 (alias)
@@ -142,6 +143,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
+'::shell_type -- shell type to generate the script for:(bash fish zsh)' \
 && ret=0
 ;;
 (direnv)
