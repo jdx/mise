@@ -26,7 +26,7 @@ complete -c rtx -n "__fish_use_subcommand" -f -a "version" -d 'Show rtx version'
 complete -c rtx -n "__fish_use_subcommand" -f -a "where" -d 'Display the installation path for a runtime'
 complete -c rtx -n "__fish_use_subcommand" -f -a "render-help" -d 'internal command to generate markdown from help'
 complete -c rtx -n "__fish_use_subcommand" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s q -l quiet -d 'Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s v -l verbose -d 'Show installation output'
@@ -57,7 +57,7 @@ complete -c rtx -n "__fish_seen_subcommand_from complete" -s h -l help -d 'Print
 complete -c rtx -n "__fish_seen_subcommand_from current" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from current" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s s -l shell -d 'shell type to generate the script for' -r -f -a "{bash	,fish	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s s -l shell -d 'shell type to generate the script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -88,7 +88,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell type to generate environment variables for' -r -f -a "{bash	,fish	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell type to generate environment variables for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from env" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -101,10 +101,10 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the
 complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'save fuzzy match to .tool-versions e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions, by default, it would save the exact version, e.g.: `nodejs 20.0.0`'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s v -l verbose -d 'Show installation output'
-complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s p -l plugin -d 'only install runtime(s) for <PLUGIN>' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -s f -l force -d 'force reinstall even if already installed'

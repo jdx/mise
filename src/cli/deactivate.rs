@@ -36,6 +36,7 @@ Examples:
     $ eval "$(rtx deactivate bash)"
     $ eval "$(rtx deactivate zsh)"
     $ rtx deactivate fish | source
+    $ execx($(rtx deactivate xonsh))
 "#;
 
 #[cfg(test)]

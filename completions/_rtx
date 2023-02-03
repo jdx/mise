@@ -33,8 +33,8 @@ _rtx() {
         case $line[1] in
             (activate)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
-'--shell=[Shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
+'--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-q[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--quiet[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
@@ -42,7 +42,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- Shell type to generate the script for:(bash fish zsh)' \
+'::shell_type -- Shell type to generate the script for:(bash fish xonsh zsh)' \
 && ret=0
 ;;
 (alias)
@@ -136,14 +136,14 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (deactivate)
 _arguments "${_arguments_options[@]}" \
-'-s+[shell type to generate the script for]:SHELL:(bash fish zsh)' \
-'--shell=[shell type to generate the script for]:SHELL:(bash fish zsh)' \
+'-s+[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
+'--shell=[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- shell type to generate the script for:(bash fish zsh)' \
+'::shell_type -- shell type to generate the script for:(bash fish xonsh zsh)' \
 && ret=0
 ;;
 (direnv)
@@ -237,8 +237,8 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (env)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
-'--shell=[Shell type to generate environment variables for]:SHELL:(bash fish zsh)' \
+'-s+[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
+'--shell=[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -274,13 +274,13 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (hook-env)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate script for]:SHELL:(bash fish zsh)' \
-'--shell=[Shell type to generate script for]:SHELL:(bash fish zsh)' \
+'-s+[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
+'--shell=[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
+'-h[Print help]' \
+'--help[Print help]' \
 && ret=0
 ;;
 (install)
