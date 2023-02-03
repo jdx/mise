@@ -26,6 +26,3 @@
 **/snapshots/*.snap.new
 
 package-lock.json
-
-# ignore macos system file
-.DS_Store

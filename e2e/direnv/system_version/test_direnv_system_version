@@ -9,7 +9,7 @@ _rtx_hook && _direnv_hook
 # prepare
 
 # use old node version on purpose to not conflict with unknown system node version
-custom_node_version="17.7.1"
+custom_node_version="16.0.0"
 rtx_nodejs_path_segment="${RTX_DATA_DIR}/installs/nodejs"
 
 # with nodejs@system rtx should not add a nodejs path segment
