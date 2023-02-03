@@ -9,6 +9,20 @@
 
 Shouldn't require anything special I'm aware of, but `just build` is a good sanity check to run and make sure it's all working.
 
+## Running the CLI
+
+I put a shim for `cargo run` that makes it easy to run build + run rtx in dev mode. It's at `.bin/rtx`. What I do is add this to PATH
+with direnv. Here is my `.envrc`:
+
+```
+source_up_if_exists
+PATH_add .bin
+```
+
+Now I can just run `rtx` as if I was using an installed version and it will build it from source everytime there are changes.
+
+You don't have to do this, but it makes things like `rtx activate` a lot easier to setup.
+
 ## Running Tests
 
 * Run only unit tests: `just test-unit`
