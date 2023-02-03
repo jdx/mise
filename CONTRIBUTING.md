@@ -5,6 +5,32 @@
 
 (you'd think we'd use rtx to fetch these but frankly it's kind of a pain to dogfood rtx while testing it)
 
+## Just
+
+Just should be used for just about every task. Here is a full list of its
+tasks:
+
+```
+~/src/rtx ❯ just --list
+Available recipes:
+    build *args           # just `cargo build`
+    clean                 # delete built files
+    default               # defaults to `just test`
+    lint                  # clippy, cargo fmt --check, and just --fmt
+    lint-fix              # runs linters but makes fixes when possible
+    pre-commit            # called by husky precommit hook
+    render-completions    # regenerate shell completion files
+    render-help           # regenerate README.md
+    test                  # run all test types
+    b                     # alias for `test`
+    t                     # alias for `test`
+    test-coverage         # run unit tests w/ coverage
+    test-e2e              # runs the E2E tests in ./e2e
+    test-setup            # prepare repo to execute tests
+    test-unit             # run the rust "unit" tests
+    test-update-snapshots # update all test snapshot files
+```
+
 ## Setup
 
 Shouldn't require anything special I'm aware of, but `just build` is a good sanity check to run and make sure it's all working.
