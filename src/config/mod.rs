@@ -1,10 +1,3 @@
-use std::collections::HashMap;
-use std::env::join_paths;
-use std::fmt::{Display, Formatter};
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
 use indexmap::IndexMap;
@@ -13,6 +6,11 @@ use rayon::prelude::*;
 
 pub use plugin_source::PluginSource;
 pub use settings::{MissingRuntimeBehavior, Settings};
+use std::collections::HashMap;
+use std::env::join_paths;
+use std::fmt::{Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::cli::args::runtime::RuntimeArg;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
@@ -94,12 +92,7 @@ impl Config {
 
     pub fn path_env(&self) -> Result<String> {
         let installs = self.list_paths()?;
-        let other = env::PATH
-            .clone()
-            .into_iter()
-            .filter(|p| !p.starts_with(dirs::INSTALLS.deref()))
-            .collect_vec();
-        Ok(join_paths([installs, other].concat())?
+        Ok(join_paths([installs, env::PATH.clone()].concat())?
             .to_string_lossy()
             .into())
     }

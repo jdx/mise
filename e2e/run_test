@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
+ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
+export ROOT
 export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
-export RTX_DATA_DIR="/tmp/rtx"
-#export PATH="$PWD/target/debug:$PATH"
+export RTX_DATA_DIR="$ROOT/e2e/.rtx"
+export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
 unset GOPATH
-
-ROOT="$PWD"
 
 TEST="$1"
 echo "Running $TEST"
+export HOME="$ROOT/e2e"
 cd "$(dirname "$TEST")"
 "./$(basename "$TEST")"
 
 rm -f "$ROOT/e2e/.tool-versions"
-git checkout "$ROOT/.tool-versions"
