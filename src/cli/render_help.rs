@@ -40,9 +40,9 @@ Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it
 (choose one, and open a new shell session for the changes to take effect):
 
 ```sh-session
-$ echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
-$ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
-$ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
+$ echo 'eval "$(~/bin/rtx activate -s bash)"' >> ~/.bashrc
+$ echo 'eval "$(~/bin/rtx activate -s zsh)"' >> ~/.zshrc
+$ echo '~/bin/rtx activate -s fish | source' >> ~/.config/fish/config.fish
 ```
 
 Install a runtime and set it as the default:
@@ -79,7 +79,7 @@ Come chat about rtx on [discord](https://discord.gg/mABnUDvP57).
 
 ### How it works
 
-rtx installs as a shell extension (e.g. `rtx activate zsh`) that sets the `PATH`
+rtx installs as a shell extension (e.g. `rtx activate -s zsh`) that sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
 directory containing a `.tool-versions` file, rtx will automatically activate the correct versions.
 
