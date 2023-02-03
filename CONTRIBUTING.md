@@ -1,7 +1,7 @@
 ## Dependencies
 
-* [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that)
-* [just](https://github.com/casey/just) any version should do
+* [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.
+* [just](https://github.com/casey/just) any version should do, but as of this writing I'm on 1.13.0
 
 (you'd think we'd use rtx to fetch these but frankly it's kind of a pain to dogfood rtx while testing it)
 
