@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::env::{join_paths, split_paths};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
+
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,17 +51,32 @@ impl DirenvDiff {
     /// this adds a directory to both the old and new path in DIRENV_DIFF
     /// the purpose is to trick direnv into thinking that this path has always been there
     /// that way it does not remove it when it modifies PATH
-    /// if the directory exists it is first removed, then added to the front of the list
     /// it returns the old and new paths as vectors
     pub fn add_path_to_old_and_new(&mut self, path: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
         let mut old = self.old_path();
         let mut new = self.new_path();
 
-        old.retain(|p| p != path);
-        new.retain(|p| p != path);
-
         old.insert(0, path.into());
         new.insert(0, path.into());
+
+        self.old
+            .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
+        self.new
+            .insert("PATH".into(), join_paths(&new)?.into_string().unwrap());
+
+        Ok((old, new))
+    }
+
+    pub fn remove_path_from_old_and_new(
+        &mut self,
+        path: &Path,
+    ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+        let mut old = self.old_path();
+        let mut new = self.new_path();
+
+        // remove the path from both old and new but only once
+        old.iter().position(|p| p == path).map(|i| old.remove(i));
+        new.iter().position(|p| p == path).map(|i| new.remove(i));
 
         self.old
             .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
