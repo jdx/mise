@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
 use color_eyre::eyre::Result;
@@ -19,6 +19,8 @@ pub struct EnvDiff {
     pub old: HashMap<String, String>,
     #[serde(default)]
     pub new: HashMap<String, String>,
+    #[serde(default)]
+    pub path: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -145,6 +147,7 @@ impl EnvDiff {
         EnvDiff {
             old: self.new.clone(),
             new: self.old.clone(),
+            path: self.path.clone(),
         }
     }
 }

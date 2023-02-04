@@ -42,7 +42,7 @@ with direnv. Here is my `.envrc`:
 
 ```
 source_up_if_exists
-PATH_add .bin
+PATH_add "$(expand_path .bin)"
 ```
 
 Now I can just run `rtx` as if I was using an installed version and it will build it from source everytime there are changes.

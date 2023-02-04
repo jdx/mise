@@ -1,17 +1,32 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088
 set -euo pipefail
+
+orig_path="$PATH"
 
 rtx install nodejs@18.0.0 nodejs@16.0.0
 # shellcheck disable=SC1090
 eval "$(rtx activate bash)"
 _rtx_hook
 
-#rtx install
+assert_path() {
+  local expected="${1//$HOME/\~}:"
+  local actual="${PATH/%$orig_path/}"
+  actual="${actual//$HOME/\~}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Invalid PATH:  $actual"
+    echo "Expected PATH: $expected"
+    exit 1
+  fi
+}
+
 test "$(node -v)" = "v18.0.0"
+assert_path "~/.rtx/installs/nodejs/18.0.0/bin:~/.rtx/installs/shfmt/3.6.0/bin"
 
 cd 16 && _rtx_hook
-#rtx install
 test "$(node -v)" = "v16.0.0"
+assert_path "~/.rtx/installs/nodejs/16.0.0/bin:~/.rtx/installs/shfmt/3.6.0/bin"
 
 cd .. && _rtx_hook
 test "$(node -v)" = "v18.0.0"
+assert_path "~/.rtx/installs/nodejs/18.0.0/bin:~/.rtx/installs/shfmt/3.6.0/bin"

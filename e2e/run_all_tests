@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-ROOT="$PWD"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FILES=$(find e2e -name 'test_*' -type f)
 for f in $FILES; do
+  if [[ "$f" == "e2e/.rtx/"* ]]; then
+    continue
+  fi
   "$ROOT/e2e/run_test" "$f"
   rm -f "$ROOT/e2e/.tool-versions"
   git checkout "$ROOT/.tool-versions"

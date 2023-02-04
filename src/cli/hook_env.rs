@@ -1,18 +1,19 @@
+use color_eyre::eyre::Result;
+use itertools::Itertools;
+
 use std::env::join_paths;
 use std::ops::Deref;
 use std::path::PathBuf;
-
-use color_eyre::eyre::Result;
-use itertools::Itertools;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::direnv::DirenvDiff;
+use crate::env::__RTX_DIFF;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
-use crate::{dirs, env, hook_env};
+use crate::{env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
@@ -32,10 +33,13 @@ impl Command for HookEnv {
 
         self.clear_old_env(out);
         let env = config.env()?;
-        let diff = EnvDiff::new(&env::PRISTINE_ENV, env);
+        let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        patches.extend(self.build_path_operations(&config)?);
+        let installs = config.list_paths()?; // load the active runtime paths
+        diff.path = installs.clone(); // update __RTX_DIFF with the new paths for the next run
+
+        patches.extend(self.build_path_operations(&installs, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&config)?);
 
@@ -67,7 +71,10 @@ impl HookEnv {
     }
 
     fn clear_old_env(&self, out: &mut Output) {
-        let patches = env::__RTX_DIFF.reverse().to_patches();
+        let mut patches = env::__RTX_DIFF.reverse().to_patches();
+        if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
+            patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
+        }
         let output = self.build_env_commands(&patches);
         out.stdout.write(output);
     }
@@ -85,20 +92,18 @@ impl HookEnv {
     }
 
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
-    fn build_path_operations(&self, config: &Config) -> Result<Vec<EnvDiffOperation>> {
-        let installs = config.list_paths()?;
-        let other = env::PATH
-            .clone()
-            .into_iter()
-            .filter(|p| !p.starts_with(dirs::INSTALLS.deref()))
-            .collect_vec();
-        let new_path = join_paths([installs.clone(), other].concat())?
+    fn build_path_operations(
+        &self,
+        installs: &Vec<PathBuf>,
+        to_remove: &Vec<PathBuf>,
+    ) -> Result<Vec<EnvDiffOperation>> {
+        let new_path = join_paths([installs.clone(), env::PATH.clone()].concat())?
             .to_string_lossy()
             .to_string();
         let mut ops = vec![EnvDiffOperation::Add("PATH".into(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
-            match self.update_direnv_diff(input, &installs) {
+            match self.update_direnv_diff(input, installs, to_remove) {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
@@ -117,10 +122,14 @@ impl HookEnv {
         &self,
         input: &str,
         installs: &Vec<PathBuf>,
+        to_remove: &Vec<PathBuf>,
     ) -> Result<Option<EnvDiffOperation>> {
         let mut diff = DirenvDiff::parse(input)?;
         if diff.new_path().is_empty() {
             return Ok(None);
+        }
+        for path in to_remove {
+            diff.remove_path_from_old_and_new(path)?;
         }
         for install in installs {
             diff.add_path_to_old_and_new(install)?;

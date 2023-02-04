@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::LevelFilter;
 
@@ -86,8 +87,10 @@ lazy_static! {
     /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
-    pub static ref PATH: Vec<PathBuf> =
-        split_paths(&var_os("PATH").unwrap_or_default()).collect();
+    pub static ref PATH: Vec<PathBuf> = match PRISTINE_ENV.get("PATH") {
+        Some(path) => split_paths(path).collect(),
+        None => vec![],
+    };
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
         ".tool-versions".into()
     } else {
@@ -132,7 +135,28 @@ fn get_pristine_env(
     orig_env: HashMap<String, String>,
 ) -> HashMap<String, String> {
     let patches = rtx_diff.reverse().to_patches();
-    apply_patches(&orig_env, &patches)
+    let mut env = apply_patches(&orig_env, &patches);
+
+    // get the current path as a vector
+    let path = match env.get("PATH") {
+        Some(path) => split_paths(path).collect(),
+        None => vec![],
+    };
+    // get the paths that were removed by rtx as a hashset
+    let mut to_remove = rtx_diff.path.iter().collect::<HashSet<_>>();
+
+    // remove those paths that were added by rtx, but only once (the first time)
+    let path = path
+        .into_iter()
+        .filter(|p| !to_remove.remove(p))
+        .collect_vec();
+
+    // put the pristine PATH back into the environment
+    env.insert(
+        "PATH".into(),
+        join_paths(path).unwrap().to_string_lossy().to_string(),
+    );
+    env
 }
 
 fn apply_patches(
