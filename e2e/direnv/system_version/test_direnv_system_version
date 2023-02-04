@@ -1,0 +1,60 @@
+#!/usr/bin/env zsh
+
+set -e
+
+eval "$(direnv hook zsh)"
+eval "$(rtx activate -s zsh)"
+_rtx_hook && _direnv_hook
+
+# prepare
+
+# use old node version on purpose to not conflict with unknown system node version
+custom_node_version="16.0.0"
+rtx_nodejs_path_segment="${RTX_DATA_DIR}/installs/nodejs"
+
+# with nodejs@system rtx should not add a nodejs path segment
+if [[ $PATH == *"${rtx_nodejs_path_segment}"* ]]; then
+  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment} must not be in PATH: ${PATH}"
+  exit 1
+fi
+
+system_node_version=$(node -v)
+# the test is only working, if system node version is not equal to custom node version
+if [[ $system_node_version == "v${custom_node_version}" ]]; then
+  echo "Equal system node version: ${system_node_version} and rtx custom version: v${custom_node_version}"
+  exit 1
+fi
+
+# allow direnv to execute .envrc file
+direnv allow rtx-direnv-system-version-reset/load-first
+
+# test
+
+# install custom nodejs version
+rtx i nodejs@$custom_node_version && _rtx_hook
+
+cd rtx-direnv-system-version-reset/load-first && _rtx_hook && _direnv_hook
+node_version=$(node -v)
+if [[ $node_version != "v${custom_node_version}" ]]; then
+  echo "Invalid node version: ${node_version} Expected: v${custom_node_version}"
+  exit 1
+fi
+
+if [[ ! $PATH == *"${rtx_nodejs_path_segment}/${custom_node_version}"* ]]; then
+  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment}/${custom_node_version} must be in PATH: ${PATH}"
+  exit 1
+fi
+
+cd .. && _rtx_hook && _direnv_hook
+
+# with nodejs@system rtx should not add a nodejs path segment
+if [[ $PATH == *"${rtx_nodejs_path_segment}"* ]]; then
+  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment} must not be in PATH: ${PATH}"
+  exit 1
+fi
+
+test_node_version=$(node -v)
+if [[ $test_node_version != "${system_node_version}" ]]; then
+  echo "Invalid node version: ${test_node_version} Expected: ${system_node_version}"
+  exit 1
+fi
