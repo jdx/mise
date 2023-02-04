@@ -2,4 +2,4 @@
 source: src/direnv.rs
 expression: "diff.old.get(\"PATH\").unwrap()"
 ---
-/tmp:/foo:/bar:/old
+/tmp:/foo:/tmp:/bar:/old

@@ -4,7 +4,7 @@ set -e
 
 eval "$(direnv hook zsh)"
 eval "$(rtx activate zsh)"
-_rtx_hook && _direnv_hook
+_rtx_hook && direnv allow && _direnv_hook
 
 assert_go_version() {
   local expected="$1"

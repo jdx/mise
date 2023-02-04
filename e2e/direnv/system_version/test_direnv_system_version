@@ -5,7 +5,6 @@ set -e
 eval "$(direnv hook zsh)"
 eval "$(rtx activate -s zsh)"
 _rtx_hook && _direnv_hook
-
 # prepare
 
 # use old node version on purpose to not conflict with unknown system node version
