@@ -232,18 +232,25 @@ fn load_config_files(
     let parsed_config_files = config_files
         .into_par_iter()
         .rev()
-        .map(|path| {
+        .filter_map(|path| {
             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-            match legacy_filenames.get(&filename) {
+            let result = match legacy_filenames.get(&filename) {
                 Some(plugin) => {
                     let plugin = ts.find_plugin(plugin).unwrap();
-                    let cf = LegacyVersionFile::parse(path.into(), &plugin)?;
-                    Ok(Box::new(cf) as Box<dyn ConfigFile>)
+                    LegacyVersionFile::parse(path.into(), &plugin)
+                        .map(|cf| Box::new(cf) as Box<dyn ConfigFile>)
                 }
                 None => config_file::parse(path),
+            };
+            match result {
+                Ok(cf) => Some(cf),
+                Err(e) => {
+                    warn!("error parsing config file: {}", e);
+                    None
+                }
             }
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
     for cf in parsed_config_files {
         let path = cf.get_path().to_path_buf();
