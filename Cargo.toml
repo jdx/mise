@@ -70,6 +70,7 @@ pretty_assertions = "1.3.0"
 tempfile = "3.3.0"
 
 [profile.release]
+debug = 1 # show line numbers in backtrace
 
 [profile.release-fast]
 inherits = "release"
