@@ -91,6 +91,7 @@ impl EnvDiff {
                 || k == "SHELLOPTS"
                 || k == "COMP_WORDBREAKS"
                 || k == "PS1"
+                || k.is_empty() // this happens when exporting a function (export -f)
                 // TODO: consider removing this
                 // this is to make the ruby plugin compatible,
                 // it causes ruby to attempt to call asdf to reshim the binaries
