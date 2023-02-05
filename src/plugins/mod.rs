@@ -382,11 +382,13 @@ impl Plugin {
             return Ok(cached);
         }
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
-        let legacy_version = self
-            .script_man
-            .read(ParseLegacyFile(legacy_file.to_string_lossy().into()))?
-            .trim()
-            .to_string();
+        let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
+        let legacy_version = match self.script_man.script_exists(&script) {
+            true => self.script_man.read(script)?,
+            false => fs::read_to_string(legacy_file)?,
+        }
+        .trim()
+        .to_string();
 
         self.write_legacy_cache(legacy_file, &legacy_version)?;
         Ok(legacy_version)
