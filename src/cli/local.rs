@@ -121,7 +121,7 @@ mod test {
         let stdout = assert_cli!("ls", "--current");
         assert_str_eq!(
             grep(stdout, "nodejs"),
-            "   nodejs     18.0.0 (missing)   (set by ~/cwd/.node-version)"
+            "   nodejs 18.0.0 (missing)   (set by ~/cwd/.node-version)"
         );
         let stdout = assert_cli!("local", "tiny@1");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
