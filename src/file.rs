@@ -11,9 +11,13 @@ pub fn basename(path: &Path) -> Option<String> {
     path.file_name().map(|f| f.to_string_lossy().to_string())
 }
 
+/// replaces $HOME with "~"
 pub fn display_path(path: &Path) -> String {
     let home = dirs::HOME.to_string_lossy();
-    path.to_string_lossy().replace(home.as_ref(), "~")
+    match path.starts_with(home.as_ref()) {
+        true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
+        false => path.to_string_lossy().to_string(),
+    }
 }
 
 pub fn changed_within(f: &Path, within: Duration) -> Result<bool> {
@@ -117,6 +121,8 @@ impl Iterator for FindUp {
 
 #[cfg(test)]
 mod test {
+    use std::ops::Deref;
+
     use crate::dirs;
 
     use super::*;
@@ -153,5 +159,16 @@ mod test {
     fn test_dir_subdirs() {
         let subdirs = dir_subdirs(dirs::HOME.as_path()).unwrap();
         assert!(subdirs.contains(&"cwd".to_string()));
+    }
+
+    #[test]
+    fn test_display_path() {
+        let path = dirs::HOME.join("cwd");
+        assert_eq!(display_path(&path), "~/cwd");
+
+        let path = Path::new("/tmp")
+            .join(dirs::HOME.deref().strip_prefix("/").unwrap())
+            .join("cwd");
+        assert_eq!(display_path(&path), path.display().to_string());
     }
 }
