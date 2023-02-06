@@ -61,7 +61,7 @@ lazy_static! {
                 } else if *RTX_DEBUG {
                     log::LevelFilter::Debug
                 } else if *RTX_QUIET {
-                    log::LevelFilter::Error
+                    log::LevelFilter::Warn
                 } else {
                     log::LevelFilter::Info
                 }
