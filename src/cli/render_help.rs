@@ -104,7 +104,7 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
     rtx local nodejs@20             Use node-20.x in current project
     rtx global nodejs@20            Use node-20.x as default
 
-    rtx install nodejs              Install the latest available version
+    rtx install nodejs              Install the version specified in .tool-versions
     rtx local nodejs@latest         Use latest node in current directory
     rtx global nodejs@system        Use system node as default
 

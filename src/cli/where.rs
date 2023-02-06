@@ -12,7 +12,9 @@ use crate::output::Output;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
 pub struct Where {
-    /// runtime(s) to remove
+    /// runtime(s) to look up
+    /// if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+    /// otherwise, it will show the current, active installed version
     #[clap(required = true, value_parser = RuntimeArgParser)]
     runtime: RuntimeArg,
 
@@ -24,18 +26,11 @@ pub struct Where {
 }
 
 impl Command for Where {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let prefix = match self.runtime.version.as_str() {
-            "latest" => match self.asdf_version {
-                Some(version) => version,
-                None => "".to_string(),
-            },
-            v => v.into(),
-        };
-
-        let rtv = config
-            .ts
-            .find_by_prefix(&config.aliases, &self.runtime.plugin, prefix.as_str());
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let version = config.resolve_runtime_arg(&self.runtime)?;
+        let rtv = config.ts.list_installed_versions().into_iter().find(|rtv| {
+            rtv.plugin.name == self.runtime.plugin && version.eq(&Some(rtv.version.clone()))
+        });
 
         match rtv {
             Some(rtv) => {
@@ -43,8 +38,8 @@ impl Command for Where {
                 Ok(())
             }
             None => Err(VersionNotInstalled(
-                self.runtime.plugin,
-                self.runtime.version,
+                self.runtime.plugin.to_string(),
+                self.runtime.version.to_string(),
             ))?,
         }
     }
@@ -52,8 +47,16 @@ impl Command for Where {
 
 const AFTER_LONG_HELP: &str = r#"
 Examples:
+
+  # Show the latest installed version of nodejs
+  # If it is is not installed, errors
   $ rtx where nodejs@20
-  /Users/jdx/.local/share/rtx/installs/nodejs/20.13.0
+  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+
+  # Show the current, active install directory of nodejs
+  # Errors if nodejs is not referenced in any .tool-version file
+  $ rtx where nodejs
+  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
 "#;
 
 #[cfg(test)]

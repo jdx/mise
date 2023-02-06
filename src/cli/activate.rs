@@ -32,6 +32,9 @@ impl Command for Activate {
         let shell = get_shell(self.shell_type.or(self.shell));
 
         if self.quiet {
+            // TODO: it would probably be better to just set --quiet on `hook-env`
+            // this will cause _all_ rtx commands to be quiet, not just the hook
+            // however as of this writing I don't think RTX_QUIET impacts other commands
             rtxprintln!(out, "{}", shell.set_env("RTX_QUIET", "1"));
         }
 
