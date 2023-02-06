@@ -194,18 +194,18 @@ impl Plugin {
                 r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
             ).unwrap();
         }
-        let query = String::from(r"^\s*") + query;
-        let query_regex = Regex::new(&query)?;
-        let latest = self
+        let query_regex = Regex::new((String::from(r"^\s*") + query).as_str())?;
+        let matches = self
             .get_cache()?
             .versions
-            .iter()
+            .into_iter()
             .filter(|v| !VERSION_REGEX.is_match(v))
             .filter(|v| query_regex.is_match(v))
-            .last()
-            .map(|v| v.into());
-
-        Ok(latest)
+            .collect_vec();
+        match matches.contains(&query.to_string()) {
+            true => Ok(Some(query.to_string())),
+            false => Ok(matches.last().map(|v| v.to_string())),
+        }
     }
 
     pub fn legacy_filenames(&self) -> Result<Vec<String>> {
@@ -443,5 +443,13 @@ mod test {
         // do it again to test the cache
         let version = plugin.parse_legacy_file(&gemfile).unwrap();
         assert_str_eq!(version, "3.0.5");
+    }
+
+    #[test]
+    fn test_exact_match() {
+        assert_cli!("plugin", "add", "python");
+        let plugin = Plugin::load(&PluginName::from("python")).unwrap();
+        let version = plugin.latest_version("3.9.1").unwrap().unwrap();
+        assert_str_eq!(version, "3.9.1");
     }
 }
