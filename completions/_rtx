@@ -314,9 +314,13 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '*--remove=[remove the plugin(s) from .tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-p[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--parent[recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions by default it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'-p[recurse up to find a .tool-versions file rather than using the current directory only
+by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
+'--parent[recurse up to find a .tool-versions file rather than using the current directory only
+by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
+'--fuzzy[save fuzzy match to .tool-versions
+e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
+without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
