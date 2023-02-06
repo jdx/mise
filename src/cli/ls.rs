@@ -39,13 +39,12 @@ impl Command for Ls {
             }
             rtxprintln!(
                 out,
-                "{} {:10} {:10} {}",
+                "{} {} {}",
                 match rtv.is_installed() && source.is_some() {
                     true => "->",
                     false => "  ",
                 },
-                cyan(Stdout, &rtv.plugin.name),
-                styled_version(&rtv.version, !rtv.is_installed(), source.is_some()),
+                styled_version(&rtv, !rtv.is_installed(), source.is_some()),
                 match source {
                     Some(source) => format!("(set by {source})"),
                     None => "".into(),
@@ -57,25 +56,30 @@ impl Command for Ls {
     }
 }
 
-fn styled_version(version: &String, missing: bool, active: bool) -> String {
+fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
     let styled = if missing {
-        version
+        rtv.version
             .if_supports_color(Stream::Stdout, |t| t.strikethrough().red().to_string())
             .to_string()
             + red(Stdout, " (missing)").as_str()
     } else if active {
-        green(Stdout, version)
+        green(Stdout, &rtv.version)
     } else {
-        dimmed(Stdout, version)
+        dimmed(Stdout, &rtv.version)
     };
     let unstyled = if missing {
-        format!("{version} (missing)")
+        format!("{} {} (missing)", &rtv.plugin.name, &rtv.version)
     } else {
-        version.to_string()
+        format!("{} {}", &rtv.plugin.name, &rtv.version)
     };
 
-    let pad = max(0, 18isize - unstyled.len() as isize) as usize;
-    format!("{}{}", styled, " ".repeat(pad))
+    let pad = max(0, 25 - unstyled.len() as isize) as usize;
+    format!(
+        "{} {}{}",
+        cyan(Stdout, &rtv.plugin.name),
+        styled,
+        " ".repeat(pad)
+    )
 }
 
 fn get_runtime_list(
