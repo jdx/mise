@@ -116,8 +116,11 @@ complete -c rtx -n "__fish_seen_subcommand_from latest" -s v -l verbose -d 'Show
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l remove -d 'remove the plugin(s) from .tool-versions' -r
 complete -c rtx -n "__fish_seen_subcommand_from local" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'save fuzzy match to .tool-versions e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions by default it would save the exact version, e.g.: `nodejs 20.0.0`'
+complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'recurse up to find a .tool-versions file rather than using the current directory only
+by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
+complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'save fuzzy match to .tool-versions
+e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
+without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -d 'Only show runtimes from [PLUGIN]' -r

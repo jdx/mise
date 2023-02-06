@@ -22,13 +22,13 @@ pub struct Local {
 
     /// recurse up to find a .tool-versions file rather than using the current directory only
     /// by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
-    #[clap(short, long)]
+    #[clap(short, long, verbatim_doc_comment)]
     parent: bool,
 
     /// save fuzzy match to .tool-versions
     /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
-    /// by default it would save the exact version, e.g.: `nodejs 20.0.0`
-    #[clap(long)]
+    /// without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`
+    #[clap(long, verbatim_doc_comment)]
     fuzzy: bool,
 
     /// remove the plugin(s) from .tool-versions

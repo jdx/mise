@@ -871,10 +871,13 @@ Arguments:
 
 Options:
   -p, --parent
-          recurse up to find a .tool-versions file rather than using the current directory only by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
+          recurse up to find a .tool-versions file rather than using the current directory only
+          by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
 
       --fuzzy
-          save fuzzy match to .tool-versions e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions by default it would save the exact version, e.g.: `nodejs 20.0.0`
+          save fuzzy match to .tool-versions
+          e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
+          without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`
 
       --remove <PLUGIN>
           remove the plugin(s) from .tool-versions
@@ -986,7 +989,8 @@ Options:
   -a, --all
           Install all missing plugins
           
-          This will only install plugins that have matching shortnames. i.e.: they don't need the full git repo url
+          This will only install plugins that have matching shortnames.
+          i.e.: they don't need the full git repo url
 
   -v, --verbose...
           Show installation output
