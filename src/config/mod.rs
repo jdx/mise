@@ -182,9 +182,12 @@ fn load_installed_runtimes(ts: &mut Toolset) -> Result<()> {
     Ok(())
 }
 
-fn load_legacy_filenames(settings: &Settings, ts: &Toolset) -> Result<HashMap<String, PluginName>> {
+fn load_legacy_filenames(
+    settings: &Settings,
+    ts: &Toolset,
+) -> Result<IndexMap<String, PluginName>> {
     if !settings.legacy_version_file {
-        return Ok(HashMap::new());
+        return Ok(IndexMap::new());
     }
     let filenames = ts
         .list_plugins()
@@ -199,11 +202,11 @@ fn load_legacy_filenames(settings: &Settings, ts: &Toolset) -> Result<HashMap<St
         .collect::<Result<Vec<Vec<(String, PluginName)>>>>()?
         .into_iter()
         .flatten()
-        .collect::<HashMap<String, PluginName>>();
+        .collect::<IndexMap<String, PluginName>>();
     Ok(filenames)
 }
 
-fn find_all_config_files(legacy_filenames: &HashMap<String, PluginName>) -> Vec<PathBuf> {
+fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec<PathBuf> {
     let mut filenames = vec![
         // ".rtxrc.toml",
         // ".rtxrc",
@@ -227,7 +230,7 @@ fn find_all_config_files(legacy_filenames: &HashMap<String, PluginName>) -> Vec<
 fn load_config_files(
     ts: &mut Toolset,
     config_files: &Vec<PathBuf>,
-    legacy_filenames: &HashMap<String, PluginName>,
+    legacy_filenames: &IndexMap<String, PluginName>,
 ) -> Result<()> {
     let parsed_config_files = config_files
         .into_par_iter()
@@ -270,7 +273,7 @@ fn load_config_file(ts: &mut Toolset, cf: Box<dyn ConfigFile>) -> Result<()> {
     Ok(())
 }
 
-fn load_runtime_env(ts: &mut Toolset, env: HashMap<String, String>) -> Result<()> {
+fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) -> Result<()> {
     for (k, v) in env {
         if k.starts_with("RTX_") && k.ends_with("_VERSION") {
             let plugin_name = k[4..k.len() - 8].to_lowercase();

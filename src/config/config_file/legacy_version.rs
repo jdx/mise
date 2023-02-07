@@ -42,7 +42,11 @@ impl ConfigFile for LegacyVersionFile {
     }
 
     fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
-        IndexMap::from([(self.plugin.clone(), vec![self.version.clone()])])
+        if self.version.is_empty() {
+            IndexMap::new()
+        } else {
+            IndexMap::from([(self.plugin.clone(), vec![self.version.clone()])])
+        }
     }
 
     fn env(&self) -> HashMap<String, String> {
