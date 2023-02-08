@@ -71,7 +71,7 @@ environment variable to point your shell to the correct runtime binaries. When y
 directory containing a `.tool-versions` file, rtx will automatically activate the correct versions.
 
 Every time your prompt starts it will call `rtx hook-env` to fetch new environment variables. This
-should be very fast and it exits early if the the directory wasn't changed or the `.tool-version`
+should be very fast and it exits early if the the directory wasn't changed or the `.tool-versions`
 files haven't been updated. On my machine this takes 4ms in the fast case, 14ms in the slow case. See [Performance](#performance) for more on this topic.
 
 Unlike asdf which uses shim files to dynamically locate runtimes when they're called, rtx modifies
@@ -279,7 +279,7 @@ I'd be happy to help you get yours integrated.
 
 ### `.tool-versions`
 
-The `.tool-versions` file is used to specify the runtime versions for a project. An example of this 
+The `.tool-versions` file is used to specify the runtime versions for a project. An example of this
 is:
 
 ```
@@ -1371,7 +1371,7 @@ use rtx
 direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
 to all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory). You can also add `use rtx` to `~/.config/direnv/direnvrc`.
 
-Note that in this method direnv typically won't know to refresh `.tool-version` files
+Note that in this method direnv typically won't know to refresh `.tool-versions` files
 unless they're at the same level as a `.envrc` file. You'll likely always want to have
 a `.envrc` file next to your `.tool-versions` for this reason. To make this a little
 easier to manage, I encourage _not_ actually using `.tool-versions` at all, and instead
