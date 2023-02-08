@@ -45,6 +45,11 @@ $ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
+> **Note**
+>
+> If you use direnv, you will want to activate direnv _before_ rtx. There is also
+> an alternative way to use rtx inside of direnv, see [here](#direnv).
+
 Install a runtime and set it as the default:
 
 ```sh-session
@@ -623,13 +628,27 @@ were very good. I really just have 2 complaints: the shims and the fact it's wri
 
 [direnv](https://direnv.net) and rtx both manage environment variables based on directory. Because they both analyze
 the current environment variables before and after their respective "hook" commands are run, they can conflict with each other.
+As a result, there were a [number of issues with direnv](https://github.com/jdxcode/rtx/issues/8).
+However, we think we've mitigated these. If you find that rtx and direnv are not working well together,
+please comment on that ticket ideally with a good description of your directory layout so we can
+reproduce the problem.
 
-There were a [number of issues with direnv](https://github.com/jdxcode/rtx/issues/8).
-However, these _should_ be resolved now and you should be able to use direnv alongside
-rtx.
+If there are remaining issues, they're likely to do with the ordering of PATH. This means it would
+really only be a problem if you were trying to manage the same runtime with direnv and rtx. For example,
+you may use `layout python` in an `.envrc` but also be maintaining a `.tool-versions` file with python
+in it as well.
 
-If you do encounter issues, or just want to use direnv in an alternate way: there
-is a method of calling rtx from within direnv so you do not need to run `rtx activate`. This is a simpler setup that's less likely to cause issues.
+A more typical usage of direnv would be to set some arbitrary environment variables, or add unrelated
+binaries to PATH. In these cases, rtx will not interfere with direnv.
+
+As mentioned in the Quick Start, it is important to make sure that `rtx activate` is called after `direnv hook`
+in the shell rc file. rtx overrides some of the internal direnv state (`DIRENV_DIFF`) so calling
+direnv first gives rtx the opportunity to make those changes to direnv's state.
+
+### rtx inside of direnv (`use rtx` in `.envrc`)
+
+If you do encounter issues with `rtx activate`, or just want to use direnv in an alternate way,
+this is a simpler setup that's less likely to cause issues.
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
@@ -658,7 +677,8 @@ export RTX_NODEJS_VERSION=18.0.0
 export RTX_PYTHON_VERSION=3.11
 ```
 
-Of course if you use `rtx activate` none of this is necesary.
+Of course if you use `rtx activate`, then these steps won't have been necessary and you can use rtx
+as if direnv was not used.
 
 ## Cache Behavior
 
