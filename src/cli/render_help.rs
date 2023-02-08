@@ -664,12 +664,12 @@ use rtx
 ```
 
 direnv will now call rtx to export its environment variables. You'll need to make sure to add `use_rtx`
-too all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory). You can also add `use rtx` to `~/.config/direnv/direnvrc`.
+to all projects that use rtx (or use direnv's `source_up` to load it from a subdirectory). You can also add `use rtx` to `~/.config/direnv/direnvrc`.
 
 Note that in this method direnv typically won't know to refresh `.tool-version` files
-unless they're at the same level at a `.envrc` file. You'll likely always want to have
+unless they're at the same level as a `.envrc` file. You'll likely always want to have
 a `.envrc` file next to your `.tool-versions` for this reason. To make this a little
-easier to manage, I encourage _not_ actually using `.tool-versions` and instead
+easier to manage, I encourage _not_ actually using `.tool-versions` at all, and instead
 setting environment variables entirely in `.envrc`:
 
 ```
