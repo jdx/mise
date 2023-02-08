@@ -45,7 +45,7 @@ $ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Note**
+> **Warning**
 >
 > If you use direnv, you will want to activate direnv _before_ rtx. There is also
 > an alternative way to use rtx inside of direnv, see [here](#direnv).
