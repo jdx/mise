@@ -600,7 +600,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':runtime -- runtime(s) to remove:' \
+':runtime -- runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version:' \
 '::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
 && ret=0
 ;;

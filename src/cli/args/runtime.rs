@@ -1,3 +1,4 @@
+use color_eyre::eyre::Result;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
 
@@ -9,22 +10,51 @@ use crate::plugins::PluginName;
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RuntimeArg {
     pub plugin: PluginName,
-    pub version: String,
+    pub version: RuntimeArgVersion,
+}
+
+/// The type of runtime argument
+/// Generally, these are in the form of `plugin@version` that's "Version"
+/// but there are some alternatives like `plugin@ref:sha` or `plugin@path:/path/to/runtime`
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum RuntimeArgVersion {
+    /// Nothing was specified, e.g.: `nodejs`
+    None,
+    /// references a version, version prefix, or alias
+    /// e.g.: `nodejs@20`, `nodejs@latest`, `nodejs@lts`
+    Version(String),
+    /// use the system runtime already on PATH
+    /// e.g.: `nodejs@system`
+    System,
+    // /// build runtime from source at this VCS sha
+    // rtx currently does not support this, see https://github.com/jdxcode/rtx/issues/98
+    // Ref,
+    // /// runtime is in a local directory, not managed by rtx
+    // Path,
 }
 
 impl RuntimeArg {
     pub fn parse(input: &str) -> Self {
-        let (plugin, version) = input.split_once('@').unwrap_or((input, "latest"));
-        Self {
-            plugin: plugin.into(),
-            version: version.into(),
+        match input.split_once('@') {
+            Some((plugin, "system")) => Self {
+                plugin: plugin.into(),
+                version: RuntimeArgVersion::System,
+            },
+            Some((plugin, version)) => Self {
+                plugin: plugin.into(),
+                version: RuntimeArgVersion::Version(version.into()),
+            },
+            None => Self {
+                plugin: input.into(),
+                version: RuntimeArgVersion::None,
+            },
         }
     }
 
     /// this handles the case where the user typed in:
     /// rtx local nodejs 20.0.0
     /// instead of
-    /// rtx local nodejs 20.0.0
+    /// rtx local nodejs@20.0.0
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.
@@ -34,8 +64,11 @@ impl RuntimeArg {
             let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
             let a = runtimes[0].clone();
             let b = runtimes[1].clone();
-            if a.version == "latest" && b.version == "latest" && re.is_match(&b.plugin) {
-                runtimes[1].version = b.plugin;
+            if matches!(a.version, RuntimeArgVersion::None)
+                && matches!(b.version, RuntimeArgVersion::None)
+                && re.is_match(&b.plugin)
+            {
+                runtimes[1].version = RuntimeArgVersion::Version(b.plugin);
                 runtimes[1].plugin = a.plugin;
                 runtimes.remove(0);
             }
@@ -46,7 +79,21 @@ impl RuntimeArg {
 
 impl Display for RuntimeArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}@{}", self.plugin, self.version)
+        match &self.version {
+            RuntimeArgVersion::System => write!(f, "{}@system", self.plugin),
+            RuntimeArgVersion::Version(version) => write!(f, "{}@{}", self.plugin, version),
+            RuntimeArgVersion::None => write!(f, "{}", self.plugin),
+        }
+    }
+}
+
+impl Display for RuntimeArgVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeArgVersion::System => write!(f, "system"),
+            RuntimeArgVersion::Version(version) => write!(f, "{version}"),
+            RuntimeArgVersion::None => write!(f, "current"),
+        }
     }
 }
 

@@ -82,7 +82,7 @@ mod test {
 
         assert!(stdout.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.5.2/bin")
+                .join("installs/shfmt/3.5.1/bin")
                 .to_string_lossy()
                 .as_ref()
         ));

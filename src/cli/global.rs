@@ -32,7 +32,7 @@ pub struct Global {
 }
 
 impl Command for Global {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let cf_path = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
 
         let mut cf = match cf_path.exists() {
@@ -47,7 +47,7 @@ impl Command for Global {
         }
         if let Some(runtimes) = &self.runtime {
             let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
-            cf.add_runtimes(&config, &runtimes, self.fuzzy)?;
+            cf.add_runtimes(&mut config, &runtimes, self.fuzzy)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {
