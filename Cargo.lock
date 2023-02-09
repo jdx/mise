@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "rtx-cli"
-version = "1.5.3"
+version = "1.6.0"
 dependencies = [
  "atty",
  "base64",
