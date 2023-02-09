@@ -14,6 +14,7 @@ pub struct Settings {
     pub missing_runtime_behavior: MissingRuntimeBehavior,
     pub always_keep_download: bool,
     pub legacy_version_file: bool,
+    pub global_tool_versions_in_config_dir: bool,
     pub plugin_autoupdate_last_check_duration: Duration,
     pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
     pub verbose: bool,
@@ -27,6 +28,7 @@ impl Default for Settings {
             missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
             always_keep_download: false,
             legacy_version_file: true,
+            global_tool_versions_in_config_dir: false,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
@@ -52,6 +54,10 @@ impl Settings {
             self.legacy_version_file.to_string(),
         );
         map.insert(
+            "global_tool_versions_in_config_dir".to_string(),
+            self.global_tool_versions_in_config_dir.to_string(),
+        );
+        map.insert(
             "plugin_autoupdate_last_check_duration".to_string(),
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
         );
@@ -67,6 +73,7 @@ pub struct SettingsBuilder {
     pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
     pub always_keep_download: Option<bool>,
     pub legacy_version_file: Option<bool>,
+    pub global_tool_versions_in_config_dir: Option<bool>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
     pub aliases: Option<AliasMap>,
     pub verbose: Option<bool>,
@@ -90,6 +97,9 @@ impl SettingsBuilder {
         }
         if other.legacy_version_file.is_some() {
             self.legacy_version_file = other.legacy_version_file;
+        }
+        if other.global_tool_versions_in_config_dir.is_some() {
+            self.global_tool_versions_in_config_dir = other.global_tool_versions_in_config_dir;
         }
         if other.plugin_autoupdate_last_check_duration.is_some() {
             self.plugin_autoupdate_last_check_duration =
@@ -132,6 +142,9 @@ impl SettingsBuilder {
         settings.legacy_version_file = self
             .legacy_version_file
             .unwrap_or(settings.legacy_version_file);
+        settings.global_tool_versions_in_config_dir = self
+            .global_tool_versions_in_config_dir
+            .unwrap_or(settings.global_tool_versions_in_config_dir);
         settings.plugin_autoupdate_last_check_duration = self
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);

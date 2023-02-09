@@ -14,7 +14,8 @@ fn init() {
         "checkout",
         "test/.tool-versions",
         "test/cwd/.tool-versions",
-        "test/config/config.toml"
+        "test/config/config.toml",
+        "test/config/tool-versions",
     )
     .run()
     {

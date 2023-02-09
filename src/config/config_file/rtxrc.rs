@@ -89,6 +89,9 @@ impl RTXFile {
             "legacy_version_file" => {
                 self.settings.legacy_version_file = Some(self.parse_bool(k, v)?)
             }
+            "global_tool_versions_in_config_dir" => {
+                self.settings.global_tool_versions_in_config_dir = Some(self.parse_bool(k, v)?)
+            }
             "always_keep_download" => {
                 self.settings.always_keep_download = Some(self.parse_bool(k, v)?)
             }
@@ -418,6 +421,7 @@ mod tests {
     fn test_from_str() {
         let cf = RTXFile::from_str(
             r#"
+global_tool_versions_in_config_dir = true
 nodejs = ["18.0.0", "20.0.0"]
 "#
             .to_string(),
@@ -425,6 +429,10 @@ nodejs = ["18.0.0", "20.0.0"]
         .unwrap();
 
         assert_eq!(cf.plugins.len(), 1);
+        assert!(cf
+            .settings
+            .global_tool_versions_in_config_dir
+            .unwrap_or(false));
         assert!(cf.plugins.contains_key("nodejs"));
         assert_eq!(cf.plugins["nodejs"].versions, vec!["18.0.0", "20.0.0"]);
     }
@@ -561,6 +569,8 @@ nodejs=[true]
         .unwrap();
         let cf = RTXFile::from_file(f.path()).unwrap();
         cf.update_setting("legacy_version_file", false).unwrap();
+        cf.update_setting("global_tool_versions_in_config_dir", true)
+            .unwrap();
         cf.update_setting("something_else", "foo").unwrap();
         cf.update_setting("something.nested.very.deeply", 123)
             .unwrap();
@@ -568,6 +578,7 @@ nodejs=[true]
         cf.update_setting("aliases.python.3", "3.9.0").unwrap();
         assert_display_snapshot!(cf.dump(), @r###"
         legacy_version_file = false
+        global_tool_versions_in_config_dir = true
         something_else = "foo"
         [aliases.nodejs]
         18 = "18.0.0"

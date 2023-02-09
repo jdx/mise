@@ -113,6 +113,7 @@ lazy_static! {
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };
+    pub static ref RTX_GLOBAL_TOOL_VERSIONS_FILENAME: String = "tool-versions".into();
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");

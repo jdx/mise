@@ -51,6 +51,7 @@ mod tests {
         missing_runtime_behavior = autoinstall
         always_keep_download = true
         legacy_version_file = true
+        global_tool_versions_in_config_dir = false
         plugin_autoupdate_last_check_duration = 20
         verbose = true
         jobs = 2

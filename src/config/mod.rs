@@ -108,6 +108,13 @@ fn load_legacy_files(
         .collect()
 }
 
+pub fn find_global_tool_versions_path(in_config_dir: bool) -> std::path::PathBuf {
+    match in_config_dir {
+        true => dirs::CONFIG.join(env::RTX_GLOBAL_TOOL_VERSIONS_FILENAME.as_str()),
+        false => dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()),
+    }
+}
+
 fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec<PathBuf> {
     let mut filenames = vec![
         // ".rtxrc.toml",
@@ -121,9 +128,9 @@ fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-    if home_config.is_file() {
-        config_files.push(home_config);
+    let global_tool_versions_file = find_global_tool_versions_path(true);
+    if global_tool_versions_file.is_file() {
+        config_files.push(global_tool_versions_file);
     }
 
     config_files.into_iter().unique().collect()

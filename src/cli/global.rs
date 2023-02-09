@@ -5,10 +5,9 @@ use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
-use crate::config::{config_file, Config};
+use crate::config::{config_file, find_global_tool_versions_path, Config};
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::{dirs, env};
 
 /// sets global .tool-versions to include a specified runtime
 ///
@@ -42,7 +41,8 @@ pub struct Global {
 
 impl Command for Global {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let cf_path = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        let cf_path =
+            find_global_tool_versions_path(config.settings.global_tool_versions_in_config_dir);
 
         let mut cf = match cf_path.exists() {
             true => config_file::parse(&cf_path)?,
@@ -91,18 +91,21 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err, dirs};
+    use crate::{
+        assert_cli, assert_cli_err, config::find_global_tool_versions_path, env, file::display_path,
+    };
 
-    #[test]
-    fn test_global() {
-        let cf_path = dirs::HOME.join(".tool-versions");
+    fn test_global(cf_path: PathBuf) {
         let orig = fs::read_to_string(&cf_path).ok();
-        let _ = fs::remove_file(&cf_path);
+        {
+            let maybe_ok = std::fs::File::create(cf_path.as_path());
+            assert!(maybe_ok.is_ok())
+        }
 
         assert_cli!("install", "shfmt@2");
         let stdout = assert_cli!("global", "--pin", "shfmt@2");
@@ -122,7 +125,10 @@ mod tests {
         let err = assert_cli_err!("global", "invalid-plugin");
         assert_str_eq!(
             err.to_string(),
-            "no version set for invalid-plugin in ~/.tool-versions"
+            format!(
+                "no version set for invalid-plugin in {}",
+                display_path(&cf_path)
+            ),
         );
 
         // can only request a version one plugin at a time
@@ -132,6 +138,25 @@ mod tests {
         // this is just invalid
         let err = assert_cli_err!("global", "tiny", "dummy@latest");
         assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+
+        if let Some(orig) = orig {
+            fs::write(cf_path, orig).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_global_tool_versions_in_home() {
+        test_global(find_global_tool_versions_path(false));
+    }
+
+    #[test]
+    fn test_global_tool_versions_in_config() {
+        let cf_path = env::RTX_CONFIG_DIR.join("config.toml");
+        let orig = fs::read_to_string(&cf_path).ok();
+        let success = fs::write(&cf_path, "global_tool_versions_in_config_dir = true\n");
+        assert!(success.is_ok());
+
+        test_global(find_global_tool_versions_path(true));
 
         if let Some(orig) = orig {
             fs::write(cf_path, orig).unwrap();
