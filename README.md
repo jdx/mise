@@ -86,7 +86,7 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
     rtx local nodejs@20             Use node-20.x in current project
     rtx global nodejs@20            Use node-20.x as default
 
-    rtx install nodejs              Install the latest available version
+    rtx install nodejs              Install the version specified in .tool-versions
     rtx local nodejs@latest         Use latest node in current directory
     rtx global nodejs@system        Use system node as default
 
@@ -829,7 +829,7 @@ Options:
 Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
-  $ rtx install nodejs         # install latest nodejs version—or what is specified in .tool-versions
+  $ rtx install nodejs         # install version specified in .tool-versions
   $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
   $ rtx install --all          # installs all runtimes and all plugins
 

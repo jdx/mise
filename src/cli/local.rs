@@ -37,7 +37,7 @@ pub struct Local {
 }
 
 impl Command for Local {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let cf_path = match self.parent {
             true => file::find_up(
                 &dirs::CURRENT,
@@ -65,7 +65,7 @@ impl Command for Local {
 
         if let Some(runtimes) = &self.runtime {
             let runtimes = RuntimeArg::double_runtime_condition(runtimes);
-            cf.add_runtimes(&config, &runtimes, self.fuzzy)?;
+            cf.add_runtimes(&mut config, &runtimes, self.fuzzy)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {

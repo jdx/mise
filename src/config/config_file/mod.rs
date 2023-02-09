@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use rtxrc::RTXFile;
 use tool_versions::ToolVersions;
 
-use crate::cli::args::runtime::RuntimeArg;
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::Config;
 use crate::config::PluginSource;
 use crate::env;
@@ -44,28 +44,31 @@ pub trait ConfigFile: Debug + Display + Send {
 impl dyn ConfigFile {
     pub fn add_runtimes(
         &mut self,
-        config: &Config,
+        config: &mut Config,
         runtimes: &[RuntimeArg],
         fuzzy: bool,
     ) -> Result<()> {
         let mut runtime_map: HashMap<PluginName, Vec<String>> = HashMap::new();
         for runtime in runtimes {
             let plugin = Plugin::load_ensure_installed(&runtime.plugin, &config.settings)?;
-            let latest = plugin
-                .latest_version(&runtime.version)?
-                .unwrap_or_else(|| runtime.version.clone());
-            let rtv = RuntimeVersion::new(Arc::new(plugin), &latest);
-            if !rtv.ensure_installed(config)? {
-                return Err(VersionNotInstalled(rtv.plugin.name.clone(), rtv.version))?;
-            };
-            runtime_map
-                .entry(rtv.plugin.name.clone())
-                .or_default()
-                .push(if fuzzy {
-                    runtime.version.to_string()
-                } else {
-                    rtv.version.to_string()
-                });
+            let latest = config.resolve_runtime_arg(runtime)?;
+            if let Some(latest) = latest {
+                let rtv = RuntimeVersion::new(Arc::new(plugin), &latest);
+                if !rtv.ensure_installed(config)? {
+                    return Err(VersionNotInstalled(rtv.plugin.name.clone(), rtv.version))?;
+                };
+                runtime_map
+                    .entry(rtv.plugin.name.clone())
+                    .or_default()
+                    .push(if fuzzy {
+                        match runtime.version {
+                            RuntimeArgVersion::Version(ref v) => v.to_string(),
+                            _ => "latest".to_string(),
+                        }
+                    } else {
+                        rtv.version.to_string()
+                    });
+            }
         }
         for (plugin, versions) in runtime_map {
             self.replace_versions(&plugin, &versions);

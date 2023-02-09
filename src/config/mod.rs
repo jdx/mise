@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+use std::env::join_paths;
+use std::fmt::{Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
 use indexmap::IndexMap;
@@ -6,13 +12,8 @@ use rayon::prelude::*;
 
 pub use plugin_source::PluginSource;
 pub use settings::{MissingRuntimeBehavior, Settings};
-use std::collections::HashMap;
-use std::env::join_paths;
-use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use crate::cli::args::runtime::RuntimeArg;
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtxrc::RTXFile;
 use crate::config::config_file::ConfigFile;
@@ -100,19 +101,15 @@ impl Config {
     pub fn with_runtime_args(mut self, args: &[RuntimeArg]) -> Result<Self> {
         let args_by_plugin = &args.iter().group_by(|arg| arg.plugin.clone());
         for (plugin_name, args) in args_by_plugin {
-            match self.ts.plugins.get(&plugin_name) {
-                Some(plugin) => plugin,
-                _ => {
-                    let plugin = Plugin::load_ensure_installed(&plugin_name, &self.settings)?;
-                    self.ts
-                        .plugins
-                        .entry(plugin_name.clone())
-                        .or_insert_with(|| Arc::new(plugin))
-                }
-            };
             let args = args.collect_vec();
             let source = PluginSource::Argument(args[0].clone());
-            let versions = args.iter().map(|arg| arg.version.clone()).collect();
+            let versions = args
+                .iter()
+                .map(|arg| self.resolve_runtime_arg(arg))
+                .collect::<Result<Vec<Option<String>>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
             self.ts
                 .set_current_runtime_versions(&plugin_name, versions, source)?;
         }
@@ -138,6 +135,33 @@ impl Config {
             }
         }
         version
+    }
+
+    pub fn resolve_runtime_arg(&mut self, arg: &RuntimeArg) -> Result<Option<String>> {
+        match &arg.version {
+            RuntimeArgVersion::System => Ok(None),
+            RuntimeArgVersion::Version(version) => {
+                let plugin = self.ts.get_or_add_plugin(arg.plugin.to_string())?;
+                plugin.ensure_installed(&self.settings)?;
+                let version = self.resolve_alias(&arg.plugin, version.into());
+                let version = plugin.latest_version(&version)?.unwrap_or(version);
+                Ok(Some(version))
+            }
+            RuntimeArgVersion::None => {
+                let plugin = self
+                    .ts
+                    .list_current_versions()
+                    .into_iter()
+                    .find(|rtv| rtv.plugin.name == arg.plugin);
+                match plugin {
+                    Some(rtv) => Ok(Some(rtv.version.clone())),
+                    None => Err(eyre!(
+                        "No version of {} is specified in a .tool-versions file",
+                        arg.plugin
+                    ))?,
+                }
+            }
+        }
     }
 }
 
