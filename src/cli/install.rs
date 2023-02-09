@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
 use owo_colors::Stream;
@@ -8,7 +6,6 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
-use crate::config::Settings;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::InstallType::Version;
@@ -62,37 +59,30 @@ impl Command for Install {
 impl Install {
     fn install_runtimes(
         &self,
-        config: Config,
+        mut config: Config,
         out: &mut Output,
         runtimes: &[RuntimeArg],
     ) -> Result<()> {
-        let settings = Settings {
-            missing_runtime_behavior: AutoInstall,
-            ..config.settings.clone()
-        };
+        config.settings.missing_runtime_behavior = AutoInstall;
 
         for r in RuntimeArg::double_runtime_condition(runtimes) {
-            if r.version == "system" {
-                continue;
+            let resolved_version = config.resolve_runtime_arg(&r)?;
+            let plugin = config.ts.find_plugin(&r.plugin).unwrap();
+            if let Some(resolved_version) = resolved_version {
+                let rtv = RuntimeVersion::new(plugin, &resolved_version);
+
+                if rtv.is_installed() && self.force {
+                    rtv.uninstall()?;
+                } else if rtv.is_installed() {
+                    warn!(
+                        "{} is already installed",
+                        cyan(Stream::Stderr, &rtv.to_string())
+                    );
+                    continue;
+                }
+
+                self.do_install(&config, out, &rtv)?;
             }
-            let plugin = Plugin::load_ensure_installed(&r.plugin, &settings)?;
-
-            let version = config.resolve_alias(&r.plugin, r.version.clone());
-            let version = plugin.latest_version(&version)?.unwrap_or(version);
-
-            let rtv = RuntimeVersion::new(Arc::new(plugin), &version);
-
-            if rtv.is_installed() && self.force {
-                rtv.uninstall()?;
-            } else if rtv.is_installed() {
-                warn!(
-                    "{} is already installed",
-                    cyan(Stream::Stderr, &rtv.to_string())
-                );
-                continue;
-            }
-
-            self.do_install(&config, out, &rtv)?;
         }
 
         Ok(())
@@ -161,7 +151,7 @@ const AFTER_LONG_HELP: &str = r#"
 Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
-  $ rtx install nodejs         # install latest nodejs version—or what is specified in .tool-versions
+  $ rtx install nodejs         # install version specified in .tool-versions
   $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
   $ rtx install --all          # installs all runtimes and all plugins
 "#;

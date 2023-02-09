@@ -3,7 +3,7 @@ use itertools::Itertools;
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
@@ -19,16 +19,21 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let runtime_versions = self
             .runtime
             .iter()
             .map(|a| {
-                let prefix = match a.version.as_str() {
-                    "latest" => "",
-                    v => v,
+                let mut versions = config.ts.list_current_versions();
+                versions.extend(config.ts.list_installed_versions());
+
+                let prefix = match &a.version {
+                    RuntimeArgVersion::None => config.resolve_runtime_arg(a)?.unwrap(),
+                    RuntimeArgVersion::Version(version) => {
+                        config.resolve_alias(&a.plugin, version.to_string())
+                    }
+                    _ => Err(eyre!("invalid version {}", a.to_string()))?,
                 };
-                let prefix = config.resolve_alias(&a.plugin, prefix.to_string());
                 let mut versions = config.ts.list_current_versions();
                 versions.extend(config.ts.list_installed_versions());
                 let versions = versions
@@ -39,9 +44,10 @@ impl Command for Uninstall {
                     .collect::<Vec<_>>();
 
                 if versions.is_empty() {
-                    Err(VersionNotInstalled(a.plugin.clone(), a.version.clone()))?
+                    Err(VersionNotInstalled(a.plugin.clone(), a.version.to_string()))?
                 } else {
-                    Ok(versions)
+                    // TODO: add a flag to uninstall all matching versions
+                    Ok(vec![versions[0].clone()])
                 }
             })
             .collect::<Result<Vec<_>>>()?

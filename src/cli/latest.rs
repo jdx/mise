@@ -1,6 +1,6 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
@@ -23,14 +23,16 @@ pub struct Latest {
 
 impl Command for Latest {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let prefix = match self.runtime.version.as_str() {
-            "latest" => match self.asdf_version {
+        let prefix = match self.runtime.version {
+            RuntimeArgVersion::None => match self.asdf_version {
                 Some(version) => version,
                 None => "latest".to_string(),
             },
-            v => v.into(),
+            RuntimeArgVersion::Version(version) => version,
+            _ => Err(eyre!("invalid version {}", self.runtime))?,
         };
         let plugin = Plugin::load_ensure_installed(&self.runtime.plugin, &config.settings)?;
+        let prefix = config.resolve_alias(&self.runtime.plugin, prefix);
 
         if let Some(version) = plugin.latest_version(&prefix)? {
             rtxprintln!(out, "{}", version);
