@@ -203,6 +203,7 @@ jobs:
     permissions:
       contents: write
     needs:
+      - unit
       - e2e-linux
       - build-linux
       - build-macos
