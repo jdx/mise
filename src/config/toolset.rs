@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
-use versions::Mess;
+use versions::Versioning;
 
 use crate::config::{AliasMap, PluginSource};
 use crate::plugins::{Plugin, PluginName};
@@ -191,7 +191,7 @@ impl Toolset {
             }
             let sorted_versions = installed_versions
                 .keys()
-                .sorted_by_cached_key(|v| v.parse::<Mess>().unwrap())
+                .sorted_by_cached_key(|v| Versioning::new(v))
                 .rev()
                 .collect::<Vec<_>>();
             for v in sorted_versions {
