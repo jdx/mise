@@ -78,7 +78,7 @@ mod test {
     fn test_current() {
         assert_cli!("install");
         let stdout = assert_cli!("current");
-        assert_snapshot!(grep(stdout, "shfmt"), @"shfmt@3.5.2");
+        assert_snapshot!(grep(stdout, "shfmt"), @"shfmt@3.5.1");
     }
 
     #[test]
@@ -86,7 +86,7 @@ mod test {
         assert_cli!("install");
         let stdout = assert_cli!("current", "shfmt");
         assert_snapshot!(stdout, @r###"
-        3.5.2
+        3.5.1
         "###);
     }
 }

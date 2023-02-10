@@ -74,7 +74,7 @@ mod test {
         let stdout = assert_cli!("where", "shfmt");
         assert_str_eq!(
             stdout.trim(),
-            dirs::ROOT.join("installs/shfmt/3.5.2").to_string_lossy()
+            dirs::ROOT.join("installs/shfmt/3.5.1").to_string_lossy()
         );
     }
 
