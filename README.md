@@ -602,13 +602,19 @@ Options:
 
 Examples:
 
+  # outputs `.tool-versions` compatible format
   $ rtx current
-  shfmt@3.6.0
-  shellcheck@0.9.0
-  nodejs@18.13.0
+  python 3.11.0 3.10.0
+  shfmt 3.6.0
+  shellcheck 0.9.0
+  nodejs 18.13.0
 
   $ rtx current nodejs
   18.13.0
+
+  # can output multiple versions
+  $ rtx current python
+  3.11.0 3.10.0
 
 ```
 ### `rtx deactivate`

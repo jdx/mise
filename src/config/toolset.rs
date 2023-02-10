@@ -224,4 +224,19 @@ impl Toolset {
             .into_iter()
             .find(|rtv| rtv.plugin.name == plugin && rtv.version.starts_with(&prefix))
     }
+
+    pub fn list_current_versions_by_plugin(
+        &self,
+    ) -> IndexMap<PluginName, Vec<Arc<RuntimeVersion>>> {
+        self.current_versions
+            .iter()
+            .map(|(plugin_name, versions)| {
+                let versions = versions
+                    .iter()
+                    .filter_map(|v| self.resolve_version(plugin_name, v))
+                    .collect();
+                (plugin_name.clone(), versions)
+            })
+            .collect()
+    }
 }
