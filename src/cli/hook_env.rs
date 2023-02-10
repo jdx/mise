@@ -88,7 +88,7 @@ impl HookEnv {
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {
             let (w, _) = term_size::dimensions_stderr().unwrap_or_default();
-            let status = installed_versions.join(" ");
+            let status = installed_versions.into_iter().rev().join(" ");
             if status.len() > w - 5 {
                 rtxstatusln!(out, "{}...", &status[..w - 9])
             } else {
