@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use owo_colors::{OwoColorize, Stream};
+use versions::Versioning;
 
 use runtime_conf::RuntimeConf;
 
@@ -63,7 +64,7 @@ impl RuntimeVersion {
                 versions.push(Self::new(plugin.clone(), &version));
             }
         }
-        versions.sort_by_cached_key(|rtv| versions::Mess::new(rtv.version.as_str()));
+        versions.sort_by_cached_key(|rtv| Versioning::new(rtv.version.as_str()));
         Ok(versions)
     }
 

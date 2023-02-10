@@ -10,7 +10,7 @@ use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
-use versions::Mess;
+use versions::Versioning;
 
 use cache::PluginCache;
 pub use script_manager::{InstallType, Script, ScriptManager};
@@ -216,7 +216,7 @@ impl Plugin {
         Ok(match self.installs_path.exists() {
             true => file::dir_subdirs(&self.installs_path)?
                 .iter()
-                .map(|v| Mess::new(v).unwrap())
+                .map(|v| Versioning::new(v).unwrap_or_default())
                 .sorted()
                 .map(|v| v.to_string())
                 .collect(),
