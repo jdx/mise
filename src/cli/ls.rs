@@ -6,7 +6,7 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 use itertools::Itertools;
 use owo_colors::{OwoColorize, Stream};
-use versions::Mess;
+use versions::Versioning;
 
 use crate::cli::command::Command;
 use crate::config::{Config, PluginSource};
@@ -118,7 +118,7 @@ fn get_runtime_list(
     let rvs: Vec<(Arc<RuntimeVersion>, Option<PluginSource>)> = versions
         .into_iter()
         .sorted_by_cached_key(|((plugin_name, version), _)| {
-            (plugin_name.clone(), Mess::new(version).unwrap_or_default())
+            (plugin_name.clone(), Versioning::new(version))
         })
         .map(|(k, rtv)| {
             let source = match &active.get(&k) {
