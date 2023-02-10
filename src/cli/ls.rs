@@ -160,9 +160,9 @@ mod test {
         let re = Regex::new(r" {3}shfmt\s+3\.5\.0\s+").unwrap();
         assert!(re.is_match(&stdout));
 
-        assert_cli!("uninstall", "shfmt@3.5.2");
+        assert_cli!("uninstall", "shfmt@3.5.1");
         let stdout = assert_cli!("list");
-        let re = Regex::new(r" {3}shfmt\s+3\.5\.2 \(missing\)\s+").unwrap();
+        let re = Regex::new(r" {3}shfmt\s+3\.5\.1 \(missing\)\s+").unwrap();
         assert!(re.is_match(&stdout));
     }
 }
