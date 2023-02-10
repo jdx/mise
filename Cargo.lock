@@ -1061,6 +1061,7 @@ dependencies = [
  "simplelog",
  "spinoff",
  "tempfile",
+ "term_size",
  "thiserror",
  "toml",
  "toml_edit",
@@ -1235,6 +1236,16 @@ dependencies = [
  "libc",
  "redox_syscall",
  "remove_dir_all",
+ "winapi",
+]
+
+[[package]]
+name = "term_size"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e4129646ca0ed8f45d09b929036bafad5377103edd06e50bf574b353d2b08d9"
+dependencies = [
+ "libc",
  "winapi",
 ]
 

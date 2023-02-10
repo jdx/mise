@@ -87,7 +87,13 @@ impl HookEnv {
             .map(|v| v.to_string())
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {
-            rtxstatusln!(out, "{}", installed_versions.join(" "));
+            let (w, _) = term_size::dimensions_stderr().unwrap_or_default();
+            let status = installed_versions.join(" ");
+            if status.len() > w - 5 {
+                rtxstatusln!(out, "{}...", &status[..w - 9])
+            } else {
+                rtxstatusln!(out, "{}", status)
+            };
         }
     }
 
