@@ -52,22 +52,19 @@ gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
 
-./rtx/scripts/render-install.sh >rtx.jdxcode.com/static/install.sh
+mkdir -p rtx.jdxcode.com
+./rtx/scripts/render-install.sh >rtx.jdxcode.com/install.sh
 
-rm -rf rtx.jdxcode.com/static/rpm
-mv artifacts/rpm rtx.jdxcode.com/static/rpm
+rm -rf rtx.jdxcode.com/rpm
+mv artifacts/rpm rtx.jdxcode.com/rpm
 
-rm -rf rtx.jdxcode.com/static/deb
-mv artifacts/deb rtx.jdxcode.com/static/deb
+rm -rf rtx.jdxcode.com/deb
+mv artifacts/deb rtx.jdxcode.com/deb
 
-cp -vrf "$RELEASE_DIR/"* rtx.jdxcode.com/static
-echo "$RTX_VERSION" > rtx.jdxcode.com/static/VERSION
+cp -vrf "$RELEASE_DIR/"* rtx.jdxcode.com
+echo "$RTX_VERSION" | tr -d 'v' > rtx.jdxcode.com/VERSION
 
 ./rtx/scripts/release-npm.sh
-
-pushd rtx.jdxcode.com
-git add . && git commit -m "rtv $RTX_VERSION"
-popd
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
 pushd homebrew-tap

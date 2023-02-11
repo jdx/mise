@@ -215,12 +215,6 @@ jobs:
           path: rtx
       - uses: actions/checkout@v3
         with:
-          repository: jdxcode/rtx.jdxcode.com
-          path: rtx.jdxcode.com
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-          lfs: 'true'
-      - uses: actions/checkout@v3
-        with:
           repository: jdxcode/homebrew-tap
           path: homebrew-tap
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
@@ -234,7 +228,6 @@ jobs:
           git_user_signingkey: true
           git_commit_gpgsign: true
           workdir: homebrew-tap
-
       - uses: actions/download-artifact@v3
         with: { path: artifacts }
       - run: rtx/scripts/release.sh
@@ -243,9 +236,13 @@ jobs:
       - name: homebrew-tap push
         run: git push
         working-directory: homebrew-tap
-      - name: rtx.jdxcode.com push
-        run: git push
-        working-directory: rtx.jdxcode.com
+      - uses: jakejarvis/s3-sync-action@master
+        env:
+          AWS_S3_BUCKET: rtx-cli
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: 'us-west-2'   # optional: defaults to us-east-1
+          SOURCE_DIR: 'rtx.jdxcode.com'
 
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v1
