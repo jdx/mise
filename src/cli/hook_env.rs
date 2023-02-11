@@ -1,9 +1,10 @@
-use color_eyre::eyre::Result;
-use itertools::Itertools;
-
+use std::cmp::min;
 use std::env::join_paths;
 use std::ops::Deref;
 use std::path::PathBuf;
+
+use color_eyre::eyre::Result;
+use itertools::Itertools;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -88,6 +89,7 @@ impl HookEnv {
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {
             let (w, _) = term_size::dimensions_stderr().unwrap_or_default();
+            let w = min(w, 80);
             let status = installed_versions.into_iter().rev().join(" ");
             if status.len() > w - 5 {
                 rtxstatusln!(out, "{}...", &status[..w - 9])
