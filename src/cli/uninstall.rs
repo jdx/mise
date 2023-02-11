@@ -1,5 +1,7 @@
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use indoc::formatdoc;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 
@@ -8,10 +10,11 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// removes runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Uninstall {
     /// runtime(s) to remove
     #[clap(required = true, value_parser = RuntimeArgParser)]
@@ -73,8 +76,11 @@ impl Command for Uninstall {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions
-  $ rtx uninstall nodejs    # will uninstall ALL nodejs versions
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions
+      $ rtx uninstall nodejs    # will uninstall ALL nodejs versions
+    "#, COLOR.header("Examples:")}
+});

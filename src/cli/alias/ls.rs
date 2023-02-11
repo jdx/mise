@@ -1,10 +1,13 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
-use indoc::indoc;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::PluginName;
+use crate::ui::color::Color;
 
 /// List aliases
 /// Shows the aliases that can be specified.
@@ -15,7 +18,7 @@ use crate::plugins::PluginName;
 ///   [alias.nodejs]
 ///   lts = "18.0.0"
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct AliasLs {
     /// Show aliases for <PLUGIN>
     #[clap(short, long)]
@@ -39,11 +42,14 @@ impl Command for AliasLs {
     }
 }
 
-const AFTER_LONG_HELP: &str = indoc! {r#"
-    Examples:
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
       $ rtx aliases
       nodejs    lts/hydrogen   18.0.0
-    "#};
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

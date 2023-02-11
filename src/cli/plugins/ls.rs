@@ -1,16 +1,19 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
-use indoc::indoc;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// List installed plugins
 ///
 /// Can also show remotely available plugins to install.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct PluginsLs {
     /// list all available remote plugins
     ///
@@ -44,20 +47,19 @@ impl Command for PluginsLs {
     }
 }
 
-const AFTER_LONG_HELP: &str = indoc! {r#"
-    List installed plugins
-    Can also show remotely available plugins to install.
-
-    Examples:
-    
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
       $ rtx plugins ls
       nodejs
       ruby
-      
+
       $ rtx plugins ls --urls
       nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
       ruby                          https://github.com/asdf-vm/asdf-ruby.git
-    "#};
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

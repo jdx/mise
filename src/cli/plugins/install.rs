@@ -1,6 +1,9 @@
+use atty::Stream;
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 use url::Url;
 
 use crate::cli::command::Command;
@@ -8,6 +11,7 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::shorthand_repository::ShorthandRepo;
+use crate::ui::color::Color;
 
 /// install a plugin
 ///
@@ -16,7 +20,7 @@ use crate::shorthand_repository::ShorthandRepo;
 ///
 /// This behavior can be modified in ~/.rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct PluginsInstall {
     /// The name of the plugin to install
     ///
@@ -118,18 +122,21 @@ fn get_name_from_url(url: &str) -> Result<String> {
     Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
-const AFTER_LONG_HELP: &str = r#"
-EXAMPLES:
-    $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
                           # https://github.com/asdf-vm/asdf-plugins
 
-    $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
+      $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
                           # install the nodejs plugin using the git url
 
-    $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
+      $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
                           # install the nodejs plugin using the git url only
                           # (nodejs is inferred from the url)
-"#;
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {
