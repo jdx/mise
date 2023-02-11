@@ -1,10 +1,14 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
+use crate::ui::color::Color;
 
 /// exports env vars to activate rtx in a single shell session
 ///
@@ -14,7 +18,7 @@ use crate::shell::{get_shell, ShellType};
 /// Unfortunately, it requires `eval` to work since it's not written in Bash though.
 /// It's also useful just to see what environment variables rtx sets.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Env {
     /// Shell type to generate environment variables for
     #[clap(long, short)]
@@ -46,13 +50,16 @@ impl Command for Env {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ eval "$(rtx env -s bash)"
-  $ eval "$(rtx env -s zsh)"
-  $ rtx env -s fish | source
-  $ execx($(rtx env -s xonsh))
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ eval "$(rtx env -s bash)"
+      $ eval "$(rtx env -s zsh)"
+      $ rtx env -s fish | source
+      $ execx($(rtx env -s xonsh))
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

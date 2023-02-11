@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use owo_colors::{OwoColorize, Stream};
 use versions::Versioning;
 
@@ -13,14 +15,14 @@ use crate::config::{Config, PluginSource};
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
-use crate::ui::color::{cyan, dimmed, green, red};
+use crate::ui::color::{cyan, dimmed, green, red, Color};
 
 /// list installed runtime versions
 ///
 /// The "arrow (->)" indicates the runtime is installed, active, and will be used for running commands.
 /// (Assuming `rtx activate` or `rtx env` is in use).
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Ls {
     /// Only show runtimes from [PLUGIN]
     #[clap(long, short)]
@@ -132,17 +134,20 @@ fn get_runtime_list(
     Ok(rvs)
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ rtx list
-  -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
-  -> python     3.11.0 (set by ~/.tool-versions)
-     python     3.10.0
-     
-  $ rtx list --current
-  -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
-  -> python     3.11.0 (set by ~/.tool-versions)
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx list
+      -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+      -> python     3.11.0 (set by ~/.tool-versions)
+         python     3.10.0
+
+      $ rtx list --current
+      -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+      -> python     3.11.0 (set by ~/.tool-versions)
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

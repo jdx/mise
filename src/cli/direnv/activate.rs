@@ -1,9 +1,12 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// Output direnv function to use rtx inside direnv
 ///
@@ -13,7 +16,7 @@ use crate::output::Output;
 /// you should run this command after installing new plugins. Otherwise
 /// direnv may not know to update environment variables when legacy file versions change.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct DirenvActivate {}
 
 impl Command for DirenvActivate {
@@ -33,9 +36,12 @@ impl Command for DirenvActivate {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-    $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
-    $ echo 'use rtx' > .envrc
-    $ direnv allow
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
+      $ echo 'use rtx' > .envrc
+      $ direnv allow
+    "#, COLOR.header("Examples:")}
+});

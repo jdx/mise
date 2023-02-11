@@ -21,3 +21,26 @@ pub fn _bright_green(stream: Stream, s: &str) -> String {
 pub fn red(stream: Stream, s: &str) -> String {
     s.if_supports_color(stream, |s| s.red()).to_string()
 }
+
+pub struct Color {
+    stream: Stream,
+}
+
+impl Color {
+    pub fn new(stream: Stream) -> Self {
+        Self { stream }
+    }
+
+    pub fn header(&self, title: &str) -> String {
+        self.underline(&self.bold(title))
+    }
+
+    pub fn bold(&self, s: &str) -> String {
+        s.if_supports_color(self.stream, |s| s.bold()).to_string()
+    }
+
+    pub fn underline(&self, s: &str) -> String {
+        s.if_supports_color(self.stream, |s| s.underline())
+            .to_string()
+    }
+}

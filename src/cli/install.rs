@@ -1,5 +1,7 @@
 use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 use owo_colors::Stream;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
@@ -11,7 +13,7 @@ use crate::output::Output;
 use crate::plugins::InstallType::Version;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
-use crate::ui::color::cyan;
+use crate::ui::color::{cyan, Color};
 
 /// install a runtime
 ///
@@ -20,7 +22,7 @@ use crate::ui::color::cyan;
 /// For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
 /// Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Install {
     /// runtime(s) to install
     ///
@@ -147,14 +149,17 @@ fn get_all_plugin_names(config: &Config) -> Vec<String> {
         .collect()
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ rtx install nodejs@18.0.0  # install specific nodejs version
-  $ rtx install nodejs@18      # install fuzzy nodejs version
-  $ rtx install nodejs         # install version specified in .tool-versions
-  $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
-  $ rtx install --all          # installs all runtimes and all plugins
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx install nodejs@18.0.0  # install specific nodejs version
+      $ rtx install nodejs@18      # install fuzzy nodejs version
+      $ rtx install nodejs         # install version specified in .tool-versions
+      $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
+      $ rtx install --all          # installs all runtimes and all plugins
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {
