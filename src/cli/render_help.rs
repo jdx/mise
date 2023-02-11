@@ -31,7 +31,7 @@ _{about}_
 Install rtx (other methods [here](#installation)):
 
 ```sh-session
-$ https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
+$ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ rtx --version
 rtx {version}
 ```

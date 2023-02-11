@@ -13,7 +13,7 @@ _Polyglot runtime manager (asdf rust clone)_
 Install rtx (other methods [here](#installation)):
 
 ```sh-session
-$ https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
+$ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ rtx --version
 rtx 1.7.0
 ```
