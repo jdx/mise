@@ -4,6 +4,7 @@ extern crate log;
 
 use color_eyre::eyre::Result;
 
+use crate::cli::version::VERSION;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
@@ -41,24 +42,31 @@ mod test;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
+
+    match run(&env::ARGS) {
+        Err(err) if log_level < log::LevelFilter::Debug => {
+            error!("{err}");
+            // TODO: tell user they can use --log-level when it's implemented
+            error!("Run with RTX_DEBUG=1 for more information.");
+            error!("rtx {}", *VERSION);
+            std::process::exit(1);
+        }
+        result => result,
+    }
+}
+
+fn run(args: &Vec<String>) -> Result<()> {
+    let out = &mut Output::new();
+
+    // show version before loading config in case of error
+    cli::version::print_version_if_requested(&env::ARGS, out);
+
     let config = Config::load()?;
     if hook_env::should_exit_early(&config) {
         return Ok(());
     }
     let cli = Cli::new_with_external_commands(&config)?;
-
-    match cli.run(config, &env::ARGS, &mut Output::new()) {
-        Err(err) if log_level < log::LevelFilter::Debug => {
-            error!("{err}");
-            error!(
-                // "rtx error: Run with `--log-level debug` or RTX_DEBUG=1 for more information."
-                "Run with RTX_DEBUG=1 for more information."
-            );
-            std::process::exit(1);
-        }
-        result => result,
-    }
+    cli.run(config, args, out)
 }
