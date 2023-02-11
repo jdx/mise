@@ -66,7 +66,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-mod test {
+mod tests {
     use insta::assert_display_snapshot;
     use pretty_assertions::assert_str_eq;
 
