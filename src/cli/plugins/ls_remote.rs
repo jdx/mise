@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 
 use color_eyre::eyre::Result;
+use itertools::Itertools;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::shorthand_repository::ShorthandRepo;
+use crate::shorthand::SHORTHAND_MAP;
 
 /// List all available remote plugins
 ///
@@ -30,15 +31,14 @@ impl Command for PluginsLsRemote {
             .map(|p| p.name.clone())
             .collect::<HashSet<_>>();
 
-        let shr = ShorthandRepo::new(&config.settings);
-        for plugin in shr.list_all()? {
-            let installed = if installed_plugins.contains(&plugin.name) {
+        for (plugin, repo) in SHORTHAND_MAP.iter().sorted().collect_vec() {
+            let installed = if installed_plugins.contains(*plugin) {
                 "*"
             } else {
                 " "
             };
-            let url = if self.urls { plugin.url } else { "".into() };
-            rtxprintln!(out, "{:28} {}{}", plugin.name, installed, url);
+            let url = if self.urls { *repo } else { "" };
+            rtxprintln!(out, "{:28} {}{}", plugin, installed, url);
         }
 
         Ok(())

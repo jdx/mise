@@ -364,17 +364,10 @@ always_keep_download = false        # deleted after install by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
 plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable updates
 
-# configure how frequently (in minutes) to fetch updated shortname repository changes
-# note this is not plugins themselves, it's the shortname mappings
-# e.g.: nodejs -> https://github.com/asdf-vm/asdf-nodejs.git
-plugin_repository_last_check_duration = 10080 # (one week) set to 0 to disable updates
-
 verbose = false # see explanation under `RTX_VERBOSE`
-
-# disables the short name repository (described above)
-disable_plugin_short_name_repository = false
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -689,16 +682,6 @@ things are hardcoded but I'm happy to add more settings to cover whatever config
 
 Below I explain the behavior it uses around caching. If you're seeing behavior where things don't appear
 to be updating, this is a good place to start.
-
-### Shorthand Repository Cache
-
-asdf maintains a [shorthand repository](https://github.com/asdf-vm/asdf-plugins) which maps plugin
-short names (e.g.: `nodejs`) to full repository names (e.g.: `https://github.com/asdf-vm/asdf-nodejs`).
-
-This is stored in `~/.local/share/rtx/repository` and updated every week by default if short names
-are requested. This is similar to what asdf does, but I'm considering just baking this straight into
-the codebase so it doesn't have to be fetched/maintained separately. It's not like new plugins get
-added that often.
 
 ### Plugin Cache
 

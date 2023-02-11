@@ -30,11 +30,12 @@ mod logger;
 mod plugins;
 pub mod runtimes;
 mod shell;
-pub mod shorthand_repository;
 mod ui;
 
 mod direnv;
 mod hash;
+mod shorthand;
+mod shorthand_list;
 #[cfg(test)]
 mod test;
 

@@ -23,7 +23,7 @@ use crate::file::changed_within;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
-use crate::shorthand_repository::ShorthandRepo;
+use crate::shorthand::shorthand_to_repository;
 use crate::ui::color::{cyan, Color};
 use crate::ui::prompt;
 use crate::ui::spinner::Spinner;
@@ -93,7 +93,7 @@ impl Plugin {
         git.get_remote_url()
     }
 
-    pub fn install(&self, settings: &Settings, repository: &String) -> Result<()> {
+    pub fn install(&self, settings: &Settings, repository: &str) -> Result<()> {
         debug!("install {} {:?}", self.name, repository);
         let install_message = format!("Installing plugin {}...", cyan(Stderr, &self.name));
         let mut sp = Spinner::start(install_message, settings.verbose);
@@ -114,18 +114,17 @@ impl Plugin {
             return Ok(true);
         }
 
-        let shr = ShorthandRepo::new(settings);
-        match shr.lookup(&self.name) {
-            Ok(repo) => match settings.missing_runtime_behavior {
+        match shorthand_to_repository(&self.name) {
+            Some(repo) => match settings.missing_runtime_behavior {
                 MissingRuntimeBehavior::AutoInstall => {
-                    self.install(settings, &repo)?;
+                    self.install(settings, repo)?;
                     Ok(true)
                 }
                 MissingRuntimeBehavior::Prompt => {
                     match prompt::prompt_for_install(&format!("plugin {}", COLOR.cyan(&self.name)))
                     {
                         true => {
-                            self.install(settings, &repo)?;
+                            self.install(settings, repo)?;
                             Ok(true)
                         }
                         false => Ok(false),
@@ -140,10 +139,10 @@ impl Plugin {
                     Ok(false)
                 }
             },
-            Err(err) => match settings.missing_runtime_behavior {
+            None => match settings.missing_runtime_behavior {
                 MissingRuntimeBehavior::Ignore => Ok(false),
                 _ => {
-                    warn!("{}", err);
+                    warn!("Plugin not found: {}", COLOR.cyan(&self.name));
                     Ok(false)
                 }
             },
