@@ -74,3 +74,39 @@ This project uses husky which will automatically install a pre-commit hook:
 npm i # installs and configured husky precommit hook automatically
 git commit # will automatically run `just pre-commit`
 ```
+
+## Testing packaging
+
+I test these with finch, but docker should work the same. This is only necessary to test
+if actually changing the packaging setup.
+
+### Ubuntu (apt)
+
+This is for arm64, but you can change the arch to amd64 if you want.
+
+```
+finch run -ti --rm ubuntuapt update -y && apt install gpg sudo wget curl \
+&& wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null \
+&& echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list \
+&& apt update && apt install -y rtx && rtx -V
+```
+
+### Amazon Linux 2 (yum)
+
+```
+finch run -ti --rm amazonlinux
+yum install -y yum-utils
+yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+yum install -y rtx
+rtx -v
+```
+
+### Fedora (dnf)
+
+```
+finch run -ti --rm fedora
+dnf install -y dnf-plugins-core
+dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+dnf install -y rtx
+rtx -v
+```
