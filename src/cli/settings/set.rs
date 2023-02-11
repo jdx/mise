@@ -28,9 +28,7 @@ impl Command for SettingsSet {
             "missing_runtime_behavior" => self.value.into(),
             "always_keep_download" => parse_bool(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
-            "disable_plugin_short_name_repository" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
-            "plugin_repository_last_check_duration" => parse_i64(&self.value)?,
             "verbose" => parse_bool(&self.value)?,
             _ => return Err(eyre!("Unknown setting: {}", self.key)),
         };
@@ -80,20 +78,8 @@ pub mod test {
         assert_cli!(
             "settings",
             "set",
-            "disable_plugin_short_name_repository",
-            "true"
-        );
-        assert_cli!(
-            "settings",
-            "set",
             "plugin_autoupdate_last_check_duration",
             "1"
-        );
-        assert_cli!(
-            "settings",
-            "set",
-            "plugin_repository_last_check_duration",
-            "2"
         );
 
         let stdout = assert_cli!("settings");

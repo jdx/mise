@@ -93,13 +93,6 @@ impl RTXFile {
                 self.settings.plugin_autoupdate_last_check_duration =
                     Some(self.parse_duration_minutes(k, v)?)
             }
-            "plugin_repository_last_check_duration" => {
-                self.settings.plugin_repository_last_check_duration =
-                    Some(self.parse_duration_minutes(k, v)?)
-            }
-            "disable_plugin_short_name_repository" => {
-                self.settings.disable_plugin_short_name_repository = Some(self.parse_bool(k, v)?)
-            }
             "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
