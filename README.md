@@ -13,7 +13,7 @@ _Polyglot runtime manager (asdf rust clone)_
 Install rtx (other methods [here](#installation)):
 
 ```sh-session
-$ https://rtx.jdxcode.com/rtx-latest-macos-arm64 > ~/bin/rtx
+$ https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ rtx --version
 rtx 1.6.1
 ```
@@ -105,7 +105,7 @@ Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate 
 file, rtx will automatically add itself to `PATH`.
 
 ```sh-session
-$ curl https://rtx.jdxcode.com/install.sh | sh
+$ curl https://rtx.pub/install.sh | sh
 ```
 
 > **Note**
@@ -117,7 +117,7 @@ $ curl https://rtx.jdxcode.com/install.sh | sh
 or if you're allergic to `| sh`:
 
 ```sh-session
-$ curl https://rtx.jdxcode.com/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+$ curl https://rtx.pub/rtx-latest-macos-arm64 > /usr/local/bin/rtx
 ```
 
 It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/rtx/bin/rtx`
@@ -185,8 +185,8 @@ $ mv rtx/bin/rtx /usr/local/bin
 For installation on Ubuntu/Debian:
 
 ```sh-session
-wget -qO - https://rtx.jdxcode.com/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 sudo apt update
 sudo apt install -y rtx
 ```
@@ -195,7 +195,7 @@ sudo apt install -y rtx
 >
 > If you're on arm64 you'll need to run the following:
 > ```
-> echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdxcode.com/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
 ### dnf
@@ -204,7 +204,7 @@ For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
 ```sh-session
 dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://rtx.jdxcode.com/rpm/rtx.repo
+dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 dnf install -y rtx
 ```
 
@@ -212,7 +212,7 @@ dnf install -y rtx
 
 ```sh-session
 yum install -y yum-utils
-yum-config-manager --add-repo https://rtx.jdxcode.com/rpm/rtx.repo
+yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 yum install -y rtx
 ```
 

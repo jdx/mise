@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-VERSION=$(curl https://rtx.jdxcode.com/VERSION | sed -e "s/^v//")
+VERSION=$(curl https://rtx.pub/VERSION | sed -e "s/^v//")
 SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/v$VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
