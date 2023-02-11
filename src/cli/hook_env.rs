@@ -165,7 +165,7 @@ impl HookEnv {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::assert_cli;
 
     #[test]

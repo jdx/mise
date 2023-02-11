@@ -120,7 +120,7 @@ impl Iterator for FindUp {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::ops::Deref;
 
     use crate::dirs;

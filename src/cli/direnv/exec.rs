@@ -46,9 +46,9 @@ impl Command for DirenvExec {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::assert_cli;
-    use crate::cli::test::grep;
+    use crate::cli::tests::grep;
     use pretty_assertions::assert_str_eq;
 
     #[test]

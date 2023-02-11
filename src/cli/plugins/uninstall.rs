@@ -49,11 +49,11 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-mod test {
+mod tests {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-    use crate::cli::test::ensure_plugin_installed;
+    use crate::cli::tests::ensure_plugin_installed;
 
     #[test]
     fn test_plugin_uninstall() {

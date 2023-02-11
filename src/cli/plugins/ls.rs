@@ -62,11 +62,11 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::assert_cli;
-    use crate::cli::test::grep;
+    use crate::cli::tests::grep;
 
     #[test]
     fn test_plugin_list() {

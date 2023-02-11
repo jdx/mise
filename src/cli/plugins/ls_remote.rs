@@ -55,9 +55,9 @@ Examples:
 "#;
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::assert_cli;
-    use crate::cli::test::ensure_plugin_installed;
+    use crate::cli::tests::ensure_plugin_installed;
 
     #[test]
     fn test_plugin_list_remote() {

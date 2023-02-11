@@ -162,7 +162,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::assert_cli;
 
     #[test]

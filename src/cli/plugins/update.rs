@@ -59,7 +59,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::{assert_cli, assert_cli_err};
