@@ -750,6 +750,7 @@ Examples:
 ```
 sets global .tool-versions to include a specified runtime
 
+then displays the contents of ~/.tool-versions
 this file is `$HOME/.tool-versions` by default
 use `rtx local` to set a runtime version locally in the current directory
 
@@ -757,9 +758,11 @@ Usage: global [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          runtimes
+          runtime(s) to add to .tool-versions
           
           e.g.: nodejs@20
+          if this is a single runtime with no version, the current value of the global
+          .tool-versions will be displayed
 
 Options:
       --fuzzy
@@ -779,6 +782,10 @@ Examples:
   # set the current version of nodejs to 20.x
   # will use a fuzzy version (e.g.: 20) in .tool-versions file
   $ rtx global --fuzzy nodejs@20
+
+  # show the current version of nodejs in ~/.tool-versions
+  $ rtx global nodejs
+  20.0.0
 
 ```
 ### `rtx install`
@@ -851,6 +858,7 @@ Examples:
 ```
 Sets .tool-versions to include a specific runtime
 
+then displays the contents of .tool-versions
 use this to set the runtime version when within a directory
 use `rtx global` to set a runtime version globally
 
@@ -861,6 +869,8 @@ Arguments:
           runtimes to add to .tool-versions
           
           e.g.: nodejs@20
+          if this is a single runtime with no version,
+          the current value of .tool-versions will be displayed
 
 Options:
   -p, --parent
@@ -892,6 +902,10 @@ Examples:
 
   # removes nodejs from .tool-versions
   $ rtx local --remove=nodejs
+
+  # show the current version of nodejs in .tool-versions
+  $ rtx local nodejs
+  20.0.0
 
 ```
 ### `rtx ls`
