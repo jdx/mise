@@ -38,14 +38,27 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
 
 impl Command for Version {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let v = VERSION.to_string();
-        rtxprintln!(out, "{v}");
+        show_version(out);
         Ok(())
     }
 }
 
+pub fn print_version_if_requested(args: &[String], out: &mut Output) {
+    if args.len() == 2 {
+        let cmd = &args[1].to_lowercase();
+        if cmd == "version" || cmd == "-v" || cmd == "--version" {
+            show_version(out);
+            std::process::exit(0);
+        }
+    }
+}
+
+fn show_version(out: &mut Output) {
+    rtxprintln!(out, "{}", *VERSION);
+}
+
 #[cfg(test)]
-mod tests {
+mod test {
     use pretty_assertions::assert_str_eq;
 
     use crate::assert_cli;
