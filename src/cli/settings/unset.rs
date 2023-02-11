@@ -54,9 +54,7 @@ mod test {
         missing_runtime_behavior = autoinstall
         always_keep_download = true
         legacy_version_file = true
-        disable_plugin_short_name_repository = false
         plugin_autoupdate_last_check_duration = 20
-        plugin_repository_last_check_duration = 20
         verbose = true
         "###);
 

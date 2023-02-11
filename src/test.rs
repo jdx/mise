@@ -38,8 +38,6 @@ pub fn reset_config() {
                 missing_runtime_behavior= 'autoinstall'
                 always_keep_download= true
                 legacy_version_file= true
-                disable_plugin_short_name_repository= false
-                plugin_repository_last_check_duration = 20
                 plugin_autoupdate_last_check_duration = 20
 
                 [alias.shfmt]

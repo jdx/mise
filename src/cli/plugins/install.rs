@@ -1,6 +1,6 @@
-use atty::Stream;
 use std::sync::Arc;
 
+use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
@@ -10,7 +10,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
-use crate::shorthand_repository::ShorthandRepo;
+use crate::shorthand::shorthand_to_repository;
 use crate::ui::color::Color;
 
 /// install a plugin
@@ -55,7 +55,7 @@ impl Command for PluginsInstall {
         if self.all {
             return self.install_all_missing_plugins(&config);
         }
-        let (name, git_url) = get_name_and_url(&config, self.name.unwrap(), self.git_url)?;
+        let (name, git_url) = get_name_and_url(self.name.unwrap(), self.git_url)?;
         let plugin = Plugin::load(&name)?;
         if self.force {
             plugin.uninstall()?;
@@ -77,7 +77,7 @@ impl PluginsInstall {
             warn!("all plugins already installed");
         }
         for plugin in missing_plugins {
-            let (_, git_url) = get_name_and_url(config, plugin.name.clone(), None)?;
+            let (_, git_url) = get_name_and_url(plugin.name.clone(), None)?;
             plugin.install(&config.settings, &git_url)?;
         }
         Ok(())
@@ -93,19 +93,15 @@ impl PluginsInstall {
     }
 }
 
-fn get_name_and_url(
-    config: &Config,
-    name: String,
-    git_url: Option<String>,
-) -> Result<(String, String)> {
+fn get_name_and_url(name: String, git_url: Option<String>) -> Result<(String, String)> {
     Ok(match git_url {
         Some(url) => (name, url),
         None => match name.contains(':') {
             true => (get_name_from_url(&name)?, name),
             false => {
-                let shr = ShorthandRepo::new(&config.settings);
-                let git_url = shr.lookup(&name)?;
-                (name, git_url)
+                let git_url = shorthand_to_repository(&name)
+                    .ok_or_else(|| eyre!("could not find plugin {}", name))?;
+                (name, git_url.to_string())
             }
         },
     })
