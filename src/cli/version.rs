@@ -1,5 +1,7 @@
+use std::string::ToString;
+
 use color_eyre::eyre::Result;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::command::Command;
@@ -10,17 +12,29 @@ use crate::output::Output;
 #[clap(about = "Show rtx version", alias = "v")]
 pub struct Version {}
 
-lazy_static! {
-    pub static ref VERSION: String = format!(
-        "{} (built {})",
+pub static OS: Lazy<String> = Lazy::new(|| std::env::consts::OS.into());
+pub static ARCH: Lazy<String> = Lazy::new(|| {
+    match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => std::env::consts::ARCH,
+    }
+    .to_string()
+});
+
+pub static VERSION: Lazy<String> = Lazy::new(|| {
+    format!(
+        "{} {}-{} (built {})",
         if cfg!(debug_assertions) {
             format!("{}-DEBUG", env!("CARGO_PKG_VERSION"))
         } else {
             env!("CARGO_PKG_VERSION").to_string()
         },
-        BUILD_TIME.format("%Y-%m-%d")
-    );
-}
+        *OS,
+        *ARCH,
+        BUILD_TIME.format("%Y-%m-%d"),
+    )
+});
 
 impl Command for Version {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
