@@ -524,7 +524,6 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
     $ eval "$(rtx activate bash)"
     $ eval "$(rtx activate zsh)"
@@ -574,7 +573,6 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   $ rtx complete
 
@@ -600,9 +598,7 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
-
   # outputs `.tool-versions` compatible format
   $ rtx current
   python 3.11.0 3.10.0
@@ -637,12 +633,11 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
-    $ eval "$(rtx deactivate bash)"
-    $ eval "$(rtx deactivate zsh)"
-    $ rtx deactivate fish | source
-    $ execx($(rtx deactivate xonsh))
+  $ eval "$(rtx deactivate bash)"
+  $ eval "$(rtx deactivate zsh)"
+  $ rtx deactivate fish | source
+  $ execx($(rtx deactivate xonsh))
 
 ```
 ### `rtx direnv activate`
@@ -662,11 +657,10 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
-    $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
-    $ echo 'use rtx' > .envrc
-    $ direnv allow
+  $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
+  $ echo 'use rtx' > .envrc
+  $ direnv allow
 
 ```
 ### `rtx doctor`
@@ -679,7 +673,6 @@ Usage: doctor
 Options:
   -h, --help
           Print help (see a summary with '-h')
-
 
 Examples:
   $ rtx doctor
@@ -711,7 +704,6 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
-
 
 Examples:
   $ eval "$(rtx env -s bash)"
@@ -752,12 +744,11 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
   rtx x nodejs@20 -- node ./app.js     # shorter alias
 
-Specify command as a string:
+  # Specify command as a string:
   rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
 
 ```
@@ -787,11 +778,10 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   # set the current version of nodejs to 20.x
   # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ rtx global nodejs@20     
+  $ rtx global nodejs@20
 
   # set the current version of nodejs to 20.x
   # will use a fuzzy version (e.g.: 20) in .tool-versions file
@@ -832,7 +822,6 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
@@ -856,11 +845,10 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   $ rtx latest nodejs@18  # get the latest version of nodejs 18
   18.0.0
-  
+
   $ rtx latest nodejs     # get the latest stable version of nodejs
   20.0.0
 
@@ -896,7 +884,6 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
-
 
 Examples:
   # set the current version of nodejs to 20.x for the current directory
@@ -934,13 +921,12 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   $ rtx list
   -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
   -> python     3.11.0 (set by ~/.tool-versions)
      python     3.10.0
-     
+
   $ rtx list --current
   -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
   -> python     3.11.0 (set by ~/.tool-versions)
@@ -963,7 +949,6 @@ Arguments:
 Options:
   -h, --help
           Print help (see a summary with '-h')
-
 
 Examples:
   $ rtx list-remote nodejs
@@ -1010,17 +995,16 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
+Examples:
+  $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
+                      # https://github.com/asdf-vm/asdf-plugins
 
-EXAMPLES:
-    $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
-                          # https://github.com/asdf-vm/asdf-plugins
+  $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
+                      # install the nodejs plugin using the git url
 
-    $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
-                          # install the nodejs plugin using the git url
-
-    $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
-                          # install the nodejs plugin using the git url only
-                          # (nodejs is inferred from the url)
+  $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
+                      # install the nodejs plugin using the git url only
+                      # (nodejs is inferred from the url)
 
 ```
 ### `rtx plugins ls`
@@ -1046,15 +1030,11 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-List installed plugins
-Can also show remotely available plugins to install.
-
 Examples:
-
   $ rtx plugins ls
   nodejs
   ruby
-  
+
   $ rtx plugins ls --urls
   nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
   ruby                          https://github.com/asdf-vm/asdf-ruby.git
@@ -1098,7 +1078,6 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
   $ rtx uninstall nodejs
 
@@ -1123,10 +1102,9 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-
 Examples:
-  rtx plugins update --all   # update all plugins
-  rtx plugins update nodejs  # update only nodejs
+  $ rtx plugins update --all   # update all plugins
+  $ rtx plugins update nodejs  # update only nodejs
 
 ```
 ### `rtx settings get`
@@ -1234,7 +1212,6 @@ Arguments:
 Options:
   -h, --help
           Print help (see a summary with '-h')
-
 
 Examples:
   $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions

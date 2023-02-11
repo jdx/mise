@@ -1,19 +1,21 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 use owo_colors::Stream;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
-use crate::ui::color::cyan;
+use crate::ui::color::{cyan, Color};
 
 /// updates a plugin to the latest version
 ///
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Update {
     /// plugin(s) to update
     #[clap()]
@@ -47,11 +49,14 @@ impl Command for Update {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  rtx plugins update --all   # update all plugins
-  rtx plugins update nodejs  # update only nodejs
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx plugins update --all   # update all plugins
+      $ rtx plugins update nodejs  # update only nodejs
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

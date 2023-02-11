@@ -1,8 +1,11 @@
+use atty::Stream;
 use std::ffi::{OsStr, OsString};
 
 use color_eyre::eyre::{eyre, Result};
 use duct::IntoExecutablePath;
 use indexmap::IndexMap;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -12,6 +15,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::env;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// execute a command with runtime(s) set
 ///
@@ -24,7 +28,7 @@ use crate::output::Output;
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Exec {
     /// runtime(s) to start
     ///
@@ -105,14 +109,17 @@ fn parse_command(
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
-  rtx x nodejs@20 -- node ./app.js     # shorter alias
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
+      rtx x nodejs@20 -- node ./app.js     # shorter alias
 
-Specify command as a string:
-  rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
-"#;
+      # Specify command as a string:
+      rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {
