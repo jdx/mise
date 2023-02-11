@@ -1,5 +1,9 @@
-use owo_colors::OwoColorize;
+use crate::ui::color::Color;
+use atty::Stream;
+use once_cell::sync::Lazy;
 use std::io::stdin;
+
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
 
 pub fn prompt() -> String {
     let mut input = String::new();
@@ -12,8 +16,9 @@ pub fn prompt_for_install(thing: &str) -> bool {
     match is_tty() {
         true => {
             eprint!(
-                "rtx: Would you like to install plugin {}? [Y/n] ",
-                thing.cyan()
+                "{} Would you like to install {}? [Y/n] ",
+                COLOR.dimmed("rtx:"),
+                thing,
             );
             matches!(prompt().to_lowercase().as_str(), "" | "y" | "yes")
         }

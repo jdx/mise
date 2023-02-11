@@ -9,6 +9,7 @@ use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
@@ -23,7 +24,7 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand_repository::ShorthandRepo;
-use crate::ui::color::cyan;
+use crate::ui::color::{cyan, Color};
 use crate::ui::prompt;
 use crate::ui::spinner::Spinner;
 use crate::{dirs, file};
@@ -108,6 +109,7 @@ impl Plugin {
     }
 
     pub fn ensure_installed(&self, settings: &Settings) -> Result<bool> {
+        static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stderr));
         if self.is_installed() {
             return Ok(true);
         }
@@ -119,13 +121,16 @@ impl Plugin {
                     self.install(settings, &repo)?;
                     Ok(true)
                 }
-                MissingRuntimeBehavior::Prompt => match prompt::prompt_for_install(&self.name) {
-                    true => {
-                        self.install(settings, &repo)?;
-                        Ok(true)
+                MissingRuntimeBehavior::Prompt => {
+                    match prompt::prompt_for_install(&format!("plugin {}", COLOR.cyan(&self.name)))
+                    {
+                        true => {
+                            self.install(settings, &repo)?;
+                            Ok(true)
+                        }
+                        false => Ok(false),
                     }
-                    false => Ok(false),
-                },
+                }
                 MissingRuntimeBehavior::Warn => {
                     warn!("{}", PluginNotInstalled(self.name.clone()));
                     Ok(false)

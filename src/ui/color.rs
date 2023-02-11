@@ -35,6 +35,10 @@ impl Color {
         self.underline(&self.bold(title))
     }
 
+    pub fn dimmed(&self, s: &str) -> String {
+        s.if_supports_color(self.stream, |s| s.dimmed()).to_string()
+    }
+
     pub fn bold(&self, s: &str) -> String {
         s.if_supports_color(self.stream, |s| s.bold()).to_string()
     }
@@ -42,5 +46,9 @@ impl Color {
     pub fn underline(&self, s: &str) -> String {
         s.if_supports_color(self.stream, |s| s.underline())
             .to_string()
+    }
+
+    pub fn cyan(&self, s: &str) -> String {
+        s.if_supports_color(self.stream, |s| s.cyan()).to_string()
     }
 }
