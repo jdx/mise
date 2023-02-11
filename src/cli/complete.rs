@@ -1,3 +1,4 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
 use std::io::Cursor;
 
@@ -6,11 +7,14 @@ use crate::config::Config;
 use crate::output::Output;
 
 use crate::cli::Cli;
+use crate::ui::color::Color;
 use clap_complete::generate;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 /// generate shell completions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Complete {
     /// shell type
     #[clap(long, short)]
@@ -27,10 +31,13 @@ impl Command for Complete {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ rtx complete
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx complete
+    "#, COLOR.header("Examples:")}
+});
 
 // #[cfg(test)]
 // mod test {

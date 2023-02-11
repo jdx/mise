@@ -1,15 +1,19 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
+use crate::ui::color::Color;
 
 /// disable rtx for current shell session
 ///
 /// This can be used to temporarily disable rtx in a shell session.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Deactivate {
     /// shell type to generate the script for
     #[clap(long, short, hide = true)]
@@ -31,13 +35,16 @@ impl Command for Deactivate {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-    $ eval "$(rtx deactivate bash)"
-    $ eval "$(rtx deactivate zsh)"
-    $ rtx deactivate fish | source
-    $ execx($(rtx deactivate xonsh))
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ eval "$(rtx deactivate bash)"
+      $ eval "$(rtx deactivate zsh)"
+      $ rtx deactivate fish | source
+      $ execx($(rtx deactivate xonsh))
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

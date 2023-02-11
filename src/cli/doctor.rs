@@ -1,13 +1,17 @@
+use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// Check rtx installation for possible problems.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Doctor {}
 
 impl Command for Doctor {
@@ -38,11 +42,14 @@ impl Command for Doctor {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  $ rtx doctor
-  [WARN] plugin nodejs is not installed
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      $ rtx doctor
+      [WARN] plugin nodejs is not installed
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

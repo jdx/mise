@@ -1,16 +1,19 @@
+use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
-use indoc::indoc;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// Add/update a setting
 ///
 /// This modifies the contents of ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct SettingsSet {
     /// The setting to set
     pub key: String,
@@ -52,10 +55,13 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
     }
 }
 
-const AFTER_LONG_HELP: &str = indoc! {r#"
-    Examples:
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
       $ rtx settings set legacy_version_file true
-    "#};
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 pub mod test {

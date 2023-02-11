@@ -1,16 +1,20 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// Display the installation path for a runtime
 ///
 /// Must be installed.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), hide = true)]
 pub struct Where {
     /// runtime(s) to look up
     /// if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
@@ -45,19 +49,21 @@ impl Command for Where {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      # Show the latest installed version of nodejs
+      # If it is is not installed, errors
+      $ rtx where nodejs@20
+      /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
 
-  # Show the latest installed version of nodejs
-  # If it is is not installed, errors
-  $ rtx where nodejs@20
-  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
-
-  # Show the current, active install directory of nodejs
-  # Errors if nodejs is not referenced in any .tool-version file
-  $ rtx where nodejs
-  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
-"#;
+      # Show the current, active install directory of nodejs
+      # Errors if nodejs is not referenced in any .tool-version file
+      $ rtx where nodejs
+      /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

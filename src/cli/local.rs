@@ -1,10 +1,14 @@
+use atty::Stream;
 use color_eyre::eyre::{eyre, ContextCompat, Result};
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::{config_file, Config};
 use crate::output::Output;
 use crate::plugins::PluginName;
+use crate::ui::color::Color;
 use crate::{dirs, env, file};
 
 /// Sets .tool-versions to include a specific runtime
@@ -12,7 +16,7 @@ use crate::{dirs, env, file};
 /// use this to set the runtime version when within a directory
 /// use `rtx global` to set a runtime version globally
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Local {
     /// runtimes to add to .tool-versions
     ///
@@ -78,22 +82,25 @@ impl Command for Local {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  # set the current version of nodejs to 20.x for the current directory
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ rtx local nodejs@20
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      # set the current version of nodejs to 20.x for the current directory
+      # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+      $ rtx local nodejs@20
 
-  # set nodejs to 20.x for the current project (recurses up to find .tool-versions)
-  $ rtx local -p nodejs@20
+      # set nodejs to 20.x for the current project (recurses up to find .tool-versions)
+      $ rtx local -p nodejs@20
 
-  # set the current version of nodejs to 20.x for the current directory
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ rtx local --fuzzy nodejs@20
+      # set the current version of nodejs to 20.x for the current directory
+      # will use a fuzzy version (e.g.: 20) in .tool-versions file
+      $ rtx local --fuzzy nodejs@20
 
-  # removes nodejs from .tool-versions
-  $ rtx local --remove=nodejs
-"#;
+      # removes nodejs from .tool-versions
+      $ rtx local --remove=nodejs
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

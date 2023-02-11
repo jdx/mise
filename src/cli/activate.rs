@@ -1,10 +1,14 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
+use crate::ui::color::Color;
 
 /// Enables rtx to automatically modify runtimes when changing directory
 ///
@@ -12,7 +16,7 @@ use crate::shell::{get_shell, ShellType};
 /// Otherwise, it will only take effect in the current session.
 /// (e.g. ~/.bashrc)
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Activate {
     /// Shell type to generate the script for
     #[clap(long, short, hide = true)]
@@ -50,13 +54,16 @@ impl Command for Activate {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-    $ eval "$(rtx activate bash)"
-    $ eval "$(rtx activate zsh)"
-    $ rtx activate fish | source
-    $ execx($(rtx activate xonsh))
-"#;
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+        $ eval "$(rtx activate bash)"
+        $ eval "$(rtx activate zsh)"
+        $ rtx activate fish | source
+        $ execx($(rtx activate xonsh))
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

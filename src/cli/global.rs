@@ -1,10 +1,14 @@
+use atty::Stream;
 use color_eyre::eyre::Result;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::{config_file, Config};
 use crate::output::Output;
 use crate::plugins::PluginName;
+use crate::ui::color::Color;
 use crate::{dirs, env};
 
 /// sets global .tool-versions to include a specified runtime
@@ -12,7 +16,7 @@ use crate::{dirs, env};
 /// this file is `$HOME/.tool-versions` by default
 /// use `rtx local` to set a runtime version locally in the current directory
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Global {
     /// runtimes
     ///
@@ -60,16 +64,19 @@ impl Command for Global {
     }
 }
 
-const AFTER_LONG_HELP: &str = r#"
-Examples:
-  # set the current version of nodejs to 20.x
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ rtx global nodejs@20     
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
+      # set the current version of nodejs to 20.x
+      # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+      $ rtx global nodejs@20
 
-  # set the current version of nodejs to 20.x
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ rtx global --fuzzy nodejs@20
-"#;
+      # set the current version of nodejs to 20.x
+      # will use a fuzzy version (e.g.: 20) in .tool-versions file
+      $ rtx global --fuzzy nodejs@20
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {

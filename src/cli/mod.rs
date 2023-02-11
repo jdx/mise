@@ -1,11 +1,14 @@
-use clap::{ColorChoice, FromArgMatches, Subcommand};
+use atty::Stream;
+use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use log::LevelFilter;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 mod activate;
 mod alias;
@@ -127,8 +130,7 @@ impl Cli {
                 .long_about(LONG_ABOUT)
                 .arg_required_else_help(true)
                 .subcommand_required(true)
-                .after_help(AFTER_HELP)
-                .color(ColorChoice::Never)
+                .after_help(AFTER_HELP.as_str())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::verbose::Verbose::arg()),
         )
@@ -157,29 +159,36 @@ impl Cli {
     }
 }
 
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+
 const LONG_ABOUT: &str = indoc! {"
-rtx is a tool for managing runtime versions. For example, use this to install a particular
-version of node and ruby for a project. Using `rtx activate`, you can also have your shell
-automatically switch to the correct node and ruby versions when you `cd` into the project's
-directory.
+rtx is a tool for managing runtime versions.
+
+Use this to install a particular version of node or ruby for a project. Using `rtx activate`,
+you can also have your shell automatically switch to the correct node and ruby versions when you
+`cd` into the project's directory.
+
+It's a replacement for tools like `nvm`, `nodenv`, `rbenv`, `rvm`, `chruby`, `pyenv`, etc. that
+works for any language. It's also great for managing linters/tools like `jq` and `shellcheck`.
 
 It is inspired by asdf and uses asdf's plugin ecosystem under the hood: https://asdf-vm.com/
 "};
 
-const AFTER_HELP: &str = indoc! {"
-    Examples:
+static AFTER_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! { "
+    {}
+      rtx install nodejs@20.0.0       Install a specific node version
+      rtx install nodejs@20.0         Install a version matching a prefix
+      rtx local nodejs@20             Use node-20.x in current project
+      rtx global nodejs@20            Use node-20.x as default
 
-        rtx install nodejs@20.0.0       Install a specific version number
-        rtx install nodejs@20.0         Install a fuzzy version number
-        rtx local nodejs@20             Use node-20.x in current project
-        rtx global nodejs@20            Use node-20.x as default
+      rtx install nodejs              Install the version specified in .tool-versions
+      rtx local nodejs                Use latest node in current directory
+      rtx global system               Use system node everywhere unless overridden
 
-        rtx install nodejs              Install the version specified in .tool-versions
-        rtx local nodejs                Use latest node in current directory
-        rtx global system               Use system node as default
-
-        rtx x nodejs@20 -- node app.js  Run `node app.js` with PATH pointing to node-20.x
-"};
+      rtx x nodejs@20 -- node app.js  Run `node app.js` with PATH pointing to node-20.x
+", COLOR.header("Examples:")  }
+});
 
 #[cfg(test)]
 pub mod test {

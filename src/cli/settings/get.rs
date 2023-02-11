@@ -1,9 +1,12 @@
+use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
-use indoc::indoc;
+use indoc::formatdoc;
+use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::ui::color::Color;
 
 /// Show a current setting
 ///
@@ -12,7 +15,7 @@ use crate::output::Output;
 /// Note that aliases are also stored in this file
 /// but managed separately with `rtx aliases get`
 #[derive(Debug, clap::Args)]
-#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct SettingsGet {
     /// The setting to show
     pub key: String,
@@ -27,11 +30,14 @@ impl Command for SettingsGet {
     }
 }
 
-const AFTER_LONG_HELP: &str = indoc! {r#"
-    Examples:
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
+    formatdoc! {r#"
+    {}
       $ rtx settings get legacy_version_file
       true
-    "#};
+    "#, COLOR.header("Examples:")}
+});
 
 #[cfg(test)]
 mod test {
