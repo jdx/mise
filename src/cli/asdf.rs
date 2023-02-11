@@ -60,7 +60,7 @@ fn list_versions(out: &mut Output, args: &Vec<String>) -> Result<()> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::assert_cli;
