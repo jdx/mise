@@ -110,7 +110,7 @@ impl Display for DirenvDiff {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use insta::assert_display_snapshot;
 

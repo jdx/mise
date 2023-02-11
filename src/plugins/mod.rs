@@ -429,7 +429,7 @@ impl PartialEq for Plugin {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::{assert_cli, env};

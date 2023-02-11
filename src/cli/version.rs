@@ -58,7 +58,7 @@ fn show_version(out: &mut Output) {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::assert_cli;

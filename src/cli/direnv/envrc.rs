@@ -56,7 +56,7 @@ impl Command for Envrc {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::fs;
 
     use insta::assert_display_snapshot;

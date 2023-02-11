@@ -191,7 +191,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub mod test {
+pub mod tests {
     use crate::config::MissingRuntimeBehavior::AutoInstall;
     use crate::config::Settings;
     use crate::dirs;
@@ -211,7 +211,7 @@ pub mod test {
     macro_rules! assert_cli {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::test::cli_run(args).unwrap().stdout.content
+            $crate::cli::tests::cli_run(args).unwrap().stdout.content
         }};
     }
 
@@ -219,7 +219,7 @@ pub mod test {
     macro_rules! assert_cli_err {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::test::cli_run(args).unwrap_err()
+            $crate::cli::tests::cli_run(args).unwrap_err()
         }};
     }
 

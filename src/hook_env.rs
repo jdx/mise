@@ -95,7 +95,7 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::time::UNIX_EPOCH;
 
     use crate::dirs;

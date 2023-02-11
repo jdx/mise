@@ -62,7 +62,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub mod test {
+pub mod tests {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
