@@ -14,9 +14,7 @@ pub struct Settings {
     pub missing_runtime_behavior: MissingRuntimeBehavior,
     pub always_keep_download: bool,
     pub legacy_version_file: bool,
-    pub disable_plugin_short_name_repository: bool,
     pub plugin_autoupdate_last_check_duration: Duration,
-    pub plugin_repository_last_check_duration: Duration,
     pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
     pub verbose: bool,
 }
@@ -27,9 +25,7 @@ impl Default for Settings {
             missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
             always_keep_download: false,
             legacy_version_file: true,
-            disable_plugin_short_name_repository: false,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
-            plugin_repository_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
             verbose: *RTX_VERBOSE || !is_tty(),
         }
@@ -52,16 +48,8 @@ impl Settings {
             self.legacy_version_file.to_string(),
         );
         map.insert(
-            "disable_plugin_short_name_repository".to_string(),
-            self.disable_plugin_short_name_repository.to_string(),
-        );
-        map.insert(
             "plugin_autoupdate_last_check_duration".to_string(),
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
-        );
-        map.insert(
-            "plugin_repository_last_check_duration".to_string(),
-            (self.plugin_repository_last_check_duration.as_secs() / 60).to_string(),
         );
         map.insert("verbose".into(), self.verbose.to_string());
         map
@@ -73,9 +61,7 @@ pub struct SettingsBuilder {
     pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
     pub always_keep_download: Option<bool>,
     pub legacy_version_file: Option<bool>,
-    pub disable_plugin_short_name_repository: Option<bool>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
-    pub plugin_repository_last_check_duration: Option<Duration>,
     pub aliases: Option<AliasMap>,
     pub verbose: Option<bool>,
 }
@@ -97,16 +83,9 @@ impl SettingsBuilder {
         if other.legacy_version_file.is_some() {
             self.legacy_version_file = other.legacy_version_file;
         }
-        if other.disable_plugin_short_name_repository.is_some() {
-            self.disable_plugin_short_name_repository = other.disable_plugin_short_name_repository;
-        }
         if other.plugin_autoupdate_last_check_duration.is_some() {
             self.plugin_autoupdate_last_check_duration =
                 other.plugin_autoupdate_last_check_duration;
-        }
-        if other.plugin_repository_last_check_duration.is_some() {
-            self.plugin_repository_last_check_duration =
-                other.plugin_repository_last_check_duration;
         }
         if other.verbose.is_some() {
             self.verbose = other.verbose;
@@ -139,12 +118,6 @@ impl SettingsBuilder {
         settings.legacy_version_file = self
             .legacy_version_file
             .unwrap_or(settings.legacy_version_file);
-        settings.disable_plugin_short_name_repository = self
-            .disable_plugin_short_name_repository
-            .unwrap_or(settings.disable_plugin_short_name_repository);
-        settings.plugin_repository_last_check_duration = self
-            .plugin_repository_last_check_duration
-            .unwrap_or(settings.plugin_repository_last_check_duration);
         settings.plugin_autoupdate_last_check_duration = self
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
