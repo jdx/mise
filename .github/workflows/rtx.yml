@@ -222,6 +222,12 @@ jobs:
         with:
           node-version: '18.x'
           registry-url: 'https://registry.npmjs.org'
+      - name: Set AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
       - uses: crazy-max/ghaction-import-gpg@v5
         with:
           gpg_private_key: ${{ secrets.GPG_KEY }}
@@ -236,13 +242,6 @@ jobs:
       - name: homebrew-tap push
         run: git push
         working-directory: homebrew-tap
-      - uses: jakejarvis/s3-sync-action@master
-        env:
-          AWS_S3_BUCKET: rtx-cli
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: 'us-west-2'   # optional: defaults to us-east-1
-          SOURCE_DIR: 'rtx.jdxcode.com'
 
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v1
