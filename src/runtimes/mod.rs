@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
-use owo_colors::{OwoColorize, Stream};
+use once_cell::sync::Lazy;
 use versions::Versioning;
 
 use runtime_conf::RuntimeConf;
@@ -18,12 +18,14 @@ use crate::config::{MissingRuntimeBehavior, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
-use crate::ui::color::cyan;
+use crate::ui::color::{cyan, Color};
 use crate::ui::prompt;
 use crate::ui::spinner::Spinner;
 use crate::{dirs, env, fake_asdf, file};
 
 mod runtime_conf;
+
+static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stderr));
 
 /// These represent individual plugin@version pairs of runtimes
 /// installed to ~/.local/share/rtx/runtimes
@@ -162,7 +164,7 @@ impl RuntimeVersion {
                 Ok(true)
             }
             MissingRuntimeBehavior::Prompt => {
-                if prompt_for_install(&format!("{self}")) {
+                if prompt::prompt_for_install(&COLOR.cyan(&self.to_string())) {
                     self.install(InstallType::Version, config)?;
                     Ok(true)
                 } else {
@@ -206,9 +208,7 @@ impl RuntimeVersion {
             remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    dir.to_str()
-                        .unwrap()
-                        .if_supports_color(Stream::Stderr, |t| t.cyan())
+                    COLOR.cyan(dir.to_str().unwrap())
                 )
             })
         };
@@ -276,19 +276,6 @@ impl Display for RuntimeVersion {
 impl PartialEq for RuntimeVersion {
     fn eq(&self, other: &Self) -> bool {
         self.plugin.name == other.plugin.name && self.version == other.version
-    }
-}
-
-fn prompt_for_install(thing: &str) -> bool {
-    match prompt::is_tty() {
-        true => {
-            eprint!(
-                "rtx: Would you like to install {}? [Y/n] ",
-                thing.if_supports_color(Stream::Stderr, |s| s.bold())
-            );
-            matches!(prompt::prompt().to_lowercase().as_str(), "" | "y" | "yes")
-        }
-        false => false,
     }
 }
 
