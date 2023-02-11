@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 
 use crate::config::AliasMap;
 use crate::env;
+use crate::env::RTX_VERBOSE;
 use crate::plugins::PluginName;
 use crate::ui::prompt::is_tty;
 
@@ -30,7 +31,7 @@ impl Default for Settings {
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             plugin_repository_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
-            verbose: !is_tty(),
+            verbose: *RTX_VERBOSE || !is_tty(),
         }
     }
 }
