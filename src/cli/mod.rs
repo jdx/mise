@@ -33,7 +33,7 @@ mod ls_remote;
 mod plugins;
 mod settings;
 mod uninstall;
-mod version;
+pub mod version;
 mod r#where;
 
 // render help
