@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use std::path::Path;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use indexmap::IndexMap;
 
 use rtxrc::RTXFile;
@@ -14,6 +14,8 @@ use crate::config::Config;
 use crate::config::PluginSource;
 use crate::env;
 use crate::errors::Error::VersionNotInstalled;
+use crate::file::display_path;
+use crate::output::Output;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 
@@ -49,6 +51,7 @@ impl dyn ConfigFile {
         fuzzy: bool,
     ) -> Result<()> {
         let mut runtime_map: HashMap<PluginName, Vec<String>> = HashMap::new();
+
         for runtime in runtimes {
             let plugin = Plugin::load_ensure_installed(&runtime.plugin, &config.settings)?;
             let latest = config.resolve_runtime_arg(runtime)?;
@@ -75,6 +78,34 @@ impl dyn ConfigFile {
         }
 
         Ok(())
+    }
+
+    /// this is for `rtx local|global RUNTIME` which will display the version instead of setting it
+    /// it's only valid to use a single runtime in this case
+    /// returns "true" if the runtime was displayed which means the CLI should exit
+    pub fn display_runtime(&self, out: &mut Output, runtimes: &[RuntimeArg]) -> Result<bool> {
+        // in this situation we just print the current version in the config file
+        if runtimes.len() == 1 && runtimes[0].version == RuntimeArgVersion::None {
+            let plugin = &runtimes[0].plugin;
+            let plugins = self.plugins();
+            let version = plugins.get(plugin).ok_or_else(|| {
+                eyre!(
+                    "no version set for {} in {}",
+                    plugin.to_string(),
+                    display_path(self.get_path())
+                )
+            })?;
+            rtxprintln!(out, "{}", version.join(" "));
+            return Ok(true);
+        }
+        // check for something like `rtx local nodejs python@latest` which is invalid
+        if runtimes
+            .iter()
+            .any(|r| r.version == RuntimeArgVersion::None)
+        {
+            return Err(eyre!("invalid input, specify a version for each runtime. Or just specify one runtime to print the current version"));
+        }
+        Ok(false)
     }
 }
 

@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::{config_file, Config};
+
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::ui::color::Color;
@@ -13,6 +14,7 @@ use crate::{dirs, env, file};
 
 /// Sets .tool-versions to include a specific runtime
 ///
+/// then displays the contents of .tool-versions
 /// use this to set the runtime version when within a directory
 /// use `rtx global` to set a runtime version globally
 #[derive(Debug, clap::Args)]
@@ -21,7 +23,9 @@ pub struct Local {
     /// runtimes to add to .tool-versions
     ///
     /// e.g.: nodejs@20
-    #[clap(value_parser = RuntimeArgParser)]
+    /// if this is a single runtime with no version,
+    /// the current value of .tool-versions will be displayed
+    #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: Option<Vec<RuntimeArg>>,
 
     /// recurse up to find a .tool-versions file rather than using the current directory only
@@ -69,6 +73,9 @@ impl Command for Local {
 
         if let Some(runtimes) = &self.runtime {
             let runtimes = RuntimeArg::double_runtime_condition(runtimes);
+            if cf.display_runtime(out, &runtimes)? {
+                return Ok(());
+            }
             cf.add_runtimes(&mut config, &runtimes, self.fuzzy)?;
         }
 
@@ -99,6 +106,10 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
       # removes nodejs from .tool-versions
       $ rtx local --remove=nodejs
+
+      # show the current version of nodejs in .tool-versions
+      $ rtx local nodejs
+      20.0.0
     "#, COLOR.header("Examples:")}
 });
 
@@ -110,7 +121,7 @@ mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;
-    use crate::{assert_cli, dirs};
+    use crate::{assert_cli, assert_cli_err, dirs};
 
     #[test]
     fn test_local() {
@@ -134,6 +145,18 @@ mod tests {
         assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
         let stdout = assert_cli!("local", "tiny", "2");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
+
+        // will output the current version(s)
+        let stdout = assert_cli!("local", "tiny");
+        assert_str_eq!(stdout, "2.1.0\n");
+
+        // can only request a version one plugin at a time
+        let err = assert_cli_err!("local", "tiny", "dummy");
+        assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+
+        // this is just invalid
+        let err = assert_cli_err!("local", "tiny", "dummy@latest");
+        assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
 
         fs::write(cf_path, orig).unwrap();
     }
