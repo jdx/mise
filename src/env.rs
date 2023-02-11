@@ -81,6 +81,7 @@ lazy_static! {
         var("RTX_MISSING_RUNTIME_BEHAVIOR").ok()
     };
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
+    pub static ref RTX_VERBOSE: bool = var_is_true("RTX_VERBOSE");
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
