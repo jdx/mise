@@ -24,9 +24,8 @@ pub struct PluginsLsRemote {
 impl Command for PluginsLsRemote {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let installed_plugins = config
-            .ts
-            .list_plugins()
-            .into_iter()
+            .plugins
+            .values()
             .filter(|p| p.is_installed())
             .map(|p| p.name.clone())
             .collect::<HashSet<_>>();

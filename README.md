@@ -23,7 +23,7 @@ The following shows using rtx to install node, python, and jq into a project usi
 - **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them.
 - **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
 - **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
-- **One command install** - No need to manually install each plugin, just run `rtx install --all` and it will install all the plugins you need.
+- **One command install** - No need to manually install each plugin, just run `rtx install` and it will install all the plugins you need.
 
 ## Quickstart
 
@@ -794,8 +794,10 @@ Arguments:
           .tool-versions will be displayed
 
 Options:
-      --fuzzy
-          save fuzzy match to .tool-versions e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions, by default, it would save the exact version, e.g.: `nodejs 20.0.0`
+      --pin
+          save exact version to `.tool-versions`
+          
+          e.g.: `rtx global --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
 
       --remove <PLUGIN>
           remove the plugin(s) from ~/.tool-versions
@@ -841,9 +843,6 @@ Options:
 
   -f, --force
           force reinstall even if already installed
-
-  -a, --all
-          install all missing runtimes as well as all plugins for the current directory
 
   -v, --verbose...
           Show installation output
@@ -906,10 +905,10 @@ Options:
           recurse up to find a .tool-versions file rather than using the current directory only
           by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
 
-      --fuzzy
-          save fuzzy match to .tool-versions
-          e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
-          without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`
+      --pin
+          save exact version to `.tool-versions`
+          
+          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
 
       --remove <PLUGIN>
           remove the plugin(s) from .tool-versions
@@ -1250,8 +1249,8 @@ Options:
           Print help (see a summary with '-h')
 
 Examples:
-  $ rtx uninstall nodejs@18 # will uninstall ALL nodejs-18.x versions
-  $ rtx uninstall nodejs    # will uninstall ALL nodejs versions
+  $ rtx uninstall nodejs@18.0.0 # will uninstall specific version
+  $ rtx uninstall nodejs        # will uninstall current nodejs version
 
 ```
 ### `rtx version`

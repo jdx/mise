@@ -45,17 +45,3 @@ pub fn get_path_with_fake_asdf() -> String {
     path.push(env::var("PATH").unwrap());
     path.join(":")
 }
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::*;
-
-    #[test]
-    fn test_setup() {
-        let path = setup().unwrap();
-        assert!(path.join("asdf").exists());
-        fs::remove_dir_all(&path).unwrap();
-    }
-}

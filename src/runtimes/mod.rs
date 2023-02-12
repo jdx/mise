@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
@@ -16,11 +17,11 @@ use runtime_conf::RuntimeConf;
 use crate::config::Config;
 use crate::config::{MissingRuntimeBehavior, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
+use crate::errors::Error::VersionNotInstalled;
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
-use crate::ui::color::{cyan, Color};
+use crate::ui::color::Color;
+use crate::ui::progress_report::ProgressReport;
 use crate::ui::prompt;
-use crate::ui::spinner::Spinner;
 use crate::{dirs, env, fake_asdf, file};
 
 mod runtime_conf;
@@ -70,54 +71,53 @@ impl RuntimeVersion {
         Ok(versions)
     }
 
-    pub fn install(&self, install_type: InstallType, config: &Config) -> Result<()> {
-        let plugin = &self.plugin;
-        let settings = &config.settings;
-        debug!("install {} {} {}", plugin.name, self.version, install_type);
-        let rtv_label = cyan(Stderr, &self.to_string());
-        let install_message = format!("Installing runtime: {rtv_label}...");
-        let mut sp = Spinner::start(install_message, config.settings.verbose);
+    pub fn install(
+        &self,
+        install_type: InstallType,
+        config: &Config,
+        mut pr: ProgressReport,
+    ) -> Result<()> {
+        static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+            ProgressStyle::with_template("{prefix}{wide_msg} {spinner:.blue} {elapsed:.dim.italic}")
+                .unwrap()
+        });
+        pr.set_style(PROG_TEMPLATE.clone());
+        pr.set_prefix(format!(
+            "{} {} ",
+            COLOR.dimmed("rtx"),
+            COLOR.cyan(&self.to_string())
+        ));
+        pr.enable_steady_tick();
 
-        if !self.plugin.ensure_installed(settings)? {
-            return Err(PluginNotInstalled(self.plugin.name.clone()).into());
-        }
+        let settings = &config.settings;
+        debug!("install {} {}", self, install_type);
 
         self.create_install_dirs()?;
         let download = Script::Download(install_type.clone());
         let install = Script::Install(install_type);
 
-        if self.script_man.script_exists(&download) {
-            if settings.verbose {
-                self.script_man
-                    .cmd(download)
-                    .stdout_to_stderr()
-                    .run()
-                    .map_err(|err| {
-                        self.cleanup_install_dirs_on_error(settings);
-                        err
-                    })?;
-            } else {
-                self.script_man.run_with_hidden_output(download, || {
+        let run_script = |script| {
+            self.script_man.run_by_line(
+                script,
+                |output| {
                     self.cleanup_install_dirs_on_error(settings);
-                })?;
-            }
-        }
+                    pr.finish_with_message(format!("error {}", COLOR.red("✗")));
+                    if !settings.verbose && !output.trim().is_empty() {
+                        pr.println(output);
+                    }
+                },
+                |line| {
+                    pr.set_message(line.into());
+                },
+            )
+        };
 
-        if settings.verbose {
-            self.script_man
-                .cmd(install)
-                .stdout_to_stderr()
-                .run()
-                .map_err(|err| {
-                    self.cleanup_install_dirs_on_error(settings);
-                    err
-                })?;
-            self.cleanup_install_dirs(settings);
-        } else {
-            self.script_man.run_with_hidden_output(install, || {
-                self.cleanup_install_dirs_on_error(settings);
-            })?;
+        if self.script_man.script_exists(&download) {
+            pr.set_message("downloading".into());
+            run_script(download)?;
         }
+        pr.set_message("installing".into());
+        run_script(install)?;
         self.cleanup_install_dirs(settings);
 
         let conf = RuntimeConf {
@@ -134,7 +134,7 @@ impl RuntimeVersion {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        sp.success(format!("Runtime {rtv_label} installed"));
+        pr.finish_with_message(COLOR.green("✓"));
 
         Ok(())
     }
@@ -160,12 +160,20 @@ impl RuntimeVersion {
         }
         match config.settings.missing_runtime_behavior {
             MissingRuntimeBehavior::AutoInstall => {
-                self.install(InstallType::Version, config)?;
+                self.install(
+                    InstallType::Version,
+                    config,
+                    ProgressReport::new(config.settings.verbose),
+                )?;
                 Ok(true)
             }
             MissingRuntimeBehavior::Prompt => {
                 if prompt::prompt_for_install(&COLOR.cyan(&self.to_string())) {
-                    self.install(InstallType::Version, config)?;
+                    self.install(
+                        InstallType::Version,
+                        config,
+                        ProgressReport::new(config.settings.verbose),
+                    )?;
                     Ok(true)
                 } else {
                     Ok(false)

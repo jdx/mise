@@ -27,10 +27,13 @@ pub struct Global {
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: Option<Vec<RuntimeArg>>,
 
-    /// save fuzzy match to .tool-versions
-    /// e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions,
-    /// by default, it would save the exact version, e.g.: `nodejs 20.0.0`
-    #[clap(long)]
+    /// save exact version to `.tool-versions`
+    ///
+    /// e.g.: `rtx global --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
+    #[clap(long, verbatim_doc_comment)]
+    pin: bool,
+
+    #[clap(long, hide = true)]
     fuzzy: bool,
 
     /// remove the plugin(s) from ~/.tool-versions
@@ -39,7 +42,7 @@ pub struct Global {
 }
 
 impl Command for Global {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let cf_path = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
 
         let mut cf = match cf_path.exists() {
@@ -57,7 +60,7 @@ impl Command for Global {
             if cf.display_runtime(out, &runtimes)? {
                 return Ok(());
             }
-            cf.add_runtimes(&mut config, &runtimes, self.fuzzy)?;
+            cf.add_runtimes(&config, &runtimes, self.pin)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {
@@ -104,13 +107,13 @@ mod tests {
         let _ = fs::remove_file(&cf_path);
 
         assert_cli!("install", "shfmt@2");
-        let stdout = assert_cli!("global", "shfmt@2");
+        let stdout = assert_cli!("global", "--pin", "shfmt@2");
         assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "--fuzzy", "shfmt@2");
+        let stdout = assert_cli!("global", "shfmt@2");
         assert_snapshot!(stdout);
         let stdout = assert_cli!("global", "--remove", "nodejs");
         assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "tiny", "2");
+        let stdout = assert_cli!("global", "--pin", "tiny", "2");
         assert_snapshot!(stdout);
 
         // will output the current version(s)

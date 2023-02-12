@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
@@ -28,16 +26,16 @@ pub struct Update {
 
 impl Command for Update {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugins: Vec<Arc<Plugin>> = match (self.plugin, self.all) {
+        let plugins: Vec<&Plugin> = match (self.plugin, self.all) {
             (Some(plugins), _) => plugins
                 .into_iter()
                 .map(|p| {
-                    config.ts.find_plugin(&p).ok_or_else(|| {
+                    config.plugins.get(&p).ok_or_else(|| {
                         eyre!("plugin {} not found", cyan(Stream::Stderr, p.as_str()))
                     })
                 })
-                .collect::<Result<Vec<Arc<Plugin>>>>()?,
-            (_, true) => config.ts.list_installed_plugins(),
+                .collect::<Result<_>>()?,
+            (_, true) => config.plugins.values().collect(),
             _ => Err(eyre!("no plugins specified"))?,
         };
 

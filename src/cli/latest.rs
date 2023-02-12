@@ -1,5 +1,6 @@
 use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -7,7 +8,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion}
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
+
 use crate::ui::color::Color;
 
 /// get the latest runtime version of a plugin's runtimes
@@ -33,12 +34,22 @@ impl Command for Latest {
                 None => "latest".to_string(),
             },
             RuntimeArgVersion::Version(version) => version,
-            _ => Err(eyre!("invalid version {}", self.runtime))?,
+            _ => Err(eyre!(
+                "invalid version: {}",
+                style(&self.runtime).cyan().for_stderr()
+            ))?,
         };
-        let plugin = Plugin::load_ensure_installed(&self.runtime.plugin, &config.settings)?;
-        let prefix = config.resolve_alias(&self.runtime.plugin, prefix);
+        let plugin = config.plugins.get(&self.runtime.plugin).ok_or_else(|| {
+            eyre!(
+                "plugin {} not found. run {} to install it",
+                style(self.runtime.plugin.to_string()).cyan().for_stderr(),
+                style(format!("rtx plugin install {}", self.runtime.plugin))
+                    .yellow()
+                    .for_stderr()
+            )
+        })?;
 
-        if let Some(version) = plugin.latest_version(&prefix)? {
+        if let Some(version) = plugin.latest_version(&prefix) {
             rtxprintln!(out, "{}", version);
         }
         Ok(())
@@ -61,7 +72,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
+    use crate::{assert_cli, assert_cli_err};
 
     #[test]
     fn test_latest() {
@@ -80,6 +91,18 @@ mod tests {
     #[test]
     fn test_latest_asdf_format() {
         let stdout = assert_cli!("latest", "nodejs", "12");
+        assert_display_snapshot!(stdout);
+    }
+
+    #[test]
+    fn test_latest_system() {
+        let stdout = assert_cli_err!("latest", "nodejs@system");
+        assert_display_snapshot!(stdout);
+    }
+
+    #[test]
+    fn test_latest_missing_plugin() {
+        let stdout = assert_cli_err!("latest", "invalid_plugin");
         assert_display_snapshot!(stdout);
     }
 }

@@ -1,13 +1,15 @@
 use clap::{ArgMatches, Command};
 use color_eyre::eyre::Result;
+use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::config::Config;
 
-pub fn commands(config: &Config) -> Result<Vec<clap::Command>> {
+pub fn commands(config: &Config) -> Result<Vec<Command>> {
     let commands = config
-        .ts
-        .list_plugins()
+        .plugins
+        .values()
+        .collect_vec()
         .into_par_iter()
         .map(|p| p.external_commands())
         .collect::<Result<Vec<Vec<Vec<String>>>>>()?
@@ -17,8 +19,12 @@ pub fn commands(config: &Config) -> Result<Vec<clap::Command>> {
         .map(|commands| {
             clap::Command::new(commands[0][0].to_string()).subcommands(commands.into_iter().map(
                 |cmd| {
-                    clap::Command::new(cmd[1..].join("-"))
-                        .arg(clap::Arg::new("args").num_args(1..).trailing_var_arg(true))
+                    clap::Command::new(cmd[1..].join("-")).arg(
+                        clap::Arg::new("args")
+                            .num_args(1..)
+                            .allow_hyphen_values(true)
+                            .trailing_var_arg(true),
+                    )
                 },
             ))
         })
@@ -35,7 +41,7 @@ pub fn execute(
 ) -> Result<()> {
     if let Some(_cmd) = external_commands.iter().find(|c| c.get_name() == plugin) {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = config.ts.find_plugin(&plugin.to_string()).unwrap();
+            let plugin = config.plugins.get(&plugin.to_string()).unwrap();
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

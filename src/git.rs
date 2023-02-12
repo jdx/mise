@@ -89,6 +89,12 @@ impl Git {
         Ok(sha)
     }
 
+    pub fn current_sha_short(&self) -> Result<String> {
+        let sha = cmd!("git", "-C", &self.dir, "rev-parse", "--short", "HEAD").read()?;
+        debug!("current sha for {}: {}", self.dir.display(), &sha);
+        Ok(sha)
+    }
+
     pub fn get_remote_url(&self) -> Option<String> {
         let res = cmd!(
             "git",
@@ -123,6 +129,7 @@ fn get_git_version() -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
     use tempfile::tempdir;
 
     use super::*;
@@ -137,6 +144,7 @@ mod tests {
         let latest = git.current_sha().unwrap();
         let update_result = git.update(Some(prev_rev.clone())).unwrap();
         assert_eq!(update_result, (latest.to_string(), prev_rev.to_string()));
+        assert_str_eq!(git.current_sha_short().unwrap(), "f4b510d");
         let update_result = git.update(None).unwrap();
         assert_eq!(update_result, (prev_rev, latest));
     }
