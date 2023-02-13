@@ -27,8 +27,12 @@ If you're creating a new plugin consider creating it as part of the [`asdf-commu
 
 ## Contributing a new Plugin
 
-- Add the plugin to this `README.md`.
-- Create a file with the shortname you wish to be used by asdf in `plugins/<name>`. Then contents should be `repository = <your_repo>`.
+- Install repo dependencies: `asdf install`
+- Add the plugin to the repository `README.md` _Plugin List_ table.
+- Create a file with the shortname you wish to be used by asdf in `plugins/<name>`. The contents should be `repository = <your_repo>`.
+  - eg: `printf "repository = https://github.com/asdf-vm/asdf-nodejs.git\n" > plugins/nodejs`
+- Test your code : `scripts/test_plugin.bash --file plugins/<name>`
+- Format your code & this README: `scripts/format.bash`
 - Create a PR following the instructions in the PR template.
 
 ## Security

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# See: ./test_plugin.sh --help
+# See: ./scripts/test_plugin.bash --help
 
 function fail() {
   echo "FAIL: $*" >&2
@@ -12,24 +12,25 @@ function badge_svg() {
   grep -o '(http[^)]*svg[^)]*)' | sed -e 's/(//;s/)//'
 }
 
-function check_plugin_from_diff() {
+function check_plugins_from_diff() {
   local BASE_REF="$1" # Base commit of main branch.
   local HEAD_REF="$2" # Latest commit of PR
 
   local DIFF_CHANGES
   DIFF_CHANGES="$(git diff --name-only "${BASE_REF}" "${HEAD_REF}")"
 
-  # Assert that the PR diff only includes a change to README and a file under plugins/
+  # Assert that the PR diff only includes a change to README and file(s) under plugins/ directory
   {
-    test "2" == "$(echo "$DIFF_CHANGES" | wc -l | xargs)" &&
+    test 1 -lt "$(echo "$DIFF_CHANGES" | wc --lines | xargs)" &&
       echo "$DIFF_CHANGES" | grep README.md >/dev/null &&
       echo "$DIFF_CHANGES" | grep plugins/ >/dev/null
   } || fail "Expected git diff ${REF_RANGE} to only include changes for a single plugin"
 
-  local PLUGIN_FILE
-  PLUGIN_FILE="$(git diff --name-only "${BASE_REF}" "${HEAD_REF}" -- plugins/)"
-
-  check_plugin_from_file "$PLUGIN_FILE"
+  local PLUGIN_FILES
+  PLUGIN_FILES="$(git diff --name-only "${BASE_REF}" "${HEAD_REF}" -- plugins/)"
+  for PLUGIN_FILE in $PLUGIN_FILES; do
+    check_plugin_from_file "$PLUGIN_FILE"
+  done
 }
 
 function check_plugin_from_file() {
@@ -41,7 +42,7 @@ function check_plugin_from_file() {
     fail "Expected a plugin file at $PLUGIN_FILE"
 
   # Assert that PLUGIN_FILE file ends with new line.
-  test 'X' == "$(tail -c1 "$PLUGIN_FILE" | tr '\n' 'X')" ||
+  test 'X' == "$(tail --bytes=1 "$PLUGIN_FILE" | tr '\n' 'X')" ||
     fail "Expected $PLUGIN_FILE to end with a new line."
 
   # Assert that PLUGIN_FILE has repository key and points to a git repo.
@@ -51,20 +52,20 @@ function check_plugin_from_file() {
     fail "File $PLUGIN_FILE does not specify a repository url"
 
   # Assert the plugin repo is reachable.
-  git ls-remote -q "$PLUGIN_REPO" HEAD >/dev/null ||
+  git ls-remote --quiet "$PLUGIN_REPO" HEAD >/dev/null ||
     fail "Repo is unreachable: $PLUGIN_REPO"
 
   local PLUGIN_REPO_NO_GIT
-  PLUGIN_REPO_NO_GIT="$(echo "$PLUGIN_REPO" | sed -e 's/\.git$//' | tr '/' '\n' | tail -n1)"
+  PLUGIN_REPO_NO_GIT="$(echo "$PLUGIN_REPO" | sed -e 's/\.git$//' | tr '/' '\n' | tail --lines 1)"
 
   local README_LINE
-  README_LINE="$(git grep -h -C0 "${PLUGIN_REPO_NO_GIT}" -- README.md | head -n 1)"
+  README_LINE="$(git grep -h --ignore-case -C0 "${PLUGIN_REPO_NO_GIT}" -- README.md | head --lines 1)"
 
   # Assert that a new line for plugin was added at README
   test -n "$README_LINE" ||
     fail "Expected a line at README.md with a link to ${PLUGIN_REPO_NO_GIT}"
 
-  BADGE_COLUMN="$(echo "${README_LINE}" | cut -d'|' -f4)"
+  BADGE_COLUMN="$(echo "${README_LINE}" | cut --delimiter='|' -f4)"
   BADGE_URL="$(echo "${BADGE_COLUMN}" | badge_svg)"
 
   # Assert that the badge has "pass" text in it, indicating the plugin is healthy
@@ -104,7 +105,7 @@ if test "--all" == "$*"; then
 
 elif test "--diff" == "$1"; then
   echo "Testing plugin introduced at git diff $2..$3"
-  check_plugin_from_diff "$2" "$3"
+  check_plugins_from_diff "$2" "$3"
 
 elif test "--file" == "$1"; then
   check_plugin_from_file "$2"

@@ -1,12 +1,15 @@
 name: test
 
 on:
-  pull_request:
+  push:
+    branches:
+      - master
     paths:
       - plugins/*
+      - README.md
 
 jobs:
-  changed_plugins:
+  all_plugins:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -15,4 +18,4 @@ jobs:
           fetch-depth: 0
 
       - name: Check new plugin is registered correctly
-        run: bash scripts/test_plugin.bash --diff origin/master ${{ github.sha }}
+        run: bash scripts/test_plugin.bash --all
