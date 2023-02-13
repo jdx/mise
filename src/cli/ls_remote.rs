@@ -14,7 +14,7 @@ use crate::ui::color::Color;
 /// note that these versions are cached for commands like `rtx install nodejs@latest`
 /// however _this_ command will always clear that cache and fetch the latest remote versions
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list-remote", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_alias = "list-remote", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), alias = "list-all")]
 pub struct LsRemote {
     /// Plugin
     #[clap()]

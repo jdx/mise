@@ -12,7 +12,7 @@ use crate::shorthand::SHORTHAND_MAP;
 ///
 /// These are fetched from https://github.com/asdf-vm/asdf-plugins
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list-remote", long_about = LONG_ABOUT, verbatim_doc_comment)]
+#[clap(visible_alias = "list-remote", long_about = LONG_ABOUT, verbatim_doc_comment, alias = "list-all")]
 pub struct PluginsLsRemote {
     /// show the git url for each plugin
     ///
