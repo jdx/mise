@@ -6,11 +6,13 @@ The purpose of the [asdf](https://github.com/asdf-vm/asdf) plugins repository is
 asdf plugin add <name>
 ```
 
-It is important to know that you can install plugins without them being in this repo with:
+The asdf core team recommend using the long-form which does not rely on this repository:
 
 ```shell
 asdf plugin add <name> <git_url>
 ```
+
+Read each plugins code before installation and usage.
 
 ## Existing Plugins
 
