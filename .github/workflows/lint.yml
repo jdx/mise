@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  markdown_and_scripts:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,7 +19,7 @@ jobs:
       - name: lint
         run: scripts/lint.bash
 
-  actionlint:
+  actions:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
