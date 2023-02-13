@@ -27,6 +27,22 @@ impl Command for RenderHelp {
 
 _{about}_
 
+## 30 Second Demo
+
+The following shows using rtx to install node, python, and jq into a project using a `.tool-versions` file.
+
+[![demo](./docs/demo.gif)](./docs/demo.gif)
+
+## Features
+
+- **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
+- **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
+- **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
+- **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them.
+- **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
+- **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
+- **One command install** - No need to manually install each plugin, just run `rtx install --all` and it will install all the plugins you need.
+
 ## Quickstart
 
 Install rtx (other methods [here](#installation)):
