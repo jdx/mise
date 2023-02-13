@@ -96,6 +96,8 @@ impl RTXFile {
             "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
+            "disable_plugin_short_name_repository" => {}
+            "plugin_repository_last_check_duration" => {}
             _ => self.parse_plugin(k, v)?,
         };
         Ok(())
