@@ -17,5 +17,5 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check new plugin is registered correctly
+      - name: Test all plugins pass our requirements
         run: bash scripts/test_plugin.bash --all
