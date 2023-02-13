@@ -12,7 +12,7 @@ mod uninstall;
 mod update;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Manage plugins", visible_alias = "p", alias = "plugin")]
+#[clap(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
 pub struct Plugins {
     #[clap(subcommand)]
     command: Option<Commands>,
