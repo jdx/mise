@@ -345,7 +345,7 @@ Here are some of the supported legacy version files:
 > asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
 > that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
 > version files since they're version files not specific to asdf/rtx and can be used by other tools.
-> (`.npmrc` being a notable exception, which is tied to a specific tool.)
+> (`.nvmrc` being a notable exception, which is tied to a specific tool.)
 
 ### Global config: `~/.config/rtx/config.toml`
 
