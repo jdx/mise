@@ -59,7 +59,7 @@ $ node -v
 v18.10.9
 ```
 
-> **Note**  
+> **Note**
 >
 > `rtx install` is optional, `rtx global` will prompt to install the runtime if it's not
 > already installed. This is configurable in [`~/.config/rtx/config.toml`](#configuration).
@@ -731,7 +731,7 @@ use this to avoid modifying the shell session or running ad-hoc commands with th
 set.
 
 Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
-Note that only the plugin specified will be overriden, so if a `.tool-versions` file
+Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 includes "nodejs 20" but you run `rtx exec python@3.11`; it will still load nodejs@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
@@ -1268,9 +1268,9 @@ which then calls `asdf exec`, which then calls the correct version of node.
 These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
 updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this.
 
-I don't think it's possible for asdf to fix thse issues. The author of asdf did a great writeup
+I don't think it's possible for asdf to fix these issues. The author of asdf did a great writeup
 of [performance problems](https://stratus3d.com/blog/2022/08/11/asdf-performance/). asdf is written
-in bash which certainly makes it challening to be performant, however I think the real problem is the
+in bash which certainly makes it challenging to be performant, however I think the real problem is the
 shim design. I don't think it's possible to fix that without a complete rewrite.
 
 rtx does call an internal command `rtx hook-env` every time the directory has changed, but because
@@ -1299,7 +1299,7 @@ variables like [dotenv](https://github.com/motdotla/dotenv) or [direnv](https://
 ### UX
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
-in asdf should be possible in rtx but may use slighly different syntax. rtx has more forgiving commands,
+in asdf should be possible in rtx but may use slightly different syntax. rtx has more forgiving commands,
 such as using fuzzy-matching, e.g.: `rtx install nodejs@18`. While in asdf you _can_ run
 `asdf install nodejs latest:18`, you can't use `latest:18` in a `.tool-versions` file or many other places.
 In `rtx` you can use fuzzy-matching everywhere.
