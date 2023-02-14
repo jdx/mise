@@ -23,7 +23,7 @@ use crate::ui::color::Color;
 /// set.
 ///
 /// Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
-/// Note that only the plugin specified will be overriden, so if a `.tool-versions` file
+/// Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 /// includes "nodejs 20" but you run `rtx exec python@3.11`; it will still load nodejs@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
