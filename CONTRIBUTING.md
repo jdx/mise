@@ -45,7 +45,7 @@ source_up_if_exists
 PATH_add "$(expand_path .bin)"
 ```
 
-Now I can just run `rtx` as if I was using an installed version and it will build it from source everytime there are changes.
+Now I can just run `rtx` as if I was using an installed version and it will build it from source every time there are changes.
 
 You don't have to do this, but it makes things like `rtx activate` a lot easier to setup.
 
