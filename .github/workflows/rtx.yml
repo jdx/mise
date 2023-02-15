@@ -251,3 +251,8 @@ jobs:
           draft: false
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
+      - name: Update Homebrew formula
+        uses: dawidd6/action-homebrew-bump-formula@v3
+        with:
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          formula: rtx
