@@ -5,13 +5,6 @@ cache_hour="max-age=3600,s-maxage=3600,public,immutable"
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
-platforms=(
-	linux-x64
-	linux-arm64
-	macos-x64
-	macos-arm64
-)
-
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 echo "$RTX_VERSION" | tr -d 'v' > "$RELEASE_DIR"/VERSION
 
