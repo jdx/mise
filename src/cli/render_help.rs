@@ -173,8 +173,18 @@ If you need something else, compile it with [cargo](#cargo).
 
 ### Homebrew
 
+There are 2 ways to install rtx with Homebrew. The recommended method is to use
+the custom tap which will always contain the latest release.
+
 ```sh-session
 $ brew install jdxcode/tap/rtx
+```
+
+Alternatively, you can use the built-in tap (homebrew-core), which will be updated
+once Homebrew maintainers merge the PR for a new release:
+
+```sh-session
+$ brew install rtx
 ```
 
 ### Cargo
