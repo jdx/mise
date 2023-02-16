@@ -29,13 +29,13 @@ function check_plugins_from_diff() {
   local PLUGIN_FILES
   PLUGIN_FILES="$(git diff --name-only "${BASE_REF}" "${HEAD_REF}" -- plugins/)"
   for PLUGIN_FILE in $PLUGIN_FILES; do
+    echo "Checking $PLUGIN_FILE"
     check_plugin_from_file "$PLUGIN_FILE"
   done
 }
 
 function check_plugin_from_file() {
   local PLUGIN_FILE="$1"
-  echo "Checking $PLUGIN_FILE"
 
   # Assert that we have a file at plugins/PLUGIN_NAME
   test -f "$PLUGIN_FILE" ||
@@ -80,31 +80,35 @@ function check_all_plugins() {
   local total=0
   local out
   for file in plugins/*; do
+
     total=$((total + 1))
-    echo -n "* Checking $file"
     out="$($0 --file "$file" 2>&1)"
-    if test $? == 0; then
-      echo " [PASSED]"
-    else
+    result=$?
+
+    if test "${result}" == 0 && test ! "${CI}"; then
+      # show successes locally, not in CI
+      printf "* Checking %s %s\n" "$file" "[PASSED]"
+    elif test "${result}" != 0; then
+      # show failures locally and in CI
       fails=$((fails + 1))
-      echo " [FAILED]"
-      echo "Failure:  $out"
+      printf "* Checking %s %s\n" "$file" "[FAILED]"
+      printf "*\t%s\n" "$out"
     fi
   done
 
-  echo
-  echo "Plugins available: ${total}"
-  echo "Plugin build checks passed: $((total - fails))"
-  echo "Plugin build checks failed: ${fails}"
+  printf "\n"
+  printf "%s %s\n" "Plugins available:" "${total}"
+  printf "%s %s\n" "Plugin build checks passed:" "$((total - fails))"
+  printf "%s %s\n" "Plugin build checks failed:" "${fails}"
   exit ${fails}
 }
 
 if test "--all" == "$*"; then
-  echo "Testing all registered plugins"
+  printf "%s\n" "Testing all registered plugins"
   check_all_plugins
 
 elif test "--diff" == "$1"; then
-  echo "Testing plugin introduced at git diff $2..$3"
+  printf "%s %s..%s" "Testing plugin introduced at git diff" "$2" "$3"
   check_plugins_from_diff "$2" "$3"
 
 elif test "--file" == "$1"; then
