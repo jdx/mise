@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 
-. ./assert.sh
+assert() {
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
+}
+assert_raises() {
+  if ! $1; then
+    echo "assertion failed: $1"
+    exit 1
+  fi
+}
 
 export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 
@@ -36,5 +50,3 @@ rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
   exit 1
 fi
-
-assert_end
