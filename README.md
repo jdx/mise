@@ -515,8 +515,10 @@ to that to help debug issues.
 
 ### Windows support?
 
-This is unlikely to ever happen since this leverages the vast ecosystem of asdf plugins which are built on Bash scripts.
-At some point it may be worth exploring an alternate plugin format that would be Windows compatible.
+This is something we'd like to add! https://github.com/jdxcode/rtx/discussions/66
+
+It's not a near-term goal and it would require plugin modifications, but
+it should be feasible.
 
 ## Commands
 
@@ -1377,7 +1379,6 @@ To do this, first use `rtx` to build a `use_rtx` function that you can use in `.
 
 ```sh-session
 $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
-# replace ~/.config with XDG_CONFIG_HOME if you've changed it
 ```
 
 Now in your `.envrc` file add the following:
