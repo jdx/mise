@@ -8,6 +8,9 @@ cache_week="max-age=604800,s-maxage=604800,public,immutable"
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 echo "$RTX_VERSION" | tr -d 'v' > "$RELEASE_DIR"/VERSION
 
+cp "$RELEASE_DIR/rtx-latest-linux-x64" "$RELEASE_DIR/rtx-$RTX_VERSION-linux-amd64"
+cp "$RELEASE_DIR/rtx-latest-macos-x64" "$RELEASE_DIR/rtx-$RTX_VERSION-macos-amd64"
+
 aws s3 cp "$RELEASE_DIR/$RTX_VERSION" "s3://rtx.pub/$RTX_VERSION/" --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --recursive --exclude "*" \
   --include "rtx-latest-*" \
