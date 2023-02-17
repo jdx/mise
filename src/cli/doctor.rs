@@ -3,6 +3,7 @@ use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
+use crate::cli;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env;
@@ -22,6 +23,10 @@ impl Command for Doctor {
                 checks.push(format!("plugin {} is not installed", plugin.name));
                 continue;
             }
+        }
+
+        if let Some(latest) = cli::version::check_for_new_version() {
+            warn!("rtx version {} available", latest)
         }
 
         if env::var("__RTX_DIFF").is_err() {

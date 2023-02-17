@@ -42,6 +42,7 @@ indoc = "2.0.0"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"
+minreq = { version = "2.6.0", features = ["https-native"] }
 num_cpus = "1.15.0"
 once_cell = "1.17.0"
 owo-colors = { version = "3.5.0", features = ["supports-colors"] }
