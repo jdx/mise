@@ -44,6 +44,7 @@ lazy_static = "1.4.0"
 log = "0.4.17"
 num_cpus = "1.15.0"
 once_cell = "1.17.0"
+openssl = { version = "0.10", features = ["vendored"] }
 owo-colors = { version = "3.5.0", features = ["supports-colors"] }
 rayon = "1.6.1"
 regex = "1.7.1"

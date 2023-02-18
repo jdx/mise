@@ -1,7 +1,7 @@
-use std::string::ToString;
-use std::time::Duration;
 use color_eyre::eyre::Result;
 use once_cell::sync::Lazy;
+use std::string::ToString;
+use std::time::Duration;
 use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
@@ -49,7 +49,6 @@ pub fn print_version_if_requested(args: &[String], out: &mut Output) {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version(out);
-            show_latest();
             std::process::exit(0);
         }
     }
@@ -57,6 +56,7 @@ pub fn print_version_if_requested(args: &[String], out: &mut Output) {
 
 fn show_version(out: &mut Output) {
     rtxprintln!(out, "{}", *VERSION);
+    show_latest();
 }
 
 fn show_latest() {
@@ -72,7 +72,7 @@ pub fn check_for_new_version() -> Option<String> {
             return Some(latest.to_string());
         }
     }
-    return None
+    None
 }
 
 fn get_latest_version() -> Option<Versioning> {
@@ -85,7 +85,9 @@ fn get_latest_version() -> Option<Versioning> {
         .ok()
         .and_then(|res| {
             if res.status().is_success() {
-                return res.text().ok()
+                return res
+                    .text()
+                    .ok()
                     .and_then(|text| Versioning::new(text.as_str().trim()));
             }
             debug!("failed to check for version: {:#?}", res);
