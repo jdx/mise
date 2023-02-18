@@ -1,6 +1,6 @@
 use std::string::ToString;
+use std::time::Duration;
 use color_eyre::eyre::Result;
-use minreq::Error;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
@@ -37,8 +37,6 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
-const LATEST_VERSION_UNKNOWN: &str = "0.0.0";
-
 impl Command for Version {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         show_version(out);
@@ -50,8 +48,8 @@ pub fn print_version_if_requested(args: &[String], out: &mut Output) {
     if args.len() == 2 {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
-            show_latest();
             show_version(out);
+            show_latest();
             std::process::exit(0);
         }
     }
@@ -68,27 +66,31 @@ fn show_latest() {
 }
 
 pub fn check_for_new_version() -> Option<String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
-    let current = Versioning::new(current.as_str()).unwrap();
-
-    let latest = get_latest_version().unwrap_or(LATEST_VERSION_UNKNOWN.to_string());
-    let latest = Versioning::new(latest.as_str()).unwrap();
-
-    if current < latest {
-        return Some(latest.to_string());
-    } else {
-        return None;
+    if let Some(latest) = get_latest_version() {
+        let current = Versioning::new(env!("CARGO_PKG_VERSION")).unwrap();
+        if current < latest {
+            return Some(latest.to_string());
+        }
     }
+    return None
 }
 
-fn get_latest_version() -> Result<String, Error> {
-    let response = minreq::get("https://rtx.jdxcode.com/VERSION")
-        .with_timeout(1)
-        .send()?;
-    match response.status_code {
-        200 => Ok(response.as_str()?.trim().to_string()),
-        _ => Ok(LATEST_VERSION_UNKNOWN.into()),
-    }
+fn get_latest_version() -> Option<Versioning> {
+    reqwest::blocking::ClientBuilder::new()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .ok()?
+        .get("https://rtx.jdxcode.com/VERSION")
+        .send()
+        .ok()
+        .and_then(|res| {
+            if res.status().is_success() {
+                return res.text().ok()
+                    .and_then(|text| Versioning::new(text.as_str().trim()));
+            }
+            debug!("failed to check for version: {:#?}", res);
+            None
+        })
 }
 
 #[cfg(test)]

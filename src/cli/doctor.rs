@@ -26,7 +26,7 @@ impl Command for Doctor {
         }
 
         if let Some(latest) = cli::version::check_for_new_version() {
-            warn!("rtx version {} available", latest)
+            warn!("new rtx version {} available, currently on {}", latest, env!("CARGO_PKG_VERSION"))
         }
 
         if env::var("__RTX_DIFF").is_err() {
