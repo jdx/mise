@@ -251,7 +251,14 @@ jobs:
           draft: false
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
-      - name: Update Homebrew formula
+  bump-homebrew-formula:
+    runs-on: macos-latest
+    if: startsWith(github.event.ref, 'refs/tags/v')
+    needs: [ release ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Bump Homebrew formula
         uses: dawidd6/action-homebrew-bump-formula@v3
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
