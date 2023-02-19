@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use atty::Stream::Stderr;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all};
@@ -8,24 +7,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use console::style;
 use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
 
 use runtime_conf::RuntimeConf;
 
 use crate::config::Config;
-use crate::config::{MissingRuntimeBehavior, Settings};
+use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::errors::Error::VersionNotInstalled;
+
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
-use crate::ui::color::Color;
+
 use crate::ui::progress_report::ProgressReport;
-use crate::ui::prompt;
+
 use crate::{dirs, env, fake_asdf, file};
 
 mod runtime_conf;
-
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stderr));
 
 /// These represent individual plugin@version pairs of runtimes
 /// installed to ~/.local/share/rtx/runtimes
@@ -71,8 +69,8 @@ impl RuntimeVersion {
         pr.set_style(PROG_TEMPLATE.clone());
         pr.set_prefix(format!(
             "{} {} ",
-            COLOR.dimmed("rtx"),
-            COLOR.cyan(&self.to_string())
+            style("rtx").dim().for_stderr(),
+            style(&self.to_string()).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
 
@@ -88,7 +86,7 @@ impl RuntimeVersion {
                 script,
                 |output| {
                     self.cleanup_install_dirs_on_error(settings);
-                    pr.finish_with_message(format!("error {}", COLOR.red("✗")));
+                    pr.finish_with_message(format!("error {}", style("✗").red().for_stderr()));
                     if !settings.verbose && !output.trim().is_empty() {
                         pr.println(output);
                     }
@@ -121,7 +119,7 @@ impl RuntimeVersion {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        pr.finish_with_message(COLOR.green("✓"));
+        pr.finish_with_message(style("✓").green().for_stderr().to_string());
 
         Ok(())
     }
@@ -139,46 +137,6 @@ impl RuntimeVersion {
             .collect();
 
         Ok(bin_paths)
-    }
-
-    pub fn ensure_installed(&self, config: &Config) -> Result<bool> {
-        if self.is_installed() || self.version == "system" {
-            return Ok(true);
-        }
-        match config.settings.missing_runtime_behavior {
-            MissingRuntimeBehavior::AutoInstall => {
-                self.install(
-                    InstallType::Version,
-                    config,
-                    ProgressReport::new(config.settings.verbose),
-                )?;
-                Ok(true)
-            }
-            MissingRuntimeBehavior::Prompt => {
-                if prompt::prompt_for_install(&COLOR.cyan(&self.to_string())) {
-                    self.install(
-                        InstallType::Version,
-                        config,
-                        ProgressReport::new(config.settings.verbose),
-                    )?;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            MissingRuntimeBehavior::Warn => {
-                let plugin = self.plugin.name.clone();
-                let version = self.version.clone();
-                warn!("{}", VersionNotInstalled(plugin, version));
-                Ok(false)
-            }
-            MissingRuntimeBehavior::Ignore => {
-                let plugin = self.plugin.name.clone();
-                let version = self.version.clone();
-                debug!("{}", VersionNotInstalled(plugin, version));
-                Ok(false)
-            }
-        }
     }
 
     pub fn is_installed(&self) -> bool {
@@ -203,7 +161,7 @@ impl RuntimeVersion {
             remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    COLOR.cyan(dir.to_str().unwrap())
+                    style(dir.to_str().unwrap()).cyan().for_stderr()
                 )
             })
         };
