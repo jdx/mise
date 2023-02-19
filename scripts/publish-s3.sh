@@ -25,3 +25,11 @@ aws s3 cp artifacts/rpm/repodata/ s3://rtx.pub/rpm/repodata/ --cache-control "$c
 
 aws s3 cp artifacts/deb/pool/ s3://rtx.pub/deb/pool/   --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp artifacts/deb/dists/ s3://rtx.pub/deb/dists/ --cache-control "$cache_hour" --no-progress --no-progress --recursive
+
+aws cloudfront create-invalidation --distribution-id E166HHA8DY7YLW --paths \
+    "/VERSION"         \
+    "/SHASUMS*"        \
+    "/install.sh"      \
+    "/rtx-latest-*"    \
+    "/rpm/repodata/*"  \
+    "/deb/dists/*"
