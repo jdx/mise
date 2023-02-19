@@ -20,6 +20,13 @@ lazy_static! {
     } else {
         current_dir().unwrap_or_else(|_| PathBuf::new())
     };
+    pub static ref XDG_CACHE_HOME: PathBuf = if cfg!(test) {
+        HOME.join("cache")
+    } else {
+        var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| HOME.join(".cache"))
+    };
     pub static ref XDG_DATA_HOME: PathBuf = if cfg!(test) {
         HOME.join("data")
     } else {
@@ -33,6 +40,13 @@ lazy_static! {
         var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| HOME.join(".config"))
+    };
+    pub static ref RTX_CACHE_DIR: PathBuf = if cfg!(test) {
+        XDG_CACHE_HOME.clone()
+    } else {
+        var_os("RTX_CACHE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| XDG_CACHE_HOME.join("rtx"))
     };
     pub static ref RTX_CONFIG_DIR: PathBuf = if cfg!(test) {
         XDG_CONFIG_HOME.clone()
