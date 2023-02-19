@@ -22,6 +22,8 @@ use crate::ui::color::Color;
 /// it won't be used simply by being installed, however.
 /// For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
 /// Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
+///
+/// Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Install {
