@@ -10,7 +10,6 @@ use std::sync::Arc;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
-use versions::Versioning;
 
 use runtime_conf::RuntimeConf;
 
@@ -57,18 +56,6 @@ impl RuntimeVersion {
             version: version.into(),
             plugin,
         }
-    }
-
-    pub fn list() -> Result<Vec<Self>> {
-        let mut versions = vec![];
-        for plugin in Plugin::list()? {
-            let plugin = Arc::new(plugin);
-            for version in file::dir_subdirs(&dirs::INSTALLS.join(&plugin.name))? {
-                versions.push(Self::new(plugin.clone(), &version));
-            }
-        }
-        versions.sort_by_cached_key(|rtv| Versioning::new(rtv.version.as_str()));
-        Ok(versions)
     }
 
     pub fn install(
