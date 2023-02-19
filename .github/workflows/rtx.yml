@@ -45,7 +45,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Install direnv
-        run: sudo apt-get update; sudo apt-get install direnv
+        run: apt-get update; apt-get install direnv
       - name: Install just
         uses: taiki-e/install-action@just
       - name: Run tests with coverage
