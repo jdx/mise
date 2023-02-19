@@ -83,9 +83,7 @@ impl Toolset {
                         return;
                     }
                 };
-                if let Err(e) = v.resolve(&config.settings, plugin) {
-                    warn!("Error resolving plugin versions: {}", e);
-                }
+                v.resolve(&config.settings, plugin);
             });
     }
     pub fn install_missing(&mut self, config: &Config) -> Result<()> {
@@ -153,7 +151,7 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            version.resolve(&config.settings, plugin)?;
+                            version.resolve(&config.settings, plugin);
                             version.install(config, mpr.add())?;
                         }
                         Ok(())

@@ -1,5 +1,3 @@
-use color_eyre::eyre::Result;
-
 use crate::config::Settings;
 use crate::plugins::Plugin;
 use crate::runtimes::RuntimeVersion;
@@ -23,11 +21,10 @@ impl ToolVersionList {
     pub fn add_version(&mut self, version: ToolVersion) {
         self.versions.push(version);
     }
-    pub fn resolve(&mut self, settings: &Settings, plugin: &Plugin) -> Result<()> {
+    pub fn resolve(&mut self, settings: &Settings, plugin: &Plugin) {
         for tv in &mut self.versions {
-            tv.resolve(settings, plugin)?;
+            tv.resolve(settings, plugin);
         }
-        Ok(())
     }
     pub fn resolved_versions(&self) -> Vec<&RuntimeVersion> {
         self.versions
