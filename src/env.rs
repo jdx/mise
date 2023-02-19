@@ -88,7 +88,7 @@ lazy_static! {
     pub static ref RTX_JOBS: usize = var("RTX_JOBS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or_else(num_cpus::get);
+        .unwrap_or(4);
     /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());

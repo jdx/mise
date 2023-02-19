@@ -376,6 +376,8 @@ always_keep_download = false        # deleted after install by default
 # (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
 plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable updates
 
+jobs = 4 # number of plugins or runtimes to install in parallel. The default is `4`.
+
 verbose = false # see explanation under `RTX_VERBOSE`
 
 [alias.nodejs]
@@ -434,6 +436,10 @@ Output logs to a file.
 
 Same as `RTX_LOG_LEVEL` but for the log file output level. This is useful if you want
 to store the logs but not have them litter your display.
+
+#### `RTX_JOBS=1`
+
+Set the number plugins or runtimes to install in parallel. The default is `4`.
 
 #### `RTX_VERBOSE=1`
 
@@ -828,6 +834,8 @@ this will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
 it won't be used simply by being installed, however.
 For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
 Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
+
+Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 
 Usage: install [OPTIONS] [RUNTIME]...
 
