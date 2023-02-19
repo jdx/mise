@@ -13,12 +13,11 @@ _Polyglot runtime manager (asdf rust clone)_
 
 The following shows using rtx to install [nodejs](https://nodejs.org) and
 [jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
-[hyperfine](https://github.com/sharkdp/hyperfine) is then used to show the performance using
+[hyperfine](https://github.com/sharkdp/hyperfine) is used to show the performance using
 rtx vs asdf. (See [Performance](#performance)).
+Note that calling `which node` gives us a real path to the binary, not a shim.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
-
-Note that calling `which node` gives us a real path to the binary, not a shim.
 
 ## Features
 
