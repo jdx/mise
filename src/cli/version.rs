@@ -1,7 +1,8 @@
-use std::string::ToString;
-
 use color_eyre::eyre::Result;
 use once_cell::sync::Lazy;
+use std::string::ToString;
+use std::time::Duration;
+use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::command::Command;
@@ -55,6 +56,43 @@ pub fn print_version_if_requested(args: &[String], out: &mut Output) {
 
 fn show_version(out: &mut Output) {
     rtxprintln!(out, "{}", *VERSION);
+    show_latest();
+}
+
+fn show_latest() {
+    if let Some(latest) = check_for_new_version() {
+        warn!("rtx version {} available", latest)
+    }
+}
+
+pub fn check_for_new_version() -> Option<String> {
+    if let Some(latest) = get_latest_version() {
+        let current = Versioning::new(env!("CARGO_PKG_VERSION")).unwrap();
+        if current < latest {
+            return Some(latest.to_string());
+        }
+    }
+    None
+}
+
+fn get_latest_version() -> Option<Versioning> {
+    reqwest::blocking::ClientBuilder::new()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .ok()?
+        .get("https://rtx.jdxcode.com/VERSION")
+        .send()
+        .ok()
+        .and_then(|res| {
+            if res.status().is_success() {
+                return res
+                    .text()
+                    .ok()
+                    .and_then(|text| Versioning::new(text.as_str().trim()));
+            }
+            debug!("failed to check for version: {:#?}", res);
+            None
+        })
 }
 
 #[cfg(test)]
