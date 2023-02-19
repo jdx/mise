@@ -5,7 +5,7 @@ use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
-use crate::runtimes::RuntimeVersion;
+use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
 #[derive(Debug, clap::Args)]
@@ -23,7 +23,7 @@ impl Command for Asdf {
 
         match args.get(1).map(|s| s.as_str()) {
             Some("reshim") => Ok(()),
-            Some("list") => list_versions(out, &args),
+            Some("list") => list_versions(&config, out, &args),
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
@@ -36,8 +36,9 @@ impl Command for Asdf {
     }
 }
 
-fn list_versions(out: &mut Output, args: &Vec<String>) -> Result<()> {
-    let mut versions = RuntimeVersion::list()?;
+fn list_versions(config: &Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
+    let ts = ToolsetBuilder::new().build(config);
+    let mut versions = ts.list_installed_versions()?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
         _ => None,
