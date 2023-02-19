@@ -11,7 +11,7 @@ _Polyglot runtime manager (asdf rust clone)_
 
 ## 30 Second Demo
 
-The following shows using rtx to install node, python, and jq into a project using a `.tool-versions` file.
+The following shows using rtx to install [nodejs](https://nodejs.org) and [jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
 
