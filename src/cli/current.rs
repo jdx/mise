@@ -144,12 +144,11 @@ mod tests {
     #[test]
     fn test_current_missing() {
         assert_cli!("uninstall", "dummy@1.0.1");
-        env::set_var("RTX_DUMMY_VERSION", "1.0.1");
-        let stdout = assert_cli!("current");
-        assert_str_eq!(grep(stdout, "dummy"), "");
+
         env::set_var("RTX_DUMMY_VERSION", "1.1.0");
         let stdout = assert_cli!("current");
         assert_str_eq!(grep(stdout, "dummy"), "dummy 1.1.0");
+
         env::remove_var("RTX_DUMMY_VERSION");
     }
 }
