@@ -15,6 +15,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::env;
 use crate::output::Output;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::color::Color;
 
 /// execute a command with runtime(s) set
@@ -47,12 +48,14 @@ pub struct Exec {
 
 impl Command for Exec {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let config = config.with_runtime_args(&self.runtime)?;
-        config.ensure_installed()?;
+        let ts = ToolsetBuilder::new()
+            .with_args(&self.runtime)
+            .with_install_missing()
+            .build(&config);
 
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
-        let mut env = config.env()?;
-        env.insert("PATH".into(), config.path_env()?);
+        let mut env = ts.env();
+        env.insert("PATH".into(), ts.path_env());
 
         exec(program, args, env)
     }
@@ -125,6 +128,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use crate::assert_cli;
     use crate::cli::tests::cli_run;
+    use test_log::test;
 
     #[test]
     fn test_exec_ok() {

@@ -19,7 +19,7 @@ pub struct PluginsUninstall {
 
 impl Command for PluginsUninstall {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugin = config.ts.find_plugin(&self.plugin);
+        let plugin = config.plugins.get(&self.plugin);
         match plugin {
             Some(plugin) if plugin.is_installed() => {
                 rtxprintln!(

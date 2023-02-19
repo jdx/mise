@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use console::strip_ansi_codes;
 use indoc::formatdoc;
 
 use crate::cli::command::Command;
@@ -41,7 +42,7 @@ The following shows using rtx to install node, python, and jq into a project usi
 - **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them.
 - **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
 - **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
-- **One command install** - No need to manually install each plugin, just run `rtx install --all` and it will install all the plugins you need.
+- **One command install** - No need to manually install each plugin, just run `rtx install` and it will install all the plugins you need.
 
 ## Quickstart
 
@@ -792,7 +793,7 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
         ```
         ",
         name = name,
-        about = c.render_long_help(),
+        about = strip_ansi_codes(&c.render_long_help().to_string()),
     ))
 }
 

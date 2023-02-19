@@ -16,6 +16,8 @@ _rtx() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -36,6 +38,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-q[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--quiet[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '*-v[Show installation output]' \
@@ -50,6 +54,8 @@ _arguments "${_arguments_options[@]}" \
 '-p+[filter aliases by plugin]:PLUGIN: ' \
 '--plugin=[filter aliases by plugin]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -69,6 +75,8 @@ _arguments "${_arguments_options[@]}" \
 '-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -106,6 +114,8 @@ esac
 (asdf)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -118,6 +128,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -127,6 +139,8 @@ _arguments "${_arguments_options[@]}" \
 (current)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -139,6 +153,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -149,6 +165,8 @@ _arguments "${_arguments_options[@]}" \
 (direnv)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -166,6 +184,8 @@ _arguments "${_arguments_options[@]}" \
             (envrc)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -175,6 +195,8 @@ _arguments "${_arguments_options[@]}" \
 (exec)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -184,6 +206,8 @@ _arguments "${_arguments_options[@]}" \
 (activate)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -229,6 +253,8 @@ esac
 (doctor)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -240,6 +266,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -252,6 +280,8 @@ _arguments "${_arguments_options[@]}" \
 '()-c+[the command string to execute]:C: ' \
 '()--command=[the command string to execute]:C: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -264,7 +294,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '*--remove=[remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'--fuzzy[save fuzzy match to .tool-versions e.g.: `rtx global --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions, by default, it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
+'--pin[save exact version to `.tool-versions`]' \
+'--fuzzy[]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -277,6 +310,8 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -288,6 +323,8 @@ _arguments "${_arguments_options[@]}" \
 '()*-p+[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
 '()*--plugin=[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-f[force reinstall even if already installed]' \
 '--force[force reinstall even if already installed]' \
 '(-p --plugin -f --force)-a[install all missing runtimes as well as all plugins for the current directory]' \
@@ -302,6 +339,8 @@ _arguments "${_arguments_options[@]}" \
 (latest)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -314,13 +353,14 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '*--remove=[remove the plugin(s) from .tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-p[recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--parent[recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--fuzzy[save fuzzy match to .tool-versions
-e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
-without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`]' \
+'--pin[save exact version to `.tool-versions`]' \
+'--fuzzy[]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -333,17 +373,22 @@ _arguments "${_arguments_options[@]}" \
 '-p+[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
 '--plugin=[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-c[Only show runtimes currently specified in .tool-versions]' \
 '--current[Only show runtimes currently specified in .tool-versions]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
+'::plugin_arg:' \
 && ret=0
 ;;
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -354,6 +399,8 @@ _arguments "${_arguments_options[@]}" \
 (plugins)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-a[list all available remote plugins]' \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
@@ -375,6 +422,8 @@ _arguments "${_arguments_options[@]}" \
             (install)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-f[Reinstall even if plugin exists]' \
 '--force[Reinstall even if plugin exists]' \
 '(-f --force)-a[Install all missing plugins]' \
@@ -390,6 +439,8 @@ _arguments "${_arguments_options[@]}" \
 (ls)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-a[list all available remote plugins]' \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
@@ -403,6 +454,8 @@ _arguments "${_arguments_options[@]}" \
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
 '*-v[Show installation output]' \
@@ -414,6 +467,8 @@ _arguments "${_arguments_options[@]}" \
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -424,6 +479,8 @@ _arguments "${_arguments_options[@]}" \
 (update)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '()-a[update all plugins]' \
 '()--all[update all plugins]' \
 '*-v[Show installation output]' \
@@ -480,6 +537,8 @@ esac
 (settings)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -497,6 +556,8 @@ _arguments "${_arguments_options[@]}" \
             (get)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -507,6 +568,8 @@ _arguments "${_arguments_options[@]}" \
 (ls)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -516,6 +579,8 @@ _arguments "${_arguments_options[@]}" \
 (set)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -527,6 +592,8 @@ _arguments "${_arguments_options[@]}" \
 (unset)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -577,6 +644,8 @@ esac
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -587,6 +656,8 @@ _arguments "${_arguments_options[@]}" \
 (version)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -596,6 +667,8 @@ _arguments "${_arguments_options[@]}" \
 (where)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -607,6 +680,8 @@ _arguments "${_arguments_options[@]}" \
 (render-help)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of parallel jobs to run]: : ' \
+'--jobs=[Number of parallel jobs to run]: : ' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \

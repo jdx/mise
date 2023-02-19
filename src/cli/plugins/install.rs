@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
@@ -11,7 +9,9 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::shorthand::shorthand_to_repository;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::color::Color;
+use crate::ui::progress_report::ProgressReport;
 
 /// install a plugin
 ///
@@ -56,14 +56,15 @@ impl Command for PluginsInstall {
             return self.install_all_missing_plugins(&config);
         }
         let (name, git_url) = get_name_and_url(self.name.unwrap(), self.git_url)?;
-        let plugin = Plugin::load(&name)?;
+        let mut plugin = Plugin::load(&name, &config.settings)?;
         if self.force {
             plugin.uninstall()?;
         }
         if !self.force && plugin.is_installed() {
             warn!("plugin {} already installed", name);
         } else {
-            plugin.install(&config.settings, &git_url)?;
+            let pr = ProgressReport::new(config.settings.verbose);
+            plugin.install(&config.settings, Some(&git_url), pr)?;
         }
 
         Ok(())
@@ -72,24 +73,21 @@ impl Command for PluginsInstall {
 
 impl PluginsInstall {
     fn install_all_missing_plugins(&self, config: &Config) -> Result<()> {
-        let missing_plugins = self.missing_plugins(config)?;
+        let ts = ToolsetBuilder::new().build(config);
+        let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
         for plugin in missing_plugins {
+            let mut plugin = Plugin::new(&plugin);
             let (_, git_url) = get_name_and_url(plugin.name.clone(), None)?;
-            plugin.install(&config.settings, &git_url)?;
+            plugin.install(
+                &config.settings,
+                Some(&git_url),
+                ProgressReport::new(config.settings.verbose),
+            )?;
         }
         Ok(())
-    }
-
-    fn missing_plugins(&self, config: &Config) -> Result<Vec<Arc<Plugin>>> {
-        Ok(config
-            .ts
-            .list_plugins()
-            .into_iter()
-            .filter(|p| !p.is_installed())
-            .collect::<Vec<_>>())
     }
 }
 

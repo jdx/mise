@@ -37,6 +37,8 @@ mod direnv;
 mod hash;
 mod shorthand;
 mod shorthand_list;
+mod toolset;
+
 #[cfg(test)]
 mod test;
 

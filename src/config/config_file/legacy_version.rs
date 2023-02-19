@@ -6,8 +6,9 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::PluginSource;
+use crate::config::Settings;
 use crate::plugins::{Plugin, PluginName};
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
 #[derive(Debug)]
 pub struct LegacyVersionFile {
@@ -17,8 +18,8 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(path: PathBuf, plugin: &Plugin) -> Result<Self> {
-        let version = plugin.parse_legacy_file(path.as_path())?;
+    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Plugin) -> Result<Self> {
+        let version = plugin.parse_legacy_file(path.as_path(), settings)?;
 
         Ok(Self {
             path,
@@ -35,10 +36,6 @@ impl ConfigFile for LegacyVersionFile {
 
     fn get_path(&self) -> &Path {
         self.path.as_path()
-    }
-
-    fn source(&self) -> PluginSource {
-        PluginSource::LegacyVersionFile(self.path.clone())
     }
 
     fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
@@ -72,10 +69,30 @@ impl ConfigFile for LegacyVersionFile {
     fn dump(&self) -> String {
         unimplemented!()
     }
+
+    fn to_toolset(&self) -> Toolset {
+        self.into()
+    }
 }
 
 impl Display for LegacyVersionFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "LegacyVersionFile({})", self.path.display())
+    }
+}
+
+impl From<&LegacyVersionFile> for Toolset {
+    fn from(value: &LegacyVersionFile) -> Self {
+        let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(value.path.clone()));
+        if !value.version.is_empty() {
+            toolset.add_version(
+                value.plugin.clone(),
+                ToolVersion::new(
+                    value.plugin.clone(),
+                    ToolVersionType::Version(value.version.clone()),
+                ),
+            );
+        }
+        toolset
     }
 }

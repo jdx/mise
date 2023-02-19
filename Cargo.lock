@@ -215,17 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "colored"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3616f750b84d8f0de8a58bda93e08e2a81ad3f523089b05f1dffecab48c6cbd"
-dependencies = [
- "atty",
- "lazy_static",
- "winapi",
-]
-
-[[package]]
 name = "console"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +223,7 @@ dependencies = [
  "encode_unicode",
  "lazy_static",
  "libc",
+ "unicode-width",
  "windows-sys 0.42.0",
 ]
 
@@ -604,6 +594,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicatif"
+version = "0.17.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cef509aa9bc73864d6756f0d34d35504af3cf0844373afe9b8669a5b8005a729"
+dependencies = [
+ "console",
+ "number_prefix",
+ "portable-atomic",
+ "unicode-width",
+]
+
+[[package]]
 name = "indoc"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -813,6 +815,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
 name = "object"
 version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -862,12 +870,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paris"
-version = "1.5.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eaf2319cd71dd9ff38c72bebde61b9ea657134abcf26ae4205f54f772a32810"
-
-[[package]]
 name = "paste"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -884,6 +886,12 @@ name = "pin-project-lite"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
+
+[[package]]
+name = "portable-atomic"
+version = "0.3.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26f6a7b87c2e435a3241addceeeff740ff8b7e76b74c13bf9acb17fa454ea00b"
 
 [[package]]
 name = "pretty_assertions"
@@ -1040,6 +1048,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "color-eyre",
+ "console",
  "ctor",
  "dirs-next",
  "duct",
@@ -1048,6 +1057,7 @@ dependencies = [
  "filetime",
  "flate2",
  "indexmap",
+ "indicatif",
  "indoc",
  "insta",
  "itertools",
@@ -1065,9 +1075,9 @@ dependencies = [
  "serde_json",
  "shell-escape",
  "simplelog",
- "spinoff",
  "tempfile",
  "term_size",
+ "test-log",
  "thiserror",
  "toml",
  "toml_edit",
@@ -1188,20 +1198,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48dfff04aade74dd495b007c831cd6f4e0cee19c344dd9dc0884c0289b70a786"
 dependencies = [
  "log",
- "paris",
  "termcolor",
  "time 0.3.17",
-]
-
-[[package]]
-name = "spinoff"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fee259f96b31e7a18657d11741fe30d63f98e07de70e7a19d2b705ab9b331cdc"
-dependencies = [
- "colored",
- "once_cell",
- "paste",
 ]
 
 [[package]]
@@ -1262,6 +1260,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test-log"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38f0c854faeb68a048f0f2dc410c5ddae3bf83854ef0e4977d58306a5edef50e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -132,6 +132,7 @@ impl Cli {
                 .subcommand_required(true)
                 .after_help(AFTER_HELP.as_str())
                 .arg(args::log_level::LogLevel::arg())
+                .arg(args::jobs::Jobs::arg())
                 .arg(args::verbose::Verbose::arg()),
         )
     }
@@ -149,6 +150,12 @@ impl Cli {
             return version::Version {}.run(config, out);
         }
         let matches = self.command.get_matches_from(args);
+        if let Some(log_level) = matches.get_one::<LevelFilter>("log-level") {
+            config.settings.log_level = *log_level;
+        }
+        if let Some(jobs) = matches.get_one::<usize>("jobs") {
+            config.settings.jobs = *jobs;
+        }
         if *matches.get_one::<u8>("verbose").unwrap() > 0 {
             config.settings.verbose = true;
         }
@@ -211,7 +218,8 @@ pub mod tests {
     macro_rules! assert_cli {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::tests::cli_run(args).unwrap().stdout.content
+            let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
+            console::strip_ansi_codes(&output).to_string()
         }};
     }
 
