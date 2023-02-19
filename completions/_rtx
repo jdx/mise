@@ -123,6 +123,64 @@ _arguments "${_arguments_options[@]}" \
 '*::args -- all arguments:' \
 && ret=0
 ;;
+(cache)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+":: :_rtx__cache_commands" \
+"*::: :->cache" \
+&& ret=0
+
+    case $state in
+    (cache)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-cache-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__cache__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-cache-help-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (complete)
 _arguments "${_arguments_options[@]}" \
 '-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
@@ -728,6 +786,26 @@ esac
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(cache)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__cache_commands" \
+"*::: :->cache" \
+&& ret=0
+
+    case $state in
+    (cache)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-cache-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
 (complete)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -912,6 +990,7 @@ _rtx_commands() {
 'alias:Manage aliases' \
 'a:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'cache:Manage the rtx cache' \
 'complete:generate shell completions' \
 'current:Shows currently active, and installed runtime versions' \
 'deactivate:disable rtx for current shell session' \
@@ -1000,6 +1079,37 @@ _rtx__asdf_commands() {
 _rtx__help__asdf_commands() {
     local commands; commands=()
     _describe -t commands 'rtx help asdf commands' commands "$@"
+}
+(( $+functions[_rtx__cache_commands] )) ||
+_rtx__cache_commands() {
+    local commands; commands=(
+'clear:Deletes all cache files in rtx' \
+'c:Deletes all cache files in rtx' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx cache commands' commands "$@"
+}
+(( $+functions[_rtx__help__cache_commands] )) ||
+_rtx__help__cache_commands() {
+    local commands; commands=(
+'clear:Deletes all cache files in rtx' \
+    )
+    _describe -t commands 'rtx help cache commands' commands "$@"
+}
+(( $+functions[_rtx__cache__clear_commands] )) ||
+_rtx__cache__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx cache clear commands' commands "$@"
+}
+(( $+functions[_rtx__cache__help__clear_commands] )) ||
+_rtx__cache__help__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx cache help clear commands' commands "$@"
+}
+(( $+functions[_rtx__help__cache__clear_commands] )) ||
+_rtx__help__cache__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help cache clear commands' commands "$@"
 }
 (( $+functions[_rtx__complete_commands] )) ||
 _rtx__complete_commands() {
@@ -1154,6 +1264,19 @@ _rtx__alias__help__help_commands() {
     local commands; commands=()
     _describe -t commands 'rtx alias help help commands' commands "$@"
 }
+(( $+functions[_rtx__cache__help_commands] )) ||
+_rtx__cache__help_commands() {
+    local commands; commands=(
+'clear:Deletes all cache files in rtx' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx cache help commands' commands "$@"
+}
+(( $+functions[_rtx__cache__help__help_commands] )) ||
+_rtx__cache__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx cache help help commands' commands "$@"
+}
 (( $+functions[_rtx__direnv__help_commands] )) ||
 _rtx__direnv__help_commands() {
     local commands; commands=(
@@ -1177,6 +1300,7 @@ _rtx__help_commands() {
 'activate:Enables rtx to automatically modify runtimes when changing directory' \
 'alias:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'cache:Manage the rtx cache' \
 'complete:generate shell completions' \
 'current:Shows currently active, and installed runtime versions' \
 'deactivate:disable rtx for current shell session' \

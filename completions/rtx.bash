@@ -24,6 +24,9 @@ _rtx() {
             rtx,asdf)
                 cmd="rtx__asdf"
                 ;;
+            rtx,cache)
+                cmd="rtx__cache"
+                ;;
             rtx,complete)
                 cmd="rtx__complete"
                 ;;
@@ -126,6 +129,21 @@ _rtx() {
             rtx__alias__help,ls)
                 cmd="rtx__alias__help__ls"
                 ;;
+            rtx__cache,c)
+                cmd="rtx__cache__clear"
+                ;;
+            rtx__cache,clear)
+                cmd="rtx__cache__clear"
+                ;;
+            rtx__cache,help)
+                cmd="rtx__cache__help"
+                ;;
+            rtx__cache__help,clear)
+                cmd="rtx__cache__help__clear"
+                ;;
+            rtx__cache__help,help)
+                cmd="rtx__cache__help__help"
+                ;;
             rtx__direnv,activate)
                 cmd="rtx__direnv__activate"
                 ;;
@@ -158,6 +176,9 @@ _rtx() {
                 ;;
             rtx__help,asdf)
                 cmd="rtx__help__asdf"
+                ;;
+            rtx__help,cache)
+                cmd="rtx__help__cache"
                 ;;
             rtx__help,complete)
                 cmd="rtx__help__complete"
@@ -224,6 +245,9 @@ _rtx() {
                 ;;
             rtx__help__alias,ls)
                 cmd="rtx__help__alias__ls"
+                ;;
+            rtx__help__cache,clear)
+                cmd="rtx__help__cache__clear"
                 ;;
             rtx__help__direnv,activate)
                 cmd="rtx__help__direnv__activate"
@@ -367,7 +391,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -555,6 +579,100 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__cache)
+            opts="-j -v -h --log-level --jobs --verbose --help clear help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__cache__clear)
+            opts="-j -v -h --log-level --jobs --verbose --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__cache__help)
+            opts="clear help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__cache__help__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__cache__help__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 *)
                     COMPREPLY=()
                     ;;
@@ -955,7 +1073,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1013,6 +1131,34 @@ _rtx() {
         rtx__help__asdf)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__cache)
+            opts="clear"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__cache__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

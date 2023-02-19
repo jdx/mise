@@ -589,6 +589,18 @@ Examples:
   nodejs    lts/hydrogen   18.0.0
 
 ```
+### `rtx cache clear`
+
+```
+Deletes all cache files in rtx
+
+Usage: clear
+
+Options:
+  -h, --help
+          Print help
+
+```
 ### `rtx complete`
 
 ```
