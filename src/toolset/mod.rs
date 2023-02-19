@@ -151,7 +151,7 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            version.resolve(&config.settings, plugin);
+                            version.resolve(&config.settings, plugin)?;
                             version.install(config, mpr.add())?;
                         }
                         Ok(())
