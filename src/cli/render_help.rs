@@ -726,14 +726,14 @@ to be updating, this is a good place to start.
 
 ### Plugin Cache
 
-Each plugin has a cache that's stored in `~/.local/share/rtx/plugins/<PLUGIN>/.rtxcache.msgpack.gz`. It stores
+Each plugin has a cache that's stored in `~/.local/share/rtx/plugins/<PLUGIN>/.rtxcache.msgpack`. It stores
 the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`) and the legacy filenames (see below).
 
 It is updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
 gzipped messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
-cat ~/.local/share/rtx/plugins/nodejs/.rtxcache.msgpack.gz | gunzip | msgpack-cli decode
+cat ~/.local/share/rtx/plugins/nodejs/.rtxcache.msgpack.gz | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 ### Runtime Cache
