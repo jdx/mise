@@ -18,7 +18,7 @@ pub struct Doctor {}
 impl Command for Doctor {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mut checks = Vec::new();
-        for plugin in config.ts.list_plugins() {
+        for plugin in config.plugins.values() {
             if !plugin.is_installed() {
                 checks.push(format!("plugin {} is not installed", plugin.name));
                 continue;

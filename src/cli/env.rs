@@ -8,6 +8,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
+use crate::toolset::ToolsetBuilder;
 use crate::ui::color::Color;
 
 /// exports env vars to activate rtx in a single shell session
@@ -31,20 +32,18 @@ pub struct Env {
 
 impl Command for Env {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let config = config.with_runtime_args(&self.runtime)?;
-        config.ensure_installed()?;
+        let ts = ToolsetBuilder::new()
+            .with_install_missing()
+            .with_args(&self.runtime)
+            .build(&config);
 
         let shell = get_shell(self.shell);
-        for (k, v) in config.env()? {
+        for (k, v) in ts.env() {
             let k = k.to_string();
             let v = v.to_string();
             rtxprint!(out, "{}", shell.set_env(&k, &v));
         }
-        rtxprintln!(
-            out,
-            "{}",
-            shell.set_env("PATH", config.path_env()?.as_ref())
-        );
+        rtxprintln!(out, "{}", shell.set_env("PATH", ts.path_env().as_ref()));
 
         Ok(())
     }

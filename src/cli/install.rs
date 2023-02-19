@@ -1,8 +1,8 @@
-use atty::Stream::Stderr;
 use color_eyre::eyre::Result;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 use owo_colors::Stream;
+use std::collections::HashSet;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -10,10 +10,11 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::InstallType::Version;
-use crate::plugins::{Plugin, PluginName};
-use crate::runtimes::RuntimeVersion;
-use crate::ui::color::{cyan, Color};
+
+use crate::plugins::PluginName;
+
+use crate::toolset::ToolsetBuilder;
+use crate::ui::color::Color;
 
 /// install a runtime
 ///
@@ -39,7 +40,9 @@ pub struct Install {
     force: bool,
 
     /// install all missing runtimes as well as all plugins for the current directory
-    #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"])]
+    ///
+    /// this is hidden because it's now the default behavior
+    #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"], hide = true)]
     all: bool,
 
     /// Show installation output
@@ -48,10 +51,12 @@ pub struct Install {
 }
 
 impl Command for Install {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+        config.settings.missing_runtime_behavior = AutoInstall;
+
         match &self.runtime {
-            Some(runtime) => self.install_runtimes(config, out, runtime)?,
-            None => self.install_missing_runtimes(config, out)?,
+            Some(runtime) => self.install_runtimes(&config, runtime)?,
+            None => self.install_missing_runtimes(&config)?,
         }
 
         Ok(())
@@ -59,94 +64,51 @@ impl Command for Install {
 }
 
 impl Install {
-    fn install_runtimes(
-        &self,
-        mut config: Config,
-        out: &mut Output,
-        runtimes: &[RuntimeArg],
-    ) -> Result<()> {
-        config.settings.missing_runtime_behavior = AutoInstall;
-
-        for r in RuntimeArg::double_runtime_condition(runtimes) {
-            let resolved_version = config.resolve_runtime_arg(&r)?;
-            let plugin = config.ts.find_plugin(&r.plugin).unwrap();
-            if let Some(resolved_version) = resolved_version {
-                let rtv = RuntimeVersion::new(plugin, &resolved_version);
-
-                if rtv.is_installed() && self.force {
-                    rtv.uninstall()?;
-                } else if rtv.is_installed() {
-                    warn!(
-                        "{} is already installed",
-                        cyan(Stream::Stderr, &rtv.to_string())
-                    );
-                    continue;
-                }
-
-                self.do_install(&config, out, &rtv)?;
+    fn install_runtimes(&self, config: &Config, runtimes: &[RuntimeArg]) -> Result<()> {
+        let runtimes = RuntimeArg::double_runtime_condition(runtimes);
+        let mut ts = ToolsetBuilder::new().with_args(&runtimes).build(config);
+        let plugins_to_install = runtimes.iter().map(|r| &r.plugin).collect::<HashSet<_>>();
+        for plugin in ts.versions.clone().keys() {
+            if !plugins_to_install.contains(plugin) {
+                ts.versions.remove(plugin);
             }
         }
-
-        Ok(())
-    }
-
-    fn install_missing_runtimes(&self, mut config: Config, out: &mut Output) -> Result<()> {
-        for rtv in config.ts.list_current_versions() {
-            let plugins = match self.all {
-                true => Some(get_all_plugin_names(&config)),
-                false => self.plugin.clone(),
-            };
-            if let Some(plugins) = &plugins {
-                // they've specified --all or --plugin, so we already know they want to install
-                config.settings.missing_runtime_behavior = AutoInstall;
-                if !plugins.contains(&rtv.plugin.name) {
-                    continue;
-                }
-                // ensure plugin is installed only if explicitly called with --plugin or using --all
-                if !rtv.plugin.ensure_installed(&config.settings)? {
-                    Err(PluginNotInstalled(rtv.plugin.name.to_string()))?;
+        for (plugin, versions) in &ts.versions {
+            if plugins_to_install.contains(plugin) && self.force {
+                for v in &versions.versions {
+                    if let Some(rtv) = &v.rtv {
+                        if rtv.is_installed() {
+                            info!("uninstalling {}", rtv);
+                            rtv.uninstall()?;
+                        }
+                    }
                 }
             }
-
-            if !rtv.plugin.is_installed() {
-                warn_plugin_not_installed(&rtv.plugin);
-                continue;
-            }
-            if rtv.version == "system" || rtv.is_installed() {
-                continue;
-            }
-            let version = rtv
-                .plugin
-                .latest_version(&rtv.version)?
-                .unwrap_or_else(|| rtv.version.clone());
-            // need to re-create the rtv because the version may have changed
-            let rtv = RuntimeVersion::new(rtv.plugin.clone(), &version);
-            self.do_install(&config, out, &rtv)?;
         }
+        ts.install_missing(config)?;
+
         Ok(())
     }
 
-    fn do_install(&self, config: &Config, _out: &mut Output, rtv: &RuntimeVersion) -> Result<()> {
-        rtv.install(Version, config)?;
+    fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().build(config);
+        if let Some(plugins) = &self.plugin {
+            let plugins = plugins.iter().collect::<HashSet<&PluginName>>();
+            for plugin in ts.versions.keys().cloned().collect::<Vec<_>>() {
+                if !plugins.contains(&plugin) {
+                    ts.versions.remove(&plugin);
+                }
+            }
+            for plugin in plugins {
+                if !ts.versions.contains_key(plugin) {
+                    Err(PluginNotInstalled(plugin.to_string()))?;
+                }
+            }
+        }
+        ts.install_missing(config)?;
+
         Ok(())
     }
-}
-
-fn warn_plugin_not_installed(plugin: &Plugin) {
-    warn!(
-        "plugin {} is not installed. Install it with `rtx plugin add {}`",
-        cyan(Stderr, &plugin.name),
-        plugin.name,
-    );
-}
-
-fn get_all_plugin_names(config: &Config) -> Vec<String> {
-    config
-        .ts
-        .list_plugins()
-        .into_iter()
-        .map(|p| p.name.clone())
-        .collect()
 }
 
 static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));

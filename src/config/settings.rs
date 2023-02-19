@@ -2,10 +2,11 @@ use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
 use indexmap::IndexMap;
+use log::LevelFilter;
 
 use crate::config::AliasMap;
 use crate::env;
-use crate::env::RTX_VERBOSE;
+use crate::env::{RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE};
 use crate::plugins::PluginName;
 use crate::ui::prompt::is_tty;
 
@@ -17,6 +18,8 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: Duration,
     pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
     pub verbose: bool,
+    pub jobs: usize,
+    pub log_level: LevelFilter,
 }
 
 impl Default for Settings {
@@ -28,6 +31,8 @@ impl Default for Settings {
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
             verbose: *RTX_VERBOSE || !is_tty(),
+            jobs: *RTX_JOBS,
+            log_level: *RTX_LOG_LEVEL,
         }
     }
 }
@@ -52,6 +57,8 @@ impl Settings {
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
         );
         map.insert("verbose".into(), self.verbose.to_string());
+        map.insert("jobs".into(), self.jobs.to_string());
+        map.insert("log_level".into(), self.log_level.to_string());
         map
     }
 }
@@ -64,6 +71,8 @@ pub struct SettingsBuilder {
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
     pub aliases: Option<AliasMap>,
     pub verbose: Option<bool>,
+    pub jobs: Option<usize>,
+    pub log_level: Option<LevelFilter>,
 }
 
 impl SettingsBuilder {
@@ -89,6 +98,12 @@ impl SettingsBuilder {
         }
         if other.verbose.is_some() {
             self.verbose = other.verbose;
+        }
+        if other.jobs.is_some() {
+            self.jobs = other.jobs;
+        }
+        if other.log_level.is_some() {
+            self.log_level = other.log_level;
         }
         if other.aliases.is_some() {
             self.aliases = other.aliases;
@@ -122,6 +137,7 @@ impl SettingsBuilder {
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
         settings.verbose = self.verbose.unwrap_or(settings.verbose);
+        settings.jobs = self.jobs.unwrap_or(settings.jobs);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         settings

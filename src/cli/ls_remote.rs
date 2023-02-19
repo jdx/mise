@@ -24,10 +24,10 @@ pub struct LsRemote {
 impl Command for LsRemote {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let plugin = config
-            .ts
-            .find_plugin(&self.plugin)
+            .plugins
+            .get(&self.plugin)
             .ok_or(PluginNotInstalled(self.plugin))?;
-        let versions = plugin.list_remote_versions()?;
+        let versions = plugin.list_remote_versions(&config.settings)?;
 
         for version in versions {
             rtxprintln!(out, "{}", version);

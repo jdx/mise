@@ -29,7 +29,7 @@ pub fn should_exit_early(config: &Config) -> bool {
     if have_config_files_been_modified(&env::vars().collect(), watch_files) {
         return false;
     }
-    trace!("rtx: early-exit");
+    trace!("early-exit");
     true
 }
 

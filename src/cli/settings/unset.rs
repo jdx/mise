@@ -56,6 +56,8 @@ mod tests {
         legacy_version_file = true
         plugin_autoupdate_last_check_duration = 20
         verbose = true
+        jobs = 2
+        log_level = INFO
         "###);
 
         reset_config();

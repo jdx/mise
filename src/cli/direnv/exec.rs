@@ -6,6 +6,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::output::Output;
+use crate::toolset::ToolsetBuilder;
 
 /// [internal] This is an internal command that writes an envrc file
 /// for direnv to consume.
@@ -24,17 +25,17 @@ impl Command for DirenvExec {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        config.ensure_installed()?;
+        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
         let mut cmd = if cfg!(test) {
             cmd!("env")
         } else {
             cmd!("direnv", "dump")
         };
 
-        for (k, v) in config.env()? {
+        for (k, v) in ts.env() {
             cmd = cmd.env(k, v);
         }
-        cmd = cmd.env("PATH", config.path_env()?);
+        cmd = cmd.env("PATH", ts.path_env());
 
         let json = cmd!("direnv", "watch", "json", ".tool-versions").read()?;
         let w: DirenvWatches = serde_json::from_str(&json)?;
