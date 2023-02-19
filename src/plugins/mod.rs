@@ -55,7 +55,7 @@ impl Plugin {
         let plugin_path = dirs::PLUGINS.join(name);
         Self {
             name: name.into(),
-            cache_path: plugin_path.join(".rtxcache.msgpack.gz"),
+            cache_path: plugin_path.join(".rtxcache.msgpack"),
             script_man: ScriptManager::new(plugin_path.clone()),
             plugin_path,
             downloads_path: dirs::DOWNLOADS.join(name),

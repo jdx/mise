@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use base64::prelude::*;
 use color_eyre::eyre::Result;
-use flate2::write::GzDecoder;
-use flate2::write::GzEncoder;
+use flate2::write::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 use crate::config::Config;
@@ -80,14 +80,14 @@ fn have_config_files_been_modified(
 pub type HookEnvWatches = HashMap<PathBuf, SystemTime>;
 
 pub fn serialize_watches(watches: &HookEnvWatches) -> Result<String> {
-    let mut gz = GzEncoder::new(Vec::new(), Compression::fast());
+    let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
     gz.write_all(&rmp_serde::to_vec_named(watches)?)?;
     Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
 }
 
 pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     let mut writer = Vec::new();
-    let mut decoder = GzDecoder::new(writer);
+    let mut decoder = ZlibDecoder::new(writer);
     let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
     decoder.write_all(&bytes[..])?;
     writer = decoder.finish()?;
