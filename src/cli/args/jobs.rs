@@ -14,9 +14,8 @@ impl Jobs {
         Arg::new("jobs")
             .short('j')
             .long("jobs")
-            .help("Number of plugins and runtimes to install in parallel")
+            .help("Number of plugins and runtimes to install in parallel, default: 4")
             .value_parser(ValueParser::new(parse_jobs))
-            .default_value("4")
             .global(true)
     }
 }
