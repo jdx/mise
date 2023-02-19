@@ -27,7 +27,6 @@ fn init() {
         "tiny",
         "https://github.com/jdxcode/asdf-tiny"
     );
-    assert_cli!("install", "--all");
 }
 
 pub fn reset_config() {
@@ -39,6 +38,7 @@ pub fn reset_config() {
                 always_keep_download= true
                 legacy_version_file= true
                 plugin_autoupdate_last_check_duration = 20
+                jobs = 2
 
                 [alias.shfmt]
                 "my/alias" = '3.0'

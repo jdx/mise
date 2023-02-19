@@ -7,13 +7,14 @@ use std::time::Duration;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::{Result, Section, SectionExt};
 use indexmap::IndexMap;
+use log::LevelFilter;
 use toml::Value;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::{MissingRuntimeBehavior, Settings, SettingsBuilder};
 use crate::config::AliasMap;
-use crate::config::PluginSource;
 use crate::plugins::PluginName;
+use crate::toolset::Toolset;
 
 const ENV_SUGGESTION: &str = r#"
 [env]
@@ -94,6 +95,8 @@ impl RTXFile {
                     Some(self.parse_duration_minutes(k, v)?)
             }
             "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
+            "jobs" => self.settings.jobs = Some(self.parse_usize(k, v)?),
+            "log_level" => self.settings.log_level = Some(self.parse_log_level(v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
             "disable_plugin_short_name_repository" => {}
@@ -170,6 +173,13 @@ impl RTXFile {
         }
     }
 
+    fn parse_usize(&self, k: &str, v: &Value) -> Result<usize> {
+        match v {
+            Value::Integer(v) => Ok(*v as usize),
+            _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+        }
+    }
+
     fn parse_string(&self, k: &str, v: &Value) -> Result<String> {
         match v {
             Value::String(v) => Ok(v.clone()),
@@ -186,6 +196,11 @@ impl RTXFile {
             "autoinstall" => Ok(MissingRuntimeBehavior::AutoInstall),
             _ => Err(eyre!("expected missing_runtime_behavior to be one of: 'warn', 'ignore', 'prompt', 'autoinstall'. Got: {v}")),
         }
+    }
+
+    fn parse_log_level(&mut self, v: &Value) -> Result<LevelFilter> {
+        let level = self.parse_string("log_level", v)?.parse()?;
+        Ok(level)
     }
 
     fn parse_aliases(&mut self, v: &Value) -> Result<AliasMap> {
@@ -311,10 +326,6 @@ impl ConfigFile for RTXFile {
         self.path.as_path()
     }
 
-    fn source(&self) -> PluginSource {
-        PluginSource::RtxRc(self.path.clone())
-    }
-
     fn plugins(&self) -> IndexMap<String, Vec<String>> {
         self.plugins
             .iter()
@@ -367,6 +378,10 @@ impl ConfigFile for RTXFile {
 
     fn dump(&self) -> String {
         self.get_edit().expect("unable to parse toml").to_string()
+    }
+
+    fn to_toolset(&self) -> Toolset {
+        todo!()
     }
 }
 

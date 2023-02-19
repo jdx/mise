@@ -91,7 +91,7 @@ macro_rules! rtxprint {
 #[macro_export]
 macro_rules! rtxstatusln {
     ($out:ident, $($arg:tt)*) => {{
-        let rtx = $crate::output::dim(atty::Stream::Stderr, "rtx: ");
+        let rtx = $crate::output::dim(atty::Stream::Stderr, "rtx ");
         $out.stderr.writeln(format!("{}{}", rtx, format!($($arg)*)));
     }};
 }

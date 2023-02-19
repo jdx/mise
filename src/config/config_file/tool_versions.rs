@@ -9,9 +9,9 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::PluginSource;
 use crate::file::display_path;
 use crate::plugins::PluginName;
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
@@ -100,6 +100,25 @@ impl ToolVersions {
     }
 }
 
+impl From<&ToolVersions> for Toolset {
+    fn from(value: &ToolVersions) -> Self {
+        let mut toolset = Toolset::new(ToolSource::ToolVersions(value.path.clone()));
+        for (plugin, tvp) in &value.plugins {
+            for version in &tvp.versions {
+                let v = match version.split_once(':') {
+                    Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
+                    Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
+                    Some(("path", v)) => ToolVersionType::Path(v.to_string()),
+                    None if version == "system" => ToolVersionType::System,
+                    _ => ToolVersionType::Version(version.to_string()),
+                };
+                toolset.add_version(plugin.clone(), ToolVersion::new(plugin.clone(), v));
+            }
+        }
+        toolset
+    }
+}
+
 impl Display for ToolVersions {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let plugins = &self
@@ -124,11 +143,6 @@ impl ConfigFile for ToolVersions {
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
-
-    fn source(&self) -> PluginSource {
-        PluginSource::ToolVersions(self.path.clone())
-    }
-
     fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
         self.plugins
             .iter()
@@ -170,6 +184,10 @@ impl ConfigFile for ToolVersions {
         }
 
         s.trim_end().to_string() + "\n"
+    }
+
+    fn to_toolset(&self) -> Toolset {
+        self.into()
     }
 }
 
@@ -216,6 +234,16 @@ pub(crate) mod tests {
         "###);
     }
 
+    #[test]
+    fn test_from_toolset() {
+        let orig = indoc! {"
+        ruby: 3.0.5 3.1
+        "};
+        let tv = ToolVersions::parse_str(orig).unwrap();
+        let toolset: Toolset = (&tv).into();
+        assert_display_snapshot!(toolset, @"Toolset: ruby@3.0.5 ruby@3.1");
+    }
+
     #[derive(Debug)]
     pub struct MockToolVersions {
         pub path: PathBuf,
@@ -258,10 +286,6 @@ pub(crate) mod tests {
             self.path.as_path()
         }
 
-        fn source(&self) -> PluginSource {
-            todo!()
-        }
-
         fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
             self.plugins.clone()
         }
@@ -287,6 +311,10 @@ pub(crate) mod tests {
         }
 
         fn dump(&self) -> String {
+            todo!()
+        }
+
+        fn to_toolset(&self) -> Toolset {
             todo!()
         }
     }

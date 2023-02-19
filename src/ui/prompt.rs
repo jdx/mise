@@ -13,21 +13,23 @@ pub fn prompt() -> String {
 }
 
 pub fn prompt_for_install(thing: &str) -> bool {
-    match is_tty() {
+    match console::user_attended_stderr() {
         true => {
+            let stderr = console::Term::stderr();
             eprint!(
                 "{} Would you like to install {}? [Y/n] ",
-                COLOR.dimmed("rtx:"),
+                COLOR.dimmed("rtx"),
                 thing,
             );
-            matches!(prompt().to_lowercase().as_str(), "" | "y" | "yes")
+            let yn = matches!(prompt().to_lowercase().as_str(), "" | "y" | "yes");
+            let _ = stderr.move_cursor_up(1);
+            let _ = stderr.clear_to_end_of_screen();
+            yn
         }
         false => false,
     }
 }
 
 pub fn is_tty() -> bool {
-    atty::is(atty::Stream::Stdin)
-        && atty::is(atty::Stream::Stderr)
-        && atty::is(atty::Stream::Stdout)
+    atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stderr)
 }

@@ -4,6 +4,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
+use console::truncate_str;
 use itertools::Itertools;
 
 use crate::cli::command::Command;
@@ -14,6 +15,7 @@ use crate::env::__RTX_DIFF;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
+use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
@@ -30,14 +32,14 @@ impl Command for HookEnv {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        config.ensure_installed()?;
+        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
 
         self.clear_old_env(out);
-        let env = config.env()?;
+        let env = ts.env();
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        let installs = config.list_paths()?; // load the active runtime paths
+        let installs = ts.list_paths(); // load the active runtime paths
         diff.path = installs.clone(); // update __RTX_DIFF with the new paths for the next run
 
         patches.extend(self.build_path_operations(&installs, &__RTX_DIFF.path)?);
@@ -46,7 +48,7 @@ impl Command for HookEnv {
 
         let output = self.build_env_commands(&patches);
         out.stdout.write(output);
-        self.display_status(&config, out);
+        self.display_status(&ts, out);
 
         Ok(())
     }
@@ -80,22 +82,17 @@ impl HookEnv {
         out.stdout.write(output);
     }
 
-    fn display_status(&self, config: &Config, out: &mut Output) {
-        let installed_versions = config
-            .ts
+    fn display_status(&self, ts: &Toolset, out: &mut Output) {
+        let installed_versions = ts
             .list_current_installed_versions()
             .into_iter()
             .map(|v| v.to_string())
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {
-            let (w, _) = term_size::dimensions_stderr().unwrap_or_default();
-            let w = max(w, 40);
+            let (mut w, _) = term_size::dimensions_stderr().unwrap_or((80, 80));
+            w = max(w, 40);
             let status = installed_versions.into_iter().rev().join(" ");
-            if status.len() > w - 5 {
-                rtxstatusln!(out, "{}...", &status[..w - 9])
-            } else {
-                rtxstatusln!(out, "{}", status)
-            };
+            rtxstatusln!(out, "{}", truncate_str(&status, w - 4, "..."));
         }
     }
 

@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::hash::hash_to_str;
 use crate::output::Output;
+use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
 /// [internal] This is an internal command that writes an envrc file
@@ -22,7 +23,7 @@ impl Command for Envrc {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        config.ensure_installed()?;
+        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
             .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");
@@ -38,7 +39,7 @@ impl Command for Envrc {
         for cf in &config.config_files {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
-        for (k, v) in config.env()? {
+        for (k, v) in ts.env() {
             writeln!(
                 file,
                 "export {}={}",
@@ -46,7 +47,7 @@ impl Command for Envrc {
                 shell_escape::unix::escape(v.into()),
             )?;
         }
-        for path in &config.list_paths()? {
+        for path in ts.list_paths().into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 

@@ -1,0 +1,5 @@
+---
+source: src/cli/latest.rs
+expression: stdout
+---
+plugin invalid_plugin not found. run rtx plugin install invalid_plugin to install it
