@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-VERSION=$(curl https://rtx.pub/VERSION | sed -e "s/^v//")
-SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/v$VERSION.tar.gz" | sha512sum | awk '{print $1}')
+
+RTX_VERSION=$(./scripts/get-version.sh)
+
+SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
   git clone ssh://aur@aur.archlinux.org/rtx.git aur
@@ -12,7 +14,7 @@ cat >aur/PKGBUILD <<EOF
 # Maintainer: Jeff Dickey <releases at chim dot sh>
 
 pkgname=rtx
-pkgver=$VERSION
+pkgver=${RTX_VERSION#v*}
 pkgrel=1
 pkgdesc='Polyglot runtime manager'
 arch=('x86_64')
@@ -50,7 +52,7 @@ EOF
 cat >aur/.SRCINFO <<EOF
 pkgbase = rtx
 	pkgdesc = Polyglot runtime manager
-	pkgver = $VERSION
+	pkgver = ${RTX_VERSION#v*}
 	pkgrel = 1
 	url = https://github.com/jdxcode/rtx
 	arch = x86_64
@@ -58,7 +60,7 @@ pkgbase = rtx
 	makedepends = cargo
 	provides = rtx
 	conflicts = rtx
-	source = rtx-$VERSION.tar.gz::https://github.com/jdxcode/rtx/archive/v$VERSION.tar.gz
+	source = rtx-${RTX_VERSION#v*}.tar.gz::https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz
 	sha512sums = $SHA512
 
 pkgname = rtx
@@ -66,5 +68,5 @@ EOF
 
 cd aur
 git add .SRCINFO PKGBUILD
-git commit -m "rtx $VERSION"
+git commit -m "rtx $RTX_VERSION"
 git push
