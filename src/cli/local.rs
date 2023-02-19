@@ -33,10 +33,13 @@ pub struct Local {
     #[clap(short, long, verbatim_doc_comment)]
     parent: bool,
 
-    /// save fuzzy match to .tool-versions
-    /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
-    /// without --fuzzy, it would save the exact version, e.g.: `nodejs 20.0.0`
+    /// save exact version to `.tool-versions`
+    ///
+    /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
     #[clap(long, verbatim_doc_comment)]
+    pin: bool,
+
+    #[clap(long, hide = true)]
     fuzzy: bool,
 
     /// remove the plugin(s) from .tool-versions
@@ -45,7 +48,7 @@ pub struct Local {
 }
 
 impl Command for Local {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let cf_path = match self.parent {
             true => file::find_up(
                 &dirs::CURRENT,
@@ -76,7 +79,7 @@ impl Command for Local {
             if cf.display_runtime(out, &runtimes)? {
                 return Ok(());
             }
-            cf.add_runtimes(&mut config, &runtimes, self.fuzzy)?;
+            cf.add_runtimes(&config, &runtimes, self.pin)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {
@@ -130,9 +133,9 @@ mod tests {
 
         assert_cli!("plugin", "add", "nodejs");
         assert_cli!("install", "shfmt@2");
-        let stdout = assert_cli!("local", "shfmt@2");
+        let stdout = assert_cli!("local", "--pin", "shfmt@2");
         assert_snapshot!(stdout);
-        let stdout = assert_cli!("local", "--fuzzy", "shfmt@2");
+        let stdout = assert_cli!("local", "shfmt@2");
         assert_snapshot!(stdout);
         let stdout = assert_cli!("local", "--remove", "nodejs");
         assert_snapshot!(stdout);
@@ -141,9 +144,9 @@ mod tests {
             grep(stdout, "nodejs"),
             "   nodejs 18.0.0 (missing)   (set by ~/cwd/.node-version)"
         );
-        let stdout = assert_cli!("local", "tiny@1");
+        let stdout = assert_cli!("local", "--pin", "tiny@1");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
-        let stdout = assert_cli!("local", "tiny", "2");
+        let stdout = assert_cli!("local", "--pin", "tiny", "2");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
 
         // will output the current version(s)

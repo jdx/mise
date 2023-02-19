@@ -56,7 +56,8 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
+        let ft = entry.file_type()?;
+        if ft.is_dir() || ft.is_symlink() {
             output.push(entry.file_name().into_string().unwrap());
         }
     }

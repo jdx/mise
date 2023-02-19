@@ -1,8 +1,9 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::io::{stderr, Write};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Output;
+use std::sync::Arc;
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
@@ -64,12 +65,14 @@ impl fmt::Display for Script {
 #[derive(Debug, Clone)]
 pub enum InstallType {
     Version,
+    Ref,
 }
 
 impl Display for InstallType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             InstallType::Version => write!(f, "version"),
+            InstallType::Ref => write!(f, "ref"),
         }
     }
 }
@@ -144,34 +147,39 @@ impl ScriptManager {
         }
     }
 
-    pub fn read(&self, script: Script) -> Result<String> {
-        self.cmd(script)
-            .read()
+    pub fn read(&self, script: Script, verbose: bool) -> Result<String> {
+        let mut cmd = self.cmd(script);
+        if !verbose {
+            cmd = cmd.stderr_null();
+        }
+        cmd.read()
             .with_context(|| ScriptFailed(self.plugin_name.clone(), None))
     }
 
-    pub fn run_with_hidden_output<F>(&self, script: Script, on_error: F) -> Result<()>
+    pub fn run_by_line<F1, F2>(&self, script: Script, on_error: F1, on_output: F2) -> Result<()>
     where
-        F: FnOnce(),
+        F1: Fn(String),
+        F2: Fn(&str),
     {
-        let out = self
-            .cmd(script)
-            .stderr_to_stdout()
-            .stdout_capture()
-            .unchecked()
-            .run();
+        let reader = self.cmd(script).stderr_to_stdout().unchecked().reader()?;
+        let reader = Arc::new(reader);
+        let mut output = vec![];
+        for line in BufReader::new(&*reader).lines() {
+            let line = line.unwrap();
+            on_output(&line);
+            output.push(line);
+        }
 
-        match out {
+        match reader.try_wait() {
             Err(err) => {
-                on_error();
+                on_error(output.join("\n"));
                 Err(err)?
             }
-            Ok(out) => match out.status.success() {
+            Ok(out) => match out.unwrap().status.success() {
                 true => Ok(()),
                 false => {
-                    stderr().write_all(out.stdout.as_slice())?;
-                    on_error();
-                    let err = ScriptFailed(self.plugin_name.clone(), Some(out.status));
+                    on_error(output.join("\n"));
+                    let err = ScriptFailed(self.plugin_name.clone(), Some(out.unwrap().status));
                     Err(err)?
                 }
             },

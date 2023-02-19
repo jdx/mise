@@ -34,7 +34,7 @@ impl Command for PluginsLs {
             return PluginsLsRemote { urls: self.urls }.run(config, out);
         }
 
-        for plugin in config.ts.list_installed_plugins() {
+        for plugin in config.plugins.values() {
             if self.urls {
                 if let Some(url) = plugin.get_remote_url() {
                     rtxprintln!(out, "{:29} {}", plugin.name, url);

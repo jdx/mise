@@ -1,21 +1,20 @@
-use atty::Stream::Stdout;
 use std::cmp::max;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use owo_colors::{OwoColorize, Stream};
+use owo_colors::OwoColorize;
 use versions::Versioning;
 
 use crate::cli::command::Command;
-use crate::config::{Config, PluginSource};
+use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
-use crate::ui::color::{cyan, dimmed, green, red, Color};
+use crate::toolset::{ToolSource, ToolsetBuilder};
 
 /// list installed runtime versions
 ///
@@ -28,6 +27,9 @@ pub struct Ls {
     #[clap(long, short)]
     plugin: Option<PluginName>,
 
+    #[clap(hide = true)]
+    plugin_arg: Option<PluginName>,
+
     /// Only show runtimes currently specified in .tool-versions
     #[clap(long, short)]
     current: bool,
@@ -35,7 +37,8 @@ pub struct Ls {
 
 impl Command for Ls {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        for (rtv, source) in get_runtime_list(&config, &self.plugin)? {
+        let plugin = self.plugin.or(self.plugin_arg);
+        for (rtv, source) in get_runtime_list(&config, &plugin)? {
             if self.current && source.is_none() {
                 continue;
             }
@@ -60,14 +63,12 @@ impl Command for Ls {
 
 fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
     let styled = if missing {
-        rtv.version
-            .if_supports_color(Stream::Stdout, |t| t.strikethrough().red().to_string())
-            .to_string()
-            + red(Stdout, " (missing)").as_str()
+        style(&rtv.version).strikethrough().red().to_string()
+            + style(" (missing)").red().to_string().as_str()
     } else if active {
-        green(Stdout, &rtv.version)
+        style(&rtv.version).green().to_string()
     } else {
-        dimmed(Stdout, &rtv.version)
+        style(&rtv.version).dim().to_string()
     };
     let unstyled = if missing {
         format!("{} {} (missing)", &rtv.plugin.name, &rtv.version)
@@ -78,7 +79,7 @@ fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
     let pad = max(0, 25 - unstyled.len() as isize) as usize;
     format!(
         "{} {}{}",
-        cyan(Stdout, &rtv.plugin.name),
+        style(&rtv.plugin.name).cyan(),
         styled,
         " ".repeat(pad)
     )
@@ -87,10 +88,10 @@ fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
 fn get_runtime_list(
     config: &Config,
     plugin_flag: &Option<PluginName>,
-) -> Result<Vec<(Arc<RuntimeVersion>, Option<PluginSource>)>> {
-    let mut versions: HashMap<(PluginName, String), Arc<RuntimeVersion>> = config
-        .ts
-        .list_installed_versions()
+) -> Result<Vec<(RuntimeVersion, Option<ToolSource>)>> {
+    let ts = ToolsetBuilder::new().build(config);
+    let mut versions: HashMap<(PluginName, String), RuntimeVersion> = ts
+        .list_installed_versions()?
         .into_iter()
         .filter(|rtv| match plugin_flag {
             Some(plugin) => rtv.plugin.name == *plugin,
@@ -99,12 +100,11 @@ fn get_runtime_list(
         .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv))
         .collect();
 
-    let active = config
-        .ts
+    let active = ts
         .list_current_versions()
         .into_iter()
         .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv.clone()))
-        .collect::<HashMap<(PluginName, String), Arc<RuntimeVersion>>>();
+        .collect::<HashMap<(PluginName, String), RuntimeVersion>>();
 
     versions.extend(
         active
@@ -114,17 +114,20 @@ fn get_runtime_list(
                 Some(plugin) => plugin_name == plugin,
                 None => true,
             })
-            .collect::<Vec<((PluginName, String), Arc<RuntimeVersion>)>>(),
+            .collect::<Vec<((PluginName, String), RuntimeVersion)>>(),
     );
 
-    let rvs: Vec<(Arc<RuntimeVersion>, Option<PluginSource>)> = versions
+    let rvs: Vec<(RuntimeVersion, Option<ToolSource>)> = versions
         .into_iter()
         .sorted_by_cached_key(|((plugin_name, version), _)| {
             (plugin_name.clone(), Versioning::new(version))
         })
         .map(|(k, rtv)| {
             let source = match &active.get(&k) {
-                Some(rtv) => config.ts.get_source_for_plugin(&rtv.plugin.name),
+                Some(rtv) => ts
+                    .versions
+                    .get(&rtv.plugin.name)
+                    .map(|tv| tv.source.clone()),
                 None => None,
             };
             (rtv, source)
@@ -134,7 +137,6 @@ fn get_runtime_list(
     Ok(rvs)
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -146,7 +148,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx list --current
       -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
       -> python     3.11.0 (set by ~/.tool-versions)
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

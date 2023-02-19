@@ -81,10 +81,14 @@ lazy_static! {
         var("RTX_MISSING_RUNTIME_BEHAVIOR").ok()
     };
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
-    pub static ref RTX_VERBOSE: bool = var_is_true("RTX_VERBOSE");
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
+    pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
+    pub static ref RTX_JOBS: usize = var("RTX_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or_else(num_cpus::get);
     /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());

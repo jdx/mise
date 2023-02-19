@@ -8,6 +8,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::color::Color;
 
 /// Display the installation path for a runtime
@@ -30,18 +31,17 @@ pub struct Where {
 }
 
 impl Command for Where {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let version = config.resolve_runtime_arg(&self.runtime)?;
-        let rtv = config.ts.list_installed_versions().into_iter().find(|rtv| {
-            rtv.plugin.name == self.runtime.plugin && version.eq(&Some(rtv.version.clone()))
-        });
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new()
+            .with_args(&[self.runtime.clone()])
+            .build(&config);
 
-        match rtv {
-            Some(rtv) => {
+        match ts.resolve_runtime_arg(&self.runtime) {
+            Some(rtv) if rtv.is_installed() => {
                 rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());
                 Ok(())
             }
-            None => Err(VersionNotInstalled(
+            _ => Err(VersionNotInstalled(
                 self.runtime.plugin.to_string(),
                 self.runtime.version.to_string(),
             ))?,
@@ -98,6 +98,6 @@ mod tests {
     #[test]
     fn test_where_not_found() {
         let err = assert_cli_err!("where", "shfmt@1111");
-        assert_display_snapshot!(err, @"[shfmt] version 1111 not installed");
+        assert_display_snapshot!(err, @"shfmt@1111 not installed");
     }
 }

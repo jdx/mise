@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
@@ -10,21 +7,14 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 
-pub use plugin_source::PluginSource;
 pub use settings::{MissingRuntimeBehavior, Settings};
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
-use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtxrc::RTXFile;
-use crate::config::config_file::ConfigFile;
-use crate::config::toolset::Toolset;
 use crate::plugins::{Plugin, PluginName};
 use crate::{dirs, env, file};
 
 pub mod config_file;
-pub mod plugin_source;
 mod settings;
-mod toolset;
 
 type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 
@@ -32,136 +22,33 @@ type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 pub struct Config {
     pub settings: Settings,
     pub rtxrc: RTXFile,
-    pub ts: Toolset,
+    pub legacy_files: IndexMap<String, PluginName>,
     pub config_files: Vec<PathBuf>,
     pub aliases: AliasMap,
+    pub plugins: IndexMap<PluginName, Plugin>,
 }
 
 impl Config {
     pub fn load() -> Result<Self> {
         let rtxrc = load_rtxrc()?;
         let settings = rtxrc.settings();
-        let mut ts = Toolset::default();
-        load_installed_plugins(&mut ts)?;
-        load_installed_runtimes(&mut ts)?;
-        let legacy_filenames = load_legacy_filenames(&settings, &ts)?;
-        let config_files = find_all_config_files(&legacy_filenames);
-        load_config_files(&mut ts, &config_files, &legacy_filenames)?;
-        load_runtime_env(&mut ts, env::vars().collect())?;
-        let aliases = load_aliases(&settings, &ts)?;
-        ts.resolve_all_versions(&aliases)?;
+        let plugins = load_plugins(&settings)?;
+        let legacy_files = load_legacy_files(&settings, &plugins);
+        let config_files = find_all_config_files(&legacy_files);
+        let aliases = load_aliases(&settings, &plugins)?;
 
         let config = Self {
             settings,
-            ts,
+            legacy_files,
             config_files,
             aliases,
             rtxrc,
+            plugins,
         };
 
         debug!("{}", &config);
 
         Ok(config)
-    }
-
-    pub fn env(&self) -> Result<IndexMap<String, String>> {
-        let mut entries = self
-            .ts
-            .list_current_installed_versions()
-            .into_par_iter()
-            .map(|p| p.exec_env())
-            .collect::<Result<Vec<HashMap<String, String>>>>()?
-            .into_iter()
-            .flatten()
-            .collect_vec();
-        entries.par_sort();
-        Ok(entries.into_iter().collect())
-    }
-
-    pub fn list_paths(&self) -> Result<Vec<PathBuf>> {
-        let paths = self
-            .ts
-            .list_current_installed_versions()
-            .into_par_iter()
-            .map(|rtv| rtv.list_bin_paths())
-            .collect::<Result<Vec<Vec<PathBuf>>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<PathBuf>>();
-        Ok(paths)
-    }
-
-    pub fn path_env(&self) -> Result<String> {
-        let installs = self.list_paths()?;
-        Ok(join_paths([installs, env::PATH.clone()].concat())?
-            .to_string_lossy()
-            .into())
-    }
-
-    pub fn with_runtime_args(mut self, args: &[RuntimeArg]) -> Result<Self> {
-        let args_by_plugin = &args.iter().group_by(|arg| arg.plugin.clone());
-        for (plugin_name, args) in args_by_plugin {
-            let args = args.collect_vec();
-            let source = PluginSource::Argument(args[0].clone());
-            let versions = args
-                .iter()
-                .map(|arg| self.resolve_runtime_arg(arg))
-                .collect::<Result<Vec<Option<String>>>>()?
-                .into_iter()
-                .flatten()
-                .collect();
-            self.ts
-                .set_current_runtime_versions(&plugin_name, versions, source)?;
-        }
-        if !args.is_empty() {
-            self.ts.resolve_all_versions(&self.aliases)?;
-        }
-        Ok(self)
-    }
-
-    pub fn ensure_installed(&self) -> Result<()> {
-        for rtv in self.ts.list_current_versions() {
-            if rtv.plugin.is_installed() {
-                rtv.ensure_installed(self)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn resolve_alias(&self, plugin: &str, version: String) -> String {
-        if let Some(plugin_aliases) = self.aliases.get(plugin) {
-            if let Some(alias) = plugin_aliases.get(&version) {
-                return alias.clone();
-            }
-        }
-        version
-    }
-
-    pub fn resolve_runtime_arg(&mut self, arg: &RuntimeArg) -> Result<Option<String>> {
-        match &arg.version {
-            RuntimeArgVersion::System => Ok(None),
-            RuntimeArgVersion::Version(version) => {
-                let plugin = self.ts.get_or_add_plugin(arg.plugin.to_string())?;
-                plugin.ensure_installed(&self.settings)?;
-                let version = self.resolve_alias(&arg.plugin, version.into());
-                let version = plugin.latest_version(&version)?.unwrap_or(version);
-                Ok(Some(version))
-            }
-            RuntimeArgVersion::None => {
-                let plugin = self
-                    .ts
-                    .list_current_versions()
-                    .into_iter()
-                    .find(|rtv| rtv.plugin.name == arg.plugin);
-                match plugin {
-                    Some(rtv) => Ok(Some(rtv.version.clone())),
-                    None => Err(eyre!(
-                        "No version of {} is specified in a .tool-versions file",
-                        arg.plugin
-                    ))?,
-                }
-            }
-        }
     }
 }
 
@@ -180,54 +67,50 @@ fn load_rtxrc() -> Result<RTXFile> {
     Ok(rtxrc)
 }
 
-fn load_installed_plugins(ts: &mut Toolset) -> Result<()> {
-    let plugins = file::dir_subdirs(&dirs::PLUGINS)?
+fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Plugin>> {
+    let plugins = Plugin::list()?
         .into_par_iter()
-        .map(|p| {
-            let plugin = Plugin::load(&p)?;
-            Ok((p, Arc::new(plugin)))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    for (name, plugin) in plugins {
-        ts.plugins.entry(name).or_insert(plugin);
-    }
-    Ok(())
-}
-
-fn load_installed_runtimes(ts: &mut Toolset) -> Result<()> {
-    let plugin_versions = ts
-        .list_plugins()
-        .into_par_iter()
-        .map(|p| Ok((p.clone(), p.list_installed_versions()?)))
-        .collect::<Result<Vec<(Arc<Plugin>, Vec<String>)>>>()?;
-    for (plugin, versions) in plugin_versions {
-        ts.add_runtime_versions(&plugin.name, versions)?;
-    }
-    Ok(())
-}
-
-fn load_legacy_filenames(
-    settings: &Settings,
-    ts: &Toolset,
-) -> Result<IndexMap<String, PluginName>> {
-    if !settings.legacy_version_file {
-        return Ok(IndexMap::new());
-    }
-    let filenames = ts
-        .list_plugins()
-        .into_par_iter()
-        .map(|plugin| {
-            let mut legacy_filenames = vec![];
-            for filename in plugin.legacy_filenames()? {
-                legacy_filenames.push((filename, plugin.name.clone()));
+        .filter_map(|mut p| match p.ensure_loaded(settings) {
+            Ok(_) => Some((p.name.clone(), p)),
+            Err(e) => {
+                error!("Failed to load plugin {}: {}", p.name, e);
+                None
             }
-            Ok(legacy_filenames)
         })
-        .collect::<Result<Vec<Vec<(String, PluginName)>>>>()?
+        .collect::<Vec<_>>()
+        .into_iter()
+        .sorted_by_cached_key(|(p, _)| p.to_string())
+        .collect();
+    Ok(plugins)
+}
+
+fn load_legacy_files(
+    settings: &Settings,
+    plugins: &IndexMap<PluginName, Plugin>,
+) -> IndexMap<String, PluginName> {
+    if !settings.legacy_version_file {
+        return IndexMap::new();
+    }
+    plugins
+        .values()
+        .collect_vec()
+        .into_par_iter()
+        .filter_map(|plugin| match plugin.legacy_filenames(settings) {
+            Ok(filenames) => Some(
+                filenames
+                    .into_iter()
+                    .map(|f| (f, plugin.name.clone()))
+                    .collect_vec(),
+            ),
+            Err(err) => {
+                eprintln!("Error: {err}");
+                None
+            }
+        })
+        .collect::<Vec<Vec<(String, PluginName)>>>()
         .into_iter()
         .flatten()
-        .collect::<IndexMap<String, PluginName>>();
-    Ok(filenames)
+        .collect()
 }
 
 fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec<PathBuf> {
@@ -251,71 +134,10 @@ fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
     config_files.into_iter().unique().collect()
 }
 
-fn load_config_files(
-    ts: &mut Toolset,
-    config_files: &Vec<PathBuf>,
-    legacy_filenames: &IndexMap<String, PluginName>,
-) -> Result<()> {
-    let parsed_config_files = config_files
-        .into_par_iter()
-        .rev()
-        .filter_map(|path| {
-            let filename = path.file_name().unwrap().to_string_lossy().to_string();
-            let result = match legacy_filenames.get(&filename) {
-                Some(plugin) => {
-                    let plugin = ts.find_plugin(plugin).unwrap();
-                    LegacyVersionFile::parse(path.into(), &plugin)
-                        .map(|cf| Box::new(cf) as Box<dyn ConfigFile>)
-                }
-                None => config_file::parse(path),
-            };
-            match result {
-                Ok(cf) => Some(cf),
-                Err(e) => {
-                    warn!("error parsing config file: {}", e);
-                    None
-                }
-            }
-        })
-        .collect::<Vec<_>>();
-
-    for cf in parsed_config_files {
-        let path = cf.get_path().to_path_buf();
-        load_config_file(ts, cf)
-            .with_context(|| eyre!("error loading file: {}", path.display()))?;
-    }
-
-    Ok(())
-}
-
-fn load_config_file(ts: &mut Toolset, cf: Box<dyn ConfigFile>) -> Result<()> {
-    trace!("config file: {}", cf);
-    for (plugin, versions) in cf.plugins() {
-        ts.set_current_runtime_versions(&plugin, versions.clone(), cf.source())?;
-    }
-
-    Ok(())
-}
-
-fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) -> Result<()> {
-    for (k, v) in env {
-        if k.starts_with("RTX_") && k.ends_with("_VERSION") {
-            let plugin_name = k[4..k.len() - 8].to_lowercase();
-            if let Some(plugin) = ts.find_plugin(&plugin_name) {
-                if plugin.is_installed() {
-                    let source = PluginSource::Environment(k, v.clone());
-                    ts.set_current_runtime_versions(&plugin.name, vec![v], source)?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn load_aliases(settings: &Settings, ts: &Toolset) -> Result<AliasMap> {
+fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Plugin>) -> Result<AliasMap> {
     let mut aliases = IndexMap::new();
-    for plugin in ts.list_installed_plugins() {
-        for (from, to) in plugin.list_aliases()? {
+    for plugin in plugins.values() {
+        for (from, to) in plugin.get_aliases() {
             aliases
                 .entry(plugin.name.clone())
                 .or_insert_with(IndexMap::new)
@@ -345,16 +167,9 @@ fn err_load_settings(settings_path: &Path) -> Report {
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let plugins = self
-            .ts
-            .list_installed_plugins()
-            .into_iter()
-            .map(|p| p.name.clone())
-            .collect::<Vec<_>>();
-        let versions = self
-            .ts
-            .list_current_installed_versions()
-            .into_iter()
-            .map(|rtv| rtv.to_string())
+            .plugins
+            .keys()
+            .map(|p| p.to_string())
             .collect::<Vec<_>>();
         let config_files = self
             .config_files
@@ -367,7 +182,6 @@ impl Display for Config {
             .collect::<Vec<_>>();
         writeln!(f, "Config:")?;
         writeln!(f, "  Files: {}", config_files.join(", "))?;
-        writeln!(f, "  Installed Plugins: {}", plugins.join(", "))?;
-        write!(f, "  Active Versions: {}", versions.join(", "))
+        writeln!(f, "  Installed Plugins: {}", plugins.join(", "))
     }
 }

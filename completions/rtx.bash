@@ -367,13 +367,21 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-v -h -V --log-level --verbose --help --version activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -385,7 +393,7 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -v -h --shell --quiet --log-level --verbose --help bash fish xonsh zsh"
+            opts="-s -q -j -v -h --shell --quiet --log-level --jobs --verbose --help bash fish xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -403,6 +411,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -411,7 +427,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias)
-            opts="-p -v -h --plugin --log-level --verbose --help ls help"
+            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help ls help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -426,6 +442,14 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -479,7 +503,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__ls)
-            opts="-p -v -h --plugin --log-level --verbose --help"
+            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -497,6 +521,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -505,13 +537,21 @@ _rtx() {
             return 0
             ;;
         rtx__asdf)
-            opts="-v -h --log-level --verbose --help [ARGS]..."
+            opts="-j -v -h --log-level --jobs --verbose --help [ARGS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -523,7 +563,7 @@ _rtx() {
             return 0
             ;;
         rtx__complete)
-            opts="-s -v -h --shell --log-level --verbose --help"
+            opts="-s -j -v -h --shell --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -538,6 +578,14 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -549,13 +597,21 @@ _rtx() {
             return 0
             ;;
         rtx__current)
-            opts="-v -h --log-level --verbose --help [PLUGIN]"
+            opts="-j -v -h --log-level --jobs --verbose --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -567,7 +623,7 @@ _rtx() {
             return 0
             ;;
         rtx__deactivate)
-            opts="-s -v -h --shell --log-level --verbose --help bash fish xonsh zsh"
+            opts="-s -j -v -h --shell --log-level --jobs --verbose --help bash fish xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -585,6 +641,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -593,13 +657,21 @@ _rtx() {
             return 0
             ;;
         rtx__direnv)
-            opts="-v -h --log-level --verbose --help envrc exec activate help"
+            opts="-j -v -h --log-level --jobs --verbose --help envrc exec activate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -611,13 +683,21 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__activate)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -629,13 +709,21 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__envrc)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -647,13 +735,21 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__exec)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -735,13 +831,21 @@ _rtx() {
             return 0
             ;;
         rtx__doctor)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -753,7 +857,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -v -h --shell --log-level --verbose --help [RUNTIME]..."
+            opts="-s -j -v -h --shell --log-level --jobs --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -771,6 +875,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -779,7 +891,7 @@ _rtx() {
             return 0
             ;;
         rtx__exec)
-            opts="-c -v -h --command --log-level --verbose --help [RUNTIME]... [COMMAND]..."
+            opts="-c -j -v -h --command --log-level --jobs --verbose --help [RUNTIME]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -797,6 +909,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -805,7 +925,7 @@ _rtx() {
             return 0
             ;;
         rtx__global)
-            opts="-v -h --fuzzy --remove --log-level --verbose --help [RUNTIME]..."
+            opts="-j -v -h --pin --fuzzy --remove --log-level --jobs --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -816,6 +936,14 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1359,7 +1487,7 @@ _rtx() {
             return 0
             ;;
         rtx__hook__env)
-            opts="-s -v -h --shell --log-level --verbose --help"
+            opts="-s -j -v -h --shell --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1377,6 +1505,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1385,7 +1521,7 @@ _rtx() {
             return 0
             ;;
         rtx__install)
-            opts="-p -f -a -v -h --plugin --force --all --verbose --log-level --help [RUNTIME]..."
+            opts="-p -f -a -v -j -h --plugin --force --all --verbose --log-level --jobs --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1403,6 +1539,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1411,13 +1555,21 @@ _rtx() {
             return 0
             ;;
         rtx__latest)
-            opts="-v -h --log-level --verbose --help <RUNTIME> [ASDF_VERSION]"
+            opts="-j -v -h --log-level --jobs --verbose --help <RUNTIME> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1429,7 +1581,7 @@ _rtx() {
             return 0
             ;;
         rtx__local)
-            opts="-p -v -h --parent --fuzzy --remove --log-level --verbose --help [RUNTIME]..."
+            opts="-p -j -v -h --parent --pin --fuzzy --remove --log-level --jobs --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1443,6 +1595,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1451,7 +1611,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls)
-            opts="-p -c -v -h --plugin --current --log-level --verbose --help"
+            opts="-p -c -j -v -h --plugin --current --log-level --jobs --verbose --help [PLUGIN_ARG]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1469,6 +1629,14 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1477,13 +1645,21 @@ _rtx() {
             return 0
             ;;
         rtx__ls__remote)
-            opts="-v -h --log-level --verbose --help <PLUGIN>"
+            opts="-j -v -h --log-level --jobs --verbose --help <PLUGIN>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1495,13 +1671,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins)
-            opts="-a -u -v -h --all --urls --log-level --verbose --help install ls ls-remote uninstall update help"
+            opts="-a -u -j -v -h --all --urls --log-level --jobs --verbose --help install ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1611,13 +1795,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -a -v -h --force --all --verbose --log-level --help [NAME] [GIT_URL]"
+            opts="-f -a -v -j -h --force --all --verbose --log-level --jobs --help [NAME] [GIT_URL]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1629,13 +1821,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls)
-            opts="-a -u -v -h --all --urls --log-level --verbose --help"
+            opts="-a -u -j -v -h --all --urls --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1647,13 +1847,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls__remote)
-            opts="-u -v -h --urls --log-level --verbose --help"
+            opts="-u -j -v -h --urls --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1665,13 +1873,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__uninstall)
-            opts="-v -h --log-level --verbose --help <PLUGIN>"
+            opts="-j -v -h --log-level --jobs --verbose --help <PLUGIN>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1683,13 +1899,21 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__update)
-            opts="-a -v -h --all --log-level --verbose --help [PLUGIN]..."
+            opts="-a -j -v -h --all --log-level --jobs --verbose --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1701,13 +1925,21 @@ _rtx() {
             return 0
             ;;
         rtx__render__help)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1719,13 +1951,21 @@ _rtx() {
             return 0
             ;;
         rtx__settings)
-            opts="-v -h --log-level --verbose --help get ls set unset help"
+            opts="-j -v -h --log-level --jobs --verbose --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1737,13 +1977,21 @@ _rtx() {
             return 0
             ;;
         rtx__settings__get)
-            opts="-v -h --log-level --verbose --help <KEY>"
+            opts="-j -v -h --log-level --jobs --verbose --help <KEY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1839,13 +2087,21 @@ _rtx() {
             return 0
             ;;
         rtx__settings__ls)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1857,13 +2113,21 @@ _rtx() {
             return 0
             ;;
         rtx__settings__set)
-            opts="-v -h --log-level --verbose --help <KEY> <VALUE>"
+            opts="-j -v -h --log-level --jobs --verbose --help <KEY> <VALUE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1875,13 +2139,21 @@ _rtx() {
             return 0
             ;;
         rtx__settings__unset)
-            opts="-v -h --log-level --verbose --help <KEY>"
+            opts="-j -v -h --log-level --jobs --verbose --help <KEY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1893,13 +2165,21 @@ _rtx() {
             return 0
             ;;
         rtx__uninstall)
-            opts="-v -h --log-level --verbose --help <RUNTIME>..."
+            opts="-j -v -h --log-level --jobs --verbose --help <RUNTIME>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1911,13 +2191,21 @@ _rtx() {
             return 0
             ;;
         rtx__version)
-            opts="-v -h --log-level --verbose --help"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1929,13 +2217,21 @@ _rtx() {
             return 0
             ;;
         rtx__where)
-            opts="-v -h --log-level --verbose --help <RUNTIME> [ASDF_VERSION]"
+            opts="-j -v -h --log-level --jobs --verbose --help <RUNTIME> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
