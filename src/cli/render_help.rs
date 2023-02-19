@@ -30,9 +30,14 @@ _{about}_
 
 ## 30 Second Demo
 
-The following shows using rtx to install [nodejs](https://nodejs.org) and [jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
+The following shows using rtx to install [nodejs](https://nodejs.org) and
+[jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
+[hyperfine](https://github.com/sharkdp/hyperfine) is then used to show the performance using
+rtx vs asdf. (See [Performance](#performance)).
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
+
+Note that calling `which node` gives us a real path to the binary, not a shim.
 
 ## Features
 
@@ -583,7 +588,9 @@ and the runtime itself. e.g.: when you call `node` it will call an asdf shim fil
 which then calls `asdf exec`, which then calls the correct version of node.
 
 These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
-updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this.
+updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo gif at the top of this README
+that `rtx` isn't actually used when calling `node -v` for this reason. The performance is
+identical to running node without using rtx.
 
 I don't think it's possible for asdf to fix these issues. The author of asdf did a great writeup
 of [performance problems](https://stratus3d.com/blog/2022/08/11/asdf-performance/). asdf is written
