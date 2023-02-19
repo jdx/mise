@@ -1,7 +1,5 @@
-use crate::ui::color::Color;
-use atty::Stream;
 use indicatif::ProgressBar;
-use once_cell::sync::Lazy;
+
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -42,7 +40,7 @@ impl ProgressReport {
         match &self.pb {
             Some(pb) => {
                 pb.set_style(style);
-                pb.set_prefix(COLOR.dimmed("rtx"));
+                pb.set_prefix(console::style("rtx").dim().for_stderr().to_string());
             }
             None => (),
         }
@@ -66,5 +64,3 @@ impl ProgressReport {
         }
     }
 }
-
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));

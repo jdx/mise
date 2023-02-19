@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
-use atty::Stream;
-use atty::Stream::Stderr;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
@@ -20,15 +18,14 @@ pub use script_manager::{InstallType, Script, ScriptManager};
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
-use crate::config::{MissingRuntimeBehavior, Settings};
+use crate::config::Settings;
 use crate::errors::Error::PluginNotInstalled;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand::shorthand_to_repository;
-use crate::ui::color::{cyan, Color};
+
 use crate::ui::progress_report::ProgressReport;
-use crate::ui::prompt;
 use crate::{dirs, file};
 
 mod script_manager;
@@ -102,8 +99,8 @@ impl Plugin {
         pr.set_style(PROG_TEMPLATE.clone());
         pr.set_prefix(format!(
             "{} {} ",
-            COLOR.dimmed("rtx"),
-            COLOR.cyan(&self.name)
+            style("rtx").dim().for_stderr(),
+            style(&self.name).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
         let repository = repository
@@ -133,55 +130,10 @@ impl Plugin {
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
             "{} {repository}@{}",
-            COLOR.green("✓"),
-            COLOR.bright_yellow(&sha),
+            style("✓").green().for_stderr(),
+            style(&sha).bright().yellow().for_stderr(),
         ));
         Ok(())
-    }
-
-    pub fn ensure_installed(&mut self, settings: &Settings) -> Result<bool> {
-        static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stderr));
-        if self.is_installed() {
-            return Ok(true);
-        }
-
-        match shorthand_to_repository(&self.name) {
-            Some(repo) => match settings.missing_runtime_behavior {
-                MissingRuntimeBehavior::AutoInstall => {
-                    self.install(settings, Some(repo), ProgressReport::new(settings.verbose))?;
-                    Ok(true)
-                }
-                MissingRuntimeBehavior::Prompt => {
-                    match prompt::prompt_for_install(&format!("plugin {}", COLOR.cyan(&self.name)))
-                    {
-                        true => {
-                            self.install(
-                                settings,
-                                Some(repo),
-                                ProgressReport::new(settings.verbose),
-                            )?;
-                            Ok(true)
-                        }
-                        false => Ok(false),
-                    }
-                }
-                MissingRuntimeBehavior::Warn => {
-                    warn!("{}", PluginNotInstalled(self.name.clone()));
-                    Ok(false)
-                }
-                MissingRuntimeBehavior::Ignore => {
-                    debug!("{}", PluginNotInstalled(self.name.clone()));
-                    Ok(false)
-                }
-            },
-            None => match settings.missing_runtime_behavior {
-                MissingRuntimeBehavior::Ignore => Ok(false),
-                _ => {
-                    warn!("Plugin not found: {}", COLOR.cyan(&self.name));
-                    Ok(false)
-                }
-            },
-        }
     }
 
     pub fn update(&self, gitref: Option<String>) -> Result<()> {
@@ -217,7 +169,7 @@ impl Plugin {
             fs::remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    cyan(Stderr, &dir.to_string_lossy())
+                    style(&dir.to_string_lossy()).cyan().for_stderr()
                 )
             })
         };
@@ -450,8 +402,6 @@ impl PartialEq for Plugin {
         self.name == other.name
     }
 }
-
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
 
 #[cfg(test)]
 mod tests {

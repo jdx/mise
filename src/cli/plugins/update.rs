@@ -1,13 +1,12 @@
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use owo_colors::Stream;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
-use crate::ui::color::{cyan, Color};
 
 /// updates a plugin to the latest version
 ///
@@ -31,7 +30,7 @@ impl Command for Update {
                 .into_iter()
                 .map(|p| {
                     config.plugins.get(&p).ok_or_else(|| {
-                        eyre!("plugin {} not found", cyan(Stream::Stderr, p.as_str()))
+                        eyre!("plugin {} not found", style(p.as_str()).cyan().for_stderr())
                     })
                 })
                 .collect::<Result<_>>()?,
@@ -47,13 +46,12 @@ impl Command for Update {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx plugins update --all   # update all plugins
       $ rtx plugins update nodejs  # update only nodejs
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
