@@ -49,7 +49,7 @@ impl Command for Latest {
             )
         })?;
 
-        if let Some(version) = plugin.latest_version(&prefix) {
+        if let Some(version) = plugin.latest_version(&config.settings, &prefix)? {
             rtxprintln!(out, "{}", version);
         }
         Ok(())
