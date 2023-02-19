@@ -9,6 +9,7 @@ SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz" | 
 if [ ! -d aur ]; then
   git clone ssh://aur@aur.archlinux.org/rtx.git aur
 fi
+git -C aur pull
 
 cat >aur/PKGBUILD <<EOF
 # Maintainer: Jeff Dickey <releases at chim dot sh>
