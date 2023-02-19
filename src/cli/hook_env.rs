@@ -56,7 +56,7 @@ impl Command for HookEnv {
 
 impl HookEnv {
     fn build_env_commands(&self, patches: &EnvDiffPatches) -> String {
-        let shell = get_shell(self.shell);
+        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         let mut output = String::new();
 
         for patch in patches.iter() {
