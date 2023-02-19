@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
+
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -22,7 +22,7 @@ use crate::env;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::tool_version_list::ToolVersionList;
-use crate::ui::color::Color;
+
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 
@@ -319,12 +319,10 @@ impl Display for Toolset {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
-
 fn display_versions(versions: &[&mut ToolVersion]) -> String {
     let display_versions = versions
         .iter()
-        .map(|v| COLOR.cyan(&v.to_string()))
+        .map(|v| style(&v.to_string()).cyan().for_stderr().to_string())
         .join(", ");
     display_versions
 }
