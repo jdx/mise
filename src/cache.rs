@@ -1,0 +1,122 @@
+use std::cmp::min;
+use std::fs;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::time::Duration;
+
+use color_eyre::eyre::Result;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
+use once_cell::sync::{Lazy, OnceCell};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+#[derive(Debug, Clone)]
+pub struct CacheManager<T>
+where
+    T: Clone + Serialize + DeserializeOwned,
+{
+    cache_file_path: PathBuf,
+    fresh_duration: Duration,
+    fresh_files: Vec<PathBuf>,
+    cache: Box<OnceCell<T>>,
+}
+
+impl<T> CacheManager<T>
+where
+    T: Clone + Serialize + DeserializeOwned,
+{
+    pub fn new(cache_file_path: PathBuf) -> Self {
+        Self {
+            cache_file_path,
+            cache: Box::new(OnceCell::new()),
+            fresh_files: Vec::new(),
+            fresh_duration: *FRESH_DURATION_YEAR,
+        }
+    }
+
+    pub fn with_fresh_duration(mut self, duration: Duration) -> Self {
+        self.fresh_duration = duration;
+        self
+    }
+
+    pub fn with_fresh_file(mut self, path: PathBuf) -> Self {
+        self.fresh_files.push(path);
+        self
+    }
+
+    pub fn get<F>(&self, fetch: F) -> Result<&T>
+    where
+        F: FnOnce() -> Result<T>,
+    {
+        let val = self.cache.get_or_try_init(|| {
+            let path = &self.cache_file_path;
+            if self.is_fresh() {
+                match self.parse() {
+                    Ok(val) => return Ok::<_, color_eyre::Report>(val),
+                    Err(err) => {
+                        warn!("failed to parse cache file: {} {}", path.display(), err);
+                    }
+                }
+            }
+            let val = (fetch)()?;
+            if let Err(err) = self.write(val.clone()) {
+                warn!("failed to write cache file: {} {}", path.display(), err);
+            }
+            Ok(val)
+        })?;
+        Ok(val)
+    }
+
+    fn parse(&self) -> Result<T> {
+        let path = &self.cache_file_path;
+        trace!("reading cache {}", path.display());
+        let mut zlib = ZlibDecoder::new(File::open(path)?);
+        let mut bytes = Vec::new();
+        zlib.read_to_end(&mut bytes)?;
+        Ok(rmp_serde::from_slice(&bytes)?)
+    }
+
+    pub fn write(&self, val: T) -> Result<()> {
+        let path = &self.cache_file_path;
+        trace!("writing cache {}", path.display());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut zlib = ZlibEncoder::new(File::create(path)?, Compression::fast());
+        zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+
+        Ok(())
+    }
+
+    fn is_fresh(&self) -> bool {
+        if !self.cache_file_path.exists() {
+            return false;
+        }
+        let fresh_duration = self.freshest_duration();
+        if let Ok(metadata) = self.cache_file_path.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                return modified.elapsed().unwrap_or_default() < fresh_duration;
+            }
+        }
+        true
+    }
+
+    fn freshest_duration(&self) -> Duration {
+        let mut freshest = self.fresh_duration;
+        for path in &self.fresh_files {
+            if let Ok(metadata) = path.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    let duration = modified.elapsed().unwrap_or_default();
+                    freshest = min(freshest, duration);
+                }
+            }
+        }
+        freshest
+    }
+}
+
+static FRESH_DURATION_YEAR: Lazy<Duration> =
+    Lazy::new(|| Duration::from_secs(60 * 60 * 24 * 7 * 52));

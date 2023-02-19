@@ -16,6 +16,7 @@ mod output;
 mod regex;
 
 pub mod build_time;
+mod cache;
 mod cli;
 mod cmd;
 mod config;

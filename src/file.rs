@@ -1,6 +1,5 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use color_eyre::eyre::Result;
 use filetime::{set_file_times, FileTime};
@@ -18,13 +17,6 @@ pub fn display_path(path: &Path) -> String {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
     }
-}
-
-pub fn changed_within(f: &Path, within: Duration) -> Result<bool> {
-    let now = std::time::SystemTime::now();
-    let last_modified = f.metadata()?.modified()?;
-    let diff = now.duration_since(last_modified)?;
-    Ok(diff < within)
 }
 
 pub fn touch_dir(dir: &Path) -> io::Result<()> {
@@ -145,15 +137,6 @@ mod tests {
         let filenames = vec![".tool-versions"];
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".tool-versions")));
-    }
-
-    #[test]
-    fn test_changed_within() {
-        let dir = dirs::CURRENT.to_path_buf();
-        set_file_times(&dir, FileTime::zero(), FileTime::zero()).unwrap();
-        assert!(!changed_within(&dir, Duration::from_secs(1000)).unwrap());
-        touch_dir(&dir).unwrap();
-        assert!(changed_within(&dir, Duration::from_secs(1000)).unwrap());
     }
 
     #[test]

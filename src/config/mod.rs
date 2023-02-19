@@ -32,10 +32,10 @@ impl Config {
     pub fn load() -> Result<Self> {
         let rtxrc = load_rtxrc()?;
         let settings = rtxrc.settings();
-        let plugins = load_plugins(&settings)?;
+        let plugins = load_plugins()?;
         let legacy_files = load_legacy_files(&settings, &plugins);
         let config_files = find_all_config_files(&legacy_files);
-        let aliases = load_aliases(&settings, &plugins)?;
+        let aliases = load_aliases(&settings, &plugins);
 
         let config = Self {
             settings,
@@ -67,16 +67,10 @@ fn load_rtxrc() -> Result<RTXFile> {
     Ok(rtxrc)
 }
 
-fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Plugin>> {
+fn load_plugins() -> Result<IndexMap<PluginName, Plugin>> {
     let plugins = Plugin::list()?
         .into_par_iter()
-        .filter_map(|mut p| match p.ensure_loaded(settings) {
-            Ok(_) => Some((p.name.clone(), p)),
-            Err(e) => {
-                error!("Failed to load plugin {}: {}", p.name, e);
-                None
-            }
-        })
+        .map(|p| (p.name.clone(), p))
         .collect::<Vec<_>>()
         .into_iter()
         .sorted_by_cached_key(|(p, _)| p.to_string())
@@ -98,8 +92,8 @@ fn load_legacy_files(
         .filter_map(|plugin| match plugin.legacy_filenames(settings) {
             Ok(filenames) => Some(
                 filenames
-                    .into_iter()
-                    .map(|f| (f, plugin.name.clone()))
+                    .iter()
+                    .map(|f| (f.to_string(), plugin.name.clone()))
                     .collect_vec(),
             ),
             Err(err) => {
@@ -134,12 +128,26 @@ fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
     config_files.into_iter().unique().collect()
 }
 
-fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Plugin>) -> Result<AliasMap> {
-    let mut aliases = IndexMap::new();
-    for plugin in plugins.values() {
-        for (from, to) in plugin.get_aliases() {
+fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Plugin>) -> AliasMap {
+    let mut aliases: AliasMap = IndexMap::new();
+    let plugin_aliases: Vec<_> = plugins
+        .values()
+        .par_bridge()
+        .map(|plugin| {
+            let aliases = match plugin.get_aliases(settings) {
+                Ok(aliases) => aliases,
+                Err(err) => {
+                    eprintln!("Error: {err}");
+                    IndexMap::new()
+                }
+            };
+            (&plugin.name, aliases)
+        })
+        .collect();
+    for (plugin, plugin_aliases) in plugin_aliases {
+        for (from, to) in plugin_aliases {
             aliases
-                .entry(plugin.name.clone())
+                .entry(plugin.clone())
                 .or_insert_with(IndexMap::new)
                 .insert(from, to);
         }
@@ -154,7 +162,7 @@ fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Plugin>) -> 
         }
     }
 
-    Ok(aliases)
+    aliases
 }
 
 fn err_load_settings(settings_path: &Path) -> Report {

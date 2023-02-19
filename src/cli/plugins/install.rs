@@ -56,7 +56,7 @@ impl Command for PluginsInstall {
             return self.install_all_missing_plugins(&config);
         }
         let (name, git_url) = get_name_and_url(self.name.unwrap(), self.git_url)?;
-        let mut plugin = Plugin::load(&name, &config.settings)?;
+        let mut plugin = Plugin::new(&name);
         if self.force {
             plugin.uninstall()?;
         }

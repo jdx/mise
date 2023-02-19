@@ -23,7 +23,9 @@ impl ToolVersionList {
     }
     pub fn resolve(&mut self, settings: &Settings, plugin: &Plugin) {
         for tv in &mut self.versions {
-            tv.resolve(settings, plugin);
+            if let Err(err) = tv.resolve(settings, plugin) {
+                warn!("failed to resolve tool version: {}", err);
+            }
         }
     }
     pub fn resolved_versions(&self) -> Vec<&RuntimeVersion> {

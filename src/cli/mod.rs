@@ -206,6 +206,7 @@ pub mod tests {
     use crate::config::Settings;
     use crate::dirs;
     use crate::plugins::{Plugin, PluginName};
+    use crate::ui::progress_report::ProgressReport;
 
     use super::*;
 
@@ -239,7 +240,12 @@ pub mod tests {
             missing_runtime_behavior: AutoInstall,
             ..Settings::default()
         };
-        Plugin::load_ensure_installed(&PluginName::from(name), &settings).unwrap();
+        let mut plugin = Plugin::new(&PluginName::from(name));
+        if plugin.is_installed() {
+            plugin
+                .install(&settings, None, ProgressReport::new(true))
+                .unwrap();
+        }
     }
 
     pub fn grep(output: String, pattern: &str) -> String {
