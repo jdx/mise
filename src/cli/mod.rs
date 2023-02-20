@@ -240,7 +240,7 @@ pub mod tests {
             missing_runtime_behavior: AutoInstall,
             ..Settings::default()
         };
-        let mut plugin = Plugin::new(&PluginName::from(name));
+        let plugin = Plugin::new(&PluginName::from(name));
         if plugin.is_installed() {
             plugin
                 .install(&settings, None, ProgressReport::new(true))
