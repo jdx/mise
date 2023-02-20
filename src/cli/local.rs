@@ -149,6 +149,18 @@ mod tests {
         let stdout = assert_cli!("local", "--pin", "tiny", "2");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
 
+        // path
+        let stdout = assert_cli!("local", "dummy@path:.");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy path:.");
+
+        // ref
+        let stdout = assert_cli!("local", "dummy@ref:master");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy ref:master");
+
+        // prefix
+        let stdout = assert_cli!("local", "dummy@prefix:1");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy prefix:1");
+
         // will output the current version(s)
         let stdout = assert_cli!("local", "tiny");
         assert_str_eq!(stdout, "2.1.0\n");

@@ -108,6 +108,21 @@ fn load_runtime_args(ts: &mut Toolset, args: &[RuntimeArg]) {
                         ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v.clone()));
                     arg_ts.add_version(plugin_name.clone(), version);
                 }
+                RuntimeArgVersion::Ref(ref v) => {
+                    let version =
+                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Ref(v.clone()));
+                    arg_ts.add_version(plugin_name.clone(), version);
+                }
+                RuntimeArgVersion::Path(ref v) => {
+                    let version =
+                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Path(v.clone()));
+                    arg_ts.add_version(plugin_name.clone(), version);
+                }
+                RuntimeArgVersion::Prefix(ref v) => {
+                    let version =
+                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Prefix(v.clone()));
+                    arg_ts.add_version(plugin_name.clone(), version);
+                }
                 // I believe this will do nothing since it would just default to the `.tool-versions` version
                 // RuntimeArgVersion::None => {
                 //     arg_ts.add_version(plugin_name.clone(), ToolVersion::None);

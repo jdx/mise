@@ -1,11 +1,11 @@
 use std::fmt::{Display, Formatter};
+use std::fs;
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::dirs;
-
 use crate::plugins::{InstallType, Plugin};
 use crate::runtimes::RuntimeVersion;
 use crate::ui::progress_report::ProgressReport;
@@ -36,31 +36,38 @@ impl ToolVersion {
         }
     }
 
-    pub fn resolve(&mut self, settings: &Settings, plugin: &Plugin) -> Result<()> {
+    pub fn resolve(&mut self, settings: &Settings, plugin: Arc<Plugin>) -> Result<()> {
         if self.rtv.is_some() {
             return Ok(());
         }
         match self.r#type.clone() {
             ToolVersionType::Version(v) => self.resolve_version(settings, plugin, &v),
             ToolVersionType::Prefix(v) => self.resolve_prefix(settings, plugin, &v),
-            ToolVersionType::Ref(_) => unimplemented!(),
-            ToolVersionType::Path(_) => unimplemented!(),
+            ToolVersionType::Ref(r) => {
+                self.rtv = Some(RuntimeVersion::new(plugin, InstallType::Ref(r)));
+                Ok(())
+            }
+            ToolVersionType::Path(path) => {
+                let path = fs::canonicalize(path)?;
+                self.rtv = Some(RuntimeVersion::new(plugin, InstallType::Path(path)));
+                Ok(())
+            }
             ToolVersionType::System => Ok(()),
         }
     }
 
-    fn resolve_version(&mut self, settings: &Settings, plugin: &Plugin, v: &str) -> Result<()> {
-        let v = resolve_alias(settings, plugin, v)?;
+    fn resolve_version(&mut self, settings: &Settings, plugin: Arc<Plugin>, v: &str) -> Result<()> {
+        let v = resolve_alias(settings, plugin.clone(), v)?;
 
         if dirs::INSTALLS.join(&plugin.name).join(&v).exists() {
             // if the version is already installed, no need to fetch all of the remote versions
-            self.rtv = Some(RuntimeVersion::new(Arc::new(plugin.clone()), &v));
+            self.rtv = Some(RuntimeVersion::new(plugin, InstallType::Version(v)));
             return Ok(());
         }
 
         let matches = plugin.list_versions_matching(settings, &v)?;
         if matches.contains(&v) {
-            self.rtv = Some(RuntimeVersion::new(Arc::new(plugin.clone()), &v));
+            self.rtv = Some(RuntimeVersion::new(plugin, InstallType::Version(v)));
         } else {
             self.resolve_prefix(settings, plugin, &v)?;
         }
@@ -68,14 +75,22 @@ impl ToolVersion {
         Ok(())
     }
 
-    fn resolve_prefix(&mut self, settings: &Settings, plugin: &Plugin, prefix: &str) -> Result<()> {
+    fn resolve_prefix(
+        &mut self,
+        settings: &Settings,
+        plugin: Arc<Plugin>,
+        prefix: &str,
+    ) -> Result<()> {
         let matches = plugin.list_versions_matching(settings, prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
             // None => Err(VersionNotFound(plugin.name.clone(), prefix.to_string()))?,
         };
-        self.rtv = Some(RuntimeVersion::new(Arc::new(plugin.clone()), v));
+        self.rtv = Some(RuntimeVersion::new(
+            plugin,
+            InstallType::Version(v.to_string()),
+        ));
         Ok(())
     }
 
@@ -88,17 +103,8 @@ impl ToolVersion {
 
     pub fn install(&mut self, config: &Config, pr: ProgressReport) -> Result<()> {
         match self.r#type {
-            ToolVersionType::Version(_) | ToolVersionType::Prefix(_) => {
-                self.rtv
-                    .as_ref()
-                    .unwrap()
-                    .install(InstallType::Version, config, pr)?;
-            }
-            ToolVersionType::Ref(_) => {
-                self.rtv
-                    .as_ref()
-                    .unwrap()
-                    .install(InstallType::Ref, config, pr)?;
+            ToolVersionType::Version(_) | ToolVersionType::Prefix(_) | ToolVersionType::Ref(_) => {
+                self.rtv.as_ref().unwrap().install(config, pr)?;
             }
             _ => (),
         }
@@ -122,7 +128,7 @@ impl Display for ToolVersion {
     }
 }
 
-pub fn resolve_alias(settings: &Settings, plugin: &Plugin, v: &str) -> Result<String> {
+pub fn resolve_alias(settings: &Settings, plugin: Arc<Plugin>, v: &str) -> Result<String> {
     if let Some(plugin_aliases) = settings.aliases.get(&plugin.name) {
         if let Some(alias) = plugin_aliases.get(v) {
             return Ok(alias.clone());
