@@ -2,6 +2,7 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use std::sync::Arc;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -25,7 +26,7 @@ pub struct Update {
 
 impl Command for Update {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugins: Vec<&Plugin> = match (self.plugin, self.all) {
+        let plugins: Vec<&Arc<Plugin>> = match (self.plugin, self.all) {
             (Some(plugins), _) => plugins
                 .into_iter()
                 .map(|p| {

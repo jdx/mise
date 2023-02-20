@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
@@ -25,7 +26,7 @@ pub struct Config {
     pub legacy_files: IndexMap<String, PluginName>,
     pub config_files: Vec<PathBuf>,
     pub aliases: AliasMap,
-    pub plugins: IndexMap<PluginName, Plugin>,
+    pub plugins: IndexMap<PluginName, Arc<Plugin>>,
 }
 
 impl Config {
@@ -67,10 +68,10 @@ fn load_rtxrc() -> Result<RTXFile> {
     Ok(rtxrc)
 }
 
-fn load_plugins() -> Result<IndexMap<PluginName, Plugin>> {
+fn load_plugins() -> Result<IndexMap<PluginName, Arc<Plugin>>> {
     let plugins = Plugin::list()?
         .into_par_iter()
-        .map(|p| (p.name.clone(), p))
+        .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>()
         .into_iter()
         .sorted_by_cached_key(|(p, _)| p.to_string())
@@ -80,7 +81,7 @@ fn load_plugins() -> Result<IndexMap<PluginName, Plugin>> {
 
 fn load_legacy_files(
     settings: &Settings,
-    plugins: &IndexMap<PluginName, Plugin>,
+    plugins: &IndexMap<PluginName, Arc<Plugin>>,
 ) -> IndexMap<String, PluginName> {
     if !settings.legacy_version_file {
         return IndexMap::new();
@@ -128,7 +129,7 @@ fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
     config_files.into_iter().unique().collect()
 }
 
-fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Plugin>) -> AliasMap {
+fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Arc<Plugin>>) -> AliasMap {
     let mut aliases: AliasMap = IndexMap::new();
     let plugin_aliases: Vec<_> = plugins
         .values()
