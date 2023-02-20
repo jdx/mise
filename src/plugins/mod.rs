@@ -91,7 +91,7 @@ impl Plugin {
     }
 
     pub fn install(
-        &mut self,
+        &self,
         settings: &Settings,
         repository: Option<&str>,
         mut pr: ProgressReport,

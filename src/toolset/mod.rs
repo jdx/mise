@@ -40,7 +40,7 @@ mod tool_version_list;
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     source: Option<ToolSource>,
-    plugins: IndexMap<PluginName, Plugin>,
+    plugins: IndexMap<PluginName, Arc<Plugin>>,
 }
 
 impl Toolset {
@@ -50,7 +50,7 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn with_plugins(mut self, plugins: IndexMap<PluginName, Plugin>) -> Self {
+    pub fn with_plugins(mut self, plugins: IndexMap<PluginName, Arc<Plugin>>) -> Self {
         self.plugins = plugins;
         self
     }
@@ -172,7 +172,7 @@ impl Toolset {
         let plugins = missing_plugins
             .into_par_iter()
             .map(|plugin_name| {
-                let mut plugin = Plugin::new(&plugin_name);
+                let plugin = Plugin::new(&plugin_name);
                 if !plugin.is_installed() {
                     plugin.install(&config.settings, None, mpr.add())?;
                 }
@@ -180,7 +180,7 @@ impl Toolset {
             })
             .collect::<Result<Vec<_>>>()?;
         for plugin in plugins {
-            self.plugins.insert(plugin.name.clone(), plugin);
+            self.plugins.insert(plugin.name.clone(), Arc::new(plugin));
         }
         self.plugins.sort_keys();
         Ok(())
@@ -209,7 +209,7 @@ impl Toolset {
                 let versions = p.list_installed_versions()?;
                 Ok(versions
                     .into_iter()
-                    .map(|v| RuntimeVersion::new(Arc::new(p.clone()), &v)))
+                    .map(|v| RuntimeVersion::new(p.clone(), &v)))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
