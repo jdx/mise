@@ -32,6 +32,7 @@ mod local;
 mod ls;
 mod ls_remote;
 mod plugins;
+mod self_update;
 mod settings;
 mod uninstall;
 pub mod version;
@@ -67,6 +68,7 @@ pub enum Commands {
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
     Plugins(plugins::Plugins),
+    SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
@@ -94,10 +96,11 @@ impl Commands {
             Self::HookEnv(cmd) => cmd.run(config, out),
             Self::Install(cmd) => cmd.run(config, out),
             Self::Latest(cmd) => cmd.run(config, out),
+            Self::Local(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
-            Self::Local(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
+            Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
