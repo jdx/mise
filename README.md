@@ -396,14 +396,18 @@ rtx can also be configured via environment variables. The following options are 
 
 This is the same as the `missing_runtime_behavior` config option in `~/.config/rtx/config.toml`.
 
-#### `RTX_DATA_DIR`
-
-This is the directory where rtx stores its data. The default is `~/.local/share/rtx`.
-
 ```sh-session
 $ RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@20
 $ RTX_NODEJS_VERSION=20 rtx exec -- node --version
 ```
+
+#### `RTX_DATA_DIR`
+
+This is the directory where rtx stores its data. The default is `~/.local/share/rtx`.
+
+#### `RTX_CACHE_DIR`
+
+This is the directory where rtx stores cache. The default is `~/.cache/rtx` on Linux and `~/Library/Caches/rtx` on macOS.
 
 #### `RTX_CONFIG_FILE`
 
@@ -1498,7 +1502,7 @@ to be updating, this is a good place to start.
 
 ### Plugin Cache
 
-Each plugin has a cache that's stored in `~/.cache/rtx/plugins/<PLUGIN>`. It stores
+Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/plugins/<PLUGIN>`. It stores
 the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
 the list of aliases, and the bin directories within each runtime installation.
 
@@ -1506,7 +1510,7 @@ Remote versions are updated daily by default or anytime that `rtx ls-remote` is 
 zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
-cat ~/.cache/rtx/nodejs/remote_versions.msgpack.zlib | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
+cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.zlib | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 ### Legacy File Cache
