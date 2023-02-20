@@ -378,6 +378,19 @@ _arguments "${_arguments_options[@]}" \
 '--help[Print help]' \
 && ret=0
 ;;
+(implode)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--config[also remove config directory]' \
+'--dry-run[list directories that would be removed without actually removing them]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (install)
 _arguments "${_arguments_options[@]}" \
 '()*-p+[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
@@ -879,6 +892,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(implode)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (install)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1020,6 +1037,7 @@ _rtx_commands() {
 'global:sets global .tool-versions to include a specified runtime' \
 'g:sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
+'implode:removes rtx CLI and all generated data' \
 'install:install a runtime' \
 'i:install a runtime' \
 'latest:get the latest runtime version of a plugin'\''s runtimes' \
@@ -1328,6 +1346,7 @@ _rtx__help_commands() {
 'exec:execute a command with runtime(s) set' \
 'global:sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
+'implode:removes rtx CLI and all generated data' \
 'install:install a runtime' \
 'latest:get the latest runtime version of a plugin'\''s runtimes' \
 'local:Sets .tool-versions to include a specific runtime' \
@@ -1391,6 +1410,16 @@ _rtx__help__hook-env_commands() {
 _rtx__hook-env_commands() {
     local commands; commands=()
     _describe -t commands 'rtx hook-env commands' commands "$@"
+}
+(( $+functions[_rtx__help__implode_commands] )) ||
+_rtx__help__implode_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help implode commands' commands "$@"
+}
+(( $+functions[_rtx__implode_commands] )) ||
+_rtx__implode_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx implode commands' commands "$@"
 }
 (( $+functions[_rtx__help__install_commands] )) ||
 _rtx__help__install_commands() {
