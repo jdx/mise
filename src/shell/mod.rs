@@ -51,13 +51,13 @@ pub trait Shell {
     fn unset_env(&self, k: &str) -> String;
 }
 
-pub fn get_shell(shell: Option<ShellType>) -> Box<dyn Shell> {
+pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     match shell.or_else(ShellType::load) {
-        Some(ShellType::Bash) => Box::<bash::Bash>::default(),
-        Some(ShellType::Fish) => Box::<fish::Fish>::default(),
-        Some(ShellType::Xonsh) => Box::<xonsh::Xonsh>::default(),
-        Some(ShellType::Zsh) => Box::<zsh::Zsh>::default(),
-        _ => panic!("no shell provided, use `--shell=zsh`"),
+        Some(ShellType::Bash) => Some(Box::<bash::Bash>::default()),
+        Some(ShellType::Fish) => Some(Box::<fish::Fish>::default()),
+        Some(ShellType::Xonsh) => Some(Box::<xonsh::Xonsh>::default()),
+        Some(ShellType::Zsh) => Some(Box::<zsh::Zsh>::default()),
+        _ => None,
     }
 }
 

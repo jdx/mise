@@ -26,7 +26,8 @@ pub struct Deactivate {
 
 impl Command for Deactivate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell = get_shell(self.shell_type.or(self.shell));
+        let shell = get_shell(self.shell_type.or(self.shell))
+            .expect("no shell provided, use `--shell=zsh`");
 
         // TODO: clear env using __RTX_DIFF
         let output = shell.deactivate();
