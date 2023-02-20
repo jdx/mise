@@ -1,11 +1,8 @@
 use std::fs;
-use std::fs::remove_file;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
-use atty::Stream;
-use atty::Stream::Stderr;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
@@ -17,23 +14,20 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
-use cache::PluginCache;
 pub use script_manager::{InstallType, Script, ScriptManager};
 
+use crate::cache::CacheManager;
 use crate::cmd::cmd;
-use crate::config::{MissingRuntimeBehavior, Settings};
+use crate::config::Settings;
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::changed_within;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand::shorthand_to_repository;
-use crate::ui::color::{cyan, Color};
+
 use crate::ui::progress_report::ProgressReport;
-use crate::ui::prompt;
 use crate::{dirs, file};
 
-mod cache;
 mod script_manager;
 
 pub type PluginName = String;
@@ -46,39 +40,38 @@ pub struct Plugin {
     cache_path: PathBuf,
     downloads_path: PathBuf,
     installs_path: PathBuf,
-    cache: Option<PluginCache>,
     script_man: ScriptManager,
+    remote_version_cache: CacheManager<Vec<String>>,
+    alias_cache: CacheManager<Vec<(String, String)>>,
+    legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
 impl Plugin {
     pub fn new(name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
+        let cache_path = dirs::CACHE.join(name);
         Self {
             name: name.into(),
-            cache_path: plugin_path.join(".rtxcache.msgpack.gz"),
             script_man: ScriptManager::new(plugin_path.clone()),
-            plugin_path,
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
-            cache: None,
+            remote_version_cache: CacheManager::new(
+                cache_path.join("remote_versions.msgpack.zlib"),
+            )
+            .with_fresh_duration(Duration::from_secs(60 * 60 * 24))
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-all")),
+            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.zlib"))
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/list-aliases")),
+            legacy_filename_cache: CacheManager::new(
+                cache_path.join("legacy_filenames.msgpack.zlib"),
+            )
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            plugin_path,
+            cache_path,
         }
-    }
-
-    pub fn load(name: &PluginName, settings: &Settings) -> Result<Self> {
-        let mut plugin = Self::new(name);
-        if plugin.is_installed() {
-            plugin.ensure_loaded(settings)?;
-        }
-        Ok(plugin)
-    }
-
-    pub fn load_ensure_installed(name: &PluginName, settings: &Settings) -> Result<Self> {
-        let mut plugin = Self::new(name);
-        if !plugin.ensure_installed(settings)? {
-            Err(PluginNotInstalled(plugin.name.to_string()))?;
-        }
-        plugin.cache = Some(plugin.get_cache(settings)?);
-        Ok(plugin)
     }
 
     pub fn list() -> Result<Vec<Self>> {
@@ -92,18 +85,13 @@ impl Plugin {
         self.plugin_path.exists()
     }
 
-    pub fn ensure_loaded(&mut self, settings: &Settings) -> Result<()> {
-        self.cache = Some(self.get_cache(settings)?);
-        Ok(())
-    }
-
     pub fn get_remote_url(&self) -> Option<String> {
         let git = Git::new(self.plugin_path.to_path_buf());
         git.get_remote_url()
     }
 
     pub fn install(
-        &mut self,
+        &self,
         settings: &Settings,
         repository: Option<&str>,
         mut pr: ProgressReport,
@@ -115,8 +103,8 @@ impl Plugin {
         pr.set_style(PROG_TEMPLATE.clone());
         pr.set_prefix(format!(
             "{} {} ",
-            COLOR.dimmed("rtx"),
-            COLOR.cyan(&self.name)
+            style("rtx").dim().for_stderr(),
+            style(&self.name).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
         let repository = repository
@@ -131,60 +119,25 @@ impl Plugin {
         let git = Git::new(self.plugin_path.to_path_buf());
         pr.set_message(format!("cloning {repository}"));
         git.clone(repository)?;
-        pr.set_message("loading plugin".into());
-        self.ensure_loaded(settings)?;
+
+        pr.set_message("loading plugin remote versions".into());
+        self.list_remote_versions(settings)?;
+        if self.has_list_alias_script() {
+            pr.set_message("getting plugin aliases".into());
+            self.get_aliases(settings)?;
+        }
+        if self.has_list_legacy_filenames_script() {
+            pr.set_message("getting plugin legacy filenames".into());
+            self.legacy_filenames(settings)?;
+        }
+
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
             "{} {repository}@{}",
-            COLOR.green("✓"),
-            COLOR.bright_yellow(&sha),
+            style("✓").green().for_stderr(),
+            style(&sha).bright().yellow().for_stderr(),
         ));
         Ok(())
-    }
-
-    pub fn ensure_installed(&mut self, settings: &Settings) -> Result<bool> {
-        static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stderr));
-        if self.is_installed() {
-            return Ok(true);
-        }
-
-        match shorthand_to_repository(&self.name) {
-            Some(repo) => match settings.missing_runtime_behavior {
-                MissingRuntimeBehavior::AutoInstall => {
-                    self.install(settings, Some(repo), ProgressReport::new(settings.verbose))?;
-                    Ok(true)
-                }
-                MissingRuntimeBehavior::Prompt => {
-                    match prompt::prompt_for_install(&format!("plugin {}", COLOR.cyan(&self.name)))
-                    {
-                        true => {
-                            self.install(
-                                settings,
-                                Some(repo),
-                                ProgressReport::new(settings.verbose),
-                            )?;
-                            Ok(true)
-                        }
-                        false => Ok(false),
-                    }
-                }
-                MissingRuntimeBehavior::Warn => {
-                    warn!("{}", PluginNotInstalled(self.name.clone()));
-                    Ok(false)
-                }
-                MissingRuntimeBehavior::Ignore => {
-                    debug!("{}", PluginNotInstalled(self.name.clone()));
-                    Ok(false)
-                }
-            },
-            None => match settings.missing_runtime_behavior {
-                MissingRuntimeBehavior::Ignore => Ok(false),
-                _ => {
-                    warn!("Plugin not found: {}", COLOR.cyan(&self.name));
-                    Ok(false)
-                }
-            },
-        }
     }
 
     pub fn update(&self, gitref: Option<String>) -> Result<()> {
@@ -220,7 +173,7 @@ impl Plugin {
             fs::remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    cyan(Stderr, &dir.to_string_lossy())
+                    style(&dir.to_string_lossy()).cyan().for_stderr()
                 )
             })
         };
@@ -232,15 +185,16 @@ impl Plugin {
         Ok(())
     }
 
-    pub fn latest_version(&self, query: &str) -> Option<String> {
-        let matches = self.list_versions_matching(query);
-        match matches.contains(&query.to_string()) {
+    pub fn latest_version(&self, settings: &Settings, query: &str) -> Result<Option<String>> {
+        let matches = self.list_versions_matching(settings, query)?;
+        let v = match matches.contains(&query.to_string()) {
             true => Some(query.to_string()),
             false => matches.last().map(|v| v.to_string()),
-        }
+        };
+        Ok(v)
     }
 
-    pub fn list_versions_matching(&self, query: &str) -> Vec<String> {
+    pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
         let mut query = query;
         if query == "latest" {
             query = "[0-9]";
@@ -252,19 +206,14 @@ impl Plugin {
         }
         let query_regex =
             Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
-        self.cache
-            .as_ref()
-            .expect("plugin not loaded")
-            .versions
+        let versions = self
+            .list_remote_versions(settings)?
             .iter()
             .filter(|v| !VERSION_REGEX.is_match(v))
             .filter(|v| query_regex.is_match(v))
             .cloned()
-            .collect_vec()
-    }
-
-    pub fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        Ok(self.get_cache(settings)?.legacy_filenames)
+            .collect_vec();
+        Ok(versions)
     }
 
     pub fn list_installed_versions(&self) -> Result<Vec<String>> {
@@ -279,21 +228,25 @@ impl Plugin {
         })
     }
 
-    pub fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
-        self.clear_cache();
-        let cache = self.get_cache(settings)?;
-
-        Ok(cache.versions)
+    pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
+        // TODO: self.remote_version_cache.clear();
+        self.remote_version_cache
+            .get_or_try_init(|| self.fetch_remote_versions(settings))
     }
 
-    pub fn get_aliases(&self) -> IndexMap<String, String> {
-        self.cache
-            .as_ref()
-            .expect("plugin not loaded")
-            .aliases
+    pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+        let aliases = self
+            .alias_cache
+            .get_or_try_init(|| self.fetch_aliases(settings))?
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
+            .collect();
+        Ok(aliases)
+    }
+
+    pub fn legacy_filenames(&self, settings: &Settings) -> Result<&Vec<String>> {
+        self.legacy_filename_cache
+            .get_or_try_init(|| self.fetch_legacy_filenames(settings))
     }
 
     pub fn external_commands(&self) -> Result<Vec<Vec<String>>> {
@@ -365,58 +318,8 @@ impl Plugin {
         Ok(stdout.split_whitespace().map(|v| v.into()).collect())
     }
 
-    fn get_cache(&self, settings: &Settings) -> Result<PluginCache> {
-        if let Some(cache) = self.cache.as_ref() {
-            return Ok(cache.clone());
-        }
-        if !self.is_installed() {
-            return Err(PluginNotInstalled(self.name.clone()).into());
-        }
-        let cp = &self.cache_path;
-        // TODO: put this duration into settings
-        let pc = match cp.exists() && changed_within(cp, Duration::from_secs(60 * 60 * 24))? {
-            true => PluginCache::parse(cp)?,
-            false => {
-                let pc = self.build_cache(settings)?;
-                pc.write(cp).unwrap_or_else(|e| {
-                    warn!(
-                        "Failed to write plugin cache to {}: {}",
-                        cp.to_string_lossy(),
-                        e
-                    );
-                });
-
-                pc
-            }
-        };
-
-        Ok(pc)
-    }
-
-    fn build_cache(&self, settings: &Settings) -> Result<PluginCache> {
-        Ok(PluginCache {
-            versions: self
-                .fetch_remote_versions(settings)
-                .wrap_err_with(|| eyre!("fetching remote versions for {}", self.name))?,
-            legacy_filenames: self
-                .fetch_legacy_filenames(settings)
-                .wrap_err_with(|| eyre!("fetching legacy filenames for {}", self.name))?,
-            aliases: self
-                .fetch_aliases(settings)
-                .wrap_err_with(|| eyre!("fetching aliases for {}", self.name))?,
-        })
-    }
-
-    fn clear_cache(&self) {
-        if self.cache_path.exists() {
-            remove_file(&self.cache_path).unwrap_or_else(|e| {
-                debug!("failed to remove cache file: {}", e);
-            });
-        }
-    }
-
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        if !self.script_man.script_exists(&Script::ListLegacyFilenames) {
+        if !self.has_list_legacy_filenames_script() {
             return Ok(vec![]);
         }
         Ok(self
@@ -427,8 +330,14 @@ impl Plugin {
             .collect())
     }
 
+    fn has_list_alias_script(&self) -> bool {
+        self.script_man.script_exists(&Script::ListAliases)
+    }
+    fn has_list_legacy_filenames_script(&self) -> bool {
+        self.script_man.script_exists(&Script::ListLegacyFilenames)
+    }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        if !self.script_man.script_exists(&Script::ListAliases) {
+        if !self.has_list_alias_script() {
             return Ok(vec![]);
         }
         let stdout = self
@@ -478,8 +387,8 @@ impl Plugin {
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
-        dirs::LEGACY_CACHE
-            .join(&self.name)
+        self.cache_path
+            .join("legacy")
             .join(hash_to_str(&legacy_file.to_string_lossy()))
             .with_extension("txt")
     }
@@ -498,8 +407,6 @@ impl PartialEq for Plugin {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_str_eq;
@@ -512,7 +419,7 @@ mod tests {
     fn test_legacy_gemfile() {
         assert_cli!("plugin", "add", "ruby");
         let settings = Settings::default();
-        let plugin = Plugin::load(&PluginName::from("ruby"), &settings).unwrap();
+        let plugin = Plugin::new(&PluginName::from("ruby"));
         let gemfile = env::HOME.join("fixtures/Gemfile");
         let version = plugin.parse_legacy_file(&gemfile, &settings).unwrap();
         assert_str_eq!(version, "3.0.5");
@@ -526,8 +433,8 @@ mod tests {
     fn test_exact_match() {
         assert_cli!("plugin", "add", "python");
         let settings = Settings::default();
-        let plugin = Plugin::load(&PluginName::from("python"), &settings).unwrap();
-        let version = plugin.latest_version("3.9.1").unwrap();
+        let plugin = Plugin::new(&PluginName::from("python"));
+        let version = plugin.latest_version(&settings, "3.9.1").unwrap().unwrap();
         assert_str_eq!(version, "3.9.1");
     }
 }

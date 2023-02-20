@@ -127,7 +127,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
+    use crate::{assert_cli, dirs};
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_install_force() {
@@ -143,5 +144,16 @@ mod tests {
     fn test_install_with_alias() {
         assert_cli!("install", "-f", "shfmt@my/alias");
         assert_cli!("where", "shfmt@my/alias");
+    }
+
+    #[test]
+    fn test_install_ref() {
+        assert_cli!("install", "-f", "dummy@ref:master");
+        assert_cli!("global", "dummy@ref:master");
+        let output = assert_cli!("where", "dummy");
+        assert_str_eq!(
+            output.trim(),
+            dirs::INSTALLS.join("dummy/ref-master").to_string_lossy()
+        );
     }
 }

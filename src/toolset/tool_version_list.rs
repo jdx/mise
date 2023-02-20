@@ -1,8 +1,7 @@
-use color_eyre::eyre::Result;
-
 use crate::config::Settings;
 use crate::plugins::Plugin;
 use crate::runtimes::RuntimeVersion;
+use std::sync::Arc;
 
 use crate::toolset::{ToolSource, ToolVersion};
 
@@ -23,11 +22,12 @@ impl ToolVersionList {
     pub fn add_version(&mut self, version: ToolVersion) {
         self.versions.push(version);
     }
-    pub fn resolve(&mut self, settings: &Settings, plugin: &Plugin) -> Result<()> {
+    pub fn resolve(&mut self, settings: &Settings, plugin: Arc<Plugin>) {
         for tv in &mut self.versions {
-            tv.resolve(settings, plugin)?;
+            if let Err(err) = tv.resolve(settings, plugin.clone()) {
+                warn!("failed to resolve tool version: {}", err);
+            }
         }
-        Ok(())
     }
     pub fn resolved_versions(&self) -> Vec<&RuntimeVersion> {
         self.versions

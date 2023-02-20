@@ -30,7 +30,11 @@ _{about}_
 
 ## 30 Second Demo
 
-The following shows using rtx to install node, python, and jq into a project using a `.tool-versions` file.
+The following shows using rtx to install [nodejs](https://nodejs.org) and
+[jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
+[hyperfine](https://github.com/sharkdp/hyperfine) is used to show the performance using
+rtx vs asdf. (See [Performance](#performance)).
+Note that calling `which node` gives us a real path to the binary, not a shim.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
 
@@ -223,7 +227,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.10.0/rtx-v1.10.0-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.10.1/rtx-v1.10.1-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -330,10 +334,13 @@ The `.tool-versions` file is used to specify the runtime versions for a project.
 is:
 
 ```
-nodejs      20.0.0  # comments are allowed
-ruby        3       # can be fuzzy version
-shellcheck  latest  # also supports "latest"
+nodejs      20.0.0       # comments are allowed
+ruby        3            # can be fuzzy version
+shellcheck  latest       # also supports "latest"
 jq          1.6
+erlang      ref:master   # compile from vcs ref
+golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
+shfmt       path:./shfmt # use a custom runtime
 ```
 
 Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local) to create them automatically.
@@ -583,7 +590,9 @@ and the runtime itself. e.g.: when you call `node` it will call an asdf shim fil
 which then calls `asdf exec`, which then calls the correct version of node.
 
 These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
-updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this.
+updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo gif at the top of this README
+that `rtx` isn't actually used when calling `node -v` for this reason. The performance is
+identical to running node without using rtx.
 
 I don't think it's possible for asdf to fix these issues. The author of asdf did a great writeup
 of [performance problems](https://stratus3d.com/blog/2022/08/11/asdf-performance/). asdf is written
@@ -720,31 +729,15 @@ to be updating, this is a good place to start.
 
 ### Plugin Cache
 
-Each plugin has a cache that's stored in `~/.local/share/rtx/plugins/<PLUGIN>/.rtxcache.msgpack.gz`. It stores
-the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`) and the legacy filenames (see below).
+Each plugin has a cache that's stored in `~/.cache/rtx/plugins/<PLUGIN>`. It stores
+the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
+the list of aliases, and the bin directories within each runtime installation.
 
-It is updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
-gzipped messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
+Remote versions are updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
+zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
-cat ~/.local/share/rtx/plugins/nodejs/.rtxcache.msgpack.gz | gunzip | msgpack-cli decode
-```
-
-### Runtime Cache
-
-Each runtime (language version, e.g.: `nodejs@20.0.0`), has a file called "runtimeconf" that's stored
-inside the install directory, e.g.: `~/.asdf/installs/nodejs/20.0.0/.rtxconf.msgpack`. This stores the
-information about the runtime that should not change after installation. Currently this is just the
-bin paths the plugin defines in `bin/list-bin-paths`. By default this is just `/bin`. It's the list
-of paths that rtx will add to `PATH` when the runtime is activated.
-
-I have not seen a plugins which has _dynamic_ bin paths but let me know if you find one. If that is
-the case, we may need to make this cached instead of static.
-
-"Runtimeconf" is stored as uncompressed messagepack and can be viewed with the following:
-
-```
-cat ~/.local/share/rtx/installs/nodejs/18.13.0/.rtxconf.msgpack | msgpack-cli decode
+cat ~/.cache/rtx/nodejs/remote_versions.msgpack.zlib | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 ### Legacy File Cache

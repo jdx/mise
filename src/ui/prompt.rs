@@ -1,9 +1,5 @@
-use crate::ui::color::Color;
-use atty::Stream;
-use once_cell::sync::Lazy;
+use console::style;
 use std::io::stdin;
-
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
 
 pub fn prompt() -> String {
     let mut input = String::new();
@@ -18,7 +14,7 @@ pub fn prompt_for_install(thing: &str) -> bool {
             let stderr = console::Term::stderr();
             eprint!(
                 "{} Would you like to install {}? [Y/n] ",
-                COLOR.dimmed("rtx"),
+                style("rtx").dim().for_stderr(),
                 thing,
             );
             let yn = matches!(prompt().to_lowercase().as_str(), "" | "y" | "yes");
@@ -28,8 +24,4 @@ pub fn prompt_for_install(thing: &str) -> bool {
         }
         false => false,
     }
-}
-
-pub fn is_tty() -> bool {
-    atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stderr)
 }

@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
+
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -19,10 +19,10 @@ pub use tool_version::ToolVersionType;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{InstallType, Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::tool_version_list::ToolVersionList;
-use crate::ui::color::Color;
+
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 
@@ -40,7 +40,7 @@ mod tool_version_list;
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     source: Option<ToolSource>,
-    plugins: IndexMap<PluginName, Plugin>,
+    plugins: IndexMap<PluginName, Arc<Plugin>>,
 }
 
 impl Toolset {
@@ -50,7 +50,7 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn with_plugins(mut self, plugins: IndexMap<PluginName, Plugin>) -> Self {
+    pub fn with_plugins(mut self, plugins: IndexMap<PluginName, Arc<Plugin>>) -> Self {
         self.plugins = plugins;
         self
     }
@@ -83,9 +83,7 @@ impl Toolset {
                         return;
                     }
                 };
-                if let Err(e) = v.resolve(&config.settings, plugin) {
-                    warn!("Error resolving plugin versions: {}", e);
-                }
+                v.resolve(&config.settings, plugin.clone());
             });
     }
     pub fn install_missing(&mut self, config: &Config) -> Result<()> {
@@ -153,7 +151,7 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            version.resolve(&config.settings, plugin)?;
+                            version.resolve(&config.settings, plugin.clone())?;
                             version.install(config, mpr.add())?;
                         }
                         Ok(())
@@ -174,7 +172,7 @@ impl Toolset {
         let plugins = missing_plugins
             .into_par_iter()
             .map(|plugin_name| {
-                let mut plugin = Plugin::new(&plugin_name);
+                let plugin = Plugin::new(&plugin_name);
                 if !plugin.is_installed() {
                     plugin.install(&config.settings, None, mpr.add())?;
                 }
@@ -182,7 +180,7 @@ impl Toolset {
             })
             .collect::<Result<Vec<_>>>()?;
         for plugin in plugins {
-            self.plugins.insert(plugin.name.clone(), plugin);
+            self.plugins.insert(plugin.name.clone(), Arc::new(plugin));
         }
         self.plugins.sort_keys();
         Ok(())
@@ -211,7 +209,7 @@ impl Toolset {
                 let versions = p.list_installed_versions()?;
                 Ok(versions
                     .into_iter()
-                    .map(|v| RuntimeVersion::new(Arc::new(p.clone()), &v)))
+                    .map(|v| RuntimeVersion::new(p.clone(), InstallType::Version(v))))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -299,6 +297,45 @@ impl Toolset {
                 }
                 None
             }
+            RuntimeArgVersion::Prefix(version) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Prefix(v) if v.starts_with(version) => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
+            RuntimeArgVersion::Ref(ref_) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Ref(v) if v == ref_ => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
+            RuntimeArgVersion::Path(path) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Path(v) if v == path => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
             RuntimeArgVersion::None => {
                 let plugin = self.versions.get(&arg.plugin);
                 match plugin {
@@ -321,12 +358,10 @@ impl Display for Toolset {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stderr));
-
 fn display_versions(versions: &[&mut ToolVersion]) -> String {
     let display_versions = versions
         .iter()
-        .map(|v| COLOR.cyan(&v.to_string()))
+        .map(|v| style(&v.to_string()).cyan().for_stderr().to_string())
         .join(", ");
     display_versions
 }

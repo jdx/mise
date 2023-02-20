@@ -1,13 +1,13 @@
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use owo_colors::Stream;
+use std::sync::Arc;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
-use crate::ui::color::{cyan, Color};
 
 /// updates a plugin to the latest version
 ///
@@ -26,12 +26,12 @@ pub struct Update {
 
 impl Command for Update {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugins: Vec<&Plugin> = match (self.plugin, self.all) {
+        let plugins: Vec<&Arc<Plugin>> = match (self.plugin, self.all) {
             (Some(plugins), _) => plugins
                 .into_iter()
                 .map(|p| {
                     config.plugins.get(&p).ok_or_else(|| {
-                        eyre!("plugin {} not found", cyan(Stream::Stderr, p.as_str()))
+                        eyre!("plugin {} not found", style(p.as_str()).cyan().for_stderr())
                     })
                 })
                 .collect::<Result<_>>()?,
@@ -47,13 +47,12 @@ impl Command for Update {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx plugins update --all   # update all plugins
       $ rtx plugins update nodejs  # update only nodejs
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
@@ -64,6 +63,7 @@ mod tests {
 
     #[test]
     fn test_plugin_update() {
+        assert_cli!("plugin", "install", "nodejs");
         let err = assert_cli_err!("p", "update");
         assert_str_eq!(err.to_string(), "no plugins specified");
         assert_cli!("plugin", "update", "--all");
