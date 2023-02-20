@@ -63,8 +63,11 @@ impl dyn ConfigFile {
                     .push(if pin {
                         rtv.version.to_string()
                     } else {
-                        match runtime.version {
+                        match &runtime.version {
                             RuntimeArgVersion::Version(ref v) => v.to_string(),
+                            RuntimeArgVersion::Path(p) => format!("path:{p}"),
+                            RuntimeArgVersion::Ref(r) => format!("ref:{r}"),
+                            RuntimeArgVersion::Prefix(p) => format!("prefix:{p}"),
                             _ => "latest".to_string(),
                         }
                     });

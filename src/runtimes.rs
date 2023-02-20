@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::fs::{create_dir_all, remove_dir_all};
+use std::fs::{create_dir_all, remove_dir_all, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, fs};
 
 use color_eyre::eyre::{Result, WrapErr};
 use console::style;
@@ -14,6 +14,7 @@ use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::hash::hash_to_str;
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env, fake_asdf, file};
@@ -25,38 +26,44 @@ pub struct RuntimeVersion {
     pub version: String,
     pub plugin: Arc<Plugin>,
     pub install_path: PathBuf,
+    pub install_type: InstallType,
     download_path: PathBuf,
     script_man: ScriptManager,
     bin_paths_cache: CacheManager<Vec<String>>,
 }
 
 impl RuntimeVersion {
-    pub fn new(plugin: Arc<Plugin>, version: &str) -> Self {
-        let install_path = dirs::INSTALLS.join(&plugin.name).join(version);
-        let download_path = dirs::DOWNLOADS.join(&plugin.name).join(version);
-        let cache_path = dirs::CACHE.join(&plugin.name).join(version);
+    pub fn new(plugin: Arc<Plugin>, install_type: InstallType) -> Self {
+        let version = match &install_type {
+            InstallType::Version(v) => v.to_string(),
+            InstallType::Ref(r) => format!("ref-{r}"),
+            InstallType::Path(p) => hash_to_str(&p),
+            InstallType::System => "system".into(),
+        };
+        let install_path = match &install_type {
+            InstallType::Path(p) => p.clone(),
+            _ => dirs::INSTALLS.join(&plugin.name).join(&version),
+        };
+        let download_path = dirs::DOWNLOADS.join(&plugin.name).join(&version);
+        let cache_path = dirs::CACHE.join(&plugin.name).join(&version);
         Self {
             script_man: build_script_man(
-                version,
+                install_type.clone(),
                 &plugin.plugin_path,
                 &install_path,
                 &download_path,
             ),
             bin_paths_cache: CacheManager::new(cache_path.join("bin_paths.msgpack.zlib"))
                 .with_fresh_file(install_path.clone()),
-            download_path: dirs::DOWNLOADS.join(&plugin.name).join(version),
+            download_path,
             install_path,
-            version: version.into(),
+            version,
             plugin,
+            install_type,
         }
     }
 
-    pub fn install(
-        &self,
-        install_type: InstallType,
-        config: &Config,
-        mut pr: ProgressReport,
-    ) -> Result<()> {
+    pub fn install(&self, config: &Config, mut pr: ProgressReport) -> Result<()> {
         static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
             ProgressStyle::with_template("{prefix}{wide_msg} {spinner:.blue} {elapsed:.dim.italic}")
                 .unwrap()
@@ -70,11 +77,11 @@ impl RuntimeVersion {
         pr.enable_steady_tick();
 
         let settings = &config.settings;
-        debug!("install {} {}", self, install_type);
+        debug!("install {} {}", self, self.install_type);
 
         self.create_install_dirs()?;
-        let download = Script::Download(install_type.clone());
-        let install = Script::Install(install_type);
+        let download = Script::Download(self.install_type.clone());
+        let install = Script::Install(self.install_type.clone());
 
         let run_script = |script| {
             self.script_man.run_by_line(
@@ -109,6 +116,9 @@ impl RuntimeVersion {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
+        if let Err(err) = fs::remove_file(self.incomplete_file_path()) {
+            debug!("error removing .rtx-incomplete: {:?}", err);
+        }
         pr.finish_with_message(style("✓").green().for_stderr().to_string());
 
         Ok(())
@@ -124,10 +134,13 @@ impl RuntimeVersion {
     }
 
     pub fn is_installed(&self) -> bool {
-        if self.version == "system" {
-            return true;
+        match &self.install_type {
+            InstallType::System => true,
+            InstallType::Path(p) => p.exists(),
+            InstallType::Version(_) | InstallType::Ref(_) => {
+                self.install_path.exists() && !self.incomplete_file_path().exists()
+            }
         }
-        self.install_path.exists()
     }
 
     pub fn uninstall(&self) -> Result<()> {
@@ -190,6 +203,7 @@ impl RuntimeVersion {
         let _ = remove_dir_all(&self.download_path);
         create_dir_all(&self.install_path)?;
         create_dir_all(&self.download_path)?;
+        File::create(self.incomplete_file_path())?;
         Ok(())
     }
 
@@ -201,6 +215,10 @@ impl RuntimeVersion {
         if !settings.always_keep_download {
             let _ = remove_dir_all(&self.download_path);
         }
+    }
+
+    fn incomplete_file_path(&self) -> PathBuf {
+        self.install_path.join(".rtx-incomplete")
     }
 }
 
@@ -217,15 +235,14 @@ impl PartialEq for RuntimeVersion {
 }
 
 fn build_script_man(
-    version: &str,
+    install_type: InstallType,
     plugin_path: &Path,
     install_path: &Path,
     download_path: &Path,
 ) -> ScriptManager {
-    ScriptManager::new(plugin_path.to_path_buf())
+    let sm = ScriptManager::new(plugin_path.to_path_buf())
         .with_envs(env::PRISTINE_ENV.clone())
         .with_env("PATH".into(), fake_asdf::get_path_with_fake_asdf())
-        .with_env("ASDF_INSTALL_VERSION".into(), version.to_string())
         .with_env(
             "ASDF_INSTALL_PATH".into(),
             install_path.to_string_lossy().to_string(),
@@ -234,5 +251,14 @@ fn build_script_man(
             "ASDF_DOWNLOAD_PATH".into(),
             download_path.to_string_lossy().to_string(),
         )
-        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string())
+        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
+    match install_type {
+        InstallType::Version(v) => sm
+            .with_env("ASDF_INSTALL_TYPE".into(), "version".into())
+            .with_env("ASDF_INSTALL_VERSION".into(), v),
+        InstallType::Ref(r) => sm
+            .with_env("ASDF_INSTALL_TYPE".into(), "ref".into())
+            .with_env("ASDF_INSTALL_VERSION".into(), r),
+        _ => sm,
+    }
 }

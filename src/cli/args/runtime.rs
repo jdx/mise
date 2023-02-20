@@ -26,11 +26,11 @@ pub enum RuntimeArgVersion {
     /// use the system runtime already on PATH
     /// e.g.: `nodejs@system`
     System,
-    // /// build runtime from source at this VCS sha
-    // rtx currently does not support this, see https://github.com/jdxcode/rtx/issues/98
-    // Ref,
-    // /// runtime is in a local directory, not managed by rtx
-    // Path,
+    /// build runtime from source at this VCS sha
+    Ref(String),
+    /// runtime is in a local directory, not managed by rtx
+    Path(String),
+    Prefix(String),
 }
 
 impl RuntimeArg {
@@ -40,9 +40,23 @@ impl RuntimeArg {
                 plugin: plugin.into(),
                 version: RuntimeArgVersion::System,
             },
-            Some((plugin, version)) => Self {
-                plugin: plugin.into(),
-                version: RuntimeArgVersion::Version(version.into()),
+            Some((plugin, version)) => match version.split_once(':') {
+                Some(("path", path)) => Self {
+                    plugin: plugin.into(),
+                    version: RuntimeArgVersion::Path(path.into()),
+                },
+                Some(("ref", ref_)) => Self {
+                    plugin: plugin.into(),
+                    version: RuntimeArgVersion::Ref(ref_.into()),
+                },
+                Some(("prefix", prefix)) => Self {
+                    plugin: plugin.into(),
+                    version: RuntimeArgVersion::Prefix(prefix.into()),
+                },
+                _ => Self {
+                    plugin: plugin.into(),
+                    version: RuntimeArgVersion::Version(version.into()),
+                },
             },
             None => Self {
                 plugin: input.into(),
@@ -81,7 +95,10 @@ impl Display for RuntimeArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.version {
             RuntimeArgVersion::System => write!(f, "{}@system", self.plugin),
+            RuntimeArgVersion::Path(path) => write!(f, "{}@path:{}", self.plugin, path),
             RuntimeArgVersion::Version(version) => write!(f, "{}@{}", self.plugin, version),
+            RuntimeArgVersion::Ref(ref_) => write!(f, "{}@ref:{}", self.plugin, ref_),
+            RuntimeArgVersion::Prefix(prefix) => write!(f, "{}@prefix:{}", self.plugin, prefix),
             RuntimeArgVersion::None => write!(f, "{}", self.plugin),
         }
     }
@@ -92,6 +109,9 @@ impl Display for RuntimeArgVersion {
         match self {
             RuntimeArgVersion::System => write!(f, "system"),
             RuntimeArgVersion::Version(version) => write!(f, "{version}"),
+            RuntimeArgVersion::Path(path) => write!(f, "path:{path}"),
+            RuntimeArgVersion::Ref(ref_) => write!(f, "ref:{ref_}"),
+            RuntimeArgVersion::Prefix(prefix) => write!(f, "prefix:{prefix}"),
             RuntimeArgVersion::None => write!(f, "current"),
         }
     }
