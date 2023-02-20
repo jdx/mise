@@ -838,6 +838,26 @@ Examples:
   20.0.0
 
 ```
+### `rtx implode`
+
+```
+removes rtx CLI and all generated data
+
+skips config directory by default
+
+Usage: implode [OPTIONS]
+
+Options:
+      --config
+          also remove config directory
+
+      --dry-run
+          list directories that would be removed without actually removing them
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+```
 ### `rtx install`
 
 ```
