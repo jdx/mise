@@ -32,7 +32,8 @@ complete -c rtx -n "__fish_use_subcommand" -f -a "help" -d 'Print this message o
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
-complete -c rtx -n "__fish_seen_subcommand_from activate" -s q -l quiet -d 'Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories'
+complete -c rtx -n "__fish_seen_subcommand_from activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
+complete -c rtx -n "__fish_seen_subcommand_from activate" -s q -l quiet -d 'noop'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from help" -s p -l plugin -d 'filter aliases by plugin' -r
@@ -135,6 +136,7 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print h
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
+complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s p -l plugin -d 'only install runtime(s) for <PLUGIN>' -r

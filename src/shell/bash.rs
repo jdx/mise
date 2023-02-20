@@ -8,9 +8,10 @@ use crate::shell::{is_dir_in_path, Shell};
 pub struct Bash {}
 
 impl Shell for Bash {
-    fn activate(&self, exe: &Path) -> String {
+    fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
+        let status = if status { " --status" } else { "" };
         let mut out = String::new();
         if !is_dir_in_path(dir) {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
@@ -19,7 +20,7 @@ impl Shell for Bash {
             _rtx_hook() {{
               local previous_exit_status=$?;
               trap -- '' SIGINT;
-              eval "$("{exe}" hook-env -s bash)";
+              eval "$("{exe}" hook-env{status} -s bash)";
               trap - SIGINT;
               return $previous_exit_status;
             }};
@@ -56,7 +57,9 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Bash::default().activate(Path::new("/some/dir/rtx")));
+        let bash = Bash::default();
+        let exe = Path::new("/some/dir/rtx");
+        insta::assert_snapshot!(bash.activate(exe, true));
     }
 
     #[test]

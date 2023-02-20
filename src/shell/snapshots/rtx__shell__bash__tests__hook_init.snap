@@ -1,12 +1,12 @@
 ---
 source: src/shell/bash.rs
-expression: "Bash::default().activate(Path::new(\"/some/dir/rtx\"))"
+expression: "bash.activate(exe, true)"
 ---
 export PATH="/some/dir:$PATH"
 _rtx_hook() {
   local previous_exit_status=$?;
   trap -- '' SIGINT;
-  eval "$("/some/dir/rtx" hook-env -s bash)";
+  eval "$("/some/dir/rtx" hook-env --status -s bash)";
   trap - SIGINT;
   return $previous_exit_status;
 };

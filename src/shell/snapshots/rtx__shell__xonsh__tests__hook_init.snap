@@ -1,6 +1,6 @@
 ---
 source: src/shell/xonsh.rs
-expression: "Xonsh::default().activate(Path::new(\"/some/dir/rtx\"))"
+expression: "xonsh.activate(exe, true)"
 ---
 from os               import environ
 from xonsh.built_ins  import XSH
@@ -10,7 +10,7 @@ envx['PATH'].add('/some/dir')
 environ['PATH'] = envx.get_detyped('PATH')
 
 def listen_prompt(): # Hook Events
-  execx($(/some/dir/rtx hook-env -s xonsh))
+  execx($(/some/dir/rtx hook-env --status -s xonsh))
 
 XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
 

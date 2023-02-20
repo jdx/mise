@@ -15,13 +15,6 @@ use crate::{dirs, env};
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
 pub fn should_exit_early(config: &Config) -> bool {
-    // TODO: make this not depend on config
-    // if possible, this should avoid loading the entire config
-    // all I need is the list of config files to load.
-    // This will likely require splitting config loading into 2 phases:
-    // 1. load the config filenames
-    // 2. parse/load the config files, then runtime versions
-
     if env::ARGS.len() < 2 || env::ARGS[1] != "hook-env" {
         return false;
     }

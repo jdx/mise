@@ -547,8 +547,8 @@ Arguments:
           [possible values: bash, fish, xonsh, zsh]
 
 Options:
-  -q, --quiet
-          Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories
+      --status
+          Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
   -h, --help
           Print help (see a summary with '-h')

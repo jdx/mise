@@ -3,7 +3,7 @@
 set -e
 
 eval "$(direnv hook zsh)"
-eval "$(rtx activate zsh)"
+eval "$(rtx activate zsh --status)"
 _rtx_hook && direnv allow && _direnv_hook
 
 assert_go_version() {
