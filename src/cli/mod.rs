@@ -32,7 +32,6 @@ mod local;
 mod ls;
 mod ls_remote;
 mod plugins;
-mod self_update;
 mod settings;
 mod uninstall;
 pub mod version;
@@ -41,6 +40,9 @@ mod r#where;
 // render help
 #[cfg(debug_assertions)]
 mod render_help;
+
+#[cfg(feature = "self_update")]
+mod self_update;
 
 pub struct Cli {
     command: clap::Command,
@@ -68,6 +70,7 @@ pub enum Commands {
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
     Plugins(plugins::Plugins),
+    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Uninstall(uninstall::Uninstall),
@@ -100,6 +103,7 @@ impl Commands {
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
+            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
