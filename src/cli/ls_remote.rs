@@ -27,6 +27,7 @@ impl Command for LsRemote {
             .plugins
             .get(&self.plugin)
             .ok_or(PluginNotInstalled(self.plugin))?;
+        plugin.clear_remote_version_cache()?;
         let versions = plugin.list_remote_versions(&config.settings)?;
 
         for version in versions {

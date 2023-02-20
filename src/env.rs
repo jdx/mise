@@ -118,6 +118,7 @@ lazy_static! {
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");
+    pub static ref RTX_PREFER_STALE: bool = prefer_stale(&ARGS);
 }
 
 fn get_env_diff() -> EnvDiff {
@@ -195,6 +196,17 @@ fn apply_patches(
     }
 
     new_env
+}
+
+/// returns true if new runtime versions should not be fetched
+fn prefer_stale(args: &[String]) -> bool {
+    if let Some(c) = args.get(1) {
+        return vec![
+            "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
+        ]
+        .contains(&c.as_str());
+    }
+    false
 }
 
 #[test]
