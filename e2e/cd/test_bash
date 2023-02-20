@@ -5,7 +5,7 @@ set -euo pipefail
 orig_path="$PATH"
 
 # shellcheck disable=SC1090
-eval "$(rtx activate bash)"
+eval "$(rtx activate bash --status)"
 _rtx_hook
 
 assert_path() {
