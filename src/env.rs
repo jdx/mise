@@ -23,9 +23,7 @@ lazy_static! {
     pub static ref XDG_CACHE_HOME: PathBuf = if cfg!(test) {
         HOME.join("cache")
     } else {
-        var_os("XDG_CACHE_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| HOME.join(".cache"))
+        dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache"))
     };
     pub static ref XDG_DATA_HOME: PathBuf = if cfg!(test) {
         HOME.join("data")
