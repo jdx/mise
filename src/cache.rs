@@ -37,8 +37,8 @@ where
         }
     }
 
-    pub fn with_fresh_duration(mut self, duration: Duration) -> Self {
-        self.fresh_duration = Some(duration);
+    pub fn with_fresh_duration(mut self, duration: Option<Duration>) -> Self {
+        self.fresh_duration = duration;
         self
     }
 
@@ -88,6 +88,15 @@ where
         let mut zlib = ZlibEncoder::new(File::create(path)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
 
+        Ok(())
+    }
+
+    pub fn clear(&self) -> Result<()> {
+        let path = &self.cache_file_path;
+        trace!("clearing cache {}", path.display());
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
         Ok(())
     }
 
