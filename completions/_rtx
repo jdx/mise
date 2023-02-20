@@ -84,6 +84,46 @@ _arguments "${_arguments_options[@]}" \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
 ;;
+(get)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':plugin -- The plugin to show the alias for:' \
+':alias -- The alias to show:' \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':plugin -- The plugin to set the alias for:' \
+':alias -- The alias to set:' \
+':value -- The value to set the alias to:' \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':plugin -- The plugin to remove the alias from:' \
+':alias -- The alias to remove:' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" \
 ":: :_rtx__alias__help_commands" \
@@ -97,6 +137,18 @@ _arguments "${_arguments_options[@]}" \
         curcontext="${curcontext%:*:*}:rtx-alias-help-command-$line[1]:"
         case $line[1] in
             (ls)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(unset)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -805,6 +857,18 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(get)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -1094,6 +1158,15 @@ These can come from user config or from plugins in `bin/list-aliases`.' \
 'list:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
+'get:Show an alias for a plugin' \
+'set:Add/update an alias for a plugin' \
+'add:Add/update an alias for a plugin' \
+'create:Add/update an alias for a plugin' \
+'unset:Clears an alias for a plugin' \
+'rm:Clears an alias for a plugin' \
+'remove:Clears an alias for a plugin' \
+'delete:Clears an alias for a plugin' \
+'del:Clears an alias for a plugin' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx alias commands' commands "$@"
@@ -1104,6 +1177,9 @@ _rtx__help__alias_commands() {
 'ls:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
+'get:Show an alias for a plugin' \
+'set:Add/update an alias for a plugin' \
+'unset:Clears an alias for a plugin' \
     )
     _describe -t commands 'rtx help alias commands' commands "$@"
 }
@@ -1261,6 +1337,21 @@ _rtx__help__exec_commands() {
     local commands; commands=()
     _describe -t commands 'rtx help exec commands' commands "$@"
 }
+(( $+functions[_rtx__alias__get_commands] )) ||
+_rtx__alias__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias get commands' commands "$@"
+}
+(( $+functions[_rtx__alias__help__get_commands] )) ||
+_rtx__alias__help__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias help get commands' commands "$@"
+}
+(( $+functions[_rtx__help__alias__get_commands] )) ||
+_rtx__help__alias__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help alias get commands' commands "$@"
+}
 (( $+functions[_rtx__help__settings__get_commands] )) ||
 _rtx__help__settings__get_commands() {
     local commands; commands=()
@@ -1292,6 +1383,9 @@ _rtx__alias__help_commands() {
 'ls:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
+'get:Show an alias for a plugin' \
+'set:Add/update an alias for a plugin' \
+'unset:Clears an alias for a plugin' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx alias help commands' commands "$@"
@@ -1594,6 +1688,21 @@ _rtx__self-update_commands() {
     local commands; commands=()
     _describe -t commands 'rtx self-update commands' commands "$@"
 }
+(( $+functions[_rtx__alias__help__set_commands] )) ||
+_rtx__alias__help__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias help set commands' commands "$@"
+}
+(( $+functions[_rtx__alias__set_commands] )) ||
+_rtx__alias__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias set commands' commands "$@"
+}
+(( $+functions[_rtx__help__alias__set_commands] )) ||
+_rtx__help__alias__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help alias set commands' commands "$@"
+}
 (( $+functions[_rtx__help__settings__set_commands] )) ||
 _rtx__help__settings__set_commands() {
     local commands; commands=()
@@ -1661,6 +1770,21 @@ _rtx__plugins__uninstall_commands() {
 _rtx__uninstall_commands() {
     local commands; commands=()
     _describe -t commands 'rtx uninstall commands' commands "$@"
+}
+(( $+functions[_rtx__alias__help__unset_commands] )) ||
+_rtx__alias__help__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias help unset commands' commands "$@"
+}
+(( $+functions[_rtx__alias__unset_commands] )) ||
+_rtx__alias__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx alias unset commands' commands "$@"
+}
+(( $+functions[_rtx__help__alias__unset_commands] )) ||
+_rtx__help__alias__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help alias unset commands' commands "$@"
 }
 (( $+functions[_rtx__help__settings__unset_commands] )) ||
 _rtx__help__settings__unset_commands() {

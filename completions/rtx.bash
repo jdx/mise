@@ -120,6 +120,21 @@ _rtx() {
             rtx,x)
                 cmd="rtx__exec"
                 ;;
+            rtx__alias,add)
+                cmd="rtx__alias__set"
+                ;;
+            rtx__alias,create)
+                cmd="rtx__alias__set"
+                ;;
+            rtx__alias,del)
+                cmd="rtx__alias__unset"
+                ;;
+            rtx__alias,delete)
+                cmd="rtx__alias__unset"
+                ;;
+            rtx__alias,get)
+                cmd="rtx__alias__get"
+                ;;
             rtx__alias,help)
                 cmd="rtx__alias__help"
                 ;;
@@ -129,11 +144,32 @@ _rtx() {
             rtx__alias,ls)
                 cmd="rtx__alias__ls"
                 ;;
+            rtx__alias,remove)
+                cmd="rtx__alias__unset"
+                ;;
+            rtx__alias,rm)
+                cmd="rtx__alias__unset"
+                ;;
+            rtx__alias,set)
+                cmd="rtx__alias__set"
+                ;;
+            rtx__alias,unset)
+                cmd="rtx__alias__unset"
+                ;;
+            rtx__alias__help,get)
+                cmd="rtx__alias__help__get"
+                ;;
             rtx__alias__help,help)
                 cmd="rtx__alias__help__help"
                 ;;
             rtx__alias__help,ls)
                 cmd="rtx__alias__help__ls"
+                ;;
+            rtx__alias__help,set)
+                cmd="rtx__alias__help__set"
+                ;;
+            rtx__alias__help,unset)
+                cmd="rtx__alias__help__unset"
                 ;;
             rtx__cache,c)
                 cmd="rtx__cache__clear"
@@ -255,8 +291,17 @@ _rtx() {
             rtx__help,where)
                 cmd="rtx__help__where"
                 ;;
+            rtx__help__alias,get)
+                cmd="rtx__help__alias__get"
+                ;;
             rtx__help__alias,ls)
                 cmd="rtx__help__alias__ls"
+                ;;
+            rtx__help__alias,set)
+                cmd="rtx__help__alias__set"
+                ;;
+            rtx__help__alias,unset)
+                cmd="rtx__help__alias__unset"
                 ;;
             rtx__help__cache,clear)
                 cmd="rtx__help__cache__clear"
@@ -463,7 +508,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias)
-            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help ls help"
+            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help ls get set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -496,9 +541,49 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtx__alias__help)
-            opts="ls help"
+        rtx__alias__get)
+            opts="-j -v -h --log-level --jobs --verbose --help <PLUGIN> <ALIAS>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__alias__help)
+            opts="ls get set unset help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__alias__help__get)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -538,6 +623,34 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtx__alias__help__set)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__alias__help__unset)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtx__alias__ls)
             opts="-p -j -v -h --plugin --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -553,6 +666,58 @@ _rtx() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__alias__set)
+            opts="-j -v -h --log-level --jobs --verbose --help <PLUGIN> <ALIAS> <VALUE>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__alias__unset)
+            opts="-j -v -h --log-level --jobs --verbose --help <PLUGIN> <ALIAS>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 --log-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1113,7 +1278,7 @@ _rtx() {
             return 0
             ;;
         rtx__help__alias)
-            opts="ls"
+            opts="ls get set unset"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1126,7 +1291,49 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtx__help__alias__get)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtx__help__alias__ls)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__alias__set)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__alias__unset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

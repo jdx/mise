@@ -298,7 +298,7 @@ impl RTXFile {
         let doc = self.get_or_create_edit();
         let aliases = doc
             .as_table_mut()
-            .entry("aliases")
+            .entry("alias")
             .or_insert(toml_edit::table())
             .as_table_mut()
             .unwrap();
@@ -308,6 +308,32 @@ impl RTXFile {
             .as_table_mut()
             .unwrap();
         plugin_aliases[from] = toml_edit::value(to);
+    }
+
+    pub fn remove_alias(&mut self, plugin: &str, from: &str) {
+        let doc = self.get_or_create_edit();
+        if doc.contains_table("alias") {
+            let aliases = doc
+                .as_table_mut()
+                .entry("alias")
+                .or_insert(toml_edit::table())
+                .as_table_mut()
+                .unwrap();
+            if aliases.contains_key(plugin) {
+                let plugin_aliases = aliases
+                    .entry(plugin)
+                    .or_insert(toml_edit::table())
+                    .as_table_mut()
+                    .unwrap();
+                plugin_aliases.remove(from);
+                if plugin_aliases.is_empty() {
+                    aliases.remove(plugin);
+                }
+            }
+            if aliases.is_empty() {
+                doc.as_table_mut().remove("alias");
+            }
+        }
     }
 }
 
@@ -599,7 +625,7 @@ nodejs=[true]
         writedoc!(
             f,
             r#"
-            [aliases.nodejs]
+            [alias.nodejs]
             16 = "16.0.0"
             18 = "18.0.0"
         "#
@@ -610,13 +636,38 @@ nodejs=[true]
         cf.set_alias("nodejs", "20", "20.0.0");
         cf.set_alias("python", "3.10", "3.10.0");
         assert_display_snapshot!(cf.dump(), @r###"
-        [aliases.nodejs]
+        [alias.nodejs]
         16 = "16.0.0"
         18 = "18.0.1"
         20 = "20.0.0"
 
-        [aliases.python]
+        [alias.python]
         "3.10" = "3.10.0"
+        "###);
+    }
+
+    #[test]
+    fn test_remove_alias() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writedoc!(
+            f,
+            r#"
+            [alias.nodejs]
+            16 = "16.0.0"
+            18 = "18.0.0"
+
+            [alias.python]
+            "3.10" = "3.10.0"
+        "#
+        )
+        .unwrap();
+        let mut cf = RTXFile::from_file(f.path()).unwrap();
+        cf.remove_alias("nodejs", "16");
+        cf.remove_alias("python", "3.10");
+
+        assert_display_snapshot!(cf.dump(), @r###"
+        [alias.nodejs]
+        18 = "18.0.0"
         "###);
     }
 
