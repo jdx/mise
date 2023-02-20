@@ -1,29 +1,22 @@
 use std::collections::HashMap;
-
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{Result, WrapErr};
 use console::style;
 use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
 
-use runtime_conf::RuntimeConf;
-
+use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-
 use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
-
 use crate::ui::progress_report::ProgressReport;
-
 use crate::{dirs, env, fake_asdf, file};
-
-mod runtime_conf;
 
 /// These represent individual plugin@version pairs of runtimes
 /// installed to ~/.local/share/rtx/runtimes
@@ -33,22 +26,24 @@ pub struct RuntimeVersion {
     pub plugin: Arc<Plugin>,
     pub install_path: PathBuf,
     download_path: PathBuf,
-    runtime_conf_path: PathBuf,
     script_man: ScriptManager,
+    bin_paths_cache: CacheManager<Vec<String>>,
 }
 
 impl RuntimeVersion {
     pub fn new(plugin: Arc<Plugin>, version: &str) -> Self {
         let install_path = dirs::INSTALLS.join(&plugin.name).join(version);
         let download_path = dirs::DOWNLOADS.join(&plugin.name).join(version);
+        let cache_path = dirs::CACHE.join(&plugin.name).join(version);
         Self {
-            runtime_conf_path: install_path.join(".rtxconf.msgpack"),
             script_man: build_script_man(
                 version,
                 &plugin.plugin_path,
                 &install_path,
                 &download_path,
             ),
+            bin_paths_cache: CacheManager::new(cache_path.join("bin_paths.msgpack.zlib"))
+                .with_fresh_file(install_path.clone()),
             download_path: dirs::DOWNLOADS.join(&plugin.name).join(version),
             install_path,
             version: version.into(),
@@ -105,11 +100,6 @@ impl RuntimeVersion {
         run_script(install)?;
         self.cleanup_install_dirs(settings);
 
-        let conf = RuntimeConf {
-            bin_paths: self.get_bin_paths()?,
-        };
-        conf.write(&self.runtime_conf_path)?;
-
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
         touch_dirs.extend(config.config_files.iter().cloned());
@@ -125,25 +115,19 @@ impl RuntimeVersion {
     }
 
     pub fn list_bin_paths(&self) -> Result<Vec<PathBuf>> {
-        if self.version == "system" {
-            return Ok(vec![]);
-        }
-        let conf = RuntimeConf::parse(&self.runtime_conf_path)
-            .wrap_err_with(|| eyre!("failed to fetch runtimeconf for {}", self))?;
-        let bin_paths = conf
-            .bin_paths
+        Ok(self
+            .bin_paths_cache
+            .get_or_try_init(|| self.fetch_bin_paths())?
             .iter()
             .map(|path| self.install_path.join(path))
-            .collect();
-
-        Ok(bin_paths)
+            .collect())
     }
 
     pub fn is_installed(&self) -> bool {
         if self.version == "system" {
             return true;
         }
-        self.runtime_conf_path.is_file()
+        self.install_path.exists()
     }
 
     pub fn uninstall(&self) -> Result<()> {
@@ -191,7 +175,7 @@ impl RuntimeVersion {
         Ok(env)
     }
 
-    fn get_bin_paths(&self) -> Result<Vec<String>> {
+    fn fetch_bin_paths(&self) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin.plugin_path.join("bin/list-bin-paths");
         if list_bin_paths.exists() {
             let output = self.script_man.cmd(Script::ListBinPaths).read()?;
