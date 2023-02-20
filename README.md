@@ -1020,20 +1020,31 @@ list runtime versions available for install
 note that these versions are cached for commands like `rtx install nodejs@latest`
 however _this_ command will always clear that cache and fetch the latest remote versions
 
-Usage: ls-remote <PLUGIN>
+Usage: ls-remote <PLUGIN> [PREFIX]
 
 Arguments:
   <PLUGIN>
-          Plugin
+          plugin to get versions for
+
+  [PREFIX]
+          the version prefix to use when querying the latest version same as the first argument after the "@"
 
 Options:
   -h, --help
           Print help (see a summary with '-h')
 
 Examples:
-  $ rtx list-remote nodejs
+  $ rtx ls-remote nodejs
   18.0.0
   20.0.0
+
+  $ rtx ls-remote nodejs@18
+  18.0.0
+  18.1.0
+
+  $ rtx ls-remote nodejs 18
+  18.0.0
+  18.1.0
 
 ```
 ### `rtx plugins install`

@@ -466,7 +466,8 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':plugin -- Plugin:' \
+':plugin -- plugin to get versions for:' \
+'::prefix -- the version prefix to use when querying the latest version same as the first argument after the "@":' \
 && ret=0
 ;;
 (plugins)

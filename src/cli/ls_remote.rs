@@ -1,5 +1,6 @@
-use atty::Stream;
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -7,7 +8,6 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// list runtime versions available for install
 ///
@@ -16,19 +16,37 @@ use crate::ui::color::Color;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list-remote", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), alias = "list-all")]
 pub struct LsRemote {
-    /// Plugin
+    /// plugin to get versions for
+    #[clap(value_parser = RuntimeArgParser)]
+    plugin: RuntimeArg,
+
+    /// the version prefix to use when querying the latest version
+    /// same as the first argument after the "@"
     #[clap()]
-    plugin: String,
+    prefix: Option<String>,
 }
 
 impl Command for LsRemote {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let plugin = config
             .plugins
-            .get(&self.plugin)
-            .ok_or(PluginNotInstalled(self.plugin))?;
+            .get(&self.plugin.plugin)
+            .ok_or(PluginNotInstalled(self.plugin.plugin))?;
         plugin.clear_remote_version_cache()?;
-        let versions = plugin.list_remote_versions(&config.settings)?;
+
+        let prefix = match self.plugin.version {
+            RuntimeArgVersion::Version(v) => Some(v),
+            _ => self.prefix,
+        };
+
+        let versions = plugin.list_remote_versions(&config.settings)?.clone();
+        let versions = match prefix {
+            Some(prefix) => versions
+                .into_iter()
+                .filter(|v| v.starts_with(&prefix))
+                .collect(),
+            None => versions,
+        };
 
         for version in versions {
             rtxprintln!(out, "{}", version);
@@ -38,25 +56,37 @@ impl Command for LsRemote {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx list-remote nodejs
+      $ rtx ls-remote nodejs
       18.0.0
       20.0.0
-    "#, COLOR.header("Examples:")}
+
+      $ rtx ls-remote nodejs@18
+      18.0.0
+      18.1.0
+
+      $ rtx ls-remote nodejs 18
+      18.0.0
+      18.1.0
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
-    use crate::cli::tests::ensure_plugin_installed;
+    use insta::assert_snapshot;
+
+    use crate::assert_cli_snapshot;
 
     #[test]
     fn test_list_remote() {
-        ensure_plugin_installed("nodejs");
-        let stdout = assert_cli!("list-remote", "nodejs");
-        assert!(stdout.contains("18.0.0"));
+        assert_cli_snapshot!("list-remote", "dummy");
+    }
+
+    #[test]
+    fn test_ls_remote_prefix() {
+        assert_cli_snapshot!("list-remote", "dummy", "1");
+        assert_cli_snapshot!("list-remote", "dummy@2");
     }
 }
