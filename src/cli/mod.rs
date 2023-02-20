@@ -26,6 +26,7 @@ mod exec;
 mod external;
 mod global;
 mod hook_env;
+mod implode;
 mod install;
 mod latest;
 mod local;
@@ -64,6 +65,7 @@ pub enum Commands {
     Exec(exec::Exec),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
+    Implode(implode::Implode),
     Install(install::Install),
     Latest(latest::Latest),
     Local(local::Local),
@@ -97,6 +99,7 @@ impl Commands {
             Self::Exec(cmd) => cmd.run(config, out),
             Self::Global(cmd) => cmd.run(config, out),
             Self::HookEnv(cmd) => cmd.run(config, out),
+            Self::Implode(cmd) => cmd.run(config, out),
             Self::Install(cmd) => cmd.run(config, out),
             Self::Latest(cmd) => cmd.run(config, out),
             Self::Local(cmd) => cmd.run(config, out),
