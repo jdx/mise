@@ -8,6 +8,7 @@ use crate::shell::{is_dir_in_path, Shell};
 pub struct Xonsh {}
 
 use std::borrow::Cow;
+
 fn xonsh_escape_sq(input: &str) -> Cow<str> {
     for (i, ch) in input.chars().enumerate() {
         if xonsh_escape_char(ch).is_some() {
@@ -37,9 +38,10 @@ fn xonsh_escape_char(ch: char) -> Option<&'static str> {
 }
 
 impl Shell for Xonsh {
-    fn activate(&self, exe: &Path) -> String {
+    fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
+        let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
         // todo: xonsh doesn't update the environment that rtx relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
@@ -64,7 +66,7 @@ impl Shell for Xonsh {
         // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
         out.push_str(&formatdoc! {r#"
             def listen_prompt(): # Hook Events
-              execx($({exe} hook-env -s xonsh))
+              execx($({exe} hook-env{status} -s xonsh))
 
             XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
             "#});
@@ -127,7 +129,9 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Xonsh::default().activate(Path::new("/some/dir/rtx")));
+        let xonsh = Xonsh::default();
+        let exe = Path::new("/some/dir/rtx");
+        insta::assert_snapshot!(xonsh.activate(exe, true));
     }
 
     #[test]

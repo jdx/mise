@@ -26,8 +26,12 @@ pub struct Activate {
     #[clap()]
     shell_type: Option<ShellType>,
 
-    /// Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long, short)]
+    /// Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long)]
+    status: bool,
+
+    /// noop
+    #[clap(long, short, hide = true)]
     quiet: bool,
 }
 
@@ -36,19 +40,12 @@ impl Command for Activate {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
-        if self.quiet {
-            // TODO: it would probably be better to just set --quiet on `hook-env`
-            // this will cause _all_ rtx commands to be quiet, not just the hook
-            // however as of this writing I don't think RTX_QUIET impacts other commands
-            rtxprintln!(out, "{}", shell.set_env("RTX_QUIET", "1"));
-        }
-
         let exe = if cfg!(test) {
             "rtx".into()
         } else {
             env::RTX_EXE.to_path_buf()
         };
-        let output = shell.activate(&exe);
+        let output = shell.activate(&exe, self.status);
         out.stdout.write(output);
 
         Ok(())

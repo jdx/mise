@@ -25,6 +25,10 @@ pub struct HookEnv {
     /// Shell type to generate script for
     #[clap(long, short)]
     shell: Option<ShellType>,
+
+    /// Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long)]
+    status: bool,
 }
 
 impl Command for HookEnv {
@@ -48,7 +52,9 @@ impl Command for HookEnv {
 
         let output = self.build_env_commands(&patches);
         out.stdout.write(output);
-        self.display_status(&ts, out);
+        if self.status {
+            self.display_status(&ts, out);
+        }
 
         Ok(())
     }
@@ -167,6 +173,6 @@ mod tests {
 
     #[test]
     fn test_hook_env() {
-        assert_cli!("hook-env", "-s", "fish");
+        assert_cli!("hook-env", "--status", "-s", "fish");
     }
 }
