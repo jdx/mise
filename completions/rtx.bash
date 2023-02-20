@@ -423,7 +423,7 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -j -v -h --shell --quiet --log-level --jobs --verbose --help bash fish xonsh zsh"
+            opts="-s -q -j -v -h --shell --status --quiet --log-level --jobs --verbose --help bash fish xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1653,7 +1653,7 @@ _rtx() {
             return 0
             ;;
         rtx__hook__env)
-            opts="-s -j -v -h --shell --log-level --jobs --verbose --help"
+            opts="-s -j -v -h --shell --status --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

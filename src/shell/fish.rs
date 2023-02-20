@@ -8,9 +8,10 @@ use crate::shell::{is_dir_in_path, Shell};
 pub struct Fish {}
 
 impl Shell for Fish {
-    fn activate(&self, exe: &Path) -> String {
+    fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
+        let status = if status { " --status" } else { "" };
         let description = "'Update rtx environment when changing directories'";
         let mut out = String::new();
 
@@ -22,14 +23,14 @@ impl Shell for Fish {
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
             function __rtx_env_eval --on-event fish_prompt --description {description};
-                {exe} hook-env -s fish | source;
+                {exe} hook-env{status} -s fish | source;
 
                 if test "$rtx_fish_mode" != "disable_arrow";
                     function __rtx_cd_hook --on-variable PWD --description {description};
                         if test "$rtx_fish_mode" = "eval_after_arrow";
                             set -g __rtx_env_again 0;
                         else;
-                            {exe} hook-env -s fish | source;
+                            {exe} hook-env{status} -s fish | source;
                         end;
                     end;
                 end;
@@ -38,7 +39,7 @@ impl Shell for Fish {
             function __rtx_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __rtx_env_again;
                     set -e __rtx_env_again;
-                    {exe} hook-env -s fish | source;
+                    {exe} hook-env{status} -s fish | source;
                     echo;
                 end;
 
@@ -76,7 +77,9 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Fish::default().activate(Path::new("/some/dir/rtx")));
+        let fish = Fish::default();
+        let exe = Path::new("/some/dir/rtx");
+        insta::assert_snapshot!(fish.activate(exe, true));
     }
 
     #[test]

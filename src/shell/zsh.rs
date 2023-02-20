@@ -9,9 +9,10 @@ use crate::shell::{is_dir_in_path, Shell};
 pub struct Zsh {}
 
 impl Shell for Zsh {
-    fn activate(&self, exe: &Path) -> String {
+    fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
+        let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
         // much of this is from direnv
@@ -22,7 +23,7 @@ impl Shell for Zsh {
         out.push_str(&formatdoc! {r#"
             _rtx_hook() {{
               trap -- '' SIGINT;
-              eval "$("{exe}" hook-env -s zsh)";
+              eval "$("{exe}" hook-env{status} -s zsh)";
               trap - SIGINT;
             }}
             typeset -ag precmd_functions;
@@ -59,7 +60,9 @@ mod tests {
 
     #[test]
     fn test_hook_init() {
-        insta::assert_snapshot!(Zsh::default().activate(Path::new("/some/dir/rtx")));
+        let zsh = Zsh::default();
+        let exe = Path::new("/some/dir/rtx");
+        insta::assert_snapshot!(zsh.activate(exe, true));
     }
 
     #[test]

@@ -40,8 +40,9 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'-q[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
-'--quiet[Hide the "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'-q[noop]' \
+'--quiet[noop]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -370,6 +371,7 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
