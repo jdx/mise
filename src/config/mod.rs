@@ -191,6 +191,6 @@ impl Display for Config {
             .collect::<Vec<_>>();
         writeln!(f, "Config:")?;
         writeln!(f, "  Files: {}", config_files.join(", "))?;
-        writeln!(f, "  Installed Plugins: {}", plugins.join(", "))
+        write!(f, "  Installed Plugins: {}", plugins.join(", "))
     }
 }

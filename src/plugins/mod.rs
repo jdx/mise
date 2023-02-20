@@ -25,6 +25,7 @@ use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::shorthand::shorthand_to_repository;
 
+use crate::env::RTX_PREFER_STALE;
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, file};
 
@@ -50,6 +51,11 @@ impl Plugin {
     pub fn new(name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
+        let fresh_duration = if *RTX_PREFER_STALE {
+            None
+        } else {
+            Some(Duration::from_secs(60 * 60 * 24))
+        };
         Self {
             name: name.into(),
             script_man: ScriptManager::new(plugin_path.clone()),
@@ -58,7 +64,7 @@ impl Plugin {
             remote_version_cache: CacheManager::new(
                 cache_path.join("remote_versions.msgpack.zlib"),
             )
-            .with_fresh_duration(Duration::from_secs(60 * 60 * 24))
+            .with_fresh_duration(fresh_duration)
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-all")),
             alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.zlib"))
@@ -228,8 +234,10 @@ impl Plugin {
         })
     }
 
+    pub fn clear_remote_version_cache(&self) -> Result<()> {
+        self.remote_version_cache.clear()
+    }
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
-        // TODO: self.remote_version_cache.clear();
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
     }
