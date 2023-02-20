@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use console::style;
 use once_cell::sync::Lazy;
 use std::string::ToString;
 use std::time::Duration;
@@ -61,7 +62,11 @@ fn show_version(out: &mut Output) {
 
 fn show_latest() {
     if let Some(latest) = check_for_new_version() {
-        warn!("rtx version {} available", latest)
+        warn!("rtx version {} available", latest);
+        if cfg!(feature = "self_update") {
+            let cmd = style("rtx self-update").bright().yellow().for_stderr();
+            warn!("To update, run {}", cmd);
+        }
     }
 }
 
