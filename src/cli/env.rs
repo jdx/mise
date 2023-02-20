@@ -37,7 +37,8 @@ impl Command for Env {
             .with_args(&self.runtime)
             .build(&config);
 
-        let shell = get_shell(self.shell);
+        let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
+        let shell = get_shell(self.shell).unwrap_or(default_shell);
         for (k, v) in ts.env() {
             let k = k.to_string();
             let v = v.to_string();
@@ -62,6 +63,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use crate::assert_cli;
     use crate::cli::tests::grep;
     use crate::dirs;
@@ -111,5 +114,12 @@ mod tests {
     fn test_env_tiny() {
         let stdout = assert_cli!("env", "tiny@1", "-s", "bash");
         assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=1.0.1");
+    }
+
+    #[test]
+    fn test_env_default_shell() {
+        env::set_var("SHELL", "");
+        let stdout = assert_cli!("env");
+        assert!(stdout.contains("export PATH="));
     }
 }
