@@ -15,7 +15,7 @@ use crate::ui::color::Color;
 ///
 /// Must be installed.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), hide = true)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Where {
     /// runtime(s) to look up
     /// if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix

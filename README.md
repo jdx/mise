@@ -1298,6 +1298,35 @@ Options:
           Print help
 
 ```
+### `rtx where`
+
+```
+Display the installation path for a runtime
+
+Must be installed.
+
+Usage: where <RUNTIME>
+
+Arguments:
+  <RUNTIME>
+          runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  # Show the latest installed version of nodejs
+  # If it is is not installed, errors
+  $ rtx where nodejs@20
+  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+
+  # Show the current, active install directory of nodejs
+  # Errors if nodejs is not referenced in any .tool-version file
+  $ rtx where nodejs
+  /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+
+```
 
 ## Comparison to asdf
 
