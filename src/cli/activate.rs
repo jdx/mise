@@ -33,7 +33,8 @@ pub struct Activate {
 
 impl Command for Activate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell = get_shell(self.shell_type.or(self.shell));
+        let shell = get_shell(self.shell_type.or(self.shell))
+            .expect("no shell provided, use `--shell=zsh`");
 
         if self.quiet {
             // TODO: it would probably be better to just set --quiet on `hook-env`
