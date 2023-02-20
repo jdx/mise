@@ -64,15 +64,19 @@ impl fmt::Display for Script {
 
 #[derive(Debug, Clone)]
 pub enum InstallType {
-    Version,
-    Ref,
+    Version(String),
+    Ref(String),
+    Path(PathBuf),
+    System,
 }
 
 impl Display for InstallType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            InstallType::Version => write!(f, "version"),
-            InstallType::Ref => write!(f, "ref"),
+            InstallType::Version(v) => write!(f, "{v}"),
+            InstallType::Ref(r) => write!(f, "ref:{r}"),
+            InstallType::Path(p) => write!(f, "path:{}", p.display()),
+            InstallType::System => write!(f, "system"),
         }
     }
 }
@@ -117,13 +121,8 @@ impl ScriptManager {
     }
 
     pub fn cmd(&self, script: Script) -> Expression {
-        let mut env = self.env.clone();
         let args = match &script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
-            Script::Install(install_type) | Script::Download(install_type) => {
-                env.insert("ASDF_INSTALL_TYPE".to_string(), install_type.to_string());
-                vec![]
-            }
             _ => vec![],
         };
         let script_path = self.get_script_path(&script);
@@ -131,7 +130,7 @@ impl ScriptManager {
         //     return Err(PluginNotInstalled(self.plugin_name.clone()).into());
         // }
         let mut cmd = cmd(&script_path, args);
-        for (k, v) in env.iter() {
+        for (k, v) in self.env.iter() {
             cmd = cmd.env(k, v);
         }
         cmd

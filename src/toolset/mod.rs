@@ -19,7 +19,7 @@ pub use tool_version::ToolVersionType;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{InstallType, Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::tool_version_list::ToolVersionList;
 
@@ -83,7 +83,7 @@ impl Toolset {
                         return;
                     }
                 };
-                v.resolve(&config.settings, plugin);
+                v.resolve(&config.settings, plugin.clone());
             });
     }
     pub fn install_missing(&mut self, config: &Config) -> Result<()> {
@@ -151,7 +151,7 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            version.resolve(&config.settings, plugin)?;
+                            version.resolve(&config.settings, plugin.clone())?;
                             version.install(config, mpr.add())?;
                         }
                         Ok(())
@@ -209,7 +209,7 @@ impl Toolset {
                 let versions = p.list_installed_versions()?;
                 Ok(versions
                     .into_iter()
-                    .map(|v| RuntimeVersion::new(p.clone(), &v)))
+                    .map(|v| RuntimeVersion::new(p.clone(), InstallType::Version(v))))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -289,6 +289,45 @@ impl Toolset {
                     for tv in tvl.versions.iter() {
                         match &tv.r#type {
                             ToolVersionType::Version(v) if v == version => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
+            RuntimeArgVersion::Prefix(version) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Prefix(v) if v.starts_with(version) => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
+            RuntimeArgVersion::Ref(ref_) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Ref(v) if v == ref_ => {
+                                return tv.rtv.as_ref();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                None
+            }
+            RuntimeArgVersion::Path(path) => {
+                if let Some(tvl) = self.versions.get(&arg.plugin) {
+                    for tv in tvl.versions.iter() {
+                        match &tv.r#type {
+                            ToolVersionType::Path(v) if v == path => {
                                 return tv.rtv.as_ref();
                             }
                             _ => (),

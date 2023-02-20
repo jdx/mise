@@ -334,10 +334,13 @@ The `.tool-versions` file is used to specify the runtime versions for a project.
 is:
 
 ```
-nodejs      20.0.0  # comments are allowed
-ruby        3       # can be fuzzy version
-shellcheck  latest  # also supports "latest"
+nodejs      20.0.0       # comments are allowed
+ruby        3            # can be fuzzy version
+shellcheck  latest       # also supports "latest"
 jq          1.6
+erlang      ref:master   # compile from vcs ref
+golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
+shfmt       path:./shfmt # use a custom runtime
 ```
 
 Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local) to create them automatically.
