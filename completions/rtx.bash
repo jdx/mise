@@ -66,6 +66,9 @@ _rtx() {
             rtx,i)
                 cmd="rtx__install"
                 ;;
+            rtx,implode)
+                cmd="rtx__implode"
+                ;;
             rtx,install)
                 cmd="rtx__install"
                 ;;
@@ -212,6 +215,9 @@ _rtx() {
                 ;;
             rtx__help,hook-env)
                 cmd="rtx__help__hook__env"
+                ;;
+            rtx__help,implode)
+                cmd="rtx__help__implode"
                 ;;
             rtx__help,install)
                 cmd="rtx__help__install"
@@ -397,7 +403,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1079,7 +1085,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
+            opts="activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1345,6 +1351,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__hook__env)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__implode)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1667,6 +1687,32 @@ _rtx() {
                     COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__implode)
+            opts="-j -v -h --config --dry-run --log-level --jobs --verbose --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 --log-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
