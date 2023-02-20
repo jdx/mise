@@ -592,6 +592,17 @@ esac
     ;;
 esac
 ;;
+(self-update)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (settings)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
@@ -922,6 +933,10 @@ _arguments "${_arguments_options[@]}" \
     ;;
 esac
 ;;
+(self-update)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (settings)
 _arguments "${_arguments_options[@]}" \
 ":: :_rtx__help__settings_commands" \
@@ -1014,6 +1029,7 @@ _rtx_commands() {
 'list-remote:list runtime versions available for install' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
+'self-update:updates rtx itself' \
 'settings:Manage settings' \
 'uninstall:removes runtime versions' \
 'version:Show rtx version' \
@@ -1316,6 +1332,7 @@ _rtx__help_commands() {
 'ls:list installed runtime versions' \
 'ls-remote:list runtime versions available for install' \
 'plugins:Manage plugins' \
+'self-update:updates rtx itself' \
 'settings:Manage settings' \
 'uninstall:removes runtime versions' \
 'version:Show rtx version' \
@@ -1534,6 +1551,16 @@ _rtx__help__render-help_commands() {
 _rtx__render-help_commands() {
     local commands; commands=()
     _describe -t commands 'rtx render-help commands' commands "$@"
+}
+(( $+functions[_rtx__help__self-update_commands] )) ||
+_rtx__help__self-update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help self-update commands' commands "$@"
+}
+(( $+functions[_rtx__self-update_commands] )) ||
+_rtx__self-update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx self-update commands' commands "$@"
 }
 (( $+functions[_rtx__help__settings__set_commands] )) ||
 _rtx__help__settings__set_commands() {

@@ -99,6 +99,9 @@ _rtx() {
             rtx,render-help)
                 cmd="rtx__render__help"
                 ;;
+            rtx,self-update)
+                cmd="rtx__self__update"
+                ;;
             rtx,settings)
                 cmd="rtx__settings"
                 ;;
@@ -230,6 +233,9 @@ _rtx() {
                 ;;
             rtx__help,render-help)
                 cmd="rtx__help__render__help"
+                ;;
+            rtx__help,self-update)
+                cmd="rtx__help__self__update"
                 ;;
             rtx__help,settings)
                 cmd="rtx__help__settings"
@@ -391,7 +397,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1073,7 +1079,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins settings uninstall version where render-help help"
+            opts="activate alias asdf cache complete current deactivate direnv doctor env exec global hook-env install latest local ls ls-remote plugins self-update settings uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1507,6 +1513,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__render__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__self__update)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2071,6 +2091,32 @@ _rtx() {
             return 0
             ;;
         rtx__render__help)
+            opts="-j -v -h --log-level --jobs --verbose --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__self__update)
             opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
