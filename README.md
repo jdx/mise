@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.11.0
+rtx 1.11.1
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -208,7 +208,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.11.0/rtx-v1.11.0-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.11.1/rtx-v1.11.1-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
