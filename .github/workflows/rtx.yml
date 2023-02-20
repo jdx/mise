@@ -84,7 +84,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target ${{matrix.target}}
+          args: --release --all-features --target ${{matrix.target}}
       - run: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
@@ -113,7 +113,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with: { key: "${{matrix.target}}" }
-      - run: cargo build --release --target ${{matrix.target}}
+      - run: cargo build --release --all-features --target ${{matrix.target}}
       - run: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:

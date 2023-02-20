@@ -5,4 +5,4 @@ set -e
 # when chims are called in shebangs
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cargo run --manifest-path "$SCRIPT_DIR/../Cargo.toml" -- "$@"
+cargo run --all-features --manifest-path "$SCRIPT_DIR/../Cargo.toml" -- "$@"
