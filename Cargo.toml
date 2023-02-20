@@ -75,7 +75,7 @@ tempfile = "3.3.0"
 test-log = "0.2"
 
 [profile.release]
-debug = 1 # show line numbers in backtrace
+debug = 0
 
 [profile.release-fast]
 inherits = "release"
