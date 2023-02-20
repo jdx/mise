@@ -130,12 +130,6 @@ file, rtx will automatically add itself to `PATH`.
 $ curl https://rtx.pub/install.sh | sh
 ```
 
-> **Note**
->
-> There isn't currently an autoupdater in rtx. So if you use this method you'll need to remember
-> to fetch a new version manually for bug/feature fixes. I'm not sure if I'll ever add an autoupdater
-> because it might be disruptive to autoupdate to a major version that has breaking changes.
-
 or if you're allergic to `| sh`:
 
 ```sh-session
@@ -1167,6 +1161,18 @@ Options:
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
+
+```
+### `rtx self-update`
+
+```
+updates rtx itself
+
+Usage: self-update
+
+Options:
+  -h, --help
+          Print help
 
 ```
 ### `rtx settings get`
