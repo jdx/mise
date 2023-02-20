@@ -9,7 +9,7 @@ use color_eyre::eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -19,7 +19,7 @@ where
     T: Clone + Serialize + DeserializeOwned,
 {
     cache_file_path: PathBuf,
-    fresh_duration: Duration,
+    fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
     cache: Box<OnceCell<T>>,
 }
@@ -33,12 +33,12 @@ where
             cache_file_path,
             cache: Box::new(OnceCell::new()),
             fresh_files: Vec::new(),
-            fresh_duration: *FRESH_DURATION_YEAR,
+            fresh_duration: None,
         }
     }
 
     pub fn with_fresh_duration(mut self, duration: Duration) -> Self {
-        self.fresh_duration = duration;
+        self.fresh_duration = Some(duration);
         self
     }
 
@@ -47,7 +47,7 @@ where
         self
     }
 
-    pub fn get<F>(&self, fetch: F) -> Result<&T>
+    pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,
     {
@@ -95,28 +95,29 @@ where
         if !self.cache_file_path.exists() {
             return false;
         }
-        let fresh_duration = self.freshest_duration();
-        if let Ok(metadata) = self.cache_file_path.metadata() {
-            if let Ok(modified) = metadata.modified() {
-                return modified.elapsed().unwrap_or_default() < fresh_duration;
+        if let Some(fresh_duration) = self.freshest_duration() {
+            if let Ok(metadata) = self.cache_file_path.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    return modified.elapsed().unwrap_or_default() < fresh_duration;
+                }
             }
         }
         true
     }
 
-    fn freshest_duration(&self) -> Duration {
+    fn freshest_duration(&self) -> Option<Duration> {
         let mut freshest = self.fresh_duration;
         for path in &self.fresh_files {
             if let Ok(metadata) = path.metadata() {
                 if let Ok(modified) = metadata.modified() {
                     let duration = modified.elapsed().unwrap_or_default();
-                    freshest = min(freshest, duration);
+                    freshest = Some(match freshest {
+                        None => duration,
+                        Some(freshest) => min(freshest, duration),
+                    })
                 }
             }
         }
         freshest
     }
 }
-
-static FRESH_DURATION_YEAR: Lazy<Duration> =
-    Lazy::new(|| Duration::from_secs(60 * 60 * 24 * 7 * 52));

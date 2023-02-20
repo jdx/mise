@@ -55,16 +55,20 @@ impl Plugin {
             script_man: ScriptManager::new(plugin_path.clone()),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
-            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack"))
-                .with_fresh_duration(Duration::from_secs(60 * 60 * 24))
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-all")),
-            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack"))
+            remote_version_cache: CacheManager::new(
+                cache_path.join("remote_versions.msgpack.zlib"),
+            )
+            .with_fresh_duration(Duration::from_secs(60 * 60 * 24))
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-all")),
+            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.zlib"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
-            legacy_filename_cache: CacheManager::new(cache_path.join("legacy_filenames.msgpack"))
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            legacy_filename_cache: CacheManager::new(
+                cache_path.join("legacy_filenames.msgpack.zlib"),
+            )
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
             plugin_path,
             cache_path,
         }
@@ -227,13 +231,13 @@ impl Plugin {
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         // TODO: self.remote_version_cache.clear();
         self.remote_version_cache
-            .get(|| self.fetch_remote_versions(settings))
+            .get_or_try_init(|| self.fetch_remote_versions(settings))
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
         let aliases = self
             .alias_cache
-            .get(|| self.fetch_aliases(settings))?
+            .get_or_try_init(|| self.fetch_aliases(settings))?
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
@@ -242,7 +246,7 @@ impl Plugin {
 
     pub fn legacy_filenames(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.legacy_filename_cache
-            .get(|| self.fetch_legacy_filenames(settings))
+            .get_or_try_init(|| self.fetch_legacy_filenames(settings))
     }
 
     pub fn external_commands(&self) -> Result<Vec<Vec<String>>> {
