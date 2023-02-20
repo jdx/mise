@@ -1440,31 +1440,15 @@ to be updating, this is a good place to start.
 
 ### Plugin Cache
 
-Each plugin has a cache that's stored in `~/.local/share/rtx/plugins/<PLUGIN>/.rtxcache.msgpack`. It stores
-the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`) and the legacy filenames (see below).
+Each plugin has a cache that's stored in `~/.cache/rtx/plugins/<PLUGIN>`. It stores
+the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
+the list of aliases, and the bin directories within each runtime installation.
 
-It is updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
-gzipped messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
+Remote versions are updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
+zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
-cat ~/.local/share/rtx/plugins/nodejs/.rtxcache.msgpack.gz | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
-```
-
-### Runtime Cache
-
-Each runtime (language version, e.g.: `nodejs@20.0.0`), has a file called "runtimeconf" that's stored
-inside the install directory, e.g.: `~/.asdf/installs/nodejs/20.0.0/.rtxconf.msgpack`. This stores the
-information about the runtime that should not change after installation. Currently this is just the
-bin paths the plugin defines in `bin/list-bin-paths`. By default this is just `/bin`. It's the list
-of paths that rtx will add to `PATH` when the runtime is activated.
-
-I have not seen a plugins which has _dynamic_ bin paths but let me know if you find one. If that is
-the case, we may need to make this cached instead of static.
-
-"Runtimeconf" is stored as uncompressed messagepack and can be viewed with the following:
-
-```
-cat ~/.local/share/rtx/installs/nodejs/18.13.0/.rtxconf.msgpack | msgpack-cli decode
+cat ~/.cache/rtx/nodejs/remote_versions.msgpack.zlib | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 ### Legacy File Cache
