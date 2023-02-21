@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn test_alias_get() {
         reset_config();
-        let stdout = assert_cli!("alias", "get", "shfmt", "my/alias");
+        let stdout = assert_cli!("alias", "get", "tiny", "my/alias");
         assert_snapshot!(stdout, @r###"
         3.0
         "###);
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_alias_get_alias_unknown() {
-        let err = assert_cli_err!("alias", "get", "shfmt", "unknown");
+        let err = assert_cli_err!("alias", "get", "tiny", "unknown");
         assert_display_snapshot!(err, @"Unknown alias: unknown");
     }
 }

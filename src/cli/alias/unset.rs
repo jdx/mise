@@ -47,10 +47,12 @@ mod tests {
     fn test_settings_unset() {
         reset_config();
 
-        assert_cli!("alias", "unset", "shfmt", "my/alias");
+        assert_cli!("alias", "unset", "tiny", "my/alias");
 
         let stdout = assert_cli!("aliases");
         assert_snapshot!(stdout, @r###"
+        tiny                 lts                  3.1.0
+        tiny                 lts-prev             2.0.0
         "###);
 
         reset_config();

@@ -49,7 +49,7 @@ pub mod tests {
     #[test]
     fn test_alias_set() {
         reset_config();
-        assert_cli!("alias", "set", "shfmt", "my/alias", "3.0");
+        assert_cli!("alias", "set", "tiny", "my/alias", "3.0");
 
         let stdout = assert_cli!("aliases");
         println!("stdout {}", stdout);

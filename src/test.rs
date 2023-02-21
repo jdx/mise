@@ -40,7 +40,7 @@ pub fn reset_config() {
                 plugin_autoupdate_last_check_duration = 20
                 jobs = 2
 
-                [alias.shfmt]
+                [alias.tiny]
                 "my/alias" = '3.0'
             "#},
     )

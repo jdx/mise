@@ -73,29 +73,27 @@ mod tests {
 
     #[test]
     fn test_where() {
-        assert_cli!("plugin", "add", "shfmt");
         assert_cli!("install");
-        let stdout = assert_cli!("where", "shfmt");
+        let stdout = assert_cli!("where", "tiny");
         assert_str_eq!(
             stdout.trim(),
-            dirs::ROOT.join("installs/shfmt/3.5.1").to_string_lossy()
+            dirs::ROOT.join("installs/tiny/2.1.0").to_string_lossy()
         );
     }
 
     #[test]
     fn test_where_alias() {
-        assert_cli!("plugin", "add", "shfmt");
-        assert_cli!("install", "shfmt@my/alias");
-        let stdout = assert_cli!("where", "shfmt@my/alias");
+        assert_cli!("install", "tiny@my/alias");
+        let stdout = assert_cli!("where", "tiny@my/alias");
         assert_str_eq!(
             stdout.trim(),
-            dirs::ROOT.join("installs/shfmt/3.0.2").to_string_lossy()
+            dirs::ROOT.join("installs/tiny/3.0.1").to_string_lossy()
         );
     }
 
     #[test]
     fn test_where_not_found() {
-        let err = assert_cli_err!("where", "shfmt@1111");
-        assert_display_snapshot!(err, @"shfmt@1111 not installed");
+        let err = assert_cli_err!("where", "tiny@1111");
+        assert_display_snapshot!(err, @"tiny@1111 not installed");
     }
 }
