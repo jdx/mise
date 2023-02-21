@@ -88,6 +88,7 @@ strip = "symbols"
 allow-branch = ["main"]
 #sign-tag = true
 #sign-commit = true
+pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
     { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
     { file = "README.md", search = "https://github.com/jdxcode/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdxcode/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
