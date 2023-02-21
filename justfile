@@ -36,7 +36,7 @@ test-e2e: test-setup build
     ./e2e/run_all_tests
 
 # run unit tests w/ coverage
-test-coverage: clean test-setup
+test-coverage:
     cargo +nightly tarpaulin \
       --all-features --workspace \
       --timeout 120 --out Xml --ignore-tests
