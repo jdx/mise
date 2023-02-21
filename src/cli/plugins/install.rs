@@ -109,6 +109,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
         if let Some(segments) = url.path_segments() {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);
+            let name = name.strip_prefix("rtx-").unwrap_or(name);
             return Ok(name.to_string());
         }
     }
@@ -139,20 +140,10 @@ mod tests {
     use crate::cli::tests::grep;
 
     #[test]
-    fn test_plugin_install() {
-        assert_cli!("plugin", "add", "nodejs");
-    }
-
-    #[test]
     fn test_plugin_install_url() {
-        assert_cli!(
-            "plugin",
-            "add",
-            "-f",
-            "https://github.com/jdxcode/asdf-nodejs"
-        );
+        assert_cli!("plugin", "add", "-f", "https://github.com/jdxcode/rtx-tiny");
         let stdout = assert_cli!("plugin", "--urls");
-        assert_snapshot!(grep(stdout, "nodejs"), @"nodejs                        https://github.com/jdxcode/asdf-nodejs");
+        assert_snapshot!(grep(stdout, "tiny"), @"tiny                          https://github.com/jdxcode/rtx-tiny");
     }
 
     #[test]
@@ -164,9 +155,9 @@ mod tests {
 
     #[test]
     fn test_plugin_install_all() {
-        assert_cli!("plugin", "rm", "nodejs");
+        assert_cli!("plugin", "rm", "tiny");
         assert_cli!("plugin", "install", "--all");
         let stdout = assert_cli!("plugin");
-        assert_snapshot!(grep(stdout, "nodejs"), "nodejs");
+        assert_snapshot!(grep(stdout, "tiny"), "tiny");
     }
 }

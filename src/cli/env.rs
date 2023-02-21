@@ -84,13 +84,12 @@ mod tests {
 
     #[test]
     fn test_env_with_runtime_arg() {
-        assert_cli!("plugin", "add", "shfmt");
-        assert_cli!("install", "shfmt@3.5");
-        let stdout = assert_cli!("env", "shfmt@3.5", "-s", "bash");
+        assert_cli!("install", "tiny@3.0");
+        let stdout = assert_cli!("env", "tiny@3.0", "-s", "bash");
 
         assert!(stdout.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.5.1/bin")
+                .join("installs/tiny/3.0.1/bin")
                 .to_string_lossy()
                 .as_ref()
         ));
@@ -98,12 +97,12 @@ mod tests {
 
     #[test]
     fn test_env_alias() {
-        assert_cli!("plugin", "add", "shfmt");
-        assert_cli!("install", "shfmt@my/alias");
-        let stdout = assert_cli!("env", "shfmt@my/alias", "-s", "bash");
+        assert_cli!("plugin", "add", "tiny");
+        assert_cli!("install", "tiny@my/alias");
+        let stdout = assert_cli!("env", "tiny@my/alias", "-s", "bash");
         assert!(stdout.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.0.2")
+                .join("installs/tiny/3.0.1")
                 .to_string_lossy()
                 .as_ref()
         ));

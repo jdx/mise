@@ -36,7 +36,7 @@ pub struct Global {
     fuzzy: bool,
 
     /// remove the plugin(s) from ~/.tool-versions
-    #[clap(long, value_name = "PLUGIN")]
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
 }
 

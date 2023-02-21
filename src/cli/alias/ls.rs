@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn test_alias_ls() {
-        ensure_plugin_installed("shfmt");
+        ensure_plugin_installed("tiny");
         let stdout = assert_cli!("aliases");
         assert!(stdout.contains("my/alias"));
     }

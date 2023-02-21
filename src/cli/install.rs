@@ -153,5 +153,6 @@ mod tests {
             output.trim(),
             dirs::INSTALLS.join("dummy/ref-master").to_string_lossy()
         );
+        assert_cli!("global", "--unset", "dummy");
     }
 }
