@@ -312,19 +312,8 @@ impl RTXFile {
 
     pub fn remove_alias(&mut self, plugin: &str, from: &str) {
         let doc = self.get_or_create_edit();
-        if doc.contains_table("alias") {
-            let aliases = doc
-                .as_table_mut()
-                .entry("alias")
-                .or_insert(toml_edit::table())
-                .as_table_mut()
-                .unwrap();
-            if aliases.contains_key(plugin) {
-                let plugin_aliases = aliases
-                    .entry(plugin)
-                    .or_insert(toml_edit::table())
-                    .as_table_mut()
-                    .unwrap();
+        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
+            if let Some(plugin_aliases) = aliases.get_mut(plugin).and_then(|v| v.as_table_mut()) {
                 plugin_aliases.remove(from);
                 if plugin_aliases.is_empty() {
                     aliases.remove(plugin);
