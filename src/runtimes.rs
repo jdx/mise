@@ -94,7 +94,9 @@ impl RuntimeVersion {
                     }
                 },
                 |line| {
-                    pr.set_message(line.into());
+                    if !line.trim().is_empty() {
+                        pr.set_message(line.into());
+                    }
                 },
             )
         };
