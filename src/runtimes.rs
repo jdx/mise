@@ -37,15 +37,21 @@ impl RuntimeVersion {
         let version = match &install_type {
             InstallType::Version(v) => v.to_string(),
             InstallType::Ref(r) => format!("ref-{r}"),
-            InstallType::Path(p) => hash_to_str(&p),
+            InstallType::Path(p) => p.display().to_string(),
             InstallType::System => "system".into(),
         };
         let install_path = match &install_type {
             InstallType::Path(p) => p.clone(),
             _ => dirs::INSTALLS.join(&plugin.name).join(&version),
         };
-        let download_path = dirs::DOWNLOADS.join(&plugin.name).join(&version);
-        let cache_path = dirs::CACHE.join(&plugin.name).join(&version);
+        let download_path = match &install_type {
+            InstallType::Path(p) => p.clone(),
+            _ => dirs::DOWNLOADS.join(&plugin.name).join(&version),
+        };
+        let cache_path = match &install_type {
+            InstallType::Path(p) => dirs::CACHE.join(&plugin.name).join(hash_to_str(&p)),
+            _ => dirs::CACHE.join(&plugin.name).join(&version),
+        };
         Self {
             script_man: build_script_man(
                 install_type.clone(),
