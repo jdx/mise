@@ -1,7 +1,7 @@
-use atty::Stream;
 use std::ffi::{OsStr, OsString};
 
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use duct::IntoExecutablePath;
 use indexmap::IndexMap;
 use indoc::formatdoc;
@@ -16,7 +16,6 @@ use crate::config::Config;
 use crate::env;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
-use crate::ui::color::Color;
 
 /// execute a command with runtime(s) set
 ///
@@ -112,7 +111,6 @@ fn parse_command(
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -121,14 +119,15 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
       # Specify command as a string:
       rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
+    use test_log::test;
+
     use crate::assert_cli;
     use crate::cli::tests::cli_run;
-    use test_log::test;
 
     #[test]
     fn test_exec_ok() {

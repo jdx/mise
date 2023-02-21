@@ -1,4 +1,5 @@
-use atty::Stream;
+use console::style;
+
 use color_eyre::eyre::Result;
 use indoc::{formatdoc, indoc};
 use once_cell::sync::Lazy;
@@ -6,7 +7,6 @@ use once_cell::sync::Lazy;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// Output direnv function to use rtx inside direnv
 ///
@@ -36,12 +36,11 @@ impl Command for DirenvActivate {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
       $ echo 'use rtx' > .envrc
       $ direnv allow
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
