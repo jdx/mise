@@ -273,7 +273,7 @@ pub mod tests {
             .split('\n')
             .find(|line| line.contains(pattern))
             .map(|line| line.to_string())
-            .unwrap_or_default()
+            .unwrap()
             .replace(dirs::HOME.to_string_lossy().as_ref(), "~")
     }
 }

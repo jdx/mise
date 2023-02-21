@@ -41,7 +41,7 @@ pub struct Local {
     fuzzy: bool,
 
     /// remove the plugin(s) from .tool-versions
-    #[clap(long, value_name = "PLUGIN")]
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
 }
 
@@ -121,25 +121,21 @@ mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;
-    use crate::{assert_cli, assert_cli_err, dirs};
+    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_local() {
         let cf_path = dirs::CURRENT.join(".tool-versions");
         let orig = fs::read_to_string(&cf_path).unwrap();
 
-        assert_cli!("plugin", "add", "nodejs");
-        assert_cli!("install", "shfmt@2");
-        let stdout = assert_cli!("local", "--pin", "shfmt@2");
-        assert_snapshot!(stdout);
-        let stdout = assert_cli!("local", "shfmt@2");
-        assert_snapshot!(stdout);
-        let stdout = assert_cli!("local", "--remove", "nodejs");
-        assert_snapshot!(stdout);
+        assert_cli!("install", "tiny@2");
+        assert_cli_snapshot!("local", "--pin", "tiny@2");
+        assert_cli_snapshot!("local", "tiny@2");
+        assert_cli_snapshot!("local", "--remove", "tiny");
         let stdout = assert_cli!("ls", "--current");
         assert_str_eq!(
-            grep(stdout, "nodejs"),
-            "   nodejs 18.0.0 (missing)   (set by ~/cwd/.node-version)"
+            grep(stdout, "tiny"),
+            "-> tiny 2.1.0                (set by ~/.tool-versions)"
         );
         let stdout = assert_cli!("local", "--pin", "tiny@1");
         assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
