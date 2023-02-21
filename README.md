@@ -564,6 +564,31 @@ Examples:
     $ execx($(rtx activate xonsh))
 
 ```
+### `rtx alias get`
+
+```
+Show an alias for a plugin
+
+This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
+
+Usage: get <PLUGIN> <ALIAS>
+
+Arguments:
+  <PLUGIN>
+          The plugin to show the alias for
+
+  <ALIAS>
+          The alias to show
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  $ rtx alias get nodejs lts/hydrogen
+  18.0.0
+
+```
 ### `rtx alias ls`
 
 ```
@@ -588,6 +613,57 @@ Options:
 Examples:
   $ rtx aliases
   nodejs    lts/hydrogen   18.0.0
+
+```
+### `rtx alias set`
+
+```
+Add/update an alias for a plugin
+
+This modifies the contents of ~/.config/rtx/config.toml
+
+Usage: set <PLUGIN> <ALIAS> <VALUE>
+
+Arguments:
+  <PLUGIN>
+          The plugin to set the alias for
+
+  <ALIAS>
+          The alias to set
+
+  <VALUE>
+          The value to set the alias to
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  $ rtx alias set nodejs lts/hydrogen 18.0.0
+
+```
+### `rtx alias unset`
+
+```
+Clears an alias for a plugin
+
+This modifies the contents of ~/.config/rtx/config.toml
+
+Usage: unset <PLUGIN> <ALIAS>
+
+Arguments:
+  <PLUGIN>
+          The plugin to remove the alias from
+
+  <ALIAS>
+          The alias to remove
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  $ rtx alias unset nodejs lts/hydrogen
 
 ```
 ### `rtx cache clear`
