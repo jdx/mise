@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -8,8 +8,6 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
-
-use crate::ui::color::Color;
 
 /// Shows currently active, and installed runtime versions
 ///
@@ -96,7 +94,6 @@ impl Current {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -113,14 +110,15 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       # can output multiple versions
       $ rtx current python
       3.11.0 3.10.0
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
-    use std::env;
 
     use crate::assert_cli;
     use crate::cli::tests::grep;

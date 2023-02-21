@@ -1,12 +1,11 @@
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use owo_colors::{OwoColorize, Stream};
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// removes a plugin
 #[derive(Debug, clap::Args)]
@@ -22,17 +21,13 @@ impl Command for PluginsUninstall {
         let plugin = config.plugins.get(&self.plugin);
         match plugin {
             Some(plugin) if plugin.is_installed() => {
-                rtxprintln!(
-                    out,
-                    "uninstalling plugin: {}",
-                    self.plugin.if_supports_color(Stream::Stderr, |t| t.cyan())
-                );
+                rtxprintln!(out, "uninstalling plugin: {}", style(&self.plugin).cyan());
                 plugin.uninstall()?;
             }
             _ => {
                 warn!(
                     "{} is not installed",
-                    self.plugin.if_supports_color(Stream::Stderr, |t| t.cyan())
+                    style(&self.plugin).cyan().for_stderr()
                 );
             }
         }
@@ -40,12 +35,11 @@ impl Command for PluginsUninstall {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx uninstall nodejs
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

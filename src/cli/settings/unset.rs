@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -7,13 +7,12 @@ use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// Clears a setting
 ///
 /// This modifies the contents of ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases=["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
+#[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct SettingsUnset {
     /// The setting to remove
     pub key: String,
@@ -27,12 +26,11 @@ impl Command for SettingsUnset {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx settings unset legacy_version_file
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
@@ -40,7 +38,6 @@ mod tests {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-
     use crate::test::reset_config;
 
     #[test]

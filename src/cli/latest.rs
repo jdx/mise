@@ -1,4 +1,3 @@
-use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
@@ -8,8 +7,6 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion}
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-
-use crate::ui::color::Color;
 
 /// get the latest runtime version of a plugin's runtimes
 #[derive(Debug, clap::Args)]
@@ -57,7 +54,6 @@ impl Command for Latest {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -66,7 +62,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
       $ rtx latest nodejs     # get the latest stable version of nodejs
       20.0.0
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

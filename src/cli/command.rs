@@ -1,6 +1,6 @@
-use crate::config::Config;
 use color_eyre::eyre::Result;
 
+use crate::config::Config;
 use crate::output::Output;
 
 /// described a CLI command

@@ -1,5 +1,3 @@
-use atty::Stream;
-use owo_colors::OwoColorize;
 use std::io;
 use std::io::Write;
 use std::process::ExitCode;
@@ -67,10 +65,6 @@ impl OutputStream {
     }
 }
 
-pub fn dim(stream: Stream, s: &str) -> String {
-    s.if_supports_color(stream, |s| s.dimmed()).to_string()
-}
-
 #[macro_export]
 macro_rules! rtxprintln {
     () => {
@@ -91,7 +85,7 @@ macro_rules! rtxprint {
 #[macro_export]
 macro_rules! rtxstatusln {
     ($out:ident, $($arg:tt)*) => {{
-        let rtx = $crate::output::dim(atty::Stream::Stderr, "rtx ");
+        let rtx = console::style("rtx ").dim().for_stderr();
         $out.stderr.writeln(format!("{}{}", rtx, format!($($arg)*)));
     }};
 }

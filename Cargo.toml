@@ -25,7 +25,6 @@ path = "src/main.rs"
 #harness = false
 
 [dependencies]
-atty = "0.2.14"
 base64 = "0.21.0"
 build-time = "0.1.2"
 chrono = "0.4.23"
@@ -47,7 +46,7 @@ log = "0.4.17"
 num_cpus = "1.15.0"
 once_cell = "1.17.0"
 openssl = { version = "0.10", features = ["vendored"] }
-owo-colors = { version = "3.5.0", features = ["supports-colors"] }
+owo-colors = { version = "3.5.0" }
 rayon = "1.6.1"
 regex = "1.7.1"
 reqwest = { version = "0.11.14", features = ["blocking"] }

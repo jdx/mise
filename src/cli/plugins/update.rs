@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use std::sync::Arc;
 
 use crate::cli::command::Command;
 use crate::config::Config;

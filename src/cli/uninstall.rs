@@ -2,7 +2,6 @@ use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use owo_colors::OwoColorize;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -31,7 +30,7 @@ impl Command for Uninstall {
                 continue;
             }
 
-            rtxprintln!(out, "uninstalling {}", rtv.to_string().cyan());
+            rtxprintln!(out, "uninstalling {}", style(rtv).cyan());
             rtv.uninstall()
                 .wrap_err_with(|| eyre!("error uninstalling {}", rtv))?;
         }
@@ -44,5 +43,5 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     {}
       $ rtx uninstall nodejs@18.0.0 # will uninstall specific version
       $ rtx uninstall nodejs        # will uninstall current nodejs version
-    "#, style("Examples:").underline().bold()}
+    "#, style("Examples:").underlined().bold()}
 });
