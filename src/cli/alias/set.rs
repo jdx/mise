@@ -24,9 +24,9 @@ pub struct AliasSet {
 
 impl Command for AliasSet {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mut rtxrc = config.rtxrc;
+        let rtxrc = config.rtxrc;
 
-        rtxrc.set_alias(&self.plugin, &self.alias, &self.value);
+        rtxrc.set_alias(&self.plugin, &self.alias, &self.value)?;
         rtxrc.save()
     }
 }
