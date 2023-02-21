@@ -8,12 +8,12 @@ use crate::{assert_cli, cmd, env};
 fn init() {
     env::set_var("NO_COLOR", "1");
     env_logger::init();
-    let _ = fs::remove_dir_all("test/data/legacy_cache");
+    let _ = fs::remove_dir_all("test/cache");
     if let Err(err) = cmd!(
         "git",
         "checkout",
-        "test/.tool-versions",
-        "test/cwd/.tool-versions",
+        "test/.test-tool-versions",
+        "test/cwd/.test-tool-versions",
         "test/config/config.toml"
     )
     .run()

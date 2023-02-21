@@ -101,7 +101,7 @@ mod tests {
         let files = HashSet::new();
         assert!(have_config_files_been_modified(&env, files));
 
-        let fp = dirs::CURRENT.join(".tool-versions");
+        let fp = dirs::CURRENT.join(".test-tool-versions");
         env.insert(
             "__RTX_WATCH".into(),
             serialize_watches(&HookEnvWatches::from([(fp.clone(), UNIX_EPOCH)])).unwrap(),

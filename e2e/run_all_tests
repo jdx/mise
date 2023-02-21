@@ -9,6 +9,4 @@ for f in $FILES; do
     continue
   fi
   "$ROOT/e2e/run_test" "$f"
-  rm -f "$ROOT/e2e/.tool-versions"
-  git checkout "$ROOT/.tool-versions"
 done
