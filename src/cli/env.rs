@@ -110,8 +110,8 @@ mod tests {
 
     #[test]
     fn test_env_tiny() {
-        let stdout = assert_cli!("env", "tiny@1", "-s", "bash");
-        assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=1.0.1");
+        let stdout = assert_cli!("env", "tiny@2", "tiny@1", "tiny@3", "-s", "bash");
+        assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=2.1.0");
     }
 
     #[test]

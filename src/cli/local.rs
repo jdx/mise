@@ -168,6 +168,13 @@ mod tests {
         });
     }
     #[test]
+    fn test_local_multiple_versions() {
+        run_test(|| {
+            assert_cli_snapshot!("local", "tiny@2", "tiny@1", "tiny@3");
+            assert_cli_snapshot!("bin-paths");
+        });
+    }
+    #[test]
     fn test_local_output_current_version() {
         run_test(|| {
             assert_cli!("local", "tiny", "2");
