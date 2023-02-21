@@ -238,6 +238,16 @@ pub mod tests {
     }
 
     #[macro_export]
+    macro_rules! assert_cli_snapshot {
+        ($($args:expr),+) => {{
+            let args = &vec!["rtx".into(), $($args.into()),+];
+            let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
+            let output = console::strip_ansi_codes(&output).to_string();
+            assert_snapshot!(output);
+        }};
+    }
+
+    #[macro_export]
     macro_rules! assert_cli_err {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
