@@ -1,5 +1,0 @@
----
-source: src/cli/plugins/install.rs
-expression: "\"nodejs\""
----
-nodejs
