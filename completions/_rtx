@@ -176,6 +176,17 @@ _arguments "${_arguments_options[@]}" \
 '*::args -- all arguments:' \
 && ret=0
 ;;
+(bin-paths)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (cache)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
@@ -877,6 +888,10 @@ esac
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(bin-paths)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (cache)
 _arguments "${_arguments_options[@]}" \
 ":: :_rtx__help__cache_commands" \
@@ -1089,6 +1104,7 @@ _rtx_commands() {
 'alias:Manage aliases' \
 'a:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'bin-paths:List all the active runtime bin paths' \
 'cache:Manage the rtx cache' \
 'complete:generate shell completions' \
 'current:Shows currently active, and installed runtime versions' \
@@ -1192,6 +1208,16 @@ _rtx__asdf_commands() {
 _rtx__help__asdf_commands() {
     local commands; commands=()
     _describe -t commands 'rtx help asdf commands' commands "$@"
+}
+(( $+functions[_rtx__bin-paths_commands] )) ||
+_rtx__bin-paths_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx bin-paths commands' commands "$@"
+}
+(( $+functions[_rtx__help__bin-paths_commands] )) ||
+_rtx__help__bin-paths_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help bin-paths commands' commands "$@"
 }
 (( $+functions[_rtx__cache_commands] )) ||
 _rtx__cache_commands() {
@@ -1431,6 +1457,7 @@ _rtx__help_commands() {
 'activate:Enables rtx to automatically modify runtimes when changing directory' \
 'alias:Manage aliases' \
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
+'bin-paths:List all the active runtime bin paths' \
 'cache:Manage the rtx cache' \
 'complete:generate shell completions' \
 'current:Shows currently active, and installed runtime versions' \
