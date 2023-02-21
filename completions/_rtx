@@ -71,20 +71,7 @@ _arguments "${_arguments_options[@]}" \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtx-alias-command-$line[1]:"
         case $line[1] in
-            (ls)
-_arguments "${_arguments_options[@]}" \
-'-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
-'--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'*-v[Show installation output]' \
-'*--verbose[Show installation output]' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
-&& ret=0
-;;
-(get)
+            (get)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
@@ -95,6 +82,19 @@ _arguments "${_arguments_options[@]}" \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- The plugin to show the alias for:' \
 ':alias -- The alias to show:' \
+&& ret=0
+;;
+(ls)
+_arguments "${_arguments_options[@]}" \
+'-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
+'--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
 ;;
 (set)
@@ -136,11 +136,11 @@ _arguments "${_arguments_options[@]}" \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtx-alias-help-command-$line[1]:"
         case $line[1] in
-            (ls)
+            (get)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
-(get)
+(ls)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -853,11 +853,11 @@ _arguments "${_arguments_options[@]}" \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtx-help-alias-command-$line[1]:"
         case $line[1] in
-            (ls)
+            (get)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
-(get)
+(ls)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -1152,13 +1152,13 @@ _rtx__help__direnv__activate_commands() {
 (( $+functions[_rtx__alias_commands] )) ||
 _rtx__alias_commands() {
     local commands; commands=(
+'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
 'list:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
-'get:Show an alias for a plugin' \
 'set:Add/update an alias for a plugin' \
 'add:Add/update an alias for a plugin' \
 'create:Add/update an alias for a plugin' \
@@ -1174,10 +1174,10 @@ These can come from user config or from plugins in `bin/list-aliases`.' \
 (( $+functions[_rtx__help__alias_commands] )) ||
 _rtx__help__alias_commands() {
     local commands; commands=(
+'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
-'get:Show an alias for a plugin' \
 'set:Add/update an alias for a plugin' \
 'unset:Clears an alias for a plugin' \
     )
@@ -1380,10 +1380,10 @@ _rtx__help__global_commands() {
 (( $+functions[_rtx__alias__help_commands] )) ||
 _rtx__alias__help_commands() {
     local commands; commands=(
+'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.' \
-'get:Show an alias for a plugin' \
 'set:Add/update an alias for a plugin' \
 'unset:Clears an alias for a plugin' \
 'help:Print this message or the help of the given subcommand(s)' \

@@ -508,7 +508,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias)
-            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help ls get set unset help"
+            opts="-p -j -v -h --plugin --log-level --jobs --verbose --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -568,7 +568,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__help)
-            opts="ls get set unset help"
+            opts="get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1278,7 +1278,7 @@ _rtx() {
             return 0
             ;;
         rtx__help__alias)
-            opts="ls get set unset"
+            opts="get ls set unset"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

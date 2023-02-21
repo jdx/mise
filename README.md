@@ -564,6 +564,31 @@ Examples:
     $ execx($(rtx activate xonsh))
 
 ```
+### `rtx alias get`
+
+```
+Show an alias for a plugin
+
+This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
+
+Usage: get <PLUGIN> <ALIAS>
+
+Arguments:
+  <PLUGIN>
+          The plugin to show the alias for
+
+  <ALIAS>
+          The alias to show
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  $ rtx alias get nodejs lts/hydrogen
+  18.0.0
+
+```
 ### `rtx alias ls`
 
 ```
@@ -588,31 +613,6 @@ Options:
 Examples:
   $ rtx aliases
   nodejs    lts/hydrogen   18.0.0
-
-```
-### `rtx alias get`
-
-```
-Show an alias for a plugin
-
-This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
-
-Usage: get <PLUGIN> <ALIAS>
-
-Arguments:
-  <PLUGIN>
-          The plugin to show the alias for
-
-  <ALIAS>
-          The alias to show
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
-Examples:
-  $ rtx alias get nodejs lts/hydrogen
-  18.0.0
 
 ```
 ### `rtx alias set`
