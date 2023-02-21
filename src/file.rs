@@ -123,20 +123,23 @@ mod tests {
     #[test]
     fn test_find_up() {
         let path = &dirs::CURRENT;
-        let filenames = vec![".rtxrc", ".rtxrc.toml", ".tool-versions"];
+        let filenames = vec![".rtxrc", ".rtxrc.toml", ".test-tool-versions"];
         #[allow(clippy::needless_collect)]
         let find_up = FindUp::new(path, &filenames).collect::<Vec<_>>();
         let mut find_up = find_up.into_iter();
-        assert_eq!(find_up.next(), Some(dirs::HOME.join("cwd/.tool-versions")));
-        assert_eq!(find_up.next(), Some(dirs::HOME.join(".tool-versions")));
+        assert_eq!(
+            find_up.next(),
+            Some(dirs::HOME.join("cwd/.test-tool-versions"))
+        );
+        assert_eq!(find_up.next(), Some(dirs::HOME.join(".test-tool-versions")));
     }
 
     #[test]
     fn test_find_up_2() {
         let path = &dirs::HOME.join("fixtures");
-        let filenames = vec![".tool-versions"];
+        let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
-        assert_eq!(result, Some(dirs::HOME.join(".tool-versions")));
+        assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
     }
 
     #[test]

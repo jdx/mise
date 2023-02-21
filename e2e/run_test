@@ -14,5 +14,3 @@ echo "Running $TEST"
 export HOME="$ROOT/e2e"
 cd "$(dirname "$TEST")"
 "./$(basename "$TEST")"
-
-rm -f "$ROOT/e2e/.tool-versions"

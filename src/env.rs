@@ -109,7 +109,7 @@ lazy_static! {
         None => vec![],
     };
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
-        ".tool-versions".into()
+        ".test-tool-versions".into()
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };

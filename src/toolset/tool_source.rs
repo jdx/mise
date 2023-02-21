@@ -33,10 +33,10 @@ mod tests {
 
     #[test]
     fn test_tool_source_display() {
-        let path = PathBuf::from("/home/user/.tool-versions");
+        let path = PathBuf::from("/home/user/.test-tool-versions");
 
         let ts = ToolSource::ToolVersions(path);
-        assert_str_eq!(ts.to_string(), "/home/user/.tool-versions");
+        assert_str_eq!(ts.to_string(), "/home/user/.test-tool-versions");
 
         let ts = ToolSource::Argument;
         assert_str_eq!(ts.to_string(), "--runtime");
