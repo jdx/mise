@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
 
 rm -rf asdf-plugins
 git clone --depth 1 https://github.com/asdf-vm/asdf-plugins
