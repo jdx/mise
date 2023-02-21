@@ -7,7 +7,6 @@ use color_eyre::eyre::Result;
 use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
-
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -22,7 +21,6 @@ use crate::env;
 use crate::plugins::{InstallType, Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::tool_version_list::ToolVersionList;
-
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 
@@ -61,13 +59,13 @@ impl Toolset {
             .or_insert_with(|| ToolVersionList::new(self.source.clone().unwrap()));
         versions.add_version(version);
     }
-    pub fn merge(&mut self, other: Toolset) {
-        for plugin in other.versions.keys() {
-            self.versions.shift_remove(plugin);
+    pub fn merge(&mut self, mut other: Toolset) {
+        for (plugin, versions) in self.versions.clone() {
+            if !other.versions.contains_key(&plugin) {
+                other.versions.insert(plugin, versions);
+            }
         }
-        for (plugin, versions) in other.versions {
-            self.versions.insert(plugin, versions);
-        }
+        self.versions = other.versions; // swap to use other's first
         self.source = other.source;
     }
     pub fn resolve(&mut self, config: &Config) {
@@ -247,19 +245,22 @@ impl Toolset {
             .collect()
     }
     pub fn env(&self) -> IndexMap<String, String> {
-        let mut entries: Vec<(String, String)> = self
+        let mut entries: IndexMap<String, String> = self
             .list_current_installed_versions()
             .into_par_iter()
-            .flat_map(|p| match p.exec_env() {
+            .flat_map(|v| match v.exec_env() {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {}", e);
                     Vec::new()
                 }
             })
+            .collect::<Vec<(String, String)>>()
+            .into_iter()
+            .rev()
             .collect();
-        entries.par_sort();
-        entries.into_iter().collect()
+        entries.sort_keys();
+        entries
     }
     pub fn path_env(&self) -> String {
         let installs = self.list_paths();
@@ -271,7 +272,6 @@ impl Toolset {
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .rev()
             .flat_map(|rtv| match rtv.list_bin_paths() {
                 Ok(paths) => paths,
                 Err(e) => {
