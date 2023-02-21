@@ -61,4 +61,10 @@ mod tests {
 
         ensure_plugin_installed("nodejs");
     }
+
+    #[test]
+    fn test_plugin_uninstall_not_installed() {
+        let stdout = assert_cli!("plugin", "rm", "xxx");
+        assert_snapshot!(stdout);
+    }
 }
