@@ -153,7 +153,7 @@ mod tests {
             Some(ConfigFileType::RtxRc)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.tool-versions")),
+            detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
             Some(ConfigFileType::ToolVersions)
         );
         assert_eq!(

@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_global() {
-        let cf_path = dirs::HOME.join(".tool-versions");
+        let cf_path = dirs::HOME.join(".test-tool-versions");
         let orig = fs::read_to_string(&cf_path).ok();
         let _ = fs::remove_file(&cf_path);
 
@@ -122,7 +122,7 @@ mod tests {
         let err = assert_cli_err!("global", "invalid-plugin");
         assert_str_eq!(
             err.to_string(),
-            "no version set for invalid-plugin in ~/.tool-versions"
+            "no version set for invalid-plugin in ~/.test-tool-versions"
         );
 
         // can only request a version one plugin at a time

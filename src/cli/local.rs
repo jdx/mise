@@ -133,7 +133,7 @@ mod tests {
             let stdout = assert_cli!("ls", "--current");
             assert_str_eq!(
                 grep(stdout, "tiny"),
-                "-> tiny 2.1.0                (set by ~/.tool-versions)"
+                "-> tiny 2.1.0                (set by ~/.test-tool-versions)"
             );
         });
     }
@@ -201,6 +201,7 @@ mod tests {
     #[test]
     fn test_local_alias_path() {
         run_test(|| {
+            assert_cli!("install", "dummy@1.1.0");
             let local_dummy_path = dirs::INSTALLS.join("dummy").join("1.1.0");
             let path_arg = String::from("path:") + &local_dummy_path.to_string_lossy();
             assert_cli!("alias", "set", "dummy", "m", &path_arg);
@@ -233,7 +234,7 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        let cf_path = dirs::CURRENT.join(".tool-versions");
+        let cf_path = dirs::CURRENT.join(".test-tool-versions");
         let orig = fs::read_to_string(&cf_path).unwrap();
 
         let result = panic::catch_unwind(test);
