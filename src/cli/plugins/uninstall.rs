@@ -46,25 +46,23 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use insta::assert_snapshot;
 
-    use crate::assert_cli;
-    use crate::cli::tests::ensure_plugin_installed;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_plugin_uninstall() {
-        ensure_plugin_installed("nodejs");
-
-        let stdout = assert_cli!("plugin", "rm", "nodejs");
-        assert_snapshot!(stdout);
-
-        let stdout = assert_cli!("plugin", "rm", "nodejs");
-        assert_snapshot!(stdout);
-
-        ensure_plugin_installed("nodejs");
-    }
-
-    #[test]
-    fn test_plugin_uninstall_not_installed() {
-        let stdout = assert_cli!("plugin", "rm", "xxx");
-        assert_snapshot!(stdout);
+        assert_cli!(
+            "plugin",
+            "add",
+            "tiny",
+            "https://github.com/jdxcode/rtx-tiny"
+        );
+        assert_cli_snapshot!("plugin", "rm", "tiny");
+        assert_cli_snapshot!("plugin", "rm", "tiny");
+        assert_cli!(
+            "plugin",
+            "add",
+            "tiny",
+            "https://github.com/jdxcode/rtx-tiny"
+        );
     }
 }
