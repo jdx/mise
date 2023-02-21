@@ -118,8 +118,12 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
 
 > **Warning**
 >
-> Regardless of the installation method, when uninstalling rtx,
-> remove `RTX_DATA_DIR` folder (usually `~/.local/share/rtx`) to fully clean up.
+> Regardless of the installation method, use `rtx implode` to fully clean up.
+> Alternatively, manually remove the following:
+> * `~/.local/share/rtx` (can also be `RTX_DATA_DIR` or `XDG_DATA_HOME/rtx`)
+> * `~/.config/rtx` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/rtx`)
+> * on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
+> * on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
 
 ### Standalone
 
