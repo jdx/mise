@@ -166,6 +166,34 @@ mod tests {
         let err = assert_cli_err!("local", "tiny", "dummy@latest");
         assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
 
+        // alias ref
+        assert_cli!("alias", "set", "dummy", "m", "ref:master");
+        let stdout = assert_cli!("local", "dummy@m");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy m");
+        assert_cli_snapshot!("current", "dummy");
+
+        // alias path
+        let local_dummy_path = dirs::INSTALLS.join("dummy").join("1.1.0");
+        let path_arg = String::from("path:") + &local_dummy_path.to_string_lossy();
+        assert_cli!("alias", "set", "dummy", "m", &path_arg);
+        let stdout = assert_cli!("local", "dummy@m");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy m");
+        let stdout = assert_cli!("current", "dummy");
+        assert_str_eq!(grep(stdout, "dummy"), "~/data/installs/dummy/1.1.0");
+
+        // alias prefix
+        assert_cli!("alias", "set", "dummy", "m", "prefix:1");
+        let stdout = assert_cli!("local", "dummy@m");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy m");
+        assert_cli_snapshot!("current", "dummy");
+
+        // alias system
+        assert_cli!("alias", "set", "dummy", "m", "system");
+        let stdout = assert_cli!("local", "dummy@m");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy m");
+        assert_cli_snapshot!("current", "dummy");
+
+        assert_cli!("alias", "unset", "dummy", "m");
         fs::write(cf_path, orig).unwrap();
     }
 }
