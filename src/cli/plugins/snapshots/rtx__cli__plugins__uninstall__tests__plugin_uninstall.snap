@@ -1,6 +1,6 @@
 ---
 source: src/cli/plugins/uninstall.rs
-expression: stdout
+expression: output
 ---
-uninstalling plugin: nodejs
+uninstalling plugin: tiny
 
