@@ -93,14 +93,7 @@ impl RuntimeArg {
 
 impl Display for RuntimeArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.version {
-            RuntimeArgVersion::System => write!(f, "{}@system", self.plugin),
-            RuntimeArgVersion::Path(path) => write!(f, "{}@path:{}", self.plugin, path),
-            RuntimeArgVersion::Version(version) => write!(f, "{}@{}", self.plugin, version),
-            RuntimeArgVersion::Ref(ref_) => write!(f, "{}@ref:{}", self.plugin, ref_),
-            RuntimeArgVersion::Prefix(prefix) => write!(f, "{}@prefix:{}", self.plugin, prefix),
-            RuntimeArgVersion::None => write!(f, "{}", self.plugin),
-        }
+        write!(f, "{}@{}", self.plugin, self.version)
     }
 }
 
