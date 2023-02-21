@@ -228,7 +228,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
       - name: ssh key
-        uses: webfactory/ssh-agent@0.7.0
+        uses: webfactory/ssh-agent@v0.7.0
         with:
           ssh-private-key: ${{ secrets.RTX_SSH_KEY }}
       - uses: crazy-max/ghaction-import-gpg@v5
