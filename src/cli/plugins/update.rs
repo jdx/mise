@@ -64,10 +64,15 @@ mod tests {
 
     #[test]
     fn test_plugin_update() {
-        assert_cli!("plugin", "install", "nodejs");
+        assert_cli!(
+            "plugin",
+            "install",
+            "tiny",
+            "https://github.com/jdxcode/rtx-tiny"
+        );
         let err = assert_cli_err!("p", "update");
         assert_str_eq!(err.to_string(), "no plugins specified");
         assert_cli!("plugin", "update", "--all");
-        assert_cli!("plugins", "update", "nodejs");
+        assert_cli!("plugins", "update", "tiny");
     }
 }

@@ -69,15 +69,15 @@ mod tests {
     #[test]
     fn test_plugin_list() {
         let stdout = assert_cli!("plugin", "list");
-        assert_str_eq!(grep(stdout, "nodejs"), "nodejs");
+        assert_str_eq!(grep(stdout, "dummy"), "dummy");
     }
 
     #[test]
     fn test_plugin_list_urls() {
         let stdout = assert_cli!("plugin", "list", "--urls");
         assert_str_eq!(
-            grep(stdout, "shfmt"),
-            "shfmt                         https://github.com/luizm/asdf-shfmt.git"
+            grep(stdout, "tiny"),
+            "tiny                          https://github.com/jdxcode/rtx-tiny"
         );
     }
 
