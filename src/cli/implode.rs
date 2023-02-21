@@ -2,9 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-
 use crate::output::Output;
-
 use crate::{dirs, env};
 
 /// removes rtx CLI and all generated data
@@ -49,7 +47,6 @@ impl Command for Implode {
 #[cfg(test)]
 #[cfg(test)]
 mod tests {
-
     use crate::assert_cli;
     use crate::{dirs, env};
 

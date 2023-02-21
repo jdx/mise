@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -8,7 +8,6 @@ use crate::config::Config;
 use crate::env;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
-use crate::ui::color::Color;
 
 /// Enables rtx to automatically modify runtimes when changing directory
 ///
@@ -52,7 +51,6 @@ impl Command for Activate {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -60,7 +58,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
         $ eval "$(rtx activate zsh)"
         $ rtx activate fish | source
         $ execx($(rtx activate xonsh))
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

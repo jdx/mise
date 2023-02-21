@@ -1,6 +1,6 @@
-use atty::Stream;
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
+use console::style;
 use indoc::{formatdoc, indoc};
 use log::LevelFilter;
 use once_cell::sync::Lazy;
@@ -8,7 +8,6 @@ use once_cell::sync::Lazy;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 mod activate;
 mod alias;
@@ -179,8 +178,6 @@ impl Cli {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
-
 const LONG_ABOUT: &str = indoc! {"
 rtx is a tool for managing runtime versions.
 
@@ -207,7 +204,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
       rtx global system               Use system node everywhere unless overridden
 
       rtx x nodejs@20 -- node app.js  Run `node app.js` with PATH pointing to node-20.x
-", COLOR.header("Examples:")  }
+", style("Examples:").bold().underlined()  }
 });
 
 #[cfg(test)]

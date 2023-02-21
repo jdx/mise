@@ -1,8 +1,9 @@
+use std::collections::HashSet;
+
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use owo_colors::Stream;
-use std::collections::HashSet;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -10,11 +11,8 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-
 use crate::plugins::PluginName;
-
 use crate::toolset::ToolsetBuilder;
-use crate::ui::color::Color;
 
 /// install a runtime
 ///
@@ -113,7 +111,6 @@ impl Install {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -122,13 +119,14 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx install nodejs         # install version specified in .tool-versions
       $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
       $ rtx install --all          # installs all runtimes and all plugins
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, dirs};
     use pretty_assertions::assert_str_eq;
+
+    use crate::{assert_cli, dirs};
 
     #[test]
     fn test_install_force() {

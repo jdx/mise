@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -7,7 +7,6 @@ use crate::cli::command::Command;
 use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// List installed plugins
 ///
@@ -47,7 +46,6 @@ impl Command for PluginsLs {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -58,7 +56,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx plugins ls --urls
       nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
       ruby                          https://github.com/asdf-vm/asdf-ruby.git
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
