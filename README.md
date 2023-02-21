@@ -673,6 +673,18 @@ Examples:
   $ rtx alias unset nodejs lts/hydrogen
 
 ```
+### `rtx bin-paths`
+
+```
+List all the active runtime bin paths
+
+Usage: bin-paths
+
+Options:
+  -h, --help
+          Print help
+
+```
 ### `rtx cache clear`
 
 ```
