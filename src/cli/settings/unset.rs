@@ -20,8 +20,8 @@ pub struct SettingsUnset {
 
 impl Command for SettingsUnset {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mut rtxrc = config.rtxrc;
-        rtxrc.remove_setting(&self.key);
+        let rtxrc = config.rtxrc;
+        rtxrc.remove_setting(&self.key)?;
         rtxrc.save()
     }
 }

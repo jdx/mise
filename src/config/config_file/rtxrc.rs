@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::{Result, Section, SectionExt};
 use indexmap::IndexMap;
 use log::LevelFilter;
+use once_cell::sync::OnceCell;
 use toml::Value;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
@@ -26,7 +28,7 @@ pub struct RTXFile {
     pub path: PathBuf,
     pub plugins: IndexMap<String, Plugin>,
     pub env: HashMap<String, String>,
-    edit: Option<toml_edit::Document>,
+    edit: OnceCell<Mutex<toml_edit::Document>>,
     settings: SettingsBuilder,
 }
 
@@ -187,7 +189,7 @@ impl RTXFile {
         }
     }
 
-    fn parse_missing_runtime_behavior(&mut self, v: &Value) -> Result<MissingRuntimeBehavior> {
+    fn parse_missing_runtime_behavior(&self, v: &Value) -> Result<MissingRuntimeBehavior> {
         let v = self.parse_string("missing_runtime_behavior", v)?;
         match v.to_lowercase().as_str() {
             "warn" => Ok(MissingRuntimeBehavior::Warn),
@@ -198,12 +200,12 @@ impl RTXFile {
         }
     }
 
-    fn parse_log_level(&mut self, v: &Value) -> Result<LevelFilter> {
+    fn parse_log_level(&self, v: &Value) -> Result<LevelFilter> {
         let level = self.parse_string("log_level", v)?.parse()?;
         Ok(level)
     }
 
-    fn parse_aliases(&mut self, v: &Value) -> Result<AliasMap> {
+    fn parse_aliases(&self, v: &Value) -> Result<AliasMap> {
         match v {
             Value::Table(table) => {
                 let mut aliases = AliasMap::new();
@@ -231,35 +233,22 @@ impl RTXFile {
         }
     }
 
-    fn get_or_create_edit(&mut self) -> &mut toml_edit::Document {
-        if self.edit.is_none() {
+    fn get_edit(&self) -> Result<&Mutex<toml_edit::Document>> {
+        self.edit.get_or_try_init(|| {
             if !self.path.exists() {
                 let dir = self.path.parent().unwrap();
-                fs::create_dir_all(dir).expect("could not create directory");
-                fs::write(&self.path, "").expect("could not create new config.toml file");
+                fs::create_dir_all(dir)?;
+                fs::write(&self.path, "")?;
             }
-            let body = fs::read_to_string(&self.path)
-                .suggestion("ensure file exists and can be read")
-                .unwrap();
-            self.edit = Some(body.parse::<toml_edit::Document>().unwrap());
-        }
-        self.edit.as_mut().unwrap()
+            let body =
+                fs::read_to_string(&self.path).suggestion("ensure file exists and can be read")?;
+            let edit = body.parse::<toml_edit::Document>()?;
+            Ok(Mutex::new(edit))
+        })
     }
 
-    fn get_edit(&self) -> Result<toml_edit::Document> {
-        match &self.edit {
-            Some(doc) => Ok(doc.clone()),
-            None => {
-                let body = fs::read_to_string(&self.path)
-                    .suggestion("ensure file exists and can be read")
-                    .unwrap();
-                Ok(body.parse::<toml_edit::Document>()?)
-            }
-        }
-    }
-
-    pub fn update_setting<V: Into<toml_edit::Value>>(&mut self, key: &str, value: V) {
-        let doc = self.get_or_create_edit();
+    pub fn update_setting<V: Into<toml_edit::Value>>(&self, key: &str, value: V) -> Result<()> {
+        let mut doc = self.get_edit()?.lock().unwrap();
         let key = key.split('.').collect::<Vec<&str>>();
         let mut table = doc.as_table_mut();
         for (i, k) in key.iter().enumerate() {
@@ -274,10 +263,11 @@ impl RTXFile {
                     .unwrap();
             }
         }
+        Ok(())
     }
 
-    pub fn remove_setting(&mut self, key: &str) {
-        let doc = self.get_or_create_edit();
+    pub fn remove_setting(&self, key: &str) -> Result<()> {
+        let mut doc = self.get_edit()?.lock().unwrap();
         let key = key.split('.').collect::<Vec<&str>>();
         let mut table = doc.as_table_mut();
         for (i, k) in key.iter().enumerate() {
@@ -292,10 +282,11 @@ impl RTXFile {
                     .unwrap();
             }
         }
+        Ok(())
     }
 
-    pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
-        let doc = self.get_or_create_edit();
+    pub fn set_alias(&self, plugin: &str, from: &str, to: &str) -> Result<()> {
+        let mut doc = self.get_edit()?.lock().unwrap();
         let aliases = doc
             .as_table_mut()
             .entry("alias")
@@ -308,10 +299,11 @@ impl RTXFile {
             .as_table_mut()
             .unwrap();
         plugin_aliases[from] = toml_edit::value(to);
+        Ok(())
     }
 
-    pub fn remove_alias(&mut self, plugin: &str, from: &str) {
-        let doc = self.get_or_create_edit();
+    pub fn remove_alias(&self, plugin: &str, from: &str) -> Result<()> {
+        let mut doc = self.get_edit()?.lock().unwrap();
         if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
             if let Some(plugin_aliases) = aliases.get_mut(plugin).and_then(|v| v.as_table_mut()) {
                 plugin_aliases.remove(from);
@@ -323,6 +315,7 @@ impl RTXFile {
                 doc.as_table_mut().remove("alias");
             }
         }
+        Ok(())
     }
 }
 
@@ -354,7 +347,12 @@ impl ConfigFile for RTXFile {
 
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.plugins.remove(plugin);
-        self.get_or_create_edit().as_table_mut().remove(plugin);
+        self.get_edit()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .as_table_mut()
+            .remove(plugin);
     }
 
     fn add_version(&mut self, plugin: &PluginName, version: &str) {
@@ -364,7 +362,10 @@ impl ConfigFile for RTXFile {
             .versions
             .push(version.to_string());
 
-        self.get_or_create_edit()
+        self.get_edit()
+            .unwrap()
+            .lock()
+            .unwrap()
             .entry(plugin)
             .or_insert_with(toml_edit::array)
             .as_array_mut()
@@ -375,7 +376,10 @@ impl ConfigFile for RTXFile {
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
         let plugin = self.plugins.entry(plugin_name.into()).or_default();
         plugin.versions.clear();
-        self.get_or_create_edit()
+        self.get_edit()
+            .unwrap()
+            .lock()
+            .unwrap()
             .entry(plugin_name)
             .or_insert_with(toml_edit::array)
             .as_array_mut()
@@ -392,7 +396,7 @@ impl ConfigFile for RTXFile {
     }
 
     fn dump(&self) -> String {
-        self.get_edit().expect("unable to parse toml").to_string()
+        self.get_edit().unwrap().lock().unwrap().to_string()
     }
 
     fn to_toolset(&self) -> Toolset {
@@ -555,12 +559,13 @@ nodejs=[true]
         "#
         )
         .unwrap();
-        let mut cf = RTXFile::from_file(f.path()).unwrap();
-        cf.update_setting("legacy_version_file", false);
-        cf.update_setting("something_else", "foo");
-        cf.update_setting("something.nested.very.deeply", 123);
-        cf.update_setting("aliases.nodejs.20", "20.0.0");
-        cf.update_setting("aliases.python.3", "3.9.0");
+        let cf = RTXFile::from_file(f.path()).unwrap();
+        cf.update_setting("legacy_version_file", false).unwrap();
+        cf.update_setting("something_else", "foo").unwrap();
+        cf.update_setting("something.nested.very.deeply", 123)
+            .unwrap();
+        cf.update_setting("aliases.nodejs.20", "20.0.0").unwrap();
+        cf.update_setting("aliases.python.3", "3.9.0").unwrap();
         assert_display_snapshot!(cf.dump(), @r###"
         legacy_version_file = false
         something_else = "foo"
@@ -596,8 +601,8 @@ nodejs=[true]
         "#
         )
         .unwrap();
-        let mut cf = RTXFile::from_file(f.path()).unwrap();
-        cf.remove_setting("something.nested.other");
+        let cf = RTXFile::from_file(f.path()).unwrap();
+        cf.remove_setting("something.nested.other").unwrap();
         assert_display_snapshot!(cf.dump(), @r###"
         [something]
 
@@ -620,10 +625,10 @@ nodejs=[true]
         "#
         )
         .unwrap();
-        let mut cf = RTXFile::from_file(f.path()).unwrap();
-        cf.set_alias("nodejs", "18", "18.0.1");
-        cf.set_alias("nodejs", "20", "20.0.0");
-        cf.set_alias("python", "3.10", "3.10.0");
+        let cf = RTXFile::from_file(f.path()).unwrap();
+        cf.set_alias("nodejs", "18", "18.0.1").unwrap();
+        cf.set_alias("nodejs", "20", "20.0.0").unwrap();
+        cf.set_alias("python", "3.10", "3.10.0").unwrap();
         assert_display_snapshot!(cf.dump(), @r###"
         [alias.nodejs]
         16 = "16.0.0"
@@ -650,9 +655,9 @@ nodejs=[true]
         "#
         )
         .unwrap();
-        let mut cf = RTXFile::from_file(f.path()).unwrap();
-        cf.remove_alias("nodejs", "16");
-        cf.remove_alias("python", "3.10");
+        let cf = RTXFile::from_file(f.path()).unwrap();
+        cf.remove_alias("nodejs", "16").unwrap();
+        cf.remove_alias("python", "3.10").unwrap();
 
         assert_display_snapshot!(cf.dump(), @r###"
         [alias.nodejs]
@@ -665,7 +670,7 @@ nodejs=[true]
         let mut cf = RTXFile::from_str("".to_string()).unwrap();
         let dir = tempfile::tempdir().unwrap();
         cf.path = dir.path().join("subdir").join("does-not-exist.toml");
-        cf.set_alias("nodejs", "18", "18.0.1");
+        cf.set_alias("nodejs", "18", "18.0.1").unwrap();
         cf.save().unwrap();
     }
 }

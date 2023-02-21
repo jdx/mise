@@ -22,8 +22,8 @@ pub struct AliasUnset {
 
 impl Command for AliasUnset {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mut rtxrc = config.rtxrc;
-        rtxrc.remove_alias(&self.plugin, &self.alias);
+        let rtxrc = config.rtxrc;
+        rtxrc.remove_alias(&self.plugin, &self.alias)?;
         rtxrc.save()
     }
 }
