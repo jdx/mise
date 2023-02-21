@@ -28,6 +28,7 @@ jobs:
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 10
           max_attempts: 3
@@ -52,6 +53,7 @@ jobs:
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 10
           max_attempts: 3
@@ -141,6 +143,7 @@ jobs:
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 20
           max_attempts: 3
