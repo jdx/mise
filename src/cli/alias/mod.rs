@@ -24,8 +24,8 @@ pub struct Alias {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Ls(ls::AliasLs),
     Get(get::AliasGet),
+    Ls(ls::AliasLs),
     Set(set::AliasSet),
     Unset(unset::AliasUnset),
 }
@@ -33,8 +33,8 @@ enum Commands {
 impl Commands {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match self {
-            Self::Ls(cmd) => cmd.run(config, out),
             Self::Get(cmd) => cmd.run(config, out),
+            Self::Ls(cmd) => cmd.run(config, out),
             Self::Set(cmd) => cmd.run(config, out),
             Self::Unset(cmd) => cmd.run(config, out),
         }
