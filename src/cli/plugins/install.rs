@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 use url::Url;
@@ -10,7 +10,6 @@ use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::shorthand::shorthand_to_repository;
 use crate::toolset::ToolsetBuilder;
-use crate::ui::color::Color;
 use crate::ui::progress_report::ProgressReport;
 
 /// install a plugin
@@ -116,7 +115,6 @@ fn get_name_from_url(url: &str) -> Result<String> {
     Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -129,7 +127,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
                           # install the nodejs plugin using the git url only
                           # (nodejs is inferred from the url)
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

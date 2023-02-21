@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::{eyre, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -7,7 +7,6 @@ use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
-use crate::ui::color::Color;
 
 /// Add/update a setting
 ///
@@ -53,12 +52,11 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx settings set legacy_version_file true
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
@@ -66,7 +64,6 @@ pub mod tests {
     use insta::assert_snapshot;
 
     use crate::assert_cli;
-
     use crate::test::reset_config;
 
     #[test]

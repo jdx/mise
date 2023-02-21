@@ -1,8 +1,9 @@
+use std::string::ToString;
+use std::time::Duration;
+
 use color_eyre::eyre::Result;
 use console::style;
 use once_cell::sync::Lazy;
-use std::string::ToString;
-use std::time::Duration;
 use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;

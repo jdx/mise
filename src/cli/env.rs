@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -9,7 +9,6 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::ToolsetBuilder;
-use crate::ui::color::Color;
 
 /// exports env vars to activate rtx in a single shell session
 ///
@@ -50,7 +49,6 @@ impl Command for Env {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -58,17 +56,18 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ eval "$(rtx env -s zsh)"
       $ rtx env -s fish | source
       $ execx($(rtx env -s xonsh))
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
     use std::env;
 
+    use pretty_assertions::assert_str_eq;
+
     use crate::assert_cli;
     use crate::cli::tests::grep;
     use crate::dirs;
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_env() {

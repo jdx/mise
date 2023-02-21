@@ -1,15 +1,13 @@
-use atty::Stream;
 use color_eyre::eyre::{eyre, ContextCompat, Result};
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::{config_file, Config};
-
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::ui::color::Color;
 use crate::{dirs, env, file};
 
 /// Sets .tool-versions to include a specific runtime
@@ -92,7 +90,6 @@ impl Command for Local {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -113,7 +110,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       # show the current version of nodejs in .tool-versions
       $ rtx local nodejs
       20.0.0
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]

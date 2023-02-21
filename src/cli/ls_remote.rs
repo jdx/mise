@@ -1,9 +1,9 @@
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;

@@ -1,5 +1,5 @@
-use atty::Stream;
 use color_eyre::eyre::Result;
+use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
@@ -9,7 +9,6 @@ use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
-use crate::ui::color::Color;
 
 /// Display the installation path for a runtime
 ///
@@ -49,7 +48,6 @@ impl Command for Where {
     }
 }
 
-static COLOR: Lazy<Color> = Lazy::new(|| Color::new(Stream::Stdout));
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
@@ -62,7 +60,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       # Errors if nodejs is not referenced in any .tool-version file
       $ rtx where nodejs
       /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
-    "#, COLOR.header("Examples:")}
+    "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
