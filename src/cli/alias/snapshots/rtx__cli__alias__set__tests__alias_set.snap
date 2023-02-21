@@ -1,0 +1,8 @@
+---
+source: src/cli/alias/set.rs
+assertion_line: 55
+expression: stdout
+---
+shfmt                my/alias             3.0
+
+
