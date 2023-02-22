@@ -253,7 +253,9 @@ jobs:
           draft: false
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
-      - run: rtx/scripts/release-aur.sh
+      - name: Release to aur
+        run: rtx/scripts/release-aur.sh
+        working-directory: rtx
   bump-homebrew-formula:
     runs-on: macos-latest
     if: startsWith(github.event.ref, 'refs/tags/v')
