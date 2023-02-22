@@ -21,7 +21,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
       - name: Install just
@@ -46,7 +46,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
@@ -87,7 +87,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
@@ -122,7 +122,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - run: cargo build --release --all-features --target ${{matrix.target}}
       - run: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
