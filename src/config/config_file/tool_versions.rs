@@ -5,6 +5,7 @@ use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
+use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -179,7 +180,14 @@ impl ConfigFile for ToolVersions {
     fn dump(&self) -> String {
         let mut s = self.pre.clone();
 
+        let max_plugin_len = self
+            .plugins
+            .keys()
+            .map(|p| measure_text_width(p))
+            .max()
+            .unwrap_or_default();
         for (plugin, tv) in &self.plugins {
+            let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
             s.push_str(&format!("{} {}{}", plugin, tv.versions.join(" "), tv.post));
         }
 
@@ -217,7 +225,7 @@ pub(crate) mod tests {
         # intro comment
         python 3.11.0 3.10.0 # some comment # more comment
         #shellcheck 0.9.0
-        shfmt 3.6.0
+        shfmt  3.6.0
         # tail comment
         "};
         let tv = ToolVersions::parse_str(orig).unwrap();
