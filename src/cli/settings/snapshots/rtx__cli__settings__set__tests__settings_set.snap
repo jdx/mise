@@ -7,6 +7,7 @@ always_keep_download = true
 legacy_version_file = false
 plugin_autoupdate_last_check_duration = 1
 verbose = true
+asdf_compat = false
 jobs = 2
 log_level = INFO
 
