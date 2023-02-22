@@ -33,11 +33,15 @@ pub struct Local {
 
     /// save exact version to `.tool-versions`
     ///
-    /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
-    #[clap(long, verbatim_doc_comment)]
+    /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
+    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    #[clap(long, hide = true)]
+    /// save fuzzy version to `.tool-versions`
+    ///
+    /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
+    /// this is the default behavior unless RTX_ASDF_COMPAT=1
+    #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
     /// remove the plugin(s) from .tool-versions
@@ -77,7 +81,8 @@ impl Command for Local {
             if cf.display_runtime(out, &runtimes)? {
                 return Ok(());
             }
-            cf.add_runtimes(&config, &runtimes, self.pin)?;
+            let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
+            cf.add_runtimes(&config, &runtimes, pin)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {

@@ -6,7 +6,7 @@ use log::LevelFilter;
 
 use crate::config::AliasMap;
 use crate::env;
-use crate::env::{RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE};
+use crate::env::{RTX_ASDF_COMPAT, RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE};
 use crate::plugins::PluginName;
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: Duration,
     pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
     pub verbose: bool,
+    pub asdf_compat: bool,
     pub jobs: usize,
     pub log_level: LevelFilter,
 }
@@ -30,6 +31,7 @@ impl Default for Settings {
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             aliases: IndexMap::new(),
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
+            asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
             log_level: *RTX_LOG_LEVEL,
         }
@@ -56,6 +58,7 @@ impl Settings {
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
         );
         map.insert("verbose".into(), self.verbose.to_string());
+        map.insert("asdf_compat".into(), self.asdf_compat.to_string());
         map.insert("jobs".into(), self.jobs.to_string());
         map.insert("log_level".into(), self.log_level.to_string());
         map
@@ -70,6 +73,7 @@ pub struct SettingsBuilder {
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
     pub aliases: Option<AliasMap>,
     pub verbose: Option<bool>,
+    pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
     pub log_level: Option<LevelFilter>,
 }
@@ -97,6 +101,9 @@ impl SettingsBuilder {
         }
         if other.verbose.is_some() {
             self.verbose = other.verbose;
+        }
+        if other.asdf_compat.is_some() {
+            self.asdf_compat = other.asdf_compat;
         }
         if other.jobs.is_some() {
             self.jobs = other.jobs;
@@ -136,6 +143,7 @@ impl SettingsBuilder {
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
         settings.verbose = self.verbose.unwrap_or(settings.verbose);
+        settings.asdf_compat = self.asdf_compat.unwrap_or(settings.asdf_compat);
         settings.jobs = self.jobs.unwrap_or(settings.jobs);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 

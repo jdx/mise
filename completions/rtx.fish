@@ -153,8 +153,8 @@ complete -c rtx -n "__fish_seen_subcommand_from exec" -s h -l help -d 'Print hel
 complete -c rtx -n "__fish_seen_subcommand_from global" -l remove -d 'remove the plugin(s) from ~/.tool-versions' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
-complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'save exact version to `.tool-versions`'
-complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy
+complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'save exact version to `~/.tool-versions`'
+complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'save fuzzy version to `~/.tool-versions`'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,xonsh	,zsh	}"
@@ -186,7 +186,7 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -s j -l jobs -d 'Number o
 complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l pin -d 'save exact version to `.tool-versions`'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy
+complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'save fuzzy version to `.tool-versions`'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -d 'Only show runtimes from [PLUGIN]' -r

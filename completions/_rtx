@@ -418,8 +418,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'--pin[save exact version to `.tool-versions`]' \
-'--fuzzy[]' \
+'--pin[save exact version to `~/.tool-versions`]' \
+'--fuzzy[save fuzzy version to `~/.tool-versions`]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -496,7 +496,7 @@ by default this command will only set the runtime in the current directory ("$PW
 '--parent[recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--pin[save exact version to `.tool-versions`]' \
-'--fuzzy[]' \
+'--fuzzy[save fuzzy version to `.tool-versions`]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
