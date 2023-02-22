@@ -349,20 +349,12 @@ See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions)
 
 ### Legacy version files
 
-RTX supports "legacy version files" just like asdf.
+rtx supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
+and `.python-version`. These are ideal for setting the runtime version of a project without forcing
+other developers to use a specific tool like rtx/asdf.
 
-It's behind a config setting "legacy_version_file", but it's enabled by default (asdf defaults to disabled).
-You can disable these with `rtx settings set legacy_version_file false`. There is a performance cost
-to having these when they're parsed as it's performed by the plugin in `bin/parse-version-file`. However
-these are [cached](#cache-behavior) so it's not a huge deal. You may not even notice.
-
-These are ideal for setting the runtime version of a project without forcing other developers to
-use a specific tool like rtx/asdf.
-
-They support aliases, which means you can (finally) have an `.nvmrc` file with `lts/hydrogen`
-and it will work in rtx _and_ nvm. This wasn't possible with asdf.
-
-Here are some of the supported legacy version files:
+They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
+in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
 | --------- | -------------------------------------------------- |
@@ -375,6 +367,11 @@ Here are some of the supported legacy version files:
 | ruby      | `.ruby-version`, `Gemfile`                         |
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yvmrc`                                           |
+
+In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
+There is a performance cost to having these when they're parsed as it's performed by the plugin in
+`bin/parse-version-file`. However these are [cached](#cache-behavior) so it's not a huge deal.
+You may not even notice.
 
 > **Note**
 >
