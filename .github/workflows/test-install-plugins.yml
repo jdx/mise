@@ -43,7 +43,7 @@ jobs:
             dist/rtx-*.tar.xz
             dist/rtx-*.tar.gz
           if-no-files-found: error
-  test-install:
+  test-install-1:
     runs-on: ubuntu-22.04
     needs: [ build-linux ]
     continue-on-error: true
@@ -306,6 +306,24 @@ jobs:
           - hurl
           - hwatch
           - hygen
+         
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx -v
+      - run: rtx install ${{matrix.plugin}}@latest
+  test-install-2:
+    runs-on: ubuntu-22.04
+    needs: [ build-linux ]
+    continue-on-error: true
+    strategy:
+      matrix:
+        plugin:
           - hyperfine
           - iam-policy-json-to-terraform
           - iamlive
@@ -561,6 +579,25 @@ jobs:
           - stripe-cli
           - stylua
           - svu
+ 
+         
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx -v
+      - run: rtx install ${{matrix.plugin}}@latest
+  test-install-3:
+    runs-on: ubuntu-22.04
+    needs: [ build-linux ]
+    continue-on-error: true
+    strategy:
+      matrix:
+        plugin:
           - swag
           - swift
           - swiftformat
