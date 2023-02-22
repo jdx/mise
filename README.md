@@ -385,8 +385,8 @@ always_keep_download = false        # deleted after install by default
 plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable updates
 
 jobs = 4 # number of plugins or runtimes to install in parallel. The default is `4`.
-
 verbose = false # see explanation under `RTX_VERBOSE`
+asdf_compat = false # see explanation under `RTX_ASDF_COMPAT`
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -458,6 +458,14 @@ Set the number plugins or runtimes to install in parallel. The default is `4`.
 This shows the installation output during `rtx install` and `rtx plugin install`.
 This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
 2 configuration for the same thing, but for now it is it's own config.
+
+#### `RTX_ASDF_COMPAT=1`
+
+Only output `.tool-versions` files in `rtx local|global` which will be usable by asdf.
+
+Currently this disables the following:
+
+* `--fuzzy` as default behavior (`rtx local nodejs@18` will save exact version)
 
 #### `RTX_HIDE_OUTDATED_BUILD=1`
 
@@ -913,9 +921,14 @@ Arguments:
 
 Options:
       --pin
-          save exact version to `.tool-versions`
+          save exact version to `~/.tool-versions`
           
-          e.g.: `rtx global --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
+          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions
+
+      --fuzzy
+          save fuzzy version to `~/.tool-versions`
+          
+          e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           remove the plugin(s) from ~/.tool-versions
@@ -1048,7 +1061,12 @@ Options:
       --pin
           save exact version to `.tool-versions`
           
-          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions,
+          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
+
+      --fuzzy
+          save fuzzy version to `.tool-versions`
+          
+          e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           remove the plugin(s) from .tool-versions

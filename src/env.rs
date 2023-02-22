@@ -117,6 +117,7 @@ lazy_static! {
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");
     pub static ref RTX_PREFER_STALE: bool = prefer_stale(&ARGS);
+    pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
 }
 
 fn get_env_diff() -> EnvDiff {
