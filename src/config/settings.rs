@@ -6,7 +6,9 @@ use log::LevelFilter;
 
 use crate::config::AliasMap;
 use crate::env;
-use crate::env::{RTX_ASDF_COMPAT, RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE};
+use crate::env::{
+    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE,
+};
 use crate::plugins::PluginName;
 
 #[derive(Debug, Clone)]
@@ -19,6 +21,7 @@ pub struct Settings {
     pub verbose: bool,
     pub asdf_compat: bool,
     pub jobs: usize,
+    pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
 }
 
@@ -33,6 +36,7 @@ impl Default for Settings {
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
             asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
+            disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
         }
     }
@@ -60,6 +64,10 @@ impl Settings {
         map.insert("verbose".into(), self.verbose.to_string());
         map.insert("asdf_compat".into(), self.asdf_compat.to_string());
         map.insert("jobs".into(), self.jobs.to_string());
+        map.insert(
+            "disable_default_shorthands".into(),
+            self.disable_default_shorthands.to_string(),
+        );
         map.insert("log_level".into(), self.log_level.to_string());
         map
     }
@@ -75,6 +83,7 @@ pub struct SettingsBuilder {
     pub verbose: Option<bool>,
     pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
+    pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
 }
 
@@ -107,6 +116,9 @@ impl SettingsBuilder {
         }
         if other.jobs.is_some() {
             self.jobs = other.jobs;
+        }
+        if other.disable_default_shorthands.is_some() {
+            self.disable_default_shorthands = other.disable_default_shorthands;
         }
         if other.log_level.is_some() {
             self.log_level = other.log_level;
@@ -145,6 +157,9 @@ impl SettingsBuilder {
         settings.verbose = self.verbose.unwrap_or(settings.verbose);
         settings.asdf_compat = self.asdf_compat.unwrap_or(settings.asdf_compat);
         settings.jobs = self.jobs.unwrap_or(settings.jobs);
+        settings.disable_default_shorthands = self
+            .disable_default_shorthands
+            .unwrap_or(settings.disable_default_shorthands);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         settings
