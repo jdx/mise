@@ -55,6 +55,7 @@ mod tests {
         verbose = true
         asdf_compat = false
         jobs = 2
+        disable_default_shorthands = false
         log_level = INFO
         "###);
 
