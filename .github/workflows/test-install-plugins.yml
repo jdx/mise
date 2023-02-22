@@ -1,11 +1,15 @@
 name: Test Installing Plugins
 
-# Test all asdf plugins install
+# Test Top 50 asdf plugins install correctly and the most common can print their
+# current version
 
 on:
-  push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
+  release:
+    types: [published]
+  schedule:
+    # run at midnight on sunday (utc?)
+    - cron: 0 0 * * 0
+  # TODO: Remove on pull_request once CI is verified to run correctly
   pull_request:
     branches: [ "main" ]
   # Allows you to run this workflow manually from the Actions tab
