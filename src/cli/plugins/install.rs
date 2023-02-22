@@ -39,7 +39,7 @@ pub struct PluginsInstall {
 
     /// Install all missing plugins
     ///
-    /// This will only install plugins that have matching shortnames.
+    /// This will only install plugins that have matching shorthands.
     /// i.e.: they don't need the full git repo url
     #[clap(short, long, conflicts_with_all = ["name", "force"], verbatim_doc_comment)]
     all: bool,
