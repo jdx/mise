@@ -403,9 +403,10 @@ always_keep_download = false        # deleted after install by default
 # (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
 plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable updates
 
-jobs = 4 # number of plugins or runtimes to install in parallel. The default is `4`.
-verbose = false # see explanation under `RTX_VERBOSE`
-asdf_compat = false # see explanation under `RTX_ASDF_COMPAT`
+verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
+asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
+jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -468,10 +469,6 @@ Output logs to a file.
 Same as `RTX_LOG_LEVEL` but for the log file output level. This is useful if you want
 to store the logs but not have them litter your display.
 
-#### `RTX_JOBS=1`
-
-Set the number plugins or runtimes to install in parallel. The default is `4`.
-
 #### `RTX_VERBOSE=1`
 
 This shows the installation output during `rtx install` and `rtx plugin install`.
@@ -481,6 +478,15 @@ This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don'
 #### `RTX_ASDF_COMPAT=1`
 
 Only output `.tool-versions` files in `rtx local|global` which will be usable by asdf.
+
+#### `RTX_JOBS=1`
+
+Set the number plugins or runtimes to install in parallel. The default is `4`.
+
+#### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
+
+Disables the shorthand aliases for installing plugins. You will have to specify full urls when
+installing plugins, e.g.: `rtx plugin install nodejs https://github.com/asdf-vm/asdf-nodejs.git`
 
 Currently this disables the following:
 
