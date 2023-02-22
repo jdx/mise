@@ -29,7 +29,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "x86_64-unknown-linux-gnu"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
