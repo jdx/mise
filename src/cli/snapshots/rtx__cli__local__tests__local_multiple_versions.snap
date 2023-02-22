@@ -4,8 +4,8 @@ expression: output
 ---
 #python 3.11.1 3.10.9 # foo
 shellcheck 0.9.0
-shfmt 3.5.1 # test comment
+shfmt      3.5.1 # test comment
 #nodejs 18.13.0
-nodejs system
-tiny 2 1 3
+nodejs     system
+tiny       2 1 3
 
