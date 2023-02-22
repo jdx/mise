@@ -87,6 +87,10 @@ v18.10.9
 > `rtx install` is optional, `rtx global` will prompt to install the runtime if it's not
 > already installed. This is configurable in [`~/.config/rtx/config.toml`](#configuration).
 
+## Table of Contents
+
+<!--ts-->
+<!--te-->
 
 ## About
 
