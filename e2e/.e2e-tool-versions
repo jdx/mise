@@ -1,5 +1,5 @@
 #python 3.11.1 3.10.9 # foo
 shellcheck 0.9.0
-shfmt 3.6.0 # test comment
-#nodejs 18.13.0
-jq latest
+shfmt      3.6.0 # test comment
+#nodejs    18.13.0
+jq         latest
