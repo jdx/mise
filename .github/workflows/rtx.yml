@@ -235,10 +235,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
-      - name: ssh key
-        uses: webfactory/ssh-agent@v0.7.0
+      - uses: shimataro/ssh-key-action@v2
         with:
-          ssh-private-key: ${{ secrets.RTX_SSH_KEY }}
+          key: ${{ secrets.RTX_SSH_KEY }}
+          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
       - uses: crazy-max/ghaction-import-gpg@v5
         with:
           gpg_private_key: ${{ secrets.GPG_KEY }}
@@ -262,7 +262,7 @@ jobs:
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
       - name: Release to aur
-        run: rtx/scripts/release-aur.sh
+        run: scripts/release-aur.sh
         working-directory: rtx
   bump-homebrew-formula:
     runs-on: macos-latest
