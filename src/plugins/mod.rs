@@ -114,7 +114,7 @@ impl Plugin {
         ));
         pr.enable_steady_tick();
         let repository = repository
-            .or_else(|| shorthand_to_repository(&self.name))
+            .or_else(|| shorthand_to_repository(settings, &self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
         if self.is_installed() {

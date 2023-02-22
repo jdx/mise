@@ -30,6 +30,10 @@ impl Command for PluginsLsRemote {
             .map(|p| p.name.clone())
             .collect::<HashSet<_>>();
 
+        if config.settings.disable_default_shorthands {
+            warn!("default shorthands are disabled");
+            return Ok(());
+        }
         for (plugin, repo) in SHORTHAND_MAP.iter().sorted().collect_vec() {
             let installed = if installed_plugins.contains(*plugin) {
                 "*"
