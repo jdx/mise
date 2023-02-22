@@ -12,7 +12,7 @@ use crate::shorthand::shorthand_to_repository;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::progress_report::ProgressReport;
 
-/// install a plugin
+/// Install a plugin
 ///
 /// note that rtx automatically can install plugins when you install a runtime
 /// e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin

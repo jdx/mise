@@ -5,17 +5,17 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::{dirs, env};
 
-/// removes rtx CLI and all generated data
+/// Removes rtx CLI and all generated data
 ///
-/// skips config directory by default
+/// Skips config directory by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Implode {
-    /// also remove config directory
+    /// Also remove config directory
     #[clap(long, verbatim_doc_comment)]
     config: bool,
 
-    /// list directories that would be removed without actually removing them
+    /// List directories that would be removed without actually removing them
     #[clap(long, verbatim_doc_comment)]
     dry_run: bool,
 }

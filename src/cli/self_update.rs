@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::env;
 use crate::output::Output;
 
-/// updates rtx itself
+/// Updates rtx itself
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {}

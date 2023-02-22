@@ -11,7 +11,7 @@ use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
 
-/// generate shell completions
+/// Generate shell completions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Complete {
@@ -33,7 +33,9 @@ impl Command for Complete {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx complete
+      $ rtx complete -s bash > /etc/bash_completion.d/rtx
+      $ rtx complete -s zsh  > /usr/local/share/zsh/site-functions/_rtx
+      $ rtx complete -s fish > ~/.config/fish/completions/rtx.fish
     "#, style("Examples:").bold().underlined()}
 });
 

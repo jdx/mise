@@ -7,11 +7,11 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
-/// removes a plugin
+/// Removes a plugin
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct PluginsUninstall {
-    /// plugin to remove
+    /// Plugin to remove
     #[clap()]
     plugin: String,
 }

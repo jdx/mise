@@ -267,13 +267,13 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::plugin -- plugin to show versions of:' \
+'::plugin -- Plugin to show versions of:' \
 && ret=0
 ;;
 (deactivate)
 _arguments "${_arguments_options[@]}" \
-'-s+[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
-'--shell=[shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
+'-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
+'--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
@@ -281,7 +281,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- shell type to generate the script for:(bash fish xonsh zsh)' \
+'::shell_type -- Shell type to generate the script for:(bash fish xonsh zsh)' \
 && ret=0
 ;;
 (direnv)
@@ -394,13 +394,13 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtime version to use:' \
+'*::runtime -- Runtime version to use:' \
 && ret=0
 ;;
 (exec)
 _arguments "${_arguments_options[@]}" \
-'()-c+[the command string to execute]:C: ' \
-'()--command=[the command string to execute]:C: ' \
+'()-c+[Command string to execute]:C: ' \
+'()--command=[Command string to execute]:C: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
@@ -408,23 +408,23 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtime(s) to start:' \
-'*::command -- the command string to execute (same as --command):' \
+'*::runtime -- Runtime(s) to start:' \
+'*::command -- Command string to execute (same as --command):' \
 && ret=0
 ;;
 (global)
 _arguments "${_arguments_options[@]}" \
-'*--remove=[remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
+'*--remove=[Remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'--pin[save exact version to `~/.tool-versions`]' \
-'--fuzzy[save fuzzy version to `~/.tool-versions`]' \
+'--pin[Save exact version to `~/.tool-versions`]' \
+'--fuzzy[Save fuzzy version to `~/.tool-versions`]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtime(s) to add to .tool-versions:' \
+'*::runtime -- Runtime(s) to add to .tool-versions:' \
 && ret=0
 ;;
 (hook-env)
@@ -446,8 +446,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'--config[also remove config directory]' \
-'--dry-run[list directories that would be removed without actually removing them]' \
+'--config[Also remove config directory]' \
+'--dry-run[List directories that would be removed without actually removing them]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -456,20 +456,20 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (install)
 _arguments "${_arguments_options[@]}" \
-'()*-p+[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
-'()*--plugin=[only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
+'()*-p+[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
+'()*--plugin=[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'-f[force reinstall even if already installed]' \
-'--force[force reinstall even if already installed]' \
-'(-p --plugin -f --force)-a[install all missing runtimes as well as all plugins for the current directory]' \
-'(-p --plugin -f --force)--all[install all missing runtimes as well as all plugins for the current directory]' \
+'-f[Force reinstall even if already installed]' \
+'--force[Force reinstall even if already installed]' \
+'(-p --plugin -f --force)-a[Install all missing runtimes as well as all plugins for the current directory]' \
+'(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtime(s) to install:' \
+'*::runtime -- Runtime(s) to install:' \
 && ret=0
 ;;
 (latest)
@@ -482,26 +482,26 @@ _arguments "${_arguments_options[@]}" \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':runtime -- Runtime to get the latest version of:' \
-'::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
+'::asdf_version -- The version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
 && ret=0
 ;;
 (local)
 _arguments "${_arguments_options[@]}" \
-'*--remove=[remove the plugin(s) from .tool-versions]:PLUGIN: ' \
+'*--remove=[Remove the plugin(s) from .tool-versions]:PLUGIN: ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'-p[recurse up to find a .tool-versions file rather than using the current directory only
+'-p[Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--parent[recurse up to find a .tool-versions file rather than using the current directory only
+'--parent[Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--pin[save exact version to `.tool-versions`]' \
-'--fuzzy[save fuzzy version to `.tool-versions`]' \
+'--pin[Save exact version to `.tool-versions`]' \
+'--fuzzy[Save fuzzy version to `.tool-versions`]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtimes to add to .tool-versions:' \
+'*::runtime -- Runtimes to add to .tool-versions:' \
 && ret=0
 ;;
 (ls)
@@ -529,8 +529,8 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':plugin -- plugin to get versions for:' \
-'::prefix -- the version prefix to use when querying the latest version same as the first argument after the "@":' \
+':plugin -- Plugin to get versions for:' \
+'::prefix -- The version prefix to use when querying the latest version same as the first argument after the "@":' \
 && ret=0
 ;;
 (plugins)
@@ -578,10 +578,10 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'-a[list all available remote plugins]' \
-'--all[list all available remote plugins]' \
-'-u[show the git url for each plugin]' \
-'--urls[show the git url for each plugin]' \
+'-a[List all available remote plugins]' \
+'--all[List all available remote plugins]' \
+'-u[Show the git url for each plugin]' \
+'--urls[Show the git url for each plugin]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -593,8 +593,8 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'-u[show the git url for each plugin]' \
-'--urls[show the git url for each plugin]' \
+'-u[Show the git url for each plugin]' \
+'--urls[Show the git url for each plugin]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -610,7 +610,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':plugin -- plugin to remove:' \
+':plugin -- Plugin to remove:' \
 && ret=0
 ;;
 (update)
@@ -618,13 +618,13 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
-'()-a[update all plugins]' \
-'()--all[update all plugins]' \
+'()-a[Update all plugins]' \
+'()--all[Update all plugins]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::plugin -- plugin(s) to update:' \
+'*::plugin -- Plugin(s) to update:' \
 && ret=0
 ;;
 (help)
@@ -798,7 +798,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- runtime(s) to remove:' \
+'*::runtime -- Runtime(s) to remove:' \
 && ret=0
 ;;
 (version)
@@ -1106,33 +1106,33 @@ _rtx_commands() {
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
 'bin-paths:List all the active runtime bin paths' \
 'cache:Manage the rtx cache' \
-'complete:generate shell completions' \
-'current:Shows currently active, and installed runtime versions' \
-'deactivate:disable rtx for current shell session' \
+'complete:Generate shell completions' \
+'current:Shows current active and installed runtime versions' \
+'deactivate:Disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
 'env:exports env vars to activate rtx in a single shell session' \
 'e:exports env vars to activate rtx in a single shell session' \
-'exec:execute a command with runtime(s) set' \
-'x:execute a command with runtime(s) set' \
-'global:sets global .tool-versions to include a specified runtime' \
-'g:sets global .tool-versions to include a specified runtime' \
+'exec:Execute a command with runtime(s) set' \
+'x:Execute a command with runtime(s) set' \
+'global:Sets global .tool-versions to include a specified runtime' \
+'g:Sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
-'implode:removes rtx CLI and all generated data' \
-'install:install a runtime' \
-'i:install a runtime' \
-'latest:get the latest runtime version of a plugin'\''s runtimes' \
+'implode:Removes rtx CLI and all generated data' \
+'install:Install a runtime' \
+'i:Install a runtime' \
+'latest:Get the latest runtime version of a plugin'\''s runtimes' \
 'local:Sets .tool-versions to include a specific runtime' \
 'l:Sets .tool-versions to include a specific runtime' \
-'ls:list installed runtime versions' \
-'list:list installed runtime versions' \
-'ls-remote:list runtime versions available for install' \
-'list-remote:list runtime versions available for install' \
+'ls:List installed runtime versions' \
+'list:List installed runtime versions' \
+'ls-remote:List runtime versions available for install' \
+'list-remote:List runtime versions available for install' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
-'self-update:updates rtx itself' \
+'self-update:Updates rtx itself' \
 'settings:Manage settings' \
-'uninstall:removes runtime versions' \
+'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
 'render-help:internal command to generate markdown from help' \
@@ -1459,25 +1459,25 @@ _rtx__help_commands() {
 'asdf:\[internal\] simulates asdf for plugins that call "asdf" internally' \
 'bin-paths:List all the active runtime bin paths' \
 'cache:Manage the rtx cache' \
-'complete:generate shell completions' \
-'current:Shows currently active, and installed runtime versions' \
-'deactivate:disable rtx for current shell session' \
+'complete:Generate shell completions' \
+'current:Shows current active and installed runtime versions' \
+'deactivate:Disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
 'env:exports env vars to activate rtx in a single shell session' \
-'exec:execute a command with runtime(s) set' \
-'global:sets global .tool-versions to include a specified runtime' \
+'exec:Execute a command with runtime(s) set' \
+'global:Sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
-'implode:removes rtx CLI and all generated data' \
-'install:install a runtime' \
-'latest:get the latest runtime version of a plugin'\''s runtimes' \
+'implode:Removes rtx CLI and all generated data' \
+'install:Install a runtime' \
+'latest:Get the latest runtime version of a plugin'\''s runtimes' \
 'local:Sets .tool-versions to include a specific runtime' \
-'ls:list installed runtime versions' \
-'ls-remote:list runtime versions available for install' \
+'ls:List installed runtime versions' \
+'ls-remote:List runtime versions available for install' \
 'plugins:Manage plugins' \
-'self-update:updates rtx itself' \
+'self-update:Updates rtx itself' \
 'settings:Manage settings' \
-'uninstall:removes runtime versions' \
+'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
 'render-help:internal command to generate markdown from help' \
@@ -1493,11 +1493,11 @@ _rtx__help__help_commands() {
 (( $+functions[_rtx__plugins__help_commands] )) ||
 _rtx__plugins__help_commands() {
     local commands; commands=(
-'install:install a plugin' \
+'install:Install a plugin' \
 'ls:List installed plugins' \
 'ls-remote:List all available remote plugins' \
-'uninstall:removes a plugin' \
-'update:updates a plugin to the latest version' \
+'uninstall:Removes a plugin' \
+'update:Updates a plugin to the latest version' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx plugins help commands' commands "$@"
@@ -1671,26 +1671,26 @@ _rtx__plugins__ls-remote_commands() {
 (( $+functions[_rtx__help__plugins_commands] )) ||
 _rtx__help__plugins_commands() {
     local commands; commands=(
-'install:install a plugin' \
+'install:Install a plugin' \
 'ls:List installed plugins' \
 'ls-remote:List all available remote plugins' \
-'uninstall:removes a plugin' \
-'update:updates a plugin to the latest version' \
+'uninstall:Removes a plugin' \
+'update:Updates a plugin to the latest version' \
     )
     _describe -t commands 'rtx help plugins commands' commands "$@"
 }
 (( $+functions[_rtx__plugins_commands] )) ||
 _rtx__plugins_commands() {
     local commands; commands=(
-'install:install a plugin' \
-'i:install a plugin' \
-'a:install a plugin' \
+'install:Install a plugin' \
+'i:Install a plugin' \
+'a:Install a plugin' \
 'ls:List installed plugins' \
 'list:List installed plugins' \
 'ls-remote:List all available remote plugins' \
 'list-remote:List all available remote plugins' \
-'uninstall:removes a plugin' \
-'update:updates a plugin to the latest version' \
+'uninstall:Removes a plugin' \
+'update:Updates a plugin to the latest version' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx plugins commands' commands "$@"
