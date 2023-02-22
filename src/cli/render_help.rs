@@ -224,7 +224,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.14.3/rtx-v1.14.3-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.15.0/rtx-v1.15.0-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
