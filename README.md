@@ -669,9 +669,6 @@ Options:
       --status
           Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
     $ eval "$(rtx activate bash)"
     $ eval "$(rtx activate zsh)"
@@ -694,10 +691,6 @@ Arguments:
   <ALIAS>
           The alias to show
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx alias get nodejs lts/hydrogen
   18.0.0
@@ -719,9 +712,6 @@ Usage: ls [OPTIONS]
 Options:
   -p, --plugin <PLUGIN>
           Show aliases for <PLUGIN>
-
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx aliases
@@ -746,10 +736,6 @@ Arguments:
   <VALUE>
           The value to set the alias to
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx alias set nodejs lts/hydrogen 18.0.0
 ```
@@ -769,10 +755,6 @@ Arguments:
   <ALIAS>
           The alias to remove
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx alias unset nodejs lts/hydrogen
 ```
@@ -782,10 +764,6 @@ Examples:
 List all the active runtime bin paths
 
 Usage: bin-paths
-
-Options:
-  -h, --help
-          Print help
 ```
 ### `rtx cache clear`
 
@@ -793,10 +771,6 @@ Options:
 Deletes all cache files in rtx
 
 Usage: clear
-
-Options:
-  -h, --help
-          Print help
 ```
 ### `rtx complete`
 
@@ -810,9 +784,6 @@ Options:
           shell type
           
           [possible values: bash, elvish, fish, powershell, zsh]
-
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx complete -s bash > /etc/bash_completion.d/rtx
@@ -834,10 +805,6 @@ Arguments:
           Plugin to show versions of
           
           e.g.: ruby, nodejs
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   # outputs `.tool-versions` compatible format
@@ -869,10 +836,6 @@ Arguments:
           
           [possible values: bash, fish, xonsh, zsh]
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ eval "$(rtx deactivate bash)"
   $ eval "$(rtx deactivate zsh)"
@@ -892,10 +855,6 @@ direnv may not know to update environment variables when legacy file versions ch
 
 Usage: activate
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
   $ echo 'use rtx' > .envrc
@@ -907,10 +866,6 @@ Examples:
 Check rtx installation for possible problems.
 
 Usage: doctor
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx doctor
@@ -938,9 +893,6 @@ Options:
           Shell type to generate environment variables for
           
           [possible values: bash, fish, xonsh, zsh]
-
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ eval "$(rtx env -s bash)"
@@ -976,9 +928,6 @@ Arguments:
 Options:
   -c, --command <C>
           Command string to execute
-
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
@@ -1020,9 +969,6 @@ Options:
       --remove <PLUGIN>
           Remove the plugin(s) from ~/.tool-versions
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   # set the current version of nodejs to 20.x
   # will use a precise version (e.g.: 20.0.0) in .tool-versions file
@@ -1051,9 +997,6 @@ Options:
 
       --dry-run
           List directories that would be removed without actually removing them
-
-  -h, --help
-          Print help (see a summary with '-h')
 ```
 ### `rtx install`
 
@@ -1085,9 +1028,6 @@ Options:
   -v, --verbose...
           Show installation output
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
@@ -1105,10 +1045,6 @@ Usage: latest <RUNTIME>
 Arguments:
   <RUNTIME>
           Runtime to get the latest version of
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx latest nodejs@18  # get the latest version of nodejs 18
@@ -1154,9 +1090,6 @@ Options:
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   # set the current version of nodejs to 20.x for the current directory
   # will use a precise version (e.g.: 20.0.0) in .tool-versions file
@@ -1193,9 +1126,6 @@ Options:
   -c, --current
           Only show runtimes currently specified in .tool-versions
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx list
   -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
@@ -1222,10 +1152,6 @@ Arguments:
 
   [PREFIX]
           The version prefix to use when querying the latest version same as the first argument after the "@"
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx ls-remote nodejs
@@ -1276,9 +1202,6 @@ Options:
   -v, --verbose...
           Show installation output
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
                       # https://github.com/asdf-vm/asdf-plugins
@@ -1310,9 +1233,6 @@ Options:
           
           e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx plugins ls
   nodejs
@@ -1340,9 +1260,6 @@ Options:
           Show the git url for each plugin
           
           e.g.: https://github.com/asdf-vm/asdf-nodejs.git
-
-  -h, --help
-          Print help (see a summary with '-h')
 ```
 ### `rtx plugins uninstall`
 
@@ -1354,10 +1271,6 @@ Usage: uninstall <PLUGIN>
 Arguments:
   <PLUGIN>
           Plugin to remove
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx uninstall nodejs
@@ -1379,9 +1292,6 @@ Options:
   -a, --all
           Update all plugins
 
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
@@ -1392,10 +1302,6 @@ Examples:
 Updates rtx itself
 
 Usage: self-update
-
-Options:
-  -h, --help
-          Print help
 ```
 ### `rtx settings get`
 
@@ -1413,10 +1319,6 @@ Arguments:
   <KEY>
           The setting to show
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx settings get legacy_version_file
   true
@@ -1432,10 +1334,6 @@ Note that aliases are also stored in this file
 but managed separately with `rtx aliases`
 
 Usage: ls
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   $ rtx settings
@@ -1457,10 +1355,6 @@ Arguments:
   <VALUE>
           The value to set
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx settings set legacy_version_file true
 ```
@@ -1477,10 +1371,6 @@ Arguments:
   <KEY>
           The setting to remove
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx settings unset legacy_version_file
 ```
@@ -1495,10 +1385,6 @@ Arguments:
   <RUNTIME>...
           Runtime(s) to remove
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
-
 Examples:
   $ rtx uninstall nodejs@18.0.0 # will uninstall specific version
   $ rtx uninstall nodejs        # will uninstall current nodejs version
@@ -1509,10 +1395,6 @@ Examples:
 Show rtx version
 
 Usage: version
-
-Options:
-  -h, --help
-          Print help
 ```
 ### `rtx where`
 
@@ -1526,10 +1408,6 @@ Usage: where <RUNTIME>
 Arguments:
   <RUNTIME>
           runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version
-
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
 
 Examples:
   # Show the latest installed version of nodejs
