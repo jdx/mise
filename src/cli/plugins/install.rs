@@ -123,15 +123,16 @@ fn get_name_from_url(url: &str) -> Result<String> {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx install nodejs  # install the nodejs plugin using the shorthand repo:
-                          # https://github.com/asdf-vm/asdf-plugins
+      # install the nodejs plugin using the shorthand repo:
+      # https://github.com/asdf-vm/asdf-plugins
+      $ rtx install nodejs
 
+      # install the nodejs plugin using the git url
       $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
-                          # install the nodejs plugin using the git url
 
+      # install the nodejs plugin using the git url only
+      # (nodejs is inferred from the url)
       $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
-                          # install the nodejs plugin using the git url only
-                          # (nodejs is inferred from the url)
     "#, style("Examples:").bold().underlined()}
 });
 
