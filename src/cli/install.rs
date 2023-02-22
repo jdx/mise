@@ -14,10 +14,10 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::toolset::ToolsetBuilder;
 
-/// install a runtime
+/// Install a runtime
 ///
-/// this will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
-/// it won't be used simply by being installed, however.
+/// This will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
+/// It won't be used simply by being installed, however.
 /// For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
 /// Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
 ///
@@ -25,23 +25,23 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Install {
-    /// runtime(s) to install
+    /// Runtime(s) to install
     ///
     /// e.g.: nodejs@20
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Option<Vec<RuntimeArg>>,
 
-    /// only install runtime(s) for <PLUGIN>
+    /// Only install runtime(s) for <PLUGIN>
     #[clap(long, short, conflicts_with = "runtime")]
     plugin: Option<Vec<PluginName>>,
 
-    /// force reinstall even if already installed
+    /// Force reinstall even if already installed
     #[clap(long, short, requires = "runtime")]
     force: bool,
 
-    /// install all missing runtimes as well as all plugins for the current directory
+    /// Install all missing runtimes as well as all plugins for the current directory
     ///
-    /// this is hidden because it's now the default behavior
+    /// This is hidden because it's now the default behavior
     #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"], hide = true)]
     all: bool,
 

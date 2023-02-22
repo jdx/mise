@@ -10,17 +10,17 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
 
-/// updates a plugin to the latest version
+/// Updates a plugin to the latest version
 ///
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Update {
-    /// plugin(s) to update
+    /// Plugin(s) to update
     #[clap()]
     plugin: Option<Vec<String>>,
 
-    /// update all plugins
+    /// Update all plugins
     #[clap(long, short = 'a', conflicts_with = "plugin")]
     all: bool,
 }

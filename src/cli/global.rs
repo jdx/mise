@@ -10,36 +10,36 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
 
-/// sets global .tool-versions to include a specified runtime
+/// Sets global .tool-versions to include a specified runtime
 ///
-/// then displays the contents of ~/.tool-versions
-/// this file is `$HOME/.tool-versions` by default
-/// use `rtx local` to set a runtime version locally in the current directory
+/// Displays the contents of ~/.tool-versions after writing.
+/// The file is `$HOME/.tool-versions` by default.
+/// Use `rtx local` to set a runtime version locally in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Global {
-    /// runtime(s) to add to .tool-versions
+    /// Runtime(s) to add to .tool-versions
     ///
     /// e.g.: nodejs@20
-    /// if this is a single runtime with no version, the current value of the global
+    /// If this is a single runtime with no version, the current value of the global
     /// .tool-versions will be displayed
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: Option<Vec<RuntimeArg>>,
 
-    /// save exact version to `~/.tool-versions`
+    /// Save exact version to `~/.tool-versions`
     ///
     /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    /// save fuzzy version to `~/.tool-versions`
+    /// Save fuzzy version to `~/.tool-versions`
     ///
     /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// remove the plugin(s) from ~/.tool-versions
+    /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
 }

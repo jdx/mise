@@ -16,7 +16,7 @@ use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::{ToolSource, ToolsetBuilder};
 
-/// list installed runtime versions
+/// List installed runtime versions
 ///
 /// The "arrow (->)" indicates the runtime is installed, active, and will be used for running commands.
 /// (Assuming `rtx activate` or `rtx env` is in use).

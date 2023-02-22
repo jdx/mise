@@ -9,15 +9,14 @@ use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
-/// Shows currently active, and installed runtime versions
+/// Shows current active and installed runtime versions
 ///
-/// This is similar to `rtx list --current`, but this
-/// only shows the runtime and/or version so it's
-/// designed to fit into scripts more easily.
+/// This is similar to `rtx ls --current`, but this only shows the runtime
+/// and/or version. It's designed to fit into scripts more easily.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Current {
-    /// plugin to show versions of
+    /// Plugin to show versions of
     ///
     /// e.g.: ruby, nodejs
     #[clap()]
