@@ -127,7 +127,9 @@ impl Plugin {
         git.clone(repository)?;
 
         pr.set_message("loading plugin remote versions".into());
-        self.list_remote_versions(settings)?;
+        if self.has_list_all_script() {
+            self.list_remote_versions(settings)?;
+        }
         if self.has_list_alias_script() {
             pr.set_message("getting plugin aliases".into());
             self.get_aliases(settings)?;
@@ -303,7 +305,11 @@ impl Plugin {
             .stdout_capture()
             .stderr_capture()
             .unchecked()
-            .run()?;
+            .run()
+            .with_context(|| {
+                let script = self.script_man.get_script_path(&Script::ListAll);
+                format!("failed to run {}", script.display())
+            })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
 
@@ -338,6 +344,9 @@ impl Plugin {
             .collect())
     }
 
+    fn has_list_all_script(&self) -> bool {
+        self.script_man.script_exists(&Script::ListAll)
+    }
     fn has_list_alias_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAliases)
     }
