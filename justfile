@@ -37,9 +37,16 @@ test-e2e: test-setup build
 
 # run unit tests w/ coverage
 test-coverage:
-    cargo +nightly tarpaulin \
-      --all-features --workspace \
-      --timeout 120 --out Xml --ignore-tests
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    source <(cargo llvm-cov show-env --export-prefix) 
+    cargo llvm-cov clean --workspace 
+
+    cargo test
+    cargo build
+    PATH="$PWD/target/debug:$PATH" ./e2e/run_all_tests
+    cargo llvm-cov report --html
+    cargo llvm-cov report --lcov --output-path lcov.info
 
 # delete built files
 clean:

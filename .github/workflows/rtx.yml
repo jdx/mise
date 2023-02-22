@@ -20,6 +20,8 @@ jobs:
         uses: actions/checkout@v3
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
       - name: Install just
@@ -37,16 +39,17 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - run: rustup toolchain install nightly --component llvm-tools-preview
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-      - name: Install direnv
-        run: apt-get update; apt-get install direnv
+        with:
+          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - name: Install just
         uses: taiki-e/install-action@just
       - name: Run tests with coverage
@@ -62,6 +65,7 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           fail_ci_if_error: false
+          files: lcov.info
 
   build-linux:
     name: build-${{matrix.target}}
@@ -81,7 +85,9 @@ jobs:
           override: true
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        with: { key: "${{matrix.target}}" }
+        with:
+          key: "${{matrix.target}}"
+          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
@@ -114,7 +120,9 @@ jobs:
           override: true
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        with: { key: "${{matrix.target}}" }
+        with:
+          key: "${{matrix.target}}"
+          save-if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: cargo build --release --all-features --target ${{matrix.target}}
       - run: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
