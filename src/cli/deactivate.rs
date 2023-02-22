@@ -8,17 +8,17 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
-/// disable rtx for current shell session
+/// Disable rtx for current shell session
 ///
 /// This can be used to temporarily disable rtx in a shell session.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Deactivate {
-    /// shell type to generate the script for
+    /// Shell type to generate the script for
     #[clap(long, short, hide = true)]
     shell: Option<ShellType>,
 
-    /// shell type to generate the script for
+    /// Shell type to generate the script for
     #[clap()]
     shell_type: Option<ShellType>,
 }

@@ -9,18 +9,18 @@ use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 
-/// list runtime versions available for install
+/// List runtime versions available for install
 ///
 /// note that these versions are cached for commands like `rtx install nodejs@latest`
 /// however _this_ command will always clear that cache and fetch the latest remote versions
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list-remote", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), alias = "list-all")]
 pub struct LsRemote {
-    /// plugin to get versions for
+    /// Plugin to get versions for
     #[clap(value_parser = RuntimeArgParser)]
     plugin: RuntimeArg,
 
-    /// the version prefix to use when querying the latest version
+    /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     #[clap()]
     prefix: Option<String>,

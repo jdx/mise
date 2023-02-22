@@ -8,7 +8,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
-/// get the latest runtime version of a plugin's runtimes
+/// Get the latest runtime version of a plugin's runtimes
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Latest {
@@ -16,7 +16,7 @@ pub struct Latest {
     #[clap(value_parser = RuntimeArgParser)]
     runtime: RuntimeArg,
 
-    /// the version prefix to use when querying the latest version
+    /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     /// used for asdf compatibility
     #[clap(hide = true)]
