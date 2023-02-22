@@ -108,6 +108,7 @@ v18.10.9
          * [RTX_VERBOSE=1](#rtx_verbose1)
          * [RTX_ASDF_COMPAT=1](#rtx_asdf_compat1)
          * [RTX_JOBS=1](#rtx_jobs1)
+         * [RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml](#rtx_shorthands_fileconfigrtxshorthandstoml)
          * [RTX_DISABLE_DEFAULT_SHORTHANDS=1](#rtx_disable_default_shorthands1)
          * [RTX_HIDE_OUTDATED_BUILD=1](#rtx_hide_outdated_build1)
    * [Aliases](#aliases)
