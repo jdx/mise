@@ -29,7 +29,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "x86_64-unknown-linux-gnu"
-          # save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
@@ -38,277 +37,65 @@ jobs:
       - run: scripts/build-tarball.sh x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v3
         with:
-          name: tarball-${{matrix.target}}
+          name: tarball-x86_64-unknown-linux-gnu
           path: |
             dist/rtx-*.tar.xz
             dist/rtx-*.tar.gz
           if-no-files-found: error
-  test-install-1:
+  test-install-and-run:
+    name: Self Test popular plugins
     runs-on: ubuntu-22.04
     needs: [ build-linux ]
     continue-on-error: true
+    env:
+      RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
     strategy:
       matrix:
-        plugin:
-          - 1password-cli
-          - R
-          - act
-          - action-validator
-          - actionlint
-          - adr-tools
-          - ag
-          - age
-          - agebox
-          - aks-engine
-          - alias
-          - allure
-          - alp
-          - amass
-          - amazon-ecr-credential-helper
-          - ansible-base
-          - ant
-          - apollo-router
-          - arc
-          - argo
-          - argo-rollouts
-          - argocd
-          - aria2
-          - asciidoctorj
-          - assh
-          - aws-copilot
-          - aws-iam-authenticator
-          - aws-nuke
-          - aws-sam-cli
-          - aws-sso-cli
-          - aws-vault
-          - awscli
-          - awsebcli
-          - awsls
-          - awsrm
-          - awsweeper
-          - azure-cli
-          - azure-functions-core-tools
-          - babashka
-          - balena-cli
-          - bashbot
-          - bat
-          - batect
-          - bats
-          - bazel
-          - bbr
-          - bbr-s3-config-validator
-          - benthos
-          - binnacle
-          - bitwarden
-          - bombardier
-          - borg
-          - bosh
-          - bottom
-          - boundary
-          - bpkg
-          - brig
-          - btrace
-          - buf
-          - buildpack
-          - bun
-          - bundler
-          - caddy
-          - camunda-modeler
-          - cargo-make
-          - carthage
-          - ccache
-          - certstrap
-          - cf
-          - cfssl
-          - chamber
-          - cheat
-          - checkov
-          - chezmoi
-          - chezscheme
-          - chicken
-          - choose
-          - chromedriver
-          - cidr-merger
-          - cilium-cli
-          - cilium-hubble
-          - clojure
-          - cloudflared
-          - cloudsql-proxy
-          - clusterawsadm
-          - clusterctl
-          - cmake
-          - cmctl
-          - cockroach
-          - codefresh
-          - codeql
-          - colima
-          - conan
-          - concourse
-          - conduit
-          - conform
-          - conftest
-          - consul
-          - container-diff
-          - container-structure-test
-          - cookiecutter
-          - copper
-          - coq
-          - cosign
-          - coursier
-          - crane
-          - crc
-          - credhub
-          - crossplane-cli
-          - crystal
-          - ctlptl
-          - ctop
-          - cue
-          - dagger
-          - dart
-          - dasel
-          - datree
-          - dbmate
-          - deck
-          - delta
-          - deno
-          - dep
-          - depot
-          - desk
-          - devspace
-          - dhall
-          - difftastic
-          - digdag
-          - direnv
-          - dive
-          - djinni
-          - dmd
-          - docker-compose-v1
-          - docker-slim
-          - dockle
-          - doctl
-          - doctoolchain
-          - docuum
-          - dome
-          - dotenv-linter
-          - dotnet
-          - dotnet-core
-          - dotty
-          - dprint
-          - draft
-          - driftctl
-          - drone
-          - dtm
-          - duf
-          - dust
-          - dyff
-          - editorconfig-checker
-          - ejson
-          - eksctl
-          - elasticsearch
-          - elixir
-          - elm
-          - embulk
-          - emsdk
-          - envcli
-          - erlang
-          - esy
-          - etcd
-          - exa
-          - fd
-          - ffmpeg
-          - figma-export
-          - fillin
-          - firebase
-          - fission
-          - flarectl
-          - flutter
-          - flux2
-          - fluxctl
-          - fly
-          - flyctl
-          - func-e
-          - furyctl
-          - fx
-          - fzf
-          - gam
-          - gator
-          - gauche
-          - gcc-arm-none-eabi
-          - gcloud
-          - getenvoy
-          - ghidra
-          - ghorg
-          - ghq
-          - ginkgo
-          - git
-          - git-chglog
-          - gitconfig
-          - github-cli
-          - github-markdown-toc
-          - gitleaks
-          - gitsign
-          - gitui
-          - glab
-          - gleam
-          - glen
-          - glooctl
-          - glow
-          - go-containerregistry
-          - go-getter
-          - go-jira
-          - go-jsonnet
-          - go-junit-report
-          - go-sdk
-          - go-swagger
-          - gohugo
-          - gojq
-          - golang
-          - golangci-lint
-          - gomigrate
-          - gomplate
-          - gopass
-          - goreleaser
-          - goss
-          - graalvm
-          - gradle
-          - gradle-profiler
-          - grails
-          - grain
-          - granted
-          - grex
-          - groovy
-          - grpc-health-probe
-          - grpcurl
-          - grype
-          - guile
-          - gum
-          - gwvault
-          - hadolint
-          - hamler
-          - has
-          - haskell
-          - hasura-cli
-          - haxe
-          - hcl2json
-          - hcloud
-          - helm
-          - helm-cr
-          - helm-ct
-          - helm-diff
-          - helm-docs
-          - helmfile
-          - helmsman
-          - heroku-cli
-          - hey
-          - httpie-go
-          - hub
-          - hugo
-          - hurl
-          - hwatch
-          - hygen
-         
+        include:
+          - plugin: nodejs
+            command: rtx exec nodejs@latest -- node -v
+          - plugin: ruby
+            command: rtx exec ruby@latest -- ruby --version
+          - plugin: python
+            command: rtx exec python@latest -- python -V
+          - plugin: direnv
+            command: rtx exec direnv@latest -- direnv --version
+          - plugin: erlang
+            command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+          - plugin: elixir
+            command: rtx exec elixir@latest erlang -- elixir --version
+          - plugin: golang
+            command: rtx exec golang@latest -- go version
+          - plugin: java@openjdk
+            command: rtx exec java@openjdk -- java -version
+          - plugin: terraform
+            command: rtx exec terraform@latest -- terraform -v
+          - plugin: yarn
+            command: rtx exec yarn@latest -- yarn --version
+          - plugin: deno
+            command: rtx exec deno@latest -- deno --version
+          - plugin: bun
+            command: rtx exec bun@latest -- bun --version
+          - plugin: kubectl
+            command: rtx exec kubectl@latest -- kubectl version --client
+          - plugin: dotnet
+            command: rtx exec dotnet@latest-core -- dotnet --list-sdks
+          - plugin: flutter
+            command: rtx exec flutter@latest -- flutter --version
+          - plugin: crystal
+            command: rtx exec crystal@latest -- crystal -v
+          - plugin: neovim
+            command: rtx exec neovim@latest -- nvim --version
+          - plugin: php
+            command: rtx exec php@latest -- php -v php
+          - plugin: rust
+            command: rtx exec rust@latest -- rustc -V
+          - plugin: postgres
+            command: rtx exec postgres@latest -- psql -v
     steps:
       - uses: actions/checkout@v3
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -316,391 +103,72 @@ jobs:
       - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
-      - run: rtx install ${{matrix.plugin}}@latest
-  test-install-2:
+      - run: ${{matrix.command}}
+  test-install:
     runs-on: ubuntu-22.04
     needs: [ build-linux ]
     continue-on-error: true
     strategy:
       matrix:
-        plugin:
-          - hyperfine
-          - iam-policy-json-to-terraform
-          - iamlive
-          - idris
-          - idris2
-          - imagemagick
-          - imgpkg
-          - infracost
-          - inlets
-          - io
-          - istioctl
-          - janet
-          - java
-          - jb
-          - jbang
-          - jib
-          - jiq
-          - jless
-          - jmespath
-          - jmeter
-          - jq
-          - jqp
-          - jreleaser
-          - jsonnet
-          - julia
-          - just
-          - jx
-          - k2tf
-          - k3d
-          - k3sup
-          - k6
-          - k9s
-          - kafka
-          - kafkactl
-          - kapp
-          - kbld
-          - kcat
-          - kcctl
-          - kconf
-          - ki
-          - kind
-          - kn
-          - ko
-          - kompose
-          - kops
-          - kotlin
-          - kpack-cli
-          - kpt
-          - krab
-          - krew
-          - kscript
-          - ksonnet
-          - ktlint
-          - kube-capacity
-          - kube-code-generator
-          - kube-controller-tools
-          - kube-credential-cache
-          - kube-linter
-          - kube-score
-          - kubebuilder
-          - kubecm
-          - kubeconform
-          - kubectl
-          - kubectl-bindrole
-          - kubectl-buildkit
-          - kubectl-kots
-          - kubectx
-          - kubefedctl
-          - kubelogin
-          - kubemqctl
-          - kubent
-          - kubergrunt
-          - kubeseal
-          - kubesec
-          - kubespy
-          - kubeval
-          - kubie
-          - kustomize
-          - kuttl
-          - kwt
-          - lab
-          - lazygit
-          - lean
-          - lefthook
-          - leiningen
-          - levant
-          - lfe
-          - link
-          - linkerd
-          - liqoctl
-          - litestream
-          - logtalk
-          - loki-logcli
-          - lua
-          - luaJIT
-          - lucy
-          - mage
-          - make
-          - mani
-          - mark
-          - mask
-          - maven
-          - mc
-          - mdbook
-          - mdbook-linkcheck
-          - melt
-          - memcached
-          - meson
-          - micronaut
-          - mill
-          - minikube
-          - minio
-          - minishift
-          - mint
-          - mitmproxy
-          - mkcert
-          - mlton
-          - mockery
-          - mongo-tools
-          - mongodb
-          - mongosh
-          - mutanus
-          - mvnd
-          - mysql
-          - nancy
-          - nano
-          - neko
-          - neovim
-          - nerdctl
-          - newrelic-cli
-          - nfpm
-          - nim
-          - ninja
-          - node
-          - nodejs
-          - nomad
-          - nova
-          - nsc
-          - oc
-          - ocaml
-          - oci
-          - odin
-          - odo
-          - okteto
-          - om
-          - opa
-          - opam
-          - openfaas-faas-cli
-          - openresty
-          - opensearch
-          - openshift-install
-          - operator-sdk
-          - opsgenie-lamp
-          - osm
-          - osqueryi
-          - pachctl
-          - packer
-          - patat
-          - pdm
-          - peco
-          - perl
-          - php
-          - pint
-          - pipectl
-          - pivnet
-          - please
-          - pluto
-          - pnpm
-          - poetry
-          - polaris
-          - popeye
-          - postgres
-          - powershell-core
-          - pre-commit
-          - protoc
-          - protoc-gen-go
-          - protoc-gen-go-grpc
-          - protoc-gen-grpc-web
-          - protoc-gen-js
-          - protolint
-          - pulumi
-          - purerl
-          - purescript
-          - purty
-          - python
-          - quarkus
-          - rabbitmq
-          - racket
-          - raku
-          - rancher
-          - rbac-lookup
-          - rclone
-          - rebar
-          - reckoner
-          - redis
-          - redis-cli
-          - redo
-          - redskyctl
-          - reg
-          - regctl
-          - richgo
-          - riff
-          - ripgrep
-          - rke
-          - rlwrap
-          - rstash
-          - ruby
-          - rust
-          - rust-analyzer
-          - saml2aws
-          - sbcl
-          - sbt
-          - scala
-          - scaleway-cli
-          - sccache
-          - scenery
-          - schemacrawler
-          - semgrep
-          - semtag
-          - semver
-          - sentinel
-          - serf
-          - serverless
-          - shellcheck
-          - shellspec
-          - shfmt
-          - sinker
-          - skaffold
-          - skate
-          - sloth
-          - smlnj
-          - snyk
-          - soft-serve
-          - solidity
-          - sops
-          - sopstool
-          - sourcery
-          - spago
-          - sparkmax-parallel
-          - spectral
-          - spin
-          - spring-boot
-          - spruce
-          - sqldef
-          - sqlite
-          - stack
-          - starboard
-          - starport
-          - starship
-          - steampipe
-          - step
-          - stern
-          - stripe-cli
-          - stylua
-          - svu
- 
-         
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-        with:
-          name: tarball-x86_64-unknown-linux-gnu
-          path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
-      - run: rtx -v
-      - run: rtx install ${{matrix.plugin}}@latest
-  test-install-3:
-    runs-on: ubuntu-22.04
-    needs: [ build-linux ]
-    continue-on-error: true
-    strategy:
-      matrix:
-        plugin:
-          - swag
-          - swift
-          - swiftformat
-          - swiftgen
-          - swiftlint
-          - swiprolog
-          - syft
-          - syncher
-          - talos
-          - tanka
-          - task
-          - tctl
-          - tekton-cli
-          - teleport-community
-          - teleport-ent
-          - telepresence
-          - temporalite
-          - terradozer
-          - terraform
-          - terraform-docs
-          - terraform-ls
-          - terraform-lsp
-          - terraform-validator
-          - terragrunt
-          - terramate
-          - terrascan
-          - tf-summarize
-          - tfc-agent
-          - tfctl
-          - tfenv
-          - tflint
-          - tfmigrate
-          - tfsec
-          - tfstate-lookup
-          - tfupdate
-          - thrift
-          - tilt
-          - tiny
-          - titan
-          - tmux
-          - tokei
-          - tomcat
-          - tonnage
-          - tool-versions-to-env
-          - trdsql
-          - tridentctl
-          - trivy
-          - tsuru
-          - uaa-cli
-          - upt
-          - upx
-          - usql
-          - v
-          - vals
-          - vault
-          - vcluster
-          - vela
-          - velad
-          - velero
-          - vendir
-          - venom
-          - vhs
-          - viddy
-          - vim
-          - vultr-cli
-          - wasi-sdk
-          - wasm3
-          - wasm4
-          - wasmer
-          - wasmtime
-          - watchexec
+        plugins: 
           - waypoint
-          - weave-gitops
-          - websocat
-          - wren-cli
-          - wtfutil
-          - xchtmlreport
-          - xcodegen
-          - xcodes
-          - xh
-          - yadm
-          - yamllint
-          - yarn
-          - yay
-          - yj
-          - yor
-          - yq
-          - ytt
-          - zbctl
-          - zellij
-          - zephyr
+          - vault
+          - tfc-agent
+          - terraform-ls
+          - serf
+          - sentinel
+          - packer
+          - nomad
+          - levant
+          - consul
+          - boundary
+          - php
+          - postgres
+          - rust
+          - action-validator
+          - dotnet-core
+          - neovim
+          - poetry
+          - haskell
+          - link
+          - lua
+          - redis
+          - gcloud
+          - helm
+          - gleam
+          - awscli
+          - dart
+          - conan
+          - awsebcli
+          - aws-sam-cli
+          - ansible-base
+          - kotlin
+          - pnpm
+          - ocaml
+          - rebar
+          - julia
+          - elm
+          - R
+          - nim
+          - alias
+          - mysql
+          - minikube
+          - gradle
           - zig
-          - zigmod
-          - zola
-          - zoxide
-          - zprint
+          - shellcheck
+          - scala
+          - maven
+          - kustomize
+          - graalvm
+          - sbcl
     steps:
       - uses: actions/checkout@v3
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
       - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
-      - run: rtx -v
-      - run: rtx install ${{matrix.plugin}}@latest
+      - run: rtx install ${{matrix.plugins}}@latest
