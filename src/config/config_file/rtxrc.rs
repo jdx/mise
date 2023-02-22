@@ -98,6 +98,10 @@ impl RTXFile {
             }
             "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
             "jobs" => self.settings.jobs = Some(self.parse_usize(k, v)?),
+            "shorthands_file" => self.settings.shorthands_file = Some(self.parse_path(k, v)?),
+            "disable_default_shorthands" => {
+                self.settings.disable_default_shorthands = Some(self.parse_bool(k, v)?)
+            }
             "log_level" => self.settings.log_level = Some(self.parse_log_level(v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
@@ -179,6 +183,13 @@ impl RTXFile {
         match v {
             Value::Integer(v) => Ok(*v as usize),
             _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+        }
+    }
+
+    fn parse_path(&self, k: &str, v: &Value) -> Result<PathBuf> {
+        match v {
+            Value::String(v) => Ok(v.into()),
+            _ => Err(eyre!("expected {k} to be a path, got: {v}")),
         }
     }
 

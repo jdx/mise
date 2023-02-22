@@ -172,7 +172,7 @@ impl Toolset {
             .map(|plugin_name| {
                 let plugin = Plugin::new(&plugin_name);
                 if !plugin.is_installed() {
-                    plugin.install(&config.settings, None, mpr.add())?;
+                    plugin.install(config, None, mpr.add())?;
                 }
                 Ok(plugin)
             })
