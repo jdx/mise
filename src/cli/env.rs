@@ -12,10 +12,10 @@ use crate::toolset::ToolsetBuilder;
 
 /// exports env vars to activate rtx in a single shell session
 ///
-/// It's not necessary to use this if you have `rtx activate` in your shell rc file.
-/// Use this if you don't want to permanently install rtx.
-/// This can be used similarly to `asdf shell`.
-/// Unfortunately, it requires `eval` to work since it's not written in Bash though.
+/// Use this if you don't want to permanently install rtx. It's not necessary to
+/// use this if you have `rtx activate` in your shell rc file.
+/// This can be used similarly to `asdf shell`. It requires `eval` to work since
+/// it's not written in Bash.
 /// It's also useful just to see what environment variables rtx sets.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
@@ -24,7 +24,7 @@ pub struct Env {
     #[clap(long, short)]
     shell: Option<ShellType>,
 
-    /// runtime version to use
+    /// Runtime version to use
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Vec<RuntimeArg>,
 }

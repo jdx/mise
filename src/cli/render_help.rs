@@ -825,7 +825,7 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
         ```
         ",
         name = name,
-        about = strip_ansi_codes(&c.render_long_help().to_string()),
+        about = strip_ansi_codes(&c.render_long_help().to_string()).trim(),
     ))
 }
 

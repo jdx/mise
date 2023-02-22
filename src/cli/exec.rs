@@ -17,7 +17,7 @@ use crate::env;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 
-/// execute a command with runtime(s) set
+/// Execute a command with runtime(s) set
 ///
 /// use this to avoid modifying the shell session or running ad-hoc commands with the rtx runtimes
 /// set.
@@ -30,17 +30,17 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Exec {
-    /// runtime(s) to start
+    /// Runtime(s) to start
     ///
     /// e.g.: nodejs@20 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Vec<RuntimeArg>,
 
-    /// the command string to execute (same as --command)
+    /// Command string to execute (same as --command)
     #[clap(conflicts_with = "c", required_unless_present = "c", last = true)]
     command: Option<Vec<OsString>>,
 
-    /// the command string to execute
+    /// Command string to execute
     #[clap(short, long = "command", conflicts_with = "command")]
     c: Option<OsString>,
 }

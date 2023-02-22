@@ -677,7 +677,6 @@ Examples:
     $ eval "$(rtx activate zsh)"
     $ rtx activate fish | source
     $ execx($(rtx activate xonsh))
-
 ```
 ### `rtx alias get`
 
@@ -702,7 +701,6 @@ Options:
 Examples:
   $ rtx alias get nodejs lts/hydrogen
   18.0.0
-
 ```
 ### `rtx alias ls`
 
@@ -728,7 +726,6 @@ Options:
 Examples:
   $ rtx aliases
   nodejs    lts/hydrogen   18.0.0
-
 ```
 ### `rtx alias set`
 
@@ -755,7 +752,6 @@ Options:
 
 Examples:
   $ rtx alias set nodejs lts/hydrogen 18.0.0
-
 ```
 ### `rtx alias unset`
 
@@ -779,7 +775,6 @@ Options:
 
 Examples:
   $ rtx alias unset nodejs lts/hydrogen
-
 ```
 ### `rtx bin-paths`
 
@@ -791,7 +786,6 @@ Usage: bin-paths
 Options:
   -h, --help
           Print help
-
 ```
 ### `rtx cache clear`
 
@@ -803,12 +797,11 @@ Usage: clear
 Options:
   -h, --help
           Print help
-
 ```
 ### `rtx complete`
 
 ```
-generate shell completions
+Generate shell completions
 
 Usage: complete --shell <SHELL>
 
@@ -822,23 +815,23 @@ Options:
           Print help (see a summary with '-h')
 
 Examples:
-  $ rtx complete
-
+  $ rtx complete -s bash > /etc/bash_completion.d/rtx
+  $ rtx complete -s zsh  > /usr/local/share/zsh/site-functions/_rtx
+  $ rtx complete -s fish > ~/.config/fish/completions/rtx.fish
 ```
 ### `rtx current`
 
 ```
-Shows currently active, and installed runtime versions
+Shows current active and installed runtime versions
 
-This is similar to `rtx list --current`, but this
-only shows the runtime and/or version so it's
-designed to fit into scripts more easily.
+This is similar to `rtx ls --current`, but this only shows the runtime
+and/or version. It's designed to fit into scripts more easily.
 
 Usage: current [PLUGIN]
 
 Arguments:
   [PLUGIN]
-          plugin to show versions of
+          Plugin to show versions of
           
           e.g.: ruby, nodejs
 
@@ -860,12 +853,11 @@ Examples:
   # can output multiple versions
   $ rtx current python
   3.11.0 3.10.0
-
 ```
 ### `rtx deactivate`
 
 ```
-disable rtx for current shell session
+Disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
 
@@ -873,7 +865,7 @@ Usage: deactivate [SHELL_TYPE]
 
 Arguments:
   [SHELL_TYPE]
-          shell type to generate the script for
+          Shell type to generate the script for
           
           [possible values: bash, fish, xonsh, zsh]
 
@@ -886,7 +878,6 @@ Examples:
   $ eval "$(rtx deactivate zsh)"
   $ rtx deactivate fish | source
   $ execx($(rtx deactivate xonsh))
-
 ```
 ### `rtx direnv activate`
 
@@ -909,7 +900,6 @@ Examples:
   $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
   $ echo 'use rtx' > .envrc
   $ direnv allow
-
 ```
 ### `rtx doctor`
 
@@ -925,24 +915,23 @@ Options:
 Examples:
   $ rtx doctor
   [WARN] plugin nodejs is not installed
-
 ```
 ### `rtx env`
 
 ```
 exports env vars to activate rtx in a single shell session
 
-It's not necessary to use this if you have `rtx activate` in your shell rc file.
-Use this if you don't want to permanently install rtx.
-This can be used similarly to `asdf shell`.
-Unfortunately, it requires `eval` to work since it's not written in Bash though.
+Use this if you don't want to permanently install rtx. It's not necessary to
+use this if you have `rtx activate` in your shell rc file.
+This can be used similarly to `asdf shell`. It requires `eval` to work since
+it's not written in Bash.
 It's also useful just to see what environment variables rtx sets.
 
 Usage: env [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          runtime version to use
+          Runtime version to use
 
 Options:
   -s, --shell <SHELL>
@@ -958,12 +947,11 @@ Examples:
   $ eval "$(rtx env -s zsh)"
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
-
 ```
 ### `rtx exec`
 
 ```
-execute a command with runtime(s) set
+Execute a command with runtime(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with the rtx runtimes
 set.
@@ -978,16 +966,16 @@ Usage: exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]
 
 Arguments:
   [RUNTIME]...
-          runtime(s) to start
+          Runtime(s) to start
           
           e.g.: nodejs@20 python@3.10
 
   [COMMAND]...
-          the command string to execute (same as --command)
+          Command string to execute (same as --command)
 
 Options:
   -c, --command <C>
-          the command string to execute
+          Command string to execute
 
   -h, --help
           Print help (see a summary with '-h')
@@ -998,40 +986,39 @@ Examples:
 
   # Specify command as a string:
   rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
-
 ```
 ### `rtx global`
 
 ```
-sets global .tool-versions to include a specified runtime
+Sets global .tool-versions to include a specified runtime
 
-then displays the contents of ~/.tool-versions
-this file is `$HOME/.tool-versions` by default
-use `rtx local` to set a runtime version locally in the current directory
+Displays the contents of ~/.tool-versions after writing.
+The file is `$HOME/.tool-versions` by default.
+Use `rtx local` to set a runtime version locally in the current directory.
 
 Usage: global [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          runtime(s) to add to .tool-versions
+          Runtime(s) to add to .tool-versions
           
           e.g.: nodejs@20
-          if this is a single runtime with no version, the current value of the global
+          If this is a single runtime with no version, the current value of the global
           .tool-versions will be displayed
 
 Options:
       --pin
-          save exact version to `~/.tool-versions`
+          Save exact version to `~/.tool-versions`
           
           e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions
 
       --fuzzy
-          save fuzzy version to `~/.tool-versions`
+          Save fuzzy version to `~/.tool-versions`
           
           e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
-          remove the plugin(s) from ~/.tool-versions
+          Remove the plugin(s) from ~/.tool-versions
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1048,35 +1035,33 @@ Examples:
   # show the current version of nodejs in ~/.tool-versions
   $ rtx global nodejs
   20.0.0
-
 ```
 ### `rtx implode`
 
 ```
-removes rtx CLI and all generated data
+Removes rtx CLI and all generated data
 
-skips config directory by default
+Skips config directory by default.
 
 Usage: implode [OPTIONS]
 
 Options:
       --config
-          also remove config directory
+          Also remove config directory
 
       --dry-run
-          list directories that would be removed without actually removing them
+          List directories that would be removed without actually removing them
 
   -h, --help
           Print help (see a summary with '-h')
-
 ```
 ### `rtx install`
 
 ```
-install a runtime
+Install a runtime
 
-this will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
-it won't be used simply by being installed, however.
+This will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
+It won't be used simply by being installed, however.
 For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
 Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
 
@@ -1086,16 +1071,16 @@ Usage: install [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          runtime(s) to install
+          Runtime(s) to install
           
           e.g.: nodejs@20
 
 Options:
   -p, --plugin <PLUGIN>
-          only install runtime(s) for <PLUGIN>
+          Only install runtime(s) for <PLUGIN>
 
   -f, --force
-          force reinstall even if already installed
+          Force reinstall even if already installed
 
   -v, --verbose...
           Show installation output
@@ -1109,12 +1094,11 @@ Examples:
   $ rtx install nodejs         # install version specified in .tool-versions
   $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
   $ rtx install --all          # installs all runtimes and all plugins
-
 ```
 ### `rtx latest`
 
 ```
-get the latest runtime version of a plugin's runtimes
+Get the latest runtime version of a plugin's runtimes
 
 Usage: latest <RUNTIME>
 
@@ -1132,7 +1116,6 @@ Examples:
 
   $ rtx latest nodejs     # get the latest stable version of nodejs
   20.0.0
-
 ```
 ### `rtx local`
 
@@ -1147,7 +1130,7 @@ Usage: local [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          runtimes to add to .tool-versions
+          Runtimes to add to .tool-versions
           
           e.g.: nodejs@20
           if this is a single runtime with no version,
@@ -1155,21 +1138,21 @@ Arguments:
 
 Options:
   -p, --parent
-          recurse up to find a .tool-versions file rather than using the current directory only
+          Recurse up to find a .tool-versions file rather than using the current directory only
           by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
 
       --pin
-          save exact version to `.tool-versions`
+          Save exact version to `.tool-versions`
           
           e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
 
       --fuzzy
-          save fuzzy version to `.tool-versions`
+          Save fuzzy version to `.tool-versions`
           
           e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
-          remove the plugin(s) from .tool-versions
+          Remove the plugin(s) from .tool-versions
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1192,12 +1175,11 @@ Examples:
   # show the current version of nodejs in .tool-versions
   $ rtx local nodejs
   20.0.0
-
 ```
 ### `rtx ls`
 
 ```
-list installed runtime versions
+List installed runtime versions
 
 The "arrow (->)" indicates the runtime is installed, active, and will be used for running commands.
 (Assuming `rtx activate` or `rtx env` is in use).
@@ -1223,12 +1205,11 @@ Examples:
   $ rtx list --current
   -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
   -> python     3.11.0 (set by ~/.tool-versions)
-
 ```
 ### `rtx ls-remote`
 
 ```
-list runtime versions available for install
+List runtime versions available for install
 
 note that these versions are cached for commands like `rtx install nodejs@latest`
 however _this_ command will always clear that cache and fetch the latest remote versions
@@ -1237,10 +1218,10 @@ Usage: ls-remote <PLUGIN> [PREFIX]
 
 Arguments:
   <PLUGIN>
-          plugin to get versions for
+          Plugin to get versions for
 
   [PREFIX]
-          the version prefix to use when querying the latest version same as the first argument after the "@"
+          The version prefix to use when querying the latest version same as the first argument after the "@"
 
 Options:
   -h, --help
@@ -1258,12 +1239,11 @@ Examples:
   $ rtx ls-remote nodejs 18
   18.0.0
   18.1.0
-
 ```
 ### `rtx plugins install`
 
 ```
-install a plugin
+Install a plugin
 
 note that rtx automatically can install plugins when you install a runtime
 e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin
@@ -1309,7 +1289,6 @@ Examples:
   $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
                       # install the nodejs plugin using the git url only
                       # (nodejs is inferred from the url)
-
 ```
 ### `rtx plugins ls`
 
@@ -1322,12 +1301,12 @@ Usage: ls [OPTIONS]
 
 Options:
   -a, --all
-          list all available remote plugins
+          List all available remote plugins
           
           same as `rtx plugins ls-remote`
 
   -u, --urls
-          show the git url for each plugin
+          Show the git url for each plugin
           
           e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
@@ -1342,7 +1321,6 @@ Examples:
   $ rtx plugins ls --urls
   nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
   ruby                          https://github.com/asdf-vm/asdf-ruby.git
-
 ```
 ### `rtx plugins ls-remote`
 
@@ -1359,24 +1337,23 @@ Usage: ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          show the git url for each plugin
+          Show the git url for each plugin
           
           e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
   -h, --help
           Print help (see a summary with '-h')
-
 ```
 ### `rtx plugins uninstall`
 
 ```
-removes a plugin
+Removes a plugin
 
 Usage: uninstall <PLUGIN>
 
 Arguments:
   <PLUGIN>
-          plugin to remove
+          Plugin to remove
 
 Options:
   -h, --help
@@ -1384,12 +1361,11 @@ Options:
 
 Examples:
   $ rtx uninstall nodejs
-
 ```
 ### `rtx plugins update`
 
 ```
-updates a plugin to the latest version
+Updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
 
@@ -1397,11 +1373,11 @@ Usage: update [OPTIONS] [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
-          plugin(s) to update
+          Plugin(s) to update
 
 Options:
   -a, --all
-          update all plugins
+          Update all plugins
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1409,19 +1385,17 @@ Options:
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
-
 ```
 ### `rtx self-update`
 
 ```
-updates rtx itself
+Updates rtx itself
 
 Usage: self-update
 
 Options:
   -h, --help
           Print help
-
 ```
 ### `rtx settings get`
 
@@ -1446,7 +1420,6 @@ Options:
 Examples:
   $ rtx settings get legacy_version_file
   true
-
 ```
 ### `rtx settings ls`
 
@@ -1467,7 +1440,6 @@ Options:
 Examples:
   $ rtx settings
   legacy_version_file = false
-
 ```
 ### `rtx settings set`
 
@@ -1491,7 +1463,6 @@ Options:
 
 Examples:
   $ rtx settings set legacy_version_file true
-
 ```
 ### `rtx settings unset`
 
@@ -1512,18 +1483,17 @@ Options:
 
 Examples:
   $ rtx settings unset legacy_version_file
-
 ```
 ### `rtx uninstall`
 
 ```
-removes runtime versions
+Removes runtime versions
 
 Usage: uninstall <RUNTIME>...
 
 Arguments:
   <RUNTIME>...
-          runtime(s) to remove
+          Runtime(s) to remove
 
 Options:
   -h, --help
@@ -1532,7 +1502,6 @@ Options:
 Examples:
   $ rtx uninstall nodejs@18.0.0 # will uninstall specific version
   $ rtx uninstall nodejs        # will uninstall current nodejs version
-
 ```
 ### `rtx version`
 
@@ -1544,7 +1513,6 @@ Usage: version
 Options:
   -h, --help
           Print help
-
 ```
 ### `rtx where`
 
@@ -1573,7 +1541,6 @@ Examples:
   # Errors if nodejs is not referenced in any .tool-version file
   $ rtx where nodejs
   /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
-
 ```
 
 ## Comparison to asdf

@@ -70,7 +70,7 @@ lint-fix:
 # regenerate README.md
 render-help:
     ./.bin/rtx render-help > README.md
-    ./scripts/gh-md-toc --insert --no-backup --hide-footer --skip-header README.md
+    ./scripts/gh-md-toc --insert --no-backup --hide-footer --skip-header README.md > /dev/null
 
 # regenerate shell completion files
 render-completions:

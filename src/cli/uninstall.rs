@@ -9,11 +9,11 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 
-/// removes runtime versions
+/// Removes runtime versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Uninstall {
-    /// runtime(s) to remove
+    /// Runtime(s) to remove
     #[clap(required = true, value_parser = RuntimeArgParser)]
     runtime: Vec<RuntimeArg>,
 }

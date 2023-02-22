@@ -18,7 +18,7 @@ use crate::{dirs, env, file};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Local {
-    /// runtimes to add to .tool-versions
+    /// Runtimes to add to .tool-versions
     ///
     /// e.g.: nodejs@20
     /// if this is a single runtime with no version,
@@ -26,25 +26,25 @@ pub struct Local {
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: Option<Vec<RuntimeArg>>,
 
-    /// recurse up to find a .tool-versions file rather than using the current directory only
+    /// Recurse up to find a .tool-versions file rather than using the current directory only
     /// by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
     #[clap(short, long, verbatim_doc_comment)]
     parent: bool,
 
-    /// save exact version to `.tool-versions`
+    /// Save exact version to `.tool-versions`
     ///
     /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    /// save fuzzy version to `.tool-versions`
+    /// Save fuzzy version to `.tool-versions`
     ///
     /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// remove the plugin(s) from .tool-versions
+    /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
 }
