@@ -18,14 +18,12 @@ pub use script_manager::{InstallType, Script, ScriptManager};
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
-use crate::config::Settings;
+use crate::config::{Config, Settings};
+use crate::env::RTX_PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
-use crate::shorthand::shorthand_to_repository;
-
-use crate::env::RTX_PREFER_STALE;
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, file};
 
@@ -98,8 +96,8 @@ impl Plugin {
 
     pub fn install(
         &self,
-        settings: &Settings,
-        repository: Option<&str>,
+        config: &Config,
+        repository: Option<&String>,
         mut pr: ProgressReport,
     ) -> Result<()> {
         static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -114,7 +112,7 @@ impl Plugin {
         ));
         pr.enable_steady_tick();
         let repository = repository
-            .or_else(|| shorthand_to_repository(settings, &self.name))
+            .or_else(|| config.get_shorthands().get(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
         if self.is_installed() {
@@ -128,15 +126,15 @@ impl Plugin {
 
         pr.set_message("loading plugin remote versions".into());
         if self.has_list_all_script() {
-            self.list_remote_versions(settings)?;
+            self.list_remote_versions(&config.settings)?;
         }
         if self.has_list_alias_script() {
             pr.set_message("getting plugin aliases".into());
-            self.get_aliases(settings)?;
+            self.get_aliases(&config.settings)?;
         }
         if self.has_list_legacy_filenames_script() {
             pr.set_message("getting plugin legacy filenames".into());
-            self.legacy_filenames(settings)?;
+            self.legacy_filenames(&config.settings)?;
         }
 
         let sha = git.current_sha_short()?;

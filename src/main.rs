@@ -20,6 +20,7 @@ mod cache;
 mod cli;
 mod cmd;
 mod config;
+mod default_shorthands;
 mod dirs;
 mod env;
 mod env_diff;
@@ -32,12 +33,11 @@ mod logger;
 mod plugins;
 pub mod runtimes;
 mod shell;
+mod shorthands;
 mod ui;
 
 mod direnv;
 mod hash;
-mod shorthand;
-mod shorthand_list;
 mod toolset;
 
 #[cfg(test)]

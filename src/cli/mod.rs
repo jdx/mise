@@ -212,7 +212,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 #[cfg(test)]
 pub mod tests {
     use crate::config::MissingRuntimeBehavior::AutoInstall;
-    use crate::config::Settings;
+
     use crate::dirs;
     use crate::plugins::{Plugin, PluginName};
     use crate::ui::progress_report::ProgressReport;
@@ -256,14 +256,12 @@ pub mod tests {
     }
 
     pub fn ensure_plugin_installed(name: &str) {
-        let settings = Settings {
-            missing_runtime_behavior: AutoInstall,
-            ..Settings::default()
-        };
+        let mut config = Config::load().unwrap();
+        config.settings.missing_runtime_behavior = AutoInstall;
         let plugin = Plugin::new(&PluginName::from(name));
         if plugin.is_installed() {
             plugin
-                .install(&settings, None, ProgressReport::new(true))
+                .install(&config, None, ProgressReport::new(true))
                 .unwrap();
         }
     }

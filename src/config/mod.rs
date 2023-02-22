@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,12 +7,14 @@ use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 
 pub use settings::{MissingRuntimeBehavior, Settings};
 
 use crate::config::config_file::rtxrc::RTXFile;
 use crate::plugins::{Plugin, PluginName};
+use crate::shorthands::{get_shorthands, Shorthands};
 use crate::{dirs, env, file};
 
 pub mod config_file;
@@ -27,6 +30,7 @@ pub struct Config {
     pub config_files: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
+    shorthands: OnceCell<HashMap<String, String>>,
 }
 
 impl Config {
@@ -45,11 +49,17 @@ impl Config {
             aliases,
             rtxrc,
             plugins,
+            shorthands: OnceCell::new(),
         };
 
         debug!("{}", &config);
 
         Ok(config)
+    }
+
+    pub fn get_shorthands(&self) -> &Shorthands {
+        self.shorthands
+            .get_or_init(|| get_shorthands(&self.settings))
     }
 }
 

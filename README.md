@@ -481,6 +481,8 @@ plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable u
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+
+shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 
 [alias.nodejs]
@@ -557,6 +559,18 @@ Only output `.tool-versions` files in `rtx local|global` which will be usable by
 #### `RTX_JOBS=1`
 
 Set the number plugins or runtimes to install in parallel. The default is `4`.
+
+#### `RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`
+
+Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
+an organization.
+
+The file should be in toml format:
+
+```toml
+elixir = "https://github.com/my-org/rtx-elixir.git"
+nodejs = "https://github.com/my-org/rtx-nodejs.git"
+```
 
 #### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
 
