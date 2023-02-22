@@ -11,7 +11,7 @@ fi
 git -C aur pull
 
 cat >aur/PKGBUILD <<EOF
-# Maintainer: Jeff Dickey <releases at chim dot sh>
+# Maintainer: Jeff Dickey <releases at rtx dot pub>
 
 pkgname=rtx
 pkgver=${RTX_VERSION#v*}
