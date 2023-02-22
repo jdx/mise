@@ -118,6 +118,7 @@ lazy_static! {
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");
     pub static ref RTX_PREFER_STALE: bool = prefer_stale(&ARGS);
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
+    pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
 }
 
@@ -146,6 +147,10 @@ fn var_is_true(key: &str) -> bool {
         }
         Err(_) => false,
     }
+}
+
+fn var_path(key: &str) -> Option<PathBuf> {
+    var_os(key).map(PathBuf::from)
 }
 
 /// this returns the environment as if __RTX_DIFF was reversed.
@@ -209,18 +214,37 @@ fn prefer_stale(args: &[String]) -> bool {
     false
 }
 
-#[test]
-fn test_apply_patches() {
-    let mut env = HashMap::new();
-    env.insert("foo".into(), "bar".into());
-    env.insert("baz".into(), "qux".into());
-    let patches = vec![
-        EnvDiffOperation::Add("foo".into(), "bar".into()),
-        EnvDiffOperation::Change("baz".into(), "qux".into()),
-        EnvDiffOperation::Remove("quux".into()),
-    ];
-    let new_env = apply_patches(&env, &patches);
-    assert_eq!(new_env.len(), 2);
-    assert_eq!(new_env.get("foo").unwrap(), "bar");
-    assert_eq!(new_env.get("baz").unwrap(), "qux");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    use crate::env::apply_patches;
+    use crate::env_diff::EnvDiffOperation;
+
+    #[test]
+    fn test_apply_patches() {
+        let mut env = HashMap::new();
+        env.insert("foo".into(), "bar".into());
+        env.insert("baz".into(), "qux".into());
+        let patches = vec![
+            EnvDiffOperation::Add("foo".into(), "bar".into()),
+            EnvDiffOperation::Change("baz".into(), "qux".into()),
+            EnvDiffOperation::Remove("quux".into()),
+        ];
+        let new_env = apply_patches(&env, &patches);
+        assert_eq!(new_env.len(), 2);
+        assert_eq!(new_env.get("foo").unwrap(), "bar");
+        assert_eq!(new_env.get("baz").unwrap(), "qux");
+    }
+
+    #[test]
+    fn test_var_path() {
+        set_var("RTX_TEST_PATH", "/foo/bar");
+        assert_eq!(
+            var_path("RTX_TEST_PATH").unwrap(),
+            PathBuf::from("/foo/bar")
+        );
+        remove_var("RTX_TEST_PATH");
+    }
 }

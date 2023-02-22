@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use color_eyre::eyre::Result;
+use console::{measure_text_width, pad_str, Alignment};
 use itertools::Itertools;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::shorthand::SHORTHAND_MAP;
 
 /// List all available remote plugins
 ///
@@ -30,18 +30,26 @@ impl Command for PluginsLsRemote {
             .map(|p| p.name.clone())
             .collect::<HashSet<_>>();
 
-        if config.settings.disable_default_shorthands {
+        let shorthands = config.get_shorthands().iter().sorted().collect_vec();
+        let max_plugin_len = shorthands
+            .iter()
+            .map(|(plugin, _)| measure_text_width(plugin))
+            .max()
+            .unwrap_or(0);
+
+        if shorthands.is_empty() {
             warn!("default shorthands are disabled");
-            return Ok(());
         }
-        for (plugin, repo) in SHORTHAND_MAP.iter().sorted().collect_vec() {
-            let installed = if installed_plugins.contains(*plugin) {
+
+        for (plugin, repo) in shorthands {
+            let installed = if installed_plugins.contains(plugin) {
                 "*"
             } else {
                 " "
             };
-            let url = if self.urls { *repo } else { "" };
-            rtxprintln!(out, "{:28} {}{}", plugin, installed, url);
+            let url = if self.urls { repo } else { "" };
+            let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
+            rtxprintln!(out, "{} {}{}", plugin, installed, url);
         }
 
         Ok(())

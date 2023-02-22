@@ -5,10 +5,9 @@ use once_cell::sync::Lazy;
 use url::Url;
 
 use crate::cli::command::Command;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
-use crate::shorthand::shorthand_to_repository;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::progress_report::ProgressReport;
 
@@ -54,7 +53,7 @@ impl Command for PluginsInstall {
         if self.all {
             return self.install_all_missing_plugins(&config);
         }
-        let (name, git_url) = get_name_and_url(&config.settings, self.name.unwrap(), self.git_url)?;
+        let (name, git_url) = get_name_and_url(&config, self.name.unwrap(), self.git_url)?;
         let plugin = Plugin::new(&name);
         if self.force {
             plugin.uninstall()?;
@@ -63,7 +62,7 @@ impl Command for PluginsInstall {
             warn!("plugin {} already installed", name);
         } else {
             let pr = ProgressReport::new(config.settings.verbose);
-            plugin.install(&config.settings, Some(&git_url), pr)?;
+            plugin.install(&config, Some(&git_url), pr)?;
         }
 
         Ok(())
@@ -79,9 +78,9 @@ impl PluginsInstall {
         }
         for plugin in missing_plugins {
             let plugin = Plugin::new(&plugin);
-            let (_, git_url) = get_name_and_url(&config.settings, plugin.name.clone(), None)?;
+            let (_, git_url) = get_name_and_url(config, plugin.name.clone(), None)?;
             plugin.install(
-                &config.settings,
+                config,
                 Some(&git_url),
                 ProgressReport::new(config.settings.verbose),
             )?;
@@ -91,7 +90,7 @@ impl PluginsInstall {
 }
 
 fn get_name_and_url(
-    settings: &Settings,
+    config: &Config,
     name: String,
     git_url: Option<String>,
 ) -> Result<(String, String)> {
@@ -100,7 +99,9 @@ fn get_name_and_url(
         None => match name.contains(':') {
             true => (get_name_from_url(&name)?, name),
             false => {
-                let git_url = shorthand_to_repository(settings, &name)
+                let git_url = config
+                    .get_shorthands()
+                    .get(&name)
                     .ok_or_else(|| eyre!("could not find plugin {}", name))?;
                 (name, git_url.to_string())
             }

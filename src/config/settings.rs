@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use indexmap::IndexMap;
@@ -7,7 +8,8 @@ use log::LevelFilter;
 use crate::config::AliasMap;
 use crate::env;
 use crate::env::{
-    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_VERBOSE,
+    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_SHORTHANDS_FILE,
+    RTX_VERBOSE,
 };
 use crate::plugins::PluginName;
 
@@ -21,6 +23,7 @@ pub struct Settings {
     pub verbose: bool,
     pub asdf_compat: bool,
     pub jobs: usize,
+    pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
 }
@@ -36,6 +39,7 @@ impl Default for Settings {
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
             asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
+            shorthands_file: RTX_SHORTHANDS_FILE.clone(),
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
         }
@@ -64,6 +68,12 @@ impl Settings {
         map.insert("verbose".into(), self.verbose.to_string());
         map.insert("asdf_compat".into(), self.asdf_compat.to_string());
         map.insert("jobs".into(), self.jobs.to_string());
+        if let Some(shorthands_file) = &self.shorthands_file {
+            map.insert(
+                "shorthands_file".into(),
+                shorthands_file.to_string_lossy().to_string(),
+            );
+        }
         map.insert(
             "disable_default_shorthands".into(),
             self.disable_default_shorthands.to_string(),
@@ -83,6 +93,7 @@ pub struct SettingsBuilder {
     pub verbose: Option<bool>,
     pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
+    pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
 }
@@ -116,6 +127,9 @@ impl SettingsBuilder {
         }
         if other.jobs.is_some() {
             self.jobs = other.jobs;
+        }
+        if other.shorthands_file.is_some() {
+            self.shorthands_file = other.shorthands_file;
         }
         if other.disable_default_shorthands.is_some() {
             self.disable_default_shorthands = other.disable_default_shorthands;
@@ -157,6 +171,7 @@ impl SettingsBuilder {
         settings.verbose = self.verbose.unwrap_or(settings.verbose);
         settings.asdf_compat = self.asdf_compat.unwrap_or(settings.asdf_compat);
         settings.jobs = self.jobs.unwrap_or(settings.jobs);
+        settings.shorthands_file = self.shorthands_file.clone().or(settings.shorthands_file);
         settings.disable_default_shorthands = self
             .disable_default_shorthands
             .unwrap_or(settings.disable_default_shorthands);
