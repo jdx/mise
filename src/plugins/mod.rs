@@ -9,7 +9,7 @@ use console::style;
 use indexmap::IndexMap;
 use indicatif::ProgressStyle;
 use itertools::Itertools;
-use lazy_static::lazy_static;
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
@@ -205,17 +205,15 @@ impl Plugin {
         if query == "latest" {
             query = "[0-9]";
         }
-        lazy_static! {
-            static ref VERSION_REGEX: Regex = Regex::new(
-                r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
-            ).unwrap();
-        }
+        let version_regex = regex!(
+            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
+        );
         let query_regex =
             Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
         let versions = self
             .list_remote_versions(settings)?
             .iter()
-            .filter(|v| !VERSION_REGEX.is_match(v))
+            .filter(|v| !version_regex.is_match(v))
             .filter(|v| query_regex.is_match(v))
             .cloned()
             .collect_vec();

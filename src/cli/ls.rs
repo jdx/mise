@@ -153,7 +153,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use regex::Regex;
 
     use crate::assert_cli;
 
@@ -162,14 +161,14 @@ mod tests {
         assert_cli!("install");
         assert_cli!("install", "shfmt@3.5.0");
         let stdout = assert_cli!("list");
-        let re = Regex::new(r"-> shellcheck\s+0\.9\.0\s+").unwrap();
+        let re = regex!(r"-> shellcheck\s+0\.9\.0\s+");
         assert!(re.is_match(&stdout));
-        let re = Regex::new(r" {3}shfmt\s+3\.5\.0\s+").unwrap();
+        let re = regex!(r" {3}shfmt\s+3\.5\.0\s+");
         assert!(re.is_match(&stdout));
 
         assert_cli!("uninstall", "shfmt@3.5.1");
         let stdout = assert_cli!("list");
-        let re = Regex::new(r" {3}shfmt\s+3\.5\.1 \(missing\)\s+").unwrap();
+        let re = regex!(r" {3}shfmt\s+3\.5\.1 \(missing\)\s+");
         assert!(re.is_match(&stdout));
     }
 }
