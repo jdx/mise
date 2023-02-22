@@ -1577,6 +1577,19 @@ That said, there are a lot of great things about asdf. It's the best multi-runti
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
 were very good. I really just have 2 complaints: the shims and the fact it's written in Bash.
 
+### CI/CD
+
+Using rtx in CI/CD is a great way to synchronize tool versions for dev/build.
+
+### GitHub Actions
+
+Use [`jdxcode/rtx-action`](https://github.com/jdxcode/rtx-action):
+
+```yaml
+- uses: jdxcode/rtx-action@v1
+- run: node -v # will be the node version from `.tool-versions`
+```
+
 ## direnv
 
 [direnv](https://direnv.net) and rtx both manage environment variables based on directory. Because they both analyze
