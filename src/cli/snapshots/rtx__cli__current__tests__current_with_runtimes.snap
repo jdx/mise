@@ -1,0 +1,6 @@
+---
+source: src/cli/current.rs
+expression: output
+---
+3.1.0
+

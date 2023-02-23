@@ -44,25 +44,19 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
 
     use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_plugin_uninstall() {
-        assert_cli!(
-            "plugin",
-            "add",
-            "tiny",
-            "https://github.com/jdxcode/rtx-tiny"
-        );
+        assert_cli!("plugin", "add", "tiny");
         assert_cli_snapshot!("plugin", "rm", "tiny");
         assert_cli_snapshot!("plugin", "rm", "tiny");
         assert_cli!(
             "plugin",
             "add",
             "tiny",
-            "https://github.com/jdxcode/rtx-tiny"
+            "https://github.com/jdxcode/rtx-tiny.git"
         );
     }
 }

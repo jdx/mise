@@ -68,7 +68,7 @@ mod tests {
             "plugin",
             "install",
             "tiny",
-            "https://github.com/jdxcode/rtx-tiny"
+            "https://github.com/jdxcode/rtx-tiny.git"
         );
         let err = assert_cli_err!("p", "update");
         assert_str_eq!(err.to_string(), "no plugins specified");

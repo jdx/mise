@@ -22,14 +22,11 @@ impl Command for BinPaths {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
-    use crate::cli::tests::grep;
+    use crate::assert_cli_snapshot;
 
     #[test]
     fn test_bin_paths() {
-        let stdout = assert_cli!("bin-paths");
-        assert_str_eq!(grep(stdout, "tiny"), "~/data/installs/tiny/2.1.0/bin");
+        assert_cli_snapshot!("bin-paths");
     }
 }

@@ -115,6 +115,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);
             let name = name.strip_prefix("rtx-").unwrap_or(name);
+            let name = name.strip_suffix(".git").unwrap_or(name);
             return Ok(name.to_string());
         }
     }
@@ -147,14 +148,19 @@ mod tests {
 
     #[test]
     fn test_plugin_install_url() {
-        assert_cli!("plugin", "add", "-f", "https://github.com/jdxcode/rtx-tiny");
+        assert_cli!(
+            "plugin",
+            "add",
+            "-f",
+            "https://github.com/jdxcode/rtx-tiny.git"
+        );
         let stdout = assert_cli!("plugin", "--urls");
-        assert_snapshot!(grep(stdout, "tiny"), @"tiny                          https://github.com/jdxcode/rtx-tiny");
+        assert_snapshot!(grep(stdout, "tiny"), @"tiny                          https://github.com/jdxcode/rtx-tiny.git");
     }
 
     #[test]
     fn test_plugin_install_invalid_url() {
-        let args = ["rtx", "plugin", "add", "ruby:"].map(String::from).into();
+        let args = ["rtx", "plugin", "add", "tiny:"].map(String::from).into();
         let err = cli_run(&args).unwrap_err();
         assert_display_snapshot!(err);
     }

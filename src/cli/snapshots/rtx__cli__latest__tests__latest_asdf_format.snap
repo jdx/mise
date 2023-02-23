@@ -1,6 +1,6 @@
 ---
 source: src/cli/latest.rs
-expression: stdout
+expression: output
 ---
-12.22.12
+1.1.0
 

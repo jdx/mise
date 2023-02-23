@@ -71,12 +71,10 @@ mod tests {
 
     #[test]
     fn test_env() {
-        assert_cli!("plugin", "add", "shfmt");
-        assert_cli!("install");
         let stdout = assert_cli!("env", "-s", "bash");
         assert!(stdout.contains(
             dirs::ROOT
-                .join("installs/shfmt/3.5.1/bin")
+                .join("installs/tiny/3.1.0/bin")
                 .to_string_lossy()
                 .as_ref()
         ));

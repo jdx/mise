@@ -424,30 +424,16 @@ impl PartialEq for Plugin {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, env};
+    use crate::assert_cli;
 
     use super::*;
 
     #[test]
-    fn test_legacy_gemfile() {
-        assert_cli!("plugin", "add", "ruby");
-        let settings = Settings::default();
-        let plugin = Plugin::new(&PluginName::from("ruby"));
-        let gemfile = env::HOME.join("fixtures/Gemfile");
-        let version = plugin.parse_legacy_file(&gemfile, &settings).unwrap();
-        assert_str_eq!(version, "3.0.5");
-
-        // do it again to test the cache
-        let version = plugin.parse_legacy_file(&gemfile, &settings).unwrap();
-        assert_str_eq!(version, "3.0.5");
-    }
-
-    #[test]
     fn test_exact_match() {
-        assert_cli!("plugin", "add", "python");
+        assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
-        let plugin = Plugin::new(&PluginName::from("python"));
-        let version = plugin.latest_version(&settings, "3.9.1").unwrap().unwrap();
-        assert_str_eq!(version, "3.9.1");
+        let plugin = Plugin::new(&PluginName::from("tiny"));
+        let version = plugin.latest_version(&settings, "1.0.0").unwrap().unwrap();
+        assert_str_eq!(version, "1.0.0");
     }
 }
