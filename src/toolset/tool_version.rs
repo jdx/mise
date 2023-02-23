@@ -160,3 +160,25 @@ pub fn resolve_alias(settings: &Settings, plugin: Arc<Plugin>, v: &str) -> Resul
     }
     Ok(v.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_str_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_tool_version_display() {
+        let foo = "foo".to_string();
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Version("1.2.3".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@1.2.3");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Prefix("1.2.3".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@prefix:1.2.3");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Ref("master".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@ref:master");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Path("~".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@path:~");
+        let tv = ToolVersion::new(foo, ToolVersionType::System);
+        assert_str_eq!(tv.to_string(), "foo@system");
+    }
+}

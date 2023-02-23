@@ -63,8 +63,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
     use crate::cli::tests::grep;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_plugin_list() {
@@ -74,11 +74,7 @@ mod tests {
 
     #[test]
     fn test_plugin_list_urls() {
-        let stdout = assert_cli!("plugin", "list", "--urls");
-        assert_str_eq!(
-            grep(stdout, "tiny"),
-            "tiny                          https://github.com/jdxcode/rtx-tiny"
-        );
+        assert_cli_snapshot!("plugin", "list", "--urls");
     }
 
     #[test]

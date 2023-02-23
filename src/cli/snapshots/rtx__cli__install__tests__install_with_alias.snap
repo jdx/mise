@@ -1,0 +1,6 @@
+---
+source: src/cli/install.rs
+expression: output
+---
+~/data/installs/tiny/3.0.1
+
