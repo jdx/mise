@@ -11,6 +11,7 @@ use versions::Versioning;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env::DUMB_TERMINAL;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
@@ -46,7 +47,12 @@ impl Command for Ls {
                 out,
                 "{} {} {}",
                 match rtv.is_installed() && source.is_some() {
-                    true => "->",
+                    true =>
+                        if *DUMB_TERMINAL {
+                            "->"
+                        } else {
+                            "⏵ "
+                        },
                     false => "  ",
                 },
                 styled_version(&rtv, !rtv.is_installed(), source.is_some()),
@@ -153,7 +159,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-
     use crate::assert_cli;
 
     #[test]
