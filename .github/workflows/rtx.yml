@@ -21,7 +21,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
       - name: Install just
@@ -46,7 +46,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
@@ -82,7 +82,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cross
       - run: scripts/build-linux.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
@@ -109,7 +109,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - run: scripts/build-macos.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
