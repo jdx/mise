@@ -9,9 +9,9 @@ error() {
 mkdir -p "$RELEASE_DIR/npm"
 
 dist_tag_from_version() {
-  IFS="-" read -r -a version_split <<< "$1"
-  IFS="." read -r -a version_split <<< "${version_split[1]:-latest}"
-  echo "${version_split[0]}"
+	IFS="-" read -r -a version_split <<<"$1"
+	IFS="." read -r -a version_split <<<"${version_split[1]:-latest}"
+	echo "${version_split[0]}"
 }
 dist_tag="$(dist_tag_from_version "$RTX_VERSION")"
 
@@ -22,21 +22,21 @@ platforms=(
 	macos-arm64
 )
 for platform in "${platforms[@]}"; do
-  # shellcheck disable=SC2206
-  platform_split=(${platform//-/ })
-  os="${platform_split[0]}"
-  arch="${platform_split[1]}"
+	# shellcheck disable=SC2206
+	platform_split=(${platform//-/ })
+	os="${platform_split[0]}"
+	arch="${platform_split[1]}"
 
-  if [[ "$os" == "macos" ]]; then
-    os="darwin"
-  fi
+	if [[ "$os" == "macos" ]]; then
+		os="darwin"
+	fi
 
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
-  tar -xzvf "$RELEASE_DIR/rtx-latest-$platform.tar.gz" -C "$RELEASE_DIR"
-  rm -rf "$RELEASE_DIR/npm"
-  mv "$RELEASE_DIR/rtx" "$RELEASE_DIR/npm"
-  cat <<EOF >"$RELEASE_DIR/npm/package.json"
+	tar -xzvf "$RELEASE_DIR/rtx-latest-$platform.tar.gz" -C "$RELEASE_DIR"
+	rm -rf "$RELEASE_DIR/npm"
+	mv "$RELEASE_DIR/rtx" "$RELEASE_DIR/npm"
+	cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "@jdxcode/rtx-$os-$arch",
   "version": "$RTX_VERSION",
@@ -57,10 +57,10 @@ for platform in "${platforms[@]}"; do
   "cpu": "$arch"
 }
 EOF
-  pushd "$RELEASE_DIR/npm"
-  tree || true
-  npm publish --access public --tag "$dist_tag"
-  popd
+	pushd "$RELEASE_DIR/npm"
+	tree || true
+	npm publish --access public --tag "$dist_tag"
+	popd
 done
 
 cat <<EOF >"$RELEASE_DIR/npm/installArchSpecificPackage.js"
