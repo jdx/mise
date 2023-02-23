@@ -8,6 +8,7 @@ use crate::output::Output;
 mod install;
 mod ls;
 mod ls_remote;
+mod test;
 mod uninstall;
 mod update;
 
@@ -35,6 +36,7 @@ enum Commands {
     Install(install::PluginsInstall),
     Ls(ls::PluginsLs),
     LsRemote(ls_remote::PluginsLsRemote),
+    Test(test::PluginsTest),
     Uninstall(uninstall::PluginsUninstall),
     Update(update::Update),
 }
@@ -45,6 +47,7 @@ impl Commands {
             Self::Install(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
+            Self::Test(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Update(cmd) => cmd.run(config, out),
         }
