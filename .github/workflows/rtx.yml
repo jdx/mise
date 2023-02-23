@@ -2,10 +2,10 @@ name: rtx
 
 on:
   push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
+    branches: ["main"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -22,8 +22,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - name: Install direnv
-        run: sudo apt-get update; sudo apt-get install direnv
+      - name: Install direnv/shfmt
+        run: sudo apt-get update; sudo apt-get install direnv shfmt
       - name: Install just
         uses: taiki-e/install-action@just
       - name: Run just test-unit
@@ -135,7 +135,7 @@ jobs:
 
   e2e-linux:
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
@@ -158,7 +158,7 @@ jobs:
           command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
     container: jdxcode/chim:rpm
     if: github.event_name != 'pull_request'
     steps:
@@ -184,7 +184,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: jdxcode/chim:deb
     if: github.event_name != 'pull_request'
-    needs: [ build-linux ]
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v3
       - uses: crazy-max/ghaction-import-gpg@v5
@@ -227,8 +227,8 @@ jobs:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
       - uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "18.x"
+          registry-url: "https://registry.npmjs.org"
       - name: Set AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -267,7 +267,7 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     if: startsWith(github.event.ref, 'refs/tags/v')
-    needs: [ release ]
+    needs: [release]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
