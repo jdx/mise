@@ -34,8 +34,8 @@ for platform in "${platforms[@]}"; do
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
 	tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
+	cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
+	cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
 
 pushd "$RELEASE_DIR"

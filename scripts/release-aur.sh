@@ -6,7 +6,7 @@ RTX_VERSION=$(./scripts/get-version.sh)
 SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
-  git clone ssh://aur@aur.archlinux.org/rtx.git aur
+	git clone ssh://aur@aur.archlinux.org/rtx.git aur
 fi
 git -C aur pull
 
