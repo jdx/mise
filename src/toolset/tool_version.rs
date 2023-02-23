@@ -18,7 +18,7 @@ pub struct ToolVersion {
     pub rtv: Option<RuntimeVersion>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ToolVersionType {
     Version(String),
     Prefix(String),
@@ -133,13 +133,18 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        let plugin = &self.plugin_name;
-        match &self.r#type {
-            ToolVersionType::Version(v) => write!(f, "{plugin}@{v}"),
-            ToolVersionType::Prefix(p) => write!(f, "{plugin}@prefix:{p}"),
-            ToolVersionType::Ref(r) => write!(f, "{plugin}@ref:{r}"),
-            ToolVersionType::Path(p) => write!(f, "{plugin}@path:{p}"),
-            ToolVersionType::System => write!(f, "{plugin}@system"),
+        write!(f, "{}@{}", &self.plugin_name, &self.r#type)
+    }
+}
+
+impl Display for ToolVersionType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ToolVersionType::Version(v) => write!(f, "{v}"),
+            ToolVersionType::Prefix(p) => write!(f, "prefix:{p}"),
+            ToolVersionType::Ref(r) => write!(f, "ref:{r}"),
+            ToolVersionType::Path(p) => write!(f, "path:{p}"),
+            ToolVersionType::System => write!(f, "system"),
         }
     }
 }
