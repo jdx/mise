@@ -78,16 +78,12 @@ jobs:
           - x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{matrix.target}}
-          override: true
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@cross
       - run: scripts/build-linux.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
@@ -107,12 +103,8 @@ jobs:
           - x86_64-apple-darwin
           - aarch64-apple-darwin
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{matrix.target}}
-          override: true
+      - uses: actions/checkout@v3
+      - run: rustup target add ${{matrix.target}}
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
