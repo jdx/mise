@@ -74,6 +74,11 @@ pretty_assertions = "1.3.0"
 tempfile = "3.3.0"
 test-log = "0.2"
 
+[features]
+brew = []
+deb = []
+rpm = []
+
 [profile.release]
 debug = 0
 
