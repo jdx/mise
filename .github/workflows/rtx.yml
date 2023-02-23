@@ -88,12 +88,7 @@ jobs:
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --all-features --target ${{matrix.target}}
-      - run: scripts/build-tarball.sh ${{matrix.target}}
+      - run: scripts/build-linux.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
@@ -123,8 +118,7 @@ jobs:
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - run: cargo build --release --all-features --target ${{matrix.target}}
-      - run: scripts/build-tarball.sh ${{matrix.target}}
+      - run: scripts/build-macos.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
@@ -132,7 +126,6 @@ jobs:
             dist/rtx-*.tar.xz
             dist/rtx-*.tar.gz
           if-no-files-found: error
-
   e2e-linux:
     runs-on: ubuntu-22.04
     needs: [build-linux]
