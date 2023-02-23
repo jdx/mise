@@ -33,6 +33,7 @@ clap_complete = "4.1.1"
 color-eyre = "0.6.2"
 console = "0.15.5"
 ctor = "0.1.26"
+dialoguer = { version = "0.10.3", features = [] }
 dirs-next = "2.0.0"
 duct = "0.13.6"
 filetime = "0.2.19"

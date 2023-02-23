@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -5,6 +6,8 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use console::style;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::MultiSelect;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -22,7 +25,6 @@ use crate::plugins::{InstallType, Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::tool_version_list::ToolVersionList;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::prompt;
 
 mod builder;
 mod tool_source;
@@ -85,7 +87,7 @@ impl Toolset {
             });
     }
     pub fn install_missing(&mut self, config: &Config) -> Result<()> {
-        let versions = self.list_missing_versions_mut();
+        let versions = self.list_missing_versions();
         if versions.is_empty() {
             return Ok(());
         }
@@ -103,14 +105,15 @@ impl Toolset {
                 warn();
             }
             MissingRuntimeBehavior::Prompt => {
-                if prompt::prompt_for_install(&display_versions) {
-                    self.install_missing_versions(config)?;
-                } else {
+                let versions = prompt_for_versions(&versions)?;
+                if versions.is_empty() {
                     warn();
+                } else {
+                    self.install_missing_versions(config, versions)?;
                 }
             }
             MissingRuntimeBehavior::AutoInstall => {
-                self.install_missing_versions(config)?;
+                self.install_missing_versions(config, versions)?;
             }
         }
         Ok(())
@@ -124,14 +127,27 @@ impl Toolset {
             .collect()
     }
 
-    fn install_missing_versions(&mut self, config: &Config) -> Result<()> {
+    fn install_missing_versions(
+        &mut self,
+        config: &Config,
+        selected_versions: Vec<ToolVersion>,
+    ) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(config.settings.jobs)
             .build()
             .unwrap()
             .install(|| -> Result<()> {
                 let mpr = MultiProgressReport::new(config.settings.verbose);
-                self.install_missing_plugins(config, &mpr)?;
+                let plugins = selected_versions
+                    .iter()
+                    .map(|v| v.plugin_name.clone())
+                    .unique()
+                    .collect_vec();
+                let selected_versions = selected_versions
+                    .into_iter()
+                    .map(|v| v.r#type)
+                    .collect::<HashSet<_>>();
+                self.install_missing_plugins(config, &mpr, plugins)?;
                 self.versions
                     .iter_mut()
                     .par_bridge()
@@ -139,7 +155,7 @@ impl Toolset {
                         let versions = v
                             .versions
                             .iter_mut()
-                            .filter(|v| v.is_missing())
+                            .filter(|v| v.is_missing() && selected_versions.contains(&v.r#type))
                             .collect_vec();
                         let plugin = self.plugins.get(&p.to_string()).unwrap();
                         match versions.is_empty() {
@@ -162,8 +178,8 @@ impl Toolset {
         &mut self,
         config: &Config,
         mpr: &MultiProgressReport,
+        missing_plugins: Vec<PluginName>,
     ) -> Result<()> {
-        let missing_plugins = self.list_missing_plugins();
         if missing_plugins.is_empty() {
             return Ok(());
         }
@@ -184,16 +200,12 @@ impl Toolset {
         Ok(())
     }
 
-    fn list_missing_versions_mut(&mut self) -> Vec<&mut ToolVersion> {
+    fn list_missing_versions(&self) -> Vec<ToolVersion> {
         let versions = self
             .versions
-            .values_mut()
-            .flat_map(|v| {
-                v.versions
-                    .iter_mut()
-                    .filter(|v| v.is_missing())
-                    .collect_vec()
-            })
+            .values()
+            .flat_map(|v| v.versions.iter().filter(|v| v.is_missing()).collect_vec())
+            .cloned()
             .collect_vec();
         versions
     }
@@ -358,10 +370,24 @@ impl Display for Toolset {
     }
 }
 
-fn display_versions(versions: &[&mut ToolVersion]) -> String {
+fn display_versions(versions: &[ToolVersion]) -> String {
     let display_versions = versions
         .iter()
         .map(|v| style(&v.to_string()).cyan().for_stderr().to_string())
         .join(", ");
     display_versions
+}
+
+fn prompt_for_versions(versions: &[ToolVersion]) -> Result<Vec<ToolVersion>> {
+    if !console::user_attended_stderr() {
+        return Ok(vec![]);
+    }
+    Ok(MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select versions to install")
+        .items(versions)
+        .defaults(&versions.iter().map(|_| true).collect_vec())
+        .interact()?
+        .into_iter()
+        .map(|i| versions[i].clone())
+        .collect())
 }
