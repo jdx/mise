@@ -72,6 +72,6 @@ mod tests {
     #[test]
     fn test_plugin_list_remote() {
         let stdout = assert_cli!("plugin", "ls-remote");
-        assert!(stdout.contains("nodejs"));
+        assert!(stdout.contains("tiny"));
     }
 }

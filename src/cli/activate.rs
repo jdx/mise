@@ -63,19 +63,16 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
+    use crate::assert_cli_snapshot;
 
     #[test]
     fn test_activate_zsh() {
-        let stdout = assert_cli!("activate", "zsh");
-        assert_display_snapshot!(stdout);
+        assert_cli_snapshot!("activate", "zsh");
     }
 
     #[test]
     fn test_activate_zsh_legacy() {
-        let stdout = assert_cli!("activate", "-s", "zsh");
-        assert_display_snapshot!(stdout);
+        assert_cli_snapshot!("activate", "-s", "zsh");
     }
 }

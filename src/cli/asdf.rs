@@ -64,8 +64,8 @@ fn list_versions(config: &Config, out: &mut Output, args: &Vec<String>) -> Resul
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
     use crate::cli::version::VERSION;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_fake_asdf() {
@@ -75,9 +75,7 @@ mod tests {
 
     #[test]
     fn test_fake_asdf_list() {
-        assert_cli!("plugin", "install", "shfmt");
-        assert_cli!("install", "shfmt@2");
-        let stdout = assert_cli!("asdf", "list", "shfmt");
-        assert!(stdout.contains('2'));
+        assert_cli!("asdf", "install", "tiny");
+        assert_cli_snapshot!("asdf", "list", "tiny");
     }
 }

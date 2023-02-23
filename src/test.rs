@@ -9,24 +9,23 @@ fn init() {
     env::set_var("NO_COLOR", "1");
     env_logger::init();
     let _ = fs::remove_dir_all("test/cache");
+    let _ = fs::remove_dir_all("test/data");
+    let _ = fs::remove_dir_all("plugins");
     if let Err(err) = cmd!(
         "git",
         "checkout",
+        "plugins",
         "test/.test-tool-versions",
         "test/cwd/.test-tool-versions",
-        "test/config/config.toml"
+        "test/config/config.toml",
+        "test/data"
     )
     .run()
     {
         warn!("failed to reset test files: {}", err);
     }
     reset_config();
-    assert_cli!(
-        "plugin",
-        "install",
-        "tiny",
-        "https://github.com/jdxcode/asdf-tiny"
-    );
+    assert_cli!("install", "tiny", "dummy");
 }
 
 pub fn reset_config() {

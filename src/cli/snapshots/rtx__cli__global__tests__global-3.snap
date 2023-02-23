@@ -2,5 +2,5 @@
 source: src/cli/global.rs
 expression: stdout
 ---
-shfmt 2
+
 
