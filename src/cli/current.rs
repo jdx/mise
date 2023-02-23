@@ -116,26 +116,16 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use std::env;
 
-    use insta::assert_snapshot;
-    use pretty_assertions::assert_str_eq;
-
-    use crate::assert_cli;
-    use crate::cli::tests::grep;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_current() {
-        assert_cli!("install");
-        let stdout = assert_cli!("current");
-        assert_snapshot!(grep(stdout, "shfmt"), @"shfmt 3.5.1");
+        assert_cli_snapshot!("current");
     }
 
     #[test]
     fn test_current_with_runtimes() {
-        assert_cli!("install");
-        let stdout = assert_cli!("current", "shfmt");
-        assert_snapshot!(stdout, @r###"
-        3.5.1
-        "###);
+        assert_cli_snapshot!("current", "tiny");
     }
 
     #[test]
@@ -143,8 +133,7 @@ mod tests {
         assert_cli!("uninstall", "dummy@1.0.1");
 
         env::set_var("RTX_DUMMY_VERSION", "1.1.0");
-        let stdout = assert_cli!("current");
-        assert_str_eq!(grep(stdout, "dummy"), "dummy 1.1.0");
+        assert_cli_snapshot!("current");
 
         env::remove_var("RTX_DUMMY_VERSION");
     }

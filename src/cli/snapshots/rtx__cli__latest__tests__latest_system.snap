@@ -1,5 +1,5 @@
 ---
 source: src/cli/latest.rs
-expression: stdout
+expression: err
 ---
-invalid version: nodejs@system
+invalid version: dummy@system

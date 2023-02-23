@@ -126,22 +126,22 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, dirs};
+    use crate::{assert_cli, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_install_force() {
-        assert_cli!("install", "-f", "shfmt");
+        assert_cli!("install", "-f", "tiny");
     }
 
     #[test]
     fn test_install_asdf_style() {
-        assert_cli!("install", "shfmt", "2");
+        assert_cli!("install", "tiny", "2");
     }
 
     #[test]
     fn test_install_with_alias() {
-        assert_cli!("install", "-f", "shfmt@my/alias");
-        assert_cli!("where", "shfmt@my/alias");
+        assert_cli!("install", "-f", "tiny@my/alias");
+        assert_cli_snapshot!("where", "tiny@my/alias");
     }
 
     #[test]

@@ -75,7 +75,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
 
     use crate::assert_cli_snapshot;
 
