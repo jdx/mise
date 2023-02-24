@@ -1,0 +1,6 @@
+---
+source: src/build_time.rs
+expression: "console::strip_ansi_codes(&msg)"
+---
+rtx rtx has not been updated in over a year. Please update to the latest version.
+rtx To hide this warning, set RTX_HIDE_OUTDATED_BUILD=1.
