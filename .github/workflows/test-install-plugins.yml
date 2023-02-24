@@ -94,7 +94,7 @@ jobs:
           - plugin: rust
             command: rtx exec rust@latest -- rustc -V
           - plugin: postgres
-            command: rtx exec postgres@latest -- psql -v
+            command: rtx exec postgres@latest -- psql -V
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
