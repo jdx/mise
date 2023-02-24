@@ -207,10 +207,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::config::MissingRuntimeBehavior::AutoInstall;
     use crate::dirs;
-    use crate::plugins::{Plugin, PluginName};
-    use crate::ui::progress_report::ProgressReport;
 
     use super::*;
 

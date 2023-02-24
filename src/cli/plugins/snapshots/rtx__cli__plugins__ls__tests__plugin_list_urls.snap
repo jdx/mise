@@ -1,7 +1,0 @@
----
-source: src/cli/plugins/ls.rs
-expression: output
----
-dummy                         https://github.com/jdxcode/rtx
-tiny                          https://github.com/jdxcode/rtx-tiny.git
-

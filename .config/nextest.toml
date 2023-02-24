@@ -1,0 +1,2 @@
+[profile.default]
+test-threads = 1
