@@ -48,7 +48,7 @@ jobs:
           if-no-files-found: error
   test-install-and-run:
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
     continue-on-error: true
     env:
       RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
@@ -103,17 +103,23 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+          # dist/rtx-v1.16.0-linux-x64.tar.xz
+          # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/x86_64-unknown-linux-gnu-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
+      # TODO: replace with `rtx plugins test` pending #191
       - run: ${{matrix.command}}
   test-install:
+    # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
+    # installing is a better-than-nothing smoke test that the plugin is correctly implemented
+    # and behaves as expected with rtx.
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
     continue-on-error: true
     strategy:
       matrix:
-        plugins: 
+        plugins:
           - waypoint
           - vault
           - tfc-agent
