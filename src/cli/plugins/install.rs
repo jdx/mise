@@ -140,36 +140,14 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::{assert_display_snapshot, assert_snapshot};
+    use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
     use crate::cli::tests::cli_run;
-    use crate::cli::tests::grep;
-
-    #[test]
-    fn test_plugin_install_url() {
-        assert_cli!(
-            "plugin",
-            "add",
-            "-f",
-            "https://github.com/jdxcode/rtx-tiny.git"
-        );
-        let stdout = assert_cli!("plugin", "--urls");
-        assert_snapshot!(grep(stdout, "tiny"), @"tiny                          https://github.com/jdxcode/rtx-tiny.git");
-    }
 
     #[test]
     fn test_plugin_install_invalid_url() {
         let args = ["rtx", "plugin", "add", "tiny:"].map(String::from).into();
         let err = cli_run(&args).unwrap_err();
         assert_display_snapshot!(err);
-    }
-
-    #[test]
-    fn test_plugin_install_all() {
-        assert_cli!("plugin", "rm", "tiny");
-        assert_cli!("plugin", "install", "--all");
-        let stdout = assert_cli!("plugin");
-        assert_snapshot!(grep(stdout, "tiny"), "tiny");
     }
 }

@@ -64,7 +64,8 @@ mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;
-    use crate::{assert_cli, assert_cli_snapshot};
+    use crate::git::Git;
+    use crate::{assert_cli, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_plugin_list() {
@@ -73,11 +74,12 @@ mod tests {
 
     #[test]
     fn test_plugin_list_urls() {
-        assert_cli!("plugin", "install", "-f", "tiny");
         let stdout = assert_cli!("plugin", "list", "--urls");
+        let git = Git::new(dirs::CURRENT.clone());
+        let cur_remote = git.get_remote_url().unwrap();
         assert_str_eq!(
-            grep(stdout, "tiny"),
-            "tiny                          https://github.com/jdxcode/rtx-tiny.git"
+            grep(stdout, "dummy"),
+            "dummy                         ".to_owned() + cur_remote.as_str()
         );
     }
 
