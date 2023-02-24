@@ -33,3 +33,19 @@ impl MultiProgressReport {
     //     }
     // }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multi_progress_report() {
+        let mpr = MultiProgressReport::new(false);
+        let pr = mpr.add();
+        pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
+        pr.enable_steady_tick();
+        pr.finish_with_message("test".into());
+        pr.println("".into());
+        pr.set_message("test".into());
+    }
+}
