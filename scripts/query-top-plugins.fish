@@ -25,12 +25,12 @@ end
 
 
 for i in /tmp/asdf-plugins/plugins/*
-          cat $i | \
-                string split -f2 '=' | \
-                string trim | \
-                xargs -I '{}' gh repo view '{}' --json stargazerCount,name,owner | \
-                jq -r "[.stargazerCount,\"$(basename $i)\",\"$(string split '=' -f2 (cat $i))\"]|@tsv" >> stargazer_count.txt
-    end
+    cat $i | \
+        string split -f2 '=' | \
+        string trim | \
+        xargs -I '{}' gh repo view '{}' --json stargazerCount,name,owner | \
+        jq -r "[.stargazerCount,\"$(basename $i)\",\"$(string split '=' -f2 (cat $i))\"]|@tsv" >> stargazer_count.txt &
+end
 
 echo "$(cat stargazer_count.txt)" | sort -nr | uniq >stargazer_count.txt
 head -n 50 stargazer_count.txt
