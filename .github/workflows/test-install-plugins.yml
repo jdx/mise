@@ -67,7 +67,7 @@ jobs:
           - plugin: erlang
             command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
-            command: rtx exec elixir@latest erlang -- elixir --version
+            command: rtx exec -j1 erlang elixir@latest -- elixir --version
           - plugin: golang
             command: rtx exec golang@latest -- go version
           - plugin: java@openjdk
