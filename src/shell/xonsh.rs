@@ -143,4 +143,17 @@ mod tests {
     fn test_unset_env() {
         insta::assert_snapshot!(Xonsh::default().unset_env("FOO"));
     }
+
+    #[test]
+    fn test_xonsh_escape_sq() {
+        assert_eq!(xonsh_escape_sq("foo"), "foo");
+        assert_eq!(xonsh_escape_sq("foo'bar"), "foo\\'bar");
+        assert_eq!(xonsh_escape_sq("foo\\bar"), "foo\\\\bar");
+        assert_eq!(xonsh_escape_sq("foo\nbar"), "foo\\nbar");
+    }
+
+    #[test]
+    fn test_xonsh_deactivate() {
+        insta::assert_snapshot!(Xonsh::default().deactivate());
+    }
 }
