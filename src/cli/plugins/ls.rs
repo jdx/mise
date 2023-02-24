@@ -68,13 +68,17 @@ mod tests {
 
     #[test]
     fn test_plugin_list() {
-        let stdout = assert_cli!("plugin", "list");
-        assert_str_eq!(grep(stdout, "dummy"), "dummy");
+        assert_cli_snapshot!("plugin", "list");
     }
 
     #[test]
     fn test_plugin_list_urls() {
-        assert_cli_snapshot!("plugin", "list", "--urls");
+        assert_cli!("plugin", "install", "-f", "tiny");
+        let stdout = assert_cli!("plugin", "list", "--urls");
+        assert_str_eq!(
+            grep(stdout, "tiny"),
+            "tiny                          https://github.com/jdxcode/rtx-tiny.git"
+        );
     }
 
     #[test]
