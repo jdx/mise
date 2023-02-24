@@ -204,3 +204,15 @@ impl Display for Config {
         write!(f, "  Installed Plugins: {}", plugins.join(", "))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use insta::assert_display_snapshot;
+
+    #[test]
+    fn test_load() {
+        let config = Config::load().unwrap();
+        assert_display_snapshot!(config);
+    }
+}
