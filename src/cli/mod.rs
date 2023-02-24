@@ -250,17 +250,6 @@ pub mod tests {
         }};
     }
 
-    pub fn ensure_plugin_installed(name: &str) {
-        let mut config = Config::load().unwrap();
-        config.settings.missing_runtime_behavior = AutoInstall;
-        let plugin = Plugin::new(&PluginName::from(name));
-        if plugin.is_installed() {
-            plugin
-                .install(&config, None, ProgressReport::new(true))
-                .unwrap();
-        }
-    }
-
     pub fn grep(output: String, pattern: &str) -> String {
         output
             .split('\n')
