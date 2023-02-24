@@ -125,6 +125,7 @@ mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;
+    use crate::test::reset_config;
     use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
 
     #[test]
@@ -252,6 +253,7 @@ mod tests {
 
         fs::write(cf_path, orig).unwrap();
 
-        assert!(result.is_ok())
+        assert!(result.is_ok());
+        reset_config();
     }
 }
