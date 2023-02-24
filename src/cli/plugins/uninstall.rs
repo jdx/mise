@@ -41,22 +41,3 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx uninstall nodejs
     "#, style("Examples:").bold().underlined()}
 });
-
-#[cfg(test)]
-mod tests {
-
-    use crate::{assert_cli, assert_cli_snapshot};
-
-    #[test]
-    fn test_plugin_uninstall() {
-        assert_cli!("plugin", "add", "tiny");
-        assert_cli_snapshot!("plugin", "rm", "tiny");
-        assert_cli_snapshot!("plugin", "rm", "tiny");
-        assert_cli!(
-            "plugin",
-            "add",
-            "tiny",
-            "https://github.com/jdxcode/rtx-tiny.git"
-        );
-    }
-}

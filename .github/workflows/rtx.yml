@@ -15,6 +15,7 @@ env:
 jobs:
   unit:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -24,21 +25,18 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
-      - name: Install just
-        uses: taiki-e/install-action@just
-      - name: Run just test-unit
-        uses: nick-fields/retry@v2
+      - uses: taiki-e/install-action@just
+      - uses: taiki-e/install-action@nextest
+      - name: Run cargo nextest
+        run: cargo nextest run
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          command: just test-unit
       - run: just lint
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -70,6 +68,7 @@ jobs:
   build-linux:
     name: build-${{matrix.target}}
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -96,6 +95,7 @@ jobs:
   build-macos:
     name: build-${{matrix.target}}
     runs-on: macos-12
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -121,6 +121,7 @@ jobs:
   e2e-linux:
     runs-on: ubuntu-22.04
     needs: [build-linux]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
@@ -144,6 +145,7 @@ jobs:
   rpm:
     runs-on: ubuntu-22.04
     needs: [build-linux]
+    timeout-minutes: 10
     container: jdxcode/chim:rpm
     if: github.event_name != 'pull_request'
     steps:
@@ -168,6 +170,7 @@ jobs:
   deb:
     runs-on: ubuntu-22.04
     container: jdxcode/chim:deb
+    timeout-minutes: 10
     if: github.event_name != 'pull_request'
     needs: [build-linux]
     steps:
@@ -192,6 +195,7 @@ jobs:
   release:
     runs-on: ubuntu-22.04
     if: startsWith(github.event.ref, 'refs/tags/v')
+    timeout-minutes: 10
     permissions:
       contents: write
     needs:
@@ -252,6 +256,7 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     if: startsWith(github.event.ref, 'refs/tags/v')
+    timeout-minutes: 10
     needs: [release]
     steps:
       - name: Checkout repository
