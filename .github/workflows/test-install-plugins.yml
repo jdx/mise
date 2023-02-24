@@ -47,7 +47,6 @@ jobs:
             dist/rtx-*.tar.gz
           if-no-files-found: error
   test-install-and-run:
-    name: Self Test popular plugins
     runs-on: ubuntu-22.04
     needs: [ build-linux ]
     continue-on-error: true
