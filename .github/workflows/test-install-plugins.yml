@@ -43,8 +43,8 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: |
-            dist/rtx-*.tar.xz
-            dist/rtx-*.tar.gz
+            dist/*.tar.xz
+            dist/*.tar.gz
           if-no-files-found: error
   test-install-and-run:
     runs-on: ubuntu-22.04
