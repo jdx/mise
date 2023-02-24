@@ -97,6 +97,7 @@ lazy_static! {
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
     pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
+    pub static ref DUMB_TERMINAL: bool = cfg!(test) || var("TERM").map_or(false, |term| term == "dumb");
     pub static ref RTX_JOBS: usize = var("RTX_JOBS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())

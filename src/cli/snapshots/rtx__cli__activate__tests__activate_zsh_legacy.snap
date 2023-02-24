@@ -1,6 +1,6 @@
 ---
 source: src/cli/activate.rs
-expression: stdout
+expression: output
 ---
 export PATH=":$PATH"
 _rtx_hook() {

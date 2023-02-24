@@ -77,7 +77,7 @@ mod tests {
         let stdout = assert_cli!("where", "tiny");
         assert_str_eq!(
             stdout.trim(),
-            dirs::ROOT.join("installs/tiny/2.1.0").to_string_lossy()
+            dirs::ROOT.join("installs/tiny/3.1.0").to_string_lossy()
         );
     }
 
@@ -89,6 +89,7 @@ mod tests {
             stdout.trim(),
             dirs::ROOT.join("installs/tiny/3.0.1").to_string_lossy()
         );
+        assert_cli!("uninstall", "tiny@my/alias");
     }
 
     #[test]

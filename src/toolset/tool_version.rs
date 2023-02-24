@@ -18,7 +18,7 @@ pub struct ToolVersion {
     pub rtv: Option<RuntimeVersion>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ToolVersionType {
     Version(String),
     Prefix(String),
@@ -133,13 +133,18 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        let plugin = &self.plugin_name;
-        match &self.r#type {
-            ToolVersionType::Version(v) => write!(f, "{plugin}@{v}"),
-            ToolVersionType::Prefix(p) => write!(f, "{plugin}@prefix:{p}"),
-            ToolVersionType::Ref(r) => write!(f, "{plugin}@ref:{r}"),
-            ToolVersionType::Path(p) => write!(f, "{plugin}@path:{p}"),
-            ToolVersionType::System => write!(f, "{plugin}@system"),
+        write!(f, "{}@{}", &self.plugin_name, &self.r#type)
+    }
+}
+
+impl Display for ToolVersionType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ToolVersionType::Version(v) => write!(f, "{v}"),
+            ToolVersionType::Prefix(p) => write!(f, "prefix:{p}"),
+            ToolVersionType::Ref(r) => write!(f, "ref:{r}"),
+            ToolVersionType::Path(p) => write!(f, "path:{p}"),
+            ToolVersionType::System => write!(f, "system"),
         }
     }
 }
@@ -154,4 +159,26 @@ pub fn resolve_alias(settings: &Settings, plugin: Arc<Plugin>, v: &str) -> Resul
         return Ok(alias.clone());
     }
     Ok(v.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_str_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_tool_version_display() {
+        let foo = "foo".to_string();
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Version("1.2.3".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@1.2.3");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Prefix("1.2.3".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@prefix:1.2.3");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Ref("master".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@ref:master");
+        let tv = ToolVersion::new(foo.clone(), ToolVersionType::Path("~".to_string()));
+        assert_str_eq!(tv.to_string(), "foo@path:~");
+        let tv = ToolVersion::new(foo, ToolVersionType::System);
+        assert_str_eq!(tv.to_string(), "foo@system");
+    }
 }

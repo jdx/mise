@@ -24,6 +24,11 @@ for target in "${targets[@]}"; do
 	cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
 done
 
+# these are already packaged into the deb/rpm
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-brew-"*.gz
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-deb-"*
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-rpm-"*
+
 platforms=(
 	linux-x64
 	linux-arm64
@@ -34,8 +39,8 @@ for platform in "${platforms[@]}"; do
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
 	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
 	tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
+	cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
+	cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
 
 pushd "$RELEASE_DIR"

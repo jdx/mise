@@ -1,6 +1,6 @@
 ---
 source: src/cli/alias/set.rs
-expression: stdout
+expression: output
 ---
 tiny                 lts                  3.1.0
 tiny                 lts-prev             2.0.0

@@ -25,6 +25,7 @@ impl Command for SelfUpdate {
             .show_download_progress(true)
             .current_version(&current_version)
             .target(&format!("{}-{}", *OS, *ARCH))
+            .identifier("rtx-v")
             .build()?
             .update()?;
         if status.updated() {

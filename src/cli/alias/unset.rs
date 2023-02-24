@@ -37,9 +37,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
 
-    use crate::assert_cli;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     use crate::test::reset_config;
 
@@ -48,12 +47,7 @@ mod tests {
         reset_config();
 
         assert_cli!("alias", "unset", "tiny", "my/alias");
-
-        let stdout = assert_cli!("aliases");
-        assert_snapshot!(stdout, @r###"
-        tiny                 lts                  3.1.0
-        tiny                 lts-prev             2.0.0
-        "###);
+        assert_cli_snapshot!("aliases");
 
         reset_config();
     }

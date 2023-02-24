@@ -1,0 +1,18 @@
+---
+source: src/shell/xonsh.rs
+expression: "Xonsh::default().deactivate()"
+---
+from xonsh.built_ins  import XSH
+
+hooks = {
+  'on_pre_prompt' : ['listen_prompt'],
+}
+for   hook_type in hooks:
+  hook_fns = hooks[hook_type]
+  for hook_fn   in hook_fns:
+    hndl = getattr(XSH.builtins.events, hook_type)
+    for fn in hndl:
+      if fn.__name__ == hook_fn:
+        hndl.remove(fn)
+        break
+

@@ -69,32 +69,22 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use insta::assert_display_snapshot;
 
-    use crate::{assert_cli, assert_cli_err};
+    use crate::{assert_cli_err, assert_cli_snapshot};
 
     #[test]
     fn test_latest() {
-        assert_cli!("plugins", "install", "nodejs");
-        let stdout = assert_cli!("latest", "nodejs@12");
-        assert_display_snapshot!(stdout);
-    }
-
-    #[test]
-    fn test_latest_ruby() {
-        assert_cli!("plugins", "install", "ruby");
-        let stdout = assert_cli!("latest", "ruby");
-        assert!(stdout.starts_with("3."));
+        assert_cli_snapshot!("latest", "dummy@1");
     }
 
     #[test]
     fn test_latest_asdf_format() {
-        let stdout = assert_cli!("latest", "nodejs", "12");
-        assert_display_snapshot!(stdout);
+        assert_cli_snapshot!("latest", "dummy", "1");
     }
 
     #[test]
     fn test_latest_system() {
-        let stdout = assert_cli_err!("latest", "nodejs@system");
-        assert_display_snapshot!(stdout);
+        let err = assert_cli_err!("latest", "dummy@system");
+        assert_display_snapshot!(err);
     }
 
     #[test]

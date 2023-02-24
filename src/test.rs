@@ -2,31 +2,14 @@ use std::fs;
 
 use indoc::indoc;
 
-use crate::{assert_cli, cmd, env};
+use crate::{assert_cli, env};
 
 #[ctor::ctor]
 fn init() {
     env::set_var("NO_COLOR", "1");
     env_logger::init();
-    let _ = fs::remove_dir_all("test/cache");
-    if let Err(err) = cmd!(
-        "git",
-        "checkout",
-        "test/.test-tool-versions",
-        "test/cwd/.test-tool-versions",
-        "test/config/config.toml"
-    )
-    .run()
-    {
-        warn!("failed to reset test files: {}", err);
-    }
     reset_config();
-    assert_cli!(
-        "plugin",
-        "install",
-        "tiny",
-        "https://github.com/jdxcode/asdf-tiny"
-    );
+    assert_cli!("install", "tiny", "dummy");
 }
 
 pub fn reset_config() {

@@ -11,6 +11,7 @@ use versions::Versioning;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env::DUMB_TERMINAL;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
@@ -46,7 +47,12 @@ impl Command for Ls {
                 out,
                 "{} {} {}",
                 match rtv.is_installed() && source.is_some() {
-                    true => "->",
+                    true =>
+                        if *DUMB_TERMINAL {
+                            "->"
+                        } else {
+                            "⏵ "
+                        },
                     false => "  ",
                 },
                 styled_version(&rtv, !rtv.is_installed(), source.is_some()),
@@ -153,22 +159,25 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::assert_cli;
+    use crate::{assert_cli, assert_cli_snapshot, dirs};
+    use std::fs;
 
     #[test]
-    fn test_list() {
+    fn test_ls() {
+        let _ = fs::remove_dir_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
-        assert_cli!("install", "shfmt@3.5.0");
-        let stdout = assert_cli!("list");
-        let re = regex!(r"-> shellcheck\s+0\.9\.0\s+");
-        assert!(re.is_match(&stdout));
-        let re = regex!(r" {3}shfmt\s+3\.5\.0\s+");
-        assert!(re.is_match(&stdout));
+        assert_cli_snapshot!("list");
 
-        assert_cli!("uninstall", "shfmt@3.5.1");
-        let stdout = assert_cli!("list");
-        let re = regex!(r" {3}shfmt\s+3\.5\.1 \(missing\)\s+");
-        assert!(re.is_match(&stdout));
+        assert_cli!("install", "tiny@2.0.0");
+        assert_cli_snapshot!("list");
+
+        assert_cli!("uninstall", "tiny@3.1.0");
+        assert_cli_snapshot!("list");
+
+        assert_cli!("uninstall", "tiny@2.0.0");
+        assert_cli_snapshot!("list");
+
+        assert_cli!("install");
+        assert_cli_snapshot!("list");
     }
 }

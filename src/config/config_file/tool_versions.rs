@@ -216,7 +216,7 @@ pub(crate) mod tests {
         let tv =
             ToolVersions::from_file(dirs::CURRENT.join(".test-tool-versions").as_path()).unwrap();
         assert_eq!(tv.path, dirs::CURRENT.join(".test-tool-versions"));
-        assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): shellcheck@0.9.0, shfmt@3.5.1, nodejs@system");
+        assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
     }
 
     #[test]

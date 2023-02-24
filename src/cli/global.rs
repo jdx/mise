@@ -109,12 +109,12 @@ mod tests {
         let orig = fs::read_to_string(&cf_path).ok();
         let _ = fs::remove_file(&cf_path);
 
-        assert_cli!("install", "shfmt@2");
-        let stdout = assert_cli!("global", "--pin", "shfmt@2");
+        assert_cli!("install", "tiny@2");
+        let stdout = assert_cli!("global", "--pin", "tiny@2");
         assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "shfmt@2");
+        let stdout = assert_cli!("global", "tiny@2");
         assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "--remove", "nodejs");
+        let stdout = assert_cli!("global", "--remove", "tiny");
         assert_snapshot!(stdout);
         let stdout = assert_cli!("global", "--pin", "tiny", "2");
         assert_snapshot!(stdout);

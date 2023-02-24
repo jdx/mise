@@ -33,6 +33,7 @@ mod local;
 mod ls;
 mod ls_remote;
 mod plugins;
+mod self_update;
 mod settings;
 mod uninstall;
 pub mod version;
@@ -41,9 +42,6 @@ mod r#where;
 // render help
 #[cfg(debug_assertions)]
 mod render_help;
-
-#[cfg(feature = "self_update")]
-mod self_update;
 
 pub struct Cli {
     command: clap::Command,
@@ -73,7 +71,6 @@ pub enum Commands {
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
     Plugins(plugins::Plugins),
-    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Uninstall(uninstall::Uninstall),
@@ -108,7 +105,6 @@ impl Commands {
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
-            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
@@ -211,11 +207,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::config::MissingRuntimeBehavior::AutoInstall;
-
     use crate::dirs;
-    use crate::plugins::{Plugin, PluginName};
-    use crate::ui::progress_report::ProgressReport;
 
     use super::*;
 
@@ -243,7 +235,7 @@ pub mod tests {
             let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
             let output = console::strip_ansi_codes(&output).to_string();
             let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
-            assert_snapshot!(output);
+            insta::assert_snapshot!(output);
         }};
     }
 
@@ -253,17 +245,6 @@ pub mod tests {
             let args = &vec!["rtx".into(), $($args.into()),+];
             $crate::cli::tests::cli_run(args).unwrap_err()
         }};
-    }
-
-    pub fn ensure_plugin_installed(name: &str) {
-        let mut config = Config::load().unwrap();
-        config.settings.missing_runtime_behavior = AutoInstall;
-        let plugin = Plugin::new(&PluginName::from(name));
-        if plugin.is_installed() {
-            plugin
-                .install(&config, None, ProgressReport::new(true))
-                .unwrap();
-        }
     }
 
     pub fn grep(output: String, pattern: &str) -> String {

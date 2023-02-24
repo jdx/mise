@@ -3,7 +3,7 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-tar -xvJf "dist/rtx-$RTX_VERSION-linux-x64.tar.xz"
+tar -xvJf "dist/rtx-rpm-$RTX_VERSION-linux-x64.tar.xz"
 fpm -s dir -t rpm \
 	--name rtx \
 	--license MIT \
@@ -14,7 +14,7 @@ fpm -s dir -t rpm \
 	--maintainer "Jeff Dickey @jdxcode" \
 	rtx/bin/rtx=/usr/bin/rtx
 
-tar -xvJf "dist/rtx-$RTX_VERSION-linux-arm64.tar.xz"
+tar -xvJf "dist/rtx-rpm-$RTX_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t rpm \
 	--name rtx \
 	--license MIT \
