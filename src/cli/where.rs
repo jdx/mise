@@ -89,6 +89,7 @@ mod tests {
             stdout.trim(),
             dirs::ROOT.join("installs/tiny/3.0.1").to_string_lossy()
         );
+        assert_cli!("uninstall", "tiny@my/alias");
     }
 
     #[test]
