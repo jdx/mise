@@ -4,14 +4,14 @@ name: Test Installing Plugins
 # current version
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
   schedule:
     # run at midnight on sunday (utc?)
     - cron: 0 0 * * 0
-  # TODO: Remove on pull_request once CI is verified to run correctly
+  # TODO: Remove `on: pull_request` once CI is verified to run correctly
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
