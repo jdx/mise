@@ -98,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -131,7 +131,6 @@ jobs:
           - levant
           - consul
           - boundary
-          - php
           - postgres
           - rust
           - action-validator
