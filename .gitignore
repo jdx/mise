@@ -29,3 +29,5 @@ package-lock.json
 
 # ignore macos system file
 .DS_Store
+e2e/.*
+stargazer_count.txt
