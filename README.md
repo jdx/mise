@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.14.3
+rtx 1.16.0
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -108,6 +108,7 @@ v18.10.9
          * [RTX_VERBOSE=1](#rtx_verbose1)
          * [RTX_ASDF_COMPAT=1](#rtx_asdf_compat1)
          * [RTX_JOBS=1](#rtx_jobs1)
+         * [RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml](#rtx_shorthands_fileconfigrtxshorthandstoml)
          * [RTX_DISABLE_DEFAULT_SHORTHANDS=1](#rtx_disable_default_shorthands1)
          * [RTX_HIDE_OUTDATED_BUILD=1](#rtx_hide_outdated_build1)
    * [Aliases](#aliases)
@@ -294,7 +295,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.14.3/rtx-v1.14.3-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.16.0/rtx-v1.16.0-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 

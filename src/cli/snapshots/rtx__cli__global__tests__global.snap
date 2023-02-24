@@ -2,5 +2,5 @@
 source: src/cli/global.rs
 expression: stdout
 ---
-shfmt 2.6.4
+tiny 2.1.0
 

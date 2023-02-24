@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -e
+
+assert() {
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
+}
+
+export RTX_MISSING_RUNTIME_BEHAVIOR=ignore
+assert "rtx plugin install ruby"
+assert "rtx current ruby" "3.0.5"

@@ -97,6 +97,14 @@ impl EnvDiff {
                 // it causes ruby to attempt to call asdf to reshim the binaries
                 // which we don't need or want to happen
                 || k == "RUBYLIB"
+                // following two ignores are for exported bash functions and exported bash
+                // functions which are multline, they appear in the environment as e.g.:
+                // BASH_FUNC_exported-bash-function%%=() { echo "this is an"
+                //  echo "exported bash function"
+                //  echo "with multiple lines"
+                // }
+                || k.starts_with("BASH_FUNC_")
+                || k.starts_with(' ')
             {
                 continue;
             }

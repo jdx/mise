@@ -2,10 +2,10 @@ name: rtx
 
 on:
   push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
+    branches: ["main"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -15,30 +15,28 @@ env:
 jobs:
   unit:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - name: Install direnv
-        run: sudo apt-get update; sudo apt-get install direnv
-      - name: Install just
-        uses: taiki-e/install-action@just
-      - name: Run just test-unit
-        uses: nick-fields/retry@v2
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Install direnv/shfmt
+        run: sudo apt-get update; sudo apt-get install direnv shfmt
+      - uses: taiki-e/install-action@just
+      - uses: taiki-e/install-action@nextest
+      - name: Run cargo nextest
+        run: cargo nextest run
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          command: just test-unit
       - run: just lint
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -46,7 +44,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
@@ -70,6 +68,7 @@ jobs:
   build-linux:
     name: build-${{matrix.target}}
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -78,22 +77,13 @@ jobs:
           - x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{matrix.target}}
-          override: true
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --all-features --target ${{matrix.target}}
-      - run: scripts/build-tarball.sh ${{matrix.target}}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - uses: taiki-e/install-action@cross
+      - run: scripts/build-linux.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
@@ -105,6 +95,7 @@ jobs:
   build-macos:
     name: build-${{matrix.target}}
     runs-on: macos-12
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -112,19 +103,14 @@ jobs:
           - x86_64-apple-darwin
           - aarch64-apple-darwin
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{matrix.target}}
-          override: true
+      - uses: actions/checkout@v3
+      - run: rustup target add ${{matrix.target}}
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           key: "${{matrix.target}}"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - run: cargo build --release --all-features --target ${{matrix.target}}
-      - run: scripts/build-tarball.sh ${{matrix.target}}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - run: scripts/build-macos.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
@@ -132,10 +118,10 @@ jobs:
             dist/rtx-*.tar.xz
             dist/rtx-*.tar.gz
           if-no-files-found: error
-
   e2e-linux:
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
@@ -158,7 +144,8 @@ jobs:
           command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
-    needs: [ build-linux ]
+    needs: [build-linux]
+    timeout-minutes: 10
     container: jdxcode/chim:rpm
     if: github.event_name != 'pull_request'
     steps:
@@ -183,8 +170,9 @@ jobs:
   deb:
     runs-on: ubuntu-22.04
     container: jdxcode/chim:deb
+    timeout-minutes: 10
     if: github.event_name != 'pull_request'
-    needs: [ build-linux ]
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v3
       - uses: crazy-max/ghaction-import-gpg@v5
@@ -207,6 +195,7 @@ jobs:
   release:
     runs-on: ubuntu-22.04
     if: startsWith(github.event.ref, 'refs/tags/v')
+    timeout-minutes: 10
     permissions:
       contents: write
     needs:
@@ -227,8 +216,8 @@ jobs:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
       - uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "18.x"
+          registry-url: "https://registry.npmjs.org"
       - name: Set AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -267,7 +256,8 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     if: startsWith(github.event.ref, 'refs/tags/v')
-    needs: [ release ]
+    timeout-minutes: 10
+    needs: [release]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

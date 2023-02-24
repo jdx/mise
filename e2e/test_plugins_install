@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+assert_not_contains() {
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" == *"$expected"* ]]; then
+    echo "assertion failed, expected not '$expected', got '$actual'"
+    exit 1
+  fi
+}
+assert_contains() {
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != *"$expected"* ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
+}
+
+rm -rf "$RTX_DATA_DIR/plugins/tiny"
+rtx plugin install https://github.com/jdxcode/rtx-tiny.git
+assert_contains "rtx plugin ls" "tiny"
+rtx plugin install -f tiny
+assert_contains "rtx plugin ls" "tiny"
+
+rm -rf "$RTX_DATA_DIR/plugins/tiny"
+rtx plugin install tiny https://github.com/jdxcode/rtx-tiny
+assert_contains "rtx plugin ls" "tiny"
+
+rm -rf "$RTX_DATA_DIR/plugins/shellcheck"
+rtx plugin install --all
+assert_contains "rtx plugin ls" "shellcheck"
+
+rtx plugin uninstall tiny
+assert_not_contains "rtx plugin ls" "tiny"
+rtx plugin uninstall tiny
+
+rtx plugin update --all
+rtx plugin update shfmt
