@@ -29,3 +29,19 @@ impl Command for SelfUpdate {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::assert_cli_err;
+    use insta::assert_display_snapshot;
+
+    use super::*;
+
+    #[test]
+    fn test_self_update() -> Result<()> {
+        let err = assert_cli_err!("self-update");
+        assert_display_snapshot!(err);
+
+        Ok(())
+    }
+}
