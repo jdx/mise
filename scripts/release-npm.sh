@@ -38,7 +38,7 @@ for platform in "${platforms[@]}"; do
 	mv "$RELEASE_DIR/rtx" "$RELEASE_DIR/npm"
 	cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
-  "name": "@jdxcode/rtx-$os-$arch",
+  "name": "$NPM_PREFIX-$os-$arch",
   "version": "$RTX_VERSION",
   "description": "polyglot runtime manager",
   "bin": {
@@ -75,13 +75,13 @@ function installArchSpecificPackage(version) {
     var platform = process.platform == 'win32' ? 'win' : process.platform;
     var arch = platform == 'win' && process.arch == 'ia32' ? 'x86' : process.arch;
 
-    var cp = spawn(platform == 'win' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['@jdxcode/rtx', platform, arch].join('-') + '@' + version], {
+    var cp = spawn(platform == 'win' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PREFIX', platform, arch].join('-') + '@' + version], {
         stdio: 'inherit',
         shell: true
     });
 
     cp.on('close', function(code) {
-        var pkgJson = require.resolve(['@jdxcode/rtx', platform, arch].join('-') + '/package.json');
+        var pkgJson = require.resolve(['$NPM_PREFIX', platform, arch].join('-') + '/package.json');
         var subpkg = JSON.parse(fs.readFileSync(pkgJson, 'utf8'));
         var executable = subpkg.bin.rtx;
         var bin = path.resolve(path.dirname(pkgJson), executable);
@@ -125,7 +125,7 @@ EOF
 
 cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
-  "name": "@jdxcode/rtx",
+  "name": "$NPM_PREFIX",
   "description": "polyglot runtime manager",
   "version": "$RTX_VERSION",
   "repository": {
