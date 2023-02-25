@@ -27,3 +27,5 @@ function __rtx_env_eval_2 --on-event fish_preexec --description 'Update rtx envi
     functions --erase __rtx_cd_hook;
 end;
 
+__rtx_env_eval
+
