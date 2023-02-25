@@ -409,7 +409,6 @@ _arguments "${_arguments_options[@]}" \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- Runtime(s) to start:' \
-'*::command -- Command string to execute (same as --command):' \
 && ret=0
 ;;
 (global)
