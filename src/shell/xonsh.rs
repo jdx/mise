@@ -74,10 +74,11 @@ impl Shell for Xonsh {
         out
     }
 
-    fn deactivate(&self) -> String {
+    fn deactivate(&self, path: String) -> String {
         formatdoc! {r#"
             from xonsh.built_ins  import XSH
 
+            environ['PATH'] = '{path}'
             hooks = {{
               'on_pre_prompt' : ['listen_prompt'],
             }}
@@ -89,7 +90,7 @@ impl Shell for Xonsh {
                   if fn.__name__ == hook_fn:
                     hndl.remove(fn)
                     break
-        "#}
+            "#}
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
@@ -126,6 +127,8 @@ impl Shell for Xonsh {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::replace_path;
+    use insta::assert_snapshot;
 
     #[test]
     fn test_hook_init() {
@@ -154,6 +157,7 @@ mod tests {
 
     #[test]
     fn test_xonsh_deactivate() {
-        insta::assert_snapshot!(Xonsh::default().deactivate());
+        let deactivate = Xonsh::default().deactivate("oldpath".into());
+        assert_snapshot!(replace_path(&deactivate));
     }
 }
