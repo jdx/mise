@@ -1,0 +1,7 @@
+---
+source: src/shell/bash.rs
+expression: replace_path(&deactivate)
+---
+export PATH="/some/path";
+unset _rtx_hook;
+

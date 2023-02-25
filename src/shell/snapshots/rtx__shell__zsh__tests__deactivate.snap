@@ -1,0 +1,7 @@
+---
+source: src/shell/zsh.rs
+expression: replace_path(&deactivate)
+---
+export PATH="foo";
+unset _rtx_hook;
+
