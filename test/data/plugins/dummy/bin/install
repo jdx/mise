@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# We want certain versions to fail installation for various reasons in the tests
+check_dummy_versions() {
+  local bad_versions=" other-dummy "
+  if [[ "$bad_versions" == *" $ASDF_INSTALL_VERSION "* ]]; then
+    echo "Dummy couldn't install version: $ASDF_INSTALL_VERSION (on purpose)"
+    exit 1
+  fi
+}
+
+check_dummy_versions
+mkdir -p "$ASDF_INSTALL_PATH"
+env >"$ASDF_INSTALL_PATH/env"
+echo "$ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/version"
+
+# create the dummy executable
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/dummy"
+echo This is Dummy ${ASDF_INSTALL_VERSION}! \$2 \$1
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/dummy"
+mkdir -p "$ASDF_INSTALL_PATH/bin/subdir"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/subdir/other_bin"
+echo This is Other Bin ${ASDF_INSTALL_VERSION}! \$2 \$1
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/subdir/other_bin"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+get_legacy_version() {
+  current_directory=$1
+  version_file="$current_directory/.dummy-version"
+
+  if [ -f "$version_file" ]; then
+    cat "$version_file"
+  fi
+}
+
+get_legacy_version "$1"
