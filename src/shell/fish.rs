@@ -45,6 +45,8 @@ impl Shell for Fish {
 
                 functions --erase __rtx_cd_hook;
             end;
+
+            __rtx_env_eval
         "#});
 
         out
