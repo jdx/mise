@@ -14,6 +14,7 @@ RTX is a polyglot runtime manager
 %install
 mkdir -p %{buildroot}/usr/bin/
 cp /root/rtx/target/release/rtx %{buildroot}/usr/bin
+cp /root/rtx/man/rtx.1 %{buildroot}/
 
 %files
 /usr/bin/rtx

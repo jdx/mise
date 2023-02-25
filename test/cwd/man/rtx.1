@@ -1,0 +1,122 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH rtx 1  "rtx 1.16.1" 
+.SH NAME
+rtx \- Polyglot runtime manager (asdf rust clone)
+.SH SYNOPSIS
+\fBrtx\fR [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
+.PP
+It\*(Aqs a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
+that works for any language. It\*(Aqs also great for managing linters/tools like
+jq and shellcheck.
+.PP
+It is inspired by asdf and uses asdf\*(Aqs plugin ecosystem under the hood:
+https://asdf\-vm.com/
+.SH OPTIONS
+.TP
+\fB\-j\fR, \fB\-\-jobs\fR
+Number of plugins and runtimes to install in parallel, default: 4
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Show installation output
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+rtx\-activate(1)
+Enables rtx to automatically modify runtimes when changing directory
+.TP
+rtx\-alias(1)
+Manage aliases
+.TP
+rtx\-bin\-paths(1)
+List all the active runtime bin paths
+.TP
+rtx\-cache(1)
+Manage the rtx cache
+.TP
+rtx\-complete(1)
+Generate shell completions
+.TP
+rtx\-current(1)
+Shows current active and installed runtime versions
+.TP
+rtx\-deactivate(1)
+Disable rtx for current shell session
+.TP
+rtx\-direnv(1)
+Output direnv function to use rtx inside direnv
+.TP
+rtx\-doctor(1)
+Check rtx installation for possible problems.
+.TP
+rtx\-env(1)
+exports env vars to activate rtx in a single shell session
+.TP
+rtx\-exec(1)
+Execute a command with runtime(s) set
+.TP
+rtx\-global(1)
+Sets global .tool\-versions to include a specified runtime
+.TP
+rtx\-implode(1)
+Removes rtx CLI and all generated data
+.TP
+rtx\-install(1)
+Install a runtime
+.TP
+rtx\-latest(1)
+Get the latest runtime version of a plugin\*(Aqs runtimes
+.TP
+rtx\-local(1)
+Sets .tool\-versions to include a specific runtime
+.TP
+rtx\-ls(1)
+List installed runtime versions
+.TP
+rtx\-ls\-remote(1)
+List runtime versions available for install
+.TP
+rtx\-plugins(1)
+Manage plugins
+.TP
+rtx\-self\-update(1)
+Updates rtx itself
+.TP
+rtx\-settings(1)
+Manage settings
+.TP
+rtx\-uninstall(1)
+Removes runtime versions
+.TP
+rtx\-version(1)
+Show rtx version
+.TP
+rtx\-where(1)
+Display the installation path for a runtime
+.TP
+rtx\-help(1)
+Print this message or the help of the given subcommand(s)
+.SH EXTRA
+Examples:
+  rtx install nodejs@20.0.0       Install a specific node version
+  rtx install nodejs@20.0         Install a version matching a prefix
+  rtx local nodejs@20             Use node\-20.x in current project
+  rtx global nodejs@20            Use node\-20.x as default
+
+  rtx install nodejs              Install the .tool\-versions node version
+  rtx local nodejs                Use latest node in current directory
+  rtx global system               Use system node everywhere unless overridden
+
+  rtx x nodejs@20 \-\- node app.js  Run `node app.js` with PATH pointing to
+                                  node\-20.x
+.SH VERSION
+v1.16.1
+.SH AUTHORS
+Jeff Dickey <@jdxcode>

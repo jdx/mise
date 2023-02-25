@@ -67,6 +67,8 @@ fi
 mkdir -p "dist/rtx/bin"
 cp "target/$RUST_TRIPLE/release/rtx" "dist/rtx/bin/rtx"
 cp README.md "dist/rtx/README.md"
+cp LICENSE "dist/rtx/LICENSE"
+cp -r man "dist/rtx/man"
 
 cd dist
 tar -cJf "$BASENAME.tar.xz" rtx

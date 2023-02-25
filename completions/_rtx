@@ -533,6 +533,17 @@ _arguments "${_arguments_options[@]}" \
 '::prefix -- The version prefix to use when querying the latest version same as the first argument after the "@":' \
 && ret=0
 ;;
+(mangen)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (plugins)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
@@ -996,6 +1007,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(mangen)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (plugins)
 _arguments "${_arguments_options[@]}" \
 ":: :_rtx__help__plugins_commands" \
@@ -1128,6 +1143,7 @@ _rtx_commands() {
 'list:List installed runtime versions' \
 'ls-remote:List runtime versions available for install' \
 'list-remote:List runtime versions available for install' \
+'mangen:Generate man pages' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
 'self-update:Updates rtx itself' \
@@ -1474,6 +1490,7 @@ _rtx__help_commands() {
 'local:Sets .tool-versions to include a specific runtime' \
 'ls:List installed runtime versions' \
 'ls-remote:List runtime versions available for install' \
+'mangen:Generate man pages' \
 'plugins:Manage plugins' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
@@ -1667,6 +1684,16 @@ _rtx__plugins__help__ls-remote_commands() {
 _rtx__plugins__ls-remote_commands() {
     local commands; commands=()
     _describe -t commands 'rtx plugins ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__help__mangen_commands] )) ||
+_rtx__help__mangen_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help mangen commands' commands "$@"
+}
+(( $+functions[_rtx__mangen_commands] )) ||
+_rtx__mangen_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx mangen commands' commands "$@"
 }
 (( $+functions[_rtx__help__plugins_commands] )) ||
 _rtx__help__plugins_commands() {

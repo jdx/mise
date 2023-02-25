@@ -12,27 +12,24 @@ alias b := test
 
 # just `cargo build`
 build *args:
-    cargo build {{ args }}
+    cargo build --all-features {{ args }}
 
 alias t := test
 
 # run all test types
-test: test-unit test-e2e
-
-# prepare repo to execute tests
-test-setup: build
+test *args: (test-unit args) test-e2e
 
 # update all test snapshot files
-test-update-snapshots: test-setup
+test-update-snapshots:
     find . -name '*.snap' -delete
     cargo insta test --accept
 
 # run the rust "unit" tests
-test-unit: test-setup
-    cargo test
+test-unit *args:
+    cargo test --features clap_mangen {{ args }}
 
 # runs the E2E tests in ./e2e
-test-e2e: test-setup build
+test-e2e: build
     ./e2e/run_all_tests
 
 # run unit tests w/ coverage
@@ -42,8 +39,7 @@ test-coverage:
     source <(cargo llvm-cov show-env --export-prefix) 
     cargo llvm-cov clean --workspace 
 
-    cargo test
-    cargo build
+    just test
     PATH="$PWD/target/debug:$PATH" ./e2e/run_all_tests
     cargo llvm-cov report --html
     cargo llvm-cov report --lcov --output-path lcov.info
@@ -65,24 +61,29 @@ lint:
 
 # runs linters but makes fixes when possible
 lint-fix:
-    cargo clippy --fix --allow-staged --allow-dirty
+    cargo clippy --all-features --fix --allow-staged --allow-dirty
     cargo fmt --all
     shellcheck scripts/*.sh
     shfmt -w scripts/*.sh
     just --unstable --fmt
 
 # regenerate README.md
-render-help:
-    ./.bin/rtx render-help > README.md
+render-help: build
+    rtx render-help > README.md
     ./scripts/gh-md-toc --insert --no-backup --hide-footer --skip-header README.md > /dev/null
 
 # regenerate shell completion files
-render-completions:
-    ./.bin/rtx complete -s bash > completions/rtx.bash
-    ./.bin/rtx complete -s zsh > completions/_rtx
-    ./.bin/rtx complete -s fish > completions/rtx.fish
+render-completions: build
+    rtx complete -s bash > completions/rtx.bash
+    rtx complete -s zsh > completions/_rtx
+    rtx complete -s fish > completions/rtx.fish
+
+# regenerate manpages
+render-mangen: build
+    rtx mangen
 
 # called by husky precommit hook
-pre-commit: lint render-help render-completions
+pre-commit: lint render-help render-completions render-mangen
     git add README.md
     git add completions
+    git add man
