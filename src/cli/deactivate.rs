@@ -2,9 +2,11 @@ use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use std::env::join_paths;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
@@ -28,8 +30,8 @@ impl Command for Deactivate {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
-        // TODO: clear env using __RTX_DIFF
-        let output = shell.deactivate();
+        let path = join_paths(&*env::PATH)?.to_string_lossy().to_string();
+        let output = shell.deactivate(path);
         out.stdout.write(output);
 
         Ok(())
@@ -48,21 +50,16 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
+    use crate::assert_cli_snapshot;
 
     #[test]
     fn test_deactivate_zsh() {
-        std::env::set_var("NO_COLOR", "1");
-        let stdout = assert_cli!("deactivate", "zsh");
-        assert_display_snapshot!(stdout);
+        assert_cli_snapshot!("deactivate", "zsh");
     }
 
     #[test]
     fn test_deactivate_zsh_legacy() {
-        std::env::set_var("NO_COLOR", "1");
-        let stdout = assert_cli!("deactivate", "-s", "zsh");
-        assert_display_snapshot!(stdout);
+        assert_cli_snapshot!("deactivate", "-s", "zsh");
     }
 }
