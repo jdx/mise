@@ -4,3 +4,8 @@ versions_list=(1.0.0 1.1.0 2.0.0)
 echo "${versions_list[@]}"
 # Sending message to STD error to ensure that it is ignored
 echo "ignore this error" >&2
+
+if [ "$RTX_FAILURE" = "1" ]; then
+  echo "error: RTX_FAILURE set" >&2
+  exit 1
+fi
