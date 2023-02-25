@@ -262,17 +262,22 @@ $ brew install rtx
 
 ### Cargo
 
-Build from source with Cargo.
+Build from source with Cargo:
 
 ```sh-session
 $ cargo install rtx-cli
-```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh-session
 $ cargo install cargo-binstall
 $ cargo binstall rtx-cli
+```
+
+Build from the latest commit in main:
+
+```sh-session
+$ cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
 ### npm
