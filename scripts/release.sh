@@ -64,3 +64,6 @@ popd
 pushd homebrew-tap
 git add . && git commit -m "rtx $RTX_VERSION"
 popd
+
+# we don't want to include these in the github release, only S3
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-brew"*
