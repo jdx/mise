@@ -66,9 +66,6 @@ impl ToolVersion {
             Some(("prefix", p)) => {
                 return self.resolve_prefix(settings, plugin, p);
             }
-            Some(("system", _)) => {
-                return Ok(None);
-            }
             _ => (),
         }
 
