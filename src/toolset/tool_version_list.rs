@@ -36,3 +36,27 @@ impl ToolVersionList {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Settings;
+    use crate::plugins::{Plugin, PluginName};
+    use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType};
+    use std::env;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_tool_version_list_failure() {
+        env::set_var("RTX_FAILURE", "1");
+        let mut tvl = ToolVersionList::new(ToolSource::Argument);
+        let plugin = Arc::new(Plugin::new(&PluginName::from("dummy")));
+        plugin.clear_remote_version_cache().unwrap();
+        tvl.add_version(ToolVersion::new(
+            plugin.name.to_string(),
+            ToolVersionType::Version("1.0.0".to_string()),
+        ));
+        tvl.resolve(&Settings::default(), plugin);
+        assert_eq!(tvl.resolved_versions().len(), 0);
+        env::remove_var("RTX_FAILURE");
+    }
+}
