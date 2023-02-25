@@ -12,7 +12,8 @@ fpm -s dir -t rpm \
 	--description "Polyglot runtime manager" \
 	--url "https://github.com/jdxcode/rtx" \
 	--maintainer "Jeff Dickey @jdxcode" \
-	rtx/bin/rtx=/usr/bin/rtx
+	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
 tar -xvJf "dist/rtx-rpm-$RTX_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t rpm \
@@ -23,7 +24,8 @@ fpm -s dir -t rpm \
 	--description "Polyglot runtime manager" \
 	--url "https://github.com/jdxcode/rtx" \
 	--maintainer "Jeff Dickey @jdxcode" \
-	rtx/bin/rtx=/usr/bin/rtx
+	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
 cat <<EOF >~/.rpmmacros
 %_signature gpg
