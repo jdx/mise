@@ -12,7 +12,7 @@ license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
 include = ["src/**/*", "/LICENSE", "/README.md", "/Cargo.lock"]
-rust-version = "1.66.1"
+rust-version = "1.64.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
