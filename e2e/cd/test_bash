@@ -6,7 +6,6 @@ orig_path="$PATH"
 
 # shellcheck disable=SC1090
 eval "$(rtx activate bash --status)"
-_rtx_hook
 
 assert_path() {
   local expected="${1//$HOME/\~}:"

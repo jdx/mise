@@ -22,7 +22,7 @@ test *args: (test-unit args) test-e2e
 # update all test snapshot files
 test-update-snapshots:
     find . -name '*.snap' -delete
-    cargo insta test --accept
+    cargo insta test --accept --features clap_mangen
 
 # run the rust "unit" tests
 test-unit *args:

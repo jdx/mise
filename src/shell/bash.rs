@@ -27,6 +27,8 @@ impl Shell for Bash {
             if ! [[ "${{PROMPT_COMMAND:-}}" =~ _rtx_hook ]]; then
               PROMPT_COMMAND="_rtx_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
+
+            _rtx_hook
             "#});
 
         out
