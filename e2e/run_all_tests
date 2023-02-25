@@ -10,3 +10,5 @@ for f in $FILES; do
   fi
   "$ROOT/e2e/run_test" "$f"
 done
+
+echo "e2e: all tests passed"
