@@ -34,8 +34,9 @@ impl Shell for Bash {
         out
     }
 
-    fn deactivate(&self) -> String {
+    fn deactivate(&self, path: String) -> String {
         formatdoc! {r#"
+            export PATH="{path}";
             unset _rtx_hook;
         "#}
     }
@@ -56,6 +57,8 @@ impl Shell for Bash {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::replace_path;
+    use insta::assert_snapshot;
 
     #[test]
     fn test_hook_init() {
@@ -72,5 +75,11 @@ mod tests {
     #[test]
     fn test_unset_env() {
         insta::assert_snapshot!(Bash::default().unset_env("FOO"));
+    }
+
+    #[test]
+    fn test_deactivate() {
+        let deactivate = Bash::default().deactivate("/some/path".into());
+        assert_snapshot!(replace_path(&deactivate));
     }
 }
