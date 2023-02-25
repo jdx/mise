@@ -19,7 +19,7 @@ impl Command for Mangen {
         let mut buffer: Vec<u8> = Default::default();
         man.render(&mut buffer)?;
 
-        let out_dir = dirs::CURRENT.join("man");
+        let out_dir = dirs::CURRENT.join("man").join("man1");
         std::fs::create_dir_all(&out_dir)?;
         std::fs::write(out_dir.join("rtx.1"), buffer)?;
 

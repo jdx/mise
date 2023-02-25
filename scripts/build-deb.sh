@@ -12,7 +12,8 @@ fpm -s dir -t deb \
 	--description "Polyglot runtime manager" \
 	--url "https://github.com/jdxcode/rtx" \
 	--maintainer "Jeff Dickey @jdxcode" \
-	rtx/bin/rtx=/usr/bin/rtx
+	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
 tar -xvJf "dist/rtx-deb-$RTX_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t deb \
@@ -23,7 +24,8 @@ fpm -s dir -t deb \
 	--description "Polyglot runtime manager" \
 	--url "https://github.com/jdxcode/rtx" \
 	--maintainer "Jeff Dickey @jdxcode" \
-	rtx/bin/rtx=/usr/bin/rtx
+	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
 mkdir -p dist/deb/pool/main
 cp -v ./*.deb dist/deb/pool/main

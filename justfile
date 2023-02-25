@@ -39,8 +39,12 @@ test-coverage:
     source <(cargo llvm-cov show-env --export-prefix) 
     cargo llvm-cov clean --workspace 
 
-    just test
+    cargo test --features clap_mangen
+    cargo build --all-features
     PATH="$PWD/target/debug:$PATH" ./e2e/run_all_tests
+    RTX_SELF_UPDATE_VERSION=1.0.0 ./target/debug/rtx self-update <<EOF
+    y
+    EOF
     cargo llvm-cov report --html
     cargo llvm-cov report --lcov --output-path lcov.info
 

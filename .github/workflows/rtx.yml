@@ -147,7 +147,7 @@ jobs:
     needs: [build-linux]
     timeout-minutes: 10
     container: jdxcode/rtx:rpm
-    #if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v3
       - uses: crazy-max/ghaction-import-gpg@v5
@@ -171,7 +171,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: jdxcode/rtx:deb
     timeout-minutes: 10
-    #if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request'
     needs: [build-linux]
     steps:
       - uses: actions/checkout@v3
