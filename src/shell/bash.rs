@@ -17,6 +17,25 @@ impl Shell for Bash {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
+            export RTX_SHELL=bash
+
+            rtx() {{
+              local command
+              command="${{1:-}}"
+              if [ "$#" -gt 0 ]; then
+                shift
+              fi
+
+              case "$command" in
+              deactivate|shell)
+                eval "$({exe} "$command" "$@")"
+                ;;
+              *)
+                command {exe} "$command" "$@"
+                ;;
+              esac
+            }}
+
             _rtx_hook() {{
               local previous_exit_status=$?;
               trap -- '' SIGINT;

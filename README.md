@@ -150,6 +150,7 @@ v18.10.9
       * [rtx settings ls](#rtx-settings-ls)
       * [rtx settings set](#rtx-settings-set)
       * [rtx settings unset](#rtx-settings-unset)
+      * [rtx shell](#rtx-shell)
       * [rtx uninstall](#rtx-uninstall)
       * [rtx version](#rtx-version)
       * [rtx where](#rtx-where)
@@ -855,18 +856,12 @@ Disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
 
-Usage: deactivate [SHELL_TYPE]
-
-Arguments:
-  [SHELL_TYPE]
-          Shell type to generate the script for
-          
-          [possible values: bash, fish, xonsh, zsh]
+Usage: deactivate
 
 Examples:
-  $ eval "$(rtx deactivate bash)"
-  $ eval "$(rtx deactivate zsh)"
-  $ rtx deactivate fish | source
+  $ rtx deactivate bash
+  $ rtx deactivate zsh
+  $ rtx deactivate fish
   $ execx($(rtx deactivate xonsh))
 ```
 ### `rtx direnv activate`
@@ -1401,6 +1396,24 @@ Arguments:
 
 Examples:
   $ rtx settings unset legacy_version_file
+```
+### `rtx shell`
+
+```
+sets a runtime for the current shell session
+
+Only works in a session where rtx is already activated.
+
+Usage: shell [RUNTIME]...
+
+Arguments:
+  [RUNTIME]...
+          Runtime version(s) to use
+
+Examples:
+  $ rtx shell nodejs@20
+  $ node -v
+  v20.0.0
 ```
 ### `rtx uninstall`
 

@@ -1,17 +1,22 @@
 #!/usr/bin/env fish
 # shellcheck disable=SC1072,SC1065,SC1064,SC1073,SC2103
+set -l orig_node (node -v)
 
 #set -l fish_trace 1
 rtx install nodejs@18.0.0 nodejs@16.0.0; or exit
 
-rtx activate fish | source
-#rtx i
+rtx activate --status fish | source
 
 test (node -v) = "v18.0.0"; or exit
 
 cd 16 && __rtx_env_eval
-#rtx i
 test (node -v) = "v16.0.0"; or exit
 
 cd .. && __rtx_env_eval
 test (node -v) = "v18.0.0"; or exit
+
+rtx shell nodejs@16.0.0 && __rtx_env_eval
+test (node -v) = "v16.0.0"; or exit
+
+rtx deactivate
+test (node -v) = $orig_node; or exit

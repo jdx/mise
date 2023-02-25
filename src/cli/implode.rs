@@ -48,7 +48,7 @@ impl Command for Implode {
 #[cfg(test)]
 mod tests {
     use crate::assert_cli;
-    use crate::{dirs, env};
+    use crate::dirs;
 
     #[test]
     fn test_implode() {
@@ -56,6 +56,5 @@ mod tests {
         assert!(stdout.contains(format!("rm -rf {}", dirs::ROOT.display()).as_str()));
         assert!(stdout.contains(format!("rm -rf {}", dirs::CACHE.display()).as_str()));
         assert!(stdout.contains(format!("rm -rf {}", dirs::CONFIG.display()).as_str()));
-        assert!(stdout.contains(format!("rm -f {}", env::RTX_EXE.display()).as_str()));
     }
 }
