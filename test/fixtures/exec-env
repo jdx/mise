@@ -3,3 +3,6 @@
 export UNMODIFIED_VAR="unmodified"
 export MODIFIED_VAR="modified"
 export ADDED_VAR="added"
+export MULTILINE_VAR="line1
+line2
+line3"
