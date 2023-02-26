@@ -93,3 +93,6 @@ pre-commit: lint render-help render-completions render-mangen
     git add README.md
     git add completions
     git add man
+
+release *args:
+    cargo release {{ args }}
