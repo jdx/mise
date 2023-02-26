@@ -24,6 +24,7 @@ impl Command for SettingsSet {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let rtxrc = config.rtxrc;
         let value: toml_edit::Value = match self.key.as_str() {
+            "experimental" => parse_bool(&self.value)?,
             "missing_runtime_behavior" => self.value.into(),
             "always_keep_download" => parse_bool(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
@@ -32,6 +33,7 @@ impl Command for SettingsSet {
             "jobs" => parse_i64(&self.value)?,
             "shorthands_file" => self.value.into(),
             "disable_default_shorthands" => parse_bool(&self.value)?,
+            "shims_dir" => self.value.into(),
             _ => return Err(eyre!("Unknown setting: {}", self.key)),
         };
 

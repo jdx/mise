@@ -48,6 +48,7 @@ mod tests {
 
         let stdout = assert_cli!("settings");
         assert_snapshot!(stdout, @r###"
+        experimental = true
         missing_runtime_behavior = autoinstall
         always_keep_download = true
         legacy_version_file = true
@@ -57,6 +58,7 @@ mod tests {
         jobs = 2
         disable_default_shorthands = false
         log_level = INFO
+        shims_dir = ~/data/shims
         "###);
 
         reset_config();
