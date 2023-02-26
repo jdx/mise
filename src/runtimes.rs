@@ -143,6 +143,17 @@ impl RuntimeVersion {
             .collect())
     }
 
+    pub fn which(&self, bin_name: &str) -> Result<Option<PathBuf>> {
+        let bin_paths = self.list_bin_paths()?;
+        for bin_path in bin_paths {
+            let bin_path = bin_path.join(bin_name);
+            if bin_path.exists() {
+                return Ok(Some(bin_path));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn is_installed(&self) -> bool {
         match &self.install_type {
             InstallType::System => true,
