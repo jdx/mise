@@ -145,6 +145,7 @@ v18.10.9
       * [rtx plugins ls-remote](#rtx-plugins-ls-remote)
       * [rtx plugins uninstall](#rtx-plugins-uninstall)
       * [rtx plugins update](#rtx-plugins-update)
+      * [rtx reshim](#rtx-reshim)
       * [rtx self-update](#rtx-self-update)
       * [rtx settings get](#rtx-settings-get)
       * [rtx settings ls](#rtx-settings-ls)
@@ -1318,6 +1319,22 @@ Options:
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
+```
+### `rtx reshim`
+
+```
+[experimental] rebuilds the shim farm
+
+this requires that the shim_dir is set
+
+Usage: reshim
+
+Examples:
+  $ rtx settings set experimental true
+  $ rtx settings set shim_dir ~/.rtx/shims
+  $ rtx reshim
+  $ ~/.rtx/shims/node -v
+  v20.0.0
 ```
 ### `rtx self-update`
 

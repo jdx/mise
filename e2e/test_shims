@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+assert() {
+  local actual
+  actual="$($*)"
+  if [[ "$actual" != "$2" ]]; then
+    echo "Expected '$2' but got '$actual'"
+    exit 1
+  fi
+}
+
+rtx settings set experimental true
+rtx settings set shims_dir "$RTX_DATA_DIR/shims"
+rtx reshim
+assert "$RTX_DATA_DIR/shims/node -v" "v18.0.0"
