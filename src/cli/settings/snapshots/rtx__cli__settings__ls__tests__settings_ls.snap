@@ -2,6 +2,7 @@
 source: src/cli/settings/ls.rs
 expression: stdout
 ---
+experimental = true
 missing_runtime_behavior = autoinstall
 always_keep_download = true
 legacy_version_file = true
@@ -11,4 +12,5 @@ asdf_compat = false
 jobs = 2
 disable_default_shorthands = false
 log_level = INFO
+shims_dir = ~/data/shims
 

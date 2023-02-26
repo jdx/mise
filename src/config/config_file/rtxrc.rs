@@ -82,6 +82,7 @@ impl RTXFile {
     fn parse_toplevel_key(&mut self, k: &String, v: &Value) -> Result<()> {
         match k.to_lowercase().as_str() {
             "env" => self.parse_env(v).with_suggestion(|| ENV_SUGGESTION)?,
+            "experimental" => self.settings.experimental = Some(self.parse_bool(k, v)?),
             "missing_runtime_behavior" => {
                 self.settings.missing_runtime_behavior =
                     Some(self.parse_missing_runtime_behavior(v)?)
@@ -103,6 +104,7 @@ impl RTXFile {
                 self.settings.disable_default_shorthands = Some(self.parse_bool(k, v)?)
             }
             "log_level" => self.settings.log_level = Some(self.parse_log_level(v)?),
+            "shims_dir" => self.settings.shims_dir = Some(self.parse_path(k, v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
             "disable_plugin_short_name_repository" => {}
