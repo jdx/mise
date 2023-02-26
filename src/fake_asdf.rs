@@ -16,10 +16,10 @@ fn setup() -> color_eyre::Result<PathBuf> {
             fs::create_dir_all(&path)?;
             fs::write(
                 &asdf_bin,
+                // rtx="${{RTX_EXE:-rtx}}"
                 formatdoc! {r#"
                 #!/bin/sh
-                rtx="${{RTX_EXE:-rtx}}"
-                "$rtx" asdf "$@"
+                rtx asdf "$@"
             "#},
             )?;
             let mut perms = asdf_bin.metadata()?.permissions();
