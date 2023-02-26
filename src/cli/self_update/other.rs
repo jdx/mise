@@ -23,7 +23,7 @@ impl Command for SelfUpdate {
         } else {
             return Err(eyre!("Self-update is not supported"));
         };
-        rtxprintln!(out, "running `{}`", style(&cmd).yellow());
+        rtxprintln!(out, "Running `{}`", style(&cmd).yellow());
         cmd!(&*env::SHELL, "-c", cmd).run()?;
 
         Ok(())
