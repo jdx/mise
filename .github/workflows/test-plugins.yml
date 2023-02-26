@@ -1,4 +1,4 @@
-name: Test Installing Plugins
+name: test-plugins
 
 # Test Top 50 asdf plugins install correctly and the most common can print their
 # current version
@@ -20,25 +20,10 @@ env:
 
 jobs:
   build-linux:
-    name: Build linux
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-unknown-linux-gnu
-          override: true
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "x86_64-unknown-linux-gnu"
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --all-features --target x86_64-unknown-linux-gnu
-      - run: scripts/build-tarball.sh x86_64-unknown-linux-gnu
+      - run: scripts/build-tarball.sh rtx --release --target x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -105,10 +90,9 @@ jobs:
           path: dist
           # dist/rtx-v1.16.0-linux-x64.tar.xz
           # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
-      - run: tar -C "$HOME" -xvJf dist/x86_64-unknown-linux-gnu-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
-      # TODO: replace with `rtx plugins test` pending #191
       - run: ${{matrix.command}}
   test-install:
     # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
@@ -177,6 +161,6 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/x86_64-unknown-linux-gnu-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx install ${{matrix.plugins}}@latest
