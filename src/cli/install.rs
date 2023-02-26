@@ -160,4 +160,10 @@ mod tests {
         );
         assert_cli!("global", "--unset", "dummy");
     }
+
+    #[test]
+    fn test_install_nothing() {
+        // this doesn't do anything since dummy isn't specified
+        assert_cli_snapshot!("install", "dummy");
+    }
 }
