@@ -73,6 +73,11 @@ impl Install {
                 ts.versions.remove(plugin);
             }
         }
+        if ts.versions.is_empty() {
+            warn!("no runtimes to install");
+            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            return Ok(());
+        }
         for (plugin, versions) in &ts.versions {
             if plugins_to_install.contains(plugin) && self.force {
                 for v in &versions.versions {
