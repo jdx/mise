@@ -1325,13 +1325,13 @@ Examples:
 ```
 [experimental] rebuilds the shim farm
 
-this requires that the shim_dir is set
+this requires that the shims_dir is set
 
 Usage: reshim
 
 Examples:
   $ rtx settings set experimental true
-  $ rtx settings set shim_dir ~/.rtx/shims
+  $ rtx settings set shims_dir ~/.rtx/shims
   $ rtx reshim
   $ ~/.rtx/shims/node -v
   v20.0.0

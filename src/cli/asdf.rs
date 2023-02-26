@@ -22,7 +22,15 @@ impl Command for Asdf {
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Ok(()),
+            Some("reshim") => {
+                if config.settings.experimental && config.settings.shims_dir.is_some() {
+                    // only reshim if experimental is enabled and shims_dir is set
+                    // otherwise it would error
+                    Cli::new().run(config, &args, out)
+                } else {
+                    Ok(())
+                }
+            }
             Some("list") => list_versions(&config, out, &args),
             Some("install") => {
                 if args.len() == 4 {

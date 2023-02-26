@@ -688,6 +688,7 @@ _arguments "${_arguments_options[@]}" \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::plugin:' \
+'::version:' \
 && ret=0
 ;;
 (self-update)
