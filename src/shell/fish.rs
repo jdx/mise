@@ -76,11 +76,10 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        format!(
-            "set -gx {k} {v}\n",
-            k = shell_escape::unix::escape(k.into()),
-            v = shell_escape::unix::escape(v.into())
-        )
+        let k = shell_escape::unix::escape(k.into());
+        let v = shell_escape::unix::escape(v.into());
+        let v = v.replace("\\n", "\n");
+        format!("set -gx {k} {v}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {

@@ -9,5 +9,6 @@ EnvDiff {
     new: [
         "ADDED_VAR=added",
         "MODIFIED_VAR=modified",
+        "MULTILINE_VAR=line1\nline2\nline3",
     ],
 }
