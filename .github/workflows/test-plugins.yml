@@ -9,9 +9,8 @@ on:
   schedule:
     # run at midnight on sunday (utc?)
     - cron: 0 0 * * 0
-  # TODO: Remove `on: pull_request` once CI is verified to run correctly
-  pull_request:
-    branches: ["main"]
+#  pull_request:
+#    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -51,7 +50,12 @@ jobs:
           - plugin: erlang
             command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
-            command: rtx exec -j1 erlang elixir@latest -- elixir --version
+            command: |
+              rtx global erlang@latest
+              eval "$(rtx env bash)"
+              rtx global elixir@latest
+              eval "$(rtx env bash)"
+              rtx exec -- elixir --version
           - plugin: golang
             command: rtx exec golang@latest -- go version
           - plugin: java@openjdk
@@ -121,7 +125,7 @@ jobs:
           - dotnet-core
           - neovim
           - poetry
-          - haskell
+          # TODO: - haskell not working due to already existing on image
           - link
           - lua
           - redis
@@ -137,10 +141,10 @@ jobs:
           - kotlin
           - pnpm
           - ocaml
-          - rebar
+          # TODO: - rebar install erlang first
           - julia
           - elm
-          - R
+          # TODO: - R install libcurl
           - nim
           - alias
           - mysql

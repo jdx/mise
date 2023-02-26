@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH rtx 1  "rtx 1.17.0" 
+.TH rtx 1  "rtx 1.18.0" 
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
@@ -86,6 +86,9 @@ List runtime versions available for install
 rtx\-plugins(1)
 Manage plugins
 .TP
+rtx\-reshim(1)
+[experimental] rebuilds the shim farm
+.TP
 rtx\-self\-update(1)
 Updates rtx itself
 .TP
@@ -120,6 +123,6 @@ Print this message or the help of the given subcommand(s)
   rtx x nodejs@20 \-\- node app.js  Run `node app.js` with PATH pointing to
                                   node\-20.x
 .SH VERSION
-v1.17.0
+v1.18.0
 .SH AUTHORS
 Jeff Dickey <@jdxcode>

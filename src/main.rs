@@ -34,6 +34,7 @@ mod logger;
 mod plugins;
 pub mod runtimes;
 mod shell;
+mod shims;
 mod shorthands;
 mod ui;
 
@@ -63,6 +64,7 @@ fn run(args: &Vec<String>) -> Result<()> {
     cli::version::print_version_if_requested(&env::ARGS, out);
 
     let config = Config::load()?;
+    let config = shims::handle_shim(config, args, out)?;
     if hook_env::should_exit_early(&config) {
         return Ok(());
     }

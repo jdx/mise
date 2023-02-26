@@ -8,13 +8,14 @@ use log::LevelFilter;
 use crate::config::AliasMap;
 use crate::env;
 use crate::env::{
-    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_SHORTHANDS_FILE,
-    RTX_VERBOSE,
+    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_SHIMS_DIR,
+    RTX_SHORTHANDS_FILE, RTX_VERBOSE,
 };
 use crate::plugins::PluginName;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
+    pub experimental: bool,
     pub missing_runtime_behavior: MissingRuntimeBehavior,
     pub always_keep_download: bool,
     pub legacy_version_file: bool,
@@ -26,11 +27,13 @@ pub struct Settings {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
+    pub shims_dir: Option<PathBuf>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            experimental: false,
             missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
             always_keep_download: false,
             legacy_version_file: true,
@@ -42,6 +45,7 @@ impl Default for Settings {
             shorthands_file: RTX_SHORTHANDS_FILE.clone(),
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
+            shims_dir: RTX_SHIMS_DIR.clone(),
         }
     }
 }
@@ -49,6 +53,7 @@ impl Default for Settings {
 impl Settings {
     pub fn to_index_map(&self) -> IndexMap<String, String> {
         let mut map = IndexMap::new();
+        map.insert("experimental".to_string(), self.experimental.to_string());
         map.insert(
             "missing_runtime_behavior".to_string(),
             self.missing_runtime_behavior.to_string(),
@@ -79,12 +84,16 @@ impl Settings {
             self.disable_default_shorthands.to_string(),
         );
         map.insert("log_level".into(), self.log_level.to_string());
+        if let Some(shims) = &self.shims_dir {
+            map.insert("shims_dir".into(), shims.to_string_lossy().to_string());
+        }
         map
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct SettingsBuilder {
+    pub experimental: Option<bool>,
     pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
     pub always_keep_download: Option<bool>,
     pub legacy_version_file: Option<bool>,
@@ -96,6 +105,7 @@ pub struct SettingsBuilder {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
+    pub shims_dir: Option<PathBuf>,
 }
 
 impl SettingsBuilder {
@@ -106,6 +116,9 @@ impl SettingsBuilder {
     // }
 
     pub fn _merge(&mut self, other: Self) -> &mut Self {
+        if other.experimental.is_some() {
+            self.experimental = other.experimental;
+        }
         if other.missing_runtime_behavior.is_some() {
             self.missing_runtime_behavior = other.missing_runtime_behavior;
         }
@@ -137,6 +150,9 @@ impl SettingsBuilder {
         if other.log_level.is_some() {
             self.log_level = other.log_level;
         }
+        if other.shims_dir.is_some() {
+            self.shims_dir = other.shims_dir;
+        }
         if other.aliases.is_some() {
             self.aliases = other.aliases;
         }
@@ -145,6 +161,7 @@ impl SettingsBuilder {
 
     pub fn build(&self) -> Settings {
         let mut settings = Settings::default();
+        settings.experimental = self.experimental.unwrap_or(settings.experimental);
         settings.missing_runtime_behavior = match env::RTX_MISSING_RUNTIME_BEHAVIOR
             .to_owned()
             .unwrap_or_default()
@@ -175,6 +192,8 @@ impl SettingsBuilder {
         settings.disable_default_shorthands = self
             .disable_default_shorthands
             .unwrap_or(settings.disable_default_shorthands);
+        settings.log_level = self.log_level.unwrap_or(settings.log_level);
+        settings.shims_dir = self.shims_dir.clone().or(settings.shims_dir);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         settings

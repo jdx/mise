@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.17.0
+rtx 1.18.0
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -145,6 +145,7 @@ v18.10.9
       * [rtx plugins ls-remote](#rtx-plugins-ls-remote)
       * [rtx plugins uninstall](#rtx-plugins-uninstall)
       * [rtx plugins update](#rtx-plugins-update)
+      * [rtx reshim](#rtx-reshim)
       * [rtx self-update](#rtx-self-update)
       * [rtx settings get](#rtx-settings-get)
       * [rtx settings ls](#rtx-settings-ls)
@@ -304,7 +305,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.17.0/rtx-v1.17.0-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.18.0/rtx-v1.18.0-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -1318,6 +1319,22 @@ Options:
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
+```
+### `rtx reshim`
+
+```
+[experimental] rebuilds the shim farm
+
+this requires that the shim_dir is set
+
+Usage: reshim
+
+Examples:
+  $ rtx settings set experimental true
+  $ rtx settings set shim_dir ~/.rtx/shims
+  $ rtx reshim
+  $ ~/.rtx/shims/node -v
+  v20.0.0
 ```
 ### `rtx self-update`
 
