@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 608] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 612] = [
     // rtx custom aliases
     ("node", "https://github.com/asdf-vm/asdf-nodejs.git"),
     ("tiny", "https://github.com/jdxcode/rtx-tiny.git"),
@@ -29,6 +29,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 608] = [
     ("alp", "https://github.com/asdf-community/asdf-alp.git"),
     ("amass", "https://github.com/dhoeric/asdf-amass.git"),
     ("amazon-ecr-credential-helper", "https://github.com/dex4er/asdf-amazon-ecr-credential-helper.git"),
+    ("ambient", "https://github.com/jtakakura/asdf-ambient.git"),
     ("ansible-base", "https://github.com/amrox/asdf-pyapp.git"),
     ("ant", "https://github.com/jackboespflug/asdf-ant.git"),
     ("apollo-router", "https://github.com/safx/asdf-apollo-router.git"),
@@ -39,6 +40,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 608] = [
     ("aria2", "https://github.com/asdf-community/asdf-aria2.git"),
     ("asciidoctorj", "https://github.com/gliwka/asdf-asciidoctorj.git"),
     ("assh", "https://github.com/zekker6/asdf-assh.git"),
+    ("aws-amplify-cli", "https://github.com/LozanoMatheus/asdf-aws-amplify-cli.git"),
     ("aws-copilot", "https://github.com/NeoHsu/asdf-copilot"),
     ("aws-iam-authenticator", "https://github.com/zekker6/asdf-aws-iam-authenticator"),
     ("aws-nuke", "https://github.com/bersalazar/asdf-aws-nuke.git"),
@@ -450,6 +452,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 608] = [
     ("protoc-gen-grpc-web", "https://github.com/pbr0ck3r/asdf-protoc-gen-grpc-web.git"),
     ("protoc-gen-js", "https://github.com/pbr0ck3r/asdf-protoc-gen-js.git"),
     ("protolint", "https://github.com/spencergilbert/asdf-protolint.git"),
+    ("protonge", "https://github.com/augustobmoura/asdf-protonge.git"),
     ("pulumi", "https://github.com/canha/asdf-pulumi.git"),
     ("purerl", "https://github.com/GoNZooo/asdf-purerl.git"),
     ("purescript", "https://github.com/nsaunders/asdf-purescript.git"),
@@ -600,6 +603,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 608] = [
     ("websocat", "https://github.com/bdellegrazie/asdf-websocat.git"),
     ("wren-cli", "https://github.com/jtakakura/asdf-wren-cli.git"),
     ("wtfutil", "https://github.com/NeoHsu/asdf-wtfutil.git"),
+    ("xc", "https://github.com/airtonix/asdf-xc"),
     ("xchtmlreport", "https://github.com/younke/asdf-xchtmlreport.git"),
     ("xcodegen", "https://github.com/younke/asdf-xcodegen.git"),
     ("xcodes", "https://github.com/younke/asdf-xcodes.git"),
