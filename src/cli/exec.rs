@@ -34,15 +34,15 @@ pub struct Exec {
     ///
     /// e.g.: nodejs@20 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
-    runtime: Vec<RuntimeArg>,
+    pub runtime: Vec<RuntimeArg>,
 
     /// Command string to execute (same as --command)
     #[clap(conflicts_with = "c", required_unless_present = "c", last = true)]
-    command: Option<Vec<OsString>>,
+    pub command: Option<Vec<OsString>>,
 
     /// Command string to execute
     #[clap(short, long = "command", conflicts_with = "command")]
-    c: Option<OsString>,
+    pub c: Option<OsString>,
 }
 
 impl Command for Exec {

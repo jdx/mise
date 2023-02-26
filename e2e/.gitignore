@@ -1,4 +1,5 @@
 .local
 .rtx
 .cache
+.config
 Library

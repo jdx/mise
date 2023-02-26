@@ -125,6 +125,7 @@ lazy_static! {
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
     pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
+    pub static ref RTX_SHIMS_DIR: Option<PathBuf> = var_path("RTX_SHIMS_DIR");
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
 }
 

@@ -22,7 +22,7 @@ mod deactivate;
 mod direnv;
 mod doctor;
 mod env;
-mod exec;
+pub mod exec;
 mod external;
 mod global;
 mod hook_env;
@@ -33,6 +33,7 @@ mod local;
 mod ls;
 mod ls_remote;
 mod plugins;
+mod reshim;
 mod self_update;
 mod settings;
 mod shell;
@@ -77,6 +78,7 @@ pub enum Commands {
     #[cfg(feature = "clap_mangen")]
     Mangen(mangen::Mangen),
     Plugins(plugins::Plugins),
+    Reshim(reshim::Reshim),
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
@@ -114,6 +116,7 @@ impl Commands {
             #[cfg(feature = "clap_mangen")]
             Self::Mangen(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
+            Self::Reshim(cmd) => cmd.run(config, out),
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
