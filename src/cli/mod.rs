@@ -35,6 +35,7 @@ mod ls_remote;
 mod plugins;
 mod self_update;
 mod settings;
+mod shell;
 mod uninstall;
 pub mod version;
 mod r#where;
@@ -78,6 +79,7 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
+    Shell(shell::Shell),
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
     Where(r#where::Where),
@@ -114,6 +116,7 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
+            Self::Shell(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),

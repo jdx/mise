@@ -3,6 +3,20 @@ source: src/shell/fish.rs
 expression: "fish.activate(exe, true)"
 ---
 fish_add_path -g /some/dir
+set -gx RTX_SHELL fish
+
+function rtx
+  set command $argv[1]
+  set -e argv[1]
+
+  switch "$command"
+  case deactivate shell
+    source (/some/dir/rtx "$command" $argv|psub)
+  case '*'
+    command /some/dir/rtx "$command" $argv
+  end
+end
+
 function __rtx_env_eval --on-event fish_prompt --description 'Update rtx environment when changing directories';
     /some/dir/rtx hook-env --status -s fish | source;
 

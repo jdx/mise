@@ -92,6 +92,7 @@ impl HookEnv {
         let installed_versions = ts
             .list_current_installed_versions()
             .into_iter()
+            .rev()
             .map(|v| v.to_string())
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {

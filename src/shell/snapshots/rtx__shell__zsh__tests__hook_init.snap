@@ -3,6 +3,25 @@ source: src/shell/zsh.rs
 expression: "zsh.activate(exe, true)"
 ---
 export PATH="/some/dir:$PATH"
+export RTX_SHELL=bash
+
+rtx() {
+  local command
+  command="${1:-}"
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$command" in
+  deactivate|shell)
+    eval "$(/some/dir/rtx "$command" "$@")"
+    ;;
+  *)
+    command /some/dir/rtx "$command" "$@"
+    ;;
+  esac
+}
+
 _rtx_hook() {
   trap -- '' SIGINT;
   eval "$("/some/dir/rtx" hook-env --status -s zsh)";

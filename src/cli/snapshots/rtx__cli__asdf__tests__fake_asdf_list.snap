@@ -2,5 +2,7 @@
 source: src/cli/asdf.rs
 expression: output
 ---
+1.0.1
+2.1.0
 3.1.0
 
