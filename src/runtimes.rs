@@ -28,6 +28,7 @@ pub struct RuntimeVersion {
     pub install_path: PathBuf,
     pub install_type: InstallType,
     download_path: PathBuf,
+    cache_path: PathBuf,
     script_man: ScriptManager,
     bin_paths_cache: CacheManager<Vec<String>>,
 }
@@ -61,6 +62,7 @@ impl RuntimeVersion {
             ),
             bin_paths_cache: CacheManager::new(cache_path.join("bin_paths.msgpack.zlib"))
                 .with_fresh_file(install_path.clone()),
+            cache_path,
             download_path,
             install_path,
             version,
@@ -125,7 +127,7 @@ impl RuntimeVersion {
             }
         }
         if let Err(err) = fs::remove_file(self.incomplete_file_path()) {
-            debug!("error removing .rtx-incomplete: {:?}", err);
+            debug!("error removing incomplete file: {:?}", err);
         }
         pr.finish_with_message(style("✓").green().for_stderr().to_string());
 
@@ -209,8 +211,10 @@ impl RuntimeVersion {
     fn create_install_dirs(&self) -> Result<()> {
         let _ = remove_dir_all(&self.install_path);
         let _ = remove_dir_all(&self.download_path);
+        let _ = remove_dir_all(&self.cache_path);
         create_dir_all(&self.install_path)?;
         create_dir_all(&self.download_path)?;
+        create_dir_all(&self.cache_path)?;
         File::create(self.incomplete_file_path())?;
         Ok(())
     }
@@ -226,7 +230,7 @@ impl RuntimeVersion {
     }
 
     fn incomplete_file_path(&self) -> PathBuf {
-        self.install_path.join(".rtx-incomplete")
+        self.cache_path.join("incomplete")
     }
 }
 

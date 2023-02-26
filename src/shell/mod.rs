@@ -18,7 +18,7 @@ pub enum ShellType {
 
 impl ShellType {
     pub fn load() -> Option<ShellType> {
-        let shell = env::var("SHELL").ok()?;
+        let shell = env::var("RTX_SHELL").or(env::var("SHELL")).ok()?;
         if shell.ends_with("bash") {
             Some(ShellType::Bash)
         } else if shell.ends_with("fish") {
@@ -46,7 +46,7 @@ impl Display for ShellType {
 
 pub trait Shell {
     fn activate(&self, exe: &Path, status: bool) -> String;
-    fn deactivate(&self) -> String;
+    fn deactivate(&self, path: String) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
 }

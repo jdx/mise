@@ -3,6 +3,7 @@ extern crate core;
 extern crate log;
 
 use color_eyre::eyre::Result;
+use color_eyre::{Help, SectionExt};
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
@@ -48,16 +49,11 @@ fn main() -> Result<()> {
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
 
-    match run(&env::ARGS) {
-        Err(err) if log_level < log::LevelFilter::Debug => {
-            error!("{err}");
-            // TODO: tell user they can use --log-level when it's implemented
-            error!("Run with RTX_DEBUG=1 for more information.");
-            error!("rtx {}", *VERSION);
-            std::process::exit(1);
-        }
-        result => result,
+    let mut result = run(&env::ARGS).with_section(|| VERSION.to_string().header("Version:"));
+    if log_level < log::LevelFilter::Debug {
+        result = result.with_suggestion(|| "Run with RTX_DEBUG=1 for more information.".to_string())
     }
+    result
 }
 
 fn run(args: &Vec<String>) -> Result<()> {

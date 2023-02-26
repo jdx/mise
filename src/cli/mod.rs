@@ -35,6 +35,7 @@ mod ls_remote;
 mod plugins;
 mod self_update;
 mod settings;
+mod shell;
 mod uninstall;
 pub mod version;
 mod r#where;
@@ -42,6 +43,9 @@ mod r#where;
 // render help
 #[cfg(debug_assertions)]
 mod render_help;
+
+#[cfg(feature = "clap_mangen")]
+mod mangen;
 
 pub struct Cli {
     command: clap::Command,
@@ -70,9 +74,12 @@ pub enum Commands {
     Local(local::Local),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    #[cfg(feature = "clap_mangen")]
+    Mangen(mangen::Mangen),
     Plugins(plugins::Plugins),
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
+    Shell(shell::Shell),
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
     Where(r#where::Where),
@@ -104,9 +111,12 @@ impl Commands {
             Self::Local(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
+            #[cfg(feature = "clap_mangen")]
+            Self::Mangen(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
+            Self::Shell(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),
@@ -235,6 +245,7 @@ pub mod tests {
             let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
             let output = console::strip_ansi_codes(&output).to_string();
             let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
+            let output = $crate::test::replace_path(&output);
             insta::assert_snapshot!(output);
         }};
     }

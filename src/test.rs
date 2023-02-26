@@ -1,3 +1,4 @@
+use std::env::join_paths;
 use std::fs;
 
 use indoc::indoc;
@@ -9,7 +10,7 @@ fn init() {
     env::set_var("NO_COLOR", "1");
     env_logger::init();
     reset_config();
-    assert_cli!("install", "tiny", "dummy");
+    assert_cli!("install", "tiny@1", "tiny@2", "tiny@3", "tiny", "dummy");
 }
 
 pub fn reset_config() {
@@ -28,4 +29,15 @@ pub fn reset_config() {
             "#},
     )
     .unwrap();
+}
+
+pub fn replace_path(input: &str) -> String {
+    let path = join_paths(&*env::PATH)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let home = env::HOME.to_string_lossy().to_string();
+    input
+        .replace(path.as_str(), "$PATH")
+        .replace(home.as_str(), "~")
 }

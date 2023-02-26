@@ -1,68 +1,71 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use std::env::join_paths;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env;
 use crate::output::Output;
-use crate::shell::{get_shell, ShellType};
+use crate::shell::get_shell;
 
 /// Disable rtx for current shell session
 ///
 /// This can be used to temporarily disable rtx in a shell session.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
-pub struct Deactivate {
-    /// Shell type to generate the script for
-    #[clap(long, short, hide = true)]
-    shell: Option<ShellType>,
-
-    /// Shell type to generate the script for
-    #[clap()]
-    shell_type: Option<ShellType>,
-}
+pub struct Deactivate {}
 
 impl Command for Deactivate {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell = get_shell(self.shell_type.or(self.shell))
-            .expect("no shell provided, use `--shell=zsh`");
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        if !config.is_activated() {
+            err_inactive()?;
+        }
 
-        // TODO: clear env using __RTX_DIFF
-        let output = shell.deactivate();
+        let shell = get_shell(None).expect("no shell detected");
+
+        let path = join_paths(&*env::PATH)?.to_string_lossy().to_string();
+        let output = shell.deactivate(path);
         out.stdout.write(output);
 
         Ok(())
     }
 }
 
+fn err_inactive() -> Result<()> {
+    return Err(eyre!(formatdoc!(
+        r#"
+                rtx is not activated in this shell session.
+                Please run `{}` first in your shell rc file.
+                "#,
+        style("rtx activate").yellow()
+    )));
+}
+
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ eval "$(rtx deactivate bash)"
-      $ eval "$(rtx deactivate zsh)"
-      $ rtx deactivate fish | source
+      $ rtx deactivate bash
+      $ rtx deactivate zsh
+      $ rtx deactivate fish
       $ execx($(rtx deactivate xonsh))
     "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
+    use crate::{assert_cli_err, assert_cli_snapshot, env};
     use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
-
     #[test]
-    fn test_deactivate_zsh() {
-        std::env::set_var("NO_COLOR", "1");
-        let stdout = assert_cli!("deactivate", "zsh");
-        assert_display_snapshot!(stdout);
-    }
-
-    #[test]
-    fn test_deactivate_zsh_legacy() {
-        std::env::set_var("NO_COLOR", "1");
-        let stdout = assert_cli!("deactivate", "-s", "zsh");
-        assert_display_snapshot!(stdout);
+    fn test_deactivate() {
+        let err = assert_cli_err!("deactivate");
+        assert_display_snapshot!(err);
+        env::set_var("__RTX_DIFF", "");
+        env::set_var("RTX_SHELL", "zsh");
+        assert_cli_snapshot!("deactivate");
+        env::remove_var("__RTX_DIFF");
+        env::remove_var("RTX_SHELL");
     }
 }

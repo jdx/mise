@@ -22,6 +22,20 @@ impl Shell for Fish {
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
+            set -gx RTX_SHELL fish
+
+            function rtx
+              set command $argv[1]
+              set -e argv[1]
+
+              switch "$command"
+              case deactivate shell
+                source ({exe} "$command" $argv|psub)
+              case '*'
+                command {exe} "$command" $argv
+              end
+            end
+
             function __rtx_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{status} -s fish | source;
 
@@ -45,13 +59,16 @@ impl Shell for Fish {
 
                 functions --erase __rtx_cd_hook;
             end;
+
+            __rtx_env_eval
         "#});
 
         out
     }
 
-    fn deactivate(&self) -> String {
+    fn deactivate(&self, path: String) -> String {
         formatdoc! {r#"
+          set -gx PATH "{path}";
           functions --erase __rtx_env_eval;
           functions --erase __rtx_env_eval_2;
           functions --erase __rtx_cd_hook;
@@ -59,11 +76,10 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        format!(
-            "set -gx {k} {v}\n",
-            k = shell_escape::unix::escape(k.into()),
-            v = shell_escape::unix::escape(v.into())
-        )
+        let k = shell_escape::unix::escape(k.into());
+        let v = shell_escape::unix::escape(v.into());
+        let v = v.replace("\\n", "\n");
+        format!("set -gx {k} {v}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -74,6 +90,8 @@ impl Shell for Fish {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::replace_path;
+    use insta::assert_snapshot;
 
     #[test]
     fn test_hook_init() {
@@ -90,5 +108,11 @@ mod tests {
     #[test]
     fn test_unset_env() {
         insta::assert_snapshot!(Fish::default().unset_env("FOO"));
+    }
+
+    #[test]
+    fn test_deactivate() {
+        let deactivate = Fish::default().deactivate("/some/path".into());
+        assert_snapshot!(replace_path(&deactivate));
     }
 }

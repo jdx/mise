@@ -57,10 +57,14 @@ gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
 
-./rtx/scripts/release-npm.sh
+NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
+NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
 ./rtx/scripts/publish-s3.sh
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
 pushd homebrew-tap
 git add . && git commit -m "rtx $RTX_VERSION"
 popd
+
+# we don't want to include these in the github release, only S3
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-brew"*

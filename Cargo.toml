@@ -1,6 +1,6 @@
 [package]
 name = "rtx-cli"
-version = "1.16.0"
+version = "1.17.0"
 edition = "2021"
 description = "Polyglot runtime manager (asdf rust clone)"
 authors = ["Jeff Dickey (@jdxcode)"]
@@ -12,7 +12,7 @@ license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
 include = ["src/**/*", "/LICENSE", "/README.md", "/Cargo.lock"]
-rust-version = "1.66.1"
+rust-version = "1.64.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,6 +30,7 @@ build-time = "0.1.2"
 chrono = "0.4.23"
 clap = { version = "4.1.1", features = ["env", "derive", "string"] }
 clap_complete = "4.1.1"
+clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
 console = "0.15.5"
 ctor = "0.1.26"
@@ -52,7 +53,7 @@ rayon = "1.6.1"
 regex = "1.7.1"
 reqwest = { version = "0.11.14", features = ["blocking"] }
 rmp-serde = "1.1.1"
-self_update = { version = "0.35.0", optional = true }
+self_update = { version = "0.36.0", optional = true }
 serde = "1.0.152"
 serde_derive = "1.0.152"
 serde_json = "1.0.92"

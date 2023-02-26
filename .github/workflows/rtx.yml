@@ -28,7 +28,7 @@ jobs:
       - uses: taiki-e/install-action@just
       - uses: taiki-e/install-action@nextest
       - name: Run cargo nextest
-        run: cargo nextest run
+        run: cargo nextest run --features clap_mangen
         env:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
@@ -36,7 +36,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -56,7 +56,7 @@ jobs:
           GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
         with:
-          timeout_minutes: 10
+          timeout_minutes: 20
           max_attempts: 3
           command: just test-coverage
       - name: Upload to codecov.io
@@ -68,7 +68,7 @@ jobs:
   build-linux:
     name: build-${{matrix.target}}
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -95,7 +95,7 @@ jobs:
   build-macos:
     name: build-${{matrix.target}}
     runs-on: macos-12
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-linux]
     timeout-minutes: 10
-    container: jdxcode/chim:rpm
+    container: jdxcode/rtx:rpm
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v3
@@ -169,7 +169,7 @@ jobs:
           if-no-files-found: error
   deb:
     runs-on: ubuntu-22.04
-    container: jdxcode/chim:deb
+    container: jdxcode/rtx:deb
     timeout-minutes: 10
     if: github.event_name != 'pull_request'
     needs: [build-linux]

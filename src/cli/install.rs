@@ -73,6 +73,11 @@ impl Install {
                 ts.versions.remove(plugin);
             }
         }
+        if ts.versions.is_empty() {
+            warn!("no runtimes to install");
+            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            return Ok(());
+        }
         for (plugin, versions) in &ts.versions {
             if plugins_to_install.contains(plugin) && self.force {
                 for v in &versions.versions {
@@ -154,5 +159,11 @@ mod tests {
             dirs::INSTALLS.join("dummy/ref-master").to_string_lossy()
         );
         assert_cli!("global", "--unset", "dummy");
+    }
+
+    #[test]
+    fn test_install_nothing() {
+        // this doesn't do anything since dummy isn't specified
+        assert_cli_snapshot!("install", "dummy");
     }
 }

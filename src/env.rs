@@ -62,7 +62,11 @@ lazy_static! {
     };
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
-    pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
+    pub static ref RTX_EXE: PathBuf = if cfg!(test) {
+            "rtx".into()
+        } else {
+            current_exe().unwrap_or_else(|_| "rtx".into())
+        };
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
         let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
         match log_level.parse::<LevelFilter>() {
@@ -121,6 +125,7 @@ lazy_static! {
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
     pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
+    pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
 }
 
 fn get_env_diff() -> EnvDiff {

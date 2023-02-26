@@ -1,10 +1,22 @@
 #!/usr/bin/env zsh
 set -euo pipefail
+orig_path="$PATH"
+
+assert_path() {
+  local expected="${1//$HOME/\~}"
+  local actual="${PATH/%$orig_path/}"
+  actual="${actual//$HOME/\~}"
+  actual="${actual/%:/}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Invalid PATH:  $actual"
+    echo "Expected PATH: $expected"
+    exit 1
+  fi
+}
 
 rtx install nodejs@18.0.0 nodejs@16.0.0
 # shellcheck disable=SC1090
 eval "$(rtx activate zsh --status)"
-_rtx_hook
 
 #rtx install
 test "$(node -v)" = "v18.0.0"
@@ -15,3 +27,9 @@ test "$(node -v)" = "v16.0.0"
 
 cd .. && _rtx_hook
 test "$(node -v)" = "v18.0.0"
+
+rtx shell nodejs@16.0.0 && _rtx_hook
+test "$(node -v)" = "v16.0.0"
+
+rtx deactivate
+assert_path ""

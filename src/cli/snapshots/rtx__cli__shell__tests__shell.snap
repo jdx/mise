@@ -1,0 +1,7 @@
+---
+source: src/cli/shell.rs
+expression: err
+---
+rtx is not activated in this shell session.
+Please run `rtx activate` first in your shell rc file.
+

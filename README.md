@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.16.0
+rtx 1.17.0
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -150,6 +150,7 @@ v18.10.9
       * [rtx settings ls](#rtx-settings-ls)
       * [rtx settings set](#rtx-settings-set)
       * [rtx settings unset](#rtx-settings-unset)
+      * [rtx shell](#rtx-shell)
       * [rtx uninstall](#rtx-uninstall)
       * [rtx version](#rtx-version)
       * [rtx where](#rtx-where)
@@ -198,6 +199,9 @@ Unlike asdf which uses shim files to dynamically locate runtimes when they're ca
 `PATH` ahead of time so the runtimes are called directly. This is not only faster since it avoids
 any overhead, but it also makes it so commands like `which node` work as expected. This also
 means there isn't any need to run `asdf reshim` after installing new runtime binaries.
+
+rtx does not directly install runtimes. Instead, it uses asdf plugins to install runtimes. See
+[plugins](#plugins) below.
 
 ### Common example commands
 
@@ -262,17 +266,22 @@ $ brew install rtx
 
 ### Cargo
 
-Build from source with Cargo.
+Build from source with Cargo:
 
 ```sh-session
 $ cargo install rtx-cli
-```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh-session
 $ cargo install cargo-binstall
 $ cargo binstall rtx-cli
+```
+
+Build from the latest commit in main:
+
+```sh-session
+$ cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
 ### npm
@@ -295,7 +304,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.16.0/rtx-v1.16.0-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.17.0/rtx-v1.17.0-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -625,8 +634,12 @@ echo "lts/fermium 14"
 
 ## Plugins
 
-rtx uses asdf's plugin ecosystem under the hood. See https://github.com/asdf-vm/asdf-plugins for a
-list.
+rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
+`bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
+
+See https://github.com/asdf-vm/asdf-plugins for the list of built-in plugins shorthands. See asdf's
+[Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
+more about how they work.
 
 ## FAQs
 
@@ -843,18 +856,12 @@ Disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
 
-Usage: deactivate [SHELL_TYPE]
-
-Arguments:
-  [SHELL_TYPE]
-          Shell type to generate the script for
-          
-          [possible values: bash, fish, xonsh, zsh]
+Usage: deactivate
 
 Examples:
-  $ eval "$(rtx deactivate bash)"
-  $ eval "$(rtx deactivate zsh)"
-  $ rtx deactivate fish | source
+  $ rtx deactivate bash
+  $ rtx deactivate zsh
+  $ rtx deactivate fish
   $ execx($(rtx deactivate xonsh))
 ```
 ### `rtx direnv activate`
@@ -1389,6 +1396,24 @@ Arguments:
 
 Examples:
   $ rtx settings unset legacy_version_file
+```
+### `rtx shell`
+
+```
+sets a runtime for the current shell session
+
+Only works in a session where rtx is already activated.
+
+Usage: shell [RUNTIME]...
+
+Arguments:
+  [RUNTIME]...
+          Runtime version(s) to use
+
+Examples:
+  $ rtx shell nodejs@20
+  $ node -v
+  v20.0.0
 ```
 ### `rtx uninstall`
 

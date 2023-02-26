@@ -3,6 +3,25 @@ source: src/shell/bash.rs
 expression: "bash.activate(exe, true)"
 ---
 export PATH="/some/dir:$PATH"
+export RTX_SHELL=bash
+
+rtx() {
+  local command
+  command="${1:-}"
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$command" in
+  deactivate|shell)
+    eval "$(/some/dir/rtx "$command" "$@")"
+    ;;
+  *)
+    command /some/dir/rtx "$command" "$@"
+    ;;
+  esac
+}
+
 _rtx_hook() {
   local previous_exit_status=$?;
   trap -- '' SIGINT;
@@ -13,4 +32,6 @@ _rtx_hook() {
 if ! [[ "${PROMPT_COMMAND:-}" =~ _rtx_hook ]]; then
   PROMPT_COMMAND="_rtx_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
+
+_rtx_hook
 

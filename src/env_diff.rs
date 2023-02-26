@@ -71,49 +71,49 @@ impl EnvDiff {
             indoc::formatdoc! {"
                 set -e
                 . {script}
-                env
+                export -p
             ", script = script.display()}
         )
         .full_env(&env)
         .read()?;
 
         let mut additions = HashMap::new();
+        let mut cur_key = None;
         for line in out.lines() {
-            let (k, v) = line.split_once('=').unwrap_or_default();
-            if k == "_"
-                || k == "SHLVL"
-                || k == "PATH"
-                || k == "PWD"
-                || k == "OLDPWD"
-                || k == "HOME"
-                || k == "USER"
-                || k == "SHELL"
-                || k == "SHELLOPTS"
-                || k == "COMP_WORDBREAKS"
-                || k == "PS1"
-                || k.is_empty() // this happens when exporting a function (export -f)
-                // TODO: consider removing this
-                // this is to make the ruby plugin compatible,
-                // it causes ruby to attempt to call asdf to reshim the binaries
-                // which we don't need or want to happen
-                || k == "RUBYLIB"
-                // following two ignores are for exported bash functions and exported bash
-                // functions which are multline, they appear in the environment as e.g.:
-                // BASH_FUNC_exported-bash-function%%=() { echo "this is an"
-                //  echo "exported bash function"
-                //  echo "with multiple lines"
-                // }
-                || k.starts_with("BASH_FUNC_")
-                || k.starts_with(' ')
-            {
-                continue;
+            match line.strip_prefix("declare -x ") {
+                Some(line) => {
+                    let (k, v) = line.split_once('=').unwrap_or_default();
+                    if valid_key(k) {
+                        continue;
+                    }
+                    cur_key = Some(k.to_string());
+                    additions.insert(k.to_string(), v.to_string());
+                }
+                None => {
+                    if let Some(k) = &cur_key {
+                        let v = format!("\n{}", line);
+                        additions.get_mut(k).unwrap().push_str(&v);
+                    }
+                }
             }
+        }
+        for (k, v) in additions.clone().iter() {
+            let v = if v.starts_with('"') && v.ends_with('"') {
+                v[1..v.len() - 1].to_string()
+            } else if v.starts_with("$'") && v.ends_with('\'') {
+                v[2..v.len() - 1].to_string()
+            } else {
+                v.to_string()
+            };
+            let v = v.replace("\\'", "'");
+            let v = v.replace("\\n", "\n");
             if let Some(orig) = env.get(k) {
-                if v == orig {
+                if &v == orig {
+                    additions.remove(k);
                     continue;
                 }
             }
-            additions.insert(k.into(), v.into());
+            additions.insert(k.into(), v);
         }
         Ok(Self::new(&env, additions))
     }
@@ -159,6 +159,34 @@ impl EnvDiff {
             path: self.path.clone(),
         }
     }
+}
+
+fn valid_key(k: &str) -> bool {
+    k.is_empty()
+        || k == "_"
+        || k == "SHLVL"
+        || k == "PATH"
+        || k == "PWD"
+        || k == "OLDPWD"
+        || k == "HOME"
+        || k == "USER"
+        || k == "SHELL"
+        || k == "SHELLOPTS"
+        || k == "COMP_WORDBREAKS"
+        || k == "PS1"
+        // TODO: consider removing this
+        // this is to make the ruby plugin compatible,
+        // it causes ruby to attempt to call asdf to reshim the binaries
+        // which we don't need or want to happen
+        || k == "RUBYLIB"
+        // following two ignores are for exported bash functions and exported bash
+        // functions which are multiline, they appear in the environment as e.g.:
+        // BASH_FUNC_exported-bash-function%%=() { echo "this is an"
+        //  echo "exported bash function"
+        //  echo "with multiple lines"
+        // }
+        || k.starts_with("BASH_FUNC_")
+        || k.starts_with(' ')
 }
 
 impl Debug for EnvDiff {

@@ -128,6 +128,9 @@ Unlike asdf which uses shim files to dynamically locate runtimes when they're ca
 any overhead, but it also makes it so commands like `which node` work as expected. This also
 means there isn't any need to run `asdf reshim` after installing new runtime binaries.
 
+rtx does not directly install runtimes. Instead, it uses asdf plugins to install runtimes. See
+[plugins](#plugins) below.
+
 ### Common example commands
 
     rtx install nodejs@20.0.0       Install a specific version number
@@ -191,17 +194,22 @@ $ brew install rtx
 
 ### Cargo
 
-Build from source with Cargo.
+Build from source with Cargo:
 
 ```sh-session
 $ cargo install rtx-cli
-```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh-session
 $ cargo install cargo-binstall
 $ cargo binstall rtx-cli
+```
+
+Build from the latest commit in main:
+
+```sh-session
+$ cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
 ### npm
@@ -224,7 +232,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.16.0/rtx-v1.16.0-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.17.0/rtx-v1.17.0-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -554,8 +562,12 @@ echo "lts/fermium 14"
 
 ## Plugins
 
-rtx uses asdf's plugin ecosystem under the hood. See https://github.com/asdf-vm/asdf-plugins for a
-list.
+rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
+`bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
+
+See https://github.com/asdf-vm/asdf-plugins for the list of built-in plugins shorthands. See asdf's
+[Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
+more about how they work.
 
 ## FAQs
 
