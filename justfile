@@ -45,6 +45,8 @@ test-coverage:
     RTX_SELF_UPDATE_VERSION=1.0.0 ./target/debug/rtx self-update <<EOF
     y
     EOF
+    cargo build
+    rtx implode
     cargo llvm-cov report --html
     cargo llvm-cov report --lcov --output-path lcov.info
 

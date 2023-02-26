@@ -114,6 +114,9 @@ _rtx() {
             rtx,settings)
                 cmd="rtx__settings"
                 ;;
+            rtx,shell)
+                cmd="rtx__shell"
+                ;;
             rtx,uninstall)
                 cmd="rtx__uninstall"
                 ;;
@@ -294,6 +297,9 @@ _rtx() {
             rtx__help,settings)
                 cmd="rtx__help__settings"
                 ;;
+            rtx__help,shell)
+                cmd="rtx__help__shell"
+                ;;
             rtx__help,uninstall)
                 cmd="rtx__help__uninstall"
                 ;;
@@ -460,7 +466,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins self-update settings uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins self-update settings shell uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -956,20 +962,12 @@ _rtx() {
             return 0
             ;;
         rtx__deactivate)
-            opts="-s -j -v -h --shell --log-level --jobs --verbose --help bash fish xonsh zsh"
+            opts="-j -v -h --log-level --jobs --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --shell)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
-                    return 0
-                    ;;
                 --log-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1288,7 +1286,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins self-update settings uninstall version where render-help help"
+            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins self-update settings shell uninstall version where render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1892,6 +1890,20 @@ _rtx() {
         rtx__help__settings__unset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__shell)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2678,6 +2690,32 @@ _rtx() {
         rtx__settings__unset)
             opts="-j -v -h --log-level --jobs --verbose --help <KEY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__shell)
+            opts="-j -v -h --log-level --jobs --verbose --help [RUNTIME]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

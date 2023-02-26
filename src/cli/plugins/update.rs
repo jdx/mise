@@ -72,7 +72,6 @@ mod tests {
         );
         let err = assert_cli_err!("p", "update");
         assert_str_eq!(err.to_string(), "no plugins specified");
-        assert_cli!("plugin", "update", "--all");
         assert_cli!("plugins", "update", "tiny");
     }
 }

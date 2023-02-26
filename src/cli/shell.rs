@@ -1,33 +1,51 @@
 use color_eyre::eyre::{eyre, Result};
+
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use std::env::join_paths;
 
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::env;
+use crate::dirs;
+
+use crate::file::touch_dir;
+
 use crate::output::Output;
 use crate::shell::get_shell;
+use crate::toolset::{ToolSource, ToolsetBuilder};
 
-/// Disable rtx for current shell session
+/// sets a runtime for the current shell session
 ///
-/// This can be used to temporarily disable rtx in a shell session.
+/// Only works in a session where rtx is already activated.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
-pub struct Deactivate {}
+pub struct Shell {
+    /// Runtime version(s) to use
+    #[clap(value_parser = RuntimeArgParser)]
+    runtime: Vec<RuntimeArg>,
+}
 
-impl Command for Deactivate {
+impl Command for Shell {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new()
+            .with_install_missing()
+            .with_args(&self.runtime)
+            .build(&config);
+
         if !config.is_activated() {
             err_inactive()?;
         }
-
         let shell = get_shell(None).expect("no shell detected");
 
-        let path = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let output = shell.deactivate(path);
-        out.stdout.write(output);
+        for rtv in ts.list_current_installed_versions() {
+            let source = &ts.versions.get(&rtv.plugin.name).unwrap().source;
+            if matches!(source, ToolSource::Argument) {
+                let k = format!("RTX_{}_VERSION", rtv.plugin.name.to_uppercase());
+                rtxprintln!(out, "{}", shell.set_env(&k, &rtv.version));
+            }
+        }
+        touch_dir(&dirs::ROOT)?;
 
         Ok(())
     }
@@ -46,25 +64,26 @@ fn err_inactive() -> Result<()> {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx deactivate bash
-      $ rtx deactivate zsh
-      $ rtx deactivate fish
-      $ execx($(rtx deactivate xonsh))
+      $ rtx shell nodejs@20
+      $ node -v
+      v20.0.0
     "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli_err, assert_cli_snapshot, env};
     use insta::assert_display_snapshot;
+    use std::env;
+
+    use crate::{assert_cli_err, assert_cli_snapshot};
 
     #[test]
-    fn test_deactivate() {
-        let err = assert_cli_err!("deactivate");
+    fn test_shell() {
+        let err = assert_cli_err!("shell", "tiny@1.0.1");
         assert_display_snapshot!(err);
         env::set_var("__RTX_DIFF", "");
         env::set_var("RTX_SHELL", "zsh");
-        assert_cli_snapshot!("deactivate");
+        assert_cli_snapshot!("shell", "tiny@1.0.1");
         env::remove_var("__RTX_DIFF");
         env::remove_var("RTX_SHELL");
     }

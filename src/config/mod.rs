@@ -61,6 +61,10 @@ impl Config {
         self.shorthands
             .get_or_init(|| get_shorthands(&self.settings))
     }
+
+    pub fn is_activated(&self) -> bool {
+        env::var("__RTX_DIFF").is_ok()
+    }
 }
 
 fn load_rtxrc() -> Result<RTXFile> {

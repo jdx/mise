@@ -18,7 +18,7 @@ pub enum ShellType {
 
 impl ShellType {
     pub fn load() -> Option<ShellType> {
-        let shell = env::var("SHELL").ok()?;
+        let shell = env::var("RTX_SHELL").or(env::var("SHELL")).ok()?;
         if shell.ends_with("bash") {
             Some(ShellType::Bash)
         } else if shell.ends_with("fish") {
