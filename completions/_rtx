@@ -272,8 +272,6 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (deactivate)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
-'--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
@@ -281,7 +279,6 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- Shell type to generate the script for:(bash fish xonsh zsh)' \
 && ret=0
 ;;
 (direnv)
@@ -799,6 +796,18 @@ esac
     ;;
 esac
 ;;
+(shell)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::runtime -- Runtime version(s) to use:' \
+&& ret=0
+;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
@@ -1082,6 +1091,10 @@ _arguments "${_arguments_options[@]}" \
     ;;
 esac
 ;;
+(shell)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1147,6 +1160,7 @@ _rtx_commands() {
 'p:Manage plugins' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
+'shell:sets a runtime for the current shell session' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
@@ -1493,6 +1507,7 @@ _rtx__help_commands() {
 'plugins:Manage plugins' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
+'shell:sets a runtime for the current shell session' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
@@ -1798,6 +1813,16 @@ _rtx__settings_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx settings commands' commands "$@"
+}
+(( $+functions[_rtx__help__shell_commands] )) ||
+_rtx__help__shell_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help shell commands' commands "$@"
+}
+(( $+functions[_rtx__shell_commands] )) ||
+_rtx__shell_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx shell commands' commands "$@"
 }
 (( $+functions[_rtx__help__plugins__uninstall_commands] )) ||
 _rtx__help__plugins__uninstall_commands() {

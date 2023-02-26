@@ -10,7 +10,7 @@ fn init() {
     env::set_var("NO_COLOR", "1");
     env_logger::init();
     reset_config();
-    assert_cli!("install", "tiny", "dummy");
+    assert_cli!("install", "tiny@1", "tiny@2", "tiny@3", "tiny", "dummy");
 }
 
 pub fn reset_config() {

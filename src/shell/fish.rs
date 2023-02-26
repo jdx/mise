@@ -22,6 +22,20 @@ impl Shell for Fish {
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
+            set -gx RTX_SHELL fish
+
+            function rtx
+              set command $argv[1]
+              set -e argv[1]
+
+              switch "$command"
+              case deactivate shell
+                source ({exe} "$command" $argv|psub)
+              case '*'
+                command {exe} "$command" $argv
+              end
+            end
+
             function __rtx_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{status} -s fish | source;
 

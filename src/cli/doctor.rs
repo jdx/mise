@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use crate::cli;
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::env;
+
 use crate::output::Output;
 
 /// Check rtx installation for possible problems.
@@ -15,7 +15,7 @@ use crate::output::Output;
 pub struct Doctor {}
 
 impl Command for Doctor {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut checks = Vec::new();
         for plugin in config.plugins.values() {
             if !plugin.is_installed() {
@@ -32,17 +32,20 @@ impl Command for Doctor {
             )
         }
 
-        if env::var("__RTX_DIFF").is_err() {
+        if !config.is_activated() {
             checks.push(
                 "rtx is not activated, run `rtx help activate` for setup instructions".to_string(),
             );
         }
+
+        rtxprintln!(out, "{}", &config);
 
         for check in &checks {
             error!("{}", check);
         }
 
         if checks.is_empty() {
+            rtxprintln!(out, "No problems found");
             Ok(())
         } else {
             Err(eyre!("{} problems found", checks.len()))

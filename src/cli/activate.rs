@@ -5,7 +5,8 @@ use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::env;
+
+use crate::env::RTX_EXE;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
@@ -39,12 +40,7 @@ impl Command for Activate {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
-        let exe = if cfg!(test) {
-            "rtx".into()
-        } else {
-            env::RTX_EXE.to_path_buf()
-        };
-        let output = shell.activate(&exe, self.status);
+        let output = shell.activate(&RTX_EXE, self.status);
         out.stdout.write(output);
 
         Ok(())
