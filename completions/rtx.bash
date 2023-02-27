@@ -2494,7 +2494,7 @@ _rtx() {
             return 0
             ;;
         rtx__reshim)
-            opts="-j -v -h --log-level --jobs --verbose --help [PLUGIN]"
+            opts="-j -v -h --log-level --jobs --verbose --help [PLUGIN] [VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
