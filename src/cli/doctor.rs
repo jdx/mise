@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use crate::cli;
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env;
 
 use crate::output::Output;
 
@@ -32,13 +33,14 @@ impl Command for Doctor {
             )
         }
 
+        rtxprintln!(out, "{}\n", &config);
+        rtxprintln!(out, "{}\n", rtx_env_vars());
+
         if !config.is_activated() {
             checks.push(
                 "rtx is not activated, run `rtx help activate` for setup instructions".to_string(),
             );
         }
-
-        rtxprintln!(out, "{}", &config);
 
         for check in &checks {
             error!("{}", check);
@@ -51,6 +53,17 @@ impl Command for Doctor {
             Err(eyre!("{} problems found", checks.len()))
         }
     }
+}
+
+fn rtx_env_vars() -> String {
+    let vars = env::vars()
+        .filter(|(k, _)| k.starts_with("RTX_"))
+        .collect::<Vec<(String, String)>>();
+    let mut s = style("rtx environment variables:\n").bold().to_string();
+    for (k, v) in vars {
+        s.push_str(&format!("{}={}\n", k, v));
+    }
+    s
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
