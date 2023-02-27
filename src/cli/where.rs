@@ -53,13 +53,13 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     {}
       # Show the latest installed version of nodejs
       # If it is is not installed, errors
-      $ rtx where nodejs@20
-      /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+      $ rtx where nodejs@18
+      /Users/jdx/.local/share/rtx/installs/nodejs/18.0.0
 
       # Show the current, active install directory of nodejs
       # Errors if nodejs is not referenced in any .tool-version file
       $ rtx where nodejs
-      /Users/jdx/.local/share/rtx/installs/nodejs/20.0.0
+      /Users/jdx/.local/share/rtx/installs/nodejs/18.0.0
     "#, style("Examples:").bold().underlined()}
 });
 

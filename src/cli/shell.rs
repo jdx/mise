@@ -64,7 +64,7 @@ fn err_inactive() -> Result<()> {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx shell nodejs@20
+      $ rtx shell nodejs@18
       $ node -v
       v20.0.0
     "#, style("Examples:").bold().underlined()}

@@ -27,7 +27,7 @@ use crate::toolset::ToolsetBuilder;
 pub struct Install {
     /// Runtime(s) to install
     ///
-    /// e.g.: nodejs@20
+    /// e.g.: nodejs@18
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Option<Vec<RuntimeArg>>,
 
