@@ -30,6 +30,7 @@ impl Command for SettingsSet {
             "legacy_version_file" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
             "verbose" => parse_bool(&self.value)?,
+            "asdf_compat" => parse_bool(&self.value)?,
             "jobs" => parse_i64(&self.value)?,
             "shorthands_file" => self.value.into(),
             "disable_default_shorthands" => parse_bool(&self.value)?,
