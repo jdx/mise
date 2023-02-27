@@ -1336,7 +1336,7 @@ Examples:
   $ rtx settings set shims_dir ~/.rtx/shims
   $ rtx reshim
   $ ~/.rtx/shims/node -v
-  v20.0.0
+  v18.0.0
 ```
 ### `rtx self-update`
 
@@ -1432,7 +1432,7 @@ Arguments:
 Examples:
   $ rtx shell nodejs@18
   $ node -v
-  v20.0.0
+  v18.0.0
 ```
 ### `rtx uninstall`
 

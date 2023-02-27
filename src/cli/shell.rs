@@ -66,7 +66,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     {}
       $ rtx shell nodejs@18
       $ node -v
-      v20.0.0
+      v18.0.0
     "#, style("Examples:").bold().underlined()}
 });
 
