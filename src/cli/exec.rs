@@ -13,6 +13,7 @@ use crate::cli::command::Command;
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::Ignore;
 use crate::env;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
@@ -55,6 +56,10 @@ impl Command for Exec {
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
         let mut env = ts.env();
         env.insert("PATH".into(), ts.path_env());
+        if config.settings.missing_runtime_behavior != Ignore {
+            // prevent rtx from auto-installing inside a shim
+            env.insert("RTX_MISSING_RUNTIME_BEHAVIOR".into(), "warn".into());
+        }
 
         exec(program, args, env)
     }
