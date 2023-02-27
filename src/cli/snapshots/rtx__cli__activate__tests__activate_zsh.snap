@@ -3,14 +3,16 @@ source: src/cli/activate.rs
 expression: output
 ---
 export PATH=":$PATH"
-export RTX_SHELL=bash
+export RTX_SHELL=zsh
 
 rtx() {
   local command
   command="${1:-}"
-  if [ "$#" -gt 0 ]; then
-    shift
+  if [ "$#" = 0 ]; then
+    command rtx
+    return
   fi
+  shift
 
   case "$command" in
   deactivate|shell)

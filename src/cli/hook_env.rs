@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::direnv::DirenvDiff;
 use crate::env::__RTX_DIFF;
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
+use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
@@ -38,7 +38,8 @@ impl Command for HookEnv {
         }
         let ts = ToolsetBuilder::new().with_install_missing().build(&config);
 
-        self.clear_old_env(out);
+        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
+        out.stdout.write(hook_env::clear_old_env(&*shell));
         let env = ts.env();
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
@@ -50,7 +51,7 @@ impl Command for HookEnv {
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&config)?);
 
-        let output = self.build_env_commands(&patches);
+        let output = hook_env::build_env_commands(&*shell, &patches);
         out.stdout.write(output);
         if self.status {
             self.display_status(&ts, out);
@@ -61,33 +62,6 @@ impl Command for HookEnv {
 }
 
 impl HookEnv {
-    fn build_env_commands(&self, patches: &EnvDiffPatches) -> String {
-        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
-        let mut output = String::new();
-
-        for patch in patches.iter() {
-            match patch {
-                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                    output.push_str(&shell.set_env(k, v));
-                }
-                EnvDiffOperation::Remove(k) => {
-                    output.push_str(&shell.unset_env(k));
-                }
-            }
-        }
-
-        output
-    }
-
-    fn clear_old_env(&self, out: &mut Output) {
-        let mut patches = env::__RTX_DIFF.reverse().to_patches();
-        if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
-            patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
-        }
-        let output = self.build_env_commands(&patches);
-        out.stdout.write(output);
-    }
-
     fn display_status(&self, ts: &Toolset, out: &mut Output) {
         let installed_versions = ts
             .list_current_installed_versions()
