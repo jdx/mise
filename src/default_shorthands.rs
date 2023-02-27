@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 612] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 613] = [
     // rtx custom aliases
     ("node", "https://github.com/asdf-vm/asdf-nodejs.git"),
     ("tiny", "https://github.com/jdxcode/rtx-tiny.git"),
@@ -560,6 +560,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 612] = [
     ("tfenv", "https://github.com/carlduevel/asdf-tfenv.git"),
     ("tflint", "https://github.com/skyzyx/asdf-tflint.git"),
     ("tfmigrate", "https://github.com/dex4er/asdf-tfmigrate.git"),
+    ("tfnotify", "https://github.com/jnavarrof/asdf-tfnotify.git"),
     ("tfsec", "https://github.com/woneill/asdf-tfsec.git"),
     ("tfstate-lookup", "https://github.com/carnei-ro/asdf-tfstate-lookup.git"),
     ("tfupdate", "https://github.com/yuokada/asdf-tfupdate.git"),
