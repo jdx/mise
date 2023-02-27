@@ -133,16 +133,16 @@ rtx does not directly install runtimes. Instead, it uses asdf plugins to install
 
 ### Common example commands
 
-    rtx install nodejs@20.0.0       Install a specific version number
-    rtx install nodejs@20.0         Install a fuzzy version number
-    rtx local nodejs@20             Use node-20.x in current project
-    rtx global nodejs@20            Use node-20.x as default
+    rtx install nodejs@18.0.0       Install a specific version number
+    rtx install nodejs@18.0         Install a fuzzy version number
+    rtx local nodejs@18             Use node-18.x in current project
+    rtx global nodejs@18            Use node-18.x as default
 
     rtx install nodejs              Install the version specified in .tool-versions
     rtx local nodejs@latest         Use latest node in current directory
     rtx global nodejs@system        Use system node as default
 
-    rtx x nodejs@20 -- node app.js  Run `node app.js` with the PATH pointing to node-20.x
+    rtx x nodejs@18 -- node app.js  Run `node app.js` with the PATH pointing to node-18.x
 
 ## Installation
 
@@ -351,7 +351,7 @@ The `.tool-versions` file is used to specify the runtime versions for a project.
 is:
 
 ```
-nodejs      20.0.0       # comments are allowed
+nodejs      18.0.0       # comments are allowed
 ruby        3            # can be fuzzy version
 shellcheck  latest       # also supports "latest"
 jq          1.6
@@ -439,8 +439,8 @@ rtx can also be configured via environment variables. The following options are 
 This is the same as the `missing_runtime_behavior` config option in `~/.config/rtx/config.toml`.
 
 ```sh-session
-$ RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@20
-$ RTX_NODEJS_VERSION=20 rtx exec -- node --version
+$ RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@18
+$ RTX_NODEJS_VERSION=18 rtx exec -- node --version
 ```
 
 #### `RTX_DATA_DIR`
@@ -462,7 +462,7 @@ Set to something other than ".tool-versions" to have rtx look for configuration 
 
 #### `RTX_${{PLUGIN}}_VERSION`
 
-Set the version for a runtime. For example, `RTX_NODEJS_VERSION=20` will use nodejs@20.x regardless
+Set the version for a runtime. For example, `RTX_NODEJS_VERSION=18` will use nodejs@18.x regardless
 of what is set in `.tool-versions`.
 
 #### `RTX_LEGACY_VERSION_FILE`

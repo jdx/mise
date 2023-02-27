@@ -147,12 +147,12 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
       $ rtx list
-      -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+      -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
       -> python     3.11.0 (set by ~/.tool-versions)
          python     3.10.0
 
       $ rtx list --current
-      -> nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+      -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
       -> python     3.11.0 (set by ~/.tool-versions)
     "#, style("Examples:").bold().underlined()}
 });

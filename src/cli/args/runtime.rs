@@ -21,7 +21,7 @@ pub enum RuntimeArgVersion {
     /// Nothing was specified, e.g.: `nodejs`
     None,
     /// references a version, version prefix, or alias
-    /// e.g.: `nodejs@20`, `nodejs@latest`, `nodejs@lts`
+    /// e.g.: `nodejs@18`, `nodejs@latest`, `nodejs@lts`
     Version(String),
     /// use the system runtime already on PATH
     /// e.g.: `nodejs@system`
@@ -66,9 +66,9 @@ impl RuntimeArg {
     }
 
     /// this handles the case where the user typed in:
-    /// rtx local nodejs 20.0.0
+    /// rtx local nodejs 18.0.0
     /// instead of
-    /// rtx local nodejs@20.0.0
+    /// rtx local nodejs@18.0.0
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.
