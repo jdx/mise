@@ -1,0 +1,170 @@
+name: test-plugins
+
+# Test Top 50 asdf plugins install correctly and the most common can print their
+# current version
+
+on:
+  push:
+    tags: ["v*"]
+  schedule:
+    # run at midnight on sunday (utc?)
+    - cron: 0 0 * * 0
+#  pull_request:
+#    branches: ["main"]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - run: scripts/build-tarball.sh rtx --release --target x86_64-unknown-linux-gnu
+      - uses: actions/upload-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: |
+            dist/*.tar.xz
+            dist/*.tar.gz
+          if-no-files-found: error
+  test-install-and-run:
+    runs-on: ubuntu-22.04
+    needs: [build-linux]
+    continue-on-error: true
+    env:
+      RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
+    strategy:
+      matrix:
+        include:
+          - plugin: nodejs
+            command: rtx exec nodejs@latest -- node -v
+          - plugin: ruby
+            command: rtx exec ruby@latest -- ruby --version
+          - plugin: python
+            command: rtx exec python@latest -- python -V
+          - plugin: direnv
+            command: rtx exec direnv@latest -- direnv --version
+          - plugin: erlang
+            command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+          - plugin: elixir
+            command: |
+              rtx global erlang@latest
+              eval "$(rtx env bash)"
+              rtx global elixir@latest
+              eval "$(rtx env bash)"
+              rtx exec -- elixir --version
+          - plugin: golang
+            command: rtx exec golang@latest -- go version
+          - plugin: java@openjdk
+            command: rtx exec java@openjdk -- java -version
+          - plugin: terraform
+            command: rtx exec terraform@latest -- terraform -v
+          - plugin: yarn
+            command: rtx exec yarn@latest -- yarn --version
+          - plugin: deno
+            command: rtx exec deno@latest -- deno --version
+          - plugin: bun
+            command: rtx exec bun@latest -- bun --version
+          - plugin: kubectl
+            command: rtx exec kubectl@latest -- kubectl version --client
+          - plugin: dotnet
+            command: rtx exec dotnet@latest-core -- dotnet --list-sdks
+          - plugin: flutter
+            command: rtx exec flutter@latest -- flutter --version
+          - plugin: crystal
+            command: rtx exec crystal@latest -- crystal -v
+          - plugin: neovim
+            command: rtx exec neovim@latest -- nvim --version
+          - plugin: php
+            command: rtx exec php@latest -- php -v php
+          - plugin: rust
+            command: rtx exec rust@latest -- rustc -V
+          - plugin: postgres
+            command: rtx exec postgres@latest -- psql -V
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+          # dist/rtx-v1.16.0-linux-x64.tar.xz
+          # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx -v
+      - run: ${{matrix.command}}
+  test-install:
+    # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
+    # installing is a better-than-nothing smoke test that the plugin is correctly implemented
+    # and behaves as expected with rtx.
+    runs-on: ubuntu-22.04
+    needs: [build-linux]
+    continue-on-error: true
+    strategy:
+      matrix:
+        plugins:
+          - waypoint
+          - vault
+          - tfc-agent
+          - terraform-ls
+          - serf
+          - sentinel
+          - packer
+          - nomad
+          - levant
+          - consul
+          - boundary
+          - postgres
+          - rust
+          - action-validator
+          - dotnet-core
+          - neovim
+          - poetry
+          # TODO: - haskell not working due to already existing on image
+          - link
+          - lua
+          - redis
+          - gcloud
+          - helm
+          - gleam
+          - awscli
+          - dart
+          - conan
+          - awsebcli
+          - aws-sam-cli
+          - ansible-base
+          - kotlin
+          - pnpm
+          - ocaml
+          # TODO: - rebar install erlang first
+          - julia
+          - elm
+          # TODO: - R install libcurl
+          - nim
+          - alias
+          - mysql
+          - minikube
+          - gradle
+          - zig
+          - shellcheck
+          - scala
+          - maven
+          - kustomize
+          - graalvm
+          - sbcl
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx install ${{matrix.plugins}}@latest
