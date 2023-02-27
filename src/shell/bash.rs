@@ -22,9 +22,11 @@ impl Shell for Bash {
             rtx() {{
               local command
               command="${{1:-}}"
-              if [ "$#" -gt 0 ]; then
-                shift
+              if [ "$#" = 0 ]; then
+                command {exe}
+                return
               fi
+              shift
 
               case "$command" in
               deactivate|shell)
@@ -53,10 +55,12 @@ impl Shell for Bash {
         out
     }
 
-    fn deactivate(&self, path: String) -> String {
+    fn deactivate(&self) -> String {
         formatdoc! {r#"
-            export PATH="{path}";
-            unset _rtx_hook;
+            PROMPT_COMMAND="${{PROMPT_COMMAND//_rtx_hook/}}"
+            unset _rtx_hook
+            unset rtx
+            unset RTX_SHELL
         "#}
     }
 
@@ -82,22 +86,22 @@ mod tests {
     fn test_hook_init() {
         let bash = Bash::default();
         let exe = Path::new("/some/dir/rtx");
-        insta::assert_snapshot!(bash.activate(exe, true));
+        assert_snapshot!(bash.activate(exe, true));
     }
 
     #[test]
     fn test_set_env() {
-        insta::assert_snapshot!(Bash::default().set_env("FOO", "1"));
+        assert_snapshot!(Bash::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_unset_env() {
-        insta::assert_snapshot!(Bash::default().unset_env("FOO"));
+        assert_snapshot!(Bash::default().unset_env("FOO"));
     }
 
     #[test]
     fn test_deactivate() {
-        let deactivate = Bash::default().deactivate("/some/path".into());
+        let deactivate = Bash::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
 }

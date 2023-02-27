@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -10,6 +11,8 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 use crate::config::Config;
+use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
+use crate::shell::Shell;
 use crate::{dirs, env};
 
 /// this function will early-exit the application if hook-env is being
@@ -157,4 +160,29 @@ pub fn get_watch_files(config: &Config) -> HashSet<PathBuf> {
     }
 
     watches
+}
+
+pub fn clear_old_env(shell: &dyn Shell) -> String {
+    let mut patches = env::__RTX_DIFF.reverse().to_patches();
+    if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
+        patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
+    }
+    build_env_commands(shell, &patches)
+}
+
+pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
+    let mut output = String::new();
+
+    for patch in patches.iter() {
+        match patch {
+            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                output.push_str(&shell.set_env(k, v));
+            }
+            EnvDiffOperation::Remove(k) => {
+                output.push_str(&shell.unset_env(k));
+            }
+        }
+    }
+
+    output
 }

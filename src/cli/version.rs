@@ -47,7 +47,7 @@ impl Command for Version {
 }
 
 pub fn print_version_if_requested(args: &[String], out: &mut Output) {
-    if args.len() == 2 && args[0] == "rtx" || args[0].ends_with("/rtx") {
+    if args.len() == 2 && (args[0] == "rtx" || args[0].ends_with("/rtx")) {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version(out);

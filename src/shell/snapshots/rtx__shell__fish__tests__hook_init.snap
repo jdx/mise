@@ -6,6 +6,11 @@ fish_add_path -g /some/dir
 set -gx RTX_SHELL fish
 
 function rtx
+  if test (count $argv) -eq 0
+    command /some/dir/rtx
+    return
+  end
+
   set command $argv[1]
   set -e argv[1]
 

@@ -25,6 +25,11 @@ impl Shell for Fish {
             set -gx RTX_SHELL fish
 
             function rtx
+              if test (count $argv) -eq 0
+                command {exe}
+                return
+              end
+
               set command $argv[1]
               set -e argv[1]
 
@@ -66,12 +71,13 @@ impl Shell for Fish {
         out
     }
 
-    fn deactivate(&self, path: String) -> String {
+    fn deactivate(&self) -> String {
         formatdoc! {r#"
-          set -gx PATH "{path}";
-          functions --erase __rtx_env_eval;
-          functions --erase __rtx_env_eval_2;
-          functions --erase __rtx_cd_hook;
+          functions --erase __rtx_env_eval
+          functions --erase __rtx_env_eval_2
+          functions --erase __rtx_cd_hook
+          functions --erase rtx
+          set -e RTX_SHELL
         "#}
     }
 
@@ -112,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_deactivate() {
-        let deactivate = Fish::default().deactivate("/some/path".into());
+        let deactivate = Fish::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
 }
