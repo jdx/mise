@@ -1,3 +1,4 @@
+use std::fs;
 use std::string::ToString;
 use std::time::Duration;
 
@@ -9,6 +10,8 @@ use versions::Versioning;
 use crate::build_time::BUILD_TIME;
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::dirs;
+use crate::file::modified_duration;
 use crate::output::Output;
 
 #[derive(Debug, clap::Args)]
@@ -72,7 +75,7 @@ fn show_latest() {
 }
 
 pub fn check_for_new_version() -> Option<String> {
-    if let Some(latest) = get_latest_version() {
+    if let Some(latest) = get_latest_version().and_then(|v| Versioning::new(&v)) {
         let current = Versioning::new(env!("CARGO_PKG_VERSION")).unwrap();
         if current < latest {
             return Some(latest.to_string());
@@ -81,20 +84,34 @@ pub fn check_for_new_version() -> Option<String> {
     None
 }
 
-fn get_latest_version() -> Option<Versioning> {
+fn get_latest_version() -> Option<String> {
+    let version_file_path = dirs::CACHE.join("latest-version");
+    if let Ok(metadata) = modified_duration(&version_file_path) {
+        if metadata < Duration::from_secs(60 * 60 * 24) {
+            if let Ok(version) = fs::read_to_string(&version_file_path) {
+                return Some(version);
+            }
+        }
+    }
+    let version = get_latest_version_call()?;
+    let _ = fs::create_dir_all(&*dirs::CACHE);
+    let _ = fs::write(version_file_path, &version);
+    Some(version)
+}
+
+fn get_latest_version_call() -> Option<String> {
+    const URL: &str = "https://rtx.jdxcode.com/VERSION";
+    debug!("checking for version from {}", URL);
     reqwest::blocking::ClientBuilder::new()
-        .timeout(Duration::from_secs(1))
+        .timeout(Duration::from_secs(2))
         .build()
         .ok()?
-        .get("https://rtx.jdxcode.com/VERSION")
+        .get(URL)
         .send()
         .ok()
         .and_then(|res| {
             if res.status().is_success() {
-                return res
-                    .text()
-                    .ok()
-                    .and_then(|text| Versioning::new(text.as_str().trim()));
+                return res.text().ok().map(|text| text.trim().to_string());
             }
             debug!("failed to check for version: {:#?}", res);
             None
