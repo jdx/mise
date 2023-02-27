@@ -204,17 +204,17 @@ https://asdf-vm.com/"};
 static AFTER_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! { "
     {}
-      rtx install nodejs@20.0.0       Install a specific node version
-      rtx install nodejs@20.0         Install a version matching a prefix
-      rtx local nodejs@20             Use node-20.x in current project
-      rtx global nodejs@20            Use node-20.x as default
+      rtx install nodejs@18.0.0       Install a specific node version
+      rtx install nodejs@18.0         Install a version matching a prefix
+      rtx local nodejs@18             Use node-18.x in current project
+      rtx global nodejs@18            Use node-18.x as default
 
       rtx install nodejs              Install the .tool-versions node version
       rtx local nodejs                Use latest node in current directory
       rtx global system               Use system node everywhere unless overridden
 
-      rtx x nodejs@20 -- node app.js  Run `node app.js` with PATH pointing to
-                                      node-20.x
+      rtx x nodejs@18 -- node app.js  Run `node app.js` with PATH pointing to
+                                      node-18.x
 ", style("Examples:").bold().underlined()  }
 });
 

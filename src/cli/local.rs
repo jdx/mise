@@ -20,7 +20,7 @@ use crate::{dirs, env, file};
 pub struct Local {
     /// Runtimes to add to .tool-versions
     ///
-    /// e.g.: nodejs@20
+    /// e.g.: nodejs@18
     /// if this is a single runtime with no version,
     /// the current value of .tool-versions will be displayed
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
@@ -33,13 +33,13 @@ pub struct Local {
 
     /// Save exact version to `.tool-versions`
     ///
-    /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
+    /// e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `.tool-versions`
     ///
-    /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
+    /// e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
@@ -98,23 +98,23 @@ impl Command for Local {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      # set the current version of nodejs to 20.x for the current directory
-      # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-      $ rtx local nodejs@20
+      # set the current version of nodejs to 18.x for the current directory
+      # will use a precise version (e.g.: 18.0.0) in .tool-versions file
+      $ rtx local nodejs@18
 
-      # set nodejs to 20.x for the current project (recurses up to find .tool-versions)
-      $ rtx local -p nodejs@20
+      # set nodejs to 18.x for the current project (recurses up to find .tool-versions)
+      $ rtx local -p nodejs@18
 
-      # set the current version of nodejs to 20.x for the current directory
-      # will use a fuzzy version (e.g.: 20) in .tool-versions file
-      $ rtx local --fuzzy nodejs@20
+      # set the current version of nodejs to 18.x for the current directory
+      # will use a fuzzy version (e.g.: 18) in .tool-versions file
+      $ rtx local --fuzzy nodejs@18
 
       # removes nodejs from .tool-versions
       $ rtx local --remove=nodejs
 
       # show the current version of nodejs in .tool-versions
       $ rtx local nodejs
-      20.0.0
+      18.0.0
     "#, style("Examples:").bold().underlined()}
 });
 
