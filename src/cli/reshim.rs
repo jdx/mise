@@ -150,6 +150,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx settings set shims_dir ~/.rtx/shims
       $ rtx reshim
       $ ~/.rtx/shims/node -v
-      v20.0.0
+      v18.0.0
     "#, style("Examples:").bold().underlined()}
 });
