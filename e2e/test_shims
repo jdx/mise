@@ -14,3 +14,5 @@ rtx settings set experimental true
 rtx settings set shims_dir "$RTX_DATA_DIR/shims"
 rtx reshim
 assert "$RTX_DATA_DIR/shims/node -v" "v18.0.0"
+rtx settings unset experimental
+rtx settings unset shims_dir

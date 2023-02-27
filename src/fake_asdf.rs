@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 
 use crate::env;
 
-fn setup() -> color_eyre::Result<PathBuf> {
+pub fn setup() -> color_eyre::Result<PathBuf> {
     static SETUP: OnceCell<PathBuf> = OnceCell::new();
     let path = SETUP.get_or_try_init(|| {
         let path = env::RTX_DATA_DIR.join(".fake-asdf");
