@@ -98,6 +98,7 @@ impl RTXFile {
                     Some(self.parse_duration_minutes(k, v)?)
             }
             "verbose" => self.settings.verbose = Some(self.parse_bool(k, v)?),
+            "asdf_compat" => self.settings.asdf_compat = Some(self.parse_bool(k, v)?),
             "jobs" => self.settings.jobs = Some(self.parse_usize(k, v)?),
             "shorthands_file" => self.settings.shorthands_file = Some(self.parse_path(k, v)?),
             "disable_default_shorthands" => {
