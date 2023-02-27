@@ -5,8 +5,10 @@ use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::dirs;
 
 use crate::env::RTX_EXE;
+use crate::file::touch_dir;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
@@ -40,6 +42,9 @@ impl Command for Activate {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
+        // touch ROOT to allow hook-env to run
+        let _ = touch_dir(&dirs::ROOT);
+
         let output = shell.activate(&RTX_EXE, self.status);
         out.stdout.write(output);
 
@@ -59,7 +64,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-
     use crate::assert_cli_snapshot;
 
     #[test]
