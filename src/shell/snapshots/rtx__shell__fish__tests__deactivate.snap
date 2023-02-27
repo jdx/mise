@@ -2,8 +2,9 @@
 source: src/shell/fish.rs
 expression: replace_path(&deactivate)
 ---
-set -gx PATH "/some/path";
-functions --erase __rtx_env_eval;
-functions --erase __rtx_env_eval_2;
-functions --erase __rtx_cd_hook;
+functions --erase __rtx_env_eval
+functions --erase __rtx_env_eval_2
+functions --erase __rtx_cd_hook
+functions --erase rtx
+set -e RTX_SHELL
 

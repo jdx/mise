@@ -74,11 +74,10 @@ impl Shell for Xonsh {
         out
     }
 
-    fn deactivate(&self, path: String) -> String {
+    fn deactivate(&self) -> String {
         formatdoc! {r#"
             from xonsh.built_ins  import XSH
 
-            environ['PATH'] = '{path}'
             hooks = {{
               'on_pre_prompt' : ['listen_prompt'],
             }}
@@ -157,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_xonsh_deactivate() {
-        let deactivate = Xonsh::default().deactivate("oldpath".into());
+        let deactivate = Xonsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
 }
