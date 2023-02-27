@@ -357,6 +357,18 @@ impl Toolset {
             }
         }
     }
+
+    pub fn which(&self, bin_name: &str) -> Option<&RuntimeVersion> {
+        self.list_current_installed_versions()
+            .into_par_iter()
+            .find_first(|v| {
+                if let Ok(x) = v.which(bin_name) {
+                    x.is_some()
+                } else {
+                    false
+                }
+            })
+    }
 }
 
 impl Display for Toolset {

@@ -857,6 +857,18 @@ _arguments "${_arguments_options[@]}" \
 '::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
 && ret=0
 ;;
+(which)
+_arguments "${_arguments_options[@]}" \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':bin_name:' \
+&& ret=0
+;;
 (render-help)
 _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
@@ -1124,6 +1136,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(which)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (render-help)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1182,6 +1198,7 @@ _rtx_commands() {
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
+'which:shows the plugin that a bin points to' \
 'render-help:internal command to generate markdown from help' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -1530,6 +1547,7 @@ _rtx__help_commands() {
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
+'which:shows the plugin that a bin points to' \
 'render-help:internal command to generate markdown from help' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -1942,6 +1960,16 @@ _rtx__help__where_commands() {
 _rtx__where_commands() {
     local commands; commands=()
     _describe -t commands 'rtx where commands' commands "$@"
+}
+(( $+functions[_rtx__help__which_commands] )) ||
+_rtx__help__which_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help which commands' commands "$@"
+}
+(( $+functions[_rtx__which_commands] )) ||
+_rtx__which_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx which commands' commands "$@"
 }
 
 _rtx "$@"
