@@ -2,11 +2,10 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use std::env::join_paths;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::env;
+use crate::hook_env;
 use crate::output::Output;
 use crate::shell::get_shell;
 
@@ -25,8 +24,8 @@ impl Command for Deactivate {
 
         let shell = get_shell(None).expect("no shell detected");
 
-        let path = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let output = shell.deactivate(path);
+        out.stdout.write(hook_env::clear_old_env(&*shell));
+        let output = shell.deactivate();
         out.stdout.write(output);
 
         Ok(())
@@ -55,8 +54,9 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli_err, assert_cli_snapshot, env};
     use insta::assert_display_snapshot;
+
+    use crate::{assert_cli_err, assert_cli_snapshot, env};
 
     #[test]
     fn test_deactivate() {

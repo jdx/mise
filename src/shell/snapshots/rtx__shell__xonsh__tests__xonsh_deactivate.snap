@@ -4,7 +4,6 @@ expression: replace_path(&deactivate)
 ---
 from xonsh.built_ins  import XSH
 
-environ['PATH'] = 'oldpath'
 hooks = {
   'on_pre_prompt' : ['listen_prompt'],
 }

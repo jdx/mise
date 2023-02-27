@@ -21,14 +21,16 @@ impl Shell for Zsh {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
-            export RTX_SHELL=bash
+            export RTX_SHELL=zsh
 
             rtx() {{
               local command
               command="${{1:-}}"
-              if [ "$#" -gt 0 ]; then
-                shift
+              if [ "$#" = 0 ]; then
+                command {exe}
+                return
               fi
+              shift
 
               case "$command" in
               deactivate|shell)
@@ -60,10 +62,13 @@ impl Shell for Zsh {
         out
     }
 
-    fn deactivate(&self, path: String) -> String {
+    fn deactivate(&self) -> String {
         formatdoc! {r#"
-        export PATH="{path}";
-        unset _rtx_hook;
+        precmd_functions=( ${{precmd_functions[(r)_rtx_hook]}} )
+        chpwd_functions=( ${{chpwd_functions[(r)_rtx_hook]}} )
+        unset -f _rtx_hook
+        unset -f rtx
+        unset RTX_SHELL
         "#}
     }
 
@@ -86,22 +91,22 @@ mod tests {
     fn test_hook_init() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/rtx");
-        insta::assert_snapshot!(zsh.activate(exe, true));
+        assert_snapshot!(zsh.activate(exe, true));
     }
 
     #[test]
     fn test_set_env() {
-        insta::assert_snapshot!(Zsh::default().set_env("FOO", "1"));
+        assert_snapshot!(Zsh::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_unset_env() {
-        insta::assert_snapshot!(Zsh::default().unset_env("FOO"));
+        assert_snapshot!(Zsh::default().unset_env("FOO"));
     }
 
     #[test]
     fn test_deactivate() {
-        let deactivate = Zsh::default().deactivate("foo".into());
+        let deactivate = Zsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
 }
