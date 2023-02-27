@@ -7,6 +7,10 @@ use crate::{assert_cli, env};
 
 #[ctor::ctor]
 fn init() {
+    if env::var("__RTX_DIFF").is_ok() {
+        // TODO: fix this
+        panic!("cannot run tests when rtx is activated");
+    }
     env::set_var("NO_COLOR", "1");
     env_logger::init();
     reset_config();
