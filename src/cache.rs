@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::file::modified_duration;
 use color_eyre::eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -117,15 +118,11 @@ where
     fn freshest_duration(&self) -> Option<Duration> {
         let mut freshest = self.fresh_duration;
         for path in &self.fresh_files {
-            if let Ok(metadata) = path.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    let duration = modified.elapsed().unwrap_or_default();
-                    freshest = Some(match freshest {
-                        None => duration,
-                        Some(freshest) => min(freshest, duration),
-                    })
-                }
-            }
+            let duration = modified_duration(path).unwrap_or_default();
+            freshest = Some(match freshest {
+                None => duration,
+                Some(freshest) => min(freshest, duration),
+            })
         }
         freshest
     }

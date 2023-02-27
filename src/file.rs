@@ -1,5 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use color_eyre::eyre::Result;
 use filetime::{set_file_times, FileTime};
@@ -22,6 +23,13 @@ pub fn display_path(path: &Path) -> String {
 pub fn touch_dir(dir: &Path) -> io::Result<()> {
     let now = FileTime::now();
     set_file_times(dir, now, now)
+}
+
+pub fn modified_duration(path: &Path) -> Result<Duration> {
+    let metadata = path.metadata()?;
+    let modified = metadata.modified()?;
+    let duration = modified.elapsed()?;
+    Ok(duration)
 }
 
 pub fn find_up(from: &Path, filenames: &[&str]) -> Option<PathBuf> {
