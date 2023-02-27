@@ -85,7 +85,7 @@ pub fn check_for_new_version() -> Option<String> {
 }
 
 fn get_latest_version() -> Option<String> {
-    let version_file_path = dirs::CACHE.join("VERSION");
+    let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < Duration::from_secs(60 * 60 * 24) {
             if let Ok(version) = fs::read_to_string(&version_file_path) {
