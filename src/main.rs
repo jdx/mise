@@ -4,6 +4,7 @@ extern crate log;
 
 use color_eyre::eyre::Result;
 use color_eyre::{Help, SectionExt};
+use console::Term;
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
@@ -49,6 +50,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
+    handle_ctrlc();
 
     let mut result = run(&env::ARGS).with_section(|| VERSION.to_string().header("Version:"));
     if log_level < log::LevelFilter::Debug {
@@ -70,4 +72,13 @@ fn run(args: &Vec<String>) -> Result<()> {
     }
     let cli = Cli::new_with_external_commands(&config)?;
     cli.run(config, args, out)
+}
+
+fn handle_ctrlc() {
+    ctrlc::set_handler(move || {
+        let _ = Term::stderr().show_cursor();
+        debug!("Ctrl-C pressed, exiting...");
+        std::process::exit(1);
+    })
+    .expect("Error setting Ctrl-C handler");
 }
