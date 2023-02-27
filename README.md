@@ -24,7 +24,7 @@ Note that calling `which node` gives us a real path to the binary, not a shim.
 - **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
-- **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them.
+- **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them by default.
 - **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
 - **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
 - **One command install** - No need to manually install each plugin, just run `rtx install` and it will install all the plugins you need.
@@ -155,12 +155,14 @@ v18.10.9
       * [rtx uninstall](#rtx-uninstall)
       * [rtx version](#rtx-version)
       * [rtx where](#rtx-where)
+      * [rtx which](#rtx-which)
    * [Comparison to asdf](#comparison-to-asdf)
       * [Performance](#performance)
       * [Environment variables](#environment-variables-1)
       * [UX](#ux)
       * [CI/CD](#cicd)
       * [GitHub Actions](#github-actions)
+   * [Shims](#shims)
    * [direnv](#direnv)
       * [rtx inside of direnv (use rtx in .envrc)](#rtx-inside-of-direnv-use-rtx-in-envrc)
    * [Cache Behavior](#cache-behavior)
@@ -1478,6 +1480,21 @@ Examples:
   $ rtx where nodejs
   /Users/jdx/.local/share/rtx/installs/nodejs/18.0.0
 ```
+### `rtx which`
+
+```
+shows the plugin that a bin points to
+
+Usage: which <BIN_NAME>
+
+Arguments:
+  <BIN_NAME>
+          
+
+Examples:
+  $ rtx which node
+  /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
+```
 
 ## Comparison to asdf
 
@@ -1574,6 +1591,22 @@ Use [`jdxcode/rtx-action`](https://github.com/jdxcode/rtx-action):
 ```yaml
 - uses: jdxcode/rtx-action@v1
 - run: node -v # will be the node version from `.tool-versions`
+```
+
+## Shims
+
+While the PATH design of rtx works great in most cases, there are some situations where shims are
+preferable. One example is when calling rtx binaries from an IDE.
+
+To support this, there is experimental support for using rtx in a "shim" mode. To use:
+
+```
+$ rtx settings set experimental true
+$ rtx settings set shim_dir ~/.rtx/shims
+$ rtx i nodejs@18.0.0
+$ rtx reshim
+$ ~/.rtx/shims/node -v
+v18.0.0
 ```
 
 ## direnv

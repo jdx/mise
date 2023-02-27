@@ -129,6 +129,9 @@ _rtx() {
             rtx,where)
                 cmd="rtx__where"
                 ;;
+            rtx,which)
+                cmd="rtx__which"
+                ;;
             rtx,x)
                 cmd="rtx__exec"
                 ;;
@@ -315,6 +318,9 @@ _rtx() {
             rtx__help,where)
                 cmd="rtx__help__where"
                 ;;
+            rtx__help,which)
+                cmd="rtx__help__which"
+                ;;
             rtx__help__alias,get)
                 cmd="rtx__help__alias__get"
                 ;;
@@ -472,7 +478,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where render-help help"
+            opts="-j -v -h -V --log-level --jobs --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1292,7 +1298,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where render-help help"
+            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1964,6 +1970,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__where)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__which)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2839,6 +2859,32 @@ _rtx() {
             ;;
         rtx__where)
             opts="-j -v -h --log-level --jobs --verbose --help <RUNTIME> [ASDF_VERSION]"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__which)
+            opts="-j -v -h --log-level --jobs --verbose --help <BIN_NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

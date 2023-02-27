@@ -40,6 +40,7 @@ mod shell;
 mod uninstall;
 pub mod version;
 mod r#where;
+mod which;
 
 // render help
 #[cfg(debug_assertions)]
@@ -85,6 +86,7 @@ pub enum Commands {
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
     Where(r#where::Where),
+    Which(which::Which),
 
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
@@ -123,6 +125,7 @@ impl Commands {
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),
+            Self::Which(cmd) => cmd.run(config, out),
 
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(config, out),
