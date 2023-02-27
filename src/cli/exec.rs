@@ -24,7 +24,7 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
 /// Note that only the plugin specified will be overridden, so if a `.tool-versions` file
-/// includes "nodejs 20" but you run `rtx exec python@3.11`; it will still load nodejs@20.
+/// includes "nodejs 18" but you run `rtx exec python@3.11`; it will still load nodejs@18.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
@@ -32,7 +32,7 @@ use crate::toolset::ToolsetBuilder;
 pub struct Exec {
     /// Runtime(s) to start
     ///
-    /// e.g.: nodejs@20 python@3.10
+    /// e.g.: nodejs@18 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
     pub runtime: Vec<RuntimeArg>,
 
@@ -114,11 +114,11 @@ fn parse_command(
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
-      rtx x nodejs@20 -- node ./app.js     # shorter alias
+      rtx exec nodejs@18 -- node ./app.js  # launch app.js using node-18.x
+      rtx x nodejs@18 -- node ./app.js     # shorter alias
 
       # Specify command as a string:
-      rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
+      rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
     "#, style("Examples:").bold().underlined()}
 });
 
