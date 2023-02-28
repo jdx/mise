@@ -3,4 +3,5 @@ source: src/cli/bin_paths.rs
 expression: output
 ---
 ~/data/installs/tiny/3.1.0/bin
+~/data/installs/dummy/ref-master/bin
 

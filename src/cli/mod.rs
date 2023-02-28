@@ -159,8 +159,9 @@ impl Cli {
                 .arg_required_else_help(true)
                 .subcommand_required(true)
                 .after_help(AFTER_HELP.as_str())
-                .arg(args::log_level::LogLevel::arg())
                 .arg(args::jobs::Jobs::arg())
+                .arg(args::log_level::LogLevel::arg())
+                .arg(args::raw::Raw::arg())
                 .arg(args::verbose::Verbose::arg()),
         )
     }
@@ -184,7 +185,14 @@ impl Cli {
         if let Some(jobs) = matches.get_one::<usize>("jobs") {
             config.settings.jobs = *jobs;
         }
+        if let Some(raw) = matches.get_one::<bool>("raw") {
+            config.settings.raw = *raw;
+        }
         if *matches.get_one::<u8>("verbose").unwrap() > 0 {
+            config.settings.verbose = true;
+        }
+        if config.settings.raw {
+            config.settings.jobs = 1;
             config.settings.verbose = true;
         }
         if let Some((command, sub_m)) = matches.subcommand() {

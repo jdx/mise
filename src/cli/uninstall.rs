@@ -31,7 +31,7 @@ impl Command for Uninstall {
             }
 
             rtxprintln!(out, "uninstalling {}", style(rtv).cyan());
-            rtv.uninstall()
+            rtv.uninstall(&config.settings)
                 .wrap_err_with(|| eyre!("error uninstalling {}", rtv))?;
         }
         Ok(())
