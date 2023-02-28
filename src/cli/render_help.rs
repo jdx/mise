@@ -74,7 +74,9 @@ $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 
 > **Warning**
 >
-> If you use direnv, you may need to also add `eval "$(rtx env -s bash)"` to your .envrc.
+> If you use direnv, you may need to also add `eval "$(rtx env -s bash)"` to your
+> .envrc for `layout python` to work or for other logic that needs to reference rtx
+> runtimes.
 > There is also an alternative way to use rtx inside of direnv, see [here](#direnv).
 
 Install a runtime and set it as the default:
