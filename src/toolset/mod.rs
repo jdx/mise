@@ -19,7 +19,7 @@ pub use tool_version::ToolVersion;
 pub use tool_version::ToolVersionType;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
-use crate::config::{Config, MissingRuntimeBehavior};
+use crate::config::{Config, MissingRuntimeBehavior, Settings};
 use crate::env;
 use crate::plugins::{InstallType, Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
@@ -274,17 +274,17 @@ impl Toolset {
         entries.sort_keys();
         entries
     }
-    pub fn path_env(&self) -> String {
-        let installs = self.list_paths();
+    pub fn path_env(&self, settings: &Settings) -> String {
+        let installs = self.list_paths(settings);
         join_paths([installs, env::PATH.clone()].concat())
             .unwrap()
             .to_string_lossy()
             .into()
     }
-    pub fn list_paths(&self) -> Vec<PathBuf> {
+    pub fn list_paths(&self, settings: &Settings) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .flat_map(|rtv| match rtv.list_bin_paths() {
+            .flat_map(|rtv| match rtv.list_bin_paths(settings) {
                 Ok(paths) => paths,
                 Err(e) => {
                     warn!("Error listing bin paths for {}: {}", rtv, e);
@@ -358,11 +358,11 @@ impl Toolset {
         }
     }
 
-    pub fn which(&self, bin_name: &str) -> Option<&RuntimeVersion> {
+    pub fn which(&self, settings: &Settings, bin_name: &str) -> Option<&RuntimeVersion> {
         self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|v| {
-                if let Ok(x) = v.which(bin_name) {
+                if let Ok(x) = v.which(settings, bin_name) {
                     x.is_some()
                 } else {
                     false

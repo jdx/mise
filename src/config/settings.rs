@@ -8,8 +8,8 @@ use log::LevelFilter;
 use crate::config::AliasMap;
 use crate::env;
 use crate::env::{
-    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_SHIMS_DIR,
-    RTX_SHORTHANDS_FILE, RTX_VERBOSE,
+    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_RAW,
+    RTX_SHIMS_DIR, RTX_SHORTHANDS_FILE, RTX_VERBOSE,
 };
 use crate::plugins::PluginName;
 
@@ -28,6 +28,7 @@ pub struct Settings {
     pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
     pub shims_dir: Option<PathBuf>,
+    pub raw: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +47,7 @@ impl Default for Settings {
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
             shims_dir: RTX_SHIMS_DIR.clone(),
+            raw: *RTX_RAW,
         }
     }
 }
@@ -87,6 +89,7 @@ impl Settings {
         if let Some(shims) = &self.shims_dir {
             map.insert("shims_dir".into(), shims.to_string_lossy().to_string());
         }
+        map.insert("raw".into(), self.raw.to_string());
         map
     }
 }
@@ -106,6 +109,7 @@ pub struct SettingsBuilder {
     pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
     pub shims_dir: Option<PathBuf>,
+    pub raw: Option<bool>,
 }
 
 impl SettingsBuilder {
@@ -156,6 +160,9 @@ impl SettingsBuilder {
         if other.aliases.is_some() {
             self.aliases = other.aliases;
         }
+        if other.raw.is_some() {
+            self.raw = other.raw;
+        }
         self
     }
 
@@ -194,7 +201,13 @@ impl SettingsBuilder {
             .unwrap_or(settings.disable_default_shorthands);
         settings.log_level = self.log_level.unwrap_or(settings.log_level);
         settings.shims_dir = self.shims_dir.clone().or(settings.shims_dir);
+        settings.raw = self.raw.unwrap_or(settings.raw);
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
+
+        if settings.raw {
+            settings.verbose = true;
+            settings.jobs = 1;
+        }
 
         settings
     }

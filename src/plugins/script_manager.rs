@@ -11,6 +11,7 @@ use indexmap::{indexmap, IndexMap};
 use once_cell::sync::Lazy;
 
 use crate::cmd::cmd;
+use crate::config::Settings;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::basename;
@@ -43,7 +44,7 @@ pub enum Script {
     // ExecEnv,
 }
 
-impl fmt::Display for Script {
+impl Display for Script {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             // Plugin
@@ -120,7 +121,7 @@ impl ScriptManager {
         self.get_script_path(script).is_file()
     }
 
-    pub fn cmd(&self, script: Script) -> Expression {
+    pub fn cmd(&self, settings: &Settings, script: Script) -> Expression {
         let args = match &script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
             _ => vec![],
@@ -130,14 +131,18 @@ impl ScriptManager {
         //     return Err(PluginNotInstalled(self.plugin_name.clone()).into());
         // }
         let mut cmd = cmd(&script_path, args);
+        if !settings.raw {
+            // ignore stdin, otherwise a prompt may show up where the user won't see it
+            cmd = cmd.stdin_null();
+        }
         for (k, v) in self.env.iter() {
             cmd = cmd.env(k, v);
         }
         cmd
     }
 
-    pub fn run(&self, script: Script) -> Result<()> {
-        let cmd = self.cmd(script);
+    pub fn run(&self, settings: &Settings, script: Script) -> Result<()> {
+        let cmd = self.cmd(settings, script);
         let Output { status, .. } = cmd.unchecked().run()?;
 
         match status.success() {
@@ -146,42 +151,60 @@ impl ScriptManager {
         }
     }
 
-    pub fn read(&self, script: Script, verbose: bool) -> Result<String> {
-        let mut cmd = self.cmd(script);
-        if !verbose {
+    pub fn read(&self, settings: &Settings, script: Script, verbose: bool) -> Result<String> {
+        let mut cmd = self.cmd(settings, script);
+        if !verbose && !settings.raw {
             cmd = cmd.stderr_null();
         }
         cmd.read()
             .with_context(|| ScriptFailed(self.plugin_name.clone(), None))
     }
 
-    pub fn run_by_line<F1, F2>(&self, script: Script, on_error: F1, on_output: F2) -> Result<()>
+    pub fn run_by_line<F1, F2>(
+        &self,
+        settings: &Settings,
+        script: Script,
+        on_error: F1,
+        on_output: F2,
+    ) -> Result<()>
     where
         F1: Fn(String),
         F2: Fn(&str),
     {
-        let reader = self.cmd(script).stderr_to_stdout().unchecked().reader()?;
-        let reader = Arc::new(reader);
+        let cmd = self.cmd(settings, script);
         let mut output = vec![];
-        for line in BufReader::new(&*reader).lines() {
-            let line = line.unwrap();
-            on_output(&line);
-            output.push(line);
-        }
-
-        match reader.try_wait() {
-            Err(err) => {
-                on_error(output.join("\n"));
-                Err(err)?
-            }
-            Ok(out) => match out.unwrap().status.success() {
+        if settings.raw {
+            let Output { status, .. } = cmd.unchecked().run()?;
+            match status.success() {
                 true => Ok(()),
                 false => {
                     on_error(output.join("\n"));
-                    let err = ScriptFailed(self.plugin_name.clone(), Some(out.unwrap().status));
+                    Err(ScriptFailed(self.plugin_name.clone(), Some(status)).into())
+                }
+            }
+        } else {
+            let reader = cmd.stdin_null().stderr_to_stdout().unchecked().reader()?;
+            let reader = Arc::new(reader);
+            for line in BufReader::new(&*reader).lines() {
+                let line = line.unwrap();
+                on_output(&line);
+                output.push(line);
+            }
+
+            match reader.try_wait() {
+                Err(err) => {
+                    on_error(output.join("\n"));
                     Err(err)?
                 }
-            },
+                Ok(out) => match out.unwrap().status.success() {
+                    true => Ok(()),
+                    false => {
+                        on_error(output.join("\n"));
+                        let err = ScriptFailed(self.plugin_name.clone(), Some(out.unwrap().status));
+                        Err(err)?
+                    }
+                },
+            }
         }
     }
 }

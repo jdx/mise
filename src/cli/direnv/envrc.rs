@@ -47,7 +47,7 @@ impl Command for Envrc {
                 shell_escape::unix::escape(v.into()),
             )?;
         }
-        for path in ts.list_paths().into_iter().rev() {
+        for path in ts.list_paths(&config.settings).into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 
