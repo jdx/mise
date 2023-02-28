@@ -177,8 +177,11 @@ complete -c rtx -n "__fish_seen_subcommand_from exec" -s h -l help -d 'Print hel
 complete -c rtx -n "__fish_seen_subcommand_from global" -l remove -d 'Remove the plugin(s) from ~/.tool-versions' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'Save exact version to `~/.tool-versions`'
-complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'Save fuzzy version to `~/.tool-versions`'
+complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'Save exact version to `~/.tool-versions`
+e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions'
+complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'Save fuzzy version to `~/.tool-versions`
+e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+this is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -200,7 +203,7 @@ complete -c rtx -n "__fish_seen_subcommand_from install" -s p -l plugin -d 'Only
 complete -c rtx -n "__fish_seen_subcommand_from install" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -s f -l force -d 'Force reinstall even if already installed'
-complete -c rtx -n "__fish_seen_subcommand_from install" -s a -l all -d 'Install all missing runtimes as well as all plugins for the current directory'
+complete -c rtx -n "__fish_seen_subcommand_from install" -s a -l all -d 'Install all missing runtimes as well as all plugins for the current directory This is hidden because it\'s now the default behavior'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -214,8 +217,9 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -s j -l jobs -d 'Number o
 complete -c rtx -n "__fish_seen_subcommand_from local" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l pin -d 'Save exact version to `.tool-versions`'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions`'
+complete -c rtx -n "__fish_seen_subcommand_from local" -l pin -d 'Save exact version to `.tool-versions`
+e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions'
+complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -252,20 +256,22 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_sub
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s f -l force -d 'Reinstall even if plugin exists'
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s a -l all -d 'Install all missing plugins'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s a -l all -d 'Install all missing plugins
+This will only install plugins that have matching shorthands.
+i.e.: they don\'t need the full git repo url'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'List all available remote plugins'
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'List all available remote plugins Same as `rtx plugins ls-remote`'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s u -l urls -d 'Show the git url for each plugin'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s h -l help -d 'Print help (see more with \'--help\')'

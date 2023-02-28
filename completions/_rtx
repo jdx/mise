@@ -293,7 +293,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::plugin -- Plugin to show versions of:' \
+'::plugin -- Plugin to show versions of e.g.\: ruby, nodejs:' \
 && ret=0
 ;;
 (deactivate)
@@ -447,7 +447,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to start:' \
+'*::runtime -- Runtime(s) to start e.g.\: nodejs@18 python@3.10:' \
 && ret=0
 ;;
 (global)
@@ -456,15 +456,21 @@ _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'--pin[Save exact version to `~/.tool-versions`]' \
-'--fuzzy[Save fuzzy version to `~/.tool-versions`]' \
+'--pin[Save exact version to `~/.tool-versions`
+e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions]' \
+'--fuzzy[Save fuzzy version to `~/.tool-versions`
+e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to add to .tool-versions:' \
+'*::runtime -- Runtime(s) to add to .tool-versions
+e.g.\: nodejs@18
+If this is a single runtime with no version, the current value of the global
+.tool-versions will be displayed:' \
 && ret=0
 ;;
 (hook-env)
@@ -507,15 +513,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Force reinstall even if already installed]' \
 '--force[Force reinstall even if already installed]' \
-'(-p --plugin -f --force)-a[Install all missing runtimes as well as all plugins for the current directory]' \
-'(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory]' \
+'(-p --plugin -f --force)-a[Install all missing runtimes as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
+'(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to install:' \
+'*::runtime -- Runtime(s) to install e.g.\: nodejs@18:' \
 && ret=0
 ;;
 (latest)
@@ -543,15 +549,19 @@ _arguments "${_arguments_options[@]}" \
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--parent[Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--pin[Save exact version to `.tool-versions`]' \
-'--fuzzy[Save fuzzy version to `.tool-versions`]' \
+'--pin[Save exact version to `.tool-versions`
+e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions]' \
+'--fuzzy[Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtimes to add to .tool-versions:' \
+'*::runtime -- Runtimes to add to .tool-versions
+e.g.\: nodejs@18
+if this is a single runtime with no version,
+the current value of .tool-versions will be displayed:' \
 && ret=0
 ;;
 (ls)
@@ -632,15 +642,19 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Reinstall even if plugin exists]' \
 '--force[Reinstall even if plugin exists]' \
-'(-f --force)-a[Install all missing plugins]' \
-'(-f --force)--all[Install all missing plugins]' \
+'(-f --force)-a[Install all missing plugins
+This will only install plugins that have matching shorthands.
+i.e.: they don'\''t need the full git repo url]' \
+'(-f --force)--all[Install all missing plugins
+This will only install plugins that have matching shorthands.
+i.e.: they don'\''t need the full git repo url]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::name -- The name of the plugin to install:' \
+'::name -- The name of the plugin to install e.g.\: nodejs, ruby:' \
 '::git_url -- The git url of the plugin:_urls' \
 && ret=0
 ;;
@@ -649,10 +663,10 @@ _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-a[List all available remote plugins]' \
-'--all[List all available remote plugins]' \
-'-u[Show the git url for each plugin]' \
-'--urls[Show the git url for each plugin]' \
+'-a[List all available remote plugins Same as `rtx plugins ls-remote`]' \
+'--all[List all available remote plugins Same as `rtx plugins ls-remote`]' \
+'-u[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'--urls[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
@@ -666,8 +680,8 @@ _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-u[Show the git url for each plugin]' \
-'--urls[Show the git url for each plugin]' \
+'-u[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'--urls[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
@@ -947,8 +961,13 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':runtime -- runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version:' \
-'::asdf_version -- the version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
+':runtime -- Runtime(s) to look up
+e.g.\: ruby@3
+if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+otherwise, it will show the current, active installed version:' \
+'::asdf_version -- the version prefix to use when querying the latest version
+same as the first argument after the "@"
+used for asdf compatibility:' \
 && ret=0
 ;;
 (which)

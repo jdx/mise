@@ -15,13 +15,11 @@ use crate::output::Output;
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
 pub struct PluginsLs {
     /// List all available remote plugins
-    ///
-    /// same as `rtx plugins ls-remote`
+    /// Same as `rtx plugins ls-remote`
     #[clap(short, long)]
     pub all: bool,
 
     /// Show the git url for each plugin
-    ///
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long)]
     pub urls: bool,

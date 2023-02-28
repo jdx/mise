@@ -16,16 +16,17 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Where {
-    /// runtime(s) to look up
+    /// Runtime(s) to look up
+    /// e.g.: ruby@3
     /// if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
     /// otherwise, it will show the current, active installed version
-    #[clap(required = true, value_parser = RuntimeArgParser)]
+    #[clap(required = true, value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: RuntimeArg,
 
     /// the version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     /// used for asdf compatibility
-    #[clap(hide = true)]
+    #[clap(hide = true, verbatim_doc_comment)]
     asdf_version: Option<String>,
 }
 
