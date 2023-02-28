@@ -6,6 +6,7 @@ set -l orig_node (node -v)
 rtx install nodejs@18.0.0 nodejs@16.0.0; or exit
 
 rtx activate --status fish | source
+__rtx_env_eval
 
 test (node -v) = "v18.0.0"; or exit
 
