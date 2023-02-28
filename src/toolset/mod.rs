@@ -378,7 +378,7 @@ impl Display for Toolset {
             .iter()
             .map(|(_, v)| v.versions.iter().map(|v| v.to_string()).join(" "))
             .collect_vec();
-        write!(f, "Toolset: {}", plugins.join(", "))
+        write!(f, "{}", plugins.join(", "))
     }
 }
 

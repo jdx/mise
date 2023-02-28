@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -197,6 +197,12 @@ impl SettingsBuilder {
         settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         settings
+    }
+}
+
+impl Display for Settings {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.to_index_map().fmt(f)
     }
 }
 
