@@ -29,7 +29,7 @@ pub fn handle_shim(config: Config, args: &[String], out: &mut Output) -> Result<
 
 fn is_valid_shim(config: &Config, bin_name: &str) -> Result<()> {
     let ts = ToolsetBuilder::new().build(config);
-    match ts.which(bin_name) {
+    match ts.which(&config.settings, bin_name) {
         Some(_) => Ok(()),
         None => Err(eyre!("{} is not a valid shim", bin_name)),
     }

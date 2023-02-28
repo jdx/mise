@@ -108,9 +108,12 @@ v18.10.9
          * [RTX_VERBOSE=1](#rtx_verbose1)
          * [RTX_ASDF_COMPAT=1](#rtx_asdf_compat1)
          * [RTX_JOBS=1](#rtx_jobs1)
+         * [RTX_RAW=1](#rtx_raw1)
          * [RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml](#rtx_shorthands_fileconfigrtxshorthandstoml)
          * [RTX_DISABLE_DEFAULT_SHORTHANDS=1](#rtx_disable_default_shorthands1)
          * [RTX_HIDE_OUTDATED_BUILD=1](#rtx_hide_outdated_build1)
+         * [RTX_EXPERIMENTAL=1](#rtx_experimental1)
+         * [[experimental] RTX_SHIMS_DIR=~/.local/share/rtx/shims](#experimental-rtx_shims_dirlocalsharertxshims)
    * [Aliases](#aliases)
    * [Plugins](#plugins)
    * [FAQs](#faqs)
@@ -494,9 +497,13 @@ plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable u
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+
+experimental = false # enable experimental features such as shims
+shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims are stored
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -573,6 +580,14 @@ Only output `.tool-versions` files in `rtx local|global` which will be usable by
 
 Set the number plugins or runtimes to install in parallel. The default is `4`.
 
+#### `RTX_RAW=1`
+
+Set to "1" to directly pipe plugin scripts to stdin/stdout/stderr. By default stdin is disabled
+because when installing a bunch of plugins in parallel you won't see the prompt. Use this if a
+plugin accepts input or otherwise does not seem to be installing correctly.
+
+Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
+
 #### `RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
@@ -605,6 +620,14 @@ rtx has not been updated in over a year. Please update to the latest version.
 You likely do not want to be using rtx if it is that old. I'm doing this instead of
 autoupdating. If, for some reason, you want to stay on some old version, you can hide
 this message with `RTX_HIDE_OUTDATED_BUILD=1`.
+
+#### `RTX_EXPERIMENTAL=1`
+
+Enables experimental features such as shims.
+
+#### [experimental] `RTX_SHIMS_DIR=~/.local/share/rtx/shims`
+
+Set a directory to output shims when running `rtx reshim`. Requires `experimental = true`.
 
 ## Aliases
 

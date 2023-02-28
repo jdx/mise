@@ -4,7 +4,7 @@
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
-\fBrtx\fR [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBrtx\fR [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
 .PP
@@ -18,6 +18,9 @@ https://asdf\-vm.com/
 .TP
 \fB\-j\fR, \fB\-\-jobs\fR
 Number of plugins and runtimes to install in parallel, default: 4
+.TP
+\fB\-r\fR, \fB\-\-raw\fR
+Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets \-\-jobs=1.
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show installation output

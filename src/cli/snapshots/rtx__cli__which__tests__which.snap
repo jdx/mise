@@ -1,0 +1,6 @@
+---
+source: src/cli/which.rs
+expression: output
+---
+~/data/installs/dummy/1.0.0/bin/dummy
+
