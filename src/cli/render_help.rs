@@ -755,7 +755,7 @@ To support this, there is experimental support for using rtx in a "shim" mode. T
 
 ```
 $ rtx settings set experimental true
-$ rtx settings set shim_dir ~/.rtx/shims
+$ rtx settings set shims_dir ~/.rtx/shims
 $ rtx i nodejs@18.0.0
 $ rtx reshim
 $ ~/.rtx/shims/node -v
