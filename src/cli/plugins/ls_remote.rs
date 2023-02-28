@@ -15,7 +15,6 @@ use crate::output::Output;
 #[clap(visible_alias = "list-remote", long_about = LONG_ABOUT, verbatim_doc_comment, alias = "list-all")]
 pub struct PluginsLsRemote {
     /// Show the git url for each plugin
-    ///
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long)]
     pub urls: bool,

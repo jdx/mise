@@ -19,7 +19,6 @@ use crate::{dirs, env, file};
 #[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Local {
     /// Runtimes to add to .tool-versions
-    ///
     /// e.g.: nodejs@18
     /// if this is a single runtime with no version,
     /// the current value of .tool-versions will be displayed
@@ -32,15 +31,13 @@ pub struct Local {
     parent: bool,
 
     /// Save exact version to `.tool-versions`
-    ///
     /// e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `.tool-versions`
-    ///
     /// e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions
-    /// this is the default behavior unless RTX_ASDF_COMPAT=1
+    /// This is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
