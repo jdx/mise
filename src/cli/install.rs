@@ -84,7 +84,7 @@ impl Install {
                     if let Some(rtv) = &v.rtv {
                         if rtv.is_installed() {
                             info!("uninstalling {}", rtv);
-                            rtv.uninstall()?;
+                            rtv.uninstall(&config.settings)?;
                         }
                     }
                 }

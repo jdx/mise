@@ -18,31 +18,18 @@ pub struct Which {
 }
 
 impl Command for Which {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config);
 
-        if !config.settings.experimental {
-            err_experimental()?;
-        }
-
-        match ts.which(&self.bin_name) {
+        match ts.which(&config.settings, &self.bin_name) {
             Some(rtv) => {
-                println!("{}", rtv.which(&self.bin_name)?.unwrap().display());
+                let path = rtv.which(&config.settings, &self.bin_name)?;
+                rtxprintln!(out, "{}", path.unwrap().display());
                 Ok(())
             }
             None => Err(eyre!("{} not found", self.bin_name)),
         }
     }
-}
-
-fn err_experimental() -> Result<()> {
-    return Err(eyre!(formatdoc!(
-        r#"
-                rtx is not configured to use experimental features.
-                Please set the `{}` setting to `true`.
-                "#,
-        style("experimental").yellow()
-    )));
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
@@ -52,3 +39,16 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
     "#, style("Examples:").bold().underlined()}
 });
+
+#[cfg(test)]
+mod tests {
+    use crate::{assert_cli, assert_cli_snapshot};
+
+    #[test]
+    fn test_which() {
+        assert_cli!("global", "dummy@1.0.0");
+        assert_cli_snapshot!("which", "dummy");
+        assert_cli!("global", "dummy@ref:master");
+        assert_cli!("uninstall", "dummy@1.0.0");
+    }
+}

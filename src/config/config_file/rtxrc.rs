@@ -106,6 +106,7 @@ impl RTXFile {
             }
             "log_level" => self.settings.log_level = Some(self.parse_log_level(v)?),
             "shims_dir" => self.settings.shims_dir = Some(self.parse_path(k, v)?),
+            "raw" => self.settings.raw = Some(self.parse_bool(k, v)?),
             "alias" => self.settings.aliases = Some(self.parse_aliases(v)?),
             "get_path" => {}
             "disable_plugin_short_name_repository" => {}

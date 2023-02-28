@@ -59,6 +59,7 @@ mod tests {
         disable_default_shorthands = false
         log_level = INFO
         shims_dir = ~/data/shims
+        raw = false
         "###);
 
         reset_config();

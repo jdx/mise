@@ -93,6 +93,7 @@ impl RuntimeVersion {
 
         let run_script = |script| {
             self.script_man.run_by_line(
+                settings,
                 script,
                 |output| {
                     self.cleanup_install_dirs_on_error(settings);
@@ -134,17 +135,17 @@ impl RuntimeVersion {
         Ok(())
     }
 
-    pub fn list_bin_paths(&self) -> Result<Vec<PathBuf>> {
+    pub fn list_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
         Ok(self
             .bin_paths_cache
-            .get_or_try_init(|| self.fetch_bin_paths())?
+            .get_or_try_init(|| self.fetch_bin_paths(settings))?
             .iter()
             .map(|path| self.install_path.join(path))
             .collect())
     }
 
-    pub fn which(&self, bin_name: &str) -> Result<Option<PathBuf>> {
-        let bin_paths = self.list_bin_paths()?;
+    pub fn which(&self, settings: &Settings, bin_name: &str) -> Result<Option<PathBuf>> {
+        let bin_paths = self.list_bin_paths(settings)?;
         for bin_path in bin_paths {
             let bin_path = bin_path.join(bin_name);
             if bin_path.exists() {
@@ -164,10 +165,10 @@ impl RuntimeVersion {
         }
     }
 
-    pub fn uninstall(&self) -> Result<()> {
+    pub fn uninstall(&self, settings: &Settings) -> Result<()> {
         debug!("uninstall {} {}", self.plugin.name, self.version);
         if self.plugin.plugin_path.join("bin/uninstall").exists() {
-            let err = self.script_man.run(Script::Uninstall);
+            let err = self.script_man.run(settings, Script::Uninstall);
             if err.is_err() {
                 warn!("Failed to run uninstall script: {}", err.unwrap_err());
             }
@@ -209,10 +210,10 @@ impl RuntimeVersion {
         Ok(env)
     }
 
-    fn fetch_bin_paths(&self) -> Result<Vec<String>> {
+    fn fetch_bin_paths(&self, settings: &Settings) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin.plugin_path.join("bin/list-bin-paths");
         if list_bin_paths.exists() {
-            let output = self.script_man.cmd(Script::ListBinPaths).read()?;
+            let output = self.script_man.cmd(settings, Script::ListBinPaths).read()?;
             Ok(output.split_whitespace().map(|e| e.into()).collect())
         } else {
             Ok(vec!["bin".into()])

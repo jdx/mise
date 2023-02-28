@@ -6,5 +6,6 @@ expression: envrc
 watch_file ~/cwd/.test-tool-versions
 watch_file ~/.test-tool-versions
 export JDXCODE_TINY=3.1.0
+PATH_add ~/data/installs/dummy/ref-master/bin
 PATH_add ~/data/installs/tiny/3.1.0/bin
 

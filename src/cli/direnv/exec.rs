@@ -35,7 +35,7 @@ impl Command for DirenvExec {
         for (k, v) in ts.env() {
             cmd = cmd.env(k, v);
         }
-        cmd = cmd.env("PATH", ts.path_env());
+        cmd = cmd.env("PATH", ts.path_env(&config.settings));
 
         let json = cmd!("direnv", "watch", "json", ".tool-versions").read()?;
         let w: DirenvWatches = serde_json::from_str(&json)?;
