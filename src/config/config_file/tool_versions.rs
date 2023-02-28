@@ -250,7 +250,7 @@ pub(crate) mod tests {
         "};
         let tv = ToolVersions::parse_str(orig).unwrap();
         let toolset: Toolset = (&tv).into();
-        assert_display_snapshot!(toolset, @"Toolset: ruby@3.0.5 ruby@3.1");
+        assert_display_snapshot!(toolset, @"ruby@3.0.5 ruby@3.1");
     }
 
     #[derive(Debug)]

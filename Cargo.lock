@@ -1400,6 +1400,7 @@ dependencies = [
  "exec",
  "filetime",
  "flate2",
+ "indenter",
  "indexmap",
  "indicatif",
  "indoc",
