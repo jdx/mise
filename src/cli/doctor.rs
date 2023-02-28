@@ -1,14 +1,20 @@
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::Result;
 use console::style;
+use indenter::indented;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use std::fmt::Write;
+use std::process::exit;
 
-use crate::cli;
 use crate::cli::command::Command;
+use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::env;
+use crate::{cli, cmd};
 
 use crate::output::Output;
+use crate::shell::ShellType;
+use crate::toolset::ToolsetBuilder;
 
 /// Check rtx installation for possible problems.
 #[derive(Debug, clap::Args)]
@@ -17,6 +23,29 @@ pub struct Doctor {}
 
 impl Command for Doctor {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config);
+        rtxprintln!(out, "{}", rtx_version());
+        rtxprintln!(out, "{}", shell());
+        rtxprintln!(out, "{}", rtx_env_vars());
+        rtxprintln!(
+            out,
+            "{}\n{}\n",
+            style("config:").bold(),
+            indent(config.to_string())
+        );
+        rtxprintln!(
+            out,
+            "{}\n{}\n",
+            style("settings:").bold(),
+            indent(config.settings.to_string())
+        );
+        rtxprintln!(
+            out,
+            "{}\n{}\n",
+            style("toolset:").bold(),
+            indent(ts.to_string())
+        );
+
         let mut checks = Vec::new();
         for plugin in config.plugins.values() {
             if !plugin.is_installed() {
@@ -26,32 +55,33 @@ impl Command for Doctor {
         }
 
         if let Some(latest) = cli::version::check_for_new_version() {
-            warn!(
+            checks.push(format!(
                 "new rtx version {} available, currently on {}",
                 latest,
                 env!("CARGO_PKG_VERSION")
-            )
+            ));
         }
-
-        rtxprintln!(out, "{}\n", &config);
-        rtxprintln!(out, "{}\n", rtx_env_vars());
 
         if !config.is_activated() {
-            checks.push(
-                "rtx is not activated, run `rtx help activate` for setup instructions".to_string(),
-            );
-        }
-
-        for check in &checks {
-            error!("{}", check);
+            let cmd = style("rtx activate").yellow().for_stderr();
+            checks.push(format!(
+                "rtx is not activated, run `{cmd}` for setup instructions"
+            ));
         }
 
         if checks.is_empty() {
             rtxprintln!(out, "No problems found");
-            Ok(())
         } else {
-            Err(eyre!("{} problems found", checks.len()))
+            let checks_plural = if checks.len() == 1 { "" } else { "s" };
+            let summary = format!("{} problem{checks_plural} found:", checks.len());
+            rtxprintln!(out, "{}", style(summary).red().bold());
+            for check in &checks {
+                rtxprintln!(out, "{}\n", check);
+            }
+            exit(1);
         }
+
+        Ok(())
     }
 }
 
@@ -60,10 +90,45 @@ fn rtx_env_vars() -> String {
         .filter(|(k, _)| k.starts_with("RTX_"))
         .collect::<Vec<(String, String)>>();
     let mut s = style("rtx environment variables:\n").bold().to_string();
+    if vars.is_empty() {
+        s.push_str("  (none)\n");
+    }
     for (k, v) in vars {
-        s.push_str(&format!("{}={}\n", k, v));
+        s.push_str(&format!("  {}={}\n", k, v));
     }
     s
+}
+
+fn rtx_version() -> String {
+    let mut s = style("rtx version:\n").bold().to_string();
+    s.push_str(&format!("  {}\n", *VERSION));
+    s
+}
+
+fn shell() -> String {
+    let mut s = style("shell:\n").bold().to_string();
+    match ShellType::load().map(|s| s.to_string()) {
+        Some(shell) => {
+            let shell_cmd = if env::SHELL.ends_with(shell.as_str()) {
+                &*env::SHELL
+            } else {
+                &shell
+            };
+            let version = cmd!(shell_cmd, "--version")
+                .read()
+                .unwrap_or_else(|e| format!("failed to get shell version: {}", e));
+            let out = format!("{}\n{}\n", shell_cmd, version);
+            s.push_str(&indent(out));
+        }
+        None => s.push_str("  (unknown)\n"),
+    }
+    s
+}
+
+fn indent(s: String) -> String {
+    let mut out = String::new();
+    write!(indented(&mut out).with_str("  "), "{}", s).unwrap();
+    out
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
@@ -73,18 +138,3 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       [WARN] plugin nodejs is not installed
     "#, style("Examples:").bold().underlined()}
 });
-
-#[cfg(test)]
-mod tests {
-    use crate::cli::tests::cli_run;
-
-    #[test]
-    fn test_doctor() {
-        let _ = cli_run(
-            &vec!["rtx", "doctor"]
-                .into_iter()
-                .map(String::from)
-                .collect::<Vec<String>>(),
-        );
-    }
-}
