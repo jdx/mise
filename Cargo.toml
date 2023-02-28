@@ -95,8 +95,8 @@ strip = "symbols"
 
 [package.metadata.release]
 allow-branch = ["main"]
-#sign-tag = true
-#sign-commit = true
+sign-tag = true
+sign-commit = true
 pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
     { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
