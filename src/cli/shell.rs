@@ -15,7 +15,7 @@ use crate::output::Output;
 use crate::shell::get_shell;
 use crate::toolset::{ToolSource, ToolsetBuilder};
 
-/// sets a runtime for the current shell session
+/// Sets a tool version for the current shell session
 ///
 /// Only works in a session where rtx is already activated.
 #[derive(Debug, clap::Args)]

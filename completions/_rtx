@@ -956,6 +956,8 @@ _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'(--version)--plugin[Show the plugin name instead of the path]' \
+'(--plugin)--version[Show the version instead of the path]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
@@ -1269,17 +1271,17 @@ _rtx_commands() {
 'deactivate:Disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
-'env:exports env vars to activate rtx in a single shell session' \
-'e:exports env vars to activate rtx in a single shell session' \
+'env:Exports env vars to activate rtx a single time' \
+'e:Exports env vars to activate rtx a single time' \
 'exec:Execute a command with runtime(s) set' \
 'x:Execute a command with runtime(s) set' \
 'global:Sets global .tool-versions to include a specified runtime' \
 'g:Sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
-'implode:Removes rtx CLI and all generated data' \
+'implode:Removes rtx CLI and all related data' \
 'install:Install a runtime' \
 'i:Install a runtime' \
-'latest:Get the latest runtime version of a plugin'\''s runtimes' \
+'latest:Gets the latest available version for a plugin' \
 'local:Sets .tool-versions to include a specific runtime' \
 'l:Sets .tool-versions to include a specific runtime' \
 'ls:List installed runtime versions' \
@@ -1292,11 +1294,11 @@ _rtx_commands() {
 'reshim:\[experimental\] rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
-'shell:sets a runtime for the current shell session' \
+'shell:Sets a tool version for the current shell session' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
-'which:shows the plugin that a bin points to' \
+'which:Shows the path that a bin name points to' \
 'render-help:internal command to generate markdown from help' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -1626,13 +1628,13 @@ _rtx__help_commands() {
 'deactivate:Disable rtx for current shell session' \
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
-'env:exports env vars to activate rtx in a single shell session' \
+'env:Exports env vars to activate rtx a single time' \
 'exec:Execute a command with runtime(s) set' \
 'global:Sets global .tool-versions to include a specified runtime' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
-'implode:Removes rtx CLI and all generated data' \
+'implode:Removes rtx CLI and all related data' \
 'install:Install a runtime' \
-'latest:Get the latest runtime version of a plugin'\''s runtimes' \
+'latest:Gets the latest available version for a plugin' \
 'local:Sets .tool-versions to include a specific runtime' \
 'ls:List installed runtime versions' \
 'ls-remote:List runtime versions available for install' \
@@ -1641,11 +1643,11 @@ _rtx__help_commands() {
 'reshim:\[experimental\] rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
-'shell:sets a runtime for the current shell session' \
+'shell:Sets a tool version for the current shell session' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
-'which:shows the plugin that a bin points to' \
+'which:Shows the path that a bin name points to' \
 'render-help:internal command to generate markdown from help' \
 'help:Print this message or the help of the given subcommand(s)' \
     )

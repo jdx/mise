@@ -32,7 +32,11 @@ mod latest;
 mod local;
 mod ls;
 mod ls_remote;
+#[cfg(feature = "clap_mangen")]
+mod mangen;
 mod plugins;
+#[cfg(debug_assertions)]
+mod render_help;
 mod reshim;
 mod self_update;
 mod settings;
@@ -40,14 +44,7 @@ mod shell;
 mod uninstall;
 pub mod version;
 mod r#where;
-mod which;
-
-// render help
-#[cfg(debug_assertions)]
-mod render_help;
-
-#[cfg(feature = "clap_mangen")]
-mod mangen;
+mod r#which;
 
 pub struct Cli {
     command: clap::Command,
