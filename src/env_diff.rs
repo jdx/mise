@@ -107,6 +107,7 @@ impl EnvDiff {
             };
             let v = v.replace("\\'", "'");
             let v = v.replace("\\n", "\n");
+            let v = v.replace("\\\\", "\\");
             if let Some(orig) = env.get(k) {
                 if &v == orig {
                     additions.remove(k);
@@ -282,6 +283,9 @@ mod tests {
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
             "UNMODIFIED_VAR" => "unmodified",
+            "UNMODIFIED_NEWLINE_VAR" => "hello\\\nworld",
+            "UNMODIFIED_SQUOTE_VAR" => "hello\\'world",
+            "UNMODIFIED_ESCAPE_VAR" => "hello\\world",
             "MODIFIED_VAR" => "original",
         }
         .into_iter()

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 export UNMODIFIED_VAR="unmodified"
+export UNMODIFIED_NEWLINE_VAR="hello\nworld"
+export UNMODIFIED_SQUOTE_VAR="hello\'world"
+export UNMODIFIED_ESCAPE_VAR="hello\\world"
 export MODIFIED_VAR="modified"
 export ADDED_VAR="added"
 export MULTILINE_VAR="line1

@@ -5,7 +5,11 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem(system:
+    {
+      overlays.rtx = final: prev: {
+        rtx = prev.callPackage ./default.nix { };
+      };
+    } // flake-utils.lib.eachDefaultSystem(system:
       let
         pkgs = import nixpkgs { inherit system; };
         rtx = pkgs.callPackage ./default.nix { };
