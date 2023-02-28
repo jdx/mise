@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::{dirs, env};
 
-/// Removes rtx CLI and all generated data
+/// Removes rtx CLI and all related data
 ///
 /// Skips config directory by default.
 #[derive(Debug, clap::Args)]
