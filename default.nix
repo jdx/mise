@@ -5,6 +5,10 @@ rustPlatform.buildRustPackage {
 
   src = lib.cleanSource ./.;
 
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
+
   buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk ];
 
   prePatch = ''
@@ -25,8 +29,6 @@ rustPlatform.buildRustPackage {
     RUST_BACKTRACE=full cargo test --features clap_mangen -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls
   '';
-
-  cargoHash = "sha256-2CxKiHiQU2PfGSo+hdFBMJt6D3xPbzB++qGm8D4UqHM=";
 
   # Need this to ensure openssl-src's build uses an available version of `perl`
   # https://github.com/alexcrichton/openssl-src-rs/issues/45
