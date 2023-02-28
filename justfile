@@ -89,7 +89,7 @@ render-mangen: build
     rtx mangen
 
 # called by husky precommit hook
-pre-commit: lint render-help render-completions render-mangen
+pre-commit: render-help render-completions render-mangen
     git add README.md
     git add completions
     git add man

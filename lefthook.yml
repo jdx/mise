@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: true
+  commands:
+    pre-commit:
+      run: just pre-commit
+    lint:
+      run: just lint
