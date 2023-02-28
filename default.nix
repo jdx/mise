@@ -5,11 +5,13 @@ rustPlatform.buildRustPackage {
 
   src = lib.cleanSource ./.;
 
+  buildInputs = with pkgs; [ coreutils bash direnv sed ];
+
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \
       --replace '#!/usr/bin/env bash' '#!${bash}/bin/bash'
     substituteInPlace ./src/fake_asdf.rs ./src/cli/reshim.rs \
-      --replace '#!/bin/sh' '#!${coreutils}/bin/sh'
+      --replace '#!/bin/sh' '#!${bash}/bin/sh'
     substituteInPlace ./src/env_diff.rs \
       --replace '"bash"' '"${bash}/bin/bash"'
     substituteInPlace ./src/cli/direnv/exec.rs \
