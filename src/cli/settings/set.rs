@@ -35,6 +35,7 @@ impl Command for SettingsSet {
             "shorthands_file" => self.value.into(),
             "disable_default_shorthands" => parse_bool(&self.value)?,
             "shims_dir" => self.value.into(),
+            "raw" => parse_bool(&self.value)?,
             _ => return Err(eyre!("Unknown setting: {}", self.key)),
         };
 

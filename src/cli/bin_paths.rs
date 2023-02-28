@@ -13,7 +13,7 @@ pub struct BinPaths {}
 impl Command for BinPaths {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().with_install_missing().build(&config);
-        for p in ts.list_paths() {
+        for p in ts.list_paths(&config.settings) {
             rtxprintln!(out, "{}", p.display());
         }
         Ok(())

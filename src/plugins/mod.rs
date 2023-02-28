@@ -297,7 +297,7 @@ impl Plugin {
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         let result = self
             .script_man
-            .cmd(Script::ListAll)
+            .cmd(settings, Script::ListAll)
             .stdout_capture()
             .stderr_capture()
             .unchecked()
@@ -334,7 +334,7 @@ impl Plugin {
         }
         Ok(self
             .script_man
-            .read(Script::ListLegacyFilenames, settings.verbose)?
+            .read(settings, Script::ListLegacyFilenames, settings.verbose)?
             .split_whitespace()
             .map(|v| v.into())
             .collect())
@@ -355,7 +355,7 @@ impl Plugin {
         }
         let stdout = self
             .script_man
-            .read(Script::ListAliases, settings.verbose)?;
+            .read(settings, Script::ListAliases, settings.verbose)?;
         let aliases = stdout
             .lines()
             .filter_map(|line| {
@@ -380,7 +380,7 @@ impl Plugin {
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(script, settings.verbose)?,
+            true => self.script_man.read(settings, script, settings.verbose)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()

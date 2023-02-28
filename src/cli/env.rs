@@ -43,7 +43,8 @@ impl Command for Env {
             let v = v.to_string();
             rtxprint!(out, "{}", shell.set_env(&k, &v));
         }
-        rtxprintln!(out, "{}", shell.set_env("PATH", ts.path_env().as_ref()));
+        let path = ts.path_env(&config.settings);
+        rtxprintln!(out, "{}", shell.set_env("PATH", &path));
 
         Ok(())
     }

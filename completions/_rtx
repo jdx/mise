@@ -15,9 +15,11 @@ _rtx() {
 
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -37,12 +39,14 @@ _rtx() {
 _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '-q[noop]' \
 '--quiet[noop]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -54,9 +58,11 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '-p+[filter aliases by plugin]:PLUGIN: ' \
 '--plugin=[filter aliases by plugin]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -73,9 +79,11 @@ _arguments "${_arguments_options[@]}" \
         case $line[1] in
             (get)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -88,9 +96,11 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -99,9 +109,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (set)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -113,9 +125,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (unset)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -166,9 +180,11 @@ esac
 ;;
 (asdf)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -178,9 +194,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (bin-paths)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -189,9 +207,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (cache)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -208,9 +228,11 @@ _arguments "${_arguments_options[@]}" \
         case $line[1] in
             (clear)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -249,9 +271,11 @@ esac
 _arguments "${_arguments_options[@]}" \
 '-s+[shell type]:SHELL:(bash elvish fish powershell zsh)' \
 '--shell=[shell type]:SHELL:(bash elvish fish powershell zsh)' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -260,9 +284,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (current)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -272,9 +298,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (deactivate)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -283,9 +311,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (direnv)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -302,9 +332,11 @@ _arguments "${_arguments_options[@]}" \
         case $line[1] in
             (envrc)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -313,9 +345,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (exec)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -324,9 +358,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (activate)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -371,9 +407,11 @@ esac
 ;;
 (doctor)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -384,9 +422,11 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -398,9 +438,11 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '()-c+[Command string to execute]:C: ' \
 '()--command=[Command string to execute]:C: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -411,11 +453,13 @@ _arguments "${_arguments_options[@]}" \
 (global)
 _arguments "${_arguments_options[@]}" \
 '*--remove=[Remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--pin[Save exact version to `~/.tool-versions`]' \
 '--fuzzy[Save fuzzy version to `~/.tool-versions`]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -427,10 +471,12 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
 '--shell=[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -439,11 +485,13 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (implode)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--config[Also remove config directory]' \
 '--dry-run[List directories that would be removed without actually removing them]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -454,15 +502,17 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '()*-p+[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
 '()*--plugin=[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Force reinstall even if already installed]' \
 '--force[Force reinstall even if already installed]' \
 '(-p --plugin -f --force)-a[Install all missing runtimes as well as all plugins for the current directory]' \
 '(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- Runtime(s) to install:' \
@@ -470,9 +520,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (latest)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -484,15 +536,17 @@ _arguments "${_arguments_options[@]}" \
 (local)
 _arguments "${_arguments_options[@]}" \
 '*--remove=[Remove the plugin(s) from .tool-versions]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-p[Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--parent[Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
 '--pin[Save exact version to `.tool-versions`]' \
 '--fuzzy[Save fuzzy version to `.tool-versions`]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -504,11 +558,13 @@ by default this command will only set the runtime in the current directory ("$PW
 _arguments "${_arguments_options[@]}" \
 '-p+[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
 '--plugin=[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show runtimes currently specified in .tool-versions]' \
 '--current[Only show runtimes currently specified in .tool-versions]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -518,9 +574,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -531,9 +589,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (mangen)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -542,13 +602,15 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (plugins)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-a[list all available remote plugins]' \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -565,15 +627,17 @@ _arguments "${_arguments_options[@]}" \
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Reinstall even if plugin exists]' \
 '--force[Reinstall even if plugin exists]' \
 '(-f --force)-a[Install all missing plugins]' \
 '(-f --force)--all[Install all missing plugins]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::name -- The name of the plugin to install:' \
@@ -582,13 +646,15 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (ls)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-a[List all available remote plugins]' \
 '--all[List all available remote plugins]' \
 '-u[Show the git url for each plugin]' \
 '--urls[Show the git url for each plugin]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -597,11 +663,13 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-u[Show the git url for each plugin]' \
 '--urls[Show the git url for each plugin]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -610,9 +678,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -622,11 +692,13 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (update)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '()-a[Update all plugins]' \
 '()--all[Update all plugins]' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -680,9 +752,11 @@ esac
 ;;
 (reshim)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -693,9 +767,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (self-update)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -704,9 +780,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (settings)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -723,9 +801,11 @@ _arguments "${_arguments_options[@]}" \
         case $line[1] in
             (get)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -735,9 +815,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (ls)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -746,9 +828,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (set)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -759,9 +843,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (unset)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -811,9 +897,11 @@ esac
 ;;
 (shell)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -823,9 +911,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -835,9 +925,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (version)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -846,9 +938,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (where)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -859,9 +953,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (which)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -871,9 +967,11 @@ _arguments "${_arguments_options[@]}" \
 ;;
 (render-help)
 _arguments "${_arguments_options[@]}" \
-'--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
+'--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \

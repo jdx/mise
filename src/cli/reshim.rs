@@ -41,7 +41,7 @@ impl Command for Reshim {
         let _ = remove_dir_all(&shims_dir);
         create_dir_all(&shims_dir)?;
 
-        for path in ts.list_paths() {
+        for path in ts.list_paths(&config.settings) {
             if !path.exists() {
                 continue;
             }
