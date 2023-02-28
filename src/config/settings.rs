@@ -7,10 +7,7 @@ use log::LevelFilter;
 
 use crate::config::AliasMap;
 use crate::env;
-use crate::env::{
-    RTX_ASDF_COMPAT, RTX_DISABLE_DEFAULT_SHORTHANDS, RTX_JOBS, RTX_LOG_LEVEL, RTX_RAW,
-    RTX_SHIMS_DIR, RTX_SHORTHANDS_FILE, RTX_VERBOSE,
-};
+use crate::env::*;
 use crate::plugins::PluginName;
 
 #[derive(Debug, Clone)]
@@ -34,7 +31,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            experimental: false,
+            experimental: *RTX_EXPERIMENTAL,
             missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
             always_keep_download: false,
             legacy_version_file: true,
