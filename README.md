@@ -51,8 +51,8 @@ $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 
 > **Warning**
 >
-> If you use direnv, you will want to activate direnv _before_ rtx. There is also
-> an alternative way to use rtx inside of direnv, see [here](#direnv).
+> If you use direnv, you may need to also add `eval "$(rtx env -s bash)"` to your .envrc.
+> There is also an alternative way to use rtx inside of direnv, see [here](#direnv).
 
 Install a runtime and set it as the default:
 
@@ -1657,14 +1657,14 @@ in it as well.
 A more typical usage of direnv would be to set some arbitrary environment variables, or add unrelated
 binaries to PATH. In these cases, rtx will not interfere with direnv.
 
-As mentioned in the Quick Start, it is important to make sure that `rtx activate` is called after `direnv hook`
-in the shell rc file. rtx overrides some of the internal direnv state (`DIRENV_DIFF`) so calling
-direnv first gives rtx the opportunity to make those changes to direnv's state.
+As mentioned in the Quick Start, calling `eval "$(rtx env -s bash)"` will add rtx runtimes
+into an .envrc file. This is useful for `layout python` which should be using the
+rtx python version. This isn't necessary unless the envrc needs access to a runtime.
 
 ### rtx inside of direnv (`use rtx` in `.envrc`)
 
 If you do encounter issues with `rtx activate`, or just want to use direnv in an alternate way,
-this is a simpler setup that's less likely to cause issues.
+this is a simpler setup that's less likely to cause issues—at the cost of functionality.
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
@@ -1694,6 +1694,8 @@ export RTX_PYTHON_VERSION=3.11
 
 Of course if you use `rtx activate`, then these steps won't have been necessary and you can use rtx
 as if direnv was not used.
+
+If you continue to struggle, you can also try using the [experimental shims feature](#shims).
 
 ## Cache Behavior
 
