@@ -19,15 +19,16 @@ Available recipes:
     lint                  # clippy, cargo fmt --check, and just --fmt
     lint-fix              # runs linters but makes fixes when possible
     pre-commit            # called by husky precommit hook
+    release *args
     render-completions    # regenerate shell completion files
     render-help           # regenerate README.md
-    test                  # run all test types
-    b                     # alias for `test`
-    t                     # alias for `test`
+    render-mangen         # regenerate manpages
+    test *args            # run all test types
+    b *args               # alias for `test`
+    t *args               # alias for `test`
     test-coverage         # run unit tests w/ coverage
     test-e2e              # runs the E2E tests in ./e2e
-    test-setup            # prepare repo to execute tests
-    test-unit             # run the rust "unit" tests
+    test-unit *args       # run the rust "unit" tests
     test-update-snapshots # update all test snapshot files
 ```
 
@@ -68,11 +69,12 @@ just pre-commit
 
 ## [optional] Pre-commit hook
 
-This project uses husky which will automatically install a pre-commit hook:
+This project uses lefthook which will automatically install a pre-commit hook:
 
 ```
-npm i # installs and configured husky precommit hook automatically
-git commit # will automatically run `just pre-commit`
+brew install lefthook # or install via some other means
+lefthook install
+git commit
 ```
 
 ## Testing packaging
