@@ -19,6 +19,7 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
                 // rtx="${{RTX_EXE:-rtx}}"
                 formatdoc! {r#"
                 #!/bin/sh
+                export RTX_MISSING_RUNTIME_BEHAVIOR=ignore
                 rtx asdf "$@"
             "#},
             )?;
