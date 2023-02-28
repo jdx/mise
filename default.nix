@@ -5,7 +5,7 @@ rustPlatform.buildRustPackage {
 
   src = lib.cleanSource ./.;
 
-  buildInputs = with pkgs; [ coreutils bash direnv sed ];
+  buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk ];
 
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \

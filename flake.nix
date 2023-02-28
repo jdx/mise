@@ -19,6 +19,20 @@
             inherit rtx;
             default = rtx;
           };
+
+          devShells.default = pkgs.mkShell {
+            name = "rtx-develop";
+
+            inputsFrom = [ rtx ];
+
+            nativeBuildInputs = with pkgs; [
+              just
+              clippy
+              rustfmt
+              shellcheck
+              shfmt
+            ];
+          };
         }
     );
 }
