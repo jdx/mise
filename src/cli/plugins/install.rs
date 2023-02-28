@@ -21,13 +21,11 @@ use crate::ui::progress_report::ProgressReport;
 #[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct PluginsInstall {
     /// The name of the plugin to install
-    ///
     /// e.g.: nodejs, ruby
     #[clap(required_unless_present = "all")]
     name: Option<String>,
 
     /// The git url of the plugin
-    ///
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url)]
     git_url: Option<String>,
@@ -37,7 +35,6 @@ pub struct PluginsInstall {
     force: bool,
 
     /// Install all missing plugins
-    ///
     /// This will only install plugins that have matching shorthands.
     /// i.e.: they don't need the full git repo url
     #[clap(short, long, conflicts_with_all = ["name", "force"], verbatim_doc_comment)]

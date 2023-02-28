@@ -32,7 +32,6 @@ use crate::toolset::ToolsetBuilder;
 #[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Exec {
     /// Runtime(s) to start
-    ///
     /// e.g.: nodejs@18 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
     pub runtime: Vec<RuntimeArg>,

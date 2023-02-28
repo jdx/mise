@@ -858,9 +858,7 @@ Usage: current [PLUGIN]
 
 Arguments:
   [PLUGIN]
-          Plugin to show versions of
-          
-          e.g.: ruby, nodejs
+          Plugin to show versions of e.g.: ruby, nodejs
 
 Examples:
   # outputs `.tool-versions` compatible format
@@ -965,9 +963,7 @@ Usage: exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to start
-          
-          e.g.: nodejs@18 python@3.10
+          Runtime(s) to start e.g.: nodejs@18 python@3.10
 
   [COMMAND]...
           Command string to execute (same as --command)
@@ -997,7 +993,6 @@ Usage: global [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtime(s) to add to .tool-versions
-          
           e.g.: nodejs@18
           If this is a single runtime with no version, the current value of the global
           .tool-versions will be displayed
@@ -1005,13 +1000,12 @@ Arguments:
 Options:
       --pin
           Save exact version to `~/.tool-versions`
-          
           e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions
 
       --fuzzy
           Save fuzzy version to `~/.tool-versions`
-          
-          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
+          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+          this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from ~/.tool-versions
@@ -1061,9 +1055,7 @@ Usage: install [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to install
-          
-          e.g.: nodejs@18
+          Runtime(s) to install e.g.: nodejs@18
 
 Options:
   -p, --plugin <PLUGIN>
@@ -1114,7 +1106,6 @@ Usage: local [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtimes to add to .tool-versions
-          
           e.g.: nodejs@18
           if this is a single runtime with no version,
           the current value of .tool-versions will be displayed
@@ -1126,13 +1117,10 @@ Options:
 
       --pin
           Save exact version to `.tool-versions`
-          
           e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
 
       --fuzzy
-          Save fuzzy version to `.tool-versions`
-          
-          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
+          Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions
@@ -1227,14 +1215,10 @@ Usage: install [OPTIONS] [NAME] [GIT_URL]
 
 Arguments:
   [NAME]
-          The name of the plugin to install
-          
-          e.g.: nodejs, ruby
+          The name of the plugin to install e.g.: nodejs, ruby
 
   [GIT_URL]
           The git url of the plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Options:
   -f, --force
@@ -1242,7 +1226,6 @@ Options:
 
   -a, --all
           Install all missing plugins
-          
           This will only install plugins that have matching shorthands.
           i.e.: they don't need the full git repo url
 
@@ -1272,14 +1255,10 @@ Usage: ls [OPTIONS]
 
 Options:
   -a, --all
-          List all available remote plugins
-          
-          same as `rtx plugins ls-remote`
+          List all available remote plugins Same as `rtx plugins ls-remote`
 
   -u, --urls
-          Show the git url for each plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Examples:
   $ rtx plugins ls
@@ -1305,9 +1284,7 @@ Usage: ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 ```
 ### `rtx plugins uninstall`
 
@@ -1489,7 +1466,10 @@ Usage: where <RUNTIME>
 
 Arguments:
   <RUNTIME>
-          runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version
+          Runtime(s) to look up
+          e.g.: ruby@3
+          if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+          otherwise, it will show the current, active installed version
 
 Examples:
   # Show the latest installed version of nodejs
