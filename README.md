@@ -922,13 +922,10 @@ Examples:
 ### `rtx env`
 
 ```
-exports env vars to activate rtx in a single shell session
+Exports env vars to activate rtx a single time
 
 Use this if you don't want to permanently install rtx. It's not necessary to
 use this if you have `rtx activate` in your shell rc file.
-This can be used similarly to `asdf shell`. It requires `eval` to work since
-it's not written in Bash.
-It's also useful just to see what environment variables rtx sets.
 
 Usage: env [OPTIONS] [RUNTIME]...
 
@@ -1033,7 +1030,7 @@ Examples:
 ### `rtx implode`
 
 ```
-Removes rtx CLI and all generated data
+Removes rtx CLI and all related data
 
 Skips config directory by default.
 
@@ -1086,7 +1083,7 @@ Examples:
 ### `rtx latest`
 
 ```
-Get the latest runtime version of a plugin's runtimes
+Gets the latest available version for a plugin
 
 Usage: latest <RUNTIME>
 
@@ -1442,7 +1439,7 @@ Examples:
 ### `rtx shell`
 
 ```
-sets a runtime for the current shell session
+Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
@@ -1506,17 +1503,28 @@ Examples:
 ### `rtx which`
 
 ```
-shows the plugin that a bin points to
+Shows the path that a bin name points to
 
-Usage: which <BIN_NAME>
+Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
           
 
+Options:
+      --plugin
+          Show the plugin name instead of the path
+
+      --version
+          Show the version instead of the path
+
 Examples:
   $ rtx which node
   /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
+  $ rtx which node --plugin
+  nodejs
+  $ rtx which node --version
+  18.0.0
 ```
 
 ## Comparison to asdf

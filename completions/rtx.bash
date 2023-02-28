@@ -2884,7 +2884,7 @@ _rtx() {
             return 0
             ;;
         rtx__which)
-            opts="-j -r -v -h --jobs --log-level --raw --verbose --help <BIN_NAME>"
+            opts="-j -r -v -h --plugin --version --jobs --log-level --raw --verbose --help <BIN_NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
