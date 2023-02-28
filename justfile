@@ -75,18 +75,18 @@ lint-fix:
 
 # regenerate README.md
 render-help: build
-    rtx render-help > README.md
+    NO_COLOR=1 rtx render-help > README.md
     ./scripts/gh-md-toc --insert --no-backup --hide-footer --skip-header README.md > /dev/null
 
 # regenerate shell completion files
 render-completions: build
-    rtx complete -s bash > completions/rtx.bash
-    rtx complete -s zsh > completions/_rtx
-    rtx complete -s fish > completions/rtx.fish
+    NO_COLOR=1 rtx complete -s bash > completions/rtx.bash
+    NO_COLOR=1 rtx complete -s zsh > completions/_rtx
+    NO_COLOR=1 rtx complete -s fish > completions/rtx.fish
 
 # regenerate manpages
 render-mangen: build
-    rtx mangen
+    NO_COLOR=1 rtx mangen
 
 # called by husky precommit hook
 pre-commit: render-help render-completions render-mangen

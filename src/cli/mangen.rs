@@ -13,7 +13,9 @@ pub struct Mangen {}
 
 impl Command for Mangen {
     fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
-        let cli = Cli::command().version(env!("CARGO_PKG_VERSION"));
+        let cli = Cli::command()
+            .version(env!("CARGO_PKG_VERSION"))
+            .disable_colored_help(true);
 
         let man = clap_mangen::Man::new(cli);
         let mut buffer: Vec<u8> = Default::default();
