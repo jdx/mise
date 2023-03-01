@@ -102,10 +102,7 @@ lazy_static! {
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
     pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
     pub static ref DUMB_TERMINAL: bool = cfg!(test) || var("TERM").map_or(false, |term| term == "dumb");
-    pub static ref RTX_JOBS: usize = var("RTX_JOBS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4);
+    pub static ref RTX_JOBS: usize = var("RTX_JOBS").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
     /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
@@ -120,12 +117,14 @@ lazy_static! {
     };
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
+    pub static ref RTX_EXPERIMENTAL: bool = var_is_true("RTX_EXPERIMENTAL");
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");
     pub static ref RTX_PREFER_STALE: bool = prefer_stale(&ARGS);
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
     pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
     pub static ref RTX_SHIMS_DIR: Option<PathBuf> = var_path("RTX_SHIMS_DIR");
+    pub static ref RTX_RAW: bool = var_is_true("RTX_RAW");
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
 }
 
@@ -223,11 +222,12 @@ fn prefer_stale(args: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
 
     use crate::env::apply_patches;
     use crate::env_diff::EnvDiffOperation;
+
+    use super::*;
 
     #[test]
     fn test_apply_patches() {

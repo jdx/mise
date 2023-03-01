@@ -17,7 +17,6 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Current {
     /// Plugin to show versions of
-    ///
     /// e.g.: ruby, nodejs
     #[clap()]
     plugin: Option<String>,

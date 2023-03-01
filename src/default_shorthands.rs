@@ -8,10 +8,11 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 613] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 614] = [
     // rtx custom aliases
     ("node", "https://github.com/asdf-vm/asdf-nodejs.git"),
     ("tiny", "https://github.com/jdxcode/rtx-tiny.git"),
+    ("go",   "https://github.com/kennyp/asdf-golang.git"),
 
     // asdf original aliases from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),

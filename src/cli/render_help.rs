@@ -74,8 +74,8 @@ $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 
 > **Warning**
 >
-> If you use direnv, you will want to activate direnv _before_ rtx. There is also
-> an alternative way to use rtx inside of direnv, see [here](#direnv).
+> If you use direnv with `layout python` or other logic that needs to reference rtx runtimes,
+> see the [direnv section](#direnv) below.
 
 Install a runtime and set it as the default:
 
@@ -232,7 +232,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.18.2/rtx-v1.18.2-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.19.1/rtx-v1.19.1-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -419,9 +419,13 @@ plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable u
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+
+experimental = false # enable experimental features such as shims
+shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims are stored
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -498,6 +502,14 @@ Only output `.tool-versions` files in `rtx local|global` which will be usable by
 
 Set the number plugins or runtimes to install in parallel. The default is `4`.
 
+#### `RTX_RAW=1`
+
+Set to "1" to directly pipe plugin scripts to stdin/stdout/stderr. By default stdin is disabled
+because when installing a bunch of plugins in parallel you won't see the prompt. Use this if a
+plugin accepts input or otherwise does not seem to be installing correctly.
+
+Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
+
 #### `RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
@@ -530,6 +542,14 @@ rtx has not been updated in over a year. Please update to the latest version.
 You likely do not want to be using rtx if it is that old. I'm doing this instead of
 autoupdating. If, for some reason, you want to stay on some old version, you can hide
 this message with `RTX_HIDE_OUTDATED_BUILD=1`.
+
+#### `RTX_EXPERIMENTAL=1`
+
+Enables experimental features such as shims.
+
+#### [experimental] `RTX_SHIMS_DIR=~/.local/share/rtx/shims`
+
+Set a directory to output shims when running `rtx reshim`. Requires `experimental = true`.
 
 ## Aliases
 
@@ -735,7 +755,7 @@ To support this, there is experimental support for using rtx in a "shim" mode. T
 
 ```
 $ rtx settings set experimental true
-$ rtx settings set shim_dir ~/.rtx/shims
+$ rtx settings set shims_dir ~/.rtx/shims
 $ rtx i nodejs@18.0.0
 $ rtx reshim
 $ ~/.rtx/shims/node -v
@@ -759,14 +779,13 @@ in it as well.
 A more typical usage of direnv would be to set some arbitrary environment variables, or add unrelated
 binaries to PATH. In these cases, rtx will not interfere with direnv.
 
-As mentioned in the Quick Start, it is important to make sure that `rtx activate` is called after `direnv hook`
-in the shell rc file. rtx overrides some of the internal direnv state (`DIRENV_DIFF`) so calling
-direnv first gives rtx the opportunity to make those changes to direnv's state.
-
 ### rtx inside of direnv (`use rtx` in `.envrc`)
 
 If you do encounter issues with `rtx activate`, or just want to use direnv in an alternate way,
-this is a simpler setup that's less likely to cause issues.
+this is a simpler setup that's less likely to cause issues—at the cost of functionality.
+
+This may be required if you want to use direnv's `layout python` with rtx. Otherwise there are
+situations where rtx will override direnv's PATH. `use rtx` ensures that direnv always has control.
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
@@ -796,6 +815,8 @@ export RTX_PYTHON_VERSION=3.11
 
 Of course if you use `rtx activate`, then these steps won't have been necessary and you can use rtx
 as if direnv was not used.
+
+If you continue to struggle, you can also try using the [experimental shims feature](#shims).
 
 ## Cache Behavior
 

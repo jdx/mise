@@ -8,7 +8,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
-/// Get the latest runtime version of a plugin's runtimes
+/// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Latest {

@@ -1,6 +1,6 @@
 [package]
 name = "rtx-cli"
-version = "1.18.2"
+version = "1.19.1"
 edition = "2021"
 description = "Polyglot runtime manager (asdf rust clone)"
 authors = ["Jeff Dickey (@jdxcode)"]
@@ -40,6 +40,7 @@ dirs-next = "2.0.0"
 duct = "0.13.6"
 filetime = "0.2.19"
 flate2 = "1.0.25"
+indenter = "0.3.3"
 indexmap = "1.9.2"
 indicatif = "0.17.3"
 indoc = "2.0.0"
@@ -94,8 +95,8 @@ strip = "symbols"
 
 [package.metadata.release]
 allow-branch = ["main"]
-#sign-tag = true
-#sign-commit = true
+sign-tag = true
+sign-commit = true
 pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
     { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },

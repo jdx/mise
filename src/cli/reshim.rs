@@ -30,7 +30,7 @@ pub struct Reshim {
 
 impl Command for Reshim {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
+        let ts = ToolsetBuilder::new().build(&config);
 
         if !config.settings.experimental {
             err_experimental()?;
@@ -41,7 +41,7 @@ impl Command for Reshim {
         let _ = remove_dir_all(&shims_dir);
         create_dir_all(&shims_dir)?;
 
-        for path in ts.list_paths() {
+        for path in ts.list_paths(&config.settings) {
             if !path.exists() {
                 continue;
             }

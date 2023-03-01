@@ -203,9 +203,8 @@ impl Display for Config {
                     .replace(&dirs::HOME.to_string_lossy().to_string(), "~")
             })
             .collect::<Vec<_>>();
-        writeln!(f, "Config:")?;
-        writeln!(f, "  Files: {}", config_files.join(", "))?;
-        write!(f, "  Installed Plugins: {}", plugins.join(", "))
+        writeln!(f, "Files: {}", config_files.join(", "))?;
+        write!(f, "Installed Plugins: {}", plugins.join(", "))
     }
 }
 

@@ -9,6 +9,7 @@ for f in $FILES; do
     continue
   fi
   "$ROOT/e2e/run_test" "$f"
+  echo
 done
 
 echo "e2e: all tests passed"

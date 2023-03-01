@@ -26,7 +26,6 @@ use crate::toolset::ToolsetBuilder;
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Install {
     /// Runtime(s) to install
-    ///
     /// e.g.: nodejs@18
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Option<Vec<RuntimeArg>>,
@@ -40,7 +39,6 @@ pub struct Install {
     force: bool,
 
     /// Install all missing runtimes as well as all plugins for the current directory
-    ///
     /// This is hidden because it's now the default behavior
     #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"], hide = true)]
     all: bool,
@@ -84,7 +82,7 @@ impl Install {
                     if let Some(rtv) = &v.rtv {
                         if rtv.is_installed() {
                             info!("uninstalling {}", rtv);
-                            rtv.uninstall()?;
+                            rtv.uninstall(&config.settings)?;
                         }
                     }
                 }

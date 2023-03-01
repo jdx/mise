@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+assert() {
+  local actual
+  actual="$($*)"
+  if [[ "$actual" != "$2" ]]; then
+    echo "Expected '$2' but got '$actual'"
+    exit 1
+  fi
+}
+
+eval "$(rtx activate bash)" && _rtx_hook
+rtx doctor

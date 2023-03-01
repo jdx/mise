@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.18.2
+rtx 1.19.1
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -51,8 +51,8 @@ $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 
 > **Warning**
 >
-> If you use direnv, you will want to activate direnv _before_ rtx. There is also
-> an alternative way to use rtx inside of direnv, see [here](#direnv).
+> If you use direnv with `layout python` or other logic that needs to reference rtx runtimes,
+> see the [direnv section](#direnv) below.
 
 Install a runtime and set it as the default:
 
@@ -108,9 +108,12 @@ v18.10.9
          * [RTX_VERBOSE=1](#rtx_verbose1)
          * [RTX_ASDF_COMPAT=1](#rtx_asdf_compat1)
          * [RTX_JOBS=1](#rtx_jobs1)
+         * [RTX_RAW=1](#rtx_raw1)
          * [RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml](#rtx_shorthands_fileconfigrtxshorthandstoml)
          * [RTX_DISABLE_DEFAULT_SHORTHANDS=1](#rtx_disable_default_shorthands1)
          * [RTX_HIDE_OUTDATED_BUILD=1](#rtx_hide_outdated_build1)
+         * [RTX_EXPERIMENTAL=1](#rtx_experimental1)
+         * [[experimental] RTX_SHIMS_DIR=~/.local/share/rtx/shims](#experimental-rtx_shims_dirlocalsharertxshims)
    * [Aliases](#aliases)
    * [Plugins](#plugins)
    * [FAQs](#faqs)
@@ -307,7 +310,7 @@ $ npx @jdxcode/rtx exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.18.2/rtx-v1.18.2-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.19.1/rtx-v1.19.1-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -494,9 +497,13 @@ plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable u
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+
+experimental = false # enable experimental features such as shims
+shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims are stored
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
@@ -573,6 +580,14 @@ Only output `.tool-versions` files in `rtx local|global` which will be usable by
 
 Set the number plugins or runtimes to install in parallel. The default is `4`.
 
+#### `RTX_RAW=1`
+
+Set to "1" to directly pipe plugin scripts to stdin/stdout/stderr. By default stdin is disabled
+because when installing a bunch of plugins in parallel you won't see the prompt. Use this if a
+plugin accepts input or otherwise does not seem to be installing correctly.
+
+Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
+
 #### `RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
@@ -605,6 +620,14 @@ rtx has not been updated in over a year. Please update to the latest version.
 You likely do not want to be using rtx if it is that old. I'm doing this instead of
 autoupdating. If, for some reason, you want to stay on some old version, you can hide
 this message with `RTX_HIDE_OUTDATED_BUILD=1`.
+
+#### `RTX_EXPERIMENTAL=1`
+
+Enables experimental features such as shims.
+
+#### [experimental] `RTX_SHIMS_DIR=~/.local/share/rtx/shims`
+
+Set a directory to output shims when running `rtx reshim`. Requires `experimental = true`.
 
 ## Aliases
 
@@ -833,9 +856,7 @@ Usage: current [PLUGIN]
 
 Arguments:
   [PLUGIN]
-          Plugin to show versions of
-          
-          e.g.: ruby, nodejs
+          Plugin to show versions of e.g.: ruby, nodejs
 
 Examples:
   # outputs `.tool-versions` compatible format
@@ -899,13 +920,10 @@ Examples:
 ### `rtx env`
 
 ```
-exports env vars to activate rtx in a single shell session
+Exports env vars to activate rtx a single time
 
 Use this if you don't want to permanently install rtx. It's not necessary to
 use this if you have `rtx activate` in your shell rc file.
-This can be used similarly to `asdf shell`. It requires `eval` to work since
-it's not written in Bash.
-It's also useful just to see what environment variables rtx sets.
 
 Usage: env [OPTIONS] [RUNTIME]...
 
@@ -943,9 +961,7 @@ Usage: exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to start
-          
-          e.g.: nodejs@18 python@3.10
+          Runtime(s) to start e.g.: nodejs@18 python@3.10
 
   [COMMAND]...
           Command string to execute (same as --command)
@@ -975,7 +991,6 @@ Usage: global [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtime(s) to add to .tool-versions
-          
           e.g.: nodejs@18
           If this is a single runtime with no version, the current value of the global
           .tool-versions will be displayed
@@ -983,13 +998,12 @@ Arguments:
 Options:
       --pin
           Save exact version to `~/.tool-versions`
-          
           e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions
 
       --fuzzy
           Save fuzzy version to `~/.tool-versions`
-          
-          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
+          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+          this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from ~/.tool-versions
@@ -1010,7 +1024,7 @@ Examples:
 ### `rtx implode`
 
 ```
-Removes rtx CLI and all generated data
+Removes rtx CLI and all related data
 
 Skips config directory by default.
 
@@ -1039,9 +1053,7 @@ Usage: install [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to install
-          
-          e.g.: nodejs@18
+          Runtime(s) to install e.g.: nodejs@18
 
 Options:
   -p, --plugin <PLUGIN>
@@ -1063,7 +1075,7 @@ Examples:
 ### `rtx latest`
 
 ```
-Get the latest runtime version of a plugin's runtimes
+Gets the latest available version for a plugin
 
 Usage: latest <RUNTIME>
 
@@ -1092,7 +1104,6 @@ Usage: local [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtimes to add to .tool-versions
-          
           e.g.: nodejs@18
           if this is a single runtime with no version,
           the current value of .tool-versions will be displayed
@@ -1104,13 +1115,10 @@ Options:
 
       --pin
           Save exact version to `.tool-versions`
-          
           e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
 
       --fuzzy
-          Save fuzzy version to `.tool-versions`
-          
-          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions this is the default behavior unless RTX_ASDF_COMPAT=1
+          Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions
@@ -1205,14 +1213,10 @@ Usage: install [OPTIONS] [NAME] [GIT_URL]
 
 Arguments:
   [NAME]
-          The name of the plugin to install
-          
-          e.g.: nodejs, ruby
+          The name of the plugin to install e.g.: nodejs, ruby
 
   [GIT_URL]
           The git url of the plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Options:
   -f, --force
@@ -1220,7 +1224,6 @@ Options:
 
   -a, --all
           Install all missing plugins
-          
           This will only install plugins that have matching shorthands.
           i.e.: they don't need the full git repo url
 
@@ -1250,14 +1253,10 @@ Usage: ls [OPTIONS]
 
 Options:
   -a, --all
-          List all available remote plugins
-          
-          same as `rtx plugins ls-remote`
+          List all available remote plugins Same as `rtx plugins ls-remote`
 
   -u, --urls
-          Show the git url for each plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Examples:
   $ rtx plugins ls
@@ -1283,9 +1282,7 @@ Usage: ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin
-          
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 ```
 ### `rtx plugins uninstall`
 
@@ -1419,7 +1416,7 @@ Examples:
 ### `rtx shell`
 
 ```
-sets a runtime for the current shell session
+Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
@@ -1467,7 +1464,10 @@ Usage: where <RUNTIME>
 
 Arguments:
   <RUNTIME>
-          runtime(s) to look up if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix otherwise, it will show the current, active installed version
+          Runtime(s) to look up
+          e.g.: ruby@3
+          if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+          otherwise, it will show the current, active installed version
 
 Examples:
   # Show the latest installed version of nodejs
@@ -1483,17 +1483,28 @@ Examples:
 ### `rtx which`
 
 ```
-shows the plugin that a bin points to
+Shows the path that a bin name points to
 
-Usage: which <BIN_NAME>
+Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
           
 
+Options:
+      --plugin
+          Show the plugin name instead of the path
+
+      --version
+          Show the version instead of the path
+
 Examples:
   $ rtx which node
   /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
+  $ rtx which node --plugin
+  nodejs
+  $ rtx which node --version
+  18.0.0
 ```
 
 ## Comparison to asdf
@@ -1602,7 +1613,7 @@ To support this, there is experimental support for using rtx in a "shim" mode. T
 
 ```
 $ rtx settings set experimental true
-$ rtx settings set shim_dir ~/.rtx/shims
+$ rtx settings set shims_dir ~/.rtx/shims
 $ rtx i nodejs@18.0.0
 $ rtx reshim
 $ ~/.rtx/shims/node -v
@@ -1626,14 +1637,13 @@ in it as well.
 A more typical usage of direnv would be to set some arbitrary environment variables, or add unrelated
 binaries to PATH. In these cases, rtx will not interfere with direnv.
 
-As mentioned in the Quick Start, it is important to make sure that `rtx activate` is called after `direnv hook`
-in the shell rc file. rtx overrides some of the internal direnv state (`DIRENV_DIFF`) so calling
-direnv first gives rtx the opportunity to make those changes to direnv's state.
-
 ### rtx inside of direnv (`use rtx` in `.envrc`)
 
 If you do encounter issues with `rtx activate`, or just want to use direnv in an alternate way,
-this is a simpler setup that's less likely to cause issues.
+this is a simpler setup that's less likely to cause issues—at the cost of functionality.
+
+This may be required if you want to use direnv's `layout python` with rtx. Otherwise there are
+situations where rtx will override direnv's PATH. `use rtx` ensures that direnv always has control.
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
@@ -1663,6 +1673,8 @@ export RTX_PYTHON_VERSION=3.11
 
 Of course if you use `rtx activate`, then these steps won't have been necessary and you can use rtx
 as if direnv was not used.
+
+If you continue to struggle, you can also try using the [experimental shims feature](#shims).
 
 ## Cache Behavior
 

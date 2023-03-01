@@ -1,5 +1,0 @@
-#!/usr/bin/env sh
-set -e
-. "$(dirname -- "$0")/_/husky.sh"
-
-just pre-commit

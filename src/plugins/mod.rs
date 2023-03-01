@@ -241,6 +241,9 @@ impl Plugin {
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+        if !self.has_list_alias_script() {
+            return Ok(IndexMap::new());
+        }
         let aliases = self
             .alias_cache
             .get_or_try_init(|| self.fetch_aliases(settings))?
@@ -250,9 +253,13 @@ impl Plugin {
         Ok(aliases)
     }
 
-    pub fn legacy_filenames(&self, settings: &Settings) -> Result<&Vec<String>> {
+    pub fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
+        if !self.has_list_legacy_filenames_script() {
+            return Ok(vec![]);
+        }
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames(settings))
+            .cloned()
     }
 
     pub fn external_commands(&self) -> Result<Vec<Vec<String>>> {
@@ -297,7 +304,7 @@ impl Plugin {
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         let result = self
             .script_man
-            .cmd(Script::ListAll)
+            .cmd(settings, Script::ListAll)
             .stdout_capture()
             .stderr_capture()
             .unchecked()
@@ -329,12 +336,9 @@ impl Plugin {
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        if !self.has_list_legacy_filenames_script() {
-            return Ok(vec![]);
-        }
         Ok(self
             .script_man
-            .read(Script::ListLegacyFilenames, settings.verbose)?
+            .read(settings, Script::ListLegacyFilenames, settings.verbose)?
             .split_whitespace()
             .map(|v| v.into())
             .collect())
@@ -350,12 +354,9 @@ impl Plugin {
         self.script_man.script_exists(&Script::ListLegacyFilenames)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        if !self.has_list_alias_script() {
-            return Ok(vec![]);
-        }
         let stdout = self
             .script_man
-            .read(Script::ListAliases, settings.verbose)?;
+            .read(settings, Script::ListAliases, settings.verbose)?;
         let aliases = stdout
             .lines()
             .filter_map(|line| {
@@ -380,7 +381,7 @@ impl Plugin {
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(script, settings.verbose)?,
+            true => self.script_man.read(settings, script, settings.verbose)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()

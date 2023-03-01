@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH rtx 1  "rtx 1.18.2" 
+.TH rtx 1  "rtx 1.19.1" 
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
-\fBrtx\fR [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBrtx\fR [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
 .PP
@@ -18,6 +18,9 @@ https://asdf\-vm.com/
 .TP
 \fB\-j\fR, \fB\-\-jobs\fR
 Number of plugins and runtimes to install in parallel, default: 4
+.TP
+\fB\-r\fR, \fB\-\-raw\fR
+Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets \-\-jobs=1.
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show installation output
@@ -57,7 +60,7 @@ rtx\-doctor(1)
 Check rtx installation for possible problems.
 .TP
 rtx\-env(1)
-exports env vars to activate rtx in a single shell session
+Exports env vars to activate rtx a single time
 .TP
 rtx\-exec(1)
 Execute a command with runtime(s) set
@@ -66,13 +69,13 @@ rtx\-global(1)
 Sets global .tool\-versions to include a specified runtime
 .TP
 rtx\-implode(1)
-Removes rtx CLI and all generated data
+Removes rtx CLI and all related data
 .TP
 rtx\-install(1)
 Install a runtime
 .TP
 rtx\-latest(1)
-Get the latest runtime version of a plugin\*(Aqs runtimes
+Gets the latest available version for a plugin
 .TP
 rtx\-local(1)
 Sets .tool\-versions to include a specific runtime
@@ -96,7 +99,7 @@ rtx\-settings(1)
 Manage settings
 .TP
 rtx\-shell(1)
-sets a runtime for the current shell session
+Sets a tool version for the current shell session
 .TP
 rtx\-uninstall(1)
 Removes runtime versions
@@ -108,7 +111,7 @@ rtx\-where(1)
 Display the installation path for a runtime
 .TP
 rtx\-which(1)
-shows the plugin that a bin points to
+Shows the path that a bin name points to
 .TP
 rtx\-help(1)
 Print this message or the help of the given subcommand(s)
@@ -126,6 +129,6 @@ Examples:
   rtx x nodejs@18 \-\- node app.js  Run `node app.js` with PATH pointing to
                                   node\-18.x
 .SH VERSION
-v1.18.2
+v1.19.1
 .SH AUTHORS
 Jeff Dickey <@jdxcode>

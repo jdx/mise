@@ -55,8 +55,6 @@ impl Shell for Zsh {
             if [[ -z "${{chpwd_functions[(r)_rtx_hook]+1}}" ]]; then
               chpwd_functions=( _rtx_hook ${{chpwd_functions[@]}} )
             fi
-
-            _rtx_hook
             "#});
 
         out

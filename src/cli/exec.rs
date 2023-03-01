@@ -32,7 +32,6 @@ use crate::toolset::ToolsetBuilder;
 #[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Exec {
     /// Runtime(s) to start
-    ///
     /// e.g.: nodejs@18 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
     pub runtime: Vec<RuntimeArg>,
@@ -55,7 +54,7 @@ impl Command for Exec {
 
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
         let mut env = ts.env();
-        env.insert("PATH".into(), ts.path_env());
+        env.insert("PATH".into(), ts.path_env(&config.settings));
         if config.settings.missing_runtime_behavior != Ignore {
             // prevent rtx from auto-installing inside a shim
             env.insert("RTX_MISSING_RUNTIME_BEHAVIOR".into(), "warn".into());
