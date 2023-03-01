@@ -1,0 +1,20 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf.settings()
+---
+SettingsBuilder {
+    experimental: None,
+    missing_runtime_behavior: None,
+    always_keep_download: None,
+    legacy_version_file: None,
+    plugin_autoupdate_last_check_duration: None,
+    aliases: None,
+    verbose: None,
+    asdf_compat: None,
+    jobs: None,
+    shorthands_file: None,
+    disable_default_shorthands: None,
+    log_level: None,
+    shims_dir: None,
+    raw: None,
+}

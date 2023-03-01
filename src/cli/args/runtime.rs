@@ -1,6 +1,7 @@
 use color_eyre::eyre::Result;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
+use std::path::PathBuf;
 
 use clap::{Arg, Command, Error};
 use regex::Regex;
@@ -29,7 +30,7 @@ pub enum RuntimeArgVersion {
     /// build runtime from source at this VCS sha
     Ref(String),
     /// runtime is in a local directory, not managed by rtx
-    Path(String),
+    Path(PathBuf),
     Prefix(String),
 }
 
@@ -102,7 +103,7 @@ impl Display for RuntimeArgVersion {
         match self {
             RuntimeArgVersion::System => write!(f, "system"),
             RuntimeArgVersion::Version(version) => write!(f, "{version}"),
-            RuntimeArgVersion::Path(path) => write!(f, "path:{path}"),
+            RuntimeArgVersion::Path(path) => write!(f, "path:{}", path.display()),
             RuntimeArgVersion::Ref(ref_) => write!(f, "ref:{ref_}"),
             RuntimeArgVersion::Prefix(prefix) => write!(f, "prefix:{prefix}"),
             RuntimeArgVersion::None => write!(f, "current"),

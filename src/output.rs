@@ -34,6 +34,12 @@ impl Output {
     }
 }
 
+impl Default for Output {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct OutputStream {
     pub content: String,

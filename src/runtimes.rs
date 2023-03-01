@@ -15,7 +15,9 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::hash::hash_to_str;
-use crate::plugins::{InstallType, Plugin, Script, ScriptManager};
+use crate::plugins::Script::{Download, Install};
+use crate::plugins::{Plugin, Script, ScriptManager};
+use crate::toolset::{ToolVersion, ToolVersionType};
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env, fake_asdf, file};
 
@@ -26,7 +28,6 @@ pub struct RuntimeVersion {
     pub version: String,
     pub plugin: Arc<Plugin>,
     pub install_path: PathBuf,
-    pub install_type: InstallType,
     download_path: PathBuf,
     cache_path: PathBuf,
     script_man: ScriptManager,
@@ -34,28 +35,23 @@ pub struct RuntimeVersion {
 }
 
 impl RuntimeVersion {
-    pub fn new(plugin: Arc<Plugin>, install_type: InstallType) -> Self {
-        let version = match &install_type {
-            InstallType::Version(v) => v.to_string(),
-            InstallType::Ref(r) => format!("ref-{r}"),
-            InstallType::Path(p) => p.display().to_string(),
-            InstallType::System => "system".into(),
-        };
-        let install_path = match &install_type {
-            InstallType::Path(p) => p.clone(),
+    pub fn new(plugin: Arc<Plugin>, version: String, tv: ToolVersion) -> Self {
+        let install_path = match &tv.r#type {
+            ToolVersionType::Path(p) => p.clone(),
             _ => dirs::INSTALLS.join(&plugin.name).join(&version),
         };
-        let download_path = match &install_type {
-            InstallType::Path(p) => p.clone(),
+        let download_path = match &tv.r#type {
+            ToolVersionType::Path(p) => p.clone(),
             _ => dirs::DOWNLOADS.join(&plugin.name).join(&version),
         };
-        let cache_path = match &install_type {
-            InstallType::Path(p) => dirs::CACHE.join(&plugin.name).join(hash_to_str(&p)),
+        let cache_path = match &tv.r#type {
+            ToolVersionType::Path(p) => dirs::CACHE.join(&plugin.name).join(hash_to_str(&p)),
             _ => dirs::CACHE.join(&plugin.name).join(&version),
         };
         Self {
             script_man: build_script_man(
-                install_type.clone(),
+                &tv,
+                &version,
                 &plugin.plugin_path,
                 &install_path,
                 &download_path,
@@ -67,7 +63,6 @@ impl RuntimeVersion {
             install_path,
             version,
             plugin,
-            install_type,
         }
     }
 
@@ -85,11 +80,9 @@ impl RuntimeVersion {
         pr.enable_steady_tick();
 
         let settings = &config.settings;
-        debug!("install {} {}", self, self.install_type);
+        debug!("install {}", self);
 
         self.create_install_dirs()?;
-        let download = Script::Download(self.install_type.clone());
-        let install = Script::Install(self.install_type.clone());
 
         let run_script = |script| {
             self.script_man.run_by_line(
@@ -110,17 +103,17 @@ impl RuntimeVersion {
             )
         };
 
-        if self.script_man.script_exists(&download) {
+        if self.script_man.script_exists(&Download) {
             pr.set_message("downloading".into());
-            run_script(download)?;
+            run_script(Download)?;
         }
         pr.set_message("installing".into());
-        run_script(install)?;
+        run_script(Install)?;
         self.cleanup_install_dirs(settings);
 
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
-        touch_dirs.extend(config.config_files.iter().cloned());
+        touch_dirs.extend(config.config_files.keys().cloned());
         for path in touch_dirs {
             let err = file::touch_dir(&path);
             if let Err(err) = err {
@@ -156,12 +149,9 @@ impl RuntimeVersion {
     }
 
     pub fn is_installed(&self) -> bool {
-        match &self.install_type {
-            InstallType::System => true,
-            InstallType::Path(p) => p.exists(),
-            InstallType::Version(_) | InstallType::Ref(_) => {
-                self.install_path.exists() && !self.incomplete_file_path().exists()
-            }
+        match self.version.as_str() {
+            "system" => true,
+            _ => self.install_path.exists() && !self.incomplete_file_path().exists(),
         }
     }
 
@@ -259,12 +249,13 @@ impl PartialEq for RuntimeVersion {
 }
 
 fn build_script_man(
-    install_type: InstallType,
+    tv: &ToolVersion,
+    version: &str,
     plugin_path: &Path,
     install_path: &Path,
     download_path: &Path,
 ) -> ScriptManager {
-    let sm = ScriptManager::new(plugin_path.to_path_buf())
+    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
         .with_envs(env::PRISTINE_ENV.clone())
         .with_env("PATH".into(), fake_asdf::get_path_with_fake_asdf())
         .with_env(
@@ -276,13 +267,17 @@ fn build_script_man(
             download_path.to_string_lossy().to_string(),
         )
         .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
-    match install_type {
-        InstallType::Version(v) => sm
+    for (key, value) in tv.options.iter() {
+        let k = format!("RTX_TOOL_OPT__{}", key.to_uppercase());
+        sm = sm.with_env(k, value.clone());
+    }
+    match &tv.r#type {
+        ToolVersionType::Version(_) | ToolVersionType::Prefix(_) => sm
             .with_env("ASDF_INSTALL_TYPE".into(), "version".into())
-            .with_env("ASDF_INSTALL_VERSION".into(), v),
-        InstallType::Ref(r) => sm
+            .with_env("ASDF_INSTALL_VERSION".into(), version.to_string()),
+        ToolVersionType::Ref(r) => sm
             .with_env("ASDF_INSTALL_TYPE".into(), "ref".into())
-            .with_env("ASDF_INSTALL_VERSION".into(), r),
+            .with_env("ASDF_INSTALL_VERSION".into(), r.to_string()),
         _ => sm,
     }
 }

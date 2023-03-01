@@ -1,0 +1,39 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf.toolset
+---
+Toolset {
+    versions: {
+        "nodejs": ToolVersionList {
+            versions: [
+                ToolVersion {
+                    plugin_name: "nodejs",
+                    type: Version(
+                        "16.0.1",
+                    ),
+                    rtv: None,
+                    repo: None,
+                    options: {},
+                },
+                ToolVersion {
+                    plugin_name: "nodejs",
+                    type: Version(
+                        "18.0.1",
+                    ),
+                    rtv: None,
+                    repo: None,
+                    options: {},
+                },
+            ],
+            source: RtxToml(
+                "",
+            ),
+        },
+    },
+    source: Some(
+        RtxToml(
+            "",
+        ),
+    ),
+    plugins: {},
+}

@@ -1,0 +1,25 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf.plugins()
+---
+{
+    "terraform": [
+        "terraform@1.0.0",
+    ],
+    "nodejs": [
+        "nodejs@16",
+        "nodejs@prefix:18",
+        "nodejs@ref:master",
+        "nodejs@path:~/.nodes/14",
+    ],
+    "jq": [
+        "jq@prefix:1.6",
+    ],
+    "shellcheck": [
+        "shellcheck@0.9.0",
+    ],
+    "python": [
+        "python@3.10.0",
+        "python@3.9.0",
+    ],
+}
