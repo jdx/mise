@@ -30,7 +30,6 @@ jobs:
       - name: Run cargo nextest
         run: cargo nextest run --features clap_mangen
         env:
-          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
       - run: just lint
 
@@ -53,7 +52,7 @@ jobs:
       - name: Run tests with coverage
         uses: nick-fields/retry@v2
         env:
-          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 20
@@ -136,7 +135,7 @@ jobs:
       - name: Run e2e tests
         uses: nick-fields/retry@v2
         env:
-          GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 20
