@@ -84,6 +84,7 @@ v18.10.9
       * [dnf](#dnf)
       * [yum](#yum)
       * [aur](#aur)
+      * [nix](#nix)
    * [Other Shells](#other-shells)
       * [Bash](#bash)
       * [Fish](#fish)
@@ -367,6 +368,45 @@ git clone https://aur.archlinux.org/rtx.git
 cd rtx
 makepkg -si
 ```
+
+### nix
+
+For NixOS or those using the Nix package manager:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rtx-flake = {
+      url = "github:chadac/rtx/add-nix-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rtx-flake }:
+    flake-utils.lib.eachDefaultSystem(system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ rtx-flake.overlay ];
+        };
+      in {
+        devShells.default = pkgs.mkShell {
+          name = "my-dev-env";
+          nativeBuildInputs = with pkgs; [
+            rtx
+          ];
+        };
+      }
+    );
+}
+```
+
+You can also import the package directly using
+`rtx-flake.packages.${system}.rtx`. It supports all default Nix
+systems.
 
 ## Other Shells
 
