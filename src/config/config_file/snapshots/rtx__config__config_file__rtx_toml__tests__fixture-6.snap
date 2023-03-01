@@ -1,0 +1,25 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf
+---
+[env]
+NODE_ENV = 'production'
+
+[tools]
+terraform = '1.0.0'
+nodejs = ['16', 'prefix:18', 'ref:master', 'path:~/.nodes/14']
+jq = { prefix = '1.6', repo = 'https://github.com/AZMCode/asdf-jq' }
+shellcheck = { version = '0.9.0' }
+python = [
+  { version = '3.10.0', venv = '.venv' },
+  { version = '3.9.0' },
+]
+
+[settings]
+verbose = true
+missing_runtime_behavior = 'warn'
+shims_dir = '~/.rtx/shims'
+
+[alias.nodejs]
+my_custom_node = '18'
+

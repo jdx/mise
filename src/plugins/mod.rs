@@ -14,7 +14,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
-pub use script_manager::{InstallType, Script, ScriptManager};
+pub use script_manager::{Script, ScriptManager};
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;

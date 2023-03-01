@@ -9,7 +9,8 @@ use rtxrc::RTXFile;
 use tool_versions::ToolVersions;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
-use crate::config::Config;
+use crate::config::settings::SettingsBuilder;
+use crate::config::{AliasMap, Config};
 use crate::env;
 
 use crate::file::display_path;
@@ -19,17 +20,19 @@ use crate::plugins::PluginName;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 pub mod legacy_version;
+pub mod rtx_toml;
 pub mod rtxrc;
 pub mod tool_versions;
 
 #[derive(Debug, PartialEq)]
 pub enum ConfigFileType {
     RtxRc,
+    RtxToml,
     ToolVersions,
     LegacyVersion,
 }
 
-pub trait ConfigFile: Debug + Display + Send {
+pub trait ConfigFile: Debug + Display + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
     fn plugins(&self) -> IndexMap<PluginName, Vec<String>>;
@@ -40,6 +43,8 @@ pub trait ConfigFile: Debug + Display + Send {
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> Toolset;
+    fn settings(&self) -> SettingsBuilder;
+    fn aliases(&self) -> AliasMap;
 }
 
 impl dyn ConfigFile {
@@ -65,7 +70,7 @@ impl dyn ConfigFile {
                     } else {
                         match &runtime.version {
                             RuntimeArgVersion::Version(ref v) => v.to_string(),
-                            RuntimeArgVersion::Path(p) => format!("path:{p}"),
+                            RuntimeArgVersion::Path(p) => format!("path:{}", p.display()),
                             RuntimeArgVersion::Ref(r) => format!("ref:{r}"),
                             RuntimeArgVersion::Prefix(p) => format!("prefix:{p}"),
                             _ => "latest".to_string(),
@@ -121,6 +126,7 @@ pub fn init(path: &Path) -> Box<dyn ConfigFile> {
 
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
+        Some(ConfigFileType::RtxToml) => Ok(Box::new(rtx_toml::RtxToml::from_file(path)?)),
         Some(ConfigFileType::RtxRc) => Ok(Box::new(RTXFile::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
         #[allow(clippy::box_default)]
@@ -131,6 +137,7 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
         ".rtxrc" | ".rtxrc.toml" | "config.toml" => Some(ConfigFileType::RtxRc),
+        f if env::RTX_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::RtxToml),
         f if env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }

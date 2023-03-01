@@ -4,12 +4,14 @@ use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
+use crate::config::AliasMap;
 use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::config::settings::SettingsBuilder;
 use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
@@ -109,7 +111,7 @@ impl From<&ToolVersions> for Toolset {
                 let v = match version.split_once(':') {
                     Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
                     Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
-                    Some(("path", v)) => ToolVersionType::Path(v.to_string()),
+                    Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
                     None if version == "system" => ToolVersionType::System,
                     _ => ToolVersionType::Version(version.to_string()),
                 };
@@ -196,6 +198,14 @@ impl ConfigFile for ToolVersions {
 
     fn to_toolset(&self) -> Toolset {
         self.into()
+    }
+
+    fn settings(&self) -> SettingsBuilder {
+        SettingsBuilder::default()
+    }
+
+    fn aliases(&self) -> AliasMap {
+        AliasMap::default()
     }
 }
 
@@ -324,6 +334,14 @@ pub(crate) mod tests {
         }
 
         fn to_toolset(&self) -> Toolset {
+            todo!()
+        }
+
+        fn settings(&self) -> SettingsBuilder {
+            todo!()
+        }
+
+        fn aliases(&self) -> AliasMap {
             todo!()
         }
     }

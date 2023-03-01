@@ -13,7 +13,7 @@ use once_cell::sync::OnceCell;
 use toml::Value;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::settings::{MissingRuntimeBehavior, Settings, SettingsBuilder};
+use crate::config::settings::{MissingRuntimeBehavior, SettingsBuilder};
 use crate::config::AliasMap;
 use crate::plugins::PluginName;
 use crate::toolset::Toolset;
@@ -28,8 +28,8 @@ pub struct RTXFile {
     pub path: PathBuf,
     pub plugins: IndexMap<String, Plugin>,
     pub env: HashMap<String, String>,
+    pub settings: SettingsBuilder,
     edit: OnceCell<Mutex<toml_edit::Document>>,
-    settings: SettingsBuilder,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
@@ -75,8 +75,8 @@ impl RTXFile {
         Ok(rf)
     }
 
-    pub fn settings(&self) -> Settings {
-        self.settings.build()
+    pub fn settings(&self) -> SettingsBuilder {
+        self.settings.clone()
     }
 
     fn parse_toplevel_key(&mut self, k: &String, v: &Value) -> Result<()> {
@@ -416,6 +416,14 @@ impl ConfigFile for RTXFile {
 
     fn to_toolset(&self) -> Toolset {
         todo!()
+    }
+
+    fn settings(&self) -> SettingsBuilder {
+        SettingsBuilder::default()
+    }
+
+    fn aliases(&self) -> AliasMap {
+        AliasMap::default()
     }
 }
 

@@ -1,0 +1,9 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf.alias
+---
+{
+    "nodejs": {
+        "my_custom_node": "18",
+    },
+}
