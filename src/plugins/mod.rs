@@ -241,6 +241,9 @@ impl Plugin {
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+        if !self.has_list_alias_script() {
+            return Ok(IndexMap::new());
+        }
         let aliases = self
             .alias_cache
             .get_or_try_init(|| self.fetch_aliases(settings))?
@@ -250,9 +253,13 @@ impl Plugin {
         Ok(aliases)
     }
 
-    pub fn legacy_filenames(&self, settings: &Settings) -> Result<&Vec<String>> {
+    pub fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
+        if !self.has_list_legacy_filenames_script() {
+            return Ok(vec![]);
+        }
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames(settings))
+            .cloned()
     }
 
     pub fn external_commands(&self) -> Result<Vec<Vec<String>>> {
@@ -329,9 +336,6 @@ impl Plugin {
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        if !self.has_list_legacy_filenames_script() {
-            return Ok(vec![]);
-        }
         Ok(self
             .script_man
             .read(settings, Script::ListLegacyFilenames, settings.verbose)?
@@ -350,9 +354,6 @@ impl Plugin {
         self.script_man.script_exists(&Script::ListLegacyFilenames)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        if !self.has_list_alias_script() {
-            return Ok(vec![]);
-        }
         let stdout = self
             .script_man
             .read(settings, Script::ListAliases, settings.verbose)?;
