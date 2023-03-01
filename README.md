@@ -28,6 +28,7 @@ Note that calling `which node` gives us a real path to the binary, not a shim.
 - **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
 - **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
 - **One command install** - No need to manually install each plugin, just run `rtx install` and it will install all the plugins you need.
+- **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
 
 ## Quickstart
 
