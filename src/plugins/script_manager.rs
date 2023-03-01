@@ -37,8 +37,8 @@ pub enum Script {
     ParseLegacyFile(String),
 
     // RuntimeVersion
-    Download(InstallType),
-    Install(InstallType),
+    Download,
+    Install,
     Uninstall,
     ListBinPaths,
     // ExecEnv,
@@ -54,30 +54,11 @@ impl Display for Script {
             Script::ParseLegacyFile(_) => write!(f, "parse-legacy-file"),
 
             // RuntimeVersion
-            Script::Install(_) => write!(f, "install"),
+            Script::Install => write!(f, "install"),
             Script::Uninstall => write!(f, "uninstall"),
             Script::ListBinPaths => write!(f, "list-bin-paths"),
             // Script::ExecEnv => write!(f, "exec-env"),
-            Script::Download(_) => write!(f, "download"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InstallType {
-    Version(String),
-    Ref(String),
-    Path(PathBuf),
-    System,
-}
-
-impl Display for InstallType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            InstallType::Version(v) => write!(f, "{v}"),
-            InstallType::Ref(r) => write!(f, "ref:{r}"),
-            InstallType::Path(p) => write!(f, "path:{}", p.display()),
-            InstallType::System => write!(f, "system"),
+            Script::Download => write!(f, "download"),
         }
     }
 }

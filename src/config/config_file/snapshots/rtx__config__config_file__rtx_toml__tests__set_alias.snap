@@ -1,0 +1,14 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf.alias
+---
+{
+    "nodejs": {
+        "16": "16.0.0",
+        "18": "18.0.1",
+        "20": "20.0.0",
+    },
+    "python": {
+        "3.10": "3.10.0",
+    },
+}

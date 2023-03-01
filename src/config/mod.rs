@@ -12,7 +12,9 @@ use rayon::prelude::*;
 
 pub use settings::{MissingRuntimeBehavior, Settings};
 
+use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtxrc::RTXFile;
+use crate::config::config_file::ConfigFile;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::{dirs, env, file};
@@ -27,20 +29,27 @@ pub struct Config {
     pub settings: Settings,
     pub rtxrc: RTXFile,
     pub legacy_files: IndexMap<String, PluginName>,
-    pub config_files: Vec<PathBuf>,
+    pub config_files: IndexMap<PathBuf, Box<dyn ConfigFile>>,
     pub aliases: AliasMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
+    pub env: IndexMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
 }
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let rtxrc = load_rtxrc()?;
-        let settings = rtxrc.settings();
         let plugins = load_plugins()?;
+        let rtxrc = load_rtxrc()?;
+        let mut settings = rtxrc.settings();
+        let config_files = load_all_config_files(&settings.build(), &plugins, &IndexMap::new());
+        for cf in config_files.values() {
+            settings.merge(cf.settings());
+        }
+        let settings = settings.build();
         let legacy_files = load_legacy_files(&settings, &plugins);
-        let config_files = find_all_config_files(&legacy_files);
-        let aliases = load_aliases(&settings, &plugins);
+        let config_files = load_all_config_files(&settings, &plugins, &legacy_files);
+        let env = load_env(&config_files);
+        let aliases = load_aliases(&settings, &plugins, &config_files);
 
         let config = Self {
             settings,
@@ -49,6 +58,7 @@ impl Config {
             aliases,
             rtxrc,
             plugins,
+            env,
             shorthands: OnceCell::new(),
         };
 
@@ -122,10 +132,13 @@ fn load_legacy_files(
         .collect()
 }
 
-fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec<PathBuf> {
+fn load_all_config_files(
+    settings: &Settings,
+    plugins: &IndexMap<PluginName, Arc<Plugin>>,
+    legacy_filenames: &IndexMap<String, PluginName>,
+) -> IndexMap<PathBuf, Box<dyn ConfigFile>> {
     let mut filenames = vec![
-        // ".rtxrc.toml",
-        // ".rtxrc",
+        env::RTX_DEFAULT_CONFIG_FILENAME.as_str(),
         env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str(),
     ];
     for filename in legacy_filenames.keys() {
@@ -140,10 +153,52 @@ fn find_all_config_files(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
         config_files.push(home_config);
     }
 
-    config_files.into_iter().unique().collect()
+    config_files
+        .into_iter()
+        .unique()
+        .collect_vec()
+        .into_par_iter()
+        .map(
+            |f| match parse_config_file(&f, settings, legacy_filenames, plugins) {
+                Ok(cf) => Some((f, cf)),
+                Err(err) => {
+                    warn!("error parsing: {} {err}", f.display());
+                    None
+                }
+            },
+        )
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
-fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Arc<Plugin>>) -> AliasMap {
+fn parse_config_file(
+    f: &PathBuf,
+    settings: &Settings,
+    legacy_filenames: &IndexMap<String, PluginName>,
+    plugins: &IndexMap<PluginName, Arc<Plugin>>,
+) -> Result<Box<dyn ConfigFile>> {
+    match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
+        Some(plugin) => LegacyVersionFile::parse(settings, f.into(), plugins.get(plugin).unwrap())
+            .map(|f| Box::new(f) as Box<dyn ConfigFile>),
+        None => config_file::parse(f),
+    }
+}
+
+fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<String, String> {
+    let mut env = IndexMap::new();
+    for cf in config_files.values() {
+        env.extend(cf.env());
+    }
+    env
+}
+
+fn load_aliases(
+    settings: &Settings,
+    plugins: &IndexMap<PluginName, Arc<Plugin>>,
+    config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>,
+) -> AliasMap {
     let mut aliases: AliasMap = IndexMap::new();
     let plugin_aliases: Vec<_> = plugins
         .values()
@@ -165,6 +220,17 @@ fn load_aliases(settings: &Settings, plugins: &IndexMap<PluginName, Arc<Plugin>>
                 .entry(plugin.clone())
                 .or_insert_with(IndexMap::new)
                 .insert(from, to);
+        }
+    }
+
+    for config_file in config_files.values() {
+        for (plugin, plugin_aliases) in config_file.aliases() {
+            for (from, to) in plugin_aliases {
+                aliases
+                    .entry(plugin.clone())
+                    .or_insert_with(IndexMap::new)
+                    .insert(from, to);
+            }
         }
     }
 
@@ -197,7 +263,7 @@ impl Display for Config {
         let config_files = self
             .config_files
             .iter()
-            .map(|p| {
+            .map(|(p, _)| {
                 p.to_string_lossy()
                     .to_string()
                     .replace(&dirs::HOME.to_string_lossy().to_string(), "~")
@@ -210,8 +276,9 @@ impl Display for Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use insta::assert_display_snapshot;
+
+    use super::*;
 
     #[test]
     fn test_load() {

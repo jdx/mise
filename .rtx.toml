@@ -1,0 +1,7 @@
+[env]
+FOO = "bar"
+
+[tools]
+nodejs = '17'
+tiny = {version="1", foo="bar"}
+golang = {version="latest", foo="bar"}

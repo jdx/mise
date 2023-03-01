@@ -116,7 +116,7 @@ impl SettingsBuilder {
     //     }
     // }
 
-    pub fn _merge(&mut self, other: Self) -> &mut Self {
+    pub fn merge(&mut self, other: Self) -> &mut Self {
         if other.experimental.is_some() {
             self.experimental = other.experimental;
         }
@@ -247,7 +247,7 @@ mod tests {
             missing_runtime_behavior: Some(AutoInstall),
             ..SettingsBuilder::default()
         };
-        s1._merge(s2);
+        s1.merge(s2);
 
         assert_eq!(s1.missing_runtime_behavior, Some(AutoInstall));
     }

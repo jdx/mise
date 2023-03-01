@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::default::Default;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
@@ -6,7 +7,8 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::Settings;
+use crate::config::settings::SettingsBuilder;
+use crate::config::{AliasMap, Settings};
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
@@ -72,6 +74,14 @@ impl ConfigFile for LegacyVersionFile {
 
     fn to_toolset(&self) -> Toolset {
         self.into()
+    }
+
+    fn settings(&self) -> SettingsBuilder {
+        SettingsBuilder::default()
+    }
+
+    fn aliases(&self) -> AliasMap {
+        AliasMap::default()
     }
 }
 
