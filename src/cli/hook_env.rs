@@ -40,7 +40,7 @@ impl Command for HookEnv {
 
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
-        let env = ts.env();
+        let env = ts.env(&config);
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 

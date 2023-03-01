@@ -155,7 +155,7 @@ pub fn get_watch_files(config: &Config) -> HashSet<PathBuf> {
     if dirs::ROOT.exists() {
         watches.insert(dirs::ROOT.clone());
     }
-    for cf in &config.config_files {
+    for cf in config.config_files.keys() {
         watches.insert(cf.clone());
     }
 

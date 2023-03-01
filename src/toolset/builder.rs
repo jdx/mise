@@ -1,16 +1,12 @@
-use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
-use crate::config::config_file::legacy_version::LegacyVersionFile;
-use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config};
-
+use crate::config::Config;
+use crate::env;
 use crate::toolset::tool_version::ToolVersionType;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
-use crate::{env, file};
 
 #[derive(Debug)]
 pub struct ToolsetBuilder {
@@ -57,28 +53,11 @@ impl ToolsetBuilder {
 fn load_config_files(config: &Config, ts: &mut Toolset) {
     let toolsets: Vec<_> = config
         .config_files
-        .par_iter()
+        .values()
+        .collect_vec()
+        .into_par_iter()
         .rev()
-        .filter_map(|path| {
-            let filename = path.file_name().unwrap().to_string_lossy().to_string();
-            let result: Result<Toolset> = match config.legacy_files.get(&filename) {
-                Some(plugin) => LegacyVersionFile::parse(
-                    &config.settings,
-                    path.into(),
-                    config.plugins.get(plugin).unwrap(),
-                )
-                .map(|cf| cf.to_toolset()),
-                None => config_file::parse(path).map(|cf| cf.to_toolset()),
-            };
-            match result {
-                Ok(ts) => Some(ts),
-                Err(e) => {
-                    warn!("error parsing config file: {}", e);
-                    warn!("file: {}", file::display_path(path));
-                    None
-                }
-            }
-        })
+        .map(|cf| cf.to_toolset())
         .collect();
     for toolset in toolsets {
         ts.merge(toolset);

@@ -17,13 +17,13 @@ pub use builder::ToolsetBuilder;
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version::ToolVersionType;
+pub use tool_version_list::ToolVersionList;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior, Settings};
 use crate::env;
-use crate::plugins::{InstallType, Plugin, PluginName};
+use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
-use crate::toolset::tool_version_list::ToolVersionList;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 mod builder;
@@ -36,7 +36,7 @@ mod tool_version_list;
 /// one example is a .tool-versions file
 /// the idea is that we start with an empty toolset, then
 /// merge in other toolsets from various sources
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     source: Option<ToolSource>,
@@ -217,9 +217,10 @@ impl Toolset {
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_installed_versions()?;
-                Ok(versions
-                    .into_iter()
-                    .map(|v| RuntimeVersion::new(p.clone(), InstallType::Version(v))))
+                Ok(versions.into_iter().map(|v| {
+                    let tv = ToolVersion::new(p.name.clone(), ToolVersionType::Version(v.clone()));
+                    RuntimeVersion::new(p.clone(), v, tv)
+                }))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -256,7 +257,7 @@ impl Toolset {
             .filter(|v| v.is_installed())
             .collect()
     }
-    pub fn env(&self) -> IndexMap<String, String> {
+    pub fn env(&self, config: &Config) -> IndexMap<String, String> {
         let mut entries: IndexMap<String, String> = self
             .list_current_installed_versions()
             .into_par_iter()
@@ -272,6 +273,7 @@ impl Toolset {
             .rev()
             .collect();
         entries.sort_keys();
+        entries.extend(config.env.clone());
         entries
     }
     pub fn path_env(&self, settings: &Settings) -> String {

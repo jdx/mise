@@ -115,6 +115,11 @@ lazy_static! {
     } else {
         var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
     };
+    pub static ref RTX_DEFAULT_CONFIG_FILENAME: String = if cfg!(test) {
+        ".test.rtx.toml".into()
+    } else {
+        var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into())
+    };
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
     pub static ref RTX_EXPERIMENTAL: bool = var_is_true("RTX_EXPERIMENTAL");

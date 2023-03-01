@@ -473,6 +473,50 @@ my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-
 
 These settings can also be managed with `rtx settings ls|get|set|unset`.
 
+### [experimental] `.rtx.toml`
+
+`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions` file.
+
+It allows for functionality that is not possible with `.tool-versions`, such as:
+
+* setting arbitrary env vars while inside the directory
+* passing options to plugins like `virtualenv='.venv'` for rtx-python.
+* specifying plugin repo url for custom plugins so it does not need to be added manually
+
+Here is what the config looks like:
+
+```toml
+[env]
+NODE_ENV = 'production' # supports arbitrary env vars so rtx can be used like dotenv
+
+[tools]
+# specify single or multiple versions
+terraform = '1.0.0'
+erlang = ['23.3', '24.0']
+
+# supports everything you can do with .tool-versions currently
+nodejs = ['16', 'prefix:18', 'ref:master', 'path:~/.nodes/14']
+
+# repo can be used to git clone a custom repo url (see #226)
+jq = {{ version = '1.6', repo = 'https://github.com/AZMCode/asdf-jq' }}
+
+# send arbitrary options to the plugin, passed as:
+# RTX_TOOL_OPTS__VENV=.venv
+# RTX_TOOL_OPTS__DEFAULT_PACKAGES__0=ansible
+# RTX_TOOL_OPTS__DEFAULT_PACKAGES__1=pipenv
+python = {{ version = '3.10', venv = '.venv', default_packages = ['ansible', 'pipenv'] }}
+
+[settings] # project-local settings
+verbose = true
+missing_runtime_behavior = 'warn'
+shims_dir = '~/.rtx/shims'
+
+[alias.nodejs] # project-local aliases
+my_custom_node = '18'
+```
+
+`.rtx.toml` is currently experimental and may change in minor versions of rtx.
+
 ### Environment variables
 
 rtx can also be configured via environment variables. The following options are available:

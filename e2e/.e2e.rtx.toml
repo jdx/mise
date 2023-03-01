@@ -1,0 +1,7 @@
+[env]
+FOO = "bar"
+
+[tools]
+jq = "latest"
+#tiny = {version="1", foo="bar"}
+#golang = {version="1.19.5", foo="bar"}

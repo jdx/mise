@@ -53,7 +53,7 @@ impl Command for Exec {
             .build(&config);
 
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
-        let mut env = ts.env();
+        let mut env = ts.env(&config);
         env.insert("PATH".into(), ts.path_env(&config.settings));
         if config.settings.missing_runtime_behavior != Ignore {
             // prevent rtx from auto-installing inside a shim

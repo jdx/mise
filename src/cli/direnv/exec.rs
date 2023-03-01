@@ -32,7 +32,7 @@ impl Command for DirenvExec {
             cmd!("direnv", "dump")
         };
 
-        for (k, v) in ts.env() {
+        for (k, v) in ts.env(&config) {
             cmd = cmd.env(k, v);
         }
         cmd = cmd.env("PATH", ts.path_env(&config.settings));
