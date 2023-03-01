@@ -6,7 +6,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     {
-      overlays.rtx = final: prev: {
+      overlay = final: prev: {
         rtx = prev.callPackage ./default.nix { };
       };
     } // flake-utils.lib.eachDefaultSystem(system:
