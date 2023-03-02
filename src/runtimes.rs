@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::split_paths;
 use std::fmt::{Display, Formatter};
 use std::fs::{create_dir_all, remove_dir_all, File};
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use color_eyre::eyre::{Result, WrapErr};
 use console::style;
 use indicatif::ProgressStyle;
 use once_cell::sync::Lazy;
+use once_cell::sync::OnceCell;
 
 use crate::cache::CacheManager;
 use crate::config::Config;
@@ -32,6 +34,7 @@ pub struct RuntimeVersion {
     cache_path: PathBuf,
     script_man: ScriptManager,
     bin_paths_cache: CacheManager<Vec<String>>,
+    exec_env_cache: Box<OnceCell<HashMap<String, String>>>,
 }
 
 impl RuntimeVersion {
@@ -63,6 +66,7 @@ impl RuntimeVersion {
             install_path,
             version,
             plugin,
+            exec_env_cache: Box::new(OnceCell::new()),
         }
     }
 
@@ -129,12 +133,27 @@ impl RuntimeVersion {
     }
 
     pub fn list_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
-        Ok(self
+        let mut bin_paths: Vec<_> = self
             .bin_paths_cache
             .get_or_try_init(|| self.fetch_bin_paths(settings))?
             .iter()
             .map(|path| self.install_path.join(path))
-            .collect())
+            .collect();
+
+        for bin_path in self.list_exec_env_bin_paths()? {
+            bin_paths.push(bin_path);
+        }
+
+        Ok(bin_paths)
+    }
+
+    fn list_exec_env_bin_paths(&self) -> Result<Vec<PathBuf>> {
+        let env = self.exec_env()?;
+        let bin_paths = match env.get("RTX_ADD_PATH") {
+            Some(paths) => split_paths(paths).collect(),
+            None => vec![],
+        };
+        Ok(bin_paths)
     }
 
     pub fn which(&self, settings: &Settings, bin_name: &str) -> Result<Option<PathBuf>> {
@@ -182,22 +201,24 @@ impl RuntimeVersion {
         Ok(())
     }
 
-    pub fn exec_env(&self) -> Result<HashMap<String, String>> {
-        let script = self.plugin.plugin_path.join("bin/exec-env");
-        if !self.is_installed() || !script.exists() {
-            return Ok(HashMap::new());
-        }
-        let ed = EnvDiff::from_bash_script(&script, &self.script_man.env)?;
-        let env = ed
-            .to_patches()
-            .into_iter()
-            .filter_map(|p| match p {
-                EnvDiffOperation::Add(key, value) => Some((key, value)),
-                EnvDiffOperation::Change(key, value) => Some((key, value)),
-                _ => None,
-            })
-            .collect();
-        Ok(env)
+    pub fn exec_env(&self) -> Result<&HashMap<String, String>> {
+        self.exec_env_cache.get_or_try_init(|| {
+            let script = self.plugin.plugin_path.join("bin/exec-env");
+            if !self.is_installed() || !script.exists() {
+                return Ok(HashMap::new());
+            }
+            let ed = EnvDiff::from_bash_script(&script, &self.script_man.env)?;
+            let env = ed
+                .to_patches()
+                .into_iter()
+                .filter_map(|p| match p {
+                    EnvDiffOperation::Add(key, value) => Some((key, value)),
+                    EnvDiffOperation::Change(key, value) => Some((key, value)),
+                    _ => None,
+                })
+                .collect();
+            Ok(env)
+        })
     }
 
     fn fetch_bin_paths(&self, settings: &Settings) -> Result<Vec<String>> {
