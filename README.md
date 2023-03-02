@@ -1433,10 +1433,12 @@ Usage: ls [OPTIONS]
 
 Options:
   -a, --all
-          List all available remote plugins Same as `rtx plugins ls-remote`
+          List all available remote plugins
+          Same as `rtx plugins ls-remote`
 
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+          Show the git url for each plugin
+          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Examples:
   $ rtx plugins ls
