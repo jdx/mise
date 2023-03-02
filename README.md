@@ -126,6 +126,8 @@ v18.10.9
       * [Windows support?](#windows-support)
       * [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
       * [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
+      * [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
+      * [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
    * [Commands](#commands)
       * [rtx activate](#rtx-activate)
       * [rtx alias get](#rtx-alias-get)
@@ -836,6 +838,33 @@ with some rtx features like virtualenv support.
 
 Over time I suspect that more plugins will be forked like rtx-python as we're able to offer more rtx-specific
 enhancements.
+
+### How do I migrate from asdf?
+
+First, just install rtx with `rtx activate` like in the getting started guide and remove asdf from your
+shell rc file.
+
+Then you can just run `rtx install` in a directory with an asdf `.tool-versions` file and it will
+install the runtimes. You could attempt to avoid this by copying the internal directory from asdf over
+to rtx with `cp -r ~/.asdf ~/.local/share/rtx`. That _should_ work because they use the same structure,
+however this isn't officially supported or regularly tested. Alternatively you can set `RTX_DATA_DIR=~/.asdf`
+and see what happens.
+
+If you need to switch to/from asdf or work in a project with asdf users, you can set [`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1).
+
+### rtx isn't working with tmux
+
+It's been reported that PATH doesn't work correctly with tmux. The fix seems to be calling `hook-env`
+right after activating:
+
+```bash
+eval "$(rtx activate bash)"
+eval "$(rtx hook-env)"
+```
+
+This can also be useful if you need to use a runtime right away in an rc file. The default behavior
+of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
+immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
 
 ## Commands
 
