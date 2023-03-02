@@ -262,7 +262,7 @@ impl Toolset {
             .list_current_installed_versions()
             .into_par_iter()
             .flat_map(|v| match v.exec_env() {
-                Ok(env) => env.into_iter().collect(),
+                Ok(env) => env.clone().into_iter().collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {}", e);
                     Vec::new()
