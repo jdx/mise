@@ -594,7 +594,8 @@ _arguments "${_arguments_options[@]}" \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- Plugin to get versions for:' \
-'::prefix -- The version prefix to use when querying the latest version same as the first argument after the "@":' \
+'::prefix -- The version prefix to use when querying the latest version
+same as the first argument after the "@":' \
 && ret=0
 ;;
 (mangen)
