@@ -41,13 +41,18 @@ impl Config {
         let plugins = load_plugins()?;
         let rtxrc = load_rtxrc()?;
         let mut settings = rtxrc.settings();
-        let config_files = load_all_config_files(&settings.build(), &plugins, &IndexMap::new());
+        let config_files = load_all_config_files(
+            &settings.build(),
+            &plugins,
+            &IndexMap::new(),
+            IndexMap::new(),
+        );
         for cf in config_files.values() {
             settings.merge(cf.settings());
         }
         let settings = settings.build();
         let legacy_files = load_legacy_files(&settings, &plugins);
-        let config_files = load_all_config_files(&settings, &plugins, &legacy_files);
+        let config_files = load_all_config_files(&settings, &plugins, &legacy_files, config_files);
         let env = load_env(&config_files);
         let aliases = load_aliases(&settings, &plugins, &config_files);
 
@@ -136,6 +141,7 @@ fn load_all_config_files(
     settings: &Settings,
     plugins: &IndexMap<PluginName, Arc<Plugin>>,
     legacy_filenames: &IndexMap<String, PluginName>,
+    mut existing: IndexMap<PathBuf, Box<dyn ConfigFile>>,
 ) -> IndexMap<PathBuf, Box<dyn ConfigFile>> {
     let mut filenames = vec![
         env::RTX_DEFAULT_CONFIG_FILENAME.as_str(),
@@ -156,17 +162,21 @@ fn load_all_config_files(
     config_files
         .into_iter()
         .unique()
+        .map(|f| (f.clone(), existing.shift_remove(&f)))
         .collect_vec()
         .into_par_iter()
-        .map(
-            |f| match parse_config_file(&f, settings, legacy_filenames, plugins) {
+        .map(|(f, existing)| match existing {
+            // already parsed so just return it
+            Some(cf) => Some((f, cf)),
+            // need to parse this config file
+            None => match parse_config_file(&f, settings, legacy_filenames, plugins) {
                 Ok(cf) => Some((f, cf)),
                 Err(err) => {
                     warn!("error parsing: {} {err}", f.display());
                     None
                 }
             },
-        )
+        })
         .collect::<Vec<_>>()
         .into_iter()
         .flatten()
