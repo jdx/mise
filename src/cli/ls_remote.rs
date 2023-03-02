@@ -22,7 +22,7 @@ pub struct LsRemote {
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
-    #[clap()]
+    #[clap(verbatim_doc_comment)]
     prefix: Option<String>,
 }
 
