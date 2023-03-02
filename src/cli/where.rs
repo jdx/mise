@@ -3,7 +3,7 @@ use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
@@ -32,18 +32,28 @@ pub struct Where {
 
 impl Command for Where {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let runtime = match self.runtime.version {
+            RuntimeArgVersion::None => match self.asdf_version {
+                Some(version) => self
+                    .runtime
+                    .with_version(RuntimeArgVersion::Version(version)),
+                None => self.runtime,
+            },
+            _ => self.runtime,
+        };
+
         let ts = ToolsetBuilder::new()
-            .with_args(&[self.runtime.clone()])
+            .with_args(&[runtime.clone()])
             .build(&config);
 
-        match ts.resolve_runtime_arg(&self.runtime) {
+        match ts.resolve_runtime_arg(&runtime) {
             Some(rtv) if rtv.is_installed() => {
                 rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
-                self.runtime.plugin.to_string(),
-                self.runtime.version.to_string(),
+                runtime.plugin.to_string(),
+                runtime.version.to_string(),
             ))?,
         }
     }
@@ -69,8 +79,8 @@ mod tests {
     use insta::assert_display_snapshot;
     use pretty_assertions::assert_str_eq;
 
-    use crate::dirs;
     use crate::{assert_cli, assert_cli_err};
+    use crate::{assert_cli_snapshot, dirs};
 
     #[test]
     fn test_where() {
@@ -80,6 +90,13 @@ mod tests {
             stdout.trim(),
             dirs::ROOT.join("installs/tiny/3.1.0").to_string_lossy()
         );
+    }
+
+    #[test]
+    fn test_where_asdf_style() {
+        assert_cli!("install", "tiny@2", "tiny@3");
+        assert_cli_snapshot!("where", "tiny", "2");
+        assert_cli_snapshot!("where", "tiny", "3");
     }
 
     #[test]
