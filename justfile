@@ -75,7 +75,7 @@ lint-fix:
 
 # regenerate README.md
 render-help: build
-    NO_COLOR=1 rtx render-help > README.md
+    NO_COLOR=1 rtx render-help
     ./scripts/gh-md-toc --insert --no-backup --hide-footer --skip-header README.md > /dev/null
 
 # regenerate shell completion files
