@@ -157,10 +157,10 @@ impl Toolset {
                             .iter_mut()
                             .filter(|v| v.is_missing() && selected_versions.contains(&v.r#type))
                             .collect_vec();
-                        let plugin = self.plugins.get(&p.to_string()).unwrap();
-                        match versions.is_empty() {
-                            true => None,
-                            false => Some((plugin, versions)),
+                        let plugin = self.plugins.get(&p.to_string());
+                        match (plugin, versions.is_empty()) {
+                            (Some(plugin), false) => Some((plugin, versions)),
+                            _ => None,
                         }
                     })
                     .map(|(plugin, versions)| {
