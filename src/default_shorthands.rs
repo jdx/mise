@@ -8,13 +8,8 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 614] = [
-    // rtx custom aliases
-    ("node", "https://github.com/asdf-vm/asdf-nodejs.git"),
-    ("tiny", "https://github.com/jdxcode/rtx-tiny.git"),
-    ("go",   "https://github.com/kennyp/asdf-golang.git"),
-
-    // asdf original aliases from https://github.com/asdf-vm/asdf-plugins
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 615] = [
+    // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
     ("act", "https://github.com/grimoh/asdf-act.git"),
@@ -626,4 +621,9 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 614] = [
     ("zola", "https://github.com/salasrod/asdf-zola.git"),
     ("zoxide", "https://github.com/nyrst/asdf-zoxide"),
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
+    // rtx custom shorthands
+    ("go",     "https://github.com/kennyp/asdf-golang.git"),
+    ("node",   "https://github.com/asdf-vm/asdf-nodejs.git"),
+    ("python", "https://github.com/jdxcode/rtx-python.git"),
+    ("tiny",   "https://github.com/jdxcode/rtx-tiny.git"),
 ];
