@@ -73,6 +73,7 @@ v18.10.9
 
 <!--ts-->
    * [About](#about)
+      * [What do I use this for?](#what-do-i-use-this-for)
       * [How it works](#how-it-works)
       * [Common example commands](#common-example-commands)
    * [Installation](#installation)
@@ -198,6 +199,18 @@ It uses the same `.tool-versions` file that asdf uses. It's also compatible with
 files like `.node-version` and `.ruby-version`. See [Legacy Version Files](#legacy-version-files) below.
 
 Come chat about rtx on [discord](https://discord.gg/mABnUDvP57).
+
+### What do I use this for?
+
+Typically, developers would use rtx to manage versions of their dev tools for _local_ development.
+The main purpose of using rtx is being able to have different versions of languages for different projects
+on the same machine. (For example, one project might require python-3.10 and another python-3.11).
+
+Using rtx in production is less common but still a supported use-case. Usually a production setup
+won't have different directories for different projects with different dev tool requirements.
+However using `.tool-versions`/`.rtx.toml` config in production provides parity with local development
+so rtx is still definitely useful in production setups. See the [GitHub Action](#github-actions) for
+an example of using rtx in production.
 
 ### How it works
 
@@ -1350,7 +1363,8 @@ Arguments:
           Plugin to get versions for
 
   [PREFIX]
-          The version prefix to use when querying the latest version same as the first argument after the "@"
+          The version prefix to use when querying the latest version
+          same as the first argument after the "@"
 
 Examples:
   $ rtx ls-remote nodejs
