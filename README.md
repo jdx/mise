@@ -180,7 +180,6 @@ v18.10.9
    * [Cache Behavior](#cache-behavior)
       * [Plugin Cache](#plugin-cache)
       * [Legacy File Cache](#legacy-file-cache)
-   * [Development](#development)
 <!--te-->
 
 ## About
@@ -1751,17 +1750,7 @@ $ asdf local nodejs latest:18
 In `rtx` this can all be done in a single step to set the local runtime version. If the plugin
 and/or runtime needs to be installed it will prompt:
 
-```sh-session
-$ asdf local nodejs@18
-rtx: Would you like to install nodejs@18.13.0? [Y/n] Y
-Trying to update node-build... ok
-Downloading node-v18.13.0-darwin-arm64.tar.gz...
--> https://nodejs.org/dist/v18.13.0/node-v18.13.0-darwin-arm64.tar.gz
-Installing node-v18.13.0-darwin-arm64...
-Installed node-v18.13.0-darwin-arm64 to /Users/jdx/.local/share/rtx/installs/nodejs/18.13.0
-$ node -v
-v18.13.0
-```
+[![asciicast](https://asciinema.org/a/564031.svg)](https://asciinema.org/a/564031)
 
 I've found asdf to be particularly rigid and difficult to learn. It also made strange decisions like
 having `asdf list all` but `asdf latest --all` (why is one a flag and one a positional argument?).
@@ -1904,18 +1893,4 @@ plugin is called:
     expensive so every file that gets parsed as a legacy file is cached into `~/.local/share/rtx/legacy_cache`.
     It will remain cached until the file is modified. This is a simple text file that has the path to the
     legacy file stored as a hash for the filename.
-
-## Development
-
-Run tests with `just`:
-
-```sh-session
-$ just test
-```
-
-Lint the codebase with:
-
-```sh-session
-$ just lint-fix
-```
 
