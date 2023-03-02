@@ -295,6 +295,7 @@ Build from source with Cargo:
 
 ```sh-session
 $ cargo install rtx-cli
+```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
