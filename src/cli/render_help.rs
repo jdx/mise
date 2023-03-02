@@ -75,8 +75,8 @@ $ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 
 > **Warning**
 >
-> If you use direnv with `layout python` or other logic that needs to reference rtx runtimes,
-> see the [direnv section](#direnv) below.
+> If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
+> of an `.envrc`, see the [direnv section](#direnv) below.
 
 Install a runtime and set it as the default:
 
@@ -673,6 +673,22 @@ See https://github.com/asdf-vm/asdf-plugins for the list of built-in plugins sho
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
+### Plugin Options
+
+rtx has support for "plugin options" which is configuration specified in `.rtx.toml` to change behavior
+of plugins. One example of this is virtualenv on python runtimes:
+
+```toml
+[tools]
+python = {{version='3.11', virtualenv='.venv'}}
+```
+
+This will be passed to all plugin scripts as `RTX_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
+any option and it will be passed to the plugin in that format.
+
+Currently this only supports simple strings, but we can make it compatible with more complex types
+(arrays, tables) fairly easily if there is a need for it.
+
 ## FAQs
 
 ### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.
@@ -683,28 +699,60 @@ You can make git ignore these files in 3 different ways:
 - Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so there is no need to commit it.
 - Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed with `git add --force .tool-versions`.
 
-### How do I create my own plugin?
-
-Just follow the [asdf docs](https://asdf-vm.com/plugins/create.html). Everything should work the same.
-If it isn't, please open an issue.
-
 ### rtx is failing or not working right
 
-First try setting `RTX_LOG_LEVEL=debug` or `RTX_LOG_LEVEL=trace` and see if that gives you more information.
-You can also set `RTX_LOG_FILE=/path/to/logfile` to write the logs to a file.
+First try setting `RTX_DEBUG=1` or `RTX_TRACE=1` and see if that gives you more information.
+You can also set `RTX_LOG_FILE_LEVEL=debug RTX_LOG_FILE=/path/to/logfile` to write logs to a file.
 
 If something is happening with the activate hook, you can try disabling it and calling `eval "$(rtx hook-env)"` manually.
-It can also be helpful to use `rtx env` to see what environment variables it wants to use.
+It can also be helpful to use `rtx env` which will just output environment variables that would be set.
+Also consider using [shims](#shims) which can be more compatible.
 
-Lastly, there is an `rtx doctor` command. It doesn't have much in it but I hope to add more functionality
-to that to help debug issues.
+If runtime installation isn't working right, try using the `--raw` flag which will install things in
+series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
+with you for some reason this will make it work.
+
+Of course check the version of rtx with `rtx --version` and make sure it is the latest. Use `rtx self-update`
+to update it. `rtx cache clean` can be used to wipe the internal cache and `rtx implode` can be used
+to remove everything except config.
+
+Before submitting a ticket, it's a good idea to test what you were doing with asdf. That way we can rule
+out if the issue is with rtx or if it's with a particular plugin. For example, if `rtx install python@latest`
+doesn't work, try running `asdf install python latest` to see if it's an issue with asdf-python.
+
+Lastly, there is `rtx doctor` which will show diagnostic information and any warnings about issues
+detected with your setup. If you submit a bug report, please include the output of `rtx doctor`.
 
 ### Windows support?
 
 This is something we'd like to add! https://github.com/jdxcode/rtx/discussions/66
 
-It's not a near-term goal and it would require plugin modifications, but
-it should be feasible.
+It's not a near-term goal and it would require plugin modifications, but it should be feasible.
+
+### How do I use rtx with http proxies?
+
+Short answer: just set `http_proxy` and `https_proxy` environment variables. These should be lowercase.
+
+rtx doesn't really do anything with http itself. The only exception to that is checking for new versions
+and `rtx self-update`. It uses `git` to clone plugins and the plugins themselves generally will download
+files with `curl` or `wget`.
+
+However this is really up to the plugin. If you're having a proxy-related issue installing something
+you should post an issue on the plugin's repo.
+
+### How do the shorthand plugin names map to repositories?
+
+e.g.: how does `rtx plugin install nodejs` know to fetch [https://github.com/asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)?
+
+asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
+This is regularly updated every time that rtx has a release. This repository is stored directly into
+the codebase [here](./src/default_shorthands.rs). The bottom of that file contains modifications that
+rtx makes. For example, we add `node` which points to the same plugin as `nodejs` and change `python`
+to point to [rtx-python](https://github.com/jdxcode/rtx-python) which is a fork of [asdf-python](https://github.com/danhper/asdf-python)
+with some rtx features like virtualenv support.
+
+Over time I suspect that more plugins will be forked like rtx-python as we're able to offer more rtx-specific
+enhancements.
 
 ## Commands
 
@@ -901,6 +949,16 @@ Of course if you use `rtx activate`, then these steps won't have been necessary 
 as if direnv was not used.
 
 If you continue to struggle, you can also try using the [experimental shims feature](#shims).
+
+### Do you need direnv?
+
+While making rtx compatible with direnv is, and will always be a major goal of this project, I also
+want rtx to be capable of replacing direnv if needed. This is why rtx includes support for managing
+env vars and virtualenv for python using `.rtx.toml`.
+
+If you find you continue to need direnv, please open an issue and let me know what it is to see if
+it's something rtx could support. rtx will never be as capable as direnv with a DSL like `.envrc`,
+but I think we can handle enough common use cases to make that unnecessary for most people.
 
 ## Cache Behavior
 
