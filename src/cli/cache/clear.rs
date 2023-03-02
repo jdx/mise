@@ -3,6 +3,7 @@ use color_eyre::eyre::Result;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env;
+use crate::file::remove_dir_all;
 use crate::output::Output;
 
 /// Deletes all cache files in rtx
@@ -15,7 +16,7 @@ impl Command for CacheClear {
         let cache_dir = env::RTX_CACHE_DIR.to_path_buf();
         if cache_dir.exists() {
             debug!("clearing cache from {}", cache_dir.display());
-            std::fs::remove_dir_all(cache_dir)?;
+            remove_dir_all(cache_dir)?;
         }
         rtxstatusln!(out, "cache cleared");
         Ok(())

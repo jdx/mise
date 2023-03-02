@@ -159,12 +159,12 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
+    use crate::file::remove_dir_all;
     use crate::{assert_cli, assert_cli_snapshot, dirs};
-    use std::fs;
 
     #[test]
     fn test_ls() {
-        let _ = fs::remove_dir_all(dirs::INSTALLS.as_path());
+        let _ = remove_dir_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
         assert_cli_snapshot!("list");
 

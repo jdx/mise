@@ -28,7 +28,11 @@ pub struct PluginsLs {
 impl Command for PluginsLs {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         if self.all {
-            return PluginsLsRemote { urls: self.urls }.run(config, out);
+            return PluginsLsRemote {
+                urls: self.urls,
+                only_names: false,
+            }
+            .run(config, out);
         }
 
         for plugin in config.plugins.values() {

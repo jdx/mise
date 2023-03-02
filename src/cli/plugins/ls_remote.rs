@@ -18,6 +18,11 @@ pub struct PluginsLsRemote {
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long)]
     pub urls: bool,
+
+    /// Only show the name of each plugin
+    /// by default it will show a "*" next to installed plugins
+    #[clap(long)]
+    pub only_names: bool,
 }
 
 impl Command for PluginsLsRemote {
@@ -41,7 +46,7 @@ impl Command for PluginsLsRemote {
         }
 
         for (plugin, repo) in shorthands {
-            let installed = if installed_plugins.contains(plugin) {
+            let installed = if !self.only_names && installed_plugins.contains(plugin) {
                 "*"
             } else {
                 " "

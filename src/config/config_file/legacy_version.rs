@@ -17,6 +17,7 @@ pub struct LegacyVersionFile {
     path: PathBuf,
     version: String,
     plugin: String,
+    toolset: Toolset,
 }
 
 impl LegacyVersionFile {
@@ -24,6 +25,7 @@ impl LegacyVersionFile {
         let version = plugin.parse_legacy_file(path.as_path(), settings)?;
 
         Ok(Self {
+            toolset: build_toolset(&path, plugin.name.as_str(), version.as_str()),
             path,
             version,
             plugin: plugin.name.clone(),
@@ -72,8 +74,8 @@ impl ConfigFile for LegacyVersionFile {
         unimplemented!()
     }
 
-    fn to_toolset(&self) -> Toolset {
-        self.into()
+    fn to_toolset(&self) -> &Toolset {
+        &self.toolset
     }
 
     fn settings(&self) -> SettingsBuilder {
@@ -91,18 +93,16 @@ impl Display for LegacyVersionFile {
     }
 }
 
-impl From<&LegacyVersionFile> for Toolset {
-    fn from(value: &LegacyVersionFile) -> Self {
-        let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(value.path.clone()));
-        if !value.version.is_empty() {
-            toolset.add_version(
-                value.plugin.clone(),
-                ToolVersion::new(
-                    value.plugin.clone(),
-                    ToolVersionType::Version(value.version.clone()),
-                ),
-            );
-        }
-        toolset
+fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
+    let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.to_path_buf()));
+    if !version.is_empty() {
+        toolset.add_version(
+            plugin.to_string(),
+            ToolVersion::new(
+                plugin.to_string(),
+                ToolVersionType::Version(version.to_string()),
+            ),
+        );
     }
+    toolset
 }

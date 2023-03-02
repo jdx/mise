@@ -42,7 +42,7 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
-    fn to_toolset(&self) -> Toolset;
+    fn to_toolset(&self) -> &Toolset;
     fn settings(&self) -> SettingsBuilder;
     fn aliases(&self) -> AliasMap;
 }
