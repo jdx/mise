@@ -664,10 +664,14 @@ _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel, default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-a[List all available remote plugins Same as `rtx plugins ls-remote`]' \
-'--all[List all available remote plugins Same as `rtx plugins ls-remote`]' \
-'-u[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
-'--urls[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'-a[List all available remote plugins
+Same as `rtx plugins ls-remote`]' \
+'--all[List all available remote plugins
+Same as `rtx plugins ls-remote`]' \
+'-u[Show the git url for each plugin
+e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'--urls[Show the git url for each plugin
+e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \

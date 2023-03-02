@@ -264,8 +264,10 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel, default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'List all available remote plugins Same as `rtx plugins ls-remote`'
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'List all available remote plugins
+Same as `rtx plugins ls-remote`'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin
+e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'

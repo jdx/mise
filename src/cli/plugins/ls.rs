@@ -16,12 +16,12 @@ use crate::output::Output;
 pub struct PluginsLs {
     /// List all available remote plugins
     /// Same as `rtx plugins ls-remote`
-    #[clap(short, long)]
+    #[clap(short, long, verbatim_doc_comment)]
     pub all: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
-    #[clap(short, long)]
+    #[clap(short, long, verbatim_doc_comment)]
     pub urls: bool,
 }
 
