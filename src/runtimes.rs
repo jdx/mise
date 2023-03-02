@@ -9,6 +9,7 @@ use std::{fmt, fs};
 use color_eyre::eyre::{Result, WrapErr};
 use console::style;
 use indicatif::ProgressStyle;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 
@@ -133,16 +134,15 @@ impl RuntimeVersion {
     }
 
     pub fn list_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
-        let mut bin_paths: Vec<_> = self
-            .bin_paths_cache
-            .get_or_try_init(|| self.fetch_bin_paths(settings))?
-            .iter()
-            .map(|path| self.install_path.join(path))
-            .collect();
+        let mut bin_paths = self.list_exec_env_bin_paths()?;
 
-        for bin_path in self.list_exec_env_bin_paths()? {
-            bin_paths.push(bin_path);
-        }
+        bin_paths.extend(
+            self.bin_paths_cache
+                .get_or_try_init(|| self.fetch_bin_paths(settings))?
+                .iter()
+                .map(|path| self.install_path.join(path))
+                .collect_vec(),
+        );
 
         Ok(bin_paths)
     }
