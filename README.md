@@ -561,7 +561,7 @@ These settings can also be managed with `rtx settings ls|get|set|unset`.
 It allows for functionality that is not possible with `.tool-versions`, such as:
 
 * setting arbitrary env vars while inside the directory
-* passing options to plugins like `virtualenv='.venv'` for rtx-python.
+* passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdxcode/rtx-python#virtualenv-support).
 * specifying plugin repo url for custom plugins so it does not need to be added manually
 
 Here is what the config looks like:
