@@ -1,9 +1,9 @@
-use color_eyre::eyre::Result;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
 use std::path::PathBuf;
 
 use clap::{Arg, Command, Error};
+use color_eyre::eyre::Result;
 use regex::Regex;
 
 use crate::plugins::PluginName;
@@ -89,6 +89,10 @@ impl RuntimeArg {
             }
         }
         runtimes
+    }
+
+    pub fn with_version(self, version: RuntimeArgVersion) -> Self {
+        Self { version, ..self }
     }
 }
 
