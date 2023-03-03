@@ -37,7 +37,7 @@ impl Command for Shell {
         }
         let shell = get_shell(None).expect("no shell detected");
 
-        for rtv in ts.list_current_installed_versions(&config) {
+        for rtv in ts.list_current_installed_versions() {
             let source = &ts.versions.get(&rtv.plugin.name).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("RTX_{}_VERSION", rtv.plugin.name.to_uppercase());

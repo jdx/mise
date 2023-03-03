@@ -27,24 +27,24 @@ impl Command for Current {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
-                Some(plugin) => self.one(&config, ts, out, plugin),
+                Some(plugin) => self.one(ts, out, plugin),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
                     Ok(())
                 }
             },
-            None => self.all(&config, ts, out),
+            None => self.all(ts, out),
         }
     }
 }
 
 impl Current {
-    fn one(&self, config: &Config, ts: Toolset, out: &mut Output, plugin: &Plugin) -> Result<()> {
+    fn one(&self, ts: Toolset, out: &mut Output, plugin: &Plugin) -> Result<()> {
         if !plugin.is_installed() {
             warn!("Plugin {} is not installed", plugin.name);
             return Ok(());
         }
-        match ts.list_versions_by_plugin(config).get(&plugin.name) {
+        match ts.list_versions_by_plugin().get(&plugin.name) {
             Some(versions) => {
                 rtxprintln!(
                     out,
@@ -63,8 +63,8 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, config: &Config, ts: Toolset, out: &mut Output) -> Result<()> {
-        for (plugin, versions) in ts.list_versions_by_plugin(config) {
+    fn all(&self, ts: Toolset, out: &mut Output) -> Result<()> {
+        for (plugin, versions) in ts.list_versions_by_plugin() {
             if versions.is_empty() {
                 continue;
             }

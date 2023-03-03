@@ -107,7 +107,7 @@ fn get_runtime_list(
         .collect();
 
     let active = ts
-        .list_current_versions(config)
+        .list_current_versions()
         .into_iter()
         .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv.clone()))
         .collect::<HashMap<(PluginName, String), RuntimeVersion>>();
