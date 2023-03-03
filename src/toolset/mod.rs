@@ -73,9 +73,9 @@ impl Toolset {
             .par_iter_mut()
             .for_each(|(p, v)| {
                 let plugin = match config.plugins.get(&p.to_string()) {
-                    Some(p) => p,
-                    None => {
-                        debug!("Plugin {} not found", p);
+                    Some(p) if p.is_installed() => p,
+                    _ => {
+                        debug!("Plugin {} is not installed", p);
                         return;
                     }
                 };
@@ -176,23 +176,22 @@ impl Toolset {
         missing_plugins: Vec<PluginName>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        if missing_plugins.is_empty() {
-            return Ok(());
-        }
-        let plugins = missing_plugins
-            .into_par_iter()
-            .map(|plugin_name| {
-                let plugin = Plugin::new(&plugin_name);
-                if !plugin.is_installed() {
-                    plugin.install(config, None, &mut mpr.add())?;
-                }
-                Ok(plugin)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for plugin in plugins {
-            config.plugins.insert(plugin.name.clone(), Arc::new(plugin));
+        for plugin in &missing_plugins {
+            config
+                .plugins
+                .entry(plugin.clone())
+                .or_insert_with(|| Arc::new(Plugin::new(plugin)));
         }
         config.plugins.sort_keys();
+        missing_plugins
+            .into_par_iter()
+            .map(|p| config.plugins.get(&p).unwrap())
+            .filter(|p| !p.is_installed())
+            .map(|p| {
+                let mut pr = mpr.add();
+                p.install(config, &mut pr)
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(())
     }
 
@@ -268,7 +267,7 @@ impl Toolset {
             .flat_map(|v| match v.exec_env() {
                 Ok(env) => env.clone().into_iter().collect(),
                 Err(e) => {
-                    warn!("Error running exec-env: {}", e);
+                    warn!("Error running exec-env: {:#}", e);
                     Vec::new()
                 }
             })
@@ -293,7 +292,7 @@ impl Toolset {
             .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
                 Ok(paths) => paths,
                 Err(e) => {
-                    warn!("Error listing bin paths for {}: {}", rtv, e);
+                    warn!("Error listing bin paths for {}: {:#}", rtv, e);
                     Vec::new()
                 }
             })

@@ -40,7 +40,7 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let plugins = load_plugins()?;
+        let mut plugins = load_plugins()?;
         let rtxrc = load_rtxrc()?;
         let mut settings = rtxrc.settings();
         let config_filenames = load_config_filenames(&IndexMap::new());
@@ -72,6 +72,16 @@ impl Config {
             },
             || hook_env::should_exit_early(&config_filenames),
         );
+
+        for cf in config_files.values() {
+            for (plugin_name, repo_url) in cf.plugins() {
+                plugins.entry(plugin_name.clone()).or_insert_with(|| {
+                    let mut plugin = Plugin::new(&plugin_name);
+                    plugin.repo_url = Some(repo_url);
+                    Arc::new(plugin)
+                });
+            }
+        }
 
         let config = Self {
             env: load_env(&config_files),
@@ -235,7 +245,7 @@ fn load_all_config_files(
             None => match parse_config_file(&f, settings, legacy_filenames, plugins) {
                 Ok(cf) => Some((f, cf)),
                 Err(err) => {
-                    warn!("error parsing: {} {err}", f.display());
+                    warn!("error parsing: {} {:#}", f.display(), err);
                     None
                 }
             },

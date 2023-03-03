@@ -80,7 +80,7 @@ fn make_symlink(target: &Path, link: &Path) -> Result<()> {
         fs::remove_file(link)?;
     }
     symlink(target, link)?;
-    debug!("symlinked {} to {}", target.display(), link.display());
+    trace!("symlinked {} to {}", target.display(), link.display());
     Ok(())
 }
 
@@ -103,7 +103,7 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     let mut perms = shim.metadata()?.permissions();
     perms.set_mode(0o755);
     fs::set_permissions(shim, perms)?;
-    debug!(
+    trace!(
         "shim created from {} to {}",
         target.display(),
         shim.display()
