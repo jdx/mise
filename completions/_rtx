@@ -1099,6 +1099,8 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-u[Removes a previously set version]' \
+'--unset[Removes a previously set version]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
