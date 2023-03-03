@@ -2,7 +2,5 @@
 source: src/cli/local.rs
 expression: output
 ---
-~/data/installs/tiny/2.1.0/bin
-~/data/installs/tiny/1.0.1/bin
-~/data/installs/tiny/3.1.0/bin
+tiny 2 1 3
 

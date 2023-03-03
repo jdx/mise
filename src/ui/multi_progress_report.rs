@@ -1,5 +1,7 @@
-use crate::ui::progress_report::ProgressReport;
+use console::style;
 use indicatif::MultiProgress;
+
+use crate::ui::progress_report::ProgressReport;
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
@@ -29,6 +31,18 @@ impl MultiProgressReport {
         match &self.mp {
             Some(mp) => mp.suspend(f),
             None => f(),
+        }
+    }
+    pub fn warn(&self, message: String) {
+        match &self.mp {
+            Some(pb) => {
+                let _ = pb.println(format!(
+                    "{} {}",
+                    style("[WARN]").yellow().for_stderr(),
+                    message
+                ));
+            }
+            None => warn!("{}", message),
         }
     }
     // pub fn clear(&self) {
