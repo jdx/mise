@@ -84,9 +84,6 @@ _rtx() {
             rtx,list)
                 cmd="rtx__ls"
                 ;;
-            rtx,list-remote)
-                cmd="rtx__ls__remote"
-                ;;
             rtx,local)
                 cmd="rtx__local"
                 ;;

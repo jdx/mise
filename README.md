@@ -887,7 +887,7 @@ immediately after activating. Not calling `hook-env` immediately appears to work
 ### `rtx activate`
 
 ```
-Enables rtx to automatically modify runtimes when changing directory
+Initializes rtx in the current shell
 
 This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
@@ -1162,7 +1162,7 @@ Examples:
 ### `rtx global`
 
 ```
-Sets global .tool-versions to include a specified runtime
+Shows/sets the global runtime version(s)
 
 Displays the contents of ~/.tool-versions after writing.
 The file is `$HOME/.tool-versions` by default.
