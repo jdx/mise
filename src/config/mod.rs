@@ -13,8 +13,9 @@ use rayon::prelude::*;
 pub use settings::{MissingRuntimeBehavior, Settings};
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
-use crate::config::config_file::rtxrc::RTXFile;
+use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::ConfigFile;
+use crate::config::settings::SettingsBuilder;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::{dirs, env, file, hook_env};
@@ -27,7 +28,7 @@ type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 #[derive(Debug, Default)]
 pub struct Config {
     pub settings: Settings,
-    pub rtxrc: RTXFile,
+    pub global_config: RtxToml,
     pub legacy_files: IndexMap<String, PluginName>,
     pub config_files: IndexMap<PathBuf, Box<dyn ConfigFile>>,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
@@ -41,8 +42,8 @@ pub struct Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let mut plugins = load_plugins()?;
-        let rtxrc = load_rtxrc()?;
-        let mut settings = rtxrc.settings();
+        let global_config = load_rtxrc()?;
+        let mut settings = SettingsBuilder::default();
         let config_filenames = load_config_filenames(&IndexMap::new());
         let config_files = load_all_config_files(
             &settings.build(),
@@ -55,7 +56,7 @@ impl Config {
             settings.merge(cf.settings());
         }
         let settings = settings.build();
-        trace!("Settings: {:#?}", rtxrc.settings());
+        trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
         let config_filenames = load_config_filenames(&legacy_files);
@@ -85,13 +86,13 @@ impl Config {
 
         let config = Self {
             env: load_env(&config_files),
-            aliases: load_aliases(&settings, &config_files),
+            aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
             config_files,
             settings,
             legacy_files,
-            rtxrc,
+            global_config,
             plugins,
             should_exit_early,
         };
@@ -153,16 +154,26 @@ impl Config {
     }
 }
 
-fn load_rtxrc() -> Result<RTXFile> {
+fn load_rtxrc() -> Result<RtxToml> {
     let settings_path = dirs::CONFIG.join("config.toml");
-    let rtxrc = if !settings_path.exists() {
-        trace!("settings does not exist {:?}", settings_path);
-        RTXFile::init(&settings_path)
-    } else {
-        RTXFile::from_file(&settings_path).wrap_err_with(|| err_load_settings(&settings_path))?
-    };
-
-    Ok(rtxrc)
+    match settings_path.exists() {
+        false => {
+            trace!("settings does not exist {:?}", settings_path);
+            Ok(RtxToml::init(&settings_path))
+        }
+        true => match RtxToml::from_file(&settings_path)
+            .wrap_err_with(|| err_load_settings(&settings_path))
+        {
+            Ok(cf) => Ok(cf),
+            Err(err) => match RtxToml::migrate(&settings_path) {
+                Ok(cf) => Ok(cf),
+                Err(e) => {
+                    error!("Error migrating config.toml: {:#}", e);
+                    Err(err)
+                }
+            },
+        },
+    }
 }
 
 fn load_plugins() -> Result<IndexMap<PluginName, Arc<Plugin>>> {
@@ -221,6 +232,10 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
     if home_config.is_file() {
         config_files.push(home_config);
     }
+    let global_config = dirs::CONFIG.join("config.toml");
+    if global_config.is_file() {
+        config_files.push(global_config);
+    }
 
     config_files.into_iter().unique().collect()
 }
@@ -277,20 +292,8 @@ fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<S
     env
 }
 
-fn load_aliases(
-    settings: &Settings,
-    config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>,
-) -> AliasMap {
+fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasMap {
     let mut aliases: AliasMap = IndexMap::new();
-
-    for (plugin, plugin_aliases) in &settings.aliases {
-        for (from, to) in plugin_aliases {
-            aliases
-                .entry(plugin.clone())
-                .or_insert_with(IndexMap::new)
-                .insert(from.clone(), to.clone());
-        }
-    }
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases() {

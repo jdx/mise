@@ -100,6 +100,11 @@ impl RuntimeVersion {
                         pr.set_message(line.into());
                     }
                 },
+                |line| {
+                    if !line.trim().is_empty() {
+                        pr.println(line.into());
+                    }
+                },
             )
         };
 

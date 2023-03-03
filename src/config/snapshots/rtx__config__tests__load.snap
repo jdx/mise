@@ -2,5 +2,5 @@
 source: src/config/mod.rs
 expression: config
 ---
-Files: ~/cwd/.test-tool-versions, ~/.test-tool-versions
+Files: ~/cwd/.test-tool-versions, ~/.test-tool-versions, ~/config/config.toml
 Installed Plugins: dummy, tiny
