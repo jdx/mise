@@ -431,6 +431,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l log-level -d 'Set the log output verbosity' -r
+complete -c rtx -n "__fish_seen_subcommand_from shell" -s u -l unset -d 'Removes a previously set version'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s v -l verbose -d 'Show installation output'

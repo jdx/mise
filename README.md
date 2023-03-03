@@ -1620,11 +1620,15 @@ Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
-Usage: shell [RUNTIME]...
+Usage: shell [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
           Runtime version(s) to use
+
+Options:
+  -u, --unset
+          Removes a previously set version
 
 Examples:
   $ rtx shell nodejs@18
