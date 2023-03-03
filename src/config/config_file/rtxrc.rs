@@ -332,43 +332,6 @@ impl RTXFile {
         }
         Ok(())
     }
-}
-
-impl Display for RTXFile {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.dump())
-    }
-}
-
-impl ConfigFile for RTXFile {
-    fn get_type(&self) -> ConfigFileType {
-        ConfigFileType::RtxRc
-    }
-
-    fn get_path(&self) -> &Path {
-        self.path.as_path()
-    }
-
-    fn plugins(&self) -> IndexMap<String, Vec<String>> {
-        self.plugins
-            .iter()
-            .map(|(k, v)| (k.clone(), v.versions.clone()))
-            .collect()
-    }
-
-    fn env(&self) -> HashMap<String, String> {
-        self.env.clone()
-    }
-
-    fn remove_plugin(&mut self, plugin: &PluginName) {
-        self.plugins.remove(plugin);
-        self.get_edit()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .as_table_mut()
-            .remove(plugin);
-    }
 
     fn add_version(&mut self, plugin: &PluginName, version: &str) {
         self.plugins
@@ -386,6 +349,40 @@ impl ConfigFile for RTXFile {
             .as_array_mut()
             .unwrap()
             .push(version);
+    }
+}
+
+impl Display for RTXFile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.dump())
+    }
+}
+
+impl ConfigFile for RTXFile {
+    fn get_type(&self) -> ConfigFileType {
+        ConfigFileType::RtxRc
+    }
+
+    fn get_path(&self) -> &Path {
+        self.path.as_path()
+    }
+
+    fn plugins(&self) -> HashMap<PluginName, String> {
+        Default::default()
+    }
+
+    fn env(&self) -> HashMap<String, String> {
+        self.env.clone()
+    }
+
+    fn remove_plugin(&mut self, plugin: &PluginName) {
+        self.plugins.remove(plugin);
+        self.get_edit()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .as_table_mut()
+            .remove(plugin);
     }
 
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {

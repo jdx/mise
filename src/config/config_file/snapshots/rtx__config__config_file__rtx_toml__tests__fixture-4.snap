@@ -12,7 +12,6 @@ Toolset {
                         "1.0.0",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
             ],
@@ -28,7 +27,6 @@ Toolset {
                         "16",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
                 ToolVersion {
@@ -37,7 +35,6 @@ Toolset {
                         "18",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
                 ToolVersion {
@@ -46,7 +43,6 @@ Toolset {
                         "master",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
                 ToolVersion {
@@ -55,7 +51,6 @@ Toolset {
                         "~/.nodes/14",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
             ],
@@ -71,9 +66,6 @@ Toolset {
                         "1.6",
                     ),
                     rtv: None,
-                    repo: Some(
-                        "https://github.com/AZMCode/asdf-jq",
-                    ),
                     options: {},
                 },
             ],
@@ -89,7 +81,6 @@ Toolset {
                         "0.9.0",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
             ],
@@ -105,7 +96,6 @@ Toolset {
                         "3.10.0",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {
                         "venv": ".venv",
                     },
@@ -116,7 +106,6 @@ Toolset {
                         "3.9.0",
                     ),
                     rtv: None,
-                    repo: None,
                     options: {},
                 },
             ],
@@ -130,6 +119,4 @@ Toolset {
             "",
         ),
     ),
-    plugins: {},
-    mpr: None,
 }

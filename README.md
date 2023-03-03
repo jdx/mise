@@ -595,14 +595,16 @@ erlang = ['23.3', '24.0']
 # supports everything you can do with .tool-versions currently
 nodejs = ['16', 'prefix:18', 'ref:master', 'path:~/.nodes/14']
 
-# repo can be used to git clone a custom repo url (see #226)
-jq = { version = '1.6', repo = 'https://github.com/AZMCode/asdf-jq' }
-
 # send arbitrary options to the plugin, passed as:
 # RTX_TOOL_OPTS__VENV=.venv
 # RTX_TOOL_OPTS__DEFAULT_PACKAGES__0=ansible
 # RTX_TOOL_OPTS__DEFAULT_PACKAGES__1=pipenv
 python = { version = '3.10', venv = '.venv', default_packages = ['ansible', 'pipenv'] }
+
+[plugins]
+# specify a custom repo url
+# note this will only be used if the plugin does not already exist
+python = 'https://github.com/jdxcode/rtx-python'
 
 [settings] # project-local settings
 verbose = true
