@@ -15,6 +15,7 @@ use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::{Plugin, PluginName};
+use crate::shims::reshim;
 use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -104,7 +105,7 @@ impl Install {
                         None => {
                             let plugin = Plugin::new(&tv.plugin_name);
                             let mut pr = mpr.add();
-                            match plugin.install(&config, &mut pr) {
+                            match plugin.install(&config, &mut pr, false) {
                                 Ok(_) => Arc::new(plugin),
                                 Err(err) => {
                                     pr.error();
@@ -158,7 +159,7 @@ impl Install {
                         }
                         let mut pr = mpr.add();
                         rtv.decorate_progress_bar(&mut pr);
-                        match rtv.install(&config, &mut pr) {
+                        match rtv.install(&config, &mut pr, self.force) {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 pr.error();
@@ -167,8 +168,7 @@ impl Install {
                         }
                     })
                     .collect::<Result<Vec<_>>>()?;
-
-                Ok(())
+                reshim(&mut config, &ts)
             })
     }
 

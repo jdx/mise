@@ -25,6 +25,7 @@ mod cli;
 mod cmd;
 mod config;
 mod default_shorthands;
+mod direnv;
 mod dirs;
 mod env;
 mod env_diff;
@@ -32,21 +33,19 @@ mod errors;
 mod fake_asdf;
 mod file;
 mod git;
+mod hash;
 mod hook_env;
+mod lock_file;
 mod logger;
 mod plugins;
 pub mod runtimes;
 mod shell;
 mod shims;
 mod shorthands;
-mod ui;
-
-mod direnv;
-mod hash;
-mod toolset;
-
 #[cfg(test)]
 mod test;
+mod toolset;
+mod ui;
 
 fn main() -> Result<()> {
     color_eyre::install()?;

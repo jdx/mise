@@ -24,6 +24,7 @@ use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
+use crate::shims::reshim;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 mod builder;
@@ -162,12 +163,12 @@ impl Toolset {
                         for version in versions {
                             let mut pr = mpr.add();
                             version.resolve(config, plugin.clone())?;
-                            version.install(config, &mut pr)?;
+                            version.install(config, &mut pr, false)?;
                         }
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
-                Ok(())
+                reshim(config, self)
             })
     }
     fn install_missing_plugins(
@@ -189,7 +190,7 @@ impl Toolset {
             .filter(|p| !p.is_installed())
             .map(|p| {
                 let mut pr = mpr.add();
-                p.install(config, &mut pr)
+                p.install(config, &mut pr, false)
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(())

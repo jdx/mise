@@ -16,6 +16,7 @@ use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::{create_dir_all, display_path, remove_dir_all};
 use crate::hash::hash_to_str;
+use crate::lock_file::LockFile;
 use crate::plugins::Script::{Download, ExecEnv, Install};
 use crate::plugins::{Plugin, Script, ScriptManager};
 use crate::toolset::{ToolVersion, ToolVersionType};
@@ -78,10 +79,11 @@ impl RuntimeVersion {
         }
     }
 
-    pub fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+    pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
         self.decorate_progress_bar(pr);
 
         let settings = &config.settings;
+        let _lock = self.get_lock(force, pr)?;
         self.create_install_dirs()?;
 
         let run_script = |script| {
@@ -224,6 +226,8 @@ impl RuntimeVersion {
                 .cmd(settings, &Script::ListBinPaths)
                 .read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
+        } else if self.version == "system" {
+            vec![]
         } else {
             vec!["bin".into()]
         };
@@ -267,6 +271,21 @@ impl RuntimeVersion {
             style(&self.to_string()).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
+    }
+
+    fn get_lock(&self, force: bool, _pr: &ProgressReport) -> Result<Option<fslock::LockFile>> {
+        let lock = if force {
+            None
+        } else {
+            let lock = LockFile::new(&self.install_path)
+                .with_callback(|l| {
+                    // pr.set_message(format!("waiting for lock on {}", display_path(l)));
+                    debug!("waiting for lock on {}", display_path(l));
+                })
+                .lock()?;
+            Some(lock)
+        };
+        Ok(lock)
     }
 }
 
