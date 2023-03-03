@@ -31,8 +31,7 @@ impl Command for Shell {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.runtime)
-            .build(&mut config);
-
+            .build(&mut config)?;
         if !config.is_activated() {
             err_inactive()?;
         }

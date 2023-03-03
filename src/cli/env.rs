@@ -31,8 +31,7 @@ impl Command for Env {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.runtime)
-            .build(&mut config);
-
+            .build(&mut config)?;
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
 

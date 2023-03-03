@@ -25,7 +25,7 @@ impl Command for Envrc {
         }
         let ts = ToolsetBuilder::new()
             .with_install_missing()
-            .build(&mut config);
+            .build(&mut config)?;
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
             .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");

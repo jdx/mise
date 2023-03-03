@@ -95,7 +95,7 @@ fn get_runtime_list(
     config: &mut Config,
     plugin_flag: &Option<PluginName>,
 ) -> Result<Vec<(RuntimeVersion, Option<ToolSource>)>> {
-    let ts = ToolsetBuilder::new().build(config);
+    let ts = ToolsetBuilder::new().build(config)?;
     let mut versions: HashMap<(PluginName, String), RuntimeVersion> = ts
         .list_installed_versions(config)?
         .into_iter()
