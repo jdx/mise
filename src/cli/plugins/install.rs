@@ -121,10 +121,7 @@ impl PluginsInstall {
         } else {
             let mut pr = mpr.add();
             plugin.decorate_progress_bar(&mut pr);
-            if self.force {
-                plugin.uninstall(&pr)?;
-            }
-            plugin.install(config, &mut pr)?;
+            plugin.install(config, &mut pr, self.force)?;
         }
         Ok(())
     }

@@ -7,9 +7,7 @@ use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indexmap::IndexMap;
-
 use itertools::Itertools;
-
 use regex::Regex;
 use versions::Versioning;
 
@@ -20,9 +18,10 @@ use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::RTX_PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::remove_dir_all;
+use crate::file::{display_path, remove_dir_all};
 use crate::git::Git;
 use crate::hash::hash_to_str;
+use crate::lock_file::LockFile;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
@@ -92,7 +91,7 @@ impl Plugin {
         git.get_remote_url()
     }
 
-    pub fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+    pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
         self.decorate_progress_bar(pr);
         let repository = self
             .repo_url
@@ -100,6 +99,9 @@ impl Plugin {
             .or_else(|| config.get_shorthands().get(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
+
+        let _lock = self.get_lock(force)?;
+
         if self.is_installed() {
             self.uninstall(pr)?;
         }
@@ -425,6 +427,20 @@ impl Plugin {
         fs::create_dir_all(fp.parent().unwrap())?;
         fs::write(fp, legacy_version)?;
         Ok(())
+    }
+
+    fn get_lock(&self, force: bool) -> Result<Option<fslock::LockFile>> {
+        let lock = if force {
+            None
+        } else {
+            let lock = LockFile::new(&self.plugin_path)
+                .with_callback(|l| {
+                    debug!("waiting for lock on {}", display_path(l));
+                })
+                .lock()?;
+            Some(lock)
+        };
+        Ok(lock)
     }
 }
 
