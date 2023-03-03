@@ -55,7 +55,7 @@ impl Command for HookEnv {
         let output = hook_env::build_env_commands(&*shell, &patches);
         out.stdout.write(output);
         if self.status {
-            self.display_status(&config, &ts, out);
+            self.display_status(&ts, out);
         }
 
         Ok(())
@@ -63,9 +63,9 @@ impl Command for HookEnv {
 }
 
 impl HookEnv {
-    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
+    fn display_status(&self, ts: &Toolset, out: &mut Output) {
         let installed_versions = ts
-            .list_current_installed_versions(config)
+            .list_current_installed_versions()
             .into_iter()
             .rev()
             .map(|v| v.to_string())
