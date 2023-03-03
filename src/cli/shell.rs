@@ -24,6 +24,10 @@ pub struct Shell {
     /// Runtime version(s) to use
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Vec<RuntimeArg>,
+
+    /// Removes a previously set version
+    #[clap(long, short)]
+    unset: bool,
 }
 
 impl Command for Shell {
@@ -41,7 +45,12 @@ impl Command for Shell {
             let source = &ts.versions.get(&rtv.plugin.name).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("RTX_{}_VERSION", rtv.plugin.name.to_uppercase());
-                rtxprintln!(out, "{}", shell.set_env(&k, &rtv.version));
+                let op = if self.unset {
+                    shell.unset_env(&k)
+                } else {
+                    shell.set_env(&k, &rtv.version)
+                };
+                out.stdout.writeln(op);
             }
         }
         touch_dir(&dirs::ROOT)?;

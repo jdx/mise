@@ -2777,7 +2777,7 @@ _rtx() {
             return 0
             ;;
         rtx__shell)
-            opts="-j -r -v -h --jobs --log-level --raw --verbose --help [RUNTIME]..."
+            opts="-u -j -r -v -h --unset --jobs --log-level --raw --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
