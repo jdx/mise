@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use indoc::formatdoc;
@@ -9,20 +11,21 @@ use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 
-/// Sets .tool-versions to include a specific runtime
+/// Sets or gets tool versions in the local .tool-versions or .rtx.toml file
 ///
-/// then displays the contents of .tool-versions
-/// use this to set the runtime version when within a directory
-/// use `rtx global` to set a runtime version globally
+/// Use this to set a tool's version when within a directory
+/// Use `rtx global` to set a runtime version globally
+/// This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
+/// is set. A future v2 release of rtx will default to using `.rtx.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Local {
-    /// Runtimes to add to .tool-versions
+    /// Runtimes to add to .tool-versions/.rtx.toml
     /// e.g.: nodejs@18
     /// if this is a single runtime with no version,
-    /// the current value of .tool-versions will be displayed
+    /// the current value of .tool-versions/.rtx.toml will be displayed
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: Option<Vec<RuntimeArg>>,
 
@@ -45,62 +48,92 @@ pub struct Local {
     /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
+
+    /// Get the path of the config file
+    #[clap(long)]
+    path: bool,
 }
 
 impl Command for Local {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let cf_path = match self.parent {
-            true => file::find_up(
-                &dirs::CURRENT,
-                &[
-                    RTX_DEFAULT_CONFIG_FILENAME.as_str(),
-                    RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str(),
-                ],
-            )
-            .with_context(|| {
-                eyre!(
-                    "no {} file found",
-                    RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()
-                )
-            })?,
-            false => {
-                let rtx_toml = dirs::CURRENT.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
-                if rtx_toml.exists() {
-                    rtx_toml
-                } else {
-                    dirs::CURRENT.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
-                }
-            }
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let path = if self.parent {
+            get_parent_path()?
+        } else {
+            get_path()
         };
-
-        let mut cf = match cf_path.exists() {
-            true => config_file::parse(&cf_path)?,
-            false => config_file::init(&cf_path),
-        };
-
-        if let Some(plugins) = &self.remove {
-            for plugin in plugins {
-                cf.remove_plugin(plugin);
-            }
-        }
-
-        if let Some(runtimes) = &self.runtime {
-            let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
-            if cf.display_runtime(out, &runtimes)? {
-                return Ok(());
-            }
-            let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
-            cf.add_runtimes(&mut config, &runtimes, pin)?;
-        }
-
-        if self.runtime.is_some() || self.remove.is_some() {
-            cf.save()?;
-        }
-
-        rtxprint!(out, "{}", cf.dump());
-
-        Ok(())
+        local(
+            config,
+            out,
+            &path,
+            self.runtime,
+            self.remove,
+            self.pin,
+            self.fuzzy,
+            self.path,
+        )
     }
+}
+
+fn get_path() -> PathBuf {
+    let rtx_toml = dirs::CURRENT.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
+    if *env::RTX_USE_TOML || rtx_toml.exists() {
+        rtx_toml
+    } else {
+        dirs::CURRENT.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+    }
+}
+
+fn get_parent_path() -> Result<PathBuf> {
+    let mut filenames = vec![RTX_DEFAULT_CONFIG_FILENAME.as_str()];
+    if !*env::RTX_USE_TOML {
+        filenames.push(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+    }
+    file::find_up(&dirs::CURRENT, &filenames)
+        .with_context(|| eyre!("no {} file found", filenames.join(" or "),))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn local(
+    mut config: Config,
+    out: &mut Output,
+    path: &Path,
+    runtime: Option<Vec<RuntimeArg>>,
+    remove: Option<Vec<PluginName>>,
+    pin: bool,
+    fuzzy: bool,
+    show_path: bool,
+) -> Result<()> {
+    let mut cf = match path.exists() {
+        true => config_file::parse(path)?,
+        false => config_file::init(path),
+    };
+    if show_path {
+        rtxprintln!(out, "{}", path.display());
+        return Ok(());
+    }
+
+    if let Some(plugins) = &remove {
+        for plugin in plugins {
+            cf.remove_plugin(plugin);
+        }
+    }
+
+    if let Some(runtimes) = &runtime {
+        let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
+        if cf.display_runtime(out, &runtimes)? {
+            return Ok(());
+        }
+        let pin = pin || (config.settings.asdf_compat && !fuzzy);
+        cf.add_runtimes(&mut config, &runtimes, pin)?;
+    }
+
+    if runtime.is_some() || remove.is_some() {
+        cf.save()?;
+    }
+
+    rtxprint!(out, "{}", cf.dump());
+
+    Ok(())
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
@@ -183,6 +216,7 @@ mod tests {
     #[test]
     fn test_local_multiple_versions() {
         run_test(|| {
+            assert_cli_snapshot!("local", "--path");
             assert_cli_snapshot!("local", "tiny@2", "tiny@1", "tiny@3");
             assert_cli_snapshot!("bin-paths");
         });
