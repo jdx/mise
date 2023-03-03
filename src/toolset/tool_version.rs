@@ -122,10 +122,10 @@ impl ToolVersion {
         }
     }
 
-    pub fn install(&mut self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+    pub fn install(&mut self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
         match self.r#type {
             ToolVersionType::Version(_) | ToolVersionType::Prefix(_) | ToolVersionType::Ref(_) => {
-                self.rtv.as_ref().unwrap().install(config, pr)
+                self.rtv.as_ref().unwrap().install(config, pr, force)
             }
             _ => Ok(()),
         }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
+use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -151,6 +152,18 @@ impl Config {
         }
 
         aliases
+    }
+
+    pub fn get_shims_dir(&self) -> Result<PathBuf> {
+        match self.settings.shims_dir.clone() {
+            Some(mut shims_dir) => {
+                if shims_dir.starts_with("~") {
+                    shims_dir = dirs::HOME.join(shims_dir.strip_prefix("~")?);
+                }
+                Ok(shims_dir)
+            }
+            None => err_no_shims_dir(),
+        }
     }
 }
 
@@ -323,6 +336,16 @@ fn err_load_settings(settings_path: &Path) -> Report {
         "error loading settings from {}",
         settings_path.to_string_lossy()
     )
+}
+
+fn err_no_shims_dir() -> Result<PathBuf> {
+    return Err(eyre!(indoc::formatdoc!(
+        r#"
+           rtx is not configured to use shims.
+           Please set the `{}` setting to a directory.
+           "#,
+        style("shims_dir").yellow()
+    )));
 }
 
 impl Display for Config {
