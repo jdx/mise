@@ -49,8 +49,7 @@ impl Command for Exec {
         let ts = ToolsetBuilder::new()
             .with_args(&self.runtime)
             .with_install_missing()
-            .build(&mut config);
-
+            .build(&mut config)?;
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
         let mut env = ts.env_with_path(&config);
         if config.settings.missing_runtime_behavior != Ignore {

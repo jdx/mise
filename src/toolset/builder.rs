@@ -1,3 +1,4 @@
+use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -32,7 +33,7 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn build(self, config: &mut Config) -> Toolset {
+    pub fn build(self, config: &mut Config) -> Result<Toolset> {
         let mut toolset = Toolset::default();
         load_config_files(config, &mut toolset);
         load_runtime_env(&mut toolset, env::vars().collect());
@@ -41,13 +42,11 @@ impl ToolsetBuilder {
 
         if self.install_missing {
             let mpr = MultiProgressReport::new(config.settings.verbose);
-            if let Err(e) = toolset.install_missing(config, mpr) {
-                warn!("Error installing runtimes: {:#}", e);
-            };
+            toolset.install_missing(config, mpr)?;
         }
 
         debug!("{}", toolset);
-        toolset
+        Ok(toolset)
     }
 }
 

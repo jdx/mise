@@ -44,8 +44,7 @@ impl Command for Where {
 
         let ts = ToolsetBuilder::new()
             .with_args(&[runtime.clone()])
-            .build(&mut config);
-
+            .build(&mut config)?;
         match ts.resolve_runtime_arg(&runtime) {
             Some(rtv) if rtv.is_installed() => {
                 rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());

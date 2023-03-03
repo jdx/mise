@@ -24,7 +24,7 @@ pub struct Current {
 
 impl Command for Current {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config);
+        let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
                 Some(plugin) => self.one(&config, ts, out, plugin),
