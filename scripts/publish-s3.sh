@@ -12,11 +12,11 @@ cp "$RELEASE_DIR/rtx-latest-linux-x64" "$RELEASE_DIR/rtx-latest-linux-amd64"
 cp "$RELEASE_DIR/rtx-latest-macos-x64" "$RELEASE_DIR/rtx-latest-macos-amd64"
 
 aws s3 cp "$RELEASE_DIR/$RTX_VERSION" "s3://rtx.pub/$RTX_VERSION/" --cache-control "$cache_week" --no-progress --recursive
-aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --recursive --exclude "*" \
-	--include "rtx-latest-*" \
-	--include "SHASUMS*" \
-	--include "VERSION" \
-	--include "install.sh"
+
+aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --recursive --exclude "*" --include "rtx-latest-*"
+aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
+aws s3 cp "$RELEASE_DIR/VERSION" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain"
+aws s3 cp "$RELEASE_DIR/install.sh" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain"
 
 aws s3 cp artifacts/rpm/rtx.repo s3://rtx.pub/rpm/ --cache-control "$cache_day" --no-progress
 aws s3 cp artifacts/rpm/packages/ s3://rtx.pub/rpm/packages/ --cache-control "$cache_week" --no-progress --recursive
