@@ -1265,7 +1265,7 @@ _rtx() {
             return 0
             ;;
         rtx__global)
-            opts="-j -r -v -h --pin --fuzzy --remove --jobs --log-level --raw --verbose --help [RUNTIME]..."
+            opts="-j -r -v -h --pin --fuzzy --remove --path --jobs --log-level --raw --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2115,7 +2115,7 @@ _rtx() {
             return 0
             ;;
         rtx__local)
-            opts="-p -j -r -v -h --parent --pin --fuzzy --remove --jobs --log-level --raw --verbose --help [RUNTIME]..."
+            opts="-p -j -r -v -h --parent --pin --fuzzy --remove --path --jobs --log-level --raw --verbose --help [RUNTIME]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

@@ -228,14 +228,23 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-    if home_config.is_file() {
-        config_files.push(home_config);
-    }
-    let global_config = dirs::CONFIG.join("config.toml");
-    if global_config.is_file() {
-        config_files.push(global_config);
-    }
+    match env::RTX_GLOBAL_FILE.clone() {
+        Some(global) => {
+            if global.is_file() {
+                config_files.push(global);
+            }
+        }
+        None => {
+            let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+            if home_config.is_file() {
+                config_files.push(home_config);
+            }
+            let global_config = dirs::CONFIG.join("config.toml");
+            if global_config.is_file() {
+                config_files.push(global_config);
+            }
+        }
+    };
 
     config_files.into_iter().unique().collect()
 }

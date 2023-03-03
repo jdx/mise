@@ -87,11 +87,22 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
 #[cfg(test)]
 mod tests {
     use crate::assert_cli;
+    use indoc::indoc;
+    use std::fs;
 
     #[test]
     fn test_render_help() {
+        fs::write(
+            "README.md",
+            indoc! {r#"
+            <!-- RTX:COMMANDS -->
+            <!-- RTX:COMMANDS -->
+        "#},
+        )
+        .unwrap();
         assert_cli!("render-help");
-        let readme = std::fs::read_to_string("README.md").unwrap();
-        assert!(readme.contains("<!-- RTX:COMMANDS -->"));
+        let readme = fs::read_to_string("README.md").unwrap();
+        assert!(readme.contains("## Commands"));
+        fs::remove_file("README.md").unwrap();
     }
 }

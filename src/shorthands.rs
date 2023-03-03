@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_get_shorthands() {
         let settings = Settings {
-            shorthands_file: Some("test/fixtures/shorthands.toml".into()),
+            shorthands_file: Some("../fixtures/shorthands.toml".into()),
             ..Settings::default()
         };
         let shorthands = get_shorthands(&settings);

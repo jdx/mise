@@ -117,9 +117,7 @@ impl PluginsInstall {
         let mut plugin = Plugin::new(name);
         plugin.repo_url = Some(git_url.to_string());
         if !self.force && plugin.is_installed() {
-            mpr.suspend(|| {
-                warn!("plugin {} already installed", name);
-            });
+            mpr.warn(format!("plugin {} already installed", name));
         } else {
             let mut pr = mpr.add();
             plugin.decorate_progress_bar(&mut pr);
