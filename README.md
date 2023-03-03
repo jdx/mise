@@ -538,6 +538,7 @@ You may not even notice.
 rtx can be configured in `~/.config/rtx/config.toml`. The following options are available (defaults shown):
 
 ```toml
+[settings]
 # whether to prompt to install plugins and runtimes if they're not already installed
 missing_runtime_behavior = 'prompt' # other options: 'ignore', 'warn', 'prompt', 'autoinstall'
 
@@ -1389,7 +1390,7 @@ Install a plugin
 note that rtx automatically can install plugins when you install a runtime
 e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin
 
-This behavior can be modified in ~/.rtx/config.toml
+This behavior can be modified in ~/.config/rtx/config.toml
 
 Usage: install [OPTIONS] [NAME] [GIT_URL]
 

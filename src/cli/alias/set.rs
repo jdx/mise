@@ -23,11 +23,11 @@ pub struct AliasSet {
 }
 
 impl Command for AliasSet {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let rtxrc = config.rtxrc;
-
-        rtxrc.set_alias(&self.plugin, &self.alias, &self.value)?;
-        rtxrc.save()
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+        config
+            .global_config
+            .set_alias(&self.plugin, &self.alias, &self.value);
+        config.global_config.save()
     }
 }
 
@@ -40,10 +40,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 pub mod tests {
-
-    use crate::{assert_cli, assert_cli_snapshot};
-
     use crate::test::reset_config;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_alias_set() {
