@@ -15,6 +15,7 @@ use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::{Plugin, PluginName};
+use crate::shims::reshim;
 use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -167,8 +168,7 @@ impl Install {
                         }
                     })
                     .collect::<Result<Vec<_>>>()?;
-
-                Ok(())
+                reshim(&mut config, &ts)
             })
     }
 

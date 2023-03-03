@@ -224,6 +224,8 @@ impl RuntimeVersion {
                 .cmd(settings, &Script::ListBinPaths)
                 .read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
+        } else if self.version == "system" {
+            vec![]
         } else {
             vec!["bin".into()]
         };
