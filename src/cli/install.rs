@@ -1,18 +1,22 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::PluginName;
-use crate::toolset::ToolsetBuilder;
+use crate::plugins::{Plugin, PluginName};
+use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a runtime
 ///
@@ -63,34 +67,109 @@ impl Command for Install {
 
 impl Install {
     fn install_runtimes(&self, config: &Config, runtimes: &[RuntimeArg]) -> Result<()> {
-        let runtimes = RuntimeArg::double_runtime_condition(runtimes);
-        let mut ts = ToolsetBuilder::new().with_args(&runtimes).build(config);
-        let plugins_to_install = runtimes.iter().map(|r| &r.plugin).collect::<HashSet<_>>();
-        for plugin in ts.versions.clone().keys() {
-            if !plugins_to_install.contains(plugin) {
-                ts.versions.remove(plugin);
-            }
-        }
-        if ts.versions.is_empty() {
-            warn!("no runtimes to install");
-            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
-            return Ok(());
-        }
-        for (plugin, versions) in &ts.versions {
-            if plugins_to_install.contains(plugin) && self.force {
-                for v in &versions.versions {
-                    if let Some(rtv) = &v.rtv {
-                        if rtv.is_installed() {
-                            info!("uninstalling {}", rtv);
-                            rtv.uninstall(&config.settings)?;
+        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mut tool_versions = vec![];
+        let ts = ToolsetBuilder::new().build(config);
+        for runtime in RuntimeArg::double_runtime_condition(runtimes) {
+            match runtime.to_tool_version() {
+                Some(tv) => tool_versions.push(tv),
+                None => {
+                    if runtime.version == RuntimeArgVersion::None {
+                        match ts.versions.get(&runtime.plugin) {
+                            Some(tvl) => {
+                                for tv in &tvl.versions {
+                                    tool_versions.push(tv.clone());
+                                }
+                            }
+                            None => {
+                                let tv = ToolVersion::new(
+                                    runtime.plugin.clone(),
+                                    ToolVersionType::Version("latest".into()),
+                                );
+                                tool_versions.push(tv);
+                            }
                         }
                     }
                 }
             }
         }
-        ts.install_missing(config)?;
+        let mut versions = vec![];
+        for mut tv in tool_versions {
+            let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
+                Some(plugin) => plugin,
+                None => {
+                    let plugin = Plugin::new(&tv.plugin_name);
+                    let mut pr = mpr.add();
+                    match plugin.install(config, None, &mut pr) {
+                        Ok(_) => Arc::new(plugin),
+                        Err(err) => {
+                            pr.error();
+                            return Err(err)?;
+                        }
+                    }
+                }
+            };
+            tv.resolve(config, plugin)?;
+            versions.push(tv.rtv.unwrap());
+        }
+        if versions.is_empty() {
+            warn!("no runtimes to install");
+            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            return Ok(());
+        }
+        let mut to_uninstall = vec![];
+        for rtv in &versions {
+            if rtv.is_installed() {
+                if self.force {
+                    to_uninstall.push(rtv.clone());
+                } else {
+                    warn!("{} already installed", style(rtv).cyan().for_stderr());
+                }
+            }
+        }
+        ThreadPoolBuilder::new()
+            .num_threads(config.settings.jobs)
+            .build()?
+            .install(|| -> Result<()> {
+                if !to_uninstall.is_empty() {
+                    to_uninstall
+                        .into_par_iter()
+                        .map(|rtv| {
+                            let mut pr = mpr.add();
+                            rtv.decorate_progress_bar(&mut pr);
+                            match rtv.uninstall(&config.settings, &pr) {
+                                Ok(_) => {
+                                    pr.finish();
+                                    Ok(())
+                                }
+                                Err(err) => {
+                                    pr.error();
+                                    Err(err.wrap_err(format!("failed to uninstall {}", rtv)))
+                                }
+                            }
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                }
+                versions
+                    .into_par_iter()
+                    .map(|rtv| {
+                        if rtv.is_installed() {
+                            return Ok(());
+                        }
+                        let mut pr = mpr.add();
+                        rtv.decorate_progress_bar(&mut pr);
+                        match rtv.install(config, &mut pr) {
+                            Ok(_) => Ok(()),
+                            Err(err) => {
+                                pr.error();
+                                Err(err.wrap_err(format!("failed to install {}", rtv)))
+                            }
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?;
 
-        Ok(())
+                Ok(())
+            })
     }
 
     fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
@@ -108,7 +187,11 @@ impl Install {
                 }
             }
         }
-        ts.install_missing(config)?;
+        if ts.list_missing_versions().is_empty() {
+            warn!("no runtimes to install");
+        }
+        let mpr = MultiProgressReport::new(config.settings.verbose);
+        ts.install_missing(config, Some(mpr))?;
 
         Ok(())
     }

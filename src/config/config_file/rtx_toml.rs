@@ -475,8 +475,8 @@ impl ConfigFile for RtxToml {
         self.doc.to_string()
     }
 
-    fn to_toolset(&self) -> Toolset {
-        self.toolset.clone()
+    fn to_toolset(&self) -> &Toolset {
+        &self.toolset
     }
 
     fn settings(&self) -> SettingsBuilder {

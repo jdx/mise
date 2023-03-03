@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
@@ -8,6 +8,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
@@ -19,20 +20,25 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = RuntimeArg::double_runtime_condition(&self.runtime);
         let ts = ToolsetBuilder::new().with_args(&runtimes).build(&config);
         let runtime_versions = runtimes.iter().filter_map(|a| ts.resolve_runtime_arg(a));
 
+        let mpr = MultiProgressReport::new(config.settings.verbose);
         for rtv in runtime_versions {
             if !rtv.is_installed() {
                 warn!("{} is not installed", style(rtv).cyan().for_stderr());
                 continue;
             }
 
-            rtxprintln!(out, "uninstalling {}", style(rtv).cyan());
-            rtv.uninstall(&config.settings)
-                .wrap_err_with(|| eyre!("error uninstalling {}", rtv))?;
+            let mut pr = mpr.add();
+            rtv.decorate_progress_bar(&mut pr);
+            if let Err(err) = rtv.uninstall(&config.settings, &pr) {
+                pr.error();
+                return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", rtv)));
+            }
+            pr.finish_with_message("uninstalled".into());
         }
         Ok(())
     }

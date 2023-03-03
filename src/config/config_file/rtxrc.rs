@@ -414,7 +414,7 @@ impl ConfigFile for RTXFile {
         self.get_edit().unwrap().lock().unwrap().to_string()
     }
 
-    fn to_toolset(&self) -> Toolset {
+    fn to_toolset(&self) -> &Toolset {
         todo!()
     }
 

@@ -2,6 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::file::remove_dir_all;
 use crate::output::Output;
 use crate::{dirs, env};
 
@@ -30,7 +31,7 @@ impl Command for Implode {
             if f.is_dir() {
                 rtxprintln!(out, "rm -rf {}", f.display());
                 if !self.dry_run {
-                    std::fs::remove_dir_all(f)?;
+                    remove_dir_all(f)?;
                 }
             } else {
                 rtxprintln!(out, "rm -f {}", f.display());

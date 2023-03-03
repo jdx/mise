@@ -20,6 +20,13 @@ assert_contains() {
   fi
 }
 
+# install/uninstall multiple
+rtx plugin uninstall tiny shfmt shellcheck
+rtx plugin install tiny shfmt shellcheck
+assert_contains "rtx plugin ls" "tiny"
+assert_contains "rtx plugin ls" "shfmt"
+assert_contains "rtx plugin ls" "shellcheck"
+
 rm -rf "$RTX_DATA_DIR/plugins/tiny"
 rtx plugin install https://github.com/jdxcode/rtx-tiny.git
 assert_contains "rtx plugin ls" "tiny"

@@ -1,8 +1,9 @@
-use crate::config::Settings;
-use crate::plugins::Plugin;
-use crate::runtimes::RuntimeVersion;
 use std::sync::Arc;
 
+use crate::config::Config;
+use crate::env;
+use crate::plugins::Plugin;
+use crate::runtimes::RuntimeVersion;
 use crate::toolset::{ToolSource, ToolVersion};
 
 /// represents several versions of a tool for a particular plugin
@@ -22,10 +23,24 @@ impl ToolVersionList {
     pub fn add_version(&mut self, version: ToolVersion) {
         self.versions.push(version);
     }
-    pub fn resolve(&mut self, settings: &Settings, plugin: Arc<Plugin>) {
+    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>) {
         for tv in &mut self.versions {
-            if let Err(err) = tv.resolve(settings, plugin.clone()) {
-                warn!("failed to resolve tool version: {}", err);
+            match tv.resolve(config, plugin.clone()) {
+                Ok(_) => {
+                    if *env::PRELOAD_ENV {
+                        if let Some(rtv) = tv.rtv.as_ref() {
+                            // optimize loading by preloading the rtv
+                            let _ = rayon::join(
+                                || rtv.exec_env(),
+                                || rtv.list_bin_paths(&config.settings),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!("failed to resolve tool version: {}", err);
+                    return;
+                }
             }
         }
     }
@@ -39,11 +54,12 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Settings;
-    use crate::plugins::{Plugin, PluginName};
-    use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType};
     use std::env;
     use std::sync::Arc;
+
+    use crate::config::Config;
+    use crate::plugins::{Plugin, PluginName};
+    use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType};
 
     #[test]
     fn test_tool_version_list_failure() {
@@ -55,7 +71,7 @@ mod tests {
             plugin.name.to_string(),
             ToolVersionType::Version("1.0.0".to_string()),
         ));
-        tvl.resolve(&Settings::default(), plugin);
+        tvl.resolve(&Config::default(), plugin);
         assert_eq!(tvl.resolved_versions().len(), 0);
         env::remove_var("RTX_FAILURE");
     }

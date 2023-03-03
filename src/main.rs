@@ -2,9 +2,11 @@ extern crate core;
 #[macro_use]
 extern crate log;
 
+use std::process::exit;
+
 use color_eyre::eyre::Result;
-use color_eyre::{Help, SectionExt};
-use console::Term;
+use color_eyre::{Help, Report, SectionExt};
+use console::{style, Term};
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
@@ -52,11 +54,14 @@ fn main() -> Result<()> {
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
     handle_ctrlc();
 
-    let mut result = run(&env::ARGS).with_section(|| VERSION.to_string().header("Version:"));
-    if log_level < log::LevelFilter::Debug {
-        result = result.with_suggestion(|| "Run with RTX_DEBUG=1 for more information.".to_string())
+    match run(&env::ARGS).with_section(|| VERSION.to_string().header("Version:")) {
+        Ok(()) => Ok(()),
+        Err(err) if log_level < log::LevelFilter::Debug => {
+            display_friendly_err(err);
+            exit(1);
+        }
+        Err(err) => Err(err).suggestion("Run with RTX_DEBUG=1 for more information."),
     }
-    result
 }
 
 fn run(args: &Vec<String>) -> Result<()> {
@@ -67,10 +72,10 @@ fn run(args: &Vec<String>) -> Result<()> {
 
     let config = Config::load()?;
     let config = shims::handle_shim(config, args, out)?;
-    if hook_env::should_exit_early(&config) {
+    if config.should_exit_early {
         return Ok(());
     }
-    let cli = Cli::new_with_external_commands(&config)?;
+    let cli = Cli::new_with_external_commands(&config);
     cli.run(config, args, out)
 }
 
@@ -78,7 +83,18 @@ fn handle_ctrlc() {
     ctrlc::set_handler(move || {
         let _ = Term::stderr().show_cursor();
         debug!("Ctrl-C pressed, exiting...");
-        std::process::exit(1);
+        exit(1);
     })
     .expect("Error setting Ctrl-C handler");
+}
+
+fn display_friendly_err(err: Report) {
+    let dim = |s| style(s).dim().for_stderr();
+    let dim_red = |s| style(s).dim().red().for_stderr();
+    eprintln!("{} {}", dim_red("rtx"), err);
+    eprintln!(
+        "{} {}",
+        dim_red("rtx"),
+        dim("Run with RTX_DEBUG=1 for more information")
+    );
 }

@@ -10,18 +10,17 @@ use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-use crate::config::Config;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
 use crate::shell::Shell;
 use crate::{dirs, env};
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(config: &Config) -> bool {
+pub fn should_exit_early(config_filenames: &[PathBuf]) -> bool {
     if env::ARGS.len() < 2 || env::ARGS[1] != "hook-env" {
         return false;
     }
-    let watch_files = get_watch_files(config);
+    let watch_files = get_watch_files(config_filenames);
     if have_config_files_been_modified(&env::vars().collect(), watch_files) {
         return false;
     }
@@ -90,6 +89,52 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
+pub fn build_watches(config_filenames: &[PathBuf]) -> Result<HookEnvWatches> {
+    let mut watches = HookEnvWatches::new();
+    for cf in get_watch_files(config_filenames) {
+        watches.insert(cf.clone(), cf.metadata()?.modified()?);
+    }
+
+    Ok(watches)
+}
+
+pub fn get_watch_files(config_filenames: &[PathBuf]) -> HashSet<PathBuf> {
+    let mut watches = HashSet::new();
+    if dirs::ROOT.exists() {
+        watches.insert(dirs::ROOT.clone());
+    }
+    for cf in config_filenames {
+        watches.insert(cf.clone());
+    }
+
+    watches
+}
+
+pub fn clear_old_env(shell: &dyn Shell) -> String {
+    let mut patches = env::__RTX_DIFF.reverse().to_patches();
+    if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
+        patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
+    }
+    build_env_commands(shell, &patches)
+}
+
+pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
+    let mut output = String::new();
+
+    for patch in patches.iter() {
+        match patch {
+            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                output.push_str(&shell.set_env(k, v));
+            }
+            EnvDiffOperation::Remove(k) => {
+                output.push_str(&shell.unset_env(k));
+            }
+        }
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::UNIX_EPOCH;
@@ -139,50 +184,4 @@ mod tests {
             &UNIX_EPOCH
         );
     }
-}
-
-pub fn build_watches(config: &Config) -> Result<HookEnvWatches> {
-    let mut watches = HookEnvWatches::new();
-    for cf in get_watch_files(config) {
-        watches.insert(cf.clone(), cf.metadata()?.modified()?);
-    }
-
-    Ok(watches)
-}
-
-pub fn get_watch_files(config: &Config) -> HashSet<PathBuf> {
-    let mut watches = HashSet::new();
-    if dirs::ROOT.exists() {
-        watches.insert(dirs::ROOT.clone());
-    }
-    for cf in config.config_files.keys() {
-        watches.insert(cf.clone());
-    }
-
-    watches
-}
-
-pub fn clear_old_env(shell: &dyn Shell) -> String {
-    let mut patches = env::__RTX_DIFF.reverse().to_patches();
-    if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
-        patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
-    }
-    build_env_commands(shell, &patches)
-}
-
-pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
-    let mut output = String::new();
-
-    for patch in patches.iter() {
-        match patch {
-            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                output.push_str(&shell.set_env(k, v));
-            }
-            EnvDiffOperation::Remove(k) => {
-                output.push_str(&shell.unset_env(k));
-            }
-        }
-    }
-
-    output
 }

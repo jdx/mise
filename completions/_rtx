@@ -655,8 +655,11 @@ i.e.: they don'\''t need the full git repo url]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::name -- The name of the plugin to install e.g.\: nodejs, ruby:' \
+'::name -- The name of the plugin to install
+e.g.\: nodejs, ruby
+Can specify multiple plugins\: `rtx plugins install nodejs ruby python`:' \
 '::git_url -- The git url of the plugin:_urls' \
+'*::rest:' \
 && ret=0
 ;;
 (ls)
@@ -687,6 +690,7 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-u[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--urls[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
 '-r[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '--raw[Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.]' \
 '*-v[Show installation output]' \
@@ -706,7 +710,7 @@ _arguments "${_arguments_options[@]}" \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':plugin -- Plugin to remove:' \
+'*::plugin -- Plugin(s) to remove:' \
 && ret=0
 ;;
 (update)

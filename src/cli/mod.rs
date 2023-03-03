@@ -138,12 +138,12 @@ impl Cli {
         }
     }
 
-    pub fn new_with_external_commands(config: &Config) -> Result<Self> {
-        let external_commands = external::commands(config)?;
-        Ok(Self {
+    pub fn new_with_external_commands(config: &Config) -> Self {
+        let external_commands = external::commands(config);
+        Self {
             command: Self::command().subcommands(external_commands.clone()),
             external_commands,
-        })
+        }
     }
 
     pub fn command() -> clap::Command {
@@ -235,7 +235,7 @@ pub mod tests {
     pub fn cli_run(args: &Vec<String>) -> Result<Output> {
         let config = Config::load()?;
         let mut out = Output::tracked();
-        Cli::new_with_external_commands(&config)?.run(config, args, &mut out)?;
+        Cli::new_with_external_commands(&config).run(config, args, &mut out)?;
 
         Ok(out)
     }
