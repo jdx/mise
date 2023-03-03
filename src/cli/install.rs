@@ -104,7 +104,7 @@ impl Install {
                         None => {
                             let plugin = Plugin::new(&tv.plugin_name);
                             let mut pr = mpr.add();
-                            match plugin.install(&config, None, &mut pr) {
+                            match plugin.install(&config, &mut pr) {
                                 Ok(_) => Arc::new(plugin),
                                 Err(err) => {
                                     pr.error();

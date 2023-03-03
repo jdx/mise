@@ -75,7 +75,7 @@ impl Git {
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
             Err(err) => warn!(
-                "failed to get git version: {}\n Git is required to use rtx.",
+                "failed to get git version: {:#}\n Git is required to use rtx.",
                 err
             ),
         }
@@ -112,7 +112,7 @@ impl Git {
             }
             Err(err) => {
                 warn!(
-                    "failed to get remote url for {}: {}",
+                    "failed to get remote url for {}: {:#}",
                     self.dir.display(),
                     err
                 );

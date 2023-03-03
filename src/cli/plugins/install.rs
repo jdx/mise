@@ -111,10 +111,11 @@ impl PluginsInstall {
         &self,
         config: &Config,
         name: &String,
-        git_url: &String,
+        git_url: &str,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let plugin = Plugin::new(name);
+        let mut plugin = Plugin::new(name);
+        plugin.repo_url = Some(git_url.to_string());
         if !self.force && plugin.is_installed() {
             mpr.suspend(|| {
                 warn!("plugin {} already installed", name);
@@ -125,7 +126,7 @@ impl PluginsInstall {
             if self.force {
                 plugin.uninstall(&pr)?;
             }
-            plugin.install(config, Some(git_url), &mut pr)?;
+            plugin.install(config, &mut pr)?;
         }
         Ok(())
     }
