@@ -27,7 +27,7 @@ pub struct Which {
 
 impl Command for Which {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config);
+        let ts = ToolsetBuilder::new().build(&mut config)?;
 
         match ts.which(&config, &self.bin_name) {
             Some(rtv) => {

@@ -28,7 +28,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
 }
 
 fn is_valid_shim(config: &mut Config, bin_name: &str) -> Result<()> {
-    let ts = ToolsetBuilder::new().build(config);
+    let ts = ToolsetBuilder::new().build(config)?;
     match ts.which(config, bin_name) {
         Some(_) => Ok(()),
         None => Err(eyre!("{} is not a valid shim", bin_name)),

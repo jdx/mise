@@ -28,7 +28,7 @@ impl Command for DirenvExec {
         }
         let ts = ToolsetBuilder::new()
             .with_install_missing()
-            .build(&mut config);
+            .build(&mut config)?;
         let mut cmd = env_cmd();
 
         for (k, v) in ts.env_with_path(&config) {

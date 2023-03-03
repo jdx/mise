@@ -69,7 +69,7 @@ impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[RuntimeArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         let mut tool_versions = vec![];
-        let ts = ToolsetBuilder::new().build(&mut config);
+        let ts = ToolsetBuilder::new().build(&mut config)?;
         for runtime in RuntimeArg::double_runtime_condition(runtimes) {
             match runtime.to_tool_version() {
                 Some(tv) => tool_versions.push(tv),
@@ -173,7 +173,7 @@ impl Install {
     }
 
     fn install_missing_runtimes(&self, mut config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().build(&mut config);
+        let mut ts = ToolsetBuilder::new().build(&mut config)?;
         if let Some(plugins) = &self.plugin {
             let plugins = plugins.iter().collect::<HashSet<&PluginName>>();
             for plugin in ts.versions.keys().cloned().collect::<Vec<_>>() {

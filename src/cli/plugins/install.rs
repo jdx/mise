@@ -77,7 +77,7 @@ impl PluginsInstall {
         config: &mut Config,
         mpr: MultiProgressReport,
     ) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config);
+        let ts = ToolsetBuilder::new().build(config)?;
         let missing_plugins = ts.list_missing_plugins(config);
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");

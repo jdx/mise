@@ -30,7 +30,7 @@ pub struct Reshim {
 
 impl Command for Reshim {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config);
+        let ts = ToolsetBuilder::new().build(&mut config)?;
 
         if !config.settings.experimental {
             err_experimental()?;

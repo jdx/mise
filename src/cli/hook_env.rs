@@ -38,8 +38,7 @@ impl Command for HookEnv {
         }
         let ts = ToolsetBuilder::new()
             .with_install_missing()
-            .build(&mut config);
-
+            .build(&mut config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
         let env = ts.env(&config);

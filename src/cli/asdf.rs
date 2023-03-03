@@ -45,7 +45,7 @@ impl Command for Asdf {
 }
 
 fn list_versions(config: &mut Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
-    let ts = ToolsetBuilder::new().build(config);
+    let ts = ToolsetBuilder::new().build(config)?;
     let mut versions = ts.list_installed_versions(config)?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
