@@ -41,40 +41,33 @@ macro_rules! parse_error {
 
 #[allow(dead_code)] // TODO: remove
 impl RtxToml {
-    pub fn init(filename: &Path) -> Self {
+    pub fn init(path: &Path) -> Self {
         Self {
-            path: filename.to_path_buf(),
+            path: path.to_path_buf(),
             ..Default::default()
         }
     }
 
-    pub fn from_file(filename: &Path) -> Result<Self> {
-        trace!("parsing: {}", filename.display());
-        let body = fs::read_to_string(filename).suggestion("ensure file exists and can be read")?;
-        let mut rf = Self::from_str(body)?;
-        rf.path = filename.to_path_buf();
+    pub fn from_file(path: &Path) -> Result<Self> {
+        trace!("parsing: {}", path.display());
+        let mut rf = Self::init(path);
+        let body = fs::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        rf.parse(&body)?;
         Ok(rf)
-    }
-
-    pub fn from_str(s: String) -> Result<Self> {
-        Self {
-            doc: s.parse().suggestion("ensure file is valid TOML")?,
-            ..Default::default()
-        }
-        .parse()
     }
 
     pub fn migrate(path: &Path) -> Result<RtxToml> {
         // attempt to read as new .rtx.toml syntax
         let mut raw = String::from("[settings]\n");
         raw.push_str(&fs::read_to_string(path)?);
-        let mut toml = RtxToml::from_str(raw)?;
-        toml.path = path.to_path_buf();
+        let mut toml = RtxToml::init(path);
+        toml.parse(&raw)?;
         toml.save()?;
         Ok(toml)
     }
 
-    fn parse(mut self) -> Result<Self> {
+    fn parse(&mut self, s: &str) -> Result<()> {
+        self.doc = s.parse().suggestion("ensure file is valid TOML")?;
         for (k, v) in self.doc.iter() {
             match k {
                 "env" => self.env = self.parse_hashmap(k, v)?,
@@ -85,7 +78,7 @@ impl RtxToml {
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
-        Ok(self)
+        Ok(())
     }
 
     pub fn settings(&self) -> SettingsBuilder {
@@ -566,11 +559,12 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [env]
         foo="bar"
         "#})
-        .unwrap();
+            .unwrap();
 
         assert_debug_snapshot!(cf.env(), @r###"
         {
@@ -582,12 +576,13 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
         18 = "18.0.0"
         "#})
-        .unwrap();
+            .unwrap();
 
         cf.set_alias("nodejs", "18", "18.0.1");
         cf.set_alias("nodejs", "20", "20.0.0");
@@ -599,7 +594,8 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
         18 = "18.0.0"
@@ -607,7 +603,7 @@ mod tests {
         [alias.python]
         "3.10" = "3.10.0"
         "#})
-        .unwrap();
+            .unwrap();
         cf.remove_alias("nodejs", "16");
         cf.remove_alias("python", "3.10");
 
@@ -617,11 +613,12 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
         "#})
-        .unwrap();
+            .unwrap();
         cf.replace_versions(
             &PluginName::from("nodejs"),
             &["16.0.1".into(), "18.0.1".into()],
@@ -633,11 +630,12 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
         "#})
-        .unwrap();
+            .unwrap();
         cf.remove_plugin(&PluginName::from("nodejs"));
 
         assert_debug_snapshot!(cf.toolset);
@@ -646,13 +644,14 @@ mod tests {
 
     #[test]
     fn test_update_setting() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
         [alias.nodejs]
         18 = "18.0.0"
         "#})
-        .unwrap();
+            .unwrap();
         cf.update_setting("legacy_version_file", false);
         assert_display_snapshot!(cf.dump(), @r###"
         [settings]
@@ -664,11 +663,12 @@ mod tests {
 
     #[test]
     fn test_remove_setting() {
-        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        let mut cf = RtxToml::init(&PathBuf::default());
+        cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
         "#})
-        .unwrap();
+            .unwrap();
         cf.remove_setting("legacy_version_file");
         assert_display_snapshot!(cf.dump(), @r###"
         "###);
