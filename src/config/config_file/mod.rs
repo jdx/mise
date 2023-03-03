@@ -3,21 +3,20 @@ use std::fmt::{Debug, Display};
 use std::path::Path;
 
 use color_eyre::eyre::{eyre, Result};
-use indexmap::IndexMap;
 
 use rtxrc::RTXFile;
 use tool_versions::ToolVersions;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
+use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Config};
 use crate::env;
-
 use crate::file::display_path;
 use crate::output::Output;
 use crate::plugins::PluginName;
-
-use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::toolset::{ToolVersionList, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 pub mod legacy_version;
 pub mod rtx_toml;
@@ -35,10 +34,9 @@ pub enum ConfigFileType {
 pub trait ConfigFile: Debug + Display + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
-    fn plugins(&self) -> IndexMap<PluginName, Vec<String>>;
+    fn plugins(&self) -> HashMap<PluginName, String>;
     fn env(&self) -> HashMap<String, String>;
     fn remove_plugin(&mut self, plugin_name: &PluginName);
-    fn add_version(&mut self, plugin_name: &PluginName, version: &str);
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
@@ -50,35 +48,41 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
 impl dyn ConfigFile {
     pub fn add_runtimes(
         &mut self,
-        config: &Config,
+        config: &mut Config,
         runtimes: &[RuntimeArg],
         pin: bool,
     ) -> Result<()> {
-        let mut runtime_map: HashMap<PluginName, Vec<String>> = HashMap::new();
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
-            .with_args(runtimes)
-            .build(config);
-
+        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mut ts = self.to_toolset().to_owned();
+        let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
-            if let Some(rtv) = ts.resolve_runtime_arg(runtime) {
-                runtime_map
-                    .entry(rtv.plugin.name.clone())
-                    .or_default()
-                    .push(if pin {
-                        rtv.version.to_string()
-                    } else {
-                        match &runtime.version {
-                            RuntimeArgVersion::Version(ref v) => v.to_string(),
-                            RuntimeArgVersion::Path(p) => format!("path:{}", p.display()),
-                            RuntimeArgVersion::Ref(r) => format!("ref:{r}"),
-                            RuntimeArgVersion::Prefix(p) => format!("prefix:{p}"),
-                            _ => "latest".to_string(),
-                        }
-                    });
+            if let Some(tv) = runtime.to_tool_version() {
+                plugins_to_update
+                    .entry(runtime.plugin.clone())
+                    .or_insert_with(Vec::new)
+                    .push(tv);
             }
         }
-        for (plugin, versions) in runtime_map {
+        for (plugin, versions) in &plugins_to_update {
+            let mut tvl = ToolVersionList::new(ts.source.as_ref().unwrap().clone());
+            tvl.versions = versions.clone();
+            ts.versions.insert(plugin.clone(), tvl);
+        }
+        ts.resolve(config);
+        ts.install_missing(config, mpr)?;
+        for (plugin, versions) in plugins_to_update {
+            let versions = versions
+                .into_iter()
+                .map(|mut tv| {
+                    if pin {
+                        let plugin = config.plugins.get(&plugin).unwrap();
+                        tv.resolve(config, plugin.clone())?;
+                        Ok(tv.rtv.unwrap().version)
+                    } else {
+                        Ok(tv.r#type.to_string())
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
             self.replace_versions(&plugin, &versions);
         }
 
@@ -92,15 +96,22 @@ impl dyn ConfigFile {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].version == RuntimeArgVersion::None {
             let plugin = &runtimes[0].plugin;
-            let plugins = self.plugins();
-            let version = plugins.get(plugin).ok_or_else(|| {
-                eyre!(
-                    "no version set for {} in {}",
-                    plugin.to_string(),
-                    display_path(self.get_path())
-                )
-            })?;
-            rtxprintln!(out, "{}", version.join(" "));
+            let tvl = self
+                .to_toolset()
+                .versions
+                .get(plugin)
+                .ok_or_else(|| {
+                    eyre!(
+                        "no version set for {} in {}",
+                        plugin.to_string(),
+                        display_path(self.get_path())
+                    )
+                })?
+                .versions
+                .iter()
+                .map(|tv| tv.r#type.to_string())
+                .collect::<Vec<_>>();
+            rtxprintln!(out, "{}", tvl.join(" "));
             return Ok(true);
         }
         // check for something like `rtx local nodejs python@latest` which is invalid
@@ -117,6 +128,8 @@ impl dyn ConfigFile {
 pub fn init(path: &Path) -> Box<dyn ConfigFile> {
     if path.ends_with(".rtxrc") || path.ends_with(".rtxrc.toml") {
         return Box::new(RTXFile::init(path));
+    } else if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) {
+        return Box::new(RtxToml::init(path));
     } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
         return Box::new(ToolVersions::init(path));
     }
@@ -126,7 +139,7 @@ pub fn init(path: &Path) -> Box<dyn ConfigFile> {
 
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Ok(Box::new(rtx_toml::RtxToml::from_file(path)?)),
+        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path)?)),
         Some(ConfigFileType::RtxRc) => Ok(Box::new(RTXFile::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
         #[allow(clippy::box_default)]

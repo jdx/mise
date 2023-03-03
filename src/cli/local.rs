@@ -6,9 +6,10 @@ use once_cell::sync::Lazy;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::{config_file, Config};
+use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::{dirs, env, file};
+use crate::{dirs, file};
 
 /// Sets .tool-versions to include a specific runtime
 ///
@@ -47,19 +48,29 @@ pub struct Local {
 }
 
 impl Command for Local {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let cf_path = match self.parent {
             true => file::find_up(
                 &dirs::CURRENT,
-                &[env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()],
+                &[
+                    RTX_DEFAULT_CONFIG_FILENAME.as_str(),
+                    RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str(),
+                ],
             )
             .with_context(|| {
                 eyre!(
                     "no {} file found",
-                    env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()
+                    RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()
                 )
             })?,
-            false => dirs::CURRENT.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()),
+            false => {
+                let rtx_toml = dirs::CURRENT.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
+                if rtx_toml.exists() {
+                    rtx_toml
+                } else {
+                    dirs::CURRENT.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+                }
+            }
         };
 
         let mut cf = match cf_path.exists() {
@@ -74,12 +85,12 @@ impl Command for Local {
         }
 
         if let Some(runtimes) = &self.runtime {
-            let runtimes = RuntimeArg::double_runtime_condition(runtimes);
+            let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
             if cf.display_runtime(out, &runtimes)? {
                 return Ok(());
             }
             let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
-            cf.add_runtimes(&config, &runtimes, pin)?;
+            cf.add_runtimes(&mut config, &runtimes, pin)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {

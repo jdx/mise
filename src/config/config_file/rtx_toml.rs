@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
-use indexmap::IndexMap;
 use log::LevelFilter;
 use toml_edit::{table, value, Array, Item, Value};
 
@@ -24,6 +23,7 @@ pub struct RtxToml {
     settings: SettingsBuilder,
     alias: AliasMap,
     doc: toml_edit::Document,
+    plugins: HashMap<String, String>,
 }
 
 #[macro_export]
@@ -70,6 +70,7 @@ impl RtxToml {
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
+                "plugins" => self.plugins = self.parse_hashmap(k, v)?,
                 _ => warn!("unknown key: {}", k),
             }
         }
@@ -221,16 +222,8 @@ impl RtxToml {
                 } else {
                     parse_error!(key, v, "version, path, or prefix")?
                 }
-                if let Some(repo) = table.get("repo") {
-                    match repo.as_str() {
-                        Some(s) => {
-                            tv.repo = Some(s.into());
-                        }
-                        _ => parse_error!(format!("{}.repo", key), v, "string")?,
-                    }
-                }
                 for (k, v) in table.iter() {
-                    if k == "version" || k == "path" || k == "prefix" || k == "ref" || k == "repo" {
+                    if k == "version" || k == "path" || k == "prefix" || k == "ref" {
                         continue;
                     }
                     match v.as_str() {
@@ -416,17 +409,8 @@ impl ConfigFile for RtxToml {
         self.path.as_path()
     }
 
-    fn plugins(&self) -> IndexMap<String, Vec<String>> {
-        self.toolset
-            .versions
-            .iter()
-            .map(|(p, v)| {
-                (
-                    p.to_string(),
-                    v.versions.iter().map(|v| v.to_string()).collect(),
-                )
-            })
-            .collect()
+    fn plugins(&self) -> HashMap<PluginName, String> {
+        self.plugins.clone()
     }
 
     fn env(&self) -> HashMap<String, String> {
@@ -435,19 +419,23 @@ impl ConfigFile for RtxToml {
 
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.toolset.versions.remove(plugin);
-        self.doc.as_table_mut().remove(plugin.to_string().as_str());
-    }
-
-    fn add_version(&mut self, _plugin: &PluginName, _version: &str) {
-        unimplemented!();
+        if let Some(tools) = self.doc.get_mut("tools") {
+            if let Some(tools) = tools.as_table_like_mut() {
+                tools.remove(plugin);
+                if tools.is_empty() {
+                    self.doc.as_table_mut().remove("tools");
+                }
+            }
+        }
     }
 
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
-        let plugin = self.toolset.versions.get_mut(plugin_name).unwrap();
-        plugin.versions = versions
-            .iter()
-            .map(|v| ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v.clone())))
-            .collect();
+        if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
+            plugin.versions = versions
+                .iter()
+                .map(|v| ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v.clone())))
+                .collect();
+        }
         let tools = self
             .doc
             .entry("tools")

@@ -20,9 +20,11 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = RuntimeArg::double_runtime_condition(&self.runtime);
-        let ts = ToolsetBuilder::new().with_args(&runtimes).build(&config);
+        let ts = ToolsetBuilder::new()
+            .with_args(&runtimes)
+            .build(&mut config);
         let runtime_versions = runtimes.iter().filter_map(|a| ts.resolve_runtime_arg(a));
 
         let mpr = MultiProgressReport::new(config.settings.verbose);

@@ -2,6 +2,7 @@
 
 export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
+export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
 
 git checkout .alternate-tool-versions
 

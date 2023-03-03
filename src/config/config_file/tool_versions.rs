@@ -38,6 +38,7 @@ struct ToolVersionPlugin {
 impl ToolVersions {
     pub fn init(filename: &Path) -> ToolVersions {
         ToolVersions {
+            toolset: Toolset::new(ToolSource::ToolVersions(filename.to_path_buf())),
             path: filename.to_path_buf(),
             ..Default::default()
         }
@@ -49,22 +50,18 @@ impl ToolVersions {
     }
 
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
-        let mut pre = String::new();
+        let mut cf = Self::init(&path);
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;
             }
-            pre.push_str(line);
-            pre.push('\n');
+            cf.pre.push_str(line);
+            cf.pre.push('\n');
         }
 
-        let plugins = Self::parse_plugins(s)?;
-        Ok(Self {
-            toolset: build_toolset(&path, &plugins),
-            path,
-            plugins,
-            pre,
-        })
+        cf.plugins = Self::parse_plugins(s)?;
+        cf.populate_toolset();
+        Ok(cf)
     }
 
     fn get_or_create_plugin(&mut self, plugin: &str) -> &mut ToolVersionPlugin {
@@ -101,23 +98,28 @@ impl ToolVersions {
         }
         Ok(plugins)
     }
-}
 
-fn build_toolset(path: &Path, plugins: &IndexMap<PluginName, ToolVersionPlugin>) -> Toolset {
-    let mut toolset = Toolset::new(ToolSource::ToolVersions(path.to_path_buf()));
-    for (plugin, tvp) in plugins {
-        for version in &tvp.versions {
-            let v = match version.split_once(':') {
-                Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
-                Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
-                Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
-                None if version == "system" => ToolVersionType::System,
-                _ => ToolVersionType::Version(version.to_string()),
-            };
-            toolset.add_version(plugin.clone(), ToolVersion::new(plugin.clone(), v));
+    fn add_version(&mut self, plugin: &PluginName, version: &str) {
+        self.get_or_create_plugin(plugin)
+            .versions
+            .push(version.to_string());
+    }
+
+    fn populate_toolset(&mut self) {
+        for (plugin, tvp) in &self.plugins {
+            for version in &tvp.versions {
+                let v = match version.split_once(':') {
+                    Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
+                    Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
+                    Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
+                    None if version == "system" => ToolVersionType::System,
+                    _ => ToolVersionType::Version(version.to_string()),
+                };
+                self.toolset
+                    .add_version(ToolVersion::new(plugin.clone(), v));
+            }
         }
     }
-    toolset
 }
 
 impl Display for ToolVersions {
@@ -144,11 +146,9 @@ impl ConfigFile for ToolVersions {
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
-    fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
-        self.plugins
-            .iter()
-            .map(|(plugin, tvp)| (plugin.clone(), tvp.versions.clone()))
-            .collect()
+
+    fn plugins(&self) -> HashMap<PluginName, String> {
+        Default::default()
     }
 
     fn env(&self) -> HashMap<PluginName, String> {
@@ -157,12 +157,6 @@ impl ConfigFile for ToolVersions {
 
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.plugins.remove(plugin);
-    }
-
-    fn add_version(&mut self, plugin: &PluginName, version: &str) {
-        self.get_or_create_plugin(plugin)
-            .versions
-            .push(version.to_string());
     }
 
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {

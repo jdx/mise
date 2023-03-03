@@ -9,6 +9,4 @@ Toolset {
             "",
         ),
     ),
-    plugins: {},
-    mpr: None,
 }
