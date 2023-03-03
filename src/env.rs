@@ -10,63 +10,25 @@ use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 
 lazy_static! {
     pub static ref ARGS: Vec<String> = args().collect();
-    pub static ref HOME: PathBuf = if cfg!(test) {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test")
-    } else {
-        dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/"))
-    };
-    pub static ref PWD: PathBuf = if cfg!(test) {
-        HOME.join("cwd")
-    } else {
-        current_dir().unwrap_or_else(|_| PathBuf::new())
-    };
-    pub static ref XDG_CACHE_HOME: PathBuf = if cfg!(test) {
-        HOME.join("cache")
-    } else {
-        dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache"))
-    };
-    pub static ref XDG_DATA_HOME: PathBuf = if cfg!(test) {
-        HOME.join("data")
-    } else {
-        var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| HOME.join(".local/share"))
-    };
-    pub static ref XDG_CONFIG_HOME: PathBuf = if cfg!(test) {
-        HOME.join("config")
-    } else {
-        var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| HOME.join(".config"))
-    };
-    pub static ref RTX_CACHE_DIR: PathBuf = if cfg!(test) {
-        XDG_CACHE_HOME.clone()
-    } else {
-        var_os("RTX_CACHE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| XDG_CACHE_HOME.join("rtx"))
-    };
-    pub static ref RTX_CONFIG_DIR: PathBuf = if cfg!(test) {
-        XDG_CONFIG_HOME.clone()
-    } else {
-        var_os("RTX_CONFIG_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx"))
-    };
-    pub static ref RTX_DATA_DIR: PathBuf = if cfg!(test) {
-        XDG_DATA_HOME.clone()
-    } else {
-        var_os("RTX_DATA_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| XDG_DATA_HOME.join("rtx"))
-    };
+
+    // paths and directories
+    pub static ref HOME: PathBuf = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    pub static ref PWD: PathBuf =current_dir().unwrap_or_else(|_| PathBuf::new());
+    pub static ref XDG_CACHE_HOME: PathBuf = dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache"));
+    pub static ref XDG_DATA_HOME: PathBuf =var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share"));
+    pub static ref XDG_CONFIG_HOME: PathBuf =var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config"));
+    pub static ref RTX_CACHE_DIR: PathBuf =var_path("RTX_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("rtx"));
+    pub static ref RTX_CONFIG_DIR: PathBuf =var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx"));
+    pub static ref RTX_DATA_DIR: PathBuf = var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx"));
+    pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String =var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into());
+    pub static ref RTX_DEFAULT_CONFIG_FILENAME: String =var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into());
+    pub static ref RTX_GLOBAL_FILE: Option<PathBuf> = var_path("RTX_GLOBAL_FILE");
+    pub static ref RTX_USE_TOML: bool = var_is_true("RTX_USE_TOML");
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
-    pub static ref RTX_EXE: PathBuf = if cfg!(test) {
-            "rtx".into()
-        } else {
-            current_exe().unwrap_or_else(|_| "rtx".into())
-        };
+    pub static ref RTX_EXE: PathBuf = if cfg!(test) {"rtx".into()} else {current_exe().unwrap_or_else(|_| "rtx".into())};
+
+    // logging
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
         let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
         match log_level.parse::<LevelFilter>() {
@@ -91,11 +53,7 @@ lazy_static! {
             _ => *RTX_LOG_LEVEL,
         }
     };
-    pub static ref RTX_MISSING_RUNTIME_BEHAVIOR: Option<String> = if cfg!(test) {
-        Some("autoinstall".into())
-    } else {
-        var("RTX_MISSING_RUNTIME_BEHAVIOR").ok()
-    };
+    pub static ref RTX_MISSING_RUNTIME_BEHAVIOR: Option<String> =var("RTX_MISSING_RUNTIME_BEHAVIOR").ok();
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
@@ -109,16 +67,6 @@ lazy_static! {
     pub static ref PATH: Vec<PathBuf> = match PRISTINE_ENV.get("PATH") {
         Some(path) => split_paths(path).collect(),
         None => vec![],
-    };
-    pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String = if cfg!(test) {
-        ".test-tool-versions".into()
-    } else {
-        var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
-    };
-    pub static ref RTX_DEFAULT_CONFIG_FILENAME: String = if cfg!(test) {
-        ".test.rtx.toml".into()
-    } else {
-        var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into())
     };
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();

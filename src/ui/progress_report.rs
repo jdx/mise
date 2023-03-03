@@ -45,7 +45,7 @@ impl ProgressReport {
 
     pub fn enable_steady_tick(&self) {
         match &self.pb {
-            Some(pb) => pb.enable_steady_tick(Duration::from_millis(100)),
+            Some(pb) => pb.enable_steady_tick(Duration::from_millis(250)),
             None => (),
         }
     }

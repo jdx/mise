@@ -2,5 +2,6 @@
 source: src/cli/ls.rs
 expression: output
 ---
+-> dummy ref-master          (set by ~/.test-tool-versions)
 -> tiny 3.1.0                (set by ~/cwd/.test-tool-versions)
 

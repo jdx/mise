@@ -1165,7 +1165,11 @@ Examples:
 Shows/sets the global runtime version(s)
 
 Displays the contents of ~/.tool-versions after writing.
-The file is `$HOME/.tool-versions` by default.
+The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_GLOBAL_FILE`.
+If `$RTX_GLOBAL_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
+Otherwise, it will be parsed as a `.tool-versions` file.
+A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
+
 Use `rtx local` to set a runtime version locally in the current directory.
 
 Usage: global [OPTIONS] [RUNTIME]...
@@ -1189,6 +1193,9 @@ Options:
 
       --remove <PLUGIN>
           Remove the plugin(s) from ~/.tool-versions
+
+      --path
+          Get the path of the global config file
 
 Examples:
   # set the current version of nodejs to 18.x
@@ -1275,20 +1282,21 @@ Examples:
 ### `rtx local`
 
 ```
-Sets .tool-versions to include a specific runtime
+Sets or gets tool versions in the local .tool-versions or .rtx.toml file
 
-then displays the contents of .tool-versions
-use this to set the runtime version when within a directory
-use `rtx global` to set a runtime version globally
+Use this to set a tool's version when within a directory
+Use `rtx global` to set a runtime version globally
+This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
+is set. A future v2 release of rtx will default to using `.rtx.toml`.
 
 Usage: local [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          Runtimes to add to .tool-versions
+          Runtimes to add to .tool-versions/.rtx.toml
           e.g.: nodejs@18
           if this is a single runtime with no version,
-          the current value of .tool-versions will be displayed
+          the current value of .tool-versions/.rtx.toml will be displayed
 
 Options:
   -p, --parent
@@ -1304,6 +1312,9 @@ Options:
 
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions
+
+      --path
+          Get the path of the config file
 
 Examples:
   # set the current version of nodejs to 18.x for the current directory

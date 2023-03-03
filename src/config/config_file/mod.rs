@@ -123,7 +123,7 @@ impl dyn ConfigFile {
 }
 
 pub fn init(path: &Path) -> Box<dyn ConfigFile> {
-    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) {
+    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) || path.ends_with(".toml") {
         return Box::new(RtxToml::init(path));
     } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
         return Box::new(ToolVersions::init(path));
@@ -143,7 +143,7 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
-        "config.toml" => Some(ConfigFileType::RtxToml),
+        f if f.ends_with(".toml") => Some(ConfigFileType::RtxToml),
         f if env::RTX_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::RtxToml),
         f if env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
@@ -164,7 +164,7 @@ mod tests {
         );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.tool-versions.toml")),
-            None
+            Some(ConfigFileType::RtxToml)
         );
     }
 }

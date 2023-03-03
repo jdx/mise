@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
@@ -5,7 +7,8 @@ use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
-use crate::config::{config_file, Config};
+use crate::cli::local::local;
+use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
@@ -13,7 +16,11 @@ use crate::{dirs, env};
 /// Shows/sets the global runtime version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
-/// The file is `$HOME/.tool-versions` by default.
+/// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_GLOBAL_FILE`.
+/// If `$RTX_GLOBAL_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
+/// Otherwise, it will be parsed as a `.tool-versions` file.
+/// A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
+///
 /// Use `rtx local` to set a runtime version locally in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP.as_str())]
@@ -39,39 +46,35 @@ pub struct Global {
     /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<PluginName>>,
+
+    /// Get the path of the global config file
+    #[clap(long)]
+    path: bool,
 }
 
 impl Command for Global {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let cf_path = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-
-        let mut cf = match cf_path.exists() {
-            true => config_file::parse(&cf_path)?,
-            false => config_file::init(&cf_path),
-        };
-
-        if let Some(plugins) = &self.remove {
-            for plugin in plugins {
-                cf.remove_plugin(plugin);
-            }
-        }
-        if let Some(runtimes) = &self.runtime {
-            let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
-            if cf.display_runtime(out, &runtimes)? {
-                return Ok(());
-            }
-            let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
-            cf.add_runtimes(&mut config, &runtimes, pin)?;
-        }
-
-        if self.runtime.is_some() || self.remove.is_some() {
-            cf.save()?;
-        }
-
-        rtxprint!(out, "{}", cf.dump());
-
-        Ok(())
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        local(
+            config,
+            out,
+            &global_file(),
+            self.runtime,
+            self.remove,
+            self.pin,
+            self.fuzzy,
+            self.path,
+        )
     }
+}
+
+fn global_file() -> PathBuf {
+    env::RTX_GLOBAL_FILE.clone().unwrap_or_else(|| {
+        if *env::RTX_USE_TOML {
+            dirs::CONFIG.join("config.toml")
+        } else {
+            dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+        }
+    })
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
@@ -95,10 +98,9 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 mod tests {
     use std::fs;
 
-    use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err, dirs};
+    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_global() {
@@ -107,18 +109,13 @@ mod tests {
         let _ = fs::remove_file(&cf_path);
 
         assert_cli!("install", "tiny@2");
-        let stdout = assert_cli!("global", "--pin", "tiny@2");
-        assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "tiny@2");
-        assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "--remove", "tiny");
-        assert_snapshot!(stdout);
-        let stdout = assert_cli!("global", "--pin", "tiny", "2");
-        assert_snapshot!(stdout);
+        assert_cli_snapshot!("global", "--pin", "tiny@2");
+        assert_cli_snapshot!("global", "tiny@2");
+        assert_cli_snapshot!("global", "--remove", "tiny");
+        assert_cli_snapshot!("global", "--pin", "tiny", "2");
 
         // will output the current version(s)
-        let stdout = assert_cli!("global", "tiny");
-        assert_str_eq!(stdout, "2.1.0\n");
+        assert_cli_snapshot!("global", "tiny");
 
         // this plugin isn't installed
         let err = assert_cli_err!("global", "invalid-plugin");
@@ -134,6 +131,8 @@ mod tests {
         // this is just invalid
         let err = assert_cli_err!("global", "tiny", "dummy@latest");
         assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+
+        assert_cli_snapshot!("global", "--path");
 
         if let Some(orig) = orig {
             fs::write(cf_path, orig).unwrap();

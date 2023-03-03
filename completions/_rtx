@@ -547,6 +547,7 @@ e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions]
 '--fuzzy[Save fuzzy version to `~/.tool-versions`
 e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1]' \
+'--path[Get the path of the global config file]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -658,6 +659,7 @@ by default this command will only set the runtime in the current directory ("$PW
 '--pin[Save exact version to `.tool-versions`
 e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions]' \
 '--fuzzy[Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
+'--path[Get the path of the config file]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -666,10 +668,10 @@ sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtimes to add to .tool-versions
+'*::runtime -- Runtimes to add to .tool-versions/.rtx.toml
 e.g.\: nodejs@18
 if this is a single runtime with no version,
-the current value of .tool-versions will be displayed:' \
+the current value of .tool-versions/.rtx.toml will be displayed:' \
 && ret=0
 ;;
 (ls)
@@ -1506,8 +1508,8 @@ _rtx_commands() {
 'install:Install a runtime' \
 'i:Install a runtime' \
 'latest:Gets the latest available version for a plugin' \
-'local:Sets .tool-versions to include a specific runtime' \
-'l:Sets .tool-versions to include a specific runtime' \
+'local:Sets or gets tool versions in the local .tool-versions or .rtx.toml file' \
+'l:Sets or gets tool versions in the local .tool-versions or .rtx.toml file' \
 'ls:List installed runtime versions' \
 'list:List installed runtime versions' \
 'ls-remote:List runtime versions available for install' \
@@ -1858,7 +1860,7 @@ _rtx__help_commands() {
 'implode:Removes rtx CLI and all related data' \
 'install:Install a runtime' \
 'latest:Gets the latest available version for a plugin' \
-'local:Sets .tool-versions to include a specific runtime' \
+'local:Sets or gets tool versions in the local .tool-versions or .rtx.toml file' \
 'ls:List installed runtime versions' \
 'ls-remote:List runtime versions available for install' \
 'mangen:Generate man pages' \
