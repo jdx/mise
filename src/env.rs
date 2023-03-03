@@ -138,7 +138,7 @@ fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__RTX_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
-            warn!("Failed to deserialize __RTX_DIFF: {}", err);
+            warn!("Failed to deserialize __RTX_DIFF: {:#}", err);
             EnvDiff::default()
         }),
         None => EnvDiff::default(),

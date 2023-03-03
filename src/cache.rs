@@ -65,13 +65,13 @@ where
                 match self.parse() {
                     Ok(val) => return Ok::<_, color_eyre::Report>(val),
                     Err(err) => {
-                        warn!("failed to parse cache file: {} {}", path.display(), err);
+                        warn!("failed to parse cache file: {} {:#}", path.display(), err);
                     }
                 }
             }
             let val = (fetch)()?;
             if let Err(err) = self.write(val.clone()) {
-                warn!("failed to write cache file: {} {}", path.display(), err);
+                warn!("failed to write cache file: {} {:#}", path.display(), err);
             }
             Ok(val)
         })?;

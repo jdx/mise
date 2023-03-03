@@ -95,7 +95,7 @@ impl HookEnv {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
-                Err(err) => warn!("failed to update DIRENV_DIFF: {}", err),
+                Err(err) => warn!("failed to update DIRENV_DIFF: {:#}", err),
                 _ => {}
             }
         }
