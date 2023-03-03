@@ -7,7 +7,7 @@ impl Raw {
         Arg::new("raw")
             .short('r')
             .long("raw")
-            .help("Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets --jobs=1.")
+            .help("Directly pipe stdin/stdout/stderr to user.\nsets --jobs=1")
             .action(ArgAction::SetTrue)
             .global(true)
     }

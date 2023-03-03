@@ -17,10 +17,12 @@ https://asdf\-vm.com/
 .SH OPTIONS
 .TP
 \fB\-j\fR, \fB\-\-jobs\fR
-Number of plugins and runtimes to install in parallel, default: 4
+Number of plugins and runtimes to install in parallel
+default: 4
 .TP
 \fB\-r\fR, \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin scripts to user. Sets \-\-jobs=1.
+Directly pipe stdin/stdout/stderr to user.
+sets \-\-jobs=1
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show installation output
@@ -33,7 +35,7 @@ Print version
 .SH SUBCOMMANDS
 .TP
 rtx\-activate(1)
-Enables rtx to automatically modify runtimes when changing directory
+Initializes rtx in the current shell
 .TP
 rtx\-alias(1)
 Manage aliases
@@ -66,7 +68,7 @@ rtx\-exec(1)
 Execute a command with runtime(s) set
 .TP
 rtx\-global(1)
-Sets global .tool\-versions to include a specified runtime
+Shows/sets the global runtime version(s)
 .TP
 rtx\-implode(1)
 Removes rtx CLI and all related data

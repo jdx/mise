@@ -12,7 +12,7 @@ use crate::file::touch_dir;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
-/// Enables rtx to automatically modify runtimes when changing directory
+/// Initializes rtx in the current shell
 ///
 /// This should go into your shell's rc file.
 /// Otherwise, it will only take effect in the current session.

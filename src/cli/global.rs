@@ -10,7 +10,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
 
-/// Sets global .tool-versions to include a specified runtime
+/// Shows/sets the global runtime version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
 /// The file is `$HOME/.tool-versions` by default.
