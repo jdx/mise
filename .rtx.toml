@@ -2,6 +2,6 @@
 FOO = "bar"
 
 [tools]
-nodejs = '17'
+nodejs = '18'
 tiny = {version="1", foo="bar"}
 golang = {version="latest", foo="bar"}
