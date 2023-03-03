@@ -132,13 +132,13 @@ mod tests {
 
     #[test]
     fn test_exec_ok() {
-        assert_cli!("exec", "--", "ls");
+        assert_cli!("exec", "--", "echo");
     }
 
     #[test]
     fn test_exec_fail() {
         let _ = cli_run(
-            &vec!["rtx", "exec", "--", "ls", "--invalid"]
+            &vec!["rtx", "exec", "--", "exit", "1"]
                 .into_iter()
                 .map(String::from)
                 .collect::<Vec<String>>(),

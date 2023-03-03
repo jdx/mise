@@ -224,33 +224,23 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_versions_by_plugin(
-        &self,
-        config: &Config,
-    ) -> IndexMap<PluginName, Vec<&RuntimeVersion>> {
+    pub fn list_versions_by_plugin(&self) -> IndexMap<PluginName, Vec<&RuntimeVersion>> {
         self.versions
             .iter()
-            .filter_map(|(p, v)| match config.plugins.get(&p.to_string()) {
-                Some(plugin) => {
-                    let plugin = Arc::new(plugin.clone());
-                    let versions = v.resolved_versions();
-                    Some((plugin.name.clone(), versions))
-                }
-                None => {
-                    debug!("Plugin {} not found", p);
-                    None
-                }
+            .map(|(p, v)| {
+                let versions = v.resolved_versions();
+                (p.clone(), versions)
             })
             .collect()
     }
-    pub fn list_current_versions(&self, config: &Config) -> Vec<&RuntimeVersion> {
-        self.list_versions_by_plugin(config)
+    pub fn list_current_versions(&self) -> Vec<&RuntimeVersion> {
+        self.list_versions_by_plugin()
             .into_iter()
             .flat_map(|(_, v)| v)
             .collect()
     }
-    pub fn list_current_installed_versions(&self, config: &Config) -> Vec<&RuntimeVersion> {
-        self.list_current_versions(config)
+    pub fn list_current_installed_versions(&self) -> Vec<&RuntimeVersion> {
+        self.list_current_versions()
             .into_iter()
             .filter(|v| v.is_installed())
             .collect()
@@ -262,7 +252,7 @@ impl Toolset {
     }
     pub fn env(&self, config: &Config) -> IndexMap<String, String> {
         let mut entries: IndexMap<String, String> = self
-            .list_current_installed_versions(config)
+            .list_current_installed_versions()
             .into_par_iter()
             .flat_map(|v| match v.exec_env() {
                 Ok(env) => env.clone().into_iter().collect(),
@@ -287,7 +277,7 @@ impl Toolset {
             .into()
     }
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
-        self.list_current_installed_versions(config)
+        self.list_current_installed_versions()
             .into_par_iter()
             .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
                 Ok(paths) => paths,
@@ -364,7 +354,7 @@ impl Toolset {
     }
 
     pub fn which(&self, config: &Config, bin_name: &str) -> Option<&RuntimeVersion> {
-        self.list_current_installed_versions(config)
+        self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|v| {
                 if let Ok(x) = v.which(&config.settings, bin_name) {
