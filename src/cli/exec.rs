@@ -9,7 +9,6 @@ use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
-//
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
@@ -46,11 +45,11 @@ pub struct Exec {
 }
 
 impl Command for Exec {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_args(&self.runtime)
             .with_install_missing()
-            .build(&config);
+            .build(&mut config);
 
         let (program, args) = parse_command(&env::SHELL, self.command, self.c);
         let mut env = ts.env_with_path(&config);

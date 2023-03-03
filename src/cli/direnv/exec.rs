@@ -26,7 +26,9 @@ impl Command for DirenvExec {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
+        let ts = ToolsetBuilder::new()
+            .with_install_missing()
+            .build(&mut config);
         let mut cmd = env_cmd();
 
         for (k, v) in ts.env_with_path(&config) {

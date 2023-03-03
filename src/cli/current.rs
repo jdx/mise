@@ -23,28 +23,28 @@ pub struct Current {
 }
 
 impl Command for Current {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config);
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&mut config);
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
-                Some(plugin) => self.one(ts, out, plugin),
+                Some(plugin) => self.one(&config, ts, out, plugin),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
                     Ok(())
                 }
             },
-            None => self.all(ts, out),
+            None => self.all(&config, ts, out),
         }
     }
 }
 
 impl Current {
-    fn one(&self, ts: Toolset, out: &mut Output, plugin: &Plugin) -> Result<()> {
+    fn one(&self, config: &Config, ts: Toolset, out: &mut Output, plugin: &Plugin) -> Result<()> {
         if !plugin.is_installed() {
             warn!("Plugin {} is not installed", plugin.name);
             return Ok(());
         }
-        match ts.list_versions_by_plugin().get(&plugin.name) {
+        match ts.list_versions_by_plugin(config).get(&plugin.name) {
             Some(versions) => {
                 rtxprintln!(
                     out,
@@ -63,8 +63,8 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, ts: Toolset, out: &mut Output) -> Result<()> {
-        for (plugin, versions) in ts.list_versions_by_plugin() {
+    fn all(&self, config: &Config, ts: Toolset, out: &mut Output) -> Result<()> {
+        for (plugin, versions) in ts.list_versions_by_plugin(config) {
             if versions.is_empty() {
                 continue;
             }

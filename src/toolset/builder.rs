@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::env;
 use crate::toolset::tool_version::ToolVersionType;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
 pub struct ToolsetBuilder {
@@ -31,15 +32,16 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn build(self, config: &Config) -> Toolset {
-        let mut toolset = Toolset::default().with_plugins(config.plugins.clone());
+    pub fn build(self, config: &mut Config) -> Toolset {
+        let mut toolset = Toolset::default();
         load_config_files(config, &mut toolset);
         load_runtime_env(&mut toolset, env::vars().collect());
         load_runtime_args(&mut toolset, &self.args);
         toolset.resolve(config);
 
         if self.install_missing {
-            if let Err(e) = toolset.install_missing(config, None) {
+            let mpr = MultiProgressReport::new(config.settings.verbose);
+            if let Err(e) = toolset.install_missing(config, mpr) {
                 warn!("Error installing runtimes: {}", e);
             };
         }
@@ -62,18 +64,18 @@ fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) {
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = Toolset::new(source);
             let version = ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v));
-            env_ts.add_version(plugin_name, version);
+            env_ts.add_version(version);
             ts.merge(&env_ts);
         }
     }
 }
 
 fn load_runtime_args(ts: &mut Toolset, args: &[RuntimeArg]) {
-    for (plugin_name, args) in args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
+    for (_, args) in args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
         let mut arg_ts = Toolset::new(ToolSource::Argument);
         for arg in args {
             if let Some(version) = arg.to_tool_version() {
-                arg_ts.add_version(plugin_name.clone(), version);
+                arg_ts.add_version(version);
             }
         }
         ts.merge(&arg_ts);

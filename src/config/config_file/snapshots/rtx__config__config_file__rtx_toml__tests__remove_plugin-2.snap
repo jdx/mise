@@ -2,6 +2,4 @@
 source: src/config/config_file/rtx_toml.rs
 expression: cf
 ---
-[tools]
-nodejs = ["16.0.0", "18.0.0"]
 

@@ -23,7 +23,9 @@ impl Command for Envrc {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
+        let ts = ToolsetBuilder::new()
+            .with_install_missing()
+            .build(&mut config);
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
             .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");
@@ -47,7 +49,7 @@ impl Command for Envrc {
                 shell_escape::unix::escape(v.into()),
             )?;
         }
-        for path in ts.list_paths(&config.settings).into_iter().rev() {
+        for path in ts.list_paths(&config).into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 

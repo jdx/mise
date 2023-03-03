@@ -26,10 +26,10 @@ pub struct Which {
 }
 
 impl Command for Which {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config);
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&mut config);
 
-        match ts.which(&config.settings, &self.bin_name) {
+        match ts.which(&config, &self.bin_name) {
             Some(rtv) => {
                 if self.version {
                     rtxprintln!(out, "{}", rtv.version);

@@ -31,7 +31,7 @@ pub struct Where {
 }
 
 impl Command for Where {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let runtime = match self.runtime.version {
             RuntimeArgVersion::None => match self.asdf_version {
                 Some(version) => self
@@ -44,7 +44,7 @@ impl Command for Where {
 
         let ts = ToolsetBuilder::new()
             .with_args(&[runtime.clone()])
-            .build(&config);
+            .build(&mut config);
 
         match ts.resolve_runtime_arg(&runtime) {
             Some(rtv) if rtv.is_installed() => {

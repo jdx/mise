@@ -20,7 +20,7 @@ pub use tool_version::ToolVersionType;
 pub use tool_version_list::ToolVersionList;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
-use crate::config::{Config, MissingRuntimeBehavior, Settings};
+use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
@@ -36,12 +36,10 @@ mod tool_version_list;
 /// one example is a .tool-versions file
 /// the idea is that we start with an empty toolset, then
 /// merge in other toolsets from various sources
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
-    source: Option<ToolSource>,
-    plugins: IndexMap<PluginName, Arc<Plugin>>,
-    mpr: Option<MultiProgressReport>,
+    pub source: Option<ToolSource>,
 }
 
 impl Toolset {
@@ -51,14 +49,10 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn with_plugins(mut self, plugins: IndexMap<PluginName, Arc<Plugin>>) -> Self {
-        self.plugins = plugins;
-        self
-    }
-    pub fn add_version(&mut self, plugin: PluginName, version: ToolVersion) {
+    pub fn add_version(&mut self, version: ToolVersion) {
         let versions = self
             .versions
-            .entry(plugin)
+            .entry(version.plugin_name.clone())
             .or_insert_with(|| ToolVersionList::new(self.source.clone().unwrap()));
         versions.add_version(version);
     }
@@ -78,7 +72,7 @@ impl Toolset {
             .collect::<Vec<_>>()
             .par_iter_mut()
             .for_each(|(p, v)| {
-                let plugin = match self.plugins.get(&p.to_string()) {
+                let plugin = match config.plugins.get(&p.to_string()) {
                     Some(p) => p,
                     None => {
                         debug!("Plugin {} not found", p);
@@ -88,11 +82,7 @@ impl Toolset {
                 v.resolve(config, plugin.clone());
             });
     }
-    pub fn install_missing(
-        &mut self,
-        config: &Config,
-        mpr: Option<MultiProgressReport>,
-    ) -> Result<()> {
+    pub fn install_missing(&mut self, config: &mut Config, mpr: MultiProgressReport) -> Result<()> {
         let versions = self.list_missing_versions();
         if versions.is_empty() {
             return Ok(());
@@ -125,26 +115,24 @@ impl Toolset {
         Ok(())
     }
 
-    pub fn list_missing_plugins(&self) -> Vec<PluginName> {
+    pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
         self.versions
             .keys()
-            .filter(|p| !self.plugins.contains_key(*p))
+            .filter(|p| !config.plugins.contains_key(*p))
             .cloned()
             .collect()
     }
 
     fn install_missing_versions(
         &mut self,
-        config: &Config,
+        config: &mut Config,
         selected_versions: Vec<ToolVersion>,
-        mpr: Option<MultiProgressReport>,
+        mpr: MultiProgressReport,
     ) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(config.settings.jobs)
             .build()?
             .install(|| -> Result<()> {
-                self.mpr =
-                    Some(mpr.unwrap_or_else(|| MultiProgressReport::new(config.settings.verbose)));
                 let plugins = selected_versions
                     .iter()
                     .map(|v| v.plugin_name.clone())
@@ -154,7 +142,7 @@ impl Toolset {
                     .into_iter()
                     .map(|v| v.r#type)
                     .collect::<HashSet<_>>();
-                self.install_missing_plugins(config, plugins)?;
+                self.install_missing_plugins(config, plugins, &mpr)?;
                 self.versions
                     .iter_mut()
                     .par_bridge()
@@ -164,7 +152,7 @@ impl Toolset {
                             .iter_mut()
                             .filter(|v| v.is_missing() && selected_versions.contains(&v.r#type))
                             .collect_vec();
-                        let plugin = self.plugins.get(&p.to_string());
+                        let plugin = config.plugins.get(&p.to_string());
                         match (plugin, versions.is_empty()) {
                             (Some(plugin), false) => Some((plugin, versions)),
                             _ => None,
@@ -172,21 +160,21 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            let mut pr = self.mpr.as_ref().unwrap().add();
+                            let mut pr = mpr.add();
                             version.resolve(config, plugin.clone())?;
                             version.install(config, &mut pr)?;
                         }
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
-                self.mpr = None;
                 Ok(())
             })
     }
     fn install_missing_plugins(
         &mut self,
-        config: &Config,
+        config: &mut Config,
         missing_plugins: Vec<PluginName>,
+        mpr: &MultiProgressReport,
     ) -> Result<()> {
         if missing_plugins.is_empty() {
             return Ok(());
@@ -196,15 +184,15 @@ impl Toolset {
             .map(|plugin_name| {
                 let plugin = Plugin::new(&plugin_name);
                 if !plugin.is_installed() {
-                    plugin.install(config, None, &mut self.mpr.as_ref().unwrap().add())?;
+                    plugin.install(config, None, &mut mpr.add())?;
                 }
                 Ok(plugin)
             })
             .collect::<Result<Vec<_>>>()?;
         for plugin in plugins {
-            self.plugins.insert(plugin.name.clone(), Arc::new(plugin));
+            config.plugins.insert(plugin.name.clone(), Arc::new(plugin));
         }
-        self.plugins.sort_keys();
+        config.plugins.sort_keys();
         Ok(())
     }
 
@@ -217,8 +205,8 @@ impl Toolset {
             .collect_vec();
         versions
     }
-    pub fn list_installed_versions(&self) -> Result<Vec<RuntimeVersion>> {
-        let versions = self
+    pub fn list_installed_versions(&self, config: &Config) -> Result<Vec<RuntimeVersion>> {
+        let versions = config
             .plugins
             .values()
             .collect_vec()
@@ -237,10 +225,13 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_versions_by_plugin(&self) -> IndexMap<PluginName, Vec<&RuntimeVersion>> {
+    pub fn list_versions_by_plugin(
+        &self,
+        config: &Config,
+    ) -> IndexMap<PluginName, Vec<&RuntimeVersion>> {
         self.versions
             .iter()
-            .filter_map(|(p, v)| match self.plugins.get(&p.to_string()) {
+            .filter_map(|(p, v)| match config.plugins.get(&p.to_string()) {
                 Some(plugin) => {
                     let plugin = Arc::new(plugin.clone());
                     let versions = v.resolved_versions();
@@ -253,27 +244,26 @@ impl Toolset {
             })
             .collect()
     }
-    pub fn list_current_versions(&self) -> Vec<&RuntimeVersion> {
-        self.list_versions_by_plugin()
+    pub fn list_current_versions(&self, config: &Config) -> Vec<&RuntimeVersion> {
+        self.list_versions_by_plugin(config)
             .into_iter()
             .flat_map(|(_, v)| v)
             .collect()
     }
-    pub fn list_current_installed_versions(&self) -> Vec<&RuntimeVersion> {
-        self.list_current_versions()
+    pub fn list_current_installed_versions(&self, config: &Config) -> Vec<&RuntimeVersion> {
+        self.list_current_versions(config)
             .into_iter()
             .filter(|v| v.is_installed())
             .collect()
     }
     pub fn env_with_path(&self, config: &Config) -> IndexMap<String, String> {
-        let (mut env, path_env) =
-            rayon::join(|| self.env(config), || self.path_env(&config.settings));
+        let (mut env, path_env) = rayon::join(|| self.env(config), || self.path_env(config));
         env.insert("PATH".to_string(), path_env);
         env
     }
     pub fn env(&self, config: &Config) -> IndexMap<String, String> {
         let mut entries: IndexMap<String, String> = self
-            .list_current_installed_versions()
+            .list_current_installed_versions(config)
             .into_par_iter()
             .flat_map(|v| match v.exec_env() {
                 Ok(env) => env.clone().into_iter().collect(),
@@ -290,17 +280,17 @@ impl Toolset {
         entries.extend(config.env.clone());
         entries
     }
-    pub fn path_env(&self, settings: &Settings) -> String {
-        let installs = self.list_paths(settings);
+    pub fn path_env(&self, config: &Config) -> String {
+        let installs = self.list_paths(config);
         join_paths([installs, env::PATH.clone()].concat())
             .unwrap()
             .to_string_lossy()
             .into()
     }
-    pub fn list_paths(&self, settings: &Settings) -> Vec<PathBuf> {
-        self.list_current_installed_versions()
+    pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
+        self.list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|rtv| match rtv.list_bin_paths(settings) {
+            .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
                 Ok(paths) => paths,
                 Err(e) => {
                     warn!("Error listing bin paths for {}: {}", rtv, e);
@@ -374,11 +364,11 @@ impl Toolset {
         }
     }
 
-    pub fn which(&self, settings: &Settings, bin_name: &str) -> Option<&RuntimeVersion> {
-        self.list_current_installed_versions()
+    pub fn which(&self, config: &Config, bin_name: &str) -> Option<&RuntimeVersion> {
+        self.list_current_installed_versions(config)
             .into_par_iter()
             .find_first(|v| {
-                if let Ok(x) = v.which(settings, bin_name) {
+                if let Ok(x) = v.which(&config.settings, bin_name) {
                     x.is_some()
                 } else {
                     false

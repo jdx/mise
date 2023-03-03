@@ -52,10 +52,10 @@ pub struct PluginsInstall {
 }
 
 impl Command for PluginsInstall {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         if self.all {
-            return self.install_all_missing_plugins(&config, mpr);
+            return self.install_all_missing_plugins(&mut config, mpr);
         }
         let (name, git_url) =
             get_name_and_url(&config, &self.name.clone().unwrap(), &self.git_url)?;
@@ -64,7 +64,7 @@ impl Command for PluginsInstall {
         } else {
             let mut plugins: Vec<PluginName> = vec![name, git_url];
             plugins.extend(self.rest.clone());
-            self.install_many(&config, &plugins, mpr)?;
+            self.install_many(&mut config, &plugins, mpr)?;
         }
 
         Ok(())
@@ -72,9 +72,13 @@ impl Command for PluginsInstall {
 }
 
 impl PluginsInstall {
-    fn install_all_missing_plugins(&self, config: &Config, mpr: MultiProgressReport) -> Result<()> {
+    fn install_all_missing_plugins(
+        &self,
+        config: &mut Config,
+        mpr: MultiProgressReport,
+    ) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config);
-        let missing_plugins = ts.list_missing_plugins();
+        let missing_plugins = ts.list_missing_plugins(config);
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
@@ -84,7 +88,7 @@ impl PluginsInstall {
 
     fn install_many(
         &self,
-        config: &Config,
+        config: &mut Config,
         plugins: &[PluginName],
         mpr: MultiProgressReport,
     ) -> Result<()> {

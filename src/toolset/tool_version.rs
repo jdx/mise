@@ -18,7 +18,6 @@ pub struct ToolVersion {
     pub plugin_name: String,
     pub r#type: ToolVersionType,
     pub rtv: Option<RuntimeVersion>,
-    pub repo: Option<String>,
     pub options: IndexMap<String, String>,
 }
 
@@ -37,7 +36,6 @@ impl ToolVersion {
             plugin_name,
             r#type,
             rtv: None,
-            repo: None,
             options: Default::default(),
         }
     }
