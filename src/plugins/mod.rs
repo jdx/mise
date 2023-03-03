@@ -7,10 +7,9 @@ use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indexmap::IndexMap;
-use indicatif::ProgressStyle;
+
 use itertools::Itertools;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
@@ -21,10 +20,11 @@ use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::RTX_PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
+use crate::file::remove_dir_all;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
 mod script_manager;
@@ -59,20 +59,16 @@ impl Plugin {
             script_man: ScriptManager::new(plugin_path.clone()),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
-            remote_version_cache: CacheManager::new(
-                cache_path.join("remote_versions.msgpack.zlib"),
-            )
-            .with_fresh_duration(fresh_duration)
-            .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-all")),
-            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.zlib"))
+            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
+                .with_fresh_duration(fresh_duration)
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/list-all")),
+            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
-            legacy_filename_cache: CacheManager::new(
-                cache_path.join("legacy_filenames.msgpack.zlib"),
-            )
-            .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            legacy_filename_cache: CacheManager::new(cache_path.join("legacy_filenames.msgpack.z"))
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
             plugin_path,
             cache_path,
         }
@@ -98,26 +94,15 @@ impl Plugin {
         &self,
         config: &Config,
         repository: Option<&String>,
-        mut pr: ProgressReport,
+        pr: &mut ProgressReport,
     ) -> Result<()> {
-        static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-            ProgressStyle::with_template("{prefix}{wide_msg} {spinner:.blue} {elapsed:.dim.italic}")
-                .unwrap()
-        });
-        pr.set_style(PROG_TEMPLATE.clone());
-        pr.set_prefix(format!(
-            "{} {} ",
-            style("rtx").dim().for_stderr(),
-            style(&self.name).cyan().for_stderr()
-        ));
-        pr.enable_steady_tick();
+        self.decorate_progress_bar(pr);
         let repository = repository
             .or_else(|| config.get_shorthands().get(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
         if self.is_installed() {
-            pr.set_message("uninstalling existing plugin".into());
-            self.uninstall()?;
+            self.uninstall(pr)?;
         }
 
         let git = Git::new(self.plugin_path.to_path_buf());
@@ -139,8 +124,7 @@ impl Plugin {
 
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
-            "{} {repository}@{}",
-            style("✓").green().for_stderr(),
+            "{repository}@{}",
             style(&sha).bright().yellow().for_stderr(),
         ));
         Ok(())
@@ -169,14 +153,18 @@ impl Plugin {
         Ok(())
     }
 
-    pub fn uninstall(&self) -> Result<()> {
-        debug!("uninstall {}", self.name);
+    pub fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
+        if !self.is_installed() {
+            return Ok(());
+        }
+        pr.set_message("uninstalling".into());
 
         let rmdir = |dir: &Path| {
             if !dir.exists() {
                 return Ok(());
             }
-            fs::remove_dir_all(dir).wrap_err_with(|| {
+            pr.set_message(format!("removing {}", &dir.to_string_lossy()));
+            remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
                     style(&dir.to_string_lossy()).cyan().for_stderr()
@@ -238,6 +226,12 @@ impl Plugin {
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
+            .with_context(|| {
+                format!(
+                    "Failed listing remote versions for plugin {}",
+                    style(&self.name).cyan().for_stderr()
+                )
+            })
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
@@ -246,7 +240,13 @@ impl Plugin {
         }
         let aliases = self
             .alias_cache
-            .get_or_try_init(|| self.fetch_aliases(settings))?
+            .get_or_try_init(|| self.fetch_aliases(settings))
+            .with_context(|| {
+                format!(
+                    "Failed fetching aliases for plugin {}",
+                    style(&self.name).cyan().for_stderr()
+                )
+            })?
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
@@ -259,6 +259,12 @@ impl Plugin {
         }
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames(settings))
+            .with_context(|| {
+                format!(
+                    "Failed fetching legacy filenames for plugin {}",
+                    style(&self.name).cyan().for_stderr()
+                )
+            })
             .cloned()
     }
 
@@ -301,10 +307,20 @@ impl Plugin {
         exit(result.status.code().unwrap_or(1));
     }
 
+    pub fn decorate_progress_bar(&self, pr: &mut ProgressReport) {
+        pr.set_style(PROG_TEMPLATE.clone());
+        pr.set_prefix(format!(
+            "{} {} ",
+            style("rtx").dim().for_stderr(),
+            style(&self.name).cyan().for_stderr()
+        ));
+        pr.enable_steady_tick();
+    }
+
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         let result = self
             .script_man
-            .cmd(settings, Script::ListAll)
+            .cmd(settings, &Script::ListAll)
             .stdout_capture()
             .stderr_capture()
             .unchecked()
@@ -322,11 +338,11 @@ impl Plugin {
             }
         };
         if !result.status.success() {
-            display_stderr();
             return Err(eyre!(
-                "error running {}: exited with code {}",
+                "error running {}: exited with code {}\n{}",
                 Script::ListAll,
-                result.status.code().unwrap_or_default()
+                result.status.code().unwrap_or_default(),
+                stderr
             ))?;
         } else if settings.verbose {
             display_stderr();
@@ -338,7 +354,7 @@ impl Plugin {
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
         Ok(self
             .script_man
-            .read(settings, Script::ListLegacyFilenames, settings.verbose)?
+            .read(settings, &Script::ListLegacyFilenames, settings.verbose)?
             .split_whitespace()
             .map(|v| v.into())
             .collect())
@@ -356,7 +372,7 @@ impl Plugin {
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
         let stdout = self
             .script_man
-            .read(settings, Script::ListAliases, settings.verbose)?;
+            .read(settings, &Script::ListAliases, settings.verbose)?;
         let aliases = stdout
             .lines()
             .filter_map(|line| {
@@ -381,7 +397,7 @@ impl Plugin {
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(settings, script, settings.verbose)?,
+            true => self.script_man.read(settings, &script, settings.verbose)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()

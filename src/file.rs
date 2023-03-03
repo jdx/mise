@@ -7,6 +7,22 @@ use filetime::{set_file_times, FileTime};
 
 use crate::dirs;
 
+pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+    let path = path.as_ref();
+    if path.exists() {
+        trace!("rm -rf {}", path.display());
+        std::fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+
+pub fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+    let path = path.as_ref();
+    trace!("mkdir -p {}", path.display());
+    std::fs::create_dir_all(path)?;
+    Ok(())
+}
+
 pub fn basename(path: &Path) -> Option<String> {
     path.file_name().map(|f| f.to_string_lossy().to_string())
 }
@@ -21,6 +37,7 @@ pub fn display_path(path: &Path) -> String {
 }
 
 pub fn touch_dir(dir: &Path) -> io::Result<()> {
+    trace!("touch {}", dir.display());
     let now = FileTime::now();
     set_file_times(dir, now, now)
 }
@@ -68,7 +85,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
 pub fn dir_files(dir: &Path) -> Result<Vec<String>> {
     let mut output = vec![];
 
-    if !dir.exists() {
+    if !dir.is_dir() {
         return Ok(output);
     }
 

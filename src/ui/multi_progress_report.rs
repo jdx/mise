@@ -1,6 +1,7 @@
 use crate::ui::progress_report::ProgressReport;
 use indicatif::MultiProgress;
 
+#[derive(Debug)]
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
 }
@@ -22,6 +23,12 @@ impl MultiProgressReport {
                 pr
             }
             None => ProgressReport::new(true),
+        }
+    }
+    pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
+        match &self.mp {
+            Some(mp) => mp.suspend(f),
+            None => f(),
         }
     }
     // pub fn clear(&self) {

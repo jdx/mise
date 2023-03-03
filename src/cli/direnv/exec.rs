@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use duct::Expression;
 use serde_derive::Deserialize;
 
 use crate::cli::command::Command;
@@ -26,16 +27,11 @@ impl Command for DirenvExec {
             config.settings.missing_runtime_behavior = Warn;
         }
         let ts = ToolsetBuilder::new().with_install_missing().build(&config);
-        let mut cmd = if cfg!(test) {
-            cmd!("env")
-        } else {
-            cmd!("direnv", "dump")
-        };
+        let mut cmd = env_cmd();
 
-        for (k, v) in ts.env(&config) {
+        for (k, v) in ts.env_with_path(&config) {
             cmd = cmd.env(k, v);
         }
-        cmd = cmd.env("PATH", ts.path_env(&config.settings));
 
         let json = cmd!("direnv", "watch", "json", ".tool-versions").read()?;
         let w: DirenvWatches = serde_json::from_str(&json)?;
@@ -47,10 +43,21 @@ impl Command for DirenvExec {
 }
 
 #[cfg(test)]
+fn env_cmd() -> Expression {
+    cmd!("env")
+}
+
+#[cfg(not(test))]
+fn env_cmd() -> Expression {
+    cmd!("direnv", "dump")
+}
+
+#[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
+
     use crate::assert_cli;
     use crate::cli::tests::grep;
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_direnv_exec() {

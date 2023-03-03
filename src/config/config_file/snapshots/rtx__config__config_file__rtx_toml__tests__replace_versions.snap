@@ -36,4 +36,5 @@ Toolset {
         ),
     ),
     plugins: {},
+    mpr: None,
 }

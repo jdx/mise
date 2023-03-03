@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::file::modified_duration;
+use crate::file::{display_path, modified_duration};
 use color_eyre::eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -23,6 +23,7 @@ where
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
     cache: Box<OnceCell<T>>,
+    no_cache: bool,
 }
 
 impl<T> CacheManager<T>
@@ -35,6 +36,7 @@ where
             cache: Box::new(OnceCell::new()),
             fresh_files: Vec::new(),
             fresh_duration: None,
+            no_cache: false,
         }
     }
 
@@ -48,13 +50,18 @@ where
         self
     }
 
+    pub fn with_no_cache(mut self) -> Self {
+        self.no_cache = true;
+        self
+    }
+
     pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,
     {
         let val = self.cache.get_or_try_init(|| {
             let path = &self.cache_file_path;
-            if self.is_fresh() {
+            if !self.no_cache && self.is_fresh() {
                 match self.parse() {
                     Ok(val) => return Ok::<_, color_eyre::Report>(val),
                     Err(err) => {
@@ -73,7 +80,7 @@ where
 
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
-        trace!("reading cache {}", path.display());
+        trace!("reading {}", display_path(path));
         let mut zlib = ZlibDecoder::new(File::open(path)?);
         let mut bytes = Vec::new();
         zlib.read_to_end(&mut bytes)?;
@@ -82,7 +89,7 @@ where
 
     pub fn write(&self, val: T) -> Result<()> {
         let path = &self.cache_file_path;
-        trace!("writing cache {}", path.display());
+        trace!("writing {}", display_path(path));
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }

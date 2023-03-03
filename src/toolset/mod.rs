@@ -36,11 +36,12 @@ mod tool_version_list;
 /// one example is a .tool-versions file
 /// the idea is that we start with an empty toolset, then
 /// merge in other toolsets from various sources
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     source: Option<ToolSource>,
     plugins: IndexMap<PluginName, Arc<Plugin>>,
+    mpr: Option<MultiProgressReport>,
 }
 
 impl Toolset {
@@ -61,14 +62,15 @@ impl Toolset {
             .or_insert_with(|| ToolVersionList::new(self.source.clone().unwrap()));
         versions.add_version(version);
     }
-    pub fn merge(&mut self, mut other: Toolset) {
-        for (plugin, versions) in self.versions.clone() {
+    pub fn merge(&mut self, other: &Toolset) {
+        let mut versions = other.versions.clone();
+        for (plugin, tvl) in self.versions.clone() {
             if !other.versions.contains_key(&plugin) {
-                other.versions.insert(plugin, versions);
+                versions.insert(plugin, tvl);
             }
         }
-        self.versions = other.versions; // swap to use other's first
-        self.source = other.source;
+        self.versions = versions;
+        self.source = other.source.clone();
     }
     pub fn resolve(&mut self, config: &Config) {
         self.versions
@@ -83,10 +85,14 @@ impl Toolset {
                         return;
                     }
                 };
-                v.resolve(&config.settings, plugin.clone());
+                v.resolve(config, plugin.clone());
             });
     }
-    pub fn install_missing(&mut self, config: &Config) -> Result<()> {
+    pub fn install_missing(
+        &mut self,
+        config: &Config,
+        mpr: Option<MultiProgressReport>,
+    ) -> Result<()> {
         let versions = self.list_missing_versions();
         if versions.is_empty() {
             return Ok(());
@@ -109,11 +115,11 @@ impl Toolset {
                 if versions.is_empty() {
                     warn();
                 } else {
-                    self.install_missing_versions(config, versions)?;
+                    self.install_missing_versions(config, versions, mpr)?;
                 }
             }
             MissingRuntimeBehavior::AutoInstall => {
-                self.install_missing_versions(config, versions)?;
+                self.install_missing_versions(config, versions, mpr)?;
             }
         }
         Ok(())
@@ -131,13 +137,14 @@ impl Toolset {
         &mut self,
         config: &Config,
         selected_versions: Vec<ToolVersion>,
+        mpr: Option<MultiProgressReport>,
     ) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(config.settings.jobs)
-            .build()
-            .unwrap()
+            .build()?
             .install(|| -> Result<()> {
-                let mpr = MultiProgressReport::new(config.settings.verbose);
+                self.mpr =
+                    Some(mpr.unwrap_or_else(|| MultiProgressReport::new(config.settings.verbose)));
                 let plugins = selected_versions
                     .iter()
                     .map(|v| v.plugin_name.clone())
@@ -147,7 +154,7 @@ impl Toolset {
                     .into_iter()
                     .map(|v| v.r#type)
                     .collect::<HashSet<_>>();
-                self.install_missing_plugins(config, &mpr, plugins)?;
+                self.install_missing_plugins(config, plugins)?;
                 self.versions
                     .iter_mut()
                     .par_bridge()
@@ -165,19 +172,20 @@ impl Toolset {
                     })
                     .map(|(plugin, versions)| {
                         for version in versions {
-                            version.resolve(&config.settings, plugin.clone())?;
-                            version.install(config, mpr.add())?;
+                            let mut pr = self.mpr.as_ref().unwrap().add();
+                            version.resolve(config, plugin.clone())?;
+                            version.install(config, &mut pr)?;
                         }
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
+                self.mpr = None;
                 Ok(())
             })
     }
     fn install_missing_plugins(
         &mut self,
         config: &Config,
-        mpr: &MultiProgressReport,
         missing_plugins: Vec<PluginName>,
     ) -> Result<()> {
         if missing_plugins.is_empty() {
@@ -188,7 +196,7 @@ impl Toolset {
             .map(|plugin_name| {
                 let plugin = Plugin::new(&plugin_name);
                 if !plugin.is_installed() {
-                    plugin.install(config, None, mpr.add())?;
+                    plugin.install(config, None, &mut self.mpr.as_ref().unwrap().add())?;
                 }
                 Ok(plugin)
             })
@@ -200,7 +208,7 @@ impl Toolset {
         Ok(())
     }
 
-    fn list_missing_versions(&self) -> Vec<ToolVersion> {
+    pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         let versions = self
             .versions
             .values()
@@ -256,6 +264,12 @@ impl Toolset {
             .into_iter()
             .filter(|v| v.is_installed())
             .collect()
+    }
+    pub fn env_with_path(&self, config: &Config) -> IndexMap<String, String> {
+        let (mut env, path_env) =
+            rayon::join(|| self.env(config), || self.path_env(&config.settings));
+        env.insert("PATH".to_string(), path_env);
+        env
     }
     pub fn env(&self, config: &Config) -> IndexMap<String, String> {
         let mut entries: IndexMap<String, String> = self

@@ -26,7 +26,7 @@ pub struct AliasLs {
 
 impl Command for AliasLs {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        for (plugin_name, aliases) in &config.aliases {
+        for (plugin_name, aliases) in config.get_all_aliases() {
             if let Some(plugin) = &self.plugin {
                 if plugin_name != plugin {
                     continue;

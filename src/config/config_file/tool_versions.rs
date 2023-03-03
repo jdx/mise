@@ -26,6 +26,7 @@ pub struct ToolVersions {
     path: PathBuf,
     pre: String,
     plugins: IndexMap<PluginName, ToolVersionPlugin>,
+    toolset: Toolset,
 }
 
 #[derive(Debug, Default)]
@@ -44,13 +45,10 @@ impl ToolVersions {
 
     pub fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
-        Ok(Self {
-            path: path.to_path_buf(),
-            ..Self::parse_str(&read_to_string(path)?)?
-        })
+        Self::parse_str(&read_to_string(path)?, path.to_path_buf())
     }
 
-    pub fn parse_str(s: &str) -> Result<Self> {
+    pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut pre = String::new();
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
@@ -60,9 +58,11 @@ impl ToolVersions {
             pre.push('\n');
         }
 
+        let plugins = Self::parse_plugins(s)?;
         Ok(Self {
-            path: PathBuf::new(),
-            plugins: Self::parse_plugins(s)?,
+            toolset: build_toolset(&path, &plugins),
+            path,
+            plugins,
             pre,
         })
     }
@@ -103,23 +103,21 @@ impl ToolVersions {
     }
 }
 
-impl From<&ToolVersions> for Toolset {
-    fn from(value: &ToolVersions) -> Self {
-        let mut toolset = Toolset::new(ToolSource::ToolVersions(value.path.clone()));
-        for (plugin, tvp) in &value.plugins {
-            for version in &tvp.versions {
-                let v = match version.split_once(':') {
-                    Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
-                    Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
-                    Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
-                    None if version == "system" => ToolVersionType::System,
-                    _ => ToolVersionType::Version(version.to_string()),
-                };
-                toolset.add_version(plugin.clone(), ToolVersion::new(plugin.clone(), v));
-            }
+fn build_toolset(path: &Path, plugins: &IndexMap<PluginName, ToolVersionPlugin>) -> Toolset {
+    let mut toolset = Toolset::new(ToolSource::ToolVersions(path.to_path_buf()));
+    for (plugin, tvp) in plugins {
+        for version in &tvp.versions {
+            let v = match version.split_once(':') {
+                Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
+                Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
+                Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
+                None if version == "system" => ToolVersionType::System,
+                _ => ToolVersionType::Version(version.to_string()),
+            };
+            toolset.add_version(plugin.clone(), ToolVersion::new(plugin.clone(), v));
         }
-        toolset
     }
+    toolset
 }
 
 impl Display for ToolVersions {
@@ -196,8 +194,8 @@ impl ConfigFile for ToolVersions {
         s.trim_end().to_string() + "\n"
     }
 
-    fn to_toolset(&self) -> Toolset {
-        self.into()
+    fn to_toolset(&self) -> &Toolset {
+        &self.toolset
     }
 
     fn settings(&self) -> SettingsBuilder {
@@ -211,7 +209,6 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::fmt::Debug;
 
     use indoc::indoc;
     use insta::{assert_display_snapshot, assert_snapshot};
@@ -238,7 +235,7 @@ pub(crate) mod tests {
         shfmt  3.6.0
         # tail comment
         "};
-        let tv = ToolVersions::parse_str(orig).unwrap();
+        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
         assert_eq!(tv.dump(), orig);
     }
 
@@ -247,7 +244,7 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5
         "};
-        let tv = ToolVersions::parse_str(orig).unwrap();
+        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
         assert_snapshot!(tv.dump(), @r###"
         ruby 3.0.5
         "###);
@@ -258,91 +255,7 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5 3.1
         "};
-        let tv = ToolVersions::parse_str(orig).unwrap();
-        let toolset: Toolset = (&tv).into();
-        assert_display_snapshot!(toolset, @"ruby@3.0.5 ruby@3.1");
-    }
-
-    #[derive(Debug)]
-    pub struct MockToolVersions {
-        pub path: PathBuf,
-        pub plugins: IndexMap<PluginName, Vec<String>>,
-        pub env: HashMap<String, String>,
-    }
-
-    // impl MockToolVersions {
-    //     pub fn new() -> Self {
-    //         Self {
-    //             path: PathBuf::from(".tool-versions"),
-    //             plugins: IndexMap::from([
-    //                 (
-    //                     "python".to_string(),
-    //                     vec!["3.11.0".to_string(), "3.10.0".to_string()],
-    //                 ),
-    //                 ("shellcheck".to_string(), vec!["0.9.0".to_string()]),
-    //                 ("shfmt".to_string(), vec!["3.6.0".to_string()]),
-    //             ]),
-    //             env: HashMap::from([
-    //                 ("FOO".to_string(), "bar".to_string()),
-    //                 ("BAZ".to_string(), "qux".to_string()),
-    //             ]),
-    //         }
-    //     }
-    // }
-    //
-    impl Display for MockToolVersions {
-        fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
-            todo!()
-        }
-    }
-
-    impl ConfigFile for MockToolVersions {
-        fn get_type(&self) -> ConfigFileType {
-            ConfigFileType::ToolVersions
-        }
-
-        fn get_path(&self) -> &Path {
-            self.path.as_path()
-        }
-
-        fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
-            self.plugins.clone()
-        }
-
-        fn env(&self) -> HashMap<String, String> {
-            self.env.clone()
-        }
-
-        fn remove_plugin(&mut self, _plugin_name: &PluginName) {
-            todo!()
-        }
-
-        fn add_version(&mut self, _plugin_name: &PluginName, _version: &str) {
-            todo!()
-        }
-
-        fn replace_versions(&mut self, _plugin_name: &PluginName, _versions: &[String]) {
-            todo!()
-        }
-
-        fn save(&self) -> Result<()> {
-            todo!()
-        }
-
-        fn dump(&self) -> String {
-            todo!()
-        }
-
-        fn to_toolset(&self) -> Toolset {
-            todo!()
-        }
-
-        fn settings(&self) -> SettingsBuilder {
-            todo!()
-        }
-
-        fn aliases(&self) -> AliasMap {
-            todo!()
-        }
+        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
+        assert_display_snapshot!(tv.to_toolset(), @"ruby@3.0.5 ruby@3.1");
     }
 }

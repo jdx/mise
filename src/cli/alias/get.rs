@@ -22,7 +22,7 @@ pub struct AliasGet {
 
 impl Command for AliasGet {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        match config.aliases.get(&self.plugin) {
+        match config.get_all_aliases().get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
                 Some(alias) => Ok(rtxprintln!(out, "{}", alias)),
                 None => Err(eyre!("Unknown alias: {}", &self.alias)),

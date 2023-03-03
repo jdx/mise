@@ -1393,7 +1393,9 @@ Usage: install [OPTIONS] [NAME] [GIT_URL]
 
 Arguments:
   [NAME]
-          The name of the plugin to install e.g.: nodejs, ruby
+          The name of the plugin to install
+          e.g.: nodejs, ruby
+          Can specify multiple plugins: `rtx plugins install nodejs ruby python`
 
   [GIT_URL]
           The git url of the plugin
@@ -1411,11 +1413,10 @@ Options:
           Show installation output
 
 Examples:
-  # install the nodejs plugin using the shorthand repo:
-  # https://github.com/asdf-vm/asdf-plugins
+  # install the nodejs via shorthand
   $ rtx install nodejs
 
-  # install the nodejs plugin using the git url
+  # install the nodejs plugin using a specific git url
   $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
 
   # install the nodejs plugin using the git url only
@@ -1465,17 +1466,20 @@ Usage: ls-remote [OPTIONS]
 Options:
   -u, --urls
           Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+
+      --only-names
+          Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
 ### `rtx plugins uninstall`
 
 ```
 Removes a plugin
 
-Usage: uninstall <PLUGIN>
+Usage: uninstall <PLUGIN>...
 
 Arguments:
-  <PLUGIN>
-          Plugin to remove
+  <PLUGIN>...
+          Plugin(s) to remove
 
 Examples:
   $ rtx uninstall nodejs
@@ -1879,7 +1883,7 @@ Remote versions are updated daily by default or anytime that `rtx ls-remote` is 
 zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
-cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.zlib | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
+cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 ### Legacy File Cache
@@ -1896,4 +1900,3 @@ plugin is called:
     expensive so every file that gets parsed as a legacy file is cached into `~/.local/share/rtx/legacy_cache`.
     It will remain cached until the file is modified. This is a simple text file that has the path to the
     legacy file stored as a hash for the filename.
-

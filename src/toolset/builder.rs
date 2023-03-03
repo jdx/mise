@@ -1,8 +1,7 @@
 use indexmap::IndexMap;
 use itertools::Itertools;
-use rayon::prelude::*;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
+use crate::cli::args::runtime::RuntimeArg;
 use crate::config::Config;
 use crate::env;
 use crate::toolset::tool_version::ToolVersionType;
@@ -40,7 +39,7 @@ impl ToolsetBuilder {
         toolset.resolve(config);
 
         if self.install_missing {
-            if let Err(e) = toolset.install_missing(config) {
+            if let Err(e) = toolset.install_missing(config, None) {
                 warn!("Error installing runtimes: {}", e);
             };
         }
@@ -51,16 +50,8 @@ impl ToolsetBuilder {
 }
 
 fn load_config_files(config: &Config, ts: &mut Toolset) {
-    let toolsets: Vec<_> = config
-        .config_files
-        .values()
-        .collect_vec()
-        .into_par_iter()
-        .rev()
-        .map(|cf| cf.to_toolset())
-        .collect();
-    for toolset in toolsets {
-        ts.merge(toolset);
+    for cf in config.config_files.values().rev() {
+        ts.merge(cf.to_toolset());
     }
 }
 
@@ -72,7 +63,7 @@ fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) {
             let mut env_ts = Toolset::new(source);
             let version = ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v));
             env_ts.add_version(plugin_name, version);
-            ts.merge(env_ts);
+            ts.merge(&env_ts);
         }
     }
 }
@@ -81,36 +72,10 @@ fn load_runtime_args(ts: &mut Toolset, args: &[RuntimeArg]) {
     for (plugin_name, args) in args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
         let mut arg_ts = Toolset::new(ToolSource::Argument);
         for arg in args {
-            match arg.version {
-                RuntimeArgVersion::Version(ref v) => {
-                    let version =
-                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v.clone()));
-                    arg_ts.add_version(plugin_name.clone(), version);
-                }
-                RuntimeArgVersion::Ref(ref v) => {
-                    let version =
-                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Ref(v.clone()));
-                    arg_ts.add_version(plugin_name.clone(), version);
-                }
-                RuntimeArgVersion::Path(ref v) => {
-                    let version =
-                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Path(v.clone()));
-                    arg_ts.add_version(plugin_name.clone(), version);
-                }
-                RuntimeArgVersion::Prefix(ref v) => {
-                    let version =
-                        ToolVersion::new(plugin_name.clone(), ToolVersionType::Prefix(v.clone()));
-                    arg_ts.add_version(plugin_name.clone(), version);
-                }
-                // I believe this will do nothing since it would just default to the `.tool-versions` version
-                // RuntimeArgVersion::None => {
-                //     arg_ts.add_version(plugin_name.clone(), ToolVersion::None);
-                // },
-                _ => {
-                    trace!("ignoring: {:?}", arg);
-                }
+            if let Some(version) = arg.to_tool_version() {
+                arg_ts.add_version(plugin_name.clone(), version);
             }
         }
-        ts.merge(arg_ts);
+        ts.merge(&arg_ts);
     }
 }

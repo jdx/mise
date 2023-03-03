@@ -17,7 +17,7 @@ build *args:
 alias t := test
 
 # run all test types
-test *args: (test-unit args) test-e2e
+test *args: (test-unit args) test-e2e lint
 
 # update all test snapshot files
 test-update-snapshots:

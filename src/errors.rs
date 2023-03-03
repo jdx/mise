@@ -13,8 +13,8 @@ pub enum Error {
     #[error("{0}@{1} not found")]
     #[allow(dead_code)]
     VersionNotFound(PluginName, String),
-    #[error("[{}] script exited with non-zero status: {}", .0, render_exit_status(.1))]
-    ScriptFailed(PluginName, Option<ExitStatus>),
+    #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
+    ScriptFailed(String, Option<ExitStatus>),
 }
 
 fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {

@@ -7,6 +7,7 @@ use color_eyre::eyre::Result;
 use regex::Regex;
 
 use crate::plugins::PluginName;
+use crate::toolset::{ToolVersion, ToolVersionType};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RuntimeArg {
@@ -93,6 +94,28 @@ impl RuntimeArg {
 
     pub fn with_version(self, version: RuntimeArgVersion) -> Self {
         Self { version, ..self }
+    }
+
+    pub fn to_tool_version(&self) -> Option<ToolVersion> {
+        match self.version {
+            RuntimeArgVersion::Version(ref v) => Some(ToolVersion::new(
+                self.plugin.clone(),
+                ToolVersionType::Version(v.clone()),
+            )),
+            RuntimeArgVersion::Ref(ref v) => Some(ToolVersion::new(
+                self.plugin.clone(),
+                ToolVersionType::Ref(v.clone()),
+            )),
+            RuntimeArgVersion::Path(ref v) => Some(ToolVersion::new(
+                self.plugin.clone(),
+                ToolVersionType::Path(v.clone()),
+            )),
+            RuntimeArgVersion::Prefix(ref v) => Some(ToolVersion::new(
+                self.plugin.clone(),
+                ToolVersionType::Prefix(v.clone()),
+            )),
+            _ => None,
+        }
     }
 }
 
