@@ -42,7 +42,7 @@ pub struct Global {
 }
 
 impl Command for Global {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let cf_path = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
 
         let mut cf = match cf_path.exists() {
@@ -61,7 +61,7 @@ impl Command for Global {
                 return Ok(());
             }
             let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
-            cf.add_runtimes(&config, &runtimes, pin)?;
+            cf.add_runtimes(&mut config, &runtimes, pin)?;
         }
 
         if self.runtime.is_some() || self.remove.is_some() {

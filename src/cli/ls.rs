@@ -37,9 +37,9 @@ pub struct Ls {
 }
 
 impl Command for Ls {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let plugin = self.plugin.or(self.plugin_arg);
-        for (rtv, source) in get_runtime_list(&config, &plugin)? {
+        for (rtv, source) in get_runtime_list(&mut config, &plugin)? {
             if self.current && source.is_none() {
                 continue;
             }
@@ -92,12 +92,12 @@ fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
 }
 
 fn get_runtime_list(
-    config: &Config,
+    config: &mut Config,
     plugin_flag: &Option<PluginName>,
 ) -> Result<Vec<(RuntimeVersion, Option<ToolSource>)>> {
     let ts = ToolsetBuilder::new().build(config);
     let mut versions: HashMap<(PluginName, String), RuntimeVersion> = ts
-        .list_installed_versions()?
+        .list_installed_versions(config)?
         .into_iter()
         .filter(|rtv| match plugin_flag {
             Some(plugin) => rtv.plugin.name == *plugin,
@@ -107,7 +107,7 @@ fn get_runtime_list(
         .collect();
 
     let active = ts
-        .list_current_versions()
+        .list_current_versions(config)
         .into_iter()
         .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv.clone()))
         .collect::<HashMap<(PluginName, String), RuntimeVersion>>();

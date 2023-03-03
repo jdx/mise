@@ -36,7 +36,9 @@ impl Command for HookEnv {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
-        let ts = ToolsetBuilder::new().with_install_missing().build(&config);
+        let ts = ToolsetBuilder::new()
+            .with_install_missing()
+            .build(&mut config);
 
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
@@ -44,7 +46,7 @@ impl Command for HookEnv {
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        let installs = ts.list_paths(&config.settings); // load the active runtime paths
+        let installs = ts.list_paths(&config); // load the active runtime paths
         diff.path = installs.clone(); // update __RTX_DIFF with the new paths for the next run
 
         patches.extend(self.build_path_operations(&installs, &__RTX_DIFF.path)?);
@@ -54,7 +56,7 @@ impl Command for HookEnv {
         let output = hook_env::build_env_commands(&*shell, &patches);
         out.stdout.write(output);
         if self.status {
-            self.display_status(&ts, out);
+            self.display_status(&config, &ts, out);
         }
 
         Ok(())
@@ -62,9 +64,9 @@ impl Command for HookEnv {
 }
 
 impl HookEnv {
-    fn display_status(&self, ts: &Toolset, out: &mut Output) {
+    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
         let installed_versions = ts
-            .list_current_installed_versions()
+            .list_current_installed_versions(config)
             .into_iter()
             .rev()
             .map(|v| v.to_string())

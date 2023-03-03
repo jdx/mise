@@ -27,18 +27,18 @@ pub struct Shell {
 }
 
 impl Command for Shell {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.runtime)
-            .build(&config);
+            .build(&mut config);
 
         if !config.is_activated() {
             err_inactive()?;
         }
         let shell = get_shell(None).expect("no shell detected");
 
-        for rtv in ts.list_current_installed_versions() {
+        for rtv in ts.list_current_installed_versions(&config) {
             let source = &ts.versions.get(&rtv.plugin.name).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("RTX_{}_VERSION", rtv.plugin.name.to_uppercase());

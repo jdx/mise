@@ -22,8 +22,8 @@ use crate::toolset::ToolsetBuilder;
 pub struct Doctor {}
 
 impl Command for Doctor {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config);
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&mut config);
         rtxprintln!(out, "{}", rtx_version());
         rtxprintln!(out, "{}", shell());
         rtxprintln!(out, "{}", rtx_env_vars());

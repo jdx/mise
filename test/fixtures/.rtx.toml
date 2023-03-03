@@ -4,12 +4,15 @@ NODE_ENV = 'production'
 [tools]
 terraform = '1.0.0'
 nodejs = ['16', 'prefix:18', 'ref:master', 'path:~/.nodes/14']
-jq = { prefix = '1.6', repo = 'https://github.com/AZMCode/asdf-jq' }
+jq = { prefix = '1.6' }
 shellcheck = { version = '0.9.0' }
 python = [
   { version = '3.10.0', venv = '.venv' },
   { version = '3.9.0' },
 ]
+
+[plugins]
+nodejs = 'https://github.com/jdxcode/rtx-nodejs'
 
 [settings]
 verbose = true

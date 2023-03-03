@@ -4,7 +4,6 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
-use indexmap::IndexMap;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
@@ -15,8 +14,6 @@ use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 #[derive(Debug)]
 pub struct LegacyVersionFile {
     path: PathBuf,
-    version: String,
-    plugin: String,
     toolset: Toolset,
 }
 
@@ -27,8 +24,6 @@ impl LegacyVersionFile {
         Ok(Self {
             toolset: build_toolset(&path, plugin.name.as_str(), version.as_str()),
             path,
-            version,
-            plugin: plugin.name.clone(),
         })
     }
 }
@@ -42,12 +37,8 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn plugins(&self) -> IndexMap<PluginName, Vec<String>> {
-        if self.version.is_empty() {
-            IndexMap::new()
-        } else {
-            IndexMap::from([(self.plugin.clone(), vec![self.version.clone()])])
-        }
+    fn plugins(&self) -> HashMap<PluginName, String> {
+        Default::default()
     }
 
     fn env(&self) -> HashMap<String, String> {
@@ -55,10 +46,6 @@ impl ConfigFile for LegacyVersionFile {
     }
 
     fn remove_plugin(&mut self, _plugin_name: &PluginName) {
-        unimplemented!()
-    }
-
-    fn add_version(&mut self, _plugin_name: &PluginName, _version: &str) {
         unimplemented!()
     }
 
@@ -96,13 +83,10 @@ impl Display for LegacyVersionFile {
 fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
     let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.to_path_buf()));
     if !version.is_empty() {
-        toolset.add_version(
+        toolset.add_version(ToolVersion::new(
             plugin.to_string(),
-            ToolVersion::new(
-                plugin.to_string(),
-                ToolVersionType::Version(version.to_string()),
-            ),
-        );
+            ToolVersionType::Version(version.to_string()),
+        ));
     }
     toolset
 }
