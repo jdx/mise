@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/test/data" />
+      <excludeFolder url="file://$MODULE_DIR$/plugins" />
+      <excludeFolder url="file://$MODULE_DIR$/installs" />
+      <excludeFolder url="file://$MODULE_DIR$/asdf" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.rtx" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.asdf" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.cache" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.config" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.local" />
+      <excludePattern pattern="*.log" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>
