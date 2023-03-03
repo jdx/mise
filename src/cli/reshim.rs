@@ -1,5 +1,4 @@
 use std::fs;
-use std::fs::{create_dir_all, remove_dir_all};
 use std::os::unix::fs::symlink;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
@@ -12,6 +11,7 @@ use once_cell::sync::Lazy;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env::RTX_EXE;
+use crate::file::{create_dir_all, remove_dir_all};
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, fake_asdf};

@@ -1,12 +1,35 @@
-use indicatif::ProgressBar;
-
 use std::time::Duration;
+
+use console::style;
+use indicatif::{ProgressBar, ProgressStyle};
+use once_cell::sync::Lazy;
 
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: Option<ProgressBar>,
     prefix: String,
 }
+
+pub static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    ProgressStyle::with_template("{prefix}{wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
+        .unwrap()
+});
+
+pub static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    let tmpl = format!(
+        "{{prefix}}{{wide_msg}} {} {{elapsed:3.dim.italic}}",
+        style("✓").bright().green().for_stderr()
+    );
+    ProgressStyle::with_template(tmpl.as_str()).unwrap()
+});
+
+pub static ERROR_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    let tmpl = format!(
+        "{{prefix:.red}}{{wide_msg}} {} {{elapsed:3.dim.italic}}",
+        style("✗").red().for_stderr()
+    );
+    ProgressStyle::with_template(tmpl.as_str()).unwrap()
+});
 
 impl ProgressReport {
     pub fn new(verbose: bool) -> ProgressReport {
@@ -36,7 +59,7 @@ impl ProgressReport {
         }
     }
 
-    pub fn set_style(&self, style: indicatif::ProgressStyle) {
+    pub fn set_style(&self, style: ProgressStyle) {
         match &self.pb {
             Some(pb) => {
                 pb.set_style(style);
@@ -47,7 +70,7 @@ impl ProgressReport {
     }
     pub fn set_message(&self, message: String) {
         match &self.pb {
-            Some(pb) => pb.set_message(message),
+            Some(pb) => pb.set_message(message.replace('\r', "")),
             None => eprintln!("{}{message}", self.prefix),
         }
     }
@@ -57,9 +80,30 @@ impl ProgressReport {
             None => eprintln!("{message}"),
         }
     }
+    pub fn error(&self) {
+        match &self.pb {
+            Some(pb) => {
+                pb.set_style(ERROR_TEMPLATE.clone());
+                pb.finish()
+            }
+            None => (),
+        }
+    }
+    pub fn finish(&self) {
+        match &self.pb {
+            Some(pb) => {
+                pb.set_style(SUCCESS_TEMPLATE.clone());
+                pb.finish()
+            }
+            None => (),
+        }
+    }
     pub fn finish_with_message(&self, message: String) {
         match &self.pb {
-            Some(pb) => pb.finish_with_message(message),
+            Some(pb) => {
+                pb.set_style(SUCCESS_TEMPLATE.clone());
+                pb.finish_with_message(message)
+            }
             None => eprintln!("{}{message}", self.prefix),
         }
     }

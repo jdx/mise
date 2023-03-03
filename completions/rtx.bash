@@ -2358,7 +2358,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -a -v -j -r -h --force --all --verbose --jobs --log-level --raw --help [NAME] [GIT_URL]"
+            opts="-f -a -v -j -r -h --force --all --verbose --jobs --log-level --raw --help [NAME] [GIT_URL] [REST]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2410,7 +2410,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls__remote)
-            opts="-u -j -r -v -h --urls --jobs --log-level --raw --verbose --help"
+            opts="-u -j -r -v -h --urls --only-names --jobs --log-level --raw --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2436,7 +2436,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__uninstall)
-            opts="-j -r -v -h --jobs --log-level --raw --verbose --help <PLUGIN>"
+            opts="-j -r -v -h --jobs --log-level --raw --verbose --help <PLUGIN>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

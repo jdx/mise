@@ -131,6 +131,7 @@ lazy_static! {
     pub static ref RTX_SHIMS_DIR: Option<PathBuf> = var_path("RTX_SHIMS_DIR");
     pub static ref RTX_RAW: bool = var_is_true("RTX_RAW");
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
+    pub static ref PRELOAD_ENV: bool = is_cmd("hook-env") || is_cmd("env") || is_cmd("exec");
 }
 
 fn get_env_diff() -> EnvDiff {
@@ -221,6 +222,14 @@ fn prefer_stale(args: &[String]) -> bool {
             "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
         ]
         .contains(&c.as_str());
+    }
+    false
+}
+
+// returns true if the subcommand to rtx is this value
+fn is_cmd(cmd: &str) -> bool {
+    if let Some(c) = ARGS.get(1) {
+        return c == cmd;
     }
     false
 }

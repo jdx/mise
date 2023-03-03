@@ -6,6 +6,7 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 export ROOT
 export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
 export RTX_DATA_DIR="$ROOT/e2e/.rtx"
+export RTX_CACHE_DIR="$ROOT/e2e/.cache"
 export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
 export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
 unset GOPATH

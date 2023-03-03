@@ -5,14 +5,23 @@ use rayon::prelude::*;
 
 use crate::config::Config;
 
-pub fn commands(config: &Config) -> Result<Vec<Command>> {
-    let commands = config
+pub fn commands(config: &Config) -> Vec<Command> {
+    config
         .plugins
         .values()
         .collect_vec()
         .into_par_iter()
-        .map(|p| p.external_commands())
-        .collect::<Result<Vec<Vec<Vec<String>>>>>()?
+        .map(|p| match p.external_commands() {
+            Ok(commands) => commands,
+            Err(e) => {
+                warn!(
+                    "failed to load external commands for plugin {}: {}",
+                    p.name, e
+                );
+                vec![]
+            }
+        })
+        .collect::<Vec<Vec<Vec<String>>>>()
         .into_iter()
         .filter(|commands| !commands.is_empty())
         .filter(|commands| commands[0][0] != "direnv")
@@ -28,9 +37,7 @@ pub fn commands(config: &Config) -> Result<Vec<Command>> {
                 },
             ))
         })
-        .collect::<Vec<clap::Command>>();
-
-    Ok(commands)
+        .collect()
 }
 
 pub fn execute(

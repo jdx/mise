@@ -14,7 +14,7 @@ use crate::cmd::cmd;
 use crate::config::Settings;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
-use crate::file::basename;
+use crate::file::{basename, display_path};
 
 #[derive(Debug, Clone)]
 pub struct ScriptManager {
@@ -41,7 +41,7 @@ pub enum Script {
     Install,
     Uninstall,
     ListBinPaths,
-    // ExecEnv,
+    ExecEnv,
 }
 
 impl Display for Script {
@@ -57,7 +57,7 @@ impl Display for Script {
             Script::Install => write!(f, "install"),
             Script::Uninstall => write!(f, "uninstall"),
             Script::ListBinPaths => write!(f, "list-bin-paths"),
-            // Script::ExecEnv => write!(f, "exec-env"),
+            Script::ExecEnv => write!(f, "exec-env"),
             Script::Download => write!(f, "download"),
         }
     }
@@ -102,12 +102,12 @@ impl ScriptManager {
         self.get_script_path(script).is_file()
     }
 
-    pub fn cmd(&self, settings: &Settings, script: Script) -> Expression {
-        let args = match &script {
+    pub fn cmd(&self, settings: &Settings, script: &Script) -> Expression {
+        let args = match script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
             _ => vec![],
         };
-        let script_path = self.get_script_path(&script);
+        let script_path = self.get_script_path(script);
         // if !script_path.exists() {
         //     return Err(PluginNotInstalled(self.plugin_name.clone()).into());
         // }
@@ -122,29 +122,31 @@ impl ScriptManager {
         cmd
     }
 
-    pub fn run(&self, settings: &Settings, script: Script) -> Result<()> {
+    pub fn run(&self, settings: &Settings, script: &Script) -> Result<()> {
         let cmd = self.cmd(settings, script);
         let Output { status, .. } = cmd.unchecked().run()?;
 
         match status.success() {
             true => Ok(()),
-            false => Err(ScriptFailed(self.plugin_name.clone(), Some(status)).into()),
+            false => {
+                Err(ScriptFailed(display_path(&self.get_script_path(script)), Some(status)).into())
+            }
         }
     }
 
-    pub fn read(&self, settings: &Settings, script: Script, verbose: bool) -> Result<String> {
+    pub fn read(&self, settings: &Settings, script: &Script, verbose: bool) -> Result<String> {
         let mut cmd = self.cmd(settings, script);
         if !verbose && !settings.raw {
             cmd = cmd.stderr_null();
         }
         cmd.read()
-            .with_context(|| ScriptFailed(self.plugin_name.clone(), None))
+            .with_context(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
     pub fn run_by_line<F1, F2>(
         &self,
         settings: &Settings,
-        script: Script,
+        script: &Script,
         on_error: F1,
         on_output: F2,
     ) -> Result<()>
@@ -160,7 +162,10 @@ impl ScriptManager {
                 true => Ok(()),
                 false => {
                     on_error(output.join("\n"));
-                    Err(ScriptFailed(self.plugin_name.clone(), Some(status)).into())
+                    Err(
+                        ScriptFailed(display_path(&self.get_script_path(script)), Some(status))
+                            .into(),
+                    )
                 }
             }
         } else {
@@ -181,7 +186,10 @@ impl ScriptManager {
                     true => Ok(()),
                     false => {
                         on_error(output.join("\n"));
-                        let err = ScriptFailed(self.plugin_name.clone(), Some(out.unwrap().status));
+                        let err = ScriptFailed(
+                            display_path(&self.get_script_path(script)),
+                            Some(out.unwrap().status),
+                        );
                         Err(err)?
                     }
                 },
