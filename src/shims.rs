@@ -15,6 +15,7 @@ use crate::env;
 use crate::env::RTX_EXE;
 use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_dir_all};
+use crate::lock_file::LockFile;
 use crate::output::Output;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -67,6 +68,11 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         return Ok(());
     }
     let shims_dir = config.get_shims_dir()?;
+    let _lock = LockFile::new(&shims_dir)
+        .with_callback(|l| {
+            trace!("reshim callback {}", l.display());
+        })
+        .lock();
 
     // remove old shims
     let _ = remove_dir_all(&shims_dir);
@@ -110,7 +116,6 @@ fn make_symlink(target: &Path, link: &Path) -> Result<()> {
         fs::remove_file(link)?;
     }
     symlink(target, link)?;
-    trace!("symlinked {} to {}", target.display(), link.display());
     Ok(())
 }
 

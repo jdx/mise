@@ -163,7 +163,7 @@ impl Toolset {
                         for version in versions {
                             let mut pr = mpr.add();
                             version.resolve(config, plugin.clone())?;
-                            version.install(config, &mut pr)?;
+                            version.install(config, &mut pr, false)?;
                         }
                         Ok(())
                     })
@@ -190,7 +190,7 @@ impl Toolset {
             .filter(|p| !p.is_installed())
             .map(|p| {
                 let mut pr = mpr.add();
-                p.install(config, &mut pr)
+                p.install(config, &mut pr, false)
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(())
