@@ -40,7 +40,7 @@ pub fn get_path_with_fake_asdf() -> String {
             path.push(fake_asdf_path.to_string_lossy().to_string());
         }
         Err(e) => {
-            warn!("Failed to setup fake asdf: {}", e);
+            warn!("Failed to setup fake asdf: {:#}", e);
         }
     };
     path.push(env::var("PATH").unwrap());

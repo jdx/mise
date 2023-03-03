@@ -26,7 +26,7 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
                 shorthands.extend(custom);
             }
             Err(err) => {
-                warn!("Failed to read shorthands file: {} {}", &f.display(), err);
+                warn!("Failed to read shorthands file: {} {:#}", &f.display(), err);
             }
         }
     }

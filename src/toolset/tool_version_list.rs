@@ -38,7 +38,7 @@ impl ToolVersionList {
                     }
                 }
                 Err(err) => {
-                    warn!("failed to resolve tool version: {}", err);
+                    warn!("failed to resolve tool version: {:#}", err);
                     return;
                 }
             }

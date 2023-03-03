@@ -15,7 +15,7 @@ pub fn commands(config: &Config) -> Vec<Command> {
             Ok(commands) => commands,
             Err(e) => {
                 warn!(
-                    "failed to load external commands for plugin {}: {}",
+                    "failed to load external commands for plugin {}: {:#}",
                     p.name, e
                 );
                 vec![]

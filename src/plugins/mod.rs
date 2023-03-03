@@ -36,6 +36,7 @@ pub type PluginName = String;
 pub struct Plugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
+    pub repo_url: Option<String>,
     cache_path: PathBuf,
     downloads_path: PathBuf,
     installs_path: PathBuf,
@@ -71,6 +72,7 @@ impl Plugin {
                 .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
             plugin_path,
             cache_path,
+            repo_url: None,
         }
     }
 
@@ -90,14 +92,11 @@ impl Plugin {
         git.get_remote_url()
     }
 
-    pub fn install(
-        &self,
-        config: &Config,
-        repository: Option<&String>,
-        pr: &mut ProgressReport,
-    ) -> Result<()> {
+    pub fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
         self.decorate_progress_bar(pr);
-        let repository = repository
+        let repository = self
+            .repo_url
+            .as_ref()
             .or_else(|| config.get_shorthands().get(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
@@ -226,12 +225,10 @@ impl Plugin {
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
-            .with_context(|| {
-                format!(
-                    "Failed listing remote versions for plugin {}",
-                    style(&self.name).cyan().for_stderr()
-                )
-            })
+            .wrap_err(format!(
+                "Failed listing remote versions for plugin {}",
+                style(&self.name).cyan().for_stderr()
+            ))
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {

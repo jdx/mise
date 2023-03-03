@@ -42,7 +42,7 @@ impl ToolsetBuilder {
         if self.install_missing {
             let mpr = MultiProgressReport::new(config.settings.verbose);
             if let Err(e) = toolset.install_missing(config, mpr) {
-                warn!("Error installing runtimes: {}", e);
+                warn!("Error installing runtimes: {:#}", e);
             };
         }
 
