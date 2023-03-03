@@ -1,6 +1,6 @@
 ---
 source: src/config/config_file/rtx_toml.rs
-expression: cf.toolset
+expression: "replace_path(&format!(\"{:#?}\", cf.toolset))"
 ---
 Toolset {
     versions: {
@@ -16,7 +16,7 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+                "~/fixtures/.rtx.toml",
             ),
         },
         "nodejs": ToolVersionList {
@@ -55,7 +55,7 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+                "~/fixtures/.rtx.toml",
             ),
         },
         "jq": ToolVersionList {
@@ -70,7 +70,7 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+                "~/fixtures/.rtx.toml",
             ),
         },
         "shellcheck": ToolVersionList {
@@ -85,7 +85,7 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+                "~/fixtures/.rtx.toml",
             ),
         },
         "python": ToolVersionList {
@@ -110,13 +110,13 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+                "~/fixtures/.rtx.toml",
             ),
         },
     },
     source: Some(
         RtxToml(
-            "/Users/jdx/src/rtx/test/fixtures/.rtx.toml",
+            "~/fixtures/.rtx.toml",
         ),
     ),
 }

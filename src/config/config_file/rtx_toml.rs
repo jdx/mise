@@ -538,9 +538,10 @@ FOO = "bar"
 #[cfg(test)]
 mod tests {
     use indoc::formatdoc;
-    use insta::{assert_debug_snapshot, assert_display_snapshot};
+    use insta::{assert_debug_snapshot, assert_display_snapshot, assert_snapshot};
 
     use crate::dirs;
+    use crate::test::replace_path;
 
     use super::*;
 
@@ -551,10 +552,10 @@ mod tests {
         assert_debug_snapshot!(cf.env());
         assert_debug_snapshot!(cf.settings());
         assert_debug_snapshot!(cf.plugins());
-        assert_debug_snapshot!(cf.toolset);
+        assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
 
-        assert_display_snapshot!(cf);
+        assert_snapshot!(replace_path(&cf.to_string()));
     }
 
     #[test]
