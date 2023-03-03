@@ -8,7 +8,6 @@ SettingsBuilder {
     always_keep_download: None,
     legacy_version_file: None,
     plugin_autoupdate_last_check_duration: None,
-    aliases: None,
     verbose: None,
     asdf_compat: None,
     jobs: None,

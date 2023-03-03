@@ -5,10 +5,8 @@ use std::time::Duration;
 use indexmap::IndexMap;
 use log::LevelFilter;
 
-use crate::config::AliasMap;
 use crate::env;
 use crate::env::*;
-use crate::plugins::PluginName;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -17,7 +15,6 @@ pub struct Settings {
     pub always_keep_download: bool,
     pub legacy_version_file: bool,
     pub plugin_autoupdate_last_check_duration: Duration,
-    pub aliases: IndexMap<PluginName, IndexMap<String, String>>,
     pub verbose: bool,
     pub asdf_compat: bool,
     pub jobs: usize,
@@ -36,7 +33,6 @@ impl Default for Settings {
             always_keep_download: false,
             legacy_version_file: true,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
-            aliases: IndexMap::new(),
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
             asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
@@ -98,7 +94,6 @@ pub struct SettingsBuilder {
     pub always_keep_download: Option<bool>,
     pub legacy_version_file: Option<bool>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
-    pub aliases: Option<AliasMap>,
     pub verbose: Option<bool>,
     pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
@@ -154,9 +149,6 @@ impl SettingsBuilder {
         if other.shims_dir.is_some() {
             self.shims_dir = other.shims_dir;
         }
-        if other.aliases.is_some() {
-            self.aliases = other.aliases;
-        }
         if other.raw.is_some() {
             self.raw = other.raw;
         }
@@ -199,7 +191,6 @@ impl SettingsBuilder {
         settings.log_level = self.log_level.unwrap_or(settings.log_level);
         settings.shims_dir = self.shims_dir.clone().or(settings.shims_dir);
         settings.raw = self.raw.unwrap_or(settings.raw);
-        settings.aliases = self.aliases.clone().unwrap_or(settings.aliases);
 
         if settings.raw {
             settings.verbose = true;

@@ -18,7 +18,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// note that rtx automatically can install plugins when you install a runtime
 /// e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin
 ///
-/// This behavior can be modified in ~/.rtx/config.toml
+/// This behavior can be modified in ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct PluginsInstall {

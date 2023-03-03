@@ -1,9 +1,9 @@
-use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::Output;
-use std::sync::Arc;
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::sync::mpsc::channel;
+use std::{fmt, thread};
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
@@ -143,25 +143,29 @@ impl ScriptManager {
             .with_context(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line<F1, F2>(
-        &self,
+    pub fn run_by_line<'a, F1, F2, F3>(
+        &'a self,
         settings: &Settings,
         script: &Script,
         on_error: F1,
-        on_output: F2,
+        on_stdout: F2,
+        on_stderr: F3,
     ) -> Result<()>
     where
         F1: Fn(String),
-        F2: Fn(&str),
+        F2: Fn(&str) + Send + Sync + 'a,
+        F3: Fn(&str) + Send + Sync,
     {
-        let cmd = self.cmd(settings, script);
-        let mut output = vec![];
+        let mut cmd = Command::new(self.get_script_path(script));
+        for (k, v) in self.env.iter() {
+            cmd.env(k, v);
+        }
         if settings.raw {
-            let Output { status, .. } = cmd.unchecked().run()?;
+            let status = cmd.spawn()?.wait()?;
             match status.success() {
                 true => Ok(()),
                 false => {
-                    on_error(output.join("\n"));
+                    on_error(String::new());
                     Err(
                         ScriptFailed(display_path(&self.get_script_path(script)), Some(status))
                             .into(),
@@ -169,31 +173,67 @@ impl ScriptManager {
                 }
             }
         } else {
-            let reader = cmd.stdin_null().stderr_to_stdout().unchecked().reader()?;
-            let reader = Arc::new(reader);
-            for line in BufReader::new(&*reader).lines() {
-                let line = line.unwrap();
-                on_output(&line);
-                output.push(line);
+            let mut cp = cmd
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            let stdout = BufReader::new(cp.stdout.take().unwrap());
+            let stderr = BufReader::new(cp.stderr.take().unwrap());
+            let (tx, rx) = channel();
+            thread::spawn({
+                let tx = tx.clone();
+                move || {
+                    for line in stdout.lines() {
+                        let line = line.unwrap();
+                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
+                    }
+                }
+            });
+            thread::spawn({
+                let tx = tx.clone();
+                move || {
+                    for line in stderr.lines() {
+                        let line = line.unwrap();
+                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
+                    }
+                }
+            });
+            thread::spawn(move || {
+                let status = cp.wait().unwrap();
+                tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
+            });
+            let mut combined_output = vec![];
+            for line in rx {
+                match line {
+                    ChildProcessOutput::Stdout(line) => {
+                        on_stdout(&line);
+                        combined_output.push(line);
+                    }
+                    ChildProcessOutput::Stderr(line) => {
+                        on_stderr(&line);
+                        combined_output.push(line);
+                    }
+                    ChildProcessOutput::ExitStatus(status) => match status.success() {
+                        true => return Ok(()),
+                        false => {
+                            on_error(combined_output.join("\n"));
+                            Err(ScriptFailed(
+                                display_path(&self.get_script_path(script)),
+                                Some(status),
+                            ))?;
+                        }
+                    },
+                }
             }
 
-            match reader.try_wait() {
-                Err(err) => {
-                    on_error(output.join("\n"));
-                    Err(err)?
-                }
-                Ok(out) => match out.unwrap().status.success() {
-                    true => Ok(()),
-                    false => {
-                        on_error(output.join("\n"));
-                        let err = ScriptFailed(
-                            display_path(&self.get_script_path(script)),
-                            Some(out.unwrap().status),
-                        );
-                        Err(err)?
-                    }
-                },
-            }
+            Ok(())
         }
     }
+}
+
+enum ChildProcessOutput {
+    Stdout(String),
+    Stderr(String),
+    ExitStatus(ExitStatus),
 }

@@ -12,6 +12,7 @@ use toml_edit::{table, value, Array, Item, Value};
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, MissingRuntimeBehavior};
+use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
 
@@ -63,6 +64,16 @@ impl RtxToml {
         .parse()
     }
 
+    pub fn migrate(path: &Path) -> Result<RtxToml> {
+        // attempt to read as new .rtx.toml syntax
+        let mut raw = String::from("[settings]\n");
+        raw.push_str(&fs::read_to_string(path)?);
+        let mut toml = RtxToml::from_str(raw)?;
+        toml.path = path.to_path_buf();
+        toml.save()?;
+        Ok(toml)
+    }
+
     fn parse(mut self) -> Result<Self> {
         for (k, v) in self.doc.iter() {
             match k {
@@ -71,7 +82,7 @@ impl RtxToml {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
                 "plugins" => self.plugins = self.parse_hashmap(k, v)?,
-                _ => warn!("unknown key: {}", k),
+                _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
         Ok(self)
@@ -295,7 +306,7 @@ impl RtxToml {
                         "log_level" => settings.log_level = Some(self.parse_log_level(&k, v)?),
                         "shims_dir" => settings.shims_dir = Some(self.parse_path(&k, v)?),
                         "raw" => settings.raw = Some(self.parse_bool(&k, v)?),
-                        _ => parse_error!(k, v, "setting")?,
+                        _ => Err(eyre!("Unknown config setting: {}", k))?,
                     };
                 }
             }
@@ -305,7 +316,7 @@ impl RtxToml {
         Ok(settings)
     }
 
-    fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
+    pub(crate) fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
         self.alias
             .entry(plugin.into())
             .or_default()
@@ -322,7 +333,7 @@ impl RtxToml {
             .insert(from, value(to));
     }
 
-    pub fn remove_alias(&mut self, plugin: &str, from: &str) -> Result<()> {
+    pub fn remove_alias(&mut self, plugin: &str, from: &str) {
         if let Some(aliases) = self.doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
             if let Some(plugin_aliases) = aliases.get_mut(plugin).and_then(|v| v.as_table_mut()) {
                 self.alias.get_mut(plugin).unwrap().remove(from);
@@ -336,7 +347,6 @@ impl RtxToml {
                 self.doc.as_table_mut().remove("alias");
             }
         }
-        Ok(())
     }
 
     fn parse_duration_minutes(&self, k: &str, v: &Item) -> Result<Duration> {
@@ -391,6 +401,53 @@ impl RtxToml {
     fn parse_log_level(&self, k: &str, v: &Item) -> Result<LevelFilter> {
         let level = self.parse_string(k, v)?.parse()?;
         Ok(level)
+    }
+
+    pub fn update_setting<V: Into<Value>>(&mut self, key: &str, value: V) {
+        let key = key.split('.').collect::<Vec<&str>>();
+        let mut settings = self
+            .doc
+            .entry("settings")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap();
+        for (i, k) in key.iter().enumerate() {
+            if i == key.len() - 1 {
+                settings.insert(k, toml_edit::value(value));
+                break;
+            } else {
+                settings = settings
+                    .entry(k)
+                    .or_insert(toml_edit::table())
+                    .as_table_mut()
+                    .unwrap();
+            }
+        }
+    }
+
+    pub fn remove_setting(&mut self, key: &str) {
+        let mut settings = self
+            .doc
+            .entry("settings")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap();
+        let key = key.split('.').collect::<Vec<&str>>();
+        for (i, k) in key.iter().enumerate() {
+            if i == key.len() - 1 {
+                settings.remove(k);
+                break;
+            } else {
+                settings = settings
+                    .entry(k)
+                    .or_insert(toml_edit::table())
+                    .as_table_mut()
+                    .unwrap();
+            }
+        }
+        if settings.is_empty() {
+            self.doc.as_table_mut().remove("settings");
+        }
     }
 }
 
@@ -456,6 +513,9 @@ impl ConfigFile for RtxToml {
 
     fn save(&self) -> Result<()> {
         let contents = self.dump();
+        if let Some(parent) = self.path.parent() {
+            create_dir_all(parent)?;
+        }
         Ok(fs::write(&self.path, contents)?)
     }
 
@@ -548,8 +608,8 @@ mod tests {
         "3.10" = "3.10.0"
         "#})
         .unwrap();
-        cf.remove_alias("nodejs", "16").unwrap();
-        cf.remove_alias("python", "3.10").unwrap();
+        cf.remove_alias("nodejs", "16");
+        cf.remove_alias("python", "3.10");
 
         assert_debug_snapshot!(cf.alias);
         assert_display_snapshot!(cf);
@@ -582,5 +642,35 @@ mod tests {
 
         assert_debug_snapshot!(cf.toolset);
         assert_display_snapshot!(cf);
+    }
+
+    #[test]
+    fn test_update_setting() {
+        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        [settings]
+        legacy_version_file = true
+        [alias.nodejs]
+        18 = "18.0.0"
+        "#})
+        .unwrap();
+        cf.update_setting("legacy_version_file", false);
+        assert_display_snapshot!(cf.dump(), @r###"
+        [settings]
+        legacy_version_file = false
+        [alias.nodejs]
+        18 = "18.0.0"
+        "###);
+    }
+
+    #[test]
+    fn test_remove_setting() {
+        let mut cf = RtxToml::from_str(formatdoc! {r#"
+        [settings]
+        legacy_version_file = true
+        "#})
+        .unwrap();
+        cf.remove_setting("legacy_version_file");
+        assert_display_snapshot!(cf.dump(), @r###"
+        "###);
     }
 }

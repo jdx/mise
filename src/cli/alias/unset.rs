@@ -21,10 +21,9 @@ pub struct AliasUnset {
 }
 
 impl Command for AliasUnset {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let rtxrc = config.rtxrc;
-        rtxrc.remove_alias(&self.plugin, &self.alias)?;
-        rtxrc.save()
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+        config.global_config.remove_alias(&self.plugin, &self.alias);
+        config.global_config.save()
     }
 }
 
@@ -37,10 +36,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::{assert_cli, assert_cli_snapshot};
-
     use crate::test::reset_config;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_settings_unset() {
