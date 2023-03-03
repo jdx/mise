@@ -21,8 +21,7 @@ pub struct SettingsSet {
 }
 
 impl Command for SettingsSet {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let rtxrc = config.rtxrc;
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let value: toml_edit::Value = match self.key.as_str() {
             "experimental" => parse_bool(&self.value)?,
             "missing_runtime_behavior" => self.value.into(),
@@ -39,8 +38,8 @@ impl Command for SettingsSet {
             _ => return Err(eyre!("Unknown setting: {}", self.key)),
         };
 
-        rtxrc.update_setting(&self.key, value)?;
-        rtxrc.save()
+        config.global_config.update_setting(&self.key, value);
+        config.global_config.save()
     }
 }
 

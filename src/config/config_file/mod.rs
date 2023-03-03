@@ -4,7 +4,6 @@ use std::path::Path;
 
 use color_eyre::eyre::{eyre, Result};
 
-use rtxrc::RTXFile;
 use tool_versions::ToolVersions;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
@@ -20,12 +19,10 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 pub mod legacy_version;
 pub mod rtx_toml;
-pub mod rtxrc;
 pub mod tool_versions;
 
 #[derive(Debug, PartialEq)]
 pub enum ConfigFileType {
-    RtxRc,
     RtxToml,
     ToolVersions,
     LegacyVersion,
@@ -126,9 +123,7 @@ impl dyn ConfigFile {
 }
 
 pub fn init(path: &Path) -> Box<dyn ConfigFile> {
-    if path.ends_with(".rtxrc") || path.ends_with(".rtxrc.toml") {
-        return Box::new(RTXFile::init(path));
-    } else if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) {
+    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) {
         return Box::new(RtxToml::init(path));
     } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
         return Box::new(ToolVersions::init(path));
@@ -140,16 +135,15 @@ pub fn init(path: &Path) -> Box<dyn ConfigFile> {
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
         Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path)?)),
-        Some(ConfigFileType::RtxRc) => Ok(Box::new(RTXFile::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
         #[allow(clippy::box_default)]
-        _ => Ok(Box::new(RTXFile::default())),
+        _ => Ok(Box::new(RtxToml::default())),
     }
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
-        ".rtxrc" | ".rtxrc.toml" | "config.toml" => Some(ConfigFileType::RtxRc),
+        "config.toml" => Some(ConfigFileType::RtxToml),
         f if env::RTX_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::RtxToml),
         f if env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
@@ -164,14 +158,6 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
-        assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.rtxrc")),
-            Some(ConfigFileType::RtxRc)
-        );
-        assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.rtxrc.toml")),
-            Some(ConfigFileType::RtxRc)
-        );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
             Some(ConfigFileType::ToolVersions)

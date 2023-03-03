@@ -8,3 +8,6 @@ golang = {version="latest", foo="bar"}
 
 [plugins]
 nodejs = 'https://github.com/jdxcode/rtx-nodejs'
+
+[alias.tiny]
+abc = '1'
