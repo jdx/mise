@@ -108,14 +108,8 @@ v18.10.9
 - [Aliases](#aliases)
 - [Plugins](#plugins)
   - [Plugin Options](#plugin-options)
-- [FAQs](#faqs)
-  - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
-  - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
-  - [Windows support?](#windows-support)
-  - [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
-  - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
-  - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
-  - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
+- [Versioning](#versioning)
+  - [Calver Breaking Changes](#calver-breaking-changes)
 - [Commands](#commands)
   - [`rtx activate`](#rtx-activate)
   - [`rtx alias get`](#rtx-alias-get)
@@ -155,9 +149,18 @@ v18.10.9
   - [`rtx version`](#rtx-version)
   - [`rtx where`](#rtx-where)
   - [`rtx which`](#rtx-which)
+- [FAQs](#faqs)
+  - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
+  - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
+  - [Windows support?](#windows-support)
+  - [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
+  - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
+  - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
+  - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
+  - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
 - [Comparison to asdf](#comparison-to-asdf)
   - [Performance](#performance)
-  - [Environment variables](#environment-variables-1)
+  - [Environment variables in rtx](#environment-variables-in-rtx)
   - [UX](#ux)
   - [CI/CD](#cicd)
   - [GitHub Actions](#github-actions)
@@ -166,8 +169,7 @@ v18.10.9
   - [rtx inside of direnv (`use rtx` in `.envrc`)](#rtx-inside-of-direnv-use-rtx-in-envrc)
   - [Do you need direnv?](#do-you-need-direnv)
 - [Cache Behavior](#cache-behavior)
-  - [Plugin Cache](#plugin-cache)
-  - [Legacy File Cache](#legacy-file-cache)
+  - [Plugin/Runtime Cache](#pluginruntime-cache)
 
 </details>
 <!-- AUTO-GENERATED-CONTENT:END -->
@@ -565,7 +567,9 @@ These settings can also be managed with `rtx settings ls|get|set|unset`.
 
 ### [experimental] `.rtx.toml`
 
-`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions` file.
+`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions` 
+file. Think of `~/.config/rtx/config.toml` as just a
+special `.rtx.toml` which is used from any directory on the machine.
 
 It allows for functionality that is not possible with `.tool-versions`, such as:
 
@@ -607,7 +611,9 @@ shims_dir = '~/.rtx/shims'
 my_custom_node = '18'
 ```
 
-`.rtx.toml` is currently experimental and may change in minor versions of rtx.
+`.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not 
+require setting `experimental = true` in the global config in part because this config can 
+itself contain the setting for `experimental`.
 
 ### Environment variables
 
@@ -639,6 +645,12 @@ This is the path to the config file. The default is `~/.config/rtx/config.toml`.
 
 Set to something other than ".tool-versions" to have rtx look for configuration with alternate names.
 
+#### `RTX_DEFAULT_CONFIG_FILENAME`
+
+Set to something other than ".rtx.toml" to have rtx look for configuration with alternate names.
+
+This is the same as `RTX_DEFAULT_TOOL_VERSIONS_FILENAME` but for `.rtx.toml` format.
+
 #### `RTX_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `RTX_NODEJS_VERSION=18` will use nodejs@18.x regardless
@@ -648,6 +660,11 @@ of what is set in `.tool-versions`.
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
 for example, .nvmrc in the case of nodejs's nvm.
+
+#### `RTX_USE_TOML`
+
+Set to `1` to use default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for 
+configuration.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
@@ -780,97 +797,43 @@ any option and it will be passed to the plugin in that format.
 Currently this only supports simple strings, but we can make it compatible with more complex types
 (arrays, tables) fairly easily if there is a need for it.
 
-## FAQs
+## Versioning
 
-### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.
+rtx is currently a new project and is under very rapid development. Slight behavior changes may 
+occur between releases. 
+Features marked as "experimental" may change significantly or be removed entirely.
 
-You can make git ignore these files in 3 different ways:
+Starting June 1, 2023*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on 
+its behavior for the long term.
+Breaking changes will be few but when they do happen,
+they will be communicated in the CLI with plenty of notice whenever possible.
 
-- Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to commit the change to the ignore file.
-- Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so there is no need to commit it.
-- Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed with `git add --force .tool-versions`.
+Rather than have semver major releases to communicate change in large releases,
+new functionality and changes can be opted-into with settings like `experimental = true`.
+This way plugin authors and users can
+test out new functionality immediately without waiting for a major release.
 
-### rtx is failing or not working right
+The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release—not compatibility
+or how many new features were added.
+Each release will be small and incremental.
 
-First try setting `RTX_DEBUG=1` or `RTX_TRACE=1` and see if that gives you more information.
-You can also set `RTX_LOG_FILE_LEVEL=debug RTX_LOG_FILE=/path/to/logfile` to write logs to a file.
+_*This plan is tentative and the details may change, but the rough idea of making many changes now so we can have stability later is the goal._
 
-If something is happening with the activate hook, you can try disabling it and calling `eval "$(rtx hook-env)"` manually.
-It can also be helpful to use `rtx env` which will just output environment variables that would be set.
-Also consider using [shims](#shims) which can be more compatible.
+### Calver Breaking Changes
 
-If runtime installation isn't working right, try using the `--raw` flag which will install things in
-series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
-with you for some reason this will make it work.
+When we switch to Calver, we'll immediately make some notable design changes to rtx. This will 
+be the first and last time that such a change is made and I actually want to make sure we make 
+as many as we can—because we'll be stuck with these decisions.
 
-Of course check the version of rtx with `rtx --version` and make sure it is the latest. Use `rtx self-update`
-to update it. `rtx cache clean` can be used to wipe the internal cache and `rtx implode` can be used
-to remove everything except config.
+Here are a list of the changes that will be made:
 
-Before submitting a ticket, it's a good idea to test what you were doing with asdf. That way we can rule
-out if the issue is with rtx or if it's with a particular plugin. For example, if `rtx install python@latest`
-doesn't work, try running `asdf install python latest` to see if it's an issue with asdf-python.
-
-Lastly, there is `rtx doctor` which will show diagnostic information and any warnings about issues
-detected with your setup. If you submit a bug report, please include the output of `rtx doctor`.
-
-### Windows support?
-
-This is something we'd like to add! https://github.com/jdxcode/rtx/discussions/66
-
-It's not a near-term goal and it would require plugin modifications, but it should be feasible.
-
-### How do I use rtx with http proxies?
-
-Short answer: just set `http_proxy` and `https_proxy` environment variables. These should be lowercase.
-
-rtx doesn't really do anything with http itself. The only exception to that is checking for new versions
-and `rtx self-update`. It uses `git` to clone plugins and the plugins themselves generally will download
-files with `curl` or `wget`.
-
-However this is really up to the plugin. If you're having a proxy-related issue installing something
-you should post an issue on the plugin's repo.
-
-### How do the shorthand plugin names map to repositories?
-
-e.g.: how does `rtx plugin install nodejs` know to fetch [https://github.com/asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)?
-
-asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
-This is regularly updated every time that rtx has a release. This repository is stored directly into
-the codebase [here](./src/default_shorthands.rs). The bottom of that file contains modifications that
-rtx makes. For example, we add `node` which points to the same plugin as `nodejs` and change `python`
-to point to [rtx-python](https://github.com/jdxcode/rtx-python) which is a fork of [asdf-python](https://github.com/danhper/asdf-python)
-with some rtx features like virtualenv support.
-
-Over time I suspect that more plugins will be forked like rtx-python as we're able to offer more rtx-specific
-enhancements.
-
-### How do I migrate from asdf?
-
-First, just install rtx with `rtx activate` like in the getting started guide and remove asdf from your
-shell rc file.
-
-Then you can just run `rtx install` in a directory with an asdf `.tool-versions` file and it will
-install the runtimes. You could attempt to avoid this by copying the internal directory from asdf over
-to rtx with `cp -r ~/.asdf ~/.local/share/rtx`. That _should_ work because they use the same structure,
-however this isn't officially supported or regularly tested. Alternatively you can set `RTX_DATA_DIR=~/.asdf`
-and see what happens.
-
-If you need to switch to/from asdf or work in a project with asdf users, you can set [`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1).
-
-### rtx isn't working with tmux
-
-It's been reported that PATH doesn't work correctly with tmux. The fix seems to be calling `hook-env`
-right after activating:
-
-```bash
-eval "$(rtx activate bash)"
-eval "$(rtx hook-env)"
-```
-
-This can also be useful if you need to use a runtime right away in an rc file. The default behavior
-of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
-immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
+* `rtx local` will default to creating `.rtx.toml` instead of `.tool-versions`. (If the config 
+  already exists the format will be preserved.)
+* `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path 
+  can be changed with `RTX_CONFIG_FILE`.
+* `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file 
+  that is read anywhere such as from `/tmp`.
+* (more to be added)
 
 <!-- RTX:COMMANDS -->
 ## Commands
@@ -1156,8 +1119,8 @@ Examples:
 Shows/sets the global runtime version(s)
 
 Displays the contents of ~/.tool-versions after writing.
-The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_GLOBAL_FILE`.
-If `$RTX_GLOBAL_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
+The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
+If `$RTX_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
 Otherwise, it will be parsed as a `.tool-versions` file.
 A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
 
@@ -1554,8 +1517,30 @@ Examples:
 
 ```
 Updates rtx itself
+Uses whatever package manager was used to install rtx or just downloads
+a binary from GitHub Releases if rtx was installed manually.
+Supports: standalone, brew, deb, rpm
 
 Usage: self-update
+
+Examples:
+  $ rtx self-update
+  Checking target-arch... macos-arm64
+  Checking current version... v1.0.0
+  Checking latest released version... v1.21.0-DEBUG macos-arm64 (built 2023-03-04)
+  New release found! v1.0.0 --> v1.21.0-DEBUG macos-arm64 (built 2023-03-04)
+  New release is compatible
+
+  rtx release status:
+    * Current exe: "/Users/jdx/bin/rtx"
+    * New exe release: "rtx-v1.21.0-DEBUG macos-arm64 (built 2023-03-04)-macos-arm64"
+
+  The new release will be downloaded/extracted and the existing binary will be replaced.
+  Do you want to continue? [Y/n] y
+  Downloading...
+  Extracting archive... Done
+  Replacing binary file... Done
+  Updated rtx to 1.21.0-DEBUG macos-arm64 (built 2023-03-04)
 ```
 ### `rtx settings get`
 
@@ -1727,6 +1712,116 @@ Examples:
 ```
 <!-- RTX:COMMANDS -->
 
+## FAQs
+
+### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.
+
+You can make git ignore these files in 3 different ways:
+
+- Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to commit the change to the ignore file.
+- Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so there is no need to commit it.
+- Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed with `git add --force .tool-versions`.
+
+### rtx is failing or not working right
+
+First try setting `RTX_DEBUG=1` or `RTX_TRACE=1` and see if that gives you more information.
+You can also set `RTX_LOG_FILE_LEVEL=debug RTX_LOG_FILE=/path/to/logfile` to write logs to a file.
+
+If something is happening with the activate hook, you can try disabling it and calling `eval "$(rtx hook-env)"` manually.
+It can also be helpful to use `rtx env` which will just output environment variables that would be set.
+Also consider using [shims](#shims) which can be more compatible.
+
+If runtime installation isn't working right, try using the `--raw` flag which will install things in
+series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
+with you for some reason this will make it work.
+
+Of course check the version of rtx with `rtx --version` and make sure it is the latest. Use `rtx self-update`
+to update it. `rtx cache clean` can be used to wipe the internal cache and `rtx implode` can be used
+to remove everything except config.
+
+Before submitting a ticket, it's a good idea to test what you were doing with asdf. That way we can rule
+out if the issue is with rtx or if it's with a particular plugin. For example, if `rtx install python@latest`
+doesn't work, try running `asdf install python latest` to see if it's an issue with asdf-python.
+
+Lastly, there is `rtx doctor` which will show diagnostic information and any warnings about issues
+detected with your setup. If you submit a bug report, please include the output of `rtx doctor`.
+
+### Windows support?
+
+This is something we'd like to add! https://github.com/jdxcode/rtx/discussions/66
+
+It's not a near-term goal and it would require plugin modifications, but it should be feasible.
+
+### How do I use rtx with http proxies?
+
+Short answer: just set `http_proxy` and `https_proxy` environment variables. These should be lowercase.
+
+rtx doesn't really do anything with http itself. The only exception to that is checking for new versions
+and `rtx self-update`. It uses `git` to clone plugins and the plugins themselves generally will download
+files with `curl` or `wget`.
+
+However this is really up to the plugin. If you're having a proxy-related issue installing something
+you should post an issue on the plugin's repo.
+
+### How do the shorthand plugin names map to repositories?
+
+e.g.: how does `rtx plugin install nodejs` know to fetch [https://github.com/asdf-vm/asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)?
+
+asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
+This is regularly updated every time that rtx has a release. This repository is stored directly into
+the codebase [here](./src/default_shorthands.rs). The bottom of that file contains modifications that
+rtx makes. For example, we add `node` which points to the same plugin as `nodejs` and change `python`
+to point to [rtx-python](https://github.com/jdxcode/rtx-python) which is a fork of [asdf-python](https://github.com/danhper/asdf-python)
+with some rtx features like virtualenv support.
+
+Over time I suspect that more plugins will be forked like rtx-python as we're able to offer more rtx-specific
+enhancements.
+
+### How do I migrate from asdf?
+
+First, just install rtx with `rtx activate` like in the getting started guide and remove asdf from your
+shell rc file.
+
+Then you can just run `rtx install` in a directory with an asdf `.tool-versions` file and it will
+install the runtimes. You could attempt to avoid this by copying the internal directory from asdf over
+to rtx with `cp -r ~/.asdf ~/.local/share/rtx`. That _should_ work because they use the same structure,
+however this isn't officially supported or regularly tested. Alternatively you can set `RTX_DATA_DIR=~/.asdf`
+and see what happens.
+
+### How compatible is rtx with asdf?
+
+rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin 
+should be usable in rtx. The commands in rtx are slightly
+different, such as `rtx install nodejs@18.0.0` vs `asdf install nodejs 18.0.0`—this is done so 
+multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx 
+install nodejs 18.0.0`). This is the case for most commands, though the help for the command may 
+say that asdf-style syntax is supported.
+
+When in doubt, just try asdf syntax and see if it works.  If it doesn't open a ticket. It may 
+not be possible to support every command identically, but
+we should attempt to make things as consistent as possible.
+
+This isn't important for usability reasons so much as making it so plugins continue to work that 
+call asdf commands.
+
+If you need to switch to/from asdf or work in a project with asdf users, you can set 
+[`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
+rtx from writing `.tool-versions` files that will not be
+compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
+
+### rtx isn't working with tmux
+
+It's been reported that PATH doesn't work correctly with tmux. The fix seems to be calling `hook-env`
+right after activating:
+
+```bash
+eval "$(rtx activate bash)"
+eval "$(rtx hook-env)"
+```
+
+This can also be useful if you need to use a runtime right away in an rc file. The default behavior
+of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
+immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
 
 ## Comparison to asdf
 
@@ -1755,7 +1850,7 @@ a full reload.
 tl;dr: asdf adds overhead (~120ms) when calling a runtime, rtx adds a small amount of overhead (~10ms)
 when the prompt loads.
 
-### Environment variables
+### Environment variables in rtx
 
 asdf only helps manage runtime executables. However, some tools are managed via environment variables
 (notably Java which switches via `JAVA_HOME`). This isn't supported very well in asdf and requires
@@ -1901,16 +1996,17 @@ but I think we can handle enough common use cases to make that unnecessary for m
 
 rtx makes use of caching in many places in order to be efficient. The details about how long to keep
 cache for should eventually all be configurable. There may be gaps in the current behavior where
-things are hardcoded but I'm happy to add more settings to cover whatever config is needed.
+things are hardcoded, but I'm happy to add more settings to cover whatever config is needed.
 
 Below I explain the behavior it uses around caching. If you're seeing behavior where things don't appear
 to be updating, this is a good place to start.
 
-### Plugin Cache
+### Plugin/Runtime Cache
 
-Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/plugins/<PLUGIN>`. It stores
+Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/<PLUGIN>`. It stores
 the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
-the list of aliases, and the bin directories within each runtime installation.
+the list of aliases, the bin directories within each runtime installation, and the result of 
+running `exec-env` after the runtime was installed.
 
 Remote versions are updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
 zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
@@ -1919,17 +2015,11 @@ zlib messagepack, if you want to view it you can run the following (requires [ms
 cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
-### Legacy File Cache
+Note that the caching of `exec-env` may be problematic if the script isn't simply exporting 
+static values. The vast majority of `exec-env` scripts only export static values, but if you're 
+working with a plugin that has a dynamic `exec-env` submit
+a ticket and we can try to figure out what to do.
 
-If enabled, rtx will read the legacy filenames such as `.node-version` for
-[asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs). This leverages cache in 2 places where the
-plugin is called:
-
-- [`list-legacy-filenames`](https://github.com/asdf-vm/asdf-nodejs/blob/master/bin/list-legacy-filenames)
-    In every plugin I've seen this simply returns a static list of filenamed like ".nvmrc .node-version".
-    It's cached alongside the standard "runtime" cache which is refreshed daily by default.
-- [`parse-legacy-file`](https://github.com/asdf-vm/asdf-nodejs/blob/master/bin/parse-legacy-file)
-    This plugin binary is called to parse a legacy file to get the version out of it. It's relatively
-    expensive so every file that gets parsed as a legacy file is cached into `~/.local/share/rtx/legacy_cache`.
-    It will remain cached until the file is modified. This is a simple text file that has the path to the
-    legacy file stored as a hash for the filename.
+Caching `exec-env` massively improved the performance of rtx since it requires calling bash 
+every time rtx is initialized. Ideally, we can keep this
+behavior.

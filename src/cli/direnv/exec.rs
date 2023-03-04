@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Context, Result};
 use duct::Expression;
 use serde_derive::Deserialize;
 
@@ -35,7 +35,9 @@ impl Command for DirenvExec {
             cmd = cmd.env(k, v);
         }
 
-        let json = cmd!("direnv", "watch", "json", ".tool-versions").read()?;
+        let json = cmd!("direnv", "watch", "json", ".tool-versions")
+            .read()
+            .with_context(|| "error running direnv watch")?;
         let w: DirenvWatches = serde_json::from_str(&json)?;
         cmd = cmd.env("DIRENV_WATCHES", w.watches);
 
