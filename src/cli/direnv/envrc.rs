@@ -74,6 +74,11 @@ mod tests {
         let stdout = assert_cli!("direnv", "envrc");
         let envrc = fs::read_to_string(stdout.trim()).unwrap();
         let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
+        let envrc = envrc
+            .lines()
+            .filter(|l| !l.starts_with("export REMOTE_"))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_display_snapshot!(envrc);
     }
 }
