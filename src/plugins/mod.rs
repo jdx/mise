@@ -36,6 +36,7 @@ pub struct Plugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
+    pub repo_ref: Option<String>,
     cache_path: PathBuf,
     downloads_path: PathBuf,
     installs_path: PathBuf,
@@ -72,6 +73,7 @@ impl Plugin {
             plugin_path,
             cache_path,
             repo_url: None,
+            repo_ref: None,
         }
     }
 
@@ -109,6 +111,10 @@ impl Plugin {
         let git = Git::new(self.plugin_path.to_path_buf());
         pr.set_message(format!("cloning {repository}"));
         git.clone(repository)?;
+        if let Some(ref_) = &self.repo_ref {
+            pr.set_message(format!("checking out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
 
         pr.set_message("loading plugin remote versions".into());
         if self.has_list_all_script() {

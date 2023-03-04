@@ -115,7 +115,11 @@ impl PluginsInstall {
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         let mut plugin = Plugin::new(name);
+        let (git_url, ref_) = git_url
+            .split_once('#')
+            .map_or((git_url, None), |(a, b)| (a, Some(b)));
         plugin.repo_url = Some(git_url.to_string());
+        plugin.repo_ref = ref_.map(|s| s.to_string());
         if !self.force && plugin.is_installed() {
             mpr.warn(format!("plugin {} already installed", name));
         } else {
@@ -167,11 +171,14 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx install nodejs
 
       # install the nodejs plugin using a specific git url
-      $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
+      $ rtx install nodejs https://github.com/jdxcode/rtx-nodejs.git
 
       # install the nodejs plugin using the git url only
       # (nodejs is inferred from the url)
-      $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
+      $ rtx install https://github.com/jdxcode/rtx-nodejs.git
+
+      # install the nodejs plugin using a specific ref
+      $ rtx install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
     "#, style("Examples:").bold().underlined()}
 });
 

@@ -1385,11 +1385,14 @@ Examples:
   $ rtx install nodejs
 
   # install the nodejs plugin using a specific git url
-  $ rtx install nodejs https://github.com/asdf-vm/asdf-nodejs.git
+  $ rtx install nodejs https://github.com/jdxcode/rtx-nodejs.git
 
   # install the nodejs plugin using the git url only
   # (nodejs is inferred from the url)
-  $ rtx install https://github.com/asdf-vm/asdf-nodejs.git
+  $ rtx install https://github.com/jdxcode/rtx-nodejs.git
+
+  # install the nodejs plugin using a specific ref
+  $ rtx install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
 ```
 ### `rtx plugins ls`
 
@@ -1470,8 +1473,9 @@ Options:
           Update all plugins
 
 Examples:
-  $ rtx plugins update --all   # update all plugins
-  $ rtx plugins update nodejs  # update only nodejs
+  $ rtx plugins update --all        # update all plugins
+  $ rtx plugins update nodejs       # update only nodejs
+  $ rtx plugins update nodejs@beta  # specify a ref
 ```
 ### `rtx prune`
 

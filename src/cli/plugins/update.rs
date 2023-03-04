@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
@@ -8,7 +6,6 @@ use once_cell::sync::Lazy;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 
 /// Updates a plugin to the latest version
 ///
@@ -27,22 +24,31 @@ pub struct Update {
 
 impl Command for Update {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugins: Vec<&Arc<Plugin>> = match (self.plugin, self.all) {
+        let plugins: Vec<_> = match (self.plugin, self.all) {
             (Some(plugins), _) => plugins
                 .into_iter()
                 .map(|p| {
-                    config.plugins.get(&p).ok_or_else(|| {
-                        eyre!("plugin {} not found", style(p.as_str()).cyan().for_stderr())
-                    })
+                    let (p, ref_) = match p.split_once('@') {
+                        Some((p, ref_)) => (p, Some(ref_.to_string())),
+                        None => (p.as_str(), None),
+                    };
+                    let plugin = config.plugins.get(p).ok_or_else(|| {
+                        eyre!("plugin {} not found", style(p).cyan().for_stderr())
+                    })?;
+                    Ok((plugin, ref_))
                 })
                 .collect::<Result<_>>()?,
-            (_, true) => config.plugins.values().collect(),
+            (_, true) => config
+                .plugins
+                .values()
+                .map(|p| (p, None))
+                .collect::<Vec<_>>(),
             _ => Err(eyre!("no plugins specified"))?,
         };
 
-        for plugin in plugins {
+        for (plugin, ref_) in plugins {
             rtxprintln!(out, "updating plugin {}", plugin.name);
-            plugin.update(None)?;
+            plugin.update(ref_)?;
         }
         Ok(())
     }
@@ -51,8 +57,9 @@ impl Command for Update {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx plugins update --all   # update all plugins
-      $ rtx plugins update nodejs  # update only nodejs
+      $ rtx plugins update --all        # update all plugins
+      $ rtx plugins update nodejs       # update only nodejs
+      $ rtx plugins update nodejs@beta  # specify a ref
     "#, style("Examples:").bold().underlined()}
 });
 
