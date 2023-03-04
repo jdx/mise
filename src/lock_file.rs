@@ -1,4 +1,6 @@
+use crate::dirs;
 use crate::file::create_dir_all;
+use crate::hash::hash_to_str;
 use std::path::{Path, PathBuf};
 
 pub type OnLockedFn = Box<dyn Fn(&Path)>;
@@ -10,8 +12,9 @@ pub struct LockFile {
 
 impl LockFile {
     pub fn new(path: &Path) -> Self {
+        let path = dirs::CACHE.join("lockfiles").join(hash_to_str(&path));
         Self {
-            path: path.with_extension(".lock\0"),
+            path,
             on_locked: None,
         }
     }
