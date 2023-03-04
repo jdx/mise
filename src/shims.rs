@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -10,7 +10,6 @@ use indoc::formatdoc;
 use crate::cli::command::Command;
 use crate::cli::exec::Exec;
 use crate::config::Config;
-use crate::dirs;
 use crate::env;
 use crate::env::RTX_EXE;
 use crate::fake_asdf;
@@ -18,6 +17,7 @@ use crate::file::{create_dir_all, remove_dir_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
 use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Result<Config> {
@@ -89,7 +89,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
             }
             let bin_name = bin.file_name().into_string().unwrap();
             let symlink_path = shims_dir.join(bin_name);
-            make_symlink(&RTX_EXE, &symlink_path)?;
+            file::make_symlink(&RTX_EXE, &symlink_path)?;
         }
     }
     for plugin in config.plugins.values() {
@@ -108,14 +108,6 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn make_symlink(target: &Path, link: &Path) -> Result<()> {
-    if link.exists() {
-        fs::remove_file(link)?;
-    }
-    symlink(target, link)?;
     Ok(())
 }
 

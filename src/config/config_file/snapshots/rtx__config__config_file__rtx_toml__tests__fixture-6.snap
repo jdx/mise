@@ -1,6 +1,6 @@
 ---
 source: src/config/config_file/rtx_toml.rs
-expression: cf
+expression: replace_path(&cf.to_string())
 ---
 [env]
 NODE_ENV = 'production'

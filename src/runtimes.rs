@@ -175,7 +175,7 @@ impl RuntimeVersion {
         }
     }
 
-    pub fn uninstall(&self, settings: &Settings, pr: &ProgressReport) -> Result<()> {
+    pub fn uninstall(&self, settings: &Settings, pr: &ProgressReport, dryrun: bool) -> Result<()> {
         pr.set_message(format!("uninstall {}", self));
 
         if self.plugin.plugin_path.join("bin/uninstall").exists() {
@@ -186,6 +186,9 @@ impl RuntimeVersion {
                 return Ok(());
             }
             pr.set_message(format!("removing {}", display_path(dir)));
+            if dryrun {
+                return Ok(());
+            }
             remove_dir_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",

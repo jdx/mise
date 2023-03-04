@@ -36,7 +36,7 @@ impl Command for Uninstall {
 
             let mut pr = mpr.add();
             rtv.decorate_progress_bar(&mut pr);
-            if let Err(err) = rtv.uninstall(&config.settings, &pr) {
+            if let Err(err) = rtv.uninstall(&config.settings, &pr, false) {
                 pr.error();
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", rtv)));
             }

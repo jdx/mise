@@ -91,6 +91,13 @@ List runtime versions available for install
 rtx\-plugins(1)
 Manage plugins
 .TP
+rtx\-prune(1)
+Delete unused versions of tools
+rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
+Versions which are no longer the latest specified in any of those configs are deleted.
+Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
+as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
+.TP
 rtx\-reshim(1)
 [experimental] rebuilds the shim farm
 .TP

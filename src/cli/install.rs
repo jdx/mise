@@ -138,7 +138,7 @@ impl Install {
                         .map(|rtv| {
                             let mut pr = mpr.add();
                             rtv.decorate_progress_bar(&mut pr);
-                            match rtv.uninstall(&config.settings, &pr) {
+                            match rtv.uninstall(&config.settings, &pr, false) {
                                 Ok(_) => {
                                     pr.finish();
                                     Ok(())
