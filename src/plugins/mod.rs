@@ -16,7 +16,7 @@ pub use script_manager::{Script, ScriptManager};
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
 use crate::config::{Config, Settings};
-use crate::env::RTX_PREFER_STALE;
+use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_dir_all};
 use crate::git::Git;
@@ -49,7 +49,7 @@ impl Plugin {
     pub fn new(name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
-        let fresh_duration = if *RTX_PREFER_STALE {
+        let fresh_duration = if *PREFER_STALE {
             None
         } else {
             Some(Duration::from_secs(60 * 60 * 24))

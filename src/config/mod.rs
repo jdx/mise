@@ -265,7 +265,7 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    match env::RTX_GLOBAL_FILE.clone() {
+    match env::RTX_CONFIG_FILE.clone() {
         Some(global) => {
             if global.is_file() {
                 config_files.push(global);

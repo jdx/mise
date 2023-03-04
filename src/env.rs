@@ -22,7 +22,7 @@ lazy_static! {
     pub static ref RTX_DATA_DIR: PathBuf = var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx"));
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String =var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into());
     pub static ref RTX_DEFAULT_CONFIG_FILENAME: String =var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into());
-    pub static ref RTX_GLOBAL_FILE: Option<PathBuf> = var_path("RTX_GLOBAL_FILE");
+    pub static ref RTX_CONFIG_FILE: Option<PathBuf> = var_path("RTX_CONFIG_FILE");
     pub static ref RTX_USE_TOML: bool = var_is_true("RTX_USE_TOML");
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
@@ -61,6 +61,7 @@ lazy_static! {
     pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
     pub static ref DUMB_TERMINAL: bool = cfg!(test) || var("TERM").map_or(false, |term| term == "dumb");
     pub static ref RTX_JOBS: usize = var("RTX_JOBS").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
+    pub static ref PREFER_STALE: bool = prefer_stale(&ARGS);
     /// essentially, this is whether we show spinners or build output on runtime install
     pub static ref PRISTINE_ENV: HashMap<String, String> =
         get_pristine_env(&__RTX_DIFF, vars().collect());
@@ -72,7 +73,6 @@ lazy_static! {
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
     pub static ref RTX_EXPERIMENTAL: bool = var_is_true("RTX_EXPERIMENTAL");
     pub static ref RTX_HIDE_OUTDATED_BUILD: bool = var_is_true("RTX_HIDE_OUTDATED_BUILD");
-    pub static ref RTX_PREFER_STALE: bool = prefer_stale(&ARGS);
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
     pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
