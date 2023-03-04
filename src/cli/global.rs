@@ -16,8 +16,8 @@ use crate::{dirs, env};
 /// Shows/sets the global runtime version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
-/// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_GLOBAL_FILE`.
-/// If `$RTX_GLOBAL_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
+/// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
+/// If `$RTX_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
 /// Otherwise, it will be parsed as a `.tool-versions` file.
 /// A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
 ///
@@ -68,7 +68,7 @@ impl Command for Global {
 }
 
 fn global_file() -> PathBuf {
-    env::RTX_GLOBAL_FILE.clone().unwrap_or_else(|| {
+    env::RTX_CONFIG_FILE.clone().unwrap_or_else(|| {
         if *env::RTX_USE_TOML {
             dirs::CONFIG.join("config.toml")
         } else {

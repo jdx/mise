@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-just render-mangen
+just render-mangen render-help
 
 ./scripts/update-shorthand-repo.sh
 just lint-fix
