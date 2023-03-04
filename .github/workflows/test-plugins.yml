@@ -33,9 +33,9 @@ jobs:
   test-install-and-run:
     runs-on: ubuntu-22.04
     needs: [build-linux]
-    continue-on-error: true
     env:
       RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
+      GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         include:
@@ -71,7 +71,7 @@ jobs:
           - plugin: kubectl
             command: rtx exec kubectl@latest -- kubectl version --client
           - plugin: dotnet
-            command: rtx exec dotnet@latest-core -- dotnet --list-sdks
+            command: rtx exec dotnet@latest -- dotnet --list-sdks
           - plugin: flutter
             command: rtx exec flutter@latest -- flutter --version
           - plugin: crystal
@@ -85,16 +85,15 @@ jobs:
           - plugin: postgres
             command: rtx exec postgres@latest -- psql -V
     steps:
-      - uses: actions/checkout@v3
-      - name: Install zsh/fish/direnv
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl-dev
+      - name: apt-get
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
           # dist/rtx-v1.16.0-linux-x64.tar.xz
           # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
       - run: ${{matrix.command}}
@@ -104,7 +103,8 @@ jobs:
     # and behaves as expected with rtx.
     runs-on: ubuntu-22.04
     needs: [build-linux]
-    continue-on-error: true
+    env:
+      GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         plugins:
@@ -158,13 +158,12 @@ jobs:
           - graalvm
           - sbcl
     steps:
-      - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx install ${{matrix.plugins}}@latest
