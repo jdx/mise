@@ -11,7 +11,6 @@ use crate::cli::command::Command;
 use crate::cli::exec::Exec;
 use crate::config::Config;
 use crate::env;
-use crate::env::RTX_EXE;
 use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_dir_all};
 use crate::lock_file::LockFile;
@@ -77,6 +76,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
     // remove old shims
     let _ = remove_dir_all(&shims_dir);
     create_dir_all(&shims_dir)?;
+    let rtx_bin = config.rtx_bin().unwrap();
 
     for path in ts.list_paths(config) {
         if !path.exists() {
@@ -89,7 +89,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
             }
             let bin_name = bin.file_name().into_string().unwrap();
             let symlink_path = shims_dir.join(bin_name);
-            file::make_symlink(&RTX_EXE, &symlink_path)?;
+            file::make_symlink(&rtx_bin, &symlink_path)?;
         }
     }
     for plugin in config.plugins.values() {

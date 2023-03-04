@@ -189,6 +189,16 @@ impl Config {
             .collect();
         Ok(config_files)
     }
+
+    pub fn rtx_bin(&self) -> Option<PathBuf> {
+        for path in &*env::PATH {
+            let rtx_bin = path.join("rtx");
+            if file::is_executable(&rtx_bin) {
+                return Some(rtx_bin);
+            }
+        }
+        None
+    }
 }
 
 fn load_rtxrc() -> Result<RtxToml> {
