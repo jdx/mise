@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 615] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 616] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -547,6 +547,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 615] = [
     ("terraform-ls", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("terraform-lsp", "https://github.com/bartlomiejdanek/terraform-lsp.git"),
     ("terraform-validator", "https://github.com/looztra/asdf-terraform-validator.git"),
+    ("terraformer", "https://github.com/grimoh/asdf-terraformer.git"),
     ("terragrunt", "https://github.com/ohmer/asdf-terragrunt.git"),
     ("terramate", "https://github.com/martinlindner/asdf-terramate.git"),
     ("terrascan", "https://github.com/hpdobrica/asdf-terrascan.git"),
