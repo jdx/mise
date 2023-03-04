@@ -186,7 +186,7 @@ impl ScriptManager {
                 move || {
                     for line in stdout.lines() {
                         let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
+                        let _ = tx.send(ChildProcessOutput::Stdout(line));
                     }
                 }
             });
@@ -195,13 +195,13 @@ impl ScriptManager {
                 move || {
                     for line in stderr.lines() {
                         let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
+                        let _ = tx.send(ChildProcessOutput::Stderr(line));
                     }
                 }
             });
             thread::spawn(move || {
                 let status = cp.wait().unwrap();
-                tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
+                let _ = tx.send(ChildProcessOutput::ExitStatus(status));
             });
             let mut combined_output = vec![];
             for line in rx {
