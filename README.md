@@ -155,6 +155,7 @@ v18.10.9
       * [rtx plugins ls-remote](#rtx-plugins-ls-remote)
       * [rtx plugins uninstall](#rtx-plugins-uninstall)
       * [rtx plugins update](#rtx-plugins-update)
+      * [rtx prune](#rtx-prune)
       * [rtx reshim](#rtx-reshim)
       * [rtx self-update](#rtx-self-update)
       * [rtx settings get](#rtx-settings-get)
@@ -1518,6 +1519,30 @@ Options:
 Examples:
   $ rtx plugins update --all   # update all plugins
   $ rtx plugins update nodejs  # update only nodejs
+```
+### `rtx prune`
+
+```
+Delete unused versions of tools
+rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
+Versions which are no longer the latest specified in any of those configs are deleted.
+Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
+as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
+
+Usage: prune [OPTIONS] [PLUGINS]...
+
+Arguments:
+  [PLUGINS]...
+          Prune only versions from these plugins
+
+Options:
+      --dry-run
+          Do not actually delete anything
+
+Examples:
+  $ rtx prune --dry-run
+  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.0
+  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.1
 ```
 ### `rtx reshim`
 

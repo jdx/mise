@@ -919,6 +919,25 @@ esac
     ;;
 esac
 ;;
+(prune)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--dry-run[Do not actually delete anything]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+sets --jobs=1]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::plugins -- Prune only versions from these plugins:' \
+&& ret=0
+;;
 (reshim)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
@@ -1408,6 +1427,10 @@ _arguments "${_arguments_options[@]}" \
     ;;
 esac
 ;;
+(prune)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (reshim)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1518,6 +1541,11 @@ _rtx_commands() {
 'mangen:Generate man pages' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
+'prune:Delete unused versions of tools
+rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
+Versions which are no longer the latest specified in any of those configs are deleted.
+Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
+as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).' \
 'reshim:\[experimental\] rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
@@ -1867,6 +1895,11 @@ _rtx__help_commands() {
 'ls-remote:List runtime versions available for install' \
 'mangen:Generate man pages' \
 'plugins:Manage plugins' \
+'prune:Delete unused versions of tools
+rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
+Versions which are no longer the latest specified in any of those configs are deleted.
+Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
+as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).' \
 'reshim:\[experimental\] rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
@@ -2099,6 +2132,16 @@ _rtx__plugins_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'rtx plugins commands' commands "$@"
+}
+(( $+functions[_rtx__help__prune_commands] )) ||
+_rtx__help__prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help prune commands' commands "$@"
+}
+(( $+functions[_rtx__prune_commands] )) ||
+_rtx__prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx prune commands' commands "$@"
 }
 (( $+functions[_rtx__help__render-help_commands] )) ||
 _rtx__help__render-help_commands() {

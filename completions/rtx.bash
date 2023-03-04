@@ -102,6 +102,9 @@ _rtx() {
             rtx,plugins)
                 cmd="rtx__plugins"
                 ;;
+            rtx,prune)
+                cmd="rtx__prune"
+                ;;
             rtx,render-help)
                 cmd="rtx__render__help"
                 ;;
@@ -291,6 +294,9 @@ _rtx() {
             rtx__help,plugins)
                 cmd="rtx__help__plugins"
                 ;;
+            rtx__help,prune)
+                cmd="rtx__help__prune"
+                ;;
             rtx__help,render-help)
                 cmd="rtx__help__render__help"
                 ;;
@@ -475,7 +481,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --jobs --log-level --raw --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where which render-help help"
+            opts="-j -r -v -h -V --jobs --log-level --raw --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1295,7 +1301,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins reshim self-update settings shell uninstall version where which render-help help"
+            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1801,6 +1807,20 @@ _rtx() {
         rtx__help__plugins__update)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__prune)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2461,6 +2481,32 @@ _rtx() {
         rtx__plugins__update)
             opts="-a -j -r -v -h --all --jobs --log-level --raw --verbose --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__prune)
+            opts="-j -r -v -h --dry-run --jobs --log-level --raw --verbose --help [PLUGINS]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

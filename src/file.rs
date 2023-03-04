@@ -1,9 +1,10 @@
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fs, io};
 
 use color_eyre::eyre::Result;
 use filetime::{set_file_times, FileTime};
+use std::os::unix::fs::symlink;
 
 use crate::dirs;
 
@@ -183,4 +184,12 @@ mod tests {
             .join("cwd");
         assert_eq!(display_path(&path), path.display().to_string());
     }
+}
+
+pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+    if link.exists() {
+        fs::remove_file(link)?;
+    }
+    symlink(target, link)?;
+    Ok(())
 }

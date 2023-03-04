@@ -1,6 +1,6 @@
 ---
 source: src/cli/global.rs
-expression: stdout
+expression: output
 ---
 tiny 2
 

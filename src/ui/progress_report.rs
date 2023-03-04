@@ -59,6 +59,13 @@ impl ProgressReport {
         }
     }
 
+    pub fn prefix(&self) -> String {
+        match &self.pb {
+            Some(pb) => pb.prefix(),
+            None => self.prefix.clone(),
+        }
+    }
+
     pub fn set_style(&self, style: ProgressStyle) {
         match &self.pb {
             Some(pb) => {
