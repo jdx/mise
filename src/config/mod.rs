@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use color_eyre::Report;
@@ -17,12 +18,14 @@ use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::settings::SettingsBuilder;
+use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::{dirs, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
+mod tracking;
 
 type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
 
@@ -61,6 +64,7 @@ impl Config {
 
         let legacy_files = load_legacy_files(&settings, &plugins);
         let config_filenames = load_config_filenames(&legacy_files);
+        let config_track = track_config_files(&config_filenames);
 
         let (config_files, should_exit_early) = rayon::join(
             || {
@@ -84,6 +88,7 @@ impl Config {
                 });
             }
         }
+        config_track.join().unwrap();
 
         let config = Self {
             env: load_env(&config_files),
@@ -164,6 +169,25 @@ impl Config {
             }
             None => err_no_shims_dir(),
         }
+    }
+
+    pub fn get_tracked_config_files(&self) -> Result<IndexMap<PathBuf, Box<dyn ConfigFile>>> {
+        let tracker = Tracker::new();
+        let config_files = tracker
+            .list_all()?
+            .into_par_iter()
+            .map(|path| match config_file::parse(&path) {
+                Ok(cf) => Some((path, cf)),
+                Err(err) => {
+                    error!("Error loading config file: {:#}", err);
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(config_files)
     }
 }
 
@@ -346,6 +370,22 @@ fn err_no_shims_dir() -> Result<PathBuf> {
            "#,
         style("shims_dir").yellow()
     )));
+}
+
+fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
+    let config_filenames = config_filenames.to_vec();
+    let track = move || -> Result<()> {
+        let mut tracker = Tracker::new();
+        for config_file in &config_filenames {
+            tracker.track(config_file)?;
+        }
+        Ok(())
+    };
+    thread::spawn(move || {
+        if let Err(err) = track() {
+            warn!("tracking config files: {:#}", err);
+        }
+    })
 }
 
 impl Display for Config {

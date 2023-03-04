@@ -35,6 +35,7 @@ mod ls_remote;
 #[cfg(feature = "clap_mangen")]
 mod mangen;
 mod plugins;
+mod prune;
 #[cfg(debug_assertions)]
 mod render_help;
 mod reshim;
@@ -76,6 +77,7 @@ pub enum Commands {
     #[cfg(feature = "clap_mangen")]
     Mangen(mangen::Mangen),
     Plugins(plugins::Plugins),
+    Prune(prune::Prune),
     Reshim(reshim::Reshim),
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
@@ -115,6 +117,7 @@ impl Commands {
             #[cfg(feature = "clap_mangen")]
             Self::Mangen(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
+            Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
