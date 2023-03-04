@@ -200,10 +200,10 @@ impl ScriptManager {
                     }
                 }
             }));
-            thread::spawn(move || {
+            threads.push(thread::spawn(move || {
                 let status = cp.wait().unwrap();
                 tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
-            });
+            }));
             let mut combined_output = vec![];
             let mut status = None;
             for line in rx {
