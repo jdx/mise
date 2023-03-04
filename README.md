@@ -176,6 +176,8 @@ v18.10.9
 
 ## About
 
+_New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction._
+
 rtx is a tool for managing programming language and tool versions. For example, use this to install
 a particular version of node.js and ruby for a project. Using `rtx activate`, you can have your
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
