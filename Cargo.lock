@@ -1436,7 +1436,6 @@ dependencies = [
  "serde_json",
  "shell-escape",
  "simplelog",
- "tempfile",
  "term_size",
  "test-log",
  "thiserror",
