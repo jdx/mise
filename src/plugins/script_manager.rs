@@ -181,29 +181,31 @@ impl ScriptManager {
             let stdout = BufReader::new(cp.stdout.take().unwrap());
             let stderr = BufReader::new(cp.stderr.take().unwrap());
             let (tx, rx) = channel();
-            thread::spawn({
+            let mut threads = vec![];
+            threads.push(thread::spawn({
                 let tx = tx.clone();
                 move || {
                     for line in stdout.lines() {
                         let line = line.unwrap();
-                        let _ = tx.send(ChildProcessOutput::Stdout(line));
+                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
                     }
                 }
-            });
-            thread::spawn({
+            }));
+            threads.push(thread::spawn({
                 let tx = tx.clone();
                 move || {
                     for line in stderr.lines() {
                         let line = line.unwrap();
-                        let _ = tx.send(ChildProcessOutput::Stderr(line));
+                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
                     }
                 }
-            });
+            }));
             thread::spawn(move || {
                 let status = cp.wait().unwrap();
-                let _ = tx.send(ChildProcessOutput::ExitStatus(status));
+                tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
             });
             let mut combined_output = vec![];
+            let mut status = None;
             for line in rx {
                 match line {
                     ChildProcessOutput::Stdout(line) => {
@@ -214,16 +216,22 @@ impl ScriptManager {
                         on_stderr(&line);
                         combined_output.push(line);
                     }
-                    ChildProcessOutput::ExitStatus(status) => match status.success() {
-                        true => return Ok(()),
-                        false => {
-                            on_error(combined_output.join("\n"));
-                            Err(ScriptFailed(
-                                display_path(&self.get_script_path(script)),
-                                Some(status),
-                            ))?;
-                        }
-                    },
+                    ChildProcessOutput::ExitStatus(s) => {
+                        status = Some(s);
+                    }
+                }
+                if threads.iter().all(|t| t.is_finished()) {
+                    break;
+                }
+            }
+            match status.unwrap().success() {
+                true => return Ok(()),
+                false => {
+                    on_error(combined_output.join("\n"));
+                    Err(ScriptFailed(
+                        display_path(&self.get_script_path(script)),
+                        status,
+                    ))?;
                 }
             }
 
