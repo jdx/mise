@@ -5,6 +5,7 @@ use std::{fs, io};
 use color_eyre::eyre::Result;
 use filetime::{set_file_times, FileTime};
 use std::os::unix::fs::symlink;
+use std::os::unix::prelude::*;
 
 use crate::dirs;
 
@@ -100,6 +101,21 @@ pub fn dir_files(dir: &Path) -> Result<Vec<String>> {
     Ok(output)
 }
 
+pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+    if link.exists() {
+        fs::remove_file(link)?;
+    }
+    symlink(target, link)?;
+    Ok(())
+}
+
+pub fn is_executable(path: &Path) -> bool {
+    if let Ok(metadata) = path.metadata() {
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+    false
+}
+
 pub struct FindUp {
     current_dir: PathBuf,
     current_dir_filenames: Vec<String>,
@@ -184,12 +200,4 @@ mod tests {
             .join("cwd");
         assert_eq!(display_path(&path), path.display().to_string());
     }
-}
-
-pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
-    if link.exists() {
-        fs::remove_file(link)?;
-    }
-    symlink(target, link)?;
-    Ok(())
 }

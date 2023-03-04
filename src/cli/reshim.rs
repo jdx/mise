@@ -5,7 +5,6 @@ use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-
 use crate::output::Output;
 use crate::shims;
 use crate::toolset::ToolsetBuilder;
