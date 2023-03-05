@@ -18,7 +18,8 @@ use crate::toolset::ToolsetBuilder;
 pub struct Where {
     /// Runtime(s) to look up
     /// e.g.: ruby@3
-    /// if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+    /// if "@<PREFIX>" is specified, it will show the latest installed version
+    /// that matches the prefix
     /// otherwise, it will show the current, active installed version
     #[clap(required = true, value_parser = RuntimeArgParser, verbatim_doc_comment)]
     runtime: RuntimeArg,

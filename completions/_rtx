@@ -1183,7 +1183,8 @@ sets --jobs=1]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':runtime -- Runtime(s) to look up
 e.g.\: ruby@3
-if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+if "@<PREFIX>" is specified, it will show the latest installed version
+that matches the prefix
 otherwise, it will show the current, active installed version:' \
 '::asdf_version -- the version prefix to use when querying the latest version
 same as the first argument after the "@"
