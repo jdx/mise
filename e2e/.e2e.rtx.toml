@@ -2,6 +2,5 @@
 FOO = "bar"
 
 [tools]
-jq = "latest"
-#tiny = {version="1", foo="bar"}
+tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}
