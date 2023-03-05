@@ -224,18 +224,23 @@ impl ScriptManager {
                     break;
                 }
             }
-            match status.unwrap().success() {
-                true => return Ok(()),
-                false => {
+            let on_failure = |status| -> Result<()> {
+                on_error(combined_output.join("\n"));
+                Err(ScriptFailed(
+                    display_path(&self.get_script_path(script)),
+                    status,
+                ))?
+            };
+            match status {
+                Some(status) => match status.success() {
+                    true => Ok(()),
+                    false => on_failure(Some(status)),
+                },
+                None => {
                     on_error(combined_output.join("\n"));
-                    Err(ScriptFailed(
-                        display_path(&self.get_script_path(script)),
-                        status,
-                    ))?;
+                    on_failure(None)
                 }
             }
-
-            Ok(())
         }
     }
 }
