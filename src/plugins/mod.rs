@@ -131,7 +131,7 @@ impl Plugin {
 
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
-            "{repository}@{}",
+            "{repository}#{}",
             style(&sha).bright().yellow().for_stderr(),
         ));
         Ok(())
