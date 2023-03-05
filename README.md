@@ -1533,20 +1533,20 @@ Examples:
   $ rtx self-update
   Checking target-arch... macos-arm64
   Checking current version... v1.0.0
-  Checking latest released version... v1.21.5-DEBUG macos-arm64 (built 2023-03-04)
-  New release found! v1.0.0 --> v1.21.5-DEBUG macos-arm64 (built 2023-03-04)
+  Checking latest released version... v1.21.5-DEBUG macos-arm64 (built 2023-03-05)
+  New release found! v1.0.0 --> v1.21.5-DEBUG macos-arm64 (built 2023-03-05)
   New release is compatible
 
   rtx release status:
     * Current exe: "/Users/jdx/bin/rtx"
-    * New exe release: "rtx-v1.21.5-DEBUG macos-arm64 (built 2023-03-04)-macos-arm64"
+    * New exe release: "rtx-v1.21.5-DEBUG macos-arm64 (built 2023-03-05)-macos-arm64"
 
   The new release will be downloaded/extracted and the existing binary will be replaced.
   Do you want to continue? [Y/n] y
   Downloading...
   Extracting archive... Done
   Replacing binary file... Done
-  Updated rtx to 1.21.5-DEBUG macos-arm64 (built 2023-03-04)
+  Updated rtx to 1.21.5-DEBUG macos-arm64 (built 2023-03-05)
 ```
 ### `rtx settings get`
 
@@ -1676,7 +1676,8 @@ Arguments:
   <RUNTIME>
           Runtime(s) to look up
           e.g.: ruby@3
-          if "@<PREFIX>" is specified, it will show the latest installed version that matches the prefix
+          if "@<PREFIX>" is specified, it will show the latest installed version
+          that matches the prefix
           otherwise, it will show the current, active installed version
 
 Examples:
