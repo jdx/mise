@@ -6,6 +6,7 @@ name: test-plugins
 on:
   push:
     tags: ["v*"]
+    branches: ["main", "test-plugins"]
   schedule:
     # run at midnight on sunday (utc?)
     - cron: 0 0 * * 0
@@ -22,6 +23,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "build-linux-x86_64-unknown-linux-gnu"
+          save-if: false
       - run: scripts/build-tarball.sh rtx --release --target x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v3
         with:
