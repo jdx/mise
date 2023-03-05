@@ -24,8 +24,7 @@ assert "rtx local" "[env]
 FOO = \"bar\"
 
 [tools]
-jq = \"latest\"
-#tiny = {version=\"1\", foo=\"bar\"}
+tiny = \"latest\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 "
 
@@ -33,9 +32,8 @@ assert "rtx local shfmt@3.5.0" "[env]
 FOO = \"bar\"
 
 [tools]
-jq = \"latest\"
+tiny = \"latest\"
 shfmt = \"3.5.0\"
-#tiny = {version=\"1\", foo=\"bar\"}
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 "
 
@@ -48,9 +46,8 @@ assert "rtx local shfmt@3.6.0" "[env]
 FOO = \"bar\"
 
 [tools]
-jq = \"latest\"
+tiny = \"latest\"
 shfmt = \"3.6.0\"
-#tiny = {version=\"1\", foo=\"bar\"}
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 "
 
@@ -63,8 +60,7 @@ assert "rtx local --rm shfmt" "[env]
 FOO = \"bar\"
 
 [tools]
-jq = \"latest\"
-#tiny = {version=\"1\", foo=\"bar\"}
+tiny = \"latest\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 "
 
