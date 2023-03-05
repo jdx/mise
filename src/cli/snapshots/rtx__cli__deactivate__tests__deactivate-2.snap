@@ -3,8 +3,8 @@ source: src/cli/deactivate.rs
 expression: output
 ---
 export PATH='$PATH'
-precmd_functions=( ${precmd_functions[(r)_rtx_hook]} )
-chpwd_functions=( ${chpwd_functions[(r)_rtx_hook]} )
+precmd_functions=( ${precmd_functions:#_rtx_hook} )
+chpwd_functions=( ${chpwd_functions:#_rtx_hook} )
 unset -f _rtx_hook
 unset -f rtx
 unset RTX_SHELL
