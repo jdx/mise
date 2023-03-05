@@ -250,6 +250,7 @@ jobs:
           draft: false
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
       - name: Release to aur
         run: scripts/release-aur.sh
         working-directory: rtx
