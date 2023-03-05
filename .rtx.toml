@@ -5,6 +5,7 @@ FOO = "bar"
 nodejs = '18'
 tiny = {version="1", foo="bar"}
 golang = {version="latest", foo="bar"}
+python = {version="latest", virtualenv="$HOME/.cache/venv"}
 
 [plugins]
 nodejs = 'https://github.com/jdxcode/rtx-nodejs'

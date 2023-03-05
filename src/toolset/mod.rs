@@ -264,6 +264,8 @@ impl Toolset {
             })
             .collect::<Vec<(String, String)>>()
             .into_iter()
+            .filter(|(k, _)| k != "RTX_ADD_PATH")
+            .filter(|(k, _)| !k.starts_with("RTX_TOOL_OPTS__"))
             .rev()
             .collect();
         entries.sort_keys();

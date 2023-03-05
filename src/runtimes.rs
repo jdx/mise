@@ -319,21 +319,34 @@ fn build_script_man(
             install_path.to_string_lossy().to_string(),
         )
         .with_env(
+            "RTX_INSTALL_PATH".into(),
+            install_path.to_string_lossy().to_string(),
+        )
+        .with_env(
             "ASDF_DOWNLOAD_PATH".into(),
             download_path.to_string_lossy().to_string(),
         )
+        .with_env(
+            "RTX_DOWNLOAD_PATH".into(),
+            download_path.to_string_lossy().to_string(),
+        )
+        .with_env("RTX_CONCURRENCY".into(), num_cpus::get().to_string())
         .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
     for (key, value) in tv.options.iter() {
-        let k = format!("RTX_TOOL_OPT__{}", key.to_uppercase());
+        let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
         sm = sm.with_env(k, value.clone());
     }
     match &tv.r#type {
         ToolVersionType::Version(_) | ToolVersionType::Prefix(_) => sm
             .with_env("ASDF_INSTALL_TYPE".into(), "version".into())
-            .with_env("ASDF_INSTALL_VERSION".into(), version.to_string()),
+            .with_env("RTX_INSTALL_TYPE".into(), "version".into())
+            .with_env("ASDF_INSTALL_VERSION".into(), version.to_string())
+            .with_env("RTX_INSTALL_VERSION".into(), version.to_string()),
         ToolVersionType::Ref(r) => sm
             .with_env("ASDF_INSTALL_TYPE".into(), "ref".into())
-            .with_env("ASDF_INSTALL_VERSION".into(), r.to_string()),
+            .with_env("RTX_INSTALL_TYPE".into(), "ref".into())
+            .with_env("ASDF_INSTALL_VERSION".into(), r.to_string())
+            .with_env("RTX_INSTALL_VERSION".into(), r.to_string()),
         _ => sm,
     }
 }

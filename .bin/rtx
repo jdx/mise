@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")")" >/dev/null 2>&1 && pwd )"
 cargo run -q --all-features --manifest-path "$SCRIPT_DIR/../Cargo.toml" -- "$@"
