@@ -16,7 +16,7 @@ pub use settings::{MissingRuntimeBehavior, Settings};
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
@@ -28,18 +28,20 @@ mod settings;
 mod tracking;
 
 type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
+type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 
 #[derive(Debug, Default)]
 pub struct Config {
     pub settings: Settings,
     pub global_config: RtxToml,
     pub legacy_files: IndexMap<String, PluginName>,
-    pub config_files: IndexMap<PathBuf, Box<dyn ConfigFile>>,
+    pub config_files: ConfigMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
     pub env: IndexMap<String, String>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
+    pub project_root: Option<PathBuf>,
     shorthands: OnceCell<HashMap<String, String>>,
 }
 
@@ -95,6 +97,7 @@ impl Config {
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
+            project_root: get_project_root(&config_files),
             config_files,
             settings,
             legacy_files,
@@ -201,6 +204,18 @@ impl Config {
     }
 }
 
+fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
+    for (p, cf) in config_files.into_iter().rev() {
+        match cf.get_type() {
+            ConfigFileType::RtxToml | ConfigFileType::ToolVersions => {
+                return Some(p.parent()?.to_path_buf());
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn load_rtxrc() -> Result<RtxToml> {
     let settings_path = dirs::CONFIG.join("config.toml");
     match settings_path.exists() {
@@ -275,25 +290,27 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    match env::RTX_CONFIG_FILE.clone() {
-        Some(global) => {
-            if global.is_file() {
-                config_files.push(global);
-            }
-        }
-        None => {
-            let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-            if home_config.is_file() {
-                config_files.push(home_config);
-            }
-            let global_config = dirs::CONFIG.join("config.toml");
-            if global_config.is_file() {
-                config_files.push(global_config);
-            }
+    if env::RTX_CONFIG_FILE.is_none() {
+        // only add ~/.tool-versions if RTX_CONFIG_FILE is not set
+        // because that's how the user overrides the default
+        let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        if home_config.is_file() {
+            config_files.push(home_config);
         }
     };
+    let global_config = get_global_rtx_toml();
+    if global_config.is_file() {
+        config_files.push(global_config);
+    }
 
     config_files.into_iter().unique().collect()
+}
+
+fn get_global_rtx_toml() -> PathBuf {
+    match env::RTX_CONFIG_FILE.clone() {
+        Some(global) => global,
+        None => dirs::CONFIG.join("config.toml"),
+    }
 }
 
 fn load_all_config_files(

@@ -215,7 +215,7 @@ impl Toolset {
                 let versions = p.list_installed_versions()?;
                 Ok(versions.into_iter().map(|v| {
                     let tv = ToolVersion::new(p.name.clone(), ToolVersionType::Version(v.clone()));
-                    RuntimeVersion::new(p.clone(), v, tv)
+                    RuntimeVersion::new(config, p.clone(), v, tv)
                 }))
             })
             .collect::<Result<Vec<_>>>()?
