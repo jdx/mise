@@ -38,7 +38,7 @@ pub struct RuntimeVersion {
 }
 
 impl RuntimeVersion {
-    pub fn new(plugin: Arc<Plugin>, version: String, tv: ToolVersion) -> Self {
+    pub fn new(config: &Config, plugin: Arc<Plugin>, version: String, tv: ToolVersion) -> Self {
         let install_path = match &tv.r#type {
             ToolVersionType::Path(p) => p.clone(),
             _ => dirs::INSTALLS.join(&plugin.name).join(&version),
@@ -63,6 +63,7 @@ impl RuntimeVersion {
         }
         Self {
             script_man: build_script_man(
+                config,
                 &tv,
                 &version,
                 &plugin.plugin_path,
@@ -305,6 +306,7 @@ impl PartialEq for RuntimeVersion {
 }
 
 fn build_script_man(
+    config: &Config,
     tv: &ToolVersion,
     version: &str,
     plugin_path: &Path,
@@ -332,6 +334,10 @@ fn build_script_man(
         )
         .with_env("RTX_CONCURRENCY".into(), num_cpus::get().to_string())
         .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
+    if let Some(project_root) = &config.project_root {
+        let project_root = project_root.to_string_lossy().to_string();
+        sm = sm.with_env("RTX_PROJECT_ROOT".into(), project_root);
+    }
     for (key, value) in tv.options.iter() {
         let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
         sm = sm.with_env(k, value.clone());
