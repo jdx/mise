@@ -37,6 +37,7 @@ jobs:
       RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
       GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - plugin: nodejs
@@ -106,6 +107,7 @@ jobs:
     env:
       GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
+      fail-fast: false
       matrix:
         plugins:
           - waypoint
