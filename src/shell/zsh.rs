@@ -62,8 +62,8 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions[(r)_rtx_hook]}} )
-        chpwd_functions=( ${{chpwd_functions[(r)_rtx_hook]}} )
+        precmd_functions=( ${{precmd_functions:#_rtx_hook}} )
+        chpwd_functions=( ${{chpwd_functions:#_rtx_hook}} )
         unset -f _rtx_hook
         unset -f rtx
         unset RTX_SHELL
