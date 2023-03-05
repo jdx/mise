@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::output::Output;
 
 mod activate;
@@ -159,6 +160,7 @@ impl Cli {
                 .arg_required_else_help(true)
                 .subcommand_required(true)
                 .after_help(AFTER_HELP.as_str())
+                .arg(args::install_missing::InstallMissing::arg())
                 .arg(args::jobs::Jobs::arg())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::raw::Raw::arg())
@@ -187,6 +189,9 @@ impl Cli {
         }
         if let Some(raw) = matches.get_one::<bool>("raw") {
             config.settings.raw = *raw;
+        }
+        if let Some(true) = matches.get_one::<bool>("install-missing") {
+            config.settings.missing_runtime_behavior = AutoInstall;
         }
         if *matches.get_one::<u8>("verbose").unwrap() > 0 {
             config.settings.verbose = true;

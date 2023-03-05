@@ -73,7 +73,7 @@ export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
 
 assert_raises "rtx uninstall shfmt@3.6.0"
 
-assert "rtx local" "#python 3.11.1 3.10.9 # foo
+assert "rtx local --install-missing" "#python 3.11.1 3.10.9 # foo
 shellcheck 0.9.0
 shfmt      3.6.0 # test comment
 #nodejs    18.13.0
