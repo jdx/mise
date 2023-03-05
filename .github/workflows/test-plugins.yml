@@ -6,7 +6,7 @@ name: test-plugins
 on:
   push:
     tags: ["v*"]
-    branches: ["main", "test-plugins"]
+    branches: ["test-plugins"]
   schedule:
     # run at midnight on sunday (utc?)
     - cron: 0 0 * * 0
@@ -88,7 +88,7 @@ jobs:
           - plugin: php
             command: rtx exec php@latest -- php -v php
           - plugin: rust
-            command: rtx exec rust@latest -- rustc -V
+            command: rtx exec rust@nightly -- rustc -V
           - plugin: postgres
             command: rtx exec postgres@latest -- psql -V
     steps:
@@ -174,4 +174,9 @@ jobs:
           path: dist
       - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
-      - run: rtx install ${{matrix.plugins}}@latest
+      - uses: nick-fields/retry@v2
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: rtx install ${{matrix.plugins}}@latest
