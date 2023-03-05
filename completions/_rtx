@@ -20,6 +20,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -51,6 +52,7 @@ default: 4]: : ' \
 '--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '-q[noop]' \
 '--quiet[noop]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -71,6 +73,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -96,6 +99,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -117,6 +121,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -134,6 +139,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -154,6 +160,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -213,6 +220,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -231,6 +239,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -248,6 +257,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -273,6 +283,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -320,6 +331,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -337,6 +349,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -355,6 +368,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -372,6 +386,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -397,6 +412,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -414,6 +430,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -431,6 +448,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -484,6 +502,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -503,6 +522,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -523,6 +543,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -548,6 +569,7 @@ e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions]
 e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the global config file]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -572,6 +594,7 @@ default: 4]: : ' \
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -591,6 +614,7 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--config[Also remove config directory]' \
 '--dry-run[List directories that would be removed without actually removing them]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -616,6 +640,7 @@ default: 4]: : ' \
 '(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -632,6 +657,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -660,6 +686,7 @@ by default this command will only set the runtime in the current directory ("$PW
 e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions]' \
 '--fuzzy[Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the config file]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -685,6 +712,7 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show runtimes currently specified in .tool-versions]' \
 '--current[Only show runtimes currently specified in .tool-versions]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -703,6 +731,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -723,6 +752,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -744,6 +774,7 @@ default: 4]: : ' \
 '--all[list all available remote plugins]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -779,6 +810,7 @@ This will only install plugins that have matching shorthands.
 i.e.: they don'\''t need the full git repo url]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -807,6 +839,7 @@ Same as `rtx plugins ls-remote`]' \
 e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--urls[Show the git url for each plugin
 e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -827,6 +860,7 @@ default: 4]: : ' \
 '-u[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--urls[Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -844,6 +878,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -864,6 +899,7 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '()-a[Update all plugins]' \
 '()--all[Update all plugins]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -927,6 +963,7 @@ default: 4]: : ' \
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--dry-run[Do not actually delete anything]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -945,6 +982,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -964,6 +1002,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -981,6 +1020,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1006,6 +1046,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1024,6 +1065,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1041,6 +1083,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1060,6 +1103,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1120,6 +1164,7 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-u[Removes a previously set version]' \
 '--unset[Removes a previously set version]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1138,6 +1183,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1156,6 +1202,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1173,6 +1220,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1200,6 +1248,7 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '(--version)--plugin[Show the plugin name instead of the path]' \
 '(--plugin)--version[Show the version instead of the path]' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
@@ -1218,6 +1267,7 @@ default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
