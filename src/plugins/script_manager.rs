@@ -188,6 +188,7 @@ impl ScriptManager {
                         let line = line.unwrap();
                         tx.send(ChildProcessOutput::Stdout(line)).unwrap();
                     }
+                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
             });
             thread::spawn({
@@ -197,13 +198,17 @@ impl ScriptManager {
                         let line = line.unwrap();
                         tx.send(ChildProcessOutput::Stderr(line)).unwrap();
                     }
+                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
             });
             thread::spawn(move || {
                 let status = cp.wait().unwrap();
                 tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
+                tx.send(ChildProcessOutput::Done).unwrap();
             });
             let mut combined_output = vec![];
+            let mut wait_for_count = 3;
+            let mut status = None;
             for line in rx {
                 match line {
                     ChildProcessOutput::Stdout(line) => {
@@ -214,17 +219,25 @@ impl ScriptManager {
                         on_stderr(&line);
                         combined_output.push(line);
                     }
-                    ChildProcessOutput::ExitStatus(status) => match status.success() {
-                        true => return Ok(()),
-                        false => {
-                            on_error(combined_output.join("\n"));
-                            Err(ScriptFailed(
-                                display_path(&self.get_script_path(script)),
-                                Some(status),
-                            ))?;
+                    ChildProcessOutput::ExitStatus(s) => {
+                        status = Some(s);
+                    }
+                    ChildProcessOutput::Done => {
+                        wait_for_count -= 1;
+                        if wait_for_count == 0 {
+                            break;
                         }
-                    },
+                    }
                 }
+            }
+            let status = status.unwrap();
+
+            if !status.success() {
+                on_error(combined_output.join("\n"));
+                Err(ScriptFailed(
+                    display_path(&self.get_script_path(script)),
+                    Some(status),
+                ))?;
             }
 
             Ok(())
@@ -236,4 +249,5 @@ enum ChildProcessOutput {
     Stdout(String),
     Stderr(String),
     ExitStatus(ExitStatus),
+    Done,
 }
