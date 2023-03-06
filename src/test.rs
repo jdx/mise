@@ -75,4 +75,5 @@ pub fn replace_path(input: &str) -> String {
     input
         .replace(path.as_str(), "$PATH")
         .replace(home.as_str(), "~")
+        .replace(env::RTX_EXE.to_string_lossy().as_ref(), "rtx")
 }
