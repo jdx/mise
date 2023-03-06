@@ -1009,8 +1009,8 @@ sets --jobs=1]' \
 sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
+'-h[Print help]' \
+'--help[Print help]' \
 && ret=0
 ;;
 (settings)
