@@ -1533,20 +1533,20 @@ Examples:
   $ rtx self-update
   Checking target-arch... macos-arm64
   Checking current version... v1.0.0
-  Checking latest released version... v1.22.3-DEBUG macos-arm64 (built 2023-03-05)
-  New release found! v1.0.0 --> v1.22.3-DEBUG macos-arm64 (built 2023-03-05)
+  Checking latest released version... v1.22.3-DEBUG macos-arm64 (built 2023-03-06)
+  New release found! v1.0.0 --> v1.22.3-DEBUG macos-arm64 (built 2023-03-06)
   New release is compatible
 
   rtx release status:
     * Current exe: "/Users/jdx/bin/rtx"
-    * New exe release: "rtx-v1.22.3-DEBUG macos-arm64 (built 2023-03-05)-macos-arm64"
+    * New exe release: "rtx-v1.22.3-DEBUG macos-arm64 (built 2023-03-06)-macos-arm64"
 
   The new release will be downloaded/extracted and the existing binary will be replaced.
   Do you want to continue? [Y/n] y
   Downloading...
   Extracting archive... Done
   Replacing binary file... Done
-  Updated rtx to 1.22.3-DEBUG macos-arm64 (built 2023-03-05)
+  Updated rtx to 1.22.3-DEBUG macos-arm64 (built 2023-03-06)
 ```
 ### `rtx settings get`
 
