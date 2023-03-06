@@ -22,8 +22,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "build-linux-x86_64-unknown-linux-gnu"
-          save-if: false
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
       - uses: taiki-e/install-action@just
