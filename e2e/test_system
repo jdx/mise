@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+assert() {
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
+}
+
+system_node="$(which node)"
+rtx_node="$(rtx which node)"
+
+assert "rtx x nodejs@system -- which node" "$system_node"
+assert "rtx x nodejs -- which node" "$rtx_node"
