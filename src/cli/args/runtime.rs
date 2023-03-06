@@ -114,7 +114,11 @@ impl RuntimeArg {
                 self.plugin.clone(),
                 ToolVersionType::Prefix(v.clone()),
             )),
-            _ => None,
+            RuntimeArgVersion::System => Some(ToolVersion::new(
+                self.plugin.clone(),
+                ToolVersionType::System,
+            )),
+            RuntimeArgVersion::None => None,
         }
     }
 }
