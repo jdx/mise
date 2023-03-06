@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.22.3
+rtx 1.22.4
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -325,7 +325,7 @@ $ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.22.3/rtx-v1.22.3-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.22.4/rtx-v1.22.4-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -1533,20 +1533,20 @@ Examples:
   $ rtx self-update
   Checking target-arch... macos-arm64
   Checking current version... v1.0.0
-  Checking latest released version... v1.22.3-DEBUG macos-arm64 (built 2023-03-06)
-  New release found! v1.0.0 --> v1.22.3-DEBUG macos-arm64 (built 2023-03-06)
+  Checking latest released version... v1.22.4-DEBUG macos-arm64 (built 2023-03-06)
+  New release found! v1.0.0 --> v1.22.4-DEBUG macos-arm64 (built 2023-03-06)
   New release is compatible
 
   rtx release status:
     * Current exe: "/Users/jdx/bin/rtx"
-    * New exe release: "rtx-v1.22.3-DEBUG macos-arm64 (built 2023-03-06)-macos-arm64"
+    * New exe release: "rtx-v1.22.4-DEBUG macos-arm64 (built 2023-03-06)-macos-arm64"
 
   The new release will be downloaded/extracted and the existing binary will be replaced.
   Do you want to continue? [Y/n] y
   Downloading...
   Extracting archive... Done
   Replacing binary file... Done
-  Updated rtx to 1.22.3-DEBUG macos-arm64 (built 2023-03-06)
+  Updated rtx to 1.22.4-DEBUG macos-arm64 (built 2023-03-06)
 ```
 ### `rtx settings get`
 
