@@ -13,7 +13,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
 
-/// Shows/sets the global runtime version(s)
+/// Sets/gets the global runtime version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
 /// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
