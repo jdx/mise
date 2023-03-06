@@ -37,7 +37,11 @@ test-coverage:
     #!/usr/bin/env bash
     set -euxo pipefail
     source <(cargo llvm-cov show-env --export-prefix) 
-    cargo llvm-cov clean --workspace 
+    cargo llvm-cov clean --workspace
+
+    if [[ -n "${RTX_GITHUB_BOT_TOKEN:-}" ]]; then
+    	export GITHUB_API_TOKEN="$RTX_GITHUB_BOT_TOKEN"
+    fi
 
     cargo test --features clap_mangen
     cargo build --all-features
