@@ -237,13 +237,16 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 #[cfg(test)]
 pub mod tests {
     use crate::dirs;
+    use color_eyre::{Section, SectionExt};
 
     use super::*;
 
     pub fn cli_run(args: &Vec<String>) -> Result<Output> {
         let config = Config::load()?;
         let mut out = Output::tracked();
-        Cli::new_with_external_commands(&config).run(config, args, &mut out)?;
+        Cli::new_with_external_commands(&config)
+            .run(config, args, &mut out)
+            .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
 
         Ok(out)
     }

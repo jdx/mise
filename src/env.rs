@@ -26,7 +26,7 @@ lazy_static! {
     pub static ref RTX_USE_TOML: bool = var_is_true("RTX_USE_TOML");
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
-    pub static ref RTX_EXE: PathBuf = if cfg!(test) {"rtx".into()} else {current_exe().unwrap_or_else(|_| "rtx".into())};
+    pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
 
     // logging
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {

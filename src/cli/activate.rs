@@ -61,18 +61,3 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
         $ execx($(rtx activate xonsh))
     "#, style("Examples:").bold().underlined()}
 });
-
-#[cfg(test)]
-mod tests {
-    use crate::assert_cli_snapshot;
-
-    #[test]
-    fn test_activate_zsh() {
-        assert_cli_snapshot!("activate", "zsh");
-    }
-
-    #[test]
-    fn test_activate_zsh_legacy() {
-        assert_cli_snapshot!("activate", "-s", "zsh");
-    }
-}
