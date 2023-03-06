@@ -57,7 +57,7 @@ impl Config {
             &plugins,
             &IndexMap::new(),
             IndexMap::new(),
-        );
+        )?;
         for cf in config_files.values() {
             settings.merge(cf.settings());
         }
@@ -80,6 +80,7 @@ impl Config {
             },
             || hook_env::should_exit_early(&config_filenames),
         );
+        let config_files = config_files?;
 
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
@@ -323,8 +324,8 @@ fn load_all_config_files(
     plugins: &IndexMap<PluginName, Arc<Plugin>>,
     legacy_filenames: &IndexMap<String, PluginName>,
     mut existing: IndexMap<PathBuf, Box<dyn ConfigFile>>,
-) -> IndexMap<PathBuf, Box<dyn ConfigFile>> {
-    config_filenames
+) -> Result<ConfigMap> {
+    Ok(config_filenames
         .iter()
         .unique()
         .map(|f| (f.clone(), existing.shift_remove(f)))
@@ -332,20 +333,18 @@ fn load_all_config_files(
         .into_par_iter()
         .map(|(f, existing)| match existing {
             // already parsed so just return it
-            Some(cf) => Some((f, cf)),
+            Some(cf) => Ok((f, cf)),
             // need to parse this config file
             None => match parse_config_file(&f, settings, legacy_filenames, plugins) {
-                Ok(cf) => Some((f, cf)),
-                Err(err) => {
-                    warn!("error parsing: {} {:#}", f.display(), err);
-                    None
-                }
+                Ok(cf) => Ok((f, cf)),
+                Err(err) => Err(eyre!("error parsing: {} {:#}", f.display(), err)),
             },
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<Result<_>>>()
         .into_iter()
-        .flatten()
-        .collect()
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .collect())
 }
 
 fn parse_config_file(
