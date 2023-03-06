@@ -1,8 +1,6 @@
-use crate::cli::version::VERSION;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use console::style;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -14,7 +12,7 @@ use crate::{cmd, env};
 /// a binary from GitHub Releases if rtx was installed manually.
 /// Supports: standalone, brew, deb, rpm
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {}
 
 impl Command for SelfUpdate {
@@ -34,29 +32,6 @@ impl Command for SelfUpdate {
         Ok(())
     }
 }
-
-pub static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    indoc::formatdoc! {r#"
-    {}
-      $ rtx self-update
-      Checking target-arch... macos-arm64
-      Checking current version... v1.0.0
-      Checking latest released version... v{version}
-      New release found! v1.0.0 --> v{version}
-      New release is compatible
-
-      rtx release status:
-        * Current exe: "/Users/jdx/bin/rtx"
-        * New exe release: "rtx-v{version}-macos-arm64"
-
-      The new release will be downloaded/extracted and the existing binary will be replaced.
-      Do you want to continue? [Y/n] y
-      Downloading...
-      Extracting archive... Done
-      Replacing binary file... Done
-      Updated rtx to {version}
-    "#, style("Examples:").bold().underlined(), version=*VERSION}
-});
 
 #[cfg(test)]
 mod tests {
