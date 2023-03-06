@@ -54,6 +54,7 @@ jobs:
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RTX_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 20
@@ -136,7 +137,6 @@ jobs:
       - name: Run e2e tests
         uses: nick-fields/retry@v2
         env:
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
         with:
           timeout_minutes: 20
