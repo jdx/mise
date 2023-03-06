@@ -437,7 +437,7 @@ complete -c rtx -n "__fish_seen_subcommand_from self-update" -l install-missing 
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s v -l verbose -d 'Show installation output'
-complete -c rtx -n "__fish_seen_subcommand_from self-update" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c rtx -n "__fish_seen_subcommand_from self-update" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
