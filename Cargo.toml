@@ -45,7 +45,7 @@ humantime = "2.1.0"
 indenter = "0.3.3"
 indexmap = "1.9.2"
 indicatif = { version = "0.17.3", features = ["default", "improved_unicode"] }
-indoc = "2.0.0"
+indoc = "2.0.1"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"
