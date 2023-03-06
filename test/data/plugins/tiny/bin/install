@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-
-set -eu -o pipefail
-
-echo "$ASDF_INSTALL_VERSION" > "$ASDF_INSTALL_PATH/VERSION"
