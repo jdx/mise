@@ -6,6 +6,7 @@ use std::process::exit;
 
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
+use rayon::prelude::*;
 
 use crate::cli::command::Command;
 use crate::cli::exec::Exec;
@@ -78,7 +79,19 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
     create_dir_all(&shims_dir)?;
     let rtx_bin = config.rtx_bin().unwrap_or(env::RTX_EXE.clone());
 
-    for path in ts.list_paths(config) {
+    let paths: Vec<PathBuf> = ts
+        .list_installed_versions(config)?
+        .into_par_iter()
+        .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
+            Ok(paths) => paths,
+            Err(e) => {
+                warn!("Error listing bin paths for {}: {:#}", rtv, e);
+                Vec::new()
+            }
+        })
+        .collect();
+
+    for path in paths {
         if !path.exists() {
             continue;
         }
