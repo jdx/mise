@@ -2399,5 +2399,9 @@ _rtx__which_commands() {
     _describe -t commands 'rtx which commands' commands "$@"
 }
 
-_rtx "$@"
+if [ "$funcstack[1]" = "_rtx" ]; then
+    _rtx "$@"
+else
+    compdef _rtx rtx
+fi
 
