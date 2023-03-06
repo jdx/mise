@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Context, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
@@ -168,7 +168,7 @@ impl Install {
                         }
                     })
                     .collect::<Result<Vec<_>>>()?;
-                reshim(&mut config, &ts)
+                reshim(&mut config, &ts).with_context(|| "failed to reshim")
             })
     }
 
