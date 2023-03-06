@@ -205,7 +205,11 @@ impl Config {
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    for (p, cf) in config_files.into_iter().rev() {
+    for (p, cf) in config_files.into_iter() {
+        if p == &get_global_rtx_toml() {
+            // ~/.config/rtx/config.toml is not a project config file
+            continue;
+        }
         match cf.get_type() {
             ConfigFileType::RtxToml | ConfigFileType::ToolVersions => {
                 return Some(p.parent()?.to_path_buf());
