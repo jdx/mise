@@ -29,7 +29,7 @@ base64 = "0.21.0"
 build-time = "0.1.2"
 chrono = "0.4.23"
 clap = { version = "4.1.1", features = ["env", "derive", "string"] }
-clap_complete = "4.1.1"
+clap_complete = "4.1.4"
 clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
 console = "0.15.5"
