@@ -9,7 +9,7 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk ];
+  buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk darwin.apple_sdk.frameworks.Security ];
 
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \
