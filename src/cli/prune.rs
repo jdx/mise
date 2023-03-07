@@ -13,6 +13,7 @@ use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Delete unused versions of tools
+///
 /// rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
 /// Versions which are no longer the latest specified in any of those configs are deleted.
 /// Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
