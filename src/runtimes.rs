@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::Result;
 use console::style;
 use once_cell::sync::Lazy;
 
@@ -14,7 +14,7 @@ use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::file::{create_dir_all, display_path, remove_dir_all};
+use crate::file::{create_dir_all, display_path, remove_dir_all_with_warning};
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
 use crate::plugins::Script::{Download, ExecEnv, Install};
@@ -190,12 +190,7 @@ impl RuntimeVersion {
             if dryrun {
                 return Ok(());
             }
-            remove_dir_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(dir.to_str().unwrap()).cyan().for_stderr()
-                )
-            })
+            remove_dir_all_with_warning(dir)
         };
         rmdir(&self.install_path)?;
         rmdir(&self.download_path)?;
@@ -243,9 +238,9 @@ impl RuntimeVersion {
     }
 
     fn create_install_dirs(&self) -> Result<()> {
-        let _ = remove_dir_all(&self.install_path);
-        let _ = remove_dir_all(&self.download_path);
-        let _ = remove_dir_all(&self.cache_path);
+        let _ = remove_dir_all_with_warning(&self.install_path);
+        let _ = remove_dir_all_with_warning(&self.download_path);
+        let _ = remove_dir_all_with_warning(&self.cache_path);
         create_dir_all(&self.install_path)?;
         create_dir_all(&self.download_path)?;
         create_dir_all(&self.cache_path)?;
@@ -254,12 +249,12 @@ impl RuntimeVersion {
     }
 
     fn cleanup_install_dirs_on_error(&self, settings: &Settings) {
-        let _ = remove_dir_all(&self.install_path);
+        let _ = remove_dir_all_with_warning(&self.install_path);
         self.cleanup_install_dirs(settings);
     }
     fn cleanup_install_dirs(&self, settings: &Settings) {
         if !settings.always_keep_download {
-            let _ = remove_dir_all(&self.download_path);
+            let _ = remove_dir_all_with_warning(&self.download_path);
         }
     }
 
