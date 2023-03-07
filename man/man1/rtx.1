@@ -71,7 +71,7 @@ rtx\-exec(1)
 Execute a command with runtime(s) set
 .TP
 rtx\-global(1)
-Shows/sets the global runtime version(s)
+Sets/gets the global runtime version(s)
 .TP
 rtx\-implode(1)
 Removes rtx CLI and all related data
@@ -83,7 +83,7 @@ rtx\-latest(1)
 Gets the latest available version for a plugin
 .TP
 rtx\-local(1)
-Sets or gets tool versions in the local .tool\-versions or .rtx.toml file
+Sets/gets tool version in local .tool\-versions or .rtx.toml
 .TP
 rtx\-ls(1)
 List installed runtime versions
@@ -96,19 +96,12 @@ Manage plugins
 .TP
 rtx\-prune(1)
 Delete unused versions of tools
-rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
-Versions which are no longer the latest specified in any of those configs are deleted.
-Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
-as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
 .TP
 rtx\-reshim(1)
 [experimental] rebuilds the shim farm
 .TP
 rtx\-self\-update(1)
 Updates rtx itself
-Uses whatever package manager was used to install rtx or just downloads
-a binary from GitHub Releases if rtx was installed manually.
-Supports: standalone, brew, deb, rpm
 .TP
 rtx\-settings(1)
 Manage settings

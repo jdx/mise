@@ -1118,7 +1118,7 @@ Examples:
 ### `rtx global`
 
 ```
-Shows/sets the global runtime version(s)
+Sets/gets the global runtime version(s)
 
 Displays the contents of ~/.tool-versions after writing.
 The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
@@ -1238,7 +1238,7 @@ Examples:
 ### `rtx local`
 
 ```
-Sets or gets tool versions in the local .tool-versions or .rtx.toml file
+Sets/gets tool version in local .tool-versions or .rtx.toml
 
 Use this to set a tool's version when within a directory
 Use `rtx global` to set a runtime version globally
@@ -1483,6 +1483,7 @@ Examples:
 
 ```
 Delete unused versions of tools
+
 rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
 Versions which are no longer the latest specified in any of those configs are deleted.
 Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
@@ -1523,6 +1524,7 @@ Examples:
 
 ```
 Updates rtx itself
+
 Uses whatever package manager was used to install rtx or just downloads
 a binary from GitHub Releases if rtx was installed manually.
 Supports: standalone, brew, deb, rpm
