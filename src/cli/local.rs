@@ -13,7 +13,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env, file};
 
-/// Sets or gets tool versions in the local .tool-versions or .rtx.toml file
+/// Sets/gets tool version in local .tool-versions or .rtx.toml
 ///
 /// Use this to set a tool's version when within a directory
 /// Use `rtx global` to set a runtime version globally

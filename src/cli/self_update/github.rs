@@ -11,6 +11,7 @@ use crate::env;
 use crate::output::Output;
 
 /// Updates rtx itself
+///
 /// Uses whatever package manager was used to install rtx or just downloads
 /// a binary from GitHub Releases if rtx was installed manually.
 /// Supports: standalone, brew, deb, rpm
