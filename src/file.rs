@@ -18,6 +18,13 @@ pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
+pub fn remove_dir_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
+    remove_dir_all(&path).map_err(|e| {
+        warn!("failed to remove {}: {}", path.as_ref().display(), e);
+        e
+    })
+}
+
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
     trace!("mkdir -p {}", path.display());
