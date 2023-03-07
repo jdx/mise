@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env::split_paths;
 use std::fmt::{Display, Formatter};
-use std::fs::File;
+use std::fs::{remove_file, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
@@ -241,6 +241,7 @@ impl RuntimeVersion {
         let _ = remove_dir_all_with_warning(&self.install_path);
         let _ = remove_dir_all_with_warning(&self.download_path);
         let _ = remove_dir_all_with_warning(&self.cache_path);
+        let _ = remove_file(&self.install_path); // removes if it is a symlink
         create_dir_all(&self.install_path)?;
         create_dir_all(&self.download_path)?;
         create_dir_all(&self.cache_path)?;
