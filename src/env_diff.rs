@@ -66,7 +66,11 @@ impl EnvDiff {
         let env: HashMap<String, String> =
             env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         let out = cmd!(
+            "env", 
+            "-i",
             "bash",
+            "--norc",
+            "--noprofile",
             "-c",
             indoc::formatdoc! {"
                 set -e
