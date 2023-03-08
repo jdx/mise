@@ -1384,17 +1384,17 @@ Options:
 
 Examples:
   # install the nodejs via shorthand
-  $ rtx install nodejs
+  $ rtx plugins install nodejs
 
   # install the nodejs plugin using a specific git url
-  $ rtx install nodejs https://github.com/jdxcode/rtx-nodejs.git
+  $ rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git
 
   # install the nodejs plugin using the git url only
   # (nodejs is inferred from the url)
-  $ rtx install https://github.com/jdxcode/rtx-nodejs.git
+  $ rtx plugins install https://github.com/jdxcode/rtx-nodejs.git
 
   # install the nodejs plugin using a specific ref
-  $ rtx install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
+  $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
 ```
 ### `rtx plugins ls`
 
