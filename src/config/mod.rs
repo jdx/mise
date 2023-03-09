@@ -362,7 +362,7 @@ fn parse_config_file(
 
 fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<String, String> {
     let mut env = IndexMap::new();
-    for cf in config_files.values() {
+    for cf in config_files.values().rev() {
         env.extend(cf.env());
     }
     env
