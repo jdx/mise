@@ -393,13 +393,13 @@ fn err_load_settings(settings_path: &Path) -> Report {
 }
 
 fn err_no_shims_dir() -> Result<PathBuf> {
-    return Err(eyre!(indoc::formatdoc!(
+    Err(eyre!(indoc::formatdoc!(
         r#"
            rtx is not configured to use shims.
            Please set the `{}` setting to a directory.
            "#,
         style("shims_dir").yellow()
-    )));
+    )))
 }
 
 fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {

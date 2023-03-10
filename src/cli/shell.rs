@@ -60,13 +60,13 @@ impl Command for Shell {
 }
 
 fn err_inactive() -> Result<()> {
-    return Err(eyre!(formatdoc!(
+    Err(eyre!(formatdoc!(
         r#"
                 rtx is not activated in this shell session.
                 Please run `{}` first in your shell rc file.
                 "#,
         style("rtx activate").yellow()
-    )));
+    )))
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
