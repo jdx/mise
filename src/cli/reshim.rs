@@ -34,13 +34,13 @@ impl Command for Reshim {
 }
 
 fn err_experimental() -> Result<()> {
-    return Err(eyre!(formatdoc!(
+    Err(eyre!(formatdoc!(
         r#"
                 rtx is not configured to use experimental features.
                 Please set the `{}` setting to `true`.
                 "#,
         style("experimental").yellow()
-    )));
+    )))
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
