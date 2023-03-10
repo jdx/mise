@@ -26,16 +26,14 @@ pub fn commands(config: &Config) -> Vec<Command> {
         .filter(|commands| !commands.is_empty())
         .filter(|commands| commands[0][0] != "direnv")
         .map(|commands| {
-            clap::Command::new(commands[0][0].to_string()).subcommands(commands.into_iter().map(
-                |cmd| {
-                    clap::Command::new(cmd[1..].join("-")).arg(
-                        clap::Arg::new("args")
-                            .num_args(1..)
-                            .allow_hyphen_values(true)
-                            .trailing_var_arg(true),
-                    )
-                },
-            ))
+            Command::new(commands[0][0].to_string()).subcommands(commands.into_iter().map(|cmd| {
+                Command::new(cmd[1..].join("-")).arg(
+                    clap::Arg::new("args")
+                        .num_args(1..)
+                        .allow_hyphen_values(true)
+                        .trailing_var_arg(true),
+                )
+            }))
         })
         .collect()
 }
@@ -52,7 +50,6 @@ pub fn execute(
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()
-                .into_iter()
                 .map(|s| s.to_string_lossy().to_string())
                 .collect();
             plugin.execute_external_command(subcommand, args)?;
