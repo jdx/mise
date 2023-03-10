@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 616] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 618] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -19,6 +19,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 616] = [
     ("ag", "https://github.com/koketani/asdf-ag.git"),
     ("age", "https://github.com/threkk/asdf-age"),
     ("agebox", "https://github.com/slok/asdf-agebox.git"),
+    ("air", "https://github.com/pdemagny/asdf-air"),
     ("aks-engine", "https://github.com/robsonpeixoto/asdf-aks-engine.git"),
     ("alias", "https://github.com/andrewthauer/asdf-alias.git"),
     ("allure", "https://github.com/comdotlinux/asdf-allure.git"),
@@ -540,6 +541,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 616] = [
     ("teleport-community", "https://github.com/MaloPolese/asdf-teleport-community"),
     ("teleport-ent", "https://github.com/highb/asdf-teleport-ent"),
     ("telepresence", "https://github.com/pirackr/asdf-telepresence.git"),
+    ("teller", "https://github.com/pdemagny/asdf-teller"),
     ("temporalite", "https://github.com/eko/asdf-temporalite.git"),
     ("terradozer", "https://github.com/chessmango/asdf-terradozer.git"),
     ("terraform", "https://github.com/asdf-community/asdf-hashicorp.git"),
