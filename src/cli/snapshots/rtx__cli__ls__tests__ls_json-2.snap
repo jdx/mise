@@ -1,0 +1,15 @@
+---
+source: src/cli/ls.rs
+expression: output
+---
+[
+  {
+    "version": "3.1.0",
+    "install_path": "~/data/installs/tiny/3.1.0",
+    "source": {
+      "type": ".tool-versions",
+      "path": "~/cwd/.test-tool-versions"
+    }
+  }
+]
+
