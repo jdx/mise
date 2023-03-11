@@ -7,9 +7,6 @@ use once_cell::sync::Lazy;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::dirs;
-
-use crate::file::touch_dir;
 
 use crate::output::Output;
 use crate::shell::get_shell;
@@ -53,7 +50,6 @@ impl Command for Shell {
                 out.stdout.writeln(op);
             }
         }
-        touch_dir(&dirs::ROOT)?;
 
         Ok(())
     }
