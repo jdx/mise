@@ -325,7 +325,22 @@ mod tests {
             "UNMODIFIED_SQUOTE_VAR" => "hello\\'world",
             "UNMODIFIED_ESCAPE_VAR" => "hello\\world",
             "MODIFIED_VAR" => "original",
-            "ESCAPES" => "\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\\a\\b\\e\\E\\f\\n\\r\\t\\v\"\\?`$\\g",
+            "ESCAPES" => "\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\\a\\b\\e\\E\\f\\n\\r\\t\\v\"?`$\\g'\\0",
+            "BACKSPACE" => "\u{08}",
+            "BACKTICK" => "`",
+            "BELL" => "\u{07}",
+            "CARRIAGE_RETURN" => "\r",
+            "DOLLAR" => "$",
+            "DOUBLE_QUOTE" => "\"",
+            "ESCAPE" => "\u{1b}",
+            "ESCAPE2" => "\u{1b}",
+            "FORM_FEED" => "\u{0c}",
+            "G" => "g",
+            "NEWLINE" => "\n",
+            "QUESTION_MARK" => "?",
+            "SINGLE_QUOTE" => "'",
+            "TAB" => "\t",
+            "VERTICAL_TAB" => "\u{0b}",
         }
         .into_iter()
         .map(|(k, v)| (k.into(), v.into()))
