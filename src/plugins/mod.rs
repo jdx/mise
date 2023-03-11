@@ -332,7 +332,7 @@ impl Plugin {
             .run()
             .with_context(|| {
                 let script = self.script_man.get_script_path(&Script::ListAll);
-                format!("failed to run {}", script.display())
+                format!("Failed to run {}", script.display())
             })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
