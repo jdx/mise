@@ -78,91 +78,34 @@ impl EnvDiff {
         .read()?;
 
         let mut additions = HashMap::new();
-        let mut lines = out.lines();
-
-        let mut current_key = "";
-        let mut current_value = String::new();
-        let mut line = lines.next();
-        loop {
-            let mut flush = true;
-            match line {
-                Some(current_line) => {
-                    match current_line.strip_prefix("declare -x ") {
-                        Some(current_line) => {
-                            let v: &str;
-                            (current_key, v) = current_line.split_once('=').unwrap_or_default();
-                            if valid_key(current_key) {
-                                line = lines.next();
-                                continue;
-                            }
-
-                            current_value = String::from(v);
-
-                            // check if we are dealing with a multiline
-                            line = lines.next();
-                            match line {
-                                Some(next_line) => {
-                                    if !next_line.starts_with("declare -x ") {
-                                        // multiline do not flush values
-                                        flush = false;
-                                    }
-                                }
-                                None => (),
-                            }
-
-                            if flush {
-                                if let Some(orig) = env.get(current_key) {
-                                    if &current_value != orig {
-                                        additions.insert(
-                                            current_key.to_string(),
-                                            Self::normalize_escape_sequences(&current_value),
-                                        );
-                                    }
-                                } else {
-                                    additions.insert(
-                                        current_key.to_string(),
-                                        Self::normalize_escape_sequences(&current_value),
-                                    );
-                                }
-                            }
-                        }
-                        None => {
-                            current_value.push_str("\n");
-                            current_value.push_str(current_line);
-
-                            // check if we are done with multiline
-                            line = lines.next();
-                            match line {
-                                Some(next_line) => {
-                                    if !next_line.starts_with("declare -x ") {
-                                        // multiline do not flush values
-                                        flush = false;
-                                    }
-                                }
-                                None => (),
-                            }
-                            if flush {
-                                if let Some(orig) = env.get(current_key) {
-                                    if &current_value != orig {
-                                        additions.insert(
-                                            current_key.to_string(),
-                                            Self::normalize_escape_sequences(&current_value),
-                                        );
-                                    }
-                                } else {
-                                    additions.insert(
-                                        current_key.to_string(),
-                                        Self::normalize_escape_sequences(&current_value),
-                                    );
-                                }
-                            }
-                        }
+        let mut cur_key = None;
+        for line in out.lines() {
+            match line.strip_prefix("declare -x ") {
+                Some(line) => {
+                    let (k, v) = line.split_once('=').unwrap_or_default();
+                    if valid_key(k) {
+                        continue;
                     }
+                    cur_key = Some(k.to_string());
+                    additions.insert(k.to_string(), v.to_string());
                 }
                 None => {
-                    break;
+                    if let Some(k) = &cur_key {
+                        let v = format!("\n{}", line);
+                        additions.get_mut(k).unwrap().push_str(&v);
+                    }
                 }
             }
+        }
+        for (k, v) in additions.clone().iter() {
+            let v = normalize_escape_sequences(v);
+            if let Some(orig) = env.get(k) {
+                if &v == orig {
+                    additions.remove(k);
+                    continue;
+                }
+            }
+            additions.insert(k.into(), v);
         }
 
         Ok(Self::new(&env, additions))
@@ -209,53 +152,6 @@ impl EnvDiff {
             path: self.path.clone(),
         }
     }
-
-    fn normalize_escape_sequences(input: &str) -> String {
-        let input = if input.starts_with('"') && input.ends_with('"') {
-            input[1..input.len() - 1].to_string()
-        } else if input.starts_with("$'") && input.ends_with('\'') {
-            input[2..input.len() - 1].to_string()
-        } else {
-            input.to_string()
-        };
-
-        let mut result = String::with_capacity(input.len());
-        let mut chars = input.chars().enumerate();
-
-        while let Some((_, c)) = chars.next() {
-            if c == '\\' {
-                match chars.next() {
-                    Some((_, val)) => match val {
-                        'a' => result.push('\u{07}'),
-                        'b' => result.push('\u{08}'),
-                        'e' | 'E' => result.push('\u{1b}'),
-                        'f' => result.push('\u{0c}'),
-                        'n' => result.push('\n'),
-                        'r' => result.push('\r'),
-                        't' => result.push('\t'),
-                        'v' => result.push('\u{0b}'),
-                        '\\' => result.push('\\'),
-                        '\'' => result.push('\''),
-                        '"' => result.push('"'),
-                        '?' => result.push('?'),
-                        '`' => result.push('`'),
-                        '$' => result.push('$'),
-                        _ => {
-                            result.push('\\');
-                            result.push(val);
-                        }
-                    },
-                    None => {
-                        error!("Invalid escape sequence");
-                    }
-                }
-            } else {
-                result.push(c)
-            }
-        }
-
-        result
-    }
 }
 
 fn valid_key(k: &str) -> bool {
@@ -300,6 +196,53 @@ impl Debug for EnvDiff {
             .field("new", &print_sorted(&self.new))
             .finish()
     }
+}
+
+fn normalize_escape_sequences(input: &str) -> String {
+    let input = if input.starts_with('"') && input.ends_with('"') {
+        input[1..input.len() - 1].to_string()
+    } else if input.starts_with("$'") && input.ends_with('\'') {
+        input[2..input.len() - 1].to_string()
+    } else {
+        input.to_string()
+    };
+
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(val) => match val {
+                    'a' => result.push('\u{07}'),
+                    'b' => result.push('\u{08}'),
+                    'e' | 'E' => result.push('\u{1b}'),
+                    'f' => result.push('\u{0c}'),
+                    'n' => result.push('\n'),
+                    'r' => result.push('\r'),
+                    't' => result.push('\t'),
+                    'v' => result.push('\u{0b}'),
+                    '\\' => result.push('\\'),
+                    '\'' => result.push('\''),
+                    '"' => result.push('"'),
+                    '?' => result.push('?'),
+                    '`' => result.push('`'),
+                    '$' => result.push('$'),
+                    _ => {
+                        result.push('\\');
+                        result.push(val);
+                    }
+                },
+                None => {
+                    error!("Invalid escape sequence");
+                }
+            }
+        } else {
+            result.push(c)
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -383,6 +326,7 @@ mod tests {
             "UNMODIFIED_SQUOTE_VAR" => "hello\\'world",
             "UNMODIFIED_ESCAPE_VAR" => "hello\\world",
             "MODIFIED_VAR" => "original",
+            "ESCAPES" => "\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\\a\\b\\e\\E\\f\\n\\r\\t\\v\"\\?`$\\g",
         }
         .into_iter()
         .map(|(k, v)| (k.into(), v.into()))

@@ -9,3 +9,4 @@ export ADDED_VAR="added"
 export MULTILINE_VAR="line1
 line2
 line3"
+export ESCAPES="\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\a\b\e\E\f\n\r\t\v\"\?\`\$\g"
