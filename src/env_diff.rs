@@ -98,16 +98,7 @@ impl EnvDiff {
             }
         }
         for (k, v) in additions.clone().iter() {
-            let v = if v.starts_with('"') && v.ends_with('"') {
-                v[1..v.len() - 1].to_string()
-            } else if v.starts_with("$'") && v.ends_with('\'') {
-                v[2..v.len() - 1].to_string()
-            } else {
-                v.to_string()
-            };
-            let v = v.replace("\\'", "'");
-            let v = v.replace("\\n", "\n");
-            let v = v.replace("\\\\", "\\");
+            let v = normalize_escape_sequences(v);
             if let Some(orig) = env.get(k) {
                 if &v == orig {
                     additions.remove(k);
@@ -206,6 +197,53 @@ impl Debug for EnvDiff {
     }
 }
 
+fn normalize_escape_sequences(input: &str) -> String {
+    let input = if input.starts_with('"') && input.ends_with('"') {
+        input[1..input.len() - 1].to_string()
+    } else if input.starts_with("$'") && input.ends_with('\'') {
+        input[2..input.len() - 1].to_string()
+    } else {
+        input.to_string()
+    };
+
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(val) => match val {
+                    'a' => result.push('\u{07}'),
+                    'b' => result.push('\u{08}'),
+                    'e' | 'E' => result.push('\u{1b}'),
+                    'f' => result.push('\u{0c}'),
+                    'n' => result.push('\n'),
+                    'r' => result.push('\r'),
+                    't' => result.push('\t'),
+                    'v' => result.push('\u{0b}'),
+                    '\\' => result.push('\\'),
+                    '\'' => result.push('\''),
+                    '"' => result.push('"'),
+                    '?' => result.push('?'),
+                    '`' => result.push('`'),
+                    '$' => result.push('$'),
+                    _ => {
+                        result.push('\\');
+                        result.push(val);
+                    }
+                },
+                None => {
+                    error!("Invalid escape sequence");
+                }
+            }
+        } else {
+            result.push(c)
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use indexmap::indexmap;
@@ -283,10 +321,26 @@ mod tests {
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
             "UNMODIFIED_VAR" => "unmodified",
-            "UNMODIFIED_NEWLINE_VAR" => "hello\\\nworld",
+            "UNMODIFIED_NEWLINE_VAR" => "hello\\nworld",
             "UNMODIFIED_SQUOTE_VAR" => "hello\\'world",
             "UNMODIFIED_ESCAPE_VAR" => "hello\\world",
             "MODIFIED_VAR" => "original",
+            "ESCAPES" => "\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\\a\\b\\e\\E\\f\\n\\r\\t\\v\"?`$\\g'\\0",
+            "BACKSPACE" => "\u{08}",
+            "BACKTICK" => "`",
+            "BELL" => "\u{07}",
+            "CARRIAGE_RETURN" => "\r",
+            "DOLLAR" => "$",
+            "DOUBLE_QUOTE" => "\"",
+            "ESCAPE" => "\u{1b}",
+            "ESCAPE2" => "\u{1b}",
+            "FORM_FEED" => "\u{0c}",
+            "G" => "g",
+            "NEWLINE" => "\n",
+            "QUESTION_MARK" => "?",
+            "SINGLE_QUOTE" => "'",
+            "TAB" => "\t",
+            "VERTICAL_TAB" => "\u{0b}",
         }
         .into_iter()
         .map(|(k, v)| (k.into(), v.into()))
