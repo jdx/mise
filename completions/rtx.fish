@@ -312,6 +312,8 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of p
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s c -l current -d 'Only show runtimes currently specified in .tool-versions'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -l parseable -d 'Output in an easily parseable format'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -l json -d 'Output in json format'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1'

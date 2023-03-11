@@ -2165,7 +2165,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls)
-            opts="-p -c -j -r -v -h --plugin --current --install-missing --jobs --log-level --raw --verbose --help [PLUGIN_ARG]"
+            opts="-p -c -j -r -v -h --plugin --current --parseable --json --install-missing --jobs --log-level --raw --verbose --help [PLUGIN_ARG]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

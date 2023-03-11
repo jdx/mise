@@ -1,0 +1,27 @@
+---
+source: src/cli/ls.rs
+expression: output
+---
+{
+  "dummy": [
+    {
+      "version": "ref-master",
+      "install_path": "~/data/installs/dummy/ref-master",
+      "source": {
+        "type": ".tool-versions",
+        "path": "~/.test-tool-versions"
+      }
+    }
+  ],
+  "tiny": [
+    {
+      "version": "3.1.0",
+      "install_path": "~/data/installs/tiny/3.1.0",
+      "source": {
+        "type": ".tool-versions",
+        "path": "~/cwd/.test-tool-versions"
+      }
+    }
+  ]
+}
+

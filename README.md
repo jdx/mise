@@ -1308,15 +1308,42 @@ Options:
   -c, --current
           Only show runtimes currently specified in .tool-versions
 
+      --parseable
+          Output in an easily parseable format
+          
+          [short aliases: x]
+
+      --json
+          Output in json format
+
 Examples:
-  $ rtx list
-  -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-  -> python     3.11.0 (set by ~/.tool-versions)
+  $ rtx ls
+  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  python     3.11.0 (set by ~/.tool-versions)
      python     3.10.0
 
-  $ rtx list --current
-  -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-  -> python     3.11.0 (set by ~/.tool-versions)
+  $ rtx ls --current
+  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  python     3.11.0 (set by ~/.tool-versions)
+
+  $ rtx ls --parseable
+  nodejs 18.0.0
+  python 3.11.0
+
+  $ rtx ls --json
+  {
+    "nodejs": [
+      {
+        "version": "18.0.0",
+        "install_path": "/Users/jdx/.rtx/installs/nodejs/18.0.0",
+        "source": {
+          "type": ".rtx.toml",
+          "path": "/Users/jdx/.rtx.toml"
+        }
+      }
+    ],
+    "python": [...]
+  }
 ```
 ### `rtx ls-remote`
 
