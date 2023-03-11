@@ -712,6 +712,8 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show runtimes currently specified in .tool-versions]' \
 '--current[Only show runtimes currently specified in .tool-versions]' \
+'--parseable[Output in an easily parseable format]' \
+'--json[Output in json format]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 sets --jobs=1]' \
