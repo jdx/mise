@@ -107,7 +107,6 @@ impl EnvDiff {
             }
             additions.insert(k.into(), v);
         }
-
         Ok(Self::new(&env, additions))
     }
 

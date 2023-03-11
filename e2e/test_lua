@@ -5,10 +5,12 @@ exit 0 # TODO: fix this test, it's flaky
 set -gx RTX_MISSING_RUNTIME_BEHAVIOR autoinstall
 
 rtx activate --status fish | source
+rtx hook-env | source
 rtx shell lua@5.4.3
 
-set -l actual (__rtx_env_eval 2>&1 && lua -v 2>&1)
-set -l expected "rtx lua@5.4.3 shellcheck@0.9.0 shfmt@3.6.0 nodejs@18.0.0 Lua 5.4.3  Copyright (C) 1994-2021 Lua.org, PUC-Rio"
+rtx hook-env | source
+set -l actual (lua -v 2>&1)
+set -l expected "Lua 5.4.3  Copyright (C) 1994-2021 Lua.org, PUC-Rio"
 
 if test "$actual" = "$expected"
     echo "OK"
