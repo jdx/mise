@@ -1,6 +1,0 @@
-coverage:
-  status:
-    project:
-      default:
-        target: 80%
-        informational: true
