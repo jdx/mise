@@ -367,6 +367,24 @@ impl Toolset {
                 }
             })
     }
+
+    pub fn list_rtvs_with_bin(
+        &self,
+        config: &Config,
+        bin_name: &str,
+    ) -> Result<Vec<RuntimeVersion>> {
+        Ok(self
+            .list_installed_versions(config)?
+            .into_par_iter()
+            .filter(|v| match v.which(&config.settings, bin_name) {
+                Ok(x) => x.is_some(),
+                Err(e) => {
+                    warn!("Error running which: {:#}", e);
+                    false
+                }
+            })
+            .collect())
+    }
 }
 
 impl Display for Toolset {
