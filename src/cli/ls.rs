@@ -40,7 +40,7 @@ pub struct Ls {
     current: bool,
 
     /// Output in an easily parseable format
-    #[clap(long, visible_short_alias = 'x')]
+    #[clap(long, visible_short_alias = 'x', conflicts_with = "json")]
     parseable: bool,
 
     /// Output in json format
