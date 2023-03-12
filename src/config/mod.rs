@@ -227,7 +227,7 @@ impl Config {
                 .filter(|p| match p.needs_autoupdate(&self.settings) {
                     Ok(should_autoupdate) => should_autoupdate,
                     Err(err) => {
-                        warn!("Error checking for autoupdate: {:#}", err);
+                        debug!("Error checking for autoupdate: {:#}", err);
                         false
                     }
                 })
