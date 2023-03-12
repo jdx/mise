@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use indexmap::IndexMap;
+use versions::{Chunk, Version};
 
 use crate::config::Config;
 use crate::dirs;
@@ -89,9 +90,39 @@ impl ToolVersion {
         let matches = plugin.list_versions_matching(&config.settings, &v)?;
         if matches.contains(&v) {
             let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
-            Ok(rtv)
-        } else {
-            self.resolve_prefix(config, plugin, &v)
+            return Ok(rtv);
+        }
+        if v.contains("!-") {
+            if let Some(rtv) = self.resolve_bang(config, plugin.clone(), &v)? {
+                return Ok(rtv);
+            }
+        }
+        self.resolve_prefix(config, plugin, &v)
+    }
+
+    /// resolve a version like `12.0.0!-1` which becomes `11.0.0`, `12.1.0!-0.1` becomes `12.0.0`
+    fn resolve_bang(
+        &self,
+        config: &Config,
+        plugin: Arc<Plugin>,
+        v: &str,
+    ) -> Result<Option<RuntimeVersion>> {
+        let (wanted, minus) = v.split_once("!-").unwrap();
+        let wanted = resolve_alias(config, plugin.clone(), wanted)?;
+        let mut wanted = Version::new(&wanted).unwrap();
+        for (i, m) in Version::new(minus).unwrap().chunks.0.iter().enumerate() {
+            let orig = match wanted.nth(i) {
+                Some(c) => c,
+                None => {
+                    warn!("cannot subtract {minus} from {wanted}");
+                    return Ok(None);
+                }
+            };
+            wanted.chunks.0[i] = Chunk::Numeric(orig - m.single_digit().unwrap());
+        }
+        match plugin.latest_version(&config.settings, Some(wanted.to_string()))? {
+            Some(v) => Ok(RuntimeVersion::new(config, plugin, v, self.clone()).into()),
+            None => Ok(None),
         }
     }
 
