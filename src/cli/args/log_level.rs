@@ -21,7 +21,6 @@ impl LogLevel {
             .default_value(DEFAULT_LOG_LEVEL.as_str())
             .global(true)
             .value_parser(ValueParser::new(parse_log_level))
-            .hide(true)
     }
 }
 

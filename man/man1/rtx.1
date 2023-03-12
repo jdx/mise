@@ -4,7 +4,7 @@
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
-\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-log\-level\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
 .PP
@@ -22,6 +22,9 @@ Automatically install missing tools
 \fB\-j\fR, \fB\-\-jobs\fR
 Number of plugins and runtimes to install in parallel
 default: 4
+.TP
+\fB\-\-log\-level\fR=\fILEVEL\fR [default: info]
+Set the log output verbosity
 .TP
 \fB\-r\fR, \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr to user.
