@@ -168,12 +168,6 @@ impl Cli {
         )
     }
 
-    // TODO: use this
-    pub fn _parse_log_level(self, args: &Vec<String>) -> LevelFilter {
-        let matches = self.command.get_matches_from(args);
-        *matches.get_one::<LevelFilter>("log-level").unwrap()
-    }
-
     pub fn run(self, mut config: Config, args: &Vec<String>, out: &mut Output) -> Result<()> {
         debug!("{}", &args.join(" "));
         if args[1..] == ["-v"] {
