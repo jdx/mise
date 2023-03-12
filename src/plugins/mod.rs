@@ -18,6 +18,7 @@ use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
+use crate::fake_asdf::get_path_with_fake_asdf;
 use crate::file::{display_path, remove_dir_all, touch_dir};
 use crate::git::Git;
 use crate::hash::hash_to_str;
@@ -58,7 +59,8 @@ impl Plugin {
         };
         Self {
             name: name.into(),
-            script_man: ScriptManager::new(plugin_path.clone()),
+            script_man: ScriptManager::new(plugin_path.clone())
+                .with_env("PATH".into(), get_path_with_fake_asdf()),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
@@ -360,7 +362,8 @@ impl Plugin {
     }
 
     pub fn needs_autoupdate(&self, settings: &Settings) -> Result<bool> {
-        if settings.plugin_autoupdate_last_check_duration == Duration::ZERO {
+        if settings.plugin_autoupdate_last_check_duration == Duration::ZERO || !self.is_installed()
+        {
             return Ok(false);
         }
         let updated_duration = self.plugin_path.metadata()?.modified()?.elapsed()?;
