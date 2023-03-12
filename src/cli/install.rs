@@ -199,9 +199,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     {}
       $ rtx install nodejs@18.0.0  # install specific nodejs version
       $ rtx install nodejs@18      # install fuzzy nodejs version
-      $ rtx install nodejs         # install version specified in .tool-versions
-      $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
-      $ rtx install --all          # installs all runtimes and all plugins
+      $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
+      $ rtx install                # installs all runtimes specified in .tool-versions or .rtx.toml
     "#, style("Examples:").bold().underlined()}
 });
 

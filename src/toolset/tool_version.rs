@@ -79,6 +79,13 @@ impl ToolVersion {
             return Ok(rtv);
         }
 
+        if v == "latest" {
+            let v = plugin.latest_version(&config.settings, None)?;
+            if let Some(v) = v {
+                let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
+                return Ok(rtv);
+            }
+        }
         let matches = plugin.list_versions_matching(&config.settings, &v)?;
         if matches.contains(&v) {
             let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
