@@ -329,7 +329,16 @@ fn build_script_man(
             download_path.to_string_lossy().to_string(),
         )
         .with_env("RTX_CONCURRENCY".into(), num_cpus::get().to_string())
-        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
+        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string())
+        .with_env(
+            "RTX_DATA_DIR".into(),
+            dirs::ROOT.to_string_lossy().to_string(),
+        )
+        .with_env("RTX_PLUGIN_NAME".into(), tv.plugin_name.clone());
+    if let Some(shims_dir) = &config.settings.shims_dir {
+        let shims_dir = shims_dir.to_string_lossy().to_string();
+        sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
+    }
     if let Some(project_root) = &config.project_root {
         let project_root = project_root.to_string_lossy().to_string();
         sm = sm.with_env("RTX_PROJECT_ROOT".into(), project_root);
