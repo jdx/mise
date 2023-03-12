@@ -2,7 +2,7 @@
 FOO = "bar"
 
 [tools]
-nodejs = '18'
+nodejs = 'lts'
 tiny = {version="1", foo="bar"}
 golang = {version="latest", foo="bar"}
 python = {version="latest", virtualenv="$HOME/.cache/venv"}
