@@ -99,11 +99,18 @@ fn get_latest_version() -> Option<String> {
     Some(version)
 }
 
+#[cfg(test)]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "https://rtx.jdxcode.com/VERSION";
+    Some("0.0.0".to_string())
+}
+
+#[cfg(not(test))]
+fn get_latest_version_call() -> Option<String> {
+    const URL: &str = "https://rtx.pub/VERSION";
     debug!("checking for version from {}", URL);
     reqwest::blocking::ClientBuilder::new()
         .timeout(Duration::from_secs(2))
+        .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .ok()?
         .get(URL)
