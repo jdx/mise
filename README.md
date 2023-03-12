@@ -587,6 +587,13 @@ Here is what the config looks like:
 ```toml
 [env]
 NODE_ENV = 'production' # supports arbitrary env vars so rtx can be used like dotenv
+PATH = [
+  # adds an absolute path
+  "~/.local/share/bin",
+  # adds a path relative to the directory this config is in, not necessarily PWD
+  "./node_modules/.bin",
+  "$PATH" # required to be at the end
+]
 
 [tools]
 # specify single or multiple versions

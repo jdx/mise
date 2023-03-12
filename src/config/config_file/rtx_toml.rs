@@ -12,6 +12,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, MissingRuntimeBehavior};
+use crate::dirs;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
@@ -115,7 +116,10 @@ impl RtxToml {
                         Some(s) => {
                             let s = match s.strip_prefix("./") {
                                 Some(s) => config_root.join(s),
-                                None => s.into(),
+                                None => match s.strip_prefix("~/") {
+                                    Some(s) => dirs::HOME.join(s),
+                                    None => s.into(),
+                                },
                             };
                             path.push(s);
                         }
