@@ -550,7 +550,7 @@ always_keep_download = false        # deleted after install by default
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
 # (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
-plugin_autoupdate_last_check_duration = 10080 # (one week) set to 0 to disable updates
+plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
 
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
