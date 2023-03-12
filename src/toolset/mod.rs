@@ -181,7 +181,7 @@ impl Toolset {
             config
                 .plugins
                 .entry(plugin.clone())
-                .or_insert_with(|| Arc::new(Plugin::new(plugin)));
+                .or_insert_with(|| Arc::new(Plugin::new(&config.settings, plugin)));
         }
         config.plugins.sort_keys();
         missing_plugins

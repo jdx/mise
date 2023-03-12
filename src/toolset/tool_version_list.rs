@@ -65,7 +65,8 @@ mod tests {
     fn test_tool_version_list_failure() {
         env::set_var("RTX_FAILURE", "1");
         let mut tvl = ToolVersionList::new(ToolSource::Argument);
-        let plugin = Arc::new(Plugin::new(&PluginName::from("dummy")));
+        let settings = crate::config::Settings::default();
+        let plugin = Arc::new(Plugin::new(&settings, &PluginName::from("dummy")));
         plugin.clear_remote_version_cache().unwrap();
         tvl.add_version(ToolVersion::new(
             plugin.name.to_string(),

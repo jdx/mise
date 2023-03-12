@@ -114,7 +114,7 @@ impl PluginsInstall {
         git_url: &str,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = Plugin::new(name);
+        let mut plugin = Plugin::new(&config.settings, name);
         let (git_url, ref_) = git_url
             .split_once('#')
             .map_or((git_url, None), |(a, b)| (a, Some(b)));
