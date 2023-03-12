@@ -274,7 +274,7 @@ impl Toolset {
     }
     pub fn path_env(&self, config: &Config) -> String {
         let installs = self.list_paths(config);
-        join_paths([installs, env::PATH.clone()].concat())
+        join_paths([config.path_dirs.clone(), installs, env::PATH.clone()].concat())
             .unwrap()
             .to_string_lossy()
             .into()

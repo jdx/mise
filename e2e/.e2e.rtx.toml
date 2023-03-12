@@ -1,5 +1,6 @@
 [env]
 FOO = "bar"
+PATH = ["/root", "./cwd", "$PATH"]
 
 [tools]
 tiny = "latest"

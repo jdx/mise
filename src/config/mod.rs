@@ -40,6 +40,7 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
     pub env: IndexMap<String, String>,
+    pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
@@ -97,6 +98,7 @@ impl Config {
 
         let config = Self {
             env: load_env(&config_files),
+            path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
@@ -427,6 +429,14 @@ fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<S
         env.extend(cf.env());
     }
     env
+}
+
+fn load_path_dirs(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> Vec<PathBuf> {
+    let mut path_dirs = vec![];
+    for cf in config_files.values().rev() {
+        path_dirs.extend(cf.path_dirs());
+    }
+    path_dirs
 }
 
 fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasMap {

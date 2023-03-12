@@ -7,7 +7,7 @@ use std::time::Duration;
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
 use log::LevelFilter;
-use toml_edit::{table, value, Array, Item, Value};
+use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
@@ -21,9 +21,10 @@ pub struct RtxToml {
     path: PathBuf,
     toolset: Toolset,
     env: HashMap<String, String>,
+    path_dirs: Vec<PathBuf>,
     settings: SettingsBuilder,
     alias: AliasMap,
-    doc: toml_edit::Document,
+    doc: Document,
     plugins: HashMap<String, String>,
 }
 
@@ -67,10 +68,10 @@ impl RtxToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        self.doc = s.parse().suggestion("ensure file is valid TOML")?;
-        for (k, v) in self.doc.iter() {
+        let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
+        for (k, v) in doc.iter() {
             match k {
-                "env" => self.env = self.parse_hashmap(k, v)?,
+                "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
@@ -78,11 +79,53 @@ impl RtxToml {
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
+        self.doc = doc;
         Ok(())
     }
 
     pub fn settings(&self) -> SettingsBuilder {
         SettingsBuilder::default()
+    }
+
+    fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
+        let mut v = v.clone();
+        if let Some(table) = v.as_table_like_mut() {
+            if let Some(path) = table.remove("PATH") {
+                self.path_dirs = self.parse_path_env(&format!("{}.PATH", k), &path)?;
+            }
+        }
+        self.env = self.parse_hashmap(k, &v)?;
+        Ok(())
+    }
+
+    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+        match v.as_array() {
+            Some(array) => {
+                if let Some(Some(last)) = array.get(array.len() - 1).map(|v| v.as_str()) {
+                    if last != "$PATH" {
+                        // TODO: allow $PATH to be anywhere in the array
+                        parse_error!(k, v, "array ending with '$PATH'")?;
+                    }
+                }
+                let mut path = Vec::new();
+                let config_root = self.path.parent().unwrap();
+                for v in array {
+                    match v.as_str() {
+                        Some("$PATH") => {}
+                        Some(s) => {
+                            let s = match s.strip_prefix("./") {
+                                Some(s) => config_root.join(s),
+                                None => s.into(),
+                            };
+                            path.push(s);
+                        }
+                        _ => parse_error!(k, v, "string")?,
+                    }
+                }
+                Ok(path)
+            }
+            _ => parse_error!(k, v, "array")?,
+        }
     }
 
     fn parse_alias(&self, k: &str, v: &Item) -> Result<AliasMap> {
@@ -467,6 +510,10 @@ impl ConfigFile for RtxToml {
         self.env.clone()
     }
 
+    fn path_dirs(&self) -> Vec<PathBuf> {
+        self.path_dirs.clone()
+    }
+
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.toolset.versions.remove(plugin);
         if let Some(tools) = self.doc.get_mut("tools") {
@@ -572,6 +619,27 @@ mod tests {
             "foo": "bar",
         }
         "###);
+        assert_debug_snapshot!(cf.path_dirs(), @"[]");
+        assert_display_snapshot!(cf);
+    }
+
+    #[test]
+    fn test_path_dirs() {
+        let p = dirs::HOME.join("fixtures/.rtx.toml");
+        let mut cf = RtxToml::init(&p);
+        cf.parse(&formatdoc! {r#"
+        [env]
+        foo="bar"
+        PATH=["/foo", "./bar", "$PATH"]
+        "#})
+            .unwrap();
+
+        assert_debug_snapshot!(cf.env(), @r###"
+        {
+            "foo": "bar",
+        }
+        "###);
+        assert_snapshot!(replace_path(&format!("{:?}", cf.path_dirs())), @r###"["/foo", "~/fixtures/bar"]"###);
         assert_display_snapshot!(cf);
     }
 
