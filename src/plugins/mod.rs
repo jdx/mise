@@ -42,6 +42,7 @@ pub struct Plugin {
     installs_path: PathBuf,
     script_man: ScriptManager,
     remote_version_cache: CacheManager<Vec<String>>,
+    latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
@@ -64,6 +65,10 @@ impl Plugin {
                 .with_fresh_duration(fresh_duration)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-all")),
+            latest_stable_cache: CacheManager::new(cache_path.join("latest_stable.msgpack.z"))
+                .with_fresh_duration(fresh_duration)
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/latest-stable")),
             alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
@@ -186,13 +191,30 @@ impl Plugin {
         Ok(())
     }
 
-    pub fn latest_version(&self, settings: &Settings, query: &str) -> Result<Option<String>> {
-        let matches = self.list_versions_matching(settings, query)?;
-        let v = match matches.contains(&query.to_string()) {
-            true => Some(query.to_string()),
-            false => matches.last().map(|v| v.to_string()),
-        };
-        Ok(v)
+    pub fn latest_version(
+        &self,
+        settings: &Settings,
+        query: Option<String>,
+    ) -> Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let matches = self.list_versions_matching(settings, &query)?;
+                let v = match matches.contains(&query) {
+                    true => Some(query),
+                    false => matches.last().map(|v| v.to_string()),
+                };
+                Ok(v)
+            }
+            None => self.latest_stable_version(settings),
+        }
+    }
+
+    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
+        if let Some(latest) = self.get_latest_stable(settings)? {
+            Ok(Some(latest))
+        } else {
+            self.latest_version(settings, Some("latest".into()))
+        }
     }
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
@@ -228,7 +250,8 @@ impl Plugin {
     }
 
     pub fn clear_remote_version_cache(&self) -> Result<()> {
-        self.remote_version_cache.clear()
+        self.remote_version_cache.clear()?;
+        self.latest_stable_cache.clear()
     }
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
@@ -267,6 +290,20 @@ impl Plugin {
             .with_context(|| {
                 format!(
                     "Failed fetching legacy filenames for plugin {}",
+                    style(&self.name).cyan().for_stderr()
+                )
+            })
+            .cloned()
+    }
+    fn get_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
+        if !self.has_latest_stable_script() {
+            return Ok(None);
+        }
+        self.latest_stable_cache
+            .get_or_try_init(|| self.fetch_latest_stable(settings))
+            .with_context(|| {
+                format!(
+                    "Failed fetching latest stable version for plugin {}",
                     style(&self.name).cyan().for_stderr()
                 )
             })
@@ -364,6 +401,18 @@ impl Plugin {
             .map(|v| v.into())
             .collect())
     }
+    fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
+        let latest_stable = self
+            .script_man
+            .read(settings, &Script::LatestStable, settings.verbose)?
+            .trim()
+            .to_string();
+        Ok(if latest_stable.is_empty() {
+            None
+        } else {
+            Some(latest_stable)
+        })
+    }
 
     fn has_list_all_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAll)
@@ -373,6 +422,9 @@ impl Plugin {
     }
     fn has_list_legacy_filenames_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListLegacyFilenames)
+    }
+    fn has_latest_stable_script(&self) -> bool {
+        self.script_man.script_exists(&Script::LatestStable)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
         let stdout = self
@@ -469,7 +521,20 @@ mod tests {
         assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
         let plugin = Plugin::new(&PluginName::from("tiny"));
-        let version = plugin.latest_version(&settings, "1.0.0").unwrap().unwrap();
+        let version = plugin
+            .latest_version(&settings, Some("1.0.0".into()))
+            .unwrap()
+            .unwrap();
         assert_str_eq!(version, "1.0.0");
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        assert_str_eq!(version, "3.1.0");
+    }
+
+    #[test]
+    fn test_latest_stable() {
+        let settings = Settings::default();
+        let plugin = Plugin::new(&PluginName::from("dummy"));
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        assert_str_eq!(version, "2.0.0");
     }
 }
