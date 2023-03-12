@@ -490,6 +490,9 @@ jq          1.6
 erlang      ref:master   # compile from vcs ref
 golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
 shfmt       path:./shfmt # use a custom runtime
+nodejs      lts          # use lts version of nodejs (not supported by all plugins)
+nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if lts is 18)
+python      3.11!-0.1    # another way to specify 3.10 (generally more useful with aliases)
 ```
 
 Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local) to create them automatically.
