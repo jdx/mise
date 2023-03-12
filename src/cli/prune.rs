@@ -82,13 +82,13 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, cmd};
+    use crate::assert_cli;
 
     #[test]
     fn test_prune() {
         assert_cli!("prune", "--dry-run");
         assert_cli!("prune", "tiny");
         assert_cli!("prune");
-        cmd!("git", "checkout", "../data").run().unwrap();
+        assert_cli!("install");
     }
 }
