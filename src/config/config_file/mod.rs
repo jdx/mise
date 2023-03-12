@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
 
@@ -33,6 +33,7 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn get_path(&self) -> &Path;
     fn plugins(&self) -> HashMap<PluginName, String>;
     fn env(&self) -> HashMap<String, String>;
+    fn path_dirs(&self) -> Vec<PathBuf>;
     fn remove_plugin(&mut self, plugin_name: &PluginName);
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
     fn save(&self) -> Result<()>;
