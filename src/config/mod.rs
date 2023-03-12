@@ -49,10 +49,10 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let mut plugins = load_plugins()?;
         let global_config = load_rtxrc()?;
         let mut settings = SettingsBuilder::default();
         let config_filenames = load_config_filenames(&IndexMap::new());
+        let mut plugins = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
@@ -87,7 +87,7 @@ impl Config {
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
                 plugins.entry(plugin_name.clone()).or_insert_with(|| {
-                    let mut plugin = Plugin::new(&plugin_name);
+                    let mut plugin = Plugin::new(&settings, &plugin_name);
                     plugin.repo_url = Some(repo_url);
                     Arc::new(plugin)
                 });
@@ -304,8 +304,8 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins() -> Result<IndexMap<PluginName, Arc<Plugin>>> {
-    let plugins = Plugin::list()?
+fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Plugin>>> {
+    let plugins = Plugin::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>()
