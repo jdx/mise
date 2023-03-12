@@ -17,7 +17,7 @@ pub struct Asdf {
 }
 
 impl Command for Asdf {
-    fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
+    fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
         let mut args = vec![String::from("rtx")];
         args.append(&mut self.args);
 
@@ -31,7 +31,7 @@ impl Command for Asdf {
                     Ok(())
                 }
             }
-            Some("list") => list_versions(&mut config, out, &args),
+            Some("list") => list_versions(config, out, &args),
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
@@ -44,9 +44,16 @@ impl Command for Asdf {
     }
 }
 
-fn list_versions(config: &mut Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
-    let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions = ts.list_installed_versions(config)?;
+fn list_versions(mut config: Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
+    if args[2] == "all" {
+        let mut new_args: Vec<String> = vec!["rtx".into(), "ls-remote".into()];
+        if args.len() >= 3 {
+            new_args.push(args[3].clone());
+        }
+        return Cli::new().run(config, &new_args, out);
+    }
+    let ts = ToolsetBuilder::new().build(&mut config)?;
+    let mut versions = ts.list_installed_versions(&config)?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
         _ => None,
