@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+assert() {
+  local actual
+  actual="$($*)"
+  if [[ "$actual" != "$2" ]]; then
+    echo "Expected '$2' but got '$actual'"
+    exit 1
+  fi
+}
+
+eval "$(rtx activate bash)" && eval "$(rtx hook-env)"
+assert "node -v" "v18.0.0"
+rtx shell nodejs@16.0.0 && eval "$(rtx hook-env)"
+assert "node -v" "v16.0.0"
+export RTX_NODEJS_VERSION=18.0.0 && eval "$(rtx hook-env)"
+assert "node -v" "v18.0.0"
