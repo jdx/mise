@@ -102,18 +102,15 @@ impl Install {
                 for mut tv in tool_versions {
                     let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
                         Some(plugin) => plugin,
-                        None => {
-                            let plugin = Plugin::new(&tv.plugin_name);
-                            let mut pr = mpr.add();
-                            match plugin.install(&config, &mut pr, false) {
-                                Ok(_) => Arc::new(plugin),
-                                Err(err) => {
-                                    pr.error();
-                                    return Err(err)?;
-                                }
-                            }
-                        }
+                        None => Arc::new(Plugin::new(&tv.plugin_name)),
                     };
+                    if !plugin.is_installed() {
+                        let mut pr = mpr.add();
+                        if let Err(err) = plugin.install(&config, &mut pr, false) {
+                            pr.error();
+                            return Err(err)?;
+                        }
+                    }
                     tv.resolve(&config, plugin)?;
                     versions.push(tv.rtv.unwrap());
                 }
