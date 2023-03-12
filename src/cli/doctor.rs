@@ -111,7 +111,8 @@ fn render_plugins(config: &Config) -> String {
         .values()
         .map(|p| p.name.len())
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        + 2;
     for p in config.plugins.values() {
         let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
         let git = Git::new(p.plugin_path.clone());
