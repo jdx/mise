@@ -18,7 +18,7 @@ use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_dir_all};
+use crate::file::{display_path, remove_dir_all, touch_dir};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
@@ -357,6 +357,22 @@ impl Plugin {
             style(&self.name).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
+    }
+
+    pub fn needs_autoupdate(&self, settings: &Settings) -> Result<bool> {
+        if settings.plugin_autoupdate_last_check_duration == Duration::ZERO {
+            return Ok(false);
+        }
+        let updated_duration = self.plugin_path.metadata()?.modified()?.elapsed()?;
+        Ok(updated_duration > settings.plugin_autoupdate_last_check_duration)
+    }
+
+    pub fn autoupdate(&self, _pr: &mut ProgressReport) -> Result<()> {
+        trace!("autoupdate({})", self.name);
+        // TODO: implement
+        // pr.set_message("Checking for updates...".into());
+        touch_dir(&self.plugin_path)?;
+        Ok(())
     }
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {

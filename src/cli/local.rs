@@ -56,6 +56,7 @@ pub struct Local {
 
 impl Command for Local {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        config.autoupdate();
         let path = if self.parent {
             get_parent_path()?
         } else {
