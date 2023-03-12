@@ -31,23 +31,25 @@ pub enum Script {
     // PostUninstall,
 
     // Plugin
+    LatestStable,
+    ListAliases,
     ListAll,
     ListLegacyFilenames,
-    ListAliases,
     ParseLegacyFile(String),
 
     // RuntimeVersion
     Download,
-    Install,
-    Uninstall,
-    ListBinPaths,
     ExecEnv,
+    Install,
+    ListBinPaths,
+    Uninstall,
 }
 
 impl Display for Script {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             // Plugin
+            Script::LatestStable => write!(f, "latest-stable"),
             Script::ListAll => write!(f, "list-all"),
             Script::ListLegacyFilenames => write!(f, "list-legacy-filenames"),
             Script::ListAliases => write!(f, "list-aliases"),
