@@ -29,6 +29,7 @@ pub struct Shell {
 
 impl Command for Shell {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        config.autoupdate();
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.runtime)

@@ -46,6 +46,7 @@ pub struct Exec {
 
 impl Command for Exec {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+        config.autoupdate();
         let ts = ToolsetBuilder::new()
             .with_args(&self.runtime)
             .with_install_missing()
