@@ -52,10 +52,16 @@ impl RuntimeVersion {
             _ => dirs::CACHE.join(&plugin.name).join(&version),
         };
         let mut bin_paths_cache = CacheManager::new(cache_path.join("bin_paths.msgpack.z"))
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.clone());
         let mut exec_env_cache = CacheManager::new(cache_path.join("exec_env.msgpack.z"))
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.clone());
-        if plugin.name == "python" && tv.options.contains_key("virtualenv") {
+        if plugin.name == "python"
+            && (tv.options.contains_key("virtualenv") || tv.options.contains_key("pipenv"))
+        {
             // TODO: remove this for a better solution
             // this is required for the virtualenv feature to work
             bin_paths_cache = bin_paths_cache.with_no_cache();
