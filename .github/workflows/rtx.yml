@@ -27,6 +27,7 @@ jobs:
         run: sudo apt-get update; sudo apt-get install direnv shfmt
       - uses: taiki-e/install-action@just
       - uses: taiki-e/install-action@nextest
+      - run: just build-core-plugins
       - name: Run cargo nextest
         run: cargo nextest run --features clap_mangen
         env:
@@ -49,6 +50,7 @@ jobs:
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - name: Install just
         uses: taiki-e/install-action@just
+      - run: just build-core-plugins
       - name: Run tests with coverage
         uses: nick-fields/retry@v2
         env:
