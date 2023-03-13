@@ -1,0 +1,8 @@
+language: c
+script: asdf plugin-test python https://github.com/danhper/asdf-python.git
+before_script:
+  - git clone https://github.com/asdf-vm/asdf.git asdf
+  - . asdf/asdf.sh
+os:
+  - linux
+  - osx

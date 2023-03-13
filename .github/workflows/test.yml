@@ -1,0 +1,23 @@
+name: test
+
+on:
+  push:
+    branches: ["*"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: jdxcode/rtx-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: mkdir -p ~/.local/share/rtx/plugins
+      - run: ln -s $PWD ~/.local/share/rtx/plugins/python
+      - run: rtx i python@latest
+      - run: rtx x python@latest -- python -V
