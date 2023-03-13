@@ -14,6 +14,17 @@ alias b := test
 build *args:
     cargo build --all-features {{ args }}
 
+build-core-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for plugin in $(ls core_plugins); do
+        if [[ "$plugin" == *.tar.xz ]]; then
+            continue
+        fi
+        echo "Building core plugin: $plugin"
+        tar -cJf core_plugins/$plugin.tar.xz -C core_plugins $plugin
+    done
+
 alias t := test
 
 # run all test types

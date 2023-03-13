@@ -27,6 +27,7 @@ use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
+mod core;
 mod script_manager;
 
 pub type PluginName = String;
@@ -50,6 +51,7 @@ pub struct Plugin {
 
 impl Plugin {
     pub fn new(settings: &Settings, name: &PluginName) -> Self {
+        core::list_assets();
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
         let fresh_duration = if *PREFER_STALE {
