@@ -46,6 +46,10 @@ impl RtxToml {
     pub fn init(path: &Path) -> Self {
         Self {
             path: path.to_path_buf(),
+            toolset: Toolset {
+                source: Some(ToolSource::RtxToml(path.to_path_buf())),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -178,8 +182,7 @@ impl RtxToml {
     }
 
     fn parse_toolset(&self, key: &str, v: &Item) -> Result<Toolset> {
-        let source = ToolSource::RtxToml(self.path.clone());
-        let mut toolset = Toolset::new(source);
+        let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
 
         match v.as_table_like() {
             Some(table) => {
