@@ -1,10 +1,10 @@
 # [rtx](https://github.com/jdxcode/rtx)
 
-[![Crates.io](https://img.shields.io/crates/v/rtx-cli.svg)](https://crates.io/crates/rtx-cli)
-[![License: MIT](https://img.shields.io/github/license/jdxcode/rtx)](https://github.com/jdxcode/rtx/blob/main/LICENSE)
-[![CI](https://github.com/jdxcode/rtx/actions/workflows/rtx.yml/badge.svg?branch=main)](https://github.com/jdxcode/rtx/actions/workflows/rtx.yml)
-[![Codecov](https://codecov.io/gh/jdxcode/rtx/branch/main/graph/badge.svg?token=XYH3Q0BOO0)](https://codecov.io/gh/jdxcode/rtx)
-[![Discord](https://img.shields.io/discord/1066429325269794907)](https://discord.gg/mABnUDvP57)
+<p align="center">
+<img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge">
+<img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2332CD32&style=for-the-badge">
+<img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2332CD32&style=for-the-badge">
+<img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2332CD32&style=for-the-badge"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></align>
 
 _Polyglot runtime manager (asdf rust clone)_
 
