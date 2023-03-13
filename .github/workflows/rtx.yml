@@ -83,6 +83,8 @@ jobs:
           shared-key: "build-linux-${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cross
+      - uses: taiki-e/install-action@just
+      - run: just build-core-plugins
       - run: scripts/build-linux.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
@@ -110,6 +112,8 @@ jobs:
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - uses: taiki-e/install-action@just
+      - run: just build-core-plugins
       - run: scripts/build-macos.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
