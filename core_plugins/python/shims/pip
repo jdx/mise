@@ -1,0 +1,66 @@
+#! /usr/bin/env bash
+
+# This script wraps pip to run `rtx reshim` after installs and uninstalls.
+# Any other cases are passed-through to pip.
+#
+# Inspired by the npm shim: https://github.com/asdf-vm/asdf-nodejs/blob/b2d06a768d9a14186db72/shims/npm
+
+set -euo pipefail
+
+this_dir=$(dirname "${BASH_SOURCE[0]}")
+this_dir=$(cd "$this_dir" && pwd -P)  # Normalizes the directory; see https://stackoverflow.com/a/7666/2308068
+plugin_name=$(basename "$(dirname "$this_dir")")
+
+should_reshim() {
+  if [ "${RTX_PYTHON_SKIP_RESHIM:-}" ]; then
+    return 1
+  fi
+
+  for arg; do
+    case "$arg" in
+      install|uninstall)
+        return 0
+      ;;
+    esac
+  done
+
+  return 1
+}
+
+resolve_pip() {
+  local pip_location="${RTX_PYTHON_CANON_PIP_PATH:-$(search_pip_bin)}"
+
+  if ! [ "$pip_location" ]; then
+    echo "rtx-python couldn't find a suitable pip executable"
+    echo "This is probably a problem with the plugin, please report this issue"
+    exit 1
+  fi
+
+  echo "$pip_location"
+}
+
+search_pip_bin() {
+  local probably_pip="$(rtx where python)/bin/pip"
+
+  if [ -x "$probably_pip" ]; then
+    echo "$probably_pip"
+    return 0
+  fi
+
+  return 1
+}
+
+wrap_pip() {
+  local pip=$(resolve_pip)
+
+  if should_reshim "$@"; then
+    "$pip" "$@"
+    echo "Reshimming rtx $plugin_name..."
+    rtx reshim "$plugin_name"
+  else
+    exec "$pip" "$@"
+  fi
+}
+
+wrap_pip "$@"
+

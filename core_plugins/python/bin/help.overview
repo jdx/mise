@@ -1,0 +1,15 @@
+# Output should be freeform text. rtx decides how to reformat it.
+
+echo 'Basic usage:
+
+  rtx install python 3.6.12
+  rtx global python 3.6.12
+  python -V
+  Python 3.6.12
+
+Check the rtx documentation for more instructions on how to install & manage versions of Python. Please make sure you have the required system dependencies installed before trying to install Python.
+
+If you use pip to install a module like `ipython` that has binaries, you will need to run `rtx reshim python` for the binary to be in your path.
+
+Under the hood, rtx-python uses python-build (the same backend of pyenv) to build and install Python. Check its readme for more information about build options and the common build problems wiki page for any issues encountered during installation of python versions.
+'

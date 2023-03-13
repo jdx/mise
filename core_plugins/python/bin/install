@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+set -e
+
+source "$(dirname "$0")/utils.sh"
+
+install_python() {
+  local install_type=$1
+  local version=$2
+  local install_path=$3
+
+  if [ "$install_type" != "version" ]; then
+    echoerr "Cannot install specific ref from source, sorry."
+    echoerr "For a list of available versions, see \`rtx ls-remote python\`."
+    exit 1
+  fi
+  install_or_update_python_build
+
+  if [[ -n "${RTX_PYTHON_PATCH_URL:-}" ]]; then 
+    echo "python-build --patch $version $install_path"
+    echo "with patch file from: $RTX_PYTHON_PATCH_URL"
+    $(python_build_path) --patch "$version" "$install_path" < <(curl -sSL "$RTX_PYTHON_PATCH_URL")
+  elif [[ -n "${RTX_PYTHON_PATCHES_DIRECTORY:-}" ]] && [[ -f ${RTX_PYTHON_PATCHES_DIRECTORY}/${version}.patch ]]; then
+    local patch_file=${RTX_PYTHON_PATCHES_DIRECTORY}/${version}.patch
+    echo "python-build $version $install_path -p < $patch_file"
+    $(python_build_path) "$version" "$install_path" -p < $patch_file
+  else
+    echo "python-build $version $install_path"
+    $(python_build_path) "$version" "$install_path"
+  fi
+}
+
+install_default_python_packages() {
+  local packages_file="${RTX_PYTHON_DEFAULT_PACKAGES_FILE:-$HOME/.default-python-packages}"
+
+  if [ -f "$packages_file" ]; then
+    echo -ne "\nInstalling default python packages..."
+    PATH="$RTX_INSTALL_PATH/bin:$PATH" pip install -U -r "$packages_file"
+  fi
+}
+
+ensure_python_build_installed
+install_python "$RTX_INSTALL_TYPE" "$RTX_INSTALL_VERSION" "$RTX_INSTALL_PATH"
+install_default_python_packages

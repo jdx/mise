@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/utils.sh"
+
+list_all() {
+  install_or_update_python_build
+  $(python_build_path) --definitions | tr '\n' ' '
+}
+
+list_all
