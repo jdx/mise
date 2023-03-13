@@ -1,12 +1,12 @@
-# [rtx](https://github.com/jdxcode/rtx)
-
-<p align="center">
+<div align="center">
+<h1><a href="https://github.com/jdxcode/rtx">rtx</a></h1>
 <img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge">
 <img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2332CD32&style=for-the-badge">
 <img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2332CD32&style=for-the-badge">
-<img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2332CD32&style=for-the-badge"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></align>
-
-_Polyglot runtime manager (asdf rust clone)_
+<img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2332CD32&style=for-the-badge">
+<img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge">
+<p><em>Polyglot runtime manager (asdf rust clone)</em></p>
+</div>
 
 ## 30 Second Demo
 
