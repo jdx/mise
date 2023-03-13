@@ -343,6 +343,7 @@ sudo apt install -y rtx
 > **Warning**
 >
 > If you're on arm64 you'll need to run the following:
+>
 > ```
 > echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
@@ -439,6 +440,7 @@ $ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ### Xonsh
 
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
+
 ```xsh
 from pathlib        	import Path
 from xonsh.built_ins	import XSH
@@ -449,6 +451,7 @@ XSH.builtins.execx(rtx_init,'exec',ctx,filename='rtx')
 ```
 
 Or continue to use `rc.xsh`/`.xonshrc`:
+
 ```xsh
 echo 'execx($(~/bin/rtx activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
 ```
@@ -470,10 +473,10 @@ Use `rtx implode` to uninstall rtx. This will remove the rtx binary and all of i
 
 Alternatively, manually remove the following directories to fully clean up:
 
-* `~/.local/share/rtx` (can also be `RTX_DATA_DIR` or `XDG_DATA_HOME/rtx`)
-* `~/.config/rtx` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/rtx`)
-* on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
-* on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
+- `~/.local/share/rtx` (can also be `RTX_DATA_DIR` or `XDG_DATA_HOME/rtx`)
+- `~/.config/rtx` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/rtx`)
+- on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
+- on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
 
 ## Configuration
 
@@ -572,15 +575,15 @@ These settings can also be managed with `rtx settings ls|get|set|unset`.
 
 ### [experimental] `.rtx.toml`
 
-`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions` 
+`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions`
 file. Think of `~/.config/rtx/config.toml` as just a
 special `.rtx.toml` which is used from any directory on the machine.
 
 It allows for functionality that is not possible with `.tool-versions`, such as:
 
-* setting arbitrary env vars while inside the directory
-* passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdxcode/rtx-python#virtualenv-support).
-* specifying plugin repo url for custom plugins so it does not need to be added manually
+- setting arbitrary env vars while inside the directory
+- passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdxcode/rtx-python#virtualenv-support).
+- specifying plugin repo url for custom plugins so it does not need to be added manually
 
 Here is what the config looks like:
 
@@ -623,8 +626,8 @@ shims_dir = '~/.rtx/shims'
 my_custom_node = '18'
 ```
 
-`.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not 
-require setting `experimental = true` in the global config in part because this config can 
+`.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not
+require setting `experimental = true` in the global config in part because this config can
 itself contain the setting for `experimental`.
 
 ### Environment variables
@@ -675,7 +678,7 @@ for example, .nvmrc in the case of nodejs's nvm.
 
 #### `RTX_USE_TOML`
 
-Set to `1` to use default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for 
+Set to `1` to use default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
 configuration.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
@@ -733,7 +736,7 @@ installing plugins, e.g.: `rtx plugin install nodejs https://github.com/asdf-vm/
 
 Currently this disables the following:
 
-* `--fuzzy` as default behavior (`rtx local nodejs@18` will save exact version)
+- `--fuzzy` as default behavior (`rtx local nodejs@18` will save exact version)
 
 #### `RTX_HIDE_OUTDATED_BUILD=1`
 
@@ -811,11 +814,11 @@ Currently this only supports simple strings, but we can make it compatible with 
 
 ## Versioning
 
-rtx is currently a new project and is under very rapid development. Slight behavior changes may 
-occur between releases. 
+rtx is currently a new project and is under very rapid development. Slight behavior changes may
+occur between releases.
 Features marked as "experimental" may change significantly or be removed entirely.
 
-Starting June 1, 2023*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on 
+Starting June 1, 2023\*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on
 its behavior for the long term.
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
@@ -829,23 +832,23 @@ The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release
 or how many new features were added.
 Each release will be small and incremental.
 
-_*This plan is tentative and the details may change, but the rough idea of making many changes now so we can have stability later is the goal._
+_\*This plan is tentative and the details may change, but the rough idea of making many changes now so we can have stability later is the goal._
 
 ### Calver Breaking Changes
 
-When we switch to Calver, we'll immediately make some notable design changes to rtx. This will 
-be the first and last time that such a change is made and I actually want to make sure we make 
+When we switch to Calver, we'll immediately make some notable design changes to rtx. This will
+be the first and last time that such a change is made and I actually want to make sure we make
 as many as we can—because we'll be stuck with these decisions.
 
 Here are a list of the changes that will be made:
 
-* `rtx local` will default to creating `.rtx.toml` instead of `.tool-versions`. (If the config 
+- `rtx local` will default to creating `.rtx.toml` instead of `.tool-versions`. (If the config
   already exists the format will be preserved.)
-* `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path 
+- `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path
   can be changed with `RTX_CONFIG_FILE`.
-* `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file 
+- `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file
   that is read anywhere such as from `/tmp`.
-* (more to be added)
+- (more to be added)
 
 <!-- RTX:COMMANDS -->
 ## Commands
@@ -1816,21 +1819,21 @@ and see what happens.
 
 ### How compatible is rtx with asdf?
 
-rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin 
+rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin
 should be usable in rtx. The commands in rtx are slightly
-different, such as `rtx install nodejs@18.0.0` vs `asdf install nodejs 18.0.0`—this is done so 
+different, such as `rtx install nodejs@18.0.0` vs `asdf install nodejs 18.0.0`—this is done so
 multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx 
-install nodejs 18.0.0`). This is the case for most commands, though the help for the command may 
+install nodejs 18.0.0`). This is the case for most commands, though the help for the command may
 say that asdf-style syntax is supported.
 
-When in doubt, just try asdf syntax and see if it works.  If it doesn't open a ticket. It may 
+When in doubt, just try asdf syntax and see if it works. If it doesn't open a ticket. It may
 not be possible to support every command identically, but
 we should attempt to make things as consistent as possible.
 
-This isn't important for usability reasons so much as making it so plugins continue to work that 
+This isn't important for usability reasons so much as making it so plugins continue to work that
 call asdf commands.
 
-If you need to switch to/from asdf or work in a project with asdf users, you can set 
+If you need to switch to/from asdf or work in a project with asdf users, you can set
 [`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
 rtx from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
@@ -2031,7 +2034,7 @@ to be updating, this is a good place to start.
 
 Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/<PLUGIN>`. It stores
 the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
-the list of aliases, the bin directories within each runtime installation, and the result of 
+the list of aliases, the bin directories within each runtime installation, and the result of
 running `exec-env` after the runtime was installed.
 
 Remote versions are updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
@@ -2041,11 +2044,11 @@ zlib messagepack, if you want to view it you can run the following (requires [ms
 cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
-Note that the caching of `exec-env` may be problematic if the script isn't simply exporting 
-static values. The vast majority of `exec-env` scripts only export static values, but if you're 
+Note that the caching of `exec-env` may be problematic if the script isn't simply exporting
+static values. The vast majority of `exec-env` scripts only export static values, but if you're
 working with a plugin that has a dynamic `exec-env` submit
 a ticket and we can try to figure out what to do.
 
-Caching `exec-env` massively improved the performance of rtx since it requires calling bash 
+Caching `exec-env` massively improved the performance of rtx since it requires calling bash
 every time rtx is initialized. Ideally, we can keep this
 behavior.
