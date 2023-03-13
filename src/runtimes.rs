@@ -60,7 +60,9 @@ impl RuntimeVersion {
             .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.clone());
         if plugin.name == "python"
-            && (tv.options.contains_key("virtualenv") || tv.options.contains_key("pipenv"))
+            && (tv.options.contains_key("virtualenv")
+                || tv.options.contains_key("pipenv")
+                || tv.options.contains_key("poetry"))
         {
             // TODO: remove this for a better solution
             // this is required for the virtualenv feature to work
