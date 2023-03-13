@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 620] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -364,6 +364,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
     ("logtalk", "https://github.com/LogtalkDotOrg/asdf-logtalk.git"),
     ("loki-logcli", "https://github.com/comdotlinux/asdf-loki-logcli.git"),
     ("lua", "https://github.com/Stratus3D/asdf-lua.git"),
+    ("lua-language-server", "https://github.com/bellini666/asdf-lua-language-server"),
     ("luaJIT", "https://github.com/smashedtoatoms/asdf-luaJIT.git"),
     ("lucy", "https://github.com/cometkim/asdf-lucy.git"),
     ("mage", "https://github.com/mathew-fleisch/asdf-mage.git"),
