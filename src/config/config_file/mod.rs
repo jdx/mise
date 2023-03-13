@@ -124,7 +124,9 @@ impl dyn ConfigFile {
 }
 
 pub fn init(path: &Path) -> Box<dyn ConfigFile> {
-    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str()) || path.ends_with(".toml") {
+    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str())
+        || path.extension() == Some("toml".as_ref())
+    {
         return Box::new(RtxToml::init(path));
     } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
         return Box::new(ToolVersions::init(path));
