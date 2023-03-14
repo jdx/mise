@@ -27,6 +27,7 @@ mod config;
 mod default_shorthands;
 mod direnv;
 mod dirs;
+pub mod duration;
 mod env;
 mod env_diff;
 mod errors;

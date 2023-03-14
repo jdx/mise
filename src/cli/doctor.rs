@@ -9,9 +9,9 @@ use std::process::exit;
 use crate::cli::command::Command;
 use crate::cli::version::VERSION;
 use crate::config::Config;
-use crate::env;
 use crate::git::Git;
 use crate::{cli, cmd};
+use crate::{duration, env};
 
 use crate::output::Output;
 use crate::shell::ShellType;
@@ -51,7 +51,7 @@ impl Command for Doctor {
             }
         }
 
-        if let Some(latest) = cli::version::check_for_new_version() {
+        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
             checks.push(format!(
                 "new rtx version {} available, currently on {}",
                 latest,

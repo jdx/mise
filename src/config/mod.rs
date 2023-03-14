@@ -23,7 +23,7 @@ use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{cli, dirs, env, file, hook_env};
+use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -258,7 +258,7 @@ impl Config {
         if !console::user_attended_stderr() {
             return; // not a tty so don't bother
         }
-        if let Some(latest) = cli::version::check_for_new_version() {
+        if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
             warn!(
                 "newer rtx version {} available, currently on {}",
                 latest,
