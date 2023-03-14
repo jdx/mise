@@ -51,7 +51,7 @@ impl Command for Doctor {
             }
         }
 
-        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
+        if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
             checks.push(format!(
                 "new rtx version {} available, currently on {}",
                 latest,

@@ -258,7 +258,7 @@ impl Config {
         if !console::user_attended_stderr() {
             return; // not a tty so don't bother
         }
-        if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
+        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
             warn!(
                 "newer rtx version {} available, currently on {}",
                 latest,
