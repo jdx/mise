@@ -93,10 +93,10 @@ fn get_latest_version() -> Option<String> {
             }
         }
     }
-    let version = get_latest_version_call()?;
     let _ = fs::create_dir_all(&*dirs::CACHE);
-    let _ = fs::write(version_file_path, &version);
-    Some(version)
+    let version = get_latest_version_call();
+    let _ = fs::write(version_file_path, version.clone().unwrap_or_default());
+    version
 }
 
 #[cfg(test)]
@@ -106,10 +106,10 @@ fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "https://rtx.pub/VERSION";
+    const URL: &str = "http://rtx.pub/VERSION";
     debug!("checking for version from {}", URL);
     reqwest::blocking::ClientBuilder::new()
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
         .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .ok()?
