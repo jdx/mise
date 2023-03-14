@@ -60,6 +60,10 @@ fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) {
     for (k, v) in env {
         if k.starts_with("RTX_") && k.ends_with("_VERSION") {
             let plugin_name = k[4..k.len() - 8].to_lowercase();
+            if plugin_name == "install" {
+                // ignore RTX_INSTALL_VERSION
+                continue;
+            }
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = Toolset::new(source);
             let version = ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v));
