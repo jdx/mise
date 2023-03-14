@@ -206,7 +206,9 @@ impl RuntimeVersion {
     }
 
     pub fn exec_env(&self) -> Result<&HashMap<String, String>> {
-        if !self.script_man.script_exists(&ExecEnv) {
+        if !self.script_man.script_exists(&ExecEnv) || *env::__RTX_SCRIPT {
+            // if the script does not exist or we're running from within a script already
+            // the second is to prevent infinite loops
             return Ok(&*EMPTY_HASH_MAP);
         }
         self.exec_env_cache.get_or_try_init(|| {
@@ -342,6 +344,7 @@ fn build_script_man(
             "RTX_DATA_DIR".into(),
             dirs::ROOT.to_string_lossy().to_string(),
         )
+        .with_env("__RTX_SCRIPT".into(), "1".into())
         .with_env("RTX_PLUGIN_NAME".into(), tv.plugin_name.clone());
     if let Some(shims_dir) = &config.settings.shims_dir {
         let shims_dir = shims_dir.to_string_lossy().to_string();

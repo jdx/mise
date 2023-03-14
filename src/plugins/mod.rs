@@ -527,6 +527,7 @@ fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> Scri
             "RTX_DATA_DIR".into(),
             dirs::ROOT.to_string_lossy().into_owned(),
         )
+        .with_env("__RTX_SCRIPT".into(), "1".into())
         .with_env("RTX_PLUGIN_NAME".into(), name.to_string());
     if let Some(shims_dir) = &settings.shims_dir {
         let shims_dir = shims_dir.to_string_lossy().to_string();
