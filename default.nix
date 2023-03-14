@@ -16,8 +16,7 @@ rustPlatform.buildRustPackage {
     gnused
     git
     gawk
-    lib.optional stdenv.isDarwin darwin.apple_sdk.frameworks.Security
-  ];
+  ] ++ lib.optional stdenv.isDarwin darwin.apple_sdk.frameworks.Security;
 
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \
