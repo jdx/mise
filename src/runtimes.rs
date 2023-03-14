@@ -52,10 +52,14 @@ impl RuntimeVersion {
             _ => dirs::CACHE.join(&plugin.name).join(&version),
         };
         let mut bin_paths_cache = CacheManager::new(cache_path.join("bin_paths.msgpack.z"))
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.clone());
         let mut exec_env_cache = CacheManager::new(cache_path.join("exec_env.msgpack.z"))
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.clone());
-        if plugin.name == "python" && tv.options.contains_key("virtualenv") {
+        if plugin.name == "python" {
             // TODO: remove this for a better solution
             // this is required for the virtualenv feature to work
             bin_paths_cache = bin_paths_cache.with_no_cache();
@@ -198,7 +202,9 @@ impl RuntimeVersion {
     }
 
     pub fn exec_env(&self) -> Result<&HashMap<String, String>> {
-        if !self.script_man.script_exists(&ExecEnv) {
+        if !self.script_man.script_exists(&ExecEnv) || *env::__RTX_SCRIPT {
+            // if the script does not exist or we're running from within a script already
+            // the second is to prevent infinite loops
             return Ok(&*EMPTY_HASH_MAP);
         }
         self.exec_env_cache.get_or_try_init(|| {
@@ -329,7 +335,17 @@ fn build_script_man(
             download_path.to_string_lossy().to_string(),
         )
         .with_env("RTX_CONCURRENCY".into(), num_cpus::get().to_string())
-        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string());
+        .with_env("ASDF_CONCURRENCY".into(), num_cpus::get().to_string())
+        .with_env(
+            "RTX_DATA_DIR".into(),
+            dirs::ROOT.to_string_lossy().to_string(),
+        )
+        .with_env("__RTX_SCRIPT".into(), "1".into())
+        .with_env("RTX_PLUGIN_NAME".into(), tv.plugin_name.clone());
+    if let Some(shims_dir) = &config.settings.shims_dir {
+        let shims_dir = shims_dir.to_string_lossy().to_string();
+        sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
+    }
     if let Some(project_root) = &config.project_root {
         let project_root = project_root.to_string_lossy().to_string();
         sm = sm.with_env("RTX_PROJECT_ROOT".into(), project_root);

@@ -1,17 +1,21 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 use console::style;
+use indexmap::IndexMap;
 use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use owo_colors::OwoColorize;
+use serde_derive::Serialize;
 use versions::Versioning;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env::DUMB_TERMINAL;
+use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtimes::RuntimeVersion;
@@ -34,15 +38,108 @@ pub struct Ls {
     /// Only show runtimes currently specified in .tool-versions
     #[clap(long, short)]
     current: bool,
+
+    /// Output in an easily parseable format
+    #[clap(long, visible_short_alias = 'x', conflicts_with = "json")]
+    parseable: bool,
+
+    /// Output in json format
+    #[clap(long)]
+    json: bool,
 }
 
 impl Command for Ls {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let plugin = self.plugin.or(self.plugin_arg);
-        for (rtv, source) in get_runtime_list(&mut config, &plugin)? {
-            if self.current && source.is_none() {
-                continue;
+    fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
+        self.plugin = self.plugin.clone().or(self.plugin_arg.clone());
+        self.verify_plugin(&config)?;
+
+        let mut runtimes = get_runtime_list(&mut config, &self.plugin)?;
+        if self.current {
+            runtimes.retain(|(_, source)| source.is_some());
+        }
+        if self.json {
+            self.display_json(runtimes, out)
+        } else if self.parseable {
+            self.display_parseable(runtimes, out)
+        } else {
+            self.display_user(runtimes, out)
+        }
+    }
+}
+
+type JSONOutput = IndexMap<String, Vec<JSONRuntime>>;
+
+#[derive(Serialize)]
+struct JSONRuntime {
+    version: String,
+    install_path: PathBuf,
+    source: Option<IndexMap<String, String>>,
+}
+
+impl Ls {
+    fn verify_plugin(&self, config: &Config) -> Result<()> {
+        match &self.plugin {
+            Some(plugin_name) => {
+                let plugin = config.plugins.get(plugin_name);
+                if plugin.is_none() || !plugin.unwrap().is_installed() {
+                    return Err(PluginNotInstalled(plugin_name.clone()))?;
+                }
             }
+            None => {}
+        }
+        Ok(())
+    }
+
+    fn display_json(
+        &self,
+        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
+        out: &mut Output,
+    ) -> Result<()> {
+        let mut plugins = JSONOutput::new();
+        for (plugin_name, runtimes) in &runtimes
+            .into_iter()
+            .group_by(|(rtv, _)| rtv.plugin.name.clone())
+        {
+            let runtimes = runtimes
+                .map(|(rtv, source)| JSONRuntime {
+                    version: rtv.version,
+                    install_path: rtv.install_path,
+                    source: source.map(|source| source.as_json()),
+                })
+                .collect();
+            if self.plugin.is_some() {
+                // only display 1 plugin
+                out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
+                return Ok(());
+            }
+            plugins.insert(plugin_name, runtimes);
+        }
+        out.stdout.writeln(serde_json::to_string_pretty(&plugins)?);
+        Ok(())
+    }
+
+    fn display_parseable(
+        &self,
+        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
+        out: &mut Output,
+    ) -> Result<()> {
+        for (rtv, _) in runtimes {
+            if self.plugin.is_some() {
+                // only displaying 1 plugin so only show the version
+                rtxprintln!(out, "{}", rtv.version);
+            } else {
+                rtxprintln!(out, "{} {}", rtv.plugin.name, rtv.version);
+            }
+        }
+        Ok(())
+    }
+
+    fn display_user(
+        &self,
+        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
+        out: &mut Output,
+    ) -> Result<()> {
+        for (rtv, source) in runtimes {
             rtxprintln!(
                 out,
                 "{} {} {}",
@@ -62,7 +159,6 @@ impl Command for Ls {
                 },
             );
         }
-
         Ok(())
     }
 }
@@ -146,21 +242,41 @@ fn get_runtime_list(
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx list
-      -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-      -> python     3.11.0 (set by ~/.tool-versions)
+      $ rtx ls
+      ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+      ⏵  python     3.11.0 (set by ~/.tool-versions)
          python     3.10.0
 
-      $ rtx list --current
-      -> nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-      -> python     3.11.0 (set by ~/.tool-versions)
+      $ rtx ls --current
+      ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+      ⏵  python     3.11.0 (set by ~/.tool-versions)
+
+      $ rtx ls --parseable
+      nodejs 18.0.0
+      python 3.11.0
+
+      $ rtx ls --json
+      {{
+        "nodejs": [
+          {{
+            "version": "18.0.0",
+            "install_path": "/Users/jdx/.rtx/installs/nodejs/18.0.0",
+            "source": {{
+              "type": ".rtx.toml",
+              "path": "/Users/jdx/.rtx.toml"
+            }}
+          }}
+        ],
+        "python": [...]
+      }}
     "#, style("Examples:").bold().underlined()}
 });
 
 #[cfg(test)]
 mod tests {
     use crate::file::remove_dir_all;
-    use crate::{assert_cli, assert_cli_snapshot, dirs};
+    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_ls() {
@@ -179,5 +295,32 @@ mod tests {
 
         assert_cli!("install");
         assert_cli_snapshot!("list");
+    }
+
+    #[test]
+    fn test_ls_current() {
+        assert_cli_snapshot!("ls", "-c");
+    }
+
+    #[test]
+    fn test_ls_json() {
+        let _ = remove_dir_all(dirs::INSTALLS.as_path());
+        assert_cli!("install");
+        assert_cli_snapshot!("ls", "--json");
+        assert_cli_snapshot!("ls", "--json", "tiny");
+    }
+
+    #[test]
+    fn test_ls_parseable() {
+        let _ = remove_dir_all(dirs::INSTALLS.as_path());
+        assert_cli!("install");
+        assert_cli_snapshot!("ls", "-x");
+        assert_cli_snapshot!("ls", "--parseable", "tiny");
+    }
+
+    #[test]
+    fn test_ls_missing_plugin() {
+        let err = assert_cli_err!("ls", "missing-plugin");
+        assert_str_eq!(err.to_string(), r#"[missing-plugin] plugin not installed"#);
     }
 }

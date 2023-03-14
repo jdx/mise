@@ -6,6 +6,11 @@ error() {
 	exit 1
 }
 
+if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+	echo "NODE_AUTH_TOKEN must be set" >&2
+	exit 0
+fi
+
 mkdir -p "$RELEASE_DIR/npm"
 
 dist_tag_from_version() {

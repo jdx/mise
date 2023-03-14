@@ -9,3 +9,21 @@ export ADDED_VAR="added"
 export MULTILINE_VAR="line1
 line2
 line3"
+export ESCAPES="\\n\\t\\r\\v\\f\\a\\b\\e\\0\\x1b\\u1234\\U00012345\a\b\e\E\f\n\r\t\v\"?\`\$\g'\0"
+export BELL=$'\a'
+export BACKSPACE=$'\b'
+export ESCAPE=$'\e'
+export ESCAPE2=$'\E'
+export FORM_FEED=$'\f'
+export NEWLINE=$'\n'
+export CARRIAGE_RETURN=$'\r'
+export TAB=$'\t'
+export VERTICAL_TAB=$'\v'
+export DOUBLE_QUOTE=$'"'
+export SINGLE_QUOTE=$"'"
+export QUESTION_MARK=$'?'
+export BACKTICK=$'`'
+export DOLLAR=$'$'
+export G=$'g'
+
+unexported="unexported val"

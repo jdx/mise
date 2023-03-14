@@ -22,6 +22,7 @@ assert_raises "rtx uninstall shfmt@3.6.0"
 
 assert "rtx local" "[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -30,6 +31,7 @@ tiny = \"latest\"
 
 assert "rtx local shfmt@3.5.0" "[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -44,6 +46,7 @@ fi
 
 assert "rtx local shfmt@3.6.0" "[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -58,6 +61,7 @@ fi
 
 assert "rtx local --rm shfmt" "[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"

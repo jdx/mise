@@ -181,7 +181,7 @@ impl Toolset {
             config
                 .plugins
                 .entry(plugin.clone())
-                .or_insert_with(|| Arc::new(Plugin::new(plugin)));
+                .or_insert_with(|| Arc::new(Plugin::new(&config.settings, plugin)));
         }
         config.plugins.sort_keys();
         missing_plugins
@@ -274,7 +274,7 @@ impl Toolset {
     }
     pub fn path_env(&self, config: &Config) -> String {
         let installs = self.list_paths(config);
-        join_paths([installs, env::PATH.clone()].concat())
+        join_paths([config.path_dirs.clone(), installs, env::PATH.clone()].concat())
             .unwrap()
             .to_string_lossy()
             .into()
@@ -366,6 +366,24 @@ impl Toolset {
                     false
                 }
             })
+    }
+
+    pub fn list_rtvs_with_bin(
+        &self,
+        config: &Config,
+        bin_name: &str,
+    ) -> Result<Vec<RuntimeVersion>> {
+        Ok(self
+            .list_installed_versions(config)?
+            .into_par_iter()
+            .filter(|v| match v.which(&config.settings, bin_name) {
+                Ok(x) => x.is_some(),
+                Err(e) => {
+                    warn!("Error running which: {:#}", e);
+                    false
+                }
+            })
+            .collect())
     }
 }
 

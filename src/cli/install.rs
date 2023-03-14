@@ -56,6 +56,7 @@ pub struct Install {
 impl Command for Install {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         config.settings.missing_runtime_behavior = AutoInstall;
+        config.autoupdate();
 
         match &self.runtime {
             Some(runtime) => self.install_runtimes(config, runtime)?,
@@ -102,18 +103,15 @@ impl Install {
                 for mut tv in tool_versions {
                     let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
                         Some(plugin) => plugin,
-                        None => {
-                            let plugin = Plugin::new(&tv.plugin_name);
-                            let mut pr = mpr.add();
-                            match plugin.install(&config, &mut pr, false) {
-                                Ok(_) => Arc::new(plugin),
-                                Err(err) => {
-                                    pr.error();
-                                    return Err(err)?;
-                                }
-                            }
-                        }
+                        None => Arc::new(Plugin::new(&config.settings, &tv.plugin_name)),
                     };
+                    if !plugin.is_installed() {
+                        let mut pr = mpr.add();
+                        if let Err(err) = plugin.install(&config, &mut pr, false) {
+                            pr.error();
+                            return Err(err)?;
+                        }
+                    }
                     tv.resolve(&config, plugin)?;
                     versions.push(tv.rtv.unwrap());
                 }
@@ -202,9 +200,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     {}
       $ rtx install nodejs@18.0.0  # install specific nodejs version
       $ rtx install nodejs@18      # install fuzzy nodejs version
-      $ rtx install nodejs         # install version specified in .tool-versions
-      $ rtx install                # installs all runtimes specified in .tool-versions for installed plugins
-      $ rtx install --all          # installs all runtimes and all plugins
+      $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
+      $ rtx install                # installs all runtimes specified in .tool-versions or .rtx.toml
     "#, style("Examples:").bold().underlined()}
 });
 

@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -9,8 +8,12 @@ use color_eyre::eyre::Result;
 use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
+use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, env};
 
@@ -21,58 +24,75 @@ pub fn should_exit_early(config_filenames: &[PathBuf]) -> bool {
         return false;
     }
     let watch_files = get_watch_files(config_filenames);
-    if have_config_files_been_modified(&env::vars().collect(), watch_files) {
-        return false;
-    }
+    match env::var("__RTX_WATCH") {
+        Ok(raw) => {
+            match deserialize_watches(raw) {
+                Ok(watches) => {
+                    if have_config_files_been_modified(&watches, watch_files) {
+                        return false;
+                    }
+                    if have_rtx_env_vars_been_modified(&watches) {
+                        return false;
+                    }
+                }
+                Err(e) => {
+                    debug!("error deserializing watches: {:?}", e);
+                    return false;
+                }
+            };
+        }
+        Err(_) => {
+            // __RTX_WATCH is not set
+            return false;
+        }
+    };
     trace!("early-exit");
     true
 }
 
 fn have_config_files_been_modified(
-    env: &HashMap<String, String>,
-    watch_files: HashSet<PathBuf>,
+    watches: &HookEnvWatches,
+    watch_files: IndexSet<PathBuf>,
 ) -> bool {
-    match env.get("__RTX_WATCH") {
-        Some(prev) => {
-            let watches = match deserialize_watches(prev.to_string()) {
-                Ok(watches) => watches,
-                Err(e) => {
-                    debug!("error deserializing watches: {:?}", e);
-                    return true;
-                }
-            };
+    // make sure they have exactly the same config filenames
+    let watch_keys = watches.files.keys().cloned().collect::<IndexSet<_>>();
+    if watch_keys != watch_files {
+        trace!(
+            "config files do not match {:?}",
+            watch_keys.symmetric_difference(&watch_files)
+        );
+        return true;
+    }
 
-            // make sure they have exactly the same config filenames
-            let watch_keys = watches.keys().cloned().collect::<HashSet<_>>();
-            if watch_keys != watch_files {
-                trace!(
-                    "config files do not match {:?}",
-                    watch_keys.symmetric_difference(&watch_files)
-                );
+    // check the files to see if they've been altered
+    for (fp, prev_modtime) in &watches.files {
+        if let Ok(modtime) = fp
+            .metadata()
+            .expect("accessing config file modtime")
+            .modified()
+        {
+            if &modtime != prev_modtime {
+                trace!("config file modified: {:?}", fp);
                 return true;
             }
-
-            // check the files to see if they've been altered
-            for (fp, prev_modtime) in watches {
-                if let Ok(modtime) = fp
-                    .metadata()
-                    .expect("accessing config file modtime")
-                    .modified()
-                {
-                    if modtime != prev_modtime {
-                        trace!("config file modified: {:?}", fp);
-                        return true;
-                    }
-                }
-            }
-            trace!("config files unmodified");
-            false
         }
-        _ => true, // no previous watch data, we say they have been modified, so we don't exit early
     }
+    trace!("config files unmodified");
+    false
 }
 
-pub type HookEnvWatches = HashMap<PathBuf, SystemTime>;
+fn have_rtx_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
+    if get_rtx_env_vars_hashed() != watches.env_var_hash {
+        return true;
+    }
+    false
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HookEnvWatches {
+    files: IndexMap<PathBuf, SystemTime>,
+    env_var_hash: String,
+}
 
 pub fn serialize_watches(watches: &HookEnvWatches) -> Result<String> {
     let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
@@ -90,16 +110,19 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
 }
 
 pub fn build_watches(config_filenames: &[PathBuf]) -> Result<HookEnvWatches> {
-    let mut watches = HookEnvWatches::new();
+    let mut watches = IndexMap::new();
     for cf in get_watch_files(config_filenames) {
         watches.insert(cf.clone(), cf.metadata()?.modified()?);
     }
 
-    Ok(watches)
+    Ok(HookEnvWatches {
+        files: watches,
+        env_var_hash: get_rtx_env_vars_hashed(),
+    })
 }
 
-pub fn get_watch_files(config_filenames: &[PathBuf]) -> HashSet<PathBuf> {
-    let mut watches = HashSet::new();
+pub fn get_watch_files(config_filenames: &[PathBuf]) -> IndexSet<PathBuf> {
+    let mut watches = IndexSet::new();
     if dirs::ROOT.exists() {
         watches.insert(dirs::ROOT.clone());
     }
@@ -108,6 +131,17 @@ pub fn get_watch_files(config_filenames: &[PathBuf]) -> HashSet<PathBuf> {
     }
 
     watches
+}
+
+/// gets a hash of all RTX_ environment variables
+fn get_rtx_env_vars_hashed() -> String {
+    let env_vars: Vec<(&String, &String)> = env::PRISTINE_ENV
+        .deref()
+        .iter()
+        .filter(|(k, _)| k.starts_with("RTX_"))
+        .sorted()
+        .collect();
+    hash_to_str(&env_vars)
 }
 
 pub fn clear_old_env(shell: &dyn Shell) -> String {
@@ -139,48 +173,64 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
 mod tests {
     use std::time::UNIX_EPOCH;
 
+    use pretty_assertions::assert_str_eq;
+
     use crate::dirs;
 
     use super::*;
 
     #[test]
     fn test_have_config_files_been_modified() {
-        let mut env = HashMap::new();
-        let files = HashSet::new();
-        assert!(have_config_files_been_modified(&env, files));
+        let files = IndexSet::new();
+        let watches = HookEnvWatches {
+            files: IndexMap::new(),
+            env_var_hash: "".into(),
+        };
+        assert!(!have_config_files_been_modified(&watches, files));
 
         let fp = dirs::CURRENT.join(".test-tool-versions");
-        env.insert(
-            "__RTX_WATCH".into(),
-            serialize_watches(&HookEnvWatches::from([(fp.clone(), UNIX_EPOCH)])).unwrap(),
-        );
-        let files = HashSet::from([fp.clone()]);
-        assert!(have_config_files_been_modified(&env, files));
+        let watches = HookEnvWatches {
+            files: IndexMap::from([(fp.clone(), UNIX_EPOCH)]),
+            env_var_hash: "".into(),
+        };
+        let files = IndexSet::from([fp.clone()]);
+        assert!(have_config_files_been_modified(&watches, files));
 
         let modtime = fp.metadata().unwrap().modified().unwrap();
-        env.insert(
-            "__RTX_WATCH".into(),
-            serialize_watches(&HookEnvWatches::from([(fp.clone(), modtime)])).unwrap(),
-        );
-        let files = HashSet::from([fp]);
-        assert!(!have_config_files_been_modified(&env, files));
+        let watches = HookEnvWatches {
+            files: IndexMap::from([(fp.clone(), modtime)]),
+            env_var_hash: "".into(),
+        };
+        let files = IndexSet::from([fp]);
+        assert!(!have_config_files_been_modified(&watches, files));
     }
 
     #[test]
     fn test_serialize_watches_empty() {
-        let serialized = serialize_watches(&HookEnvWatches::new()).unwrap();
+        let watches = HookEnvWatches {
+            files: IndexMap::new(),
+            env_var_hash: "".into(),
+        };
+        let serialized = serialize_watches(&watches).unwrap();
         let deserialized = deserialize_watches(serialized).unwrap();
-        assert_eq!(deserialized.len(), 0);
+        assert_eq!(deserialized.files.len(), 0);
     }
 
     #[test]
     fn test_serialize_watches() {
-        let serialized =
-            serialize_watches(&HookEnvWatches::from([("foo".into(), UNIX_EPOCH)])).unwrap();
+        let serialized = serialize_watches(&HookEnvWatches {
+            files: IndexMap::from([("foo".into(), UNIX_EPOCH)]),
+            env_var_hash: "testing-123".into(),
+        })
+        .unwrap();
         let deserialized = deserialize_watches(serialized).unwrap();
-        assert_eq!(deserialized.len(), 1);
+        assert_eq!(deserialized.files.len(), 1);
+        assert_str_eq!(deserialized.env_var_hash, "testing-123");
         assert_eq!(
-            deserialized.get(PathBuf::from("foo").as_path()).unwrap(),
+            deserialized
+                .files
+                .get(PathBuf::from("foo").as_path())
+                .unwrap(),
             &UNIX_EPOCH
         );
     }

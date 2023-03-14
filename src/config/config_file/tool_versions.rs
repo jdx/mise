@@ -155,6 +155,10 @@ impl ConfigFile for ToolVersions {
         HashMap::new()
     }
 
+    fn path_dirs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.plugins.remove(plugin);
     }

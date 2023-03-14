@@ -10,9 +10,9 @@ use versions::Versioning;
 use crate::build_time::BUILD_TIME;
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::dirs;
 use crate::file::modified_duration;
 use crate::output::Output;
+use crate::{dirs, duration};
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Show rtx version", alias = "v")]
@@ -65,7 +65,7 @@ fn show_version(out: &mut Output) {
 }
 
 fn show_latest() {
-    if let Some(latest) = check_for_new_version() {
+    if let Some(latest) = check_for_new_version(duration::DAILY) {
         warn!("rtx version {} available", latest);
         if cfg!(feature = "self_update") {
             let cmd = style("rtx self-update").bright().yellow().for_stderr();
@@ -74,8 +74,8 @@ fn show_latest() {
     }
 }
 
-pub fn check_for_new_version() -> Option<String> {
-    if let Some(latest) = get_latest_version().and_then(|v| Versioning::new(&v)) {
+pub fn check_for_new_version(cache_duration: Duration) -> Option<String> {
+    if let Some(latest) = get_latest_version(cache_duration).and_then(|v| Versioning::new(&v)) {
         let current = Versioning::new(env!("CARGO_PKG_VERSION")).unwrap();
         if current < latest {
             return Some(latest.to_string());
@@ -84,26 +84,33 @@ pub fn check_for_new_version() -> Option<String> {
     None
 }
 
-fn get_latest_version() -> Option<String> {
+fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
-        if metadata < Duration::from_secs(60 * 60 * 24) {
+        if metadata < duration {
             if let Ok(version) = fs::read_to_string(&version_file_path) {
                 return Some(version);
             }
         }
     }
-    let version = get_latest_version_call()?;
     let _ = fs::create_dir_all(&*dirs::CACHE);
-    let _ = fs::write(version_file_path, &version);
-    Some(version)
+    let version = get_latest_version_call();
+    let _ = fs::write(version_file_path, version.clone().unwrap_or_default());
+    version
 }
 
+#[cfg(test)]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "https://rtx.jdxcode.com/VERSION";
+    Some("0.0.0".to_string())
+}
+
+#[cfg(not(test))]
+fn get_latest_version_call() -> Option<String> {
+    const URL: &str = "http://rtx.pub/VERSION";
     debug!("checking for version from {}", URL);
     reqwest::blocking::ClientBuilder::new()
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .ok()?
         .get(URL)

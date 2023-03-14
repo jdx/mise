@@ -1,2 +1,6 @@
 [*.sh]
-indent_style = tabs
+indent_style = tab
+
+[Cargo.toml]
+indent_style = space
+indent_size = 2

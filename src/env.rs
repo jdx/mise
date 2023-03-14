@@ -30,6 +30,16 @@ lazy_static! {
 
     // logging
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
+        ARGS.iter().enumerate().for_each(|(i, arg)| {
+            if let Some(("--log-level", level)) = arg.split_once('=') {
+                std::env::set_var("RTX_LOG_LEVEL", level);
+            }
+            if arg == "--log-level" {
+                if let Some(level) = ARGS.get(i + 1) {
+                    std::env::set_var("RTX_LOG_LEVEL", level);
+                }
+            }
+        });
         let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
         match log_level.parse::<LevelFilter>() {
             Ok(level) => level,
@@ -55,6 +65,9 @@ lazy_static! {
     };
     pub static ref RTX_MISSING_RUNTIME_BEHAVIOR: Option<String> =var("RTX_MISSING_RUNTIME_BEHAVIOR").ok();
     pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
+    /// true if inside of a script like bin/exec-env or bin/install
+    /// used to prevent infinite loops
+    pub static ref __RTX_SCRIPT: bool = var_is_true("__RTX_SCRIPT");
     pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
     pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");

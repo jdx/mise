@@ -16,6 +16,7 @@ use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_dir_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
+use crate::runtimes::RuntimeVersion;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
@@ -58,6 +59,8 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
                     return Ok(bin);
                 }
             }
+            let rtvs = ts.list_rtvs_with_bin(config, bin_name)?;
+            err_no_version_set(bin_name, rtvs)?;
         }
     }
     Err(eyre!("{} is not a valid shim", bin_name))
@@ -155,4 +158,16 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         shim.display()
     );
     Ok(())
+}
+
+fn err_no_version_set(bin_name: &str, rtvs: Vec<RuntimeVersion>) -> Result<()> {
+    if rtvs.is_empty() {
+        return Ok(());
+    }
+    let mut msg = format!("No version is set for shim: {}\n", bin_name);
+    msg.push_str("Set a global default version with one of the following:\n");
+    for rtv in rtvs {
+        msg.push_str(&format!("rtx global {}@{}\n", rtv.plugin.name, rtv.version));
+    }
+    Err(eyre!(msg.trim().to_string()))
 }

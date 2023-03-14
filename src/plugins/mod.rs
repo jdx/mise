@@ -18,7 +18,8 @@ use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_dir_all};
+use crate::fake_asdf::get_path_with_fake_asdf;
+use crate::file::{display_path, remove_dir_all, touch_dir};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
@@ -42,12 +43,13 @@ pub struct Plugin {
     installs_path: PathBuf,
     script_man: ScriptManager,
     remote_version_cache: CacheManager<Vec<String>>,
+    latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
 impl Plugin {
-    pub fn new(name: &PluginName) -> Self {
+    pub fn new(settings: &Settings, name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
         let fresh_duration = if *PREFER_STALE {
@@ -57,13 +59,17 @@ impl Plugin {
         };
         Self {
             name: name.into(),
-            script_man: ScriptManager::new(plugin_path.clone()),
+            script_man: build_script_man(settings, name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(fresh_duration)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-all")),
+            latest_stable_cache: CacheManager::new(cache_path.join("latest_stable.msgpack.z"))
+                .with_fresh_duration(fresh_duration)
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/latest-stable")),
             alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
@@ -77,10 +83,10 @@ impl Plugin {
         }
     }
 
-    pub fn list() -> Result<Vec<Self>> {
+    pub fn list(settings: &Settings) -> Result<Vec<Self>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .iter()
-            .map(Plugin::new)
+            .map(|name| Plugin::new(settings, name))
             .collect())
     }
 
@@ -186,13 +192,30 @@ impl Plugin {
         Ok(())
     }
 
-    pub fn latest_version(&self, settings: &Settings, query: &str) -> Result<Option<String>> {
-        let matches = self.list_versions_matching(settings, query)?;
-        let v = match matches.contains(&query.to_string()) {
-            true => Some(query.to_string()),
-            false => matches.last().map(|v| v.to_string()),
-        };
-        Ok(v)
+    pub fn latest_version(
+        &self,
+        settings: &Settings,
+        query: Option<String>,
+    ) -> Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let matches = self.list_versions_matching(settings, &query)?;
+                let v = match matches.contains(&query) {
+                    true => Some(query),
+                    false => matches.last().map(|v| v.to_string()),
+                };
+                Ok(v)
+            }
+            None => self.latest_stable_version(settings),
+        }
+    }
+
+    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
+        if let Some(latest) = self.get_latest_stable(settings)? {
+            Ok(Some(latest))
+        } else {
+            self.latest_version(settings, Some("latest".into()))
+        }
     }
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
@@ -228,7 +251,8 @@ impl Plugin {
     }
 
     pub fn clear_remote_version_cache(&self) -> Result<()> {
-        self.remote_version_cache.clear()
+        self.remote_version_cache.clear()?;
+        self.latest_stable_cache.clear()
     }
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
@@ -267,6 +291,20 @@ impl Plugin {
             .with_context(|| {
                 format!(
                     "Failed fetching legacy filenames for plugin {}",
+                    style(&self.name).cyan().for_stderr()
+                )
+            })
+            .cloned()
+    }
+    fn get_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
+        if !self.has_latest_stable_script() {
+            return Ok(None);
+        }
+        self.latest_stable_cache
+            .get_or_try_init(|| self.fetch_latest_stable(settings))
+            .with_context(|| {
+                format!(
+                    "Failed fetching latest stable version for plugin {}",
                     style(&self.name).cyan().for_stderr()
                 )
             })
@@ -322,6 +360,23 @@ impl Plugin {
         pr.enable_steady_tick();
     }
 
+    pub fn needs_autoupdate(&self, settings: &Settings) -> Result<bool> {
+        if settings.plugin_autoupdate_last_check_duration == Duration::ZERO || !self.is_installed()
+        {
+            return Ok(false);
+        }
+        let updated_duration = self.plugin_path.metadata()?.modified()?.elapsed()?;
+        Ok(updated_duration > settings.plugin_autoupdate_last_check_duration)
+    }
+
+    pub fn autoupdate(&self, _pr: &mut ProgressReport) -> Result<()> {
+        trace!("autoupdate({})", self.name);
+        // TODO: implement
+        // pr.set_message("Checking for updates...".into());
+        touch_dir(&self.plugin_path)?;
+        Ok(())
+    }
+
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         let result = self
             .script_man
@@ -332,7 +387,7 @@ impl Plugin {
             .run()
             .with_context(|| {
                 let script = self.script_man.get_script_path(&Script::ListAll);
-                format!("failed to run {}", script.display())
+                format!("Failed to run {}", script.display())
             })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
@@ -364,6 +419,18 @@ impl Plugin {
             .map(|v| v.into())
             .collect())
     }
+    fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
+        let latest_stable = self
+            .script_man
+            .read(settings, &Script::LatestStable, settings.verbose)?
+            .trim()
+            .to_string();
+        Ok(if latest_stable.is_empty() {
+            None
+        } else {
+            Some(latest_stable)
+        })
+    }
 
     fn has_list_all_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAll)
@@ -373,6 +440,9 @@ impl Plugin {
     }
     fn has_list_legacy_filenames_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListLegacyFilenames)
+    }
+    fn has_latest_stable_script(&self) -> bool {
+        self.script_man.script_exists(&Script::LatestStable)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
         let stdout = self
@@ -450,6 +520,23 @@ impl Plugin {
     }
 }
 
+fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> ScriptManager {
+    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
+        .with_env("PATH".into(), get_path_with_fake_asdf())
+        .with_env(
+            "RTX_DATA_DIR".into(),
+            dirs::ROOT.to_string_lossy().into_owned(),
+        )
+        .with_env("__RTX_SCRIPT".into(), "1".into())
+        .with_env("RTX_PLUGIN_NAME".into(), name.to_string());
+    if let Some(shims_dir) = &settings.shims_dir {
+        let shims_dir = shims_dir.to_string_lossy().to_string();
+        sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
+    }
+
+    sm
+}
+
 impl PartialEq for Plugin {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -468,8 +555,21 @@ mod tests {
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
-        let plugin = Plugin::new(&PluginName::from("tiny"));
-        let version = plugin.latest_version(&settings, "1.0.0").unwrap().unwrap();
+        let plugin = Plugin::new(&settings, &PluginName::from("tiny"));
+        let version = plugin
+            .latest_version(&settings, Some("1.0.0".into()))
+            .unwrap()
+            .unwrap();
         assert_str_eq!(version, "1.0.0");
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        assert_str_eq!(version, "3.1.0");
+    }
+
+    #[test]
+    fn test_latest_stable() {
+        let settings = Settings::default();
+        let plugin = Plugin::new(&settings, &PluginName::from("dummy"));
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        assert_str_eq!(version, "2.0.0");
     }
 }

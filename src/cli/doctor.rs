@@ -1,5 +1,5 @@
 use color_eyre::eyre::Result;
-use console::style;
+use console::{pad_str, style, Alignment};
 use indenter::indented;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
@@ -9,8 +9,9 @@ use std::process::exit;
 use crate::cli::command::Command;
 use crate::cli::version::VERSION;
 use crate::config::Config;
-use crate::env;
+use crate::git::Git;
 use crate::{cli, cmd};
+use crate::{duration, env};
 
 use crate::output::Output;
 use crate::shell::ShellType;
@@ -30,15 +31,11 @@ impl Command for Doctor {
         rtxprintln!(
             out,
             "{}\n{}\n",
-            style("config:").bold(),
-            indent(config.to_string())
-        );
-        rtxprintln!(
-            out,
-            "{}\n{}\n",
             style("settings:").bold(),
             indent(config.settings.to_string())
         );
+        rtxprintln!(out, "{}", render_config_files(&config));
+        rtxprintln!(out, "{}", render_plugins(&config));
         rtxprintln!(
             out,
             "{}\n{}\n",
@@ -54,7 +51,7 @@ impl Command for Doctor {
             }
         }
 
-        if let Some(latest) = cli::version::check_for_new_version() {
+        if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
             checks.push(format!(
                 "new rtx version {} available, currently on {}",
                 latest,
@@ -95,6 +92,40 @@ fn rtx_env_vars() -> String {
     }
     for (k, v) in vars {
         s.push_str(&format!("  {}={}\n", k, v));
+    }
+    s
+}
+
+fn render_config_files(config: &Config) -> String {
+    let mut s = style("config files:\n").bold().to_string();
+    for f in config.config_files.keys().rev() {
+        s.push_str(&format!("  {}\n", f.display()));
+    }
+    s
+}
+
+fn render_plugins(config: &Config) -> String {
+    let mut s = style("plugins:\n").bold().to_string();
+    let max_plugin_name_len = config
+        .plugins
+        .values()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    for p in config.plugins.values() {
+        let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
+        let git = Git::new(p.plugin_path.clone());
+        let si = match git.get_remote_url() {
+            Some(url) => {
+                let sha = git
+                    .current_sha_short()
+                    .unwrap_or_else(|_| "(unknown)".to_string());
+                format!("  {padded_name} {url}#{sha}\n")
+            }
+            None => format!("  {padded_name}\n"),
+        };
+        s.push_str(&si);
     }
     s
 }

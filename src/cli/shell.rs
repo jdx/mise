@@ -7,9 +7,6 @@ use once_cell::sync::Lazy;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::dirs;
-
-use crate::file::touch_dir;
 
 use crate::output::Output;
 use crate::shell::get_shell;
@@ -32,6 +29,7 @@ pub struct Shell {
 
 impl Command for Shell {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        config.autoupdate();
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.runtime)
@@ -53,20 +51,19 @@ impl Command for Shell {
                 out.stdout.writeln(op);
             }
         }
-        touch_dir(&dirs::ROOT)?;
 
         Ok(())
     }
 }
 
 fn err_inactive() -> Result<()> {
-    return Err(eyre!(formatdoc!(
+    Err(eyre!(formatdoc!(
         r#"
                 rtx is not activated in this shell session.
                 Please run `{}` first in your shell rc file.
                 "#,
         style("rtx activate").yellow()
-    )));
+    )))
 }
 
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {

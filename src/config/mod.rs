@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
 pub use settings::{MissingRuntimeBehavior, Settings};
 
@@ -21,7 +22,8 @@ use crate::config::settings::SettingsBuilder;
 use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
-use crate::{dirs, env, file, hook_env};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -38,6 +40,7 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
     pub env: IndexMap<String, String>,
+    pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
@@ -47,10 +50,10 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let mut plugins = load_plugins()?;
         let global_config = load_rtxrc()?;
         let mut settings = SettingsBuilder::default();
         let config_filenames = load_config_filenames(&IndexMap::new());
+        let mut plugins = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
@@ -85,7 +88,7 @@ impl Config {
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
                 plugins.entry(plugin_name.clone()).or_insert_with(|| {
-                    let mut plugin = Plugin::new(&plugin_name);
+                    let mut plugin = Plugin::new(&settings, &plugin_name);
                     plugin.repo_url = Some(repo_url);
                     Arc::new(plugin)
                 });
@@ -95,6 +98,7 @@ impl Config {
 
         let config = Self {
             env: load_env(&config_files),
+            path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
@@ -203,6 +207,65 @@ impl Config {
         }
         None
     }
+
+    pub fn autoupdate(&self) {
+        self.check_for_new_version();
+        let thread_pool = match ThreadPoolBuilder::new()
+            .num_threads(self.settings.jobs)
+            .build()
+        {
+            Ok(thread_pool) => thread_pool,
+            Err(err) => {
+                warn!("Error building thread pool: {:#}", err);
+                return;
+            }
+        };
+        if let Err(err) = thread_pool.install(|| -> Result<()> {
+            let plugins: Vec<Arc<Plugin>> = self
+                .plugins
+                .values()
+                .collect_vec()
+                .into_par_iter()
+                .filter(|p| match p.needs_autoupdate(&self.settings) {
+                    Ok(should_autoupdate) => should_autoupdate,
+                    Err(err) => {
+                        debug!("Error checking for autoupdate: {:#}", err);
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+            if plugins.is_empty() {
+                return Ok(());
+            }
+            let mpr = MultiProgressReport::new(self.settings.verbose);
+            plugins
+                .into_par_iter()
+                .map(|plugin| {
+                    let mut pr = mpr.add();
+                    plugin.autoupdate(&mut pr)?;
+                    pr.clear();
+                    Ok(())
+                })
+                .collect::<Result<_>>()?;
+            Ok(())
+        }) {
+            warn!("Error autoupdating: {:#}", err);
+        }
+    }
+
+    pub fn check_for_new_version(&self) {
+        if !console::user_attended_stderr() {
+            return; // not a tty so don't bother
+        }
+        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
+            warn!(
+                "newer rtx version {} available, currently on {}",
+                latest,
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+    }
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
@@ -243,8 +306,8 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins() -> Result<IndexMap<PluginName, Arc<Plugin>>> {
-    let plugins = Plugin::list()?
+fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Plugin>>> {
+    let plugins = Plugin::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>()
@@ -362,10 +425,18 @@ fn parse_config_file(
 
 fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<String, String> {
     let mut env = IndexMap::new();
-    for cf in config_files.values() {
+    for cf in config_files.values().rev() {
         env.extend(cf.env());
     }
     env
+}
+
+fn load_path_dirs(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> Vec<PathBuf> {
+    let mut path_dirs = vec![];
+    for cf in config_files.values().rev() {
+        path_dirs.extend(cf.path_dirs());
+    }
+    path_dirs
 }
 
 fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasMap {
@@ -393,13 +464,13 @@ fn err_load_settings(settings_path: &Path) -> Report {
 }
 
 fn err_no_shims_dir() -> Result<PathBuf> {
-    return Err(eyre!(indoc::formatdoc!(
+    Err(eyre!(indoc::formatdoc!(
         r#"
            rtx is not configured to use shims.
            Please set the `{}` setting to a directory.
            "#,
         style("shims_dir").yellow()
-    )));
+    )))
 }
 
 fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {

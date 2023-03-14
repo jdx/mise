@@ -26,11 +26,8 @@ pub struct Latest {
 impl Command for Latest {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let prefix = match self.runtime.version {
-            RuntimeArgVersion::None => match self.asdf_version {
-                Some(version) => version,
-                None => "latest".to_string(),
-            },
-            RuntimeArgVersion::Version(version) => version,
+            RuntimeArgVersion::None => self.asdf_version,
+            RuntimeArgVersion::Version(version) => Some(version),
             _ => Err(eyre!(
                 "invalid version: {}",
                 style(&self.runtime).cyan().for_stderr()
@@ -47,7 +44,7 @@ impl Command for Latest {
         })?;
 
         plugin.clear_remote_version_cache()?;
-        if let Some(version) = plugin.latest_version(&config.settings, &prefix)? {
+        if let Some(version) = plugin.latest_version(&config.settings, prefix)? {
             rtxprintln!(out, "{}", version);
         }
         Ok(())
