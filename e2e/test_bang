@@ -2,12 +2,18 @@
 set -euo pipefail
 
 assert() {
-  local actual
-  actual="$($*)"
-  if [[ "$actual" != "$2" ]]; then
-    echo "Expected '$2' but got '$actual'"
-    exit 1
-  fi
+	local actual
+	actual="$($1)"
+	if [[ "$actual" != "$2" ]]; then
+		echo "Expected '$2' but got '$actual'"
+		exit 1
+	fi
 }
 
-assert "rtx x nodejs@18.0.0!-2 -- node -v" "v16.0.0"
+rtx local tiny@latest!-1
+assert "rtx current tiny" "2.1.0"
+rtx local tiny@lts!-1
+assert "rtx current tiny" "2.1.0"
+rtx local tiny@3.1!-0.1
+assert "rtx current tiny" "3.0.1"
+rtx local tiny@latest
