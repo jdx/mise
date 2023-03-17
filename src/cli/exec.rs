@@ -42,6 +42,10 @@ pub struct Exec {
     /// Command string to execute
     #[clap(short, long = "command", conflicts_with = "command")]
     pub c: Option<OsString>,
+
+    /// Change to this directory before executing the command
+    #[clap(visible_short_alias = 'C', long)]
+    pub cd: Option<OsString>,
 }
 
 impl Command for Exec {
@@ -51,57 +55,65 @@ impl Command for Exec {
             .with_args(&self.runtime)
             .with_install_missing()
             .build(&mut config)?;
-        let (program, args) = parse_command(&env::SHELL, self.command, self.c);
+        let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
         let mut env = ts.env_with_path(&config);
         if config.settings.missing_runtime_behavior != Ignore {
             // prevent rtx from auto-installing inside a shim
             env.insert("RTX_MISSING_RUNTIME_BEHAVIOR".into(), "warn".into());
         }
 
-        exec(program, args, env)
+        self.exec(program, args, env)
     }
 }
 
-#[cfg(not(test))]
-fn exec<T, U, E>(program: T, args: U, env: IndexMap<E, E>) -> Result<()>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-    E: AsRef<OsStr>,
-{
-    for (k, v) in env.iter() {
-        env::set_var(k, v);
+impl Exec {
+    #[cfg(not(test))]
+    fn exec<T, U, E>(&self, program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+    where
+        T: IntoExecutablePath,
+        U: IntoIterator,
+        U::Item: Into<OsString>,
+        E: AsRef<OsStr>,
+    {
+        for (k, v) in env.iter() {
+            env::set_var(k, v);
+        }
+        let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+        let program = program.to_executable();
+        if let Some(cd) = &self.cd {
+            env::set_current_dir(cd)?;
+        }
+        let err = exec::Command::new(program.clone()).args(&args).exec();
+        Err(eyre!("{:?} {}", program.to_string_lossy(), err.to_string()))
     }
-    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-    let program = program.to_executable();
-    let err = exec::Command::new(program.clone()).args(&args).exec();
-    Err(eyre!("{:?} {}", program.to_string_lossy(), err.to_string()))
-}
 
-#[cfg(test)]
-fn exec<T, U, E>(program: T, args: U, env: IndexMap<E, E>) -> Result<()>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-    E: AsRef<OsStr>,
-{
-    let mut cmd = cmd::cmd(program, args);
-    for (k, v) in env.iter() {
-        cmd = cmd.env(k, v);
-    }
-    let res = cmd.unchecked().run()?;
-    match res.status.code().unwrap_or(1) {
-        0 => Ok(()),
-        code => Err(eyre!("command failed with exit code {}", code)),
+    #[cfg(test)]
+    fn exec<T, U, E>(&self, program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+    where
+        T: IntoExecutablePath,
+        U: IntoIterator,
+        U::Item: Into<OsString>,
+        E: AsRef<OsStr>,
+    {
+        let mut cmd = cmd::cmd(program, args);
+        if let Some(cd) = &self.cd {
+            cmd = cmd.dir(cd);
+        }
+        for (k, v) in env.iter() {
+            cmd = cmd.env(k, v);
+        }
+        let res = cmd.unchecked().run()?;
+        match res.status.code().unwrap_or(1) {
+            0 => Ok(()),
+            code => Err(eyre!("command failed with exit code {}", code)),
+        }
     }
 }
 
 fn parse_command(
     shell: &str,
-    command: Option<Vec<OsString>>,
-    c: Option<OsString>,
+    command: &Option<Vec<OsString>>,
+    c: &Option<OsString>,
 ) -> (OsString, Vec<OsString>) {
     match (&command, &c) {
         (Some(command), _) => {
@@ -109,7 +121,7 @@ fn parse_command(
 
             (program.clone(), args.into())
         }
-        _ => (shell.into(), vec!["-c".into(), c.unwrap()]),
+        _ => (shell.into(), vec!["-c".into(), c.clone().unwrap()]),
     }
 }
 
@@ -121,6 +133,9 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
       # Specify command as a string:
       rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
+
+      # Run a command in a different directory:
+      rtx x -C /path/to/project nodejs@18 -- node ./app.js
     "#, style("Examples:").bold().underlined()}
 });
 
@@ -145,5 +160,10 @@ mod tests {
                 .collect::<Vec<String>>(),
         )
         .unwrap_err();
+    }
+
+    #[test]
+    fn test_exec_cd() {
+        assert_cli!("exec", "-C", "/tmp", "--", "pwd");
     }
 }
