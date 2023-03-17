@@ -572,6 +572,7 @@ disable_default_shorthands = false # disable the default shorthands, see `RTX_DI
 
 experimental = false # enable experimental features such as shims
 shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims are stored
+log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
 
 [alias.nodejs]
 my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
