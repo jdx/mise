@@ -494,6 +494,8 @@ erlang      ref:master   # compile from vcs ref
 golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
 shfmt       path:./shfmt # use a custom runtime
 nodejs      lts          # use lts version of nodejs (not supported by all plugins)
+
+# The following syntax is experimental and subject to change
 nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if lts is 18)
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
