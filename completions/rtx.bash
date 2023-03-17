@@ -1237,7 +1237,7 @@ _rtx() {
             return 0
             ;;
         rtx__exec)
-            opts="-c -j -r -v -h --command --install-missing --jobs --log-level --raw --verbose --help [RUNTIME]... [COMMAND]..."
+            opts="-c -j -r -v -h --command --cd --install-missing --jobs --log-level --raw --verbose --help [RUNTIME]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1248,6 +1248,10 @@ _rtx() {
                     return 0
                     ;;
                 -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cd)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
