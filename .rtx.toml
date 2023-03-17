@@ -1,3 +1,4 @@
+dotenv = '.env'
 [env]
 FOO = "bar"
 

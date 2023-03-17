@@ -595,14 +595,8 @@ Here is what the config looks like:
 
 ```toml
 [env]
-NODE_ENV = 'production' # supports arbitrary env vars so rtx can be used like dotenv
-PATH = [
-  # adds an absolute path
-  "~/.local/share/bin",
-  # adds a path relative to the directory this config is in, not necessarily PWD
-  "./node_modules/.bin",
-  "$PATH" # required to be at the end
-]
+# supports arbitrary env vars so rtx can be used like direnv/dotenv
+NODE_ENV = 'production' 
 
 [tools]
 # specify single or multiple versions
@@ -635,6 +629,39 @@ my_custom_node = '18'
 `.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not
 require setting `experimental = true` in the global config in part because this config can
 itself contain the setting for `experimental`.
+
+#### `[env]` - Arbitrary Environment Variables
+
+The `[env]` section of .rtx.toml allows setting arbitrary environment variables.
+These can be simple key/value entries like this:
+
+```toml
+[env]
+NODE_ENV = 'production'
+```
+
+`PATH` is treated specially, it needs to be defined as an array with `$PATH` at the end:
+
+```toml
+[env]
+PATH = [
+    # adds an absolute path
+    "~/.local/share/bin",
+    # adds a path relative to the .rtx.toml, not PWD
+    "./node_modules/.bin",
+    "$PATH"
+]
+```
+
+_Note: other PATH-like variables like `LD_LIBRARY_PATH` cannot be set this way._
+
+`dotenv` can be used to specify a [dotenv](https://dotenv.org) file to load:
+
+```toml
+dotenv = '.env'
+```
+
+_Note: `dotenv` goes at the top of the file, above `[env]`._
 
 ### Environment variables
 
