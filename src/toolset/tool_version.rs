@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use versions::{Chunk, Version};
 
 use crate::config::Config;
-use crate::dirs;
+
 use crate::plugins::Plugin;
 use crate::runtimes::RuntimeVersion;
 use crate::ui::progress_report::ProgressReport;
@@ -74,11 +74,12 @@ impl ToolVersion {
             _ => (),
         }
 
-        if dirs::INSTALLS.join(&plugin.name).join(&v).exists() {
-            // if the version is already installed, no need to fetch all of the remote versions
-            let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
-            return Ok(rtv);
-        }
+        // TODO: put this back in when it's compatible with #343
+        // if dirs::INSTALLS.join(&plugin.name).join(&v).exists() {
+        //     // if the version is already installed, no need to fetch all of the remote versions
+        //     let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
+        //     return Ok(rtv);
+        // }
 
         if v == "latest" {
             let v = plugin.latest_version(&config.settings, None)?;

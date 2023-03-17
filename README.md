@@ -110,6 +110,10 @@ v18.10.9
   - [Plugin Options](#plugin-options)
 - [Versioning](#versioning)
   - [Calver Breaking Changes](#calver-breaking-changes)
+- [Directories](#directories)
+  - [`~/.config/rtx`](#configrtx)
+  - [`~/.cache/rtx`](#cachertx)
+  - [`~/.local/share/rtx`](#localsharertx)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
@@ -851,6 +855,74 @@ Here are a list of the changes that will be made:
 - `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file
   that is read anywhere such as from `/tmp`.
 - (more to be added)
+
+## Directories
+
+The following are the directories that rtx uses.
+These are the default directories, see 
+[Configuration](#configuration) for information on changing the locations.
+
+> **Tip**
+> 
+> If you often find yourself using these directories (as I do), I suggest setting all of them to `~/.rtx` for easy access.
+
+### `~/.config/rtx`
+
+This directory stores the global configuration file `~/.config/rtx/config.toml`.
+
+### `~/.cache/rtx`
+
+_On macOS this is `~/Library/Caches/rtx`._
+
+Stores internal cache that rtx uses for things like the list of all available versions of a 
+plugin.
+See [Cache Behavior](#cache-behavior) for more information.
+
+### `~/.local/share/rtx`
+
+This is the main directory that rtx uses and is where plugins and tools are installed into.
+It is nearly identical to `~/.asdf` in asdf, so much so that you may be able to get by 
+symlinking these together and using asdf and rtx simultaneously. (Supporting this isn't a 
+project goal, however).
+
+#### `~/.local/share/rtx/downloads`
+
+This is where plugins may optionally cache downloaded assets such as tarballs. Use the 
+`always_keep_downloads` setting to prevent rtx from removing files from here.
+
+#### `~/.local/share/rtx/plugins`
+
+rtx installs plugins to this directory when running `rtx plugins install`. If you are working on a 
+plugin, I suggest 
+symlinking it manually by running:
+
+```
+ln -s ~/src/rtx-my-tool ~/.local/share/rtx/plugins/my-tool
+```
+
+#### `~/.local/share/rtx/installs`
+
+This is where tools are installed to when running `rtx install`. For example, `rtx install 
+nodejs@18.0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0` For example, `rtx 
+install 0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0`.
+
+This will also create other symlinks to this directory for version prefixes ("18" and "18.15") 
+and matching aliases ("lts", "latest").
+For example:
+
+```
+18 -> ./18.15.0
+18.15 -> ./18.15.0
+latest -> ./18.15.0
+lts -> ./18.15.0
+```
+
+These are currently experimental and only created when the "experimental" setting is true. 
+
+#### `~/.local/share/rtx/shims`
+
+This will be the default location for storing shims. Currently this functionality is marked as 
+experimental, however, and this needs to be manually set with `shims_dir`.
 
 ## FAQs
 
