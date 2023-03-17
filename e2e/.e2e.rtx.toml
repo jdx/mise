@@ -1,3 +1,4 @@
+dotenv = '.test-env'
 [env]
 FOO = "bar"
 PATH = ["/root", "./cwd", "$PATH"]

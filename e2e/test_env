@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 
 assert() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
+	actual="$(bash -c "$1")"
+	actual="${actual%$'\n'}"
+	expected="${2%$'\n'}"
+	if [[ "$actual" != "$expected" ]]; then
+		echo "assertion failed, expected '$expected', got '$actual'"
+		exit 1
+	fi
 }
 
 rtx i nodejs@16.0.0
 eval "$(rtx env -s bash nodejs@16.0.0)"
 assert "node -v" "v16.0.0"
+assert "rtx x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"

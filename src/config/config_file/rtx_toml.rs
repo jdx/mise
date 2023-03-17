@@ -76,6 +76,7 @@ impl RtxToml {
         let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
+                "dotenv" => self.parse_dotenv(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
@@ -92,6 +93,20 @@ impl RtxToml {
         SettingsBuilder::default()
     }
 
+    fn parse_dotenv(&mut self, k: &str, v: &Item) -> Result<()> {
+        match v.as_str() {
+            Some(filename) => {
+                let path = self.path.parent().unwrap().join(filename);
+                for item in dotenvy::from_path_iter(path)? {
+                    let (k, v) = item?;
+                    self.env.insert(k, v);
+                }
+            }
+            _ => parse_error!(k, v, "string")?,
+        }
+        Ok(())
+    }
+
     fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
         let mut v = v.clone();
         if let Some(table) = v.as_table_like_mut() {
@@ -99,7 +114,9 @@ impl RtxToml {
                 self.path_dirs = self.parse_path_env(&format!("{}.PATH", k), &path)?;
             }
         }
-        self.env = self.parse_hashmap(k, &v)?;
+        for (k, v) in self.parse_hashmap(k, &v)? {
+            self.env.insert(k, v);
+        }
         Ok(())
     }
 
