@@ -1,6 +1,7 @@
 dotenv = '.env'
 [env]
 FOO = "bar"
+THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 
 [tools]
 nodejs = 'lts'
