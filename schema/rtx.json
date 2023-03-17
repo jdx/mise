@@ -38,7 +38,7 @@
     "plugins": {
       "description": "plugins to use",
       "type": "object",
-      "items": {
+      "additionalProperties": {
         "description": "url to plugin repository",
         "type": "string"
       }
@@ -46,10 +46,37 @@
     "alias": {
       "description": "custom shorthands for versions",
       "type": "object",
-      "items": {
-        "description": "version to use",
-        "type": "string"
+      "additionalProperties": {
+        "description": "plugin to set aliases for",
+        "type": "object",
+        "additionalProperties": {
+          "description": "version alias points to",
+          "type": "string"
+        }
       }
+    },
+    "settings": {"$ref": "#/$defs/settings"}
+  },
+  "$defs": {
+    "tool": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "version of the tool to install"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "description": "version of the tool to install",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version"
+          ]
+        }
+      ]
     },
     "settings": {
       "description": "settings for rtx",
@@ -131,28 +158,6 @@
           "type": "boolean"
         }
       }
-    }
-  },
-  "$defs": {
-    "tool": {
-      "oneOf": [
-        {
-          "type": "string",
-          "description": "version of the tool to install"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "version": {
-              "description": "version of the tool to install",
-              "type": "string"
-            }
-          },
-          "required": [
-            "version"
-          ]
-        }
-      ]
     }
   }
 }
