@@ -68,7 +68,7 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
 }
 
 pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
-    if !config.settings.experimental {
+    if !config.settings.experimental || config.settings.shims_dir.is_none() {
         return Ok(());
     }
     let shims_dir = config.get_shims_dir()?;

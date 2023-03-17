@@ -24,6 +24,7 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
@@ -242,6 +243,7 @@ impl Plugin {
         Ok(match self.installs_path.exists() {
             true => file::dir_subdirs(&self.installs_path)?
                 .iter()
+                .filter(|v| !is_runtime_symlink(&self.installs_path.join(v)))
                 .map(|v| Versioning::new(v).unwrap_or_default())
                 .sorted()
                 .map(|v| v.to_string())
