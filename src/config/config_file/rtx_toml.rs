@@ -4,21 +4,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::{Result, Section};
 use log::LevelFilter;
+use tera::{Context, Tera};
 use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, MissingRuntimeBehavior};
-use crate::dirs;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
+use crate::{dirs, env};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
+    context: Context,
     path: PathBuf,
     toolset: Toolset,
     env: HashMap<String, String>,
@@ -44,8 +46,12 @@ macro_rules! parse_error {
 #[allow(dead_code)] // TODO: remove
 impl RtxToml {
     pub fn init(path: &Path) -> Self {
+        let mut context = Context::new();
+        context.insert("env", &*env::PRISTINE_ENV);
+        context.insert("config_root", path.parent().unwrap().to_str().unwrap());
         Self {
             path: path.to_path_buf(),
+            context,
             toolset: Toolset {
                 source: Some(ToolSource::RtxToml(path.to_path_buf())),
                 ..Default::default()
@@ -115,6 +121,7 @@ impl RtxToml {
             }
         }
         for (k, v) in self.parse_hashmap(k, &v)? {
+            let v = self.parse_template(&k, &v)?;
             self.env.insert(k, v);
         }
         Ok(())
@@ -509,6 +516,12 @@ impl RtxToml {
             self.doc.as_table_mut().remove("settings");
         }
     }
+
+    fn parse_template(&self, k: &str, input: &str) -> Result<String> {
+        let output = Tera::one_off(input, &self.context, false)
+            .with_context(|| format!("failed to parse template: {k}='{}'", input))?;
+        Ok(output)
+    }
 }
 
 impl Display for RtxToml {
@@ -631,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [env]
         foo="bar"
@@ -669,7 +682,7 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -687,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -706,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -723,7 +736,7 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -737,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_update_setting() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
@@ -756,7 +769,7 @@ mod tests {
 
     #[test]
     fn test_remove_setting() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true

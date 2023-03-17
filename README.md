@@ -114,6 +114,7 @@ v18.10.9
   - [`~/.config/rtx`](#configrtx)
   - [`~/.cache/rtx`](#cachertx)
   - [`~/.local/share/rtx`](#localsharertx)
+- [Templates](#templates)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
@@ -655,6 +656,13 @@ PATH = [
 
 _Note: other PATH-like variables like `LD_LIBRARY_PATH` cannot be set this way._
 
+Environment variable values can be templated, see [Templates](#templates) for details.
+
+```toml
+[env]
+LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
+```
+
 `dotenv` can be used to specify a [dotenv](https://dotenv.org) file to load:
 
 ```toml
@@ -950,6 +958,16 @@ These are currently experimental and only created when the "experimental" settin
 
 This will be the default location for storing shims. Currently this functionality is marked as 
 experimental, however, and this needs to be manually set with `shims_dir`.
+
+## Templates
+
+The following context objects are available inside templates:
+
+- `env: HashMap<String, String>` – current environment variables
+- `config_root: PathBuf` – directory containing the `.rtx.toml` file
+
+Templates are parsed with [tera](https://tera.netlify.app/docs). Currently templates are only 
+used for env var values, but in the future they may be used for other things.
 
 ## FAQs
 
