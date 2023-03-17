@@ -358,7 +358,7 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    if env::RTX_CONFIG_FILE.is_none() {
+    if env::RTX_CONFIG_FILE.is_none() && !*env::RTX_USE_TOML {
         // only add ~/.tool-versions if RTX_CONFIG_FILE is not set
         // because that's how the user overrides the default
         let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());

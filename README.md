@@ -37,7 +37,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.23.9
+rtx 1.23.10
 ```
 
 Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
@@ -325,7 +325,7 @@ $ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.23.9/rtx-v1.23.9-linux-x64 | tar -xJv
+$ curl https://github.com/jdxcode/rtx/releases/download/v1.23.10/rtx-v1.23.10-linux-x64 | tar -xJv
 $ mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -494,6 +494,8 @@ erlang      ref:master   # compile from vcs ref
 golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
 shfmt       path:./shfmt # use a custom runtime
 nodejs      lts          # use lts version of nodejs (not supported by all plugins)
+
+# The following syntax is experimental and subject to change
 nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if lts is 18)
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
