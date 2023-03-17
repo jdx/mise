@@ -23,6 +23,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::{Plugin, PluginName};
+use crate::runtime_symlinks::rebuild_symlinks;
 use crate::runtimes::RuntimeVersion;
 use crate::shims::reshim;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -168,7 +169,9 @@ impl Toolset {
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
-                reshim(config, self)
+                reshim(config, self)?;
+                rebuild_symlinks(config)?;
+                Ok(())
             })
     }
     fn install_missing_plugins(
