@@ -44,6 +44,9 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
   exit 1
 fi
 
+assert_raises "rtx uninstall shfmt@3.6.0"
+assert_raises "rtx g shfmt --install-missing"
+
 assert "rtx local shfmt@3.6.0" "[env]
 FOO = \"bar\"
 PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
