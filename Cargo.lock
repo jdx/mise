@@ -1307,7 +1307,7 @@ checksum = "b833d8d034ea094b1ea68aa6d5c740e0d04bad9d16568d08ba6f76823a114316"
 
 [[package]]
 name = "rtx-cli"
-version = "1.23.8"
+version = "1.23.9"
 dependencies = [
  "base64",
  "build-time",
