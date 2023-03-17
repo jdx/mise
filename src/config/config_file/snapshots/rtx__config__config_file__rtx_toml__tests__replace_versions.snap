@@ -24,13 +24,13 @@ Toolset {
                 },
             ],
             source: RtxToml(
-                "",
+                "/tmp/.rtx.toml",
             ),
         },
     },
     source: Some(
         RtxToml(
-            "",
+            "/tmp/.rtx.toml",
         ),
     ),
 }

@@ -6,7 +6,7 @@ Toolset {
     versions: {},
     source: Some(
         RtxToml(
-            "",
+            "/tmp/.rtx.toml",
         ),
     ),
 }
