@@ -32,6 +32,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
         runtime: vec![],
         c: None,
         command: Some(args),
+        cd: None,
     };
     exec.run(config, out)?;
     exit(0);
