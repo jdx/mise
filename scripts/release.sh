@@ -60,6 +60,7 @@ popd
 NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
 NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
 ./rtx/scripts/publish-r2.sh
+./rtx/scripts/publish-s3.sh
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
 pushd homebrew-tap
