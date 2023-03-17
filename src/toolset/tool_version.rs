@@ -108,19 +108,12 @@ impl ToolVersion {
         v: &str,
     ) -> Result<Option<RuntimeVersion>> {
         let (wanted, minus) = v.split_once("!-").unwrap();
-        let wanted = resolve_alias(config, plugin.clone(), wanted)?;
-        let mut wanted = Version::new(&wanted).unwrap();
-        for (i, m) in Version::new(minus).unwrap().chunks.0.iter().enumerate() {
-            let orig = match wanted.nth(i) {
-                Some(c) => c,
-                None => {
-                    warn!("cannot subtract {minus} from {wanted}");
-                    return Ok(None);
-                }
-            };
-            wanted.chunks.0[i] = Chunk::Numeric(orig - m.single_digit().unwrap());
-        }
-        match plugin.latest_version(&config.settings, Some(wanted.to_string()))? {
+        let wanted = match wanted {
+            "latest" => plugin.latest_version(&config.settings, None)?.unwrap(),
+            _ => resolve_alias(config, plugin.clone(), wanted)?,
+        };
+        let wanted = version_sub(&wanted, minus);
+        match plugin.latest_version(&config.settings, Some(wanted))? {
             Some(v) => Ok(RuntimeVersion::new(config, plugin, v, self.clone()).into()),
             None => Ok(None),
         }
@@ -210,6 +203,22 @@ pub fn resolve_alias(config: &Config, plugin: Arc<Plugin>, v: &str) -> Result<St
     Ok(v.to_string())
 }
 
+/// subtracts sub from orig and removes suffix
+/// e.g. version_sub("18.2.3", "2") -> "16"
+/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+fn version_sub(orig: &str, sub: &str) -> String {
+    let mut orig = Version::new(orig).unwrap();
+    let sub = Version::new(sub).unwrap();
+    while orig.chunks.0.len() > sub.chunks.0.len() {
+        orig.chunks.0.pop();
+    }
+    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
+        let m = sub.nth(i).unwrap();
+        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+    }
+    orig.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_str_eq;
@@ -229,5 +238,11 @@ mod tests {
         assert_str_eq!(tv.to_string(), "foo@path:~");
         let tv = ToolVersion::new(foo, ToolVersionType::System);
         assert_str_eq!(tv.to_string(), "foo@system");
+    }
+
+    #[test]
+    fn test_version_sub() {
+        assert_str_eq!(version_sub("18.2.3", "2"), "16");
+        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }
 }
