@@ -55,9 +55,9 @@ impl Command for Activate {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-        $ eval "$(rtx activate bash)"
-        $ eval "$(rtx activate zsh)"
-        $ rtx activate fish | source
-        $ execx($(rtx activate xonsh))
+        eval "$(rtx activate bash)"
+        eval "$(rtx activate zsh)"
+        rtx activate fish | source
+        execx($(rtx activate xonsh))
     "#, style("Examples:").bold().underlined()}
 });

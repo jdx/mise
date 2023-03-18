@@ -255,7 +255,7 @@ impl Config {
     }
 
     pub fn check_for_new_version(&self) {
-        if !console::user_attended_stderr() {
+        if !console::user_attended_stderr() || *env::RTX_HIDE_UPDATE_WARNING {
             return; // not a tty so don't bother
         }
         if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
