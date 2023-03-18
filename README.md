@@ -965,7 +965,7 @@ experimental, however, and this needs to be manually set with `shims_dir`.
 Templates are used in the following locations:
 
 - `.tool-versions` files
-- env var values in `.rtx.toml`
+- `.rtx.toml` files for most configuration
 - _(Submit a ticket if you want to see it used elsewhere!)_
 
 The following context objects are available inside templates:
