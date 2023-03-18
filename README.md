@@ -436,6 +436,12 @@ $ echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 $ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
+### Nushell
+
+```sh-session
+$ rtx activate nu | save $nu.config-path --append
+```
+
 ### Xonsh
 
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
