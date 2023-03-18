@@ -57,22 +57,13 @@ impl Shell for Nushell {
           }}
           
           def-env _rtx_hook [] {{
-            let lines = (^"{exe}" hook-env{status} -s nu | lines | parse "{{name}} = {{value}}")
+            let lines = (^"{exe}" hook-env{status} -s nu
+              | lines
+              | parse "{{name}} = {{value}}"
+              | where value != ($env.PATH | str join ":"))
             
             if ($lines | is-empty) {{
               return
-            }}
-          
-            let paths = ($lines | find PATH)
-          
-            let rejector = if ($paths | length | $in > 1) {{
-              $paths.0.value
-            }} else {{
-              null
-            }}
-          
-            if not ($rejector == null) {{
-              $lines | where value != $rejector | transpose -i -r -d | load-env
             }} else {{
               $lines | transpose -i -r -d | load-env
             }}
