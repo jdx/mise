@@ -7,10 +7,12 @@ use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
+use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env, file};
 
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
@@ -122,17 +124,29 @@ pub fn local(
     if let Some(runtimes) = &runtime {
         let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
         if cf.display_runtime(out, &runtimes)? {
+            install_missing_runtimes(&mut config, cf.as_ref())?;
             return Ok(());
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
         cf.add_runtimes(&mut config, &runtimes, pin)?;
     }
+    install_missing_runtimes(&mut config, cf.as_ref())?;
 
     if runtime.is_some() || remove.is_some() {
         cf.save()?;
     }
 
     rtxprint!(out, "{}", cf.dump());
+
+    Ok(())
+}
+
+fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<()> {
+    let mut ts = cf.to_toolset().clone();
+    if !ts.list_missing_versions().is_empty() {
+        let mpr = MultiProgressReport::new(config.settings.verbose);
+        ts.install_missing(config, mpr)?;
+    }
 
     Ok(())
 }

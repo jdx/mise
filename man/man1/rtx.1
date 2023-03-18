@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH rtx 1  "rtx 1.23.1" 
+.TH rtx 1  "rtx 1.25.4" 
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
-\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-log\-level\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
 .PP
@@ -23,9 +23,12 @@ Automatically install missing tools
 Number of plugins and runtimes to install in parallel
 default: 4
 .TP
+\fB\-\-log\-level\fR=\fILEVEL\fR [default: info]
+Set the log output verbosity
+.TP
 \fB\-r\fR, \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr to user.
-sets \-\-jobs=1
+Sets \-\-jobs=1
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show installation output
@@ -137,6 +140,6 @@ Examples:
   rtx x nodejs@18 \-\- node app.js  Run `node app.js` with PATH pointing to
                                   node\-18.x
 .SH VERSION
-v1.23.1
+v1.25.4
 .SH AUTHORS
 Jeff Dickey <@jdxcode>

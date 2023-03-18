@@ -17,6 +17,7 @@ aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-prog
 aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://rtx.pub/" --cache-control "$cache_hour" --no-progress --content-type "text/plain"
+aws s3 cp "./rtx/schema/rtx.json" "s3://rtx.pub/schema/rtx.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 
 aws s3 cp artifacts/rpm/rtx.repo s3://rtx.pub/rpm/ --cache-control "$cache_day" --no-progress
 aws s3 cp artifacts/rpm/packages/ s3://rtx.pub/rpm/packages/ --cache-control "$cache_week" --no-progress --recursive
@@ -26,10 +27,10 @@ aws s3 cp artifacts/rpm/repodata/ s3://rtx.pub/rpm/repodata/ --cache-control "$c
 aws s3 cp artifacts/deb/pool/ s3://rtx.pub/deb/pool/ --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp artifacts/deb/dists/ s3://rtx.pub/deb/dists/ --cache-control "$cache_hour" --no-progress --no-progress --recursive
 
-aws cloudfront create-invalidation --distribution-id E166HHA8DY7YLW --paths \
-	"/VERSION" \
-	"/SHASUMS*" \
-	"/install.sh" \
-	"/rtx-latest-*" \
-	"/rpm/repodata/*" \
-	"/deb/dists/*"
+#aws cloudfront create-invalidation --distribution-id E166HHA8DY7YLW --paths \
+#	"/VERSION" \
+#	"/SHASUMS*" \
+#	"/install.sh" \
+#	"/rtx-latest-*" \
+#	"/rpm/repodata/*" \
+#	"/deb/dists/*"

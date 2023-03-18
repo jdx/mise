@@ -32,6 +32,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
         runtime: vec![],
         c: None,
         command: Some(args),
+        cd: None,
     };
     exec.run(config, out)?;
     exit(0);
@@ -67,7 +68,7 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
 }
 
 pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
-    if !config.settings.experimental {
+    if !config.settings.experimental || config.settings.shims_dir.is_none() {
         return Ok(());
     }
     let shims_dir = config.get_shims_dir()?;

@@ -45,6 +45,10 @@ impl ConfigFile for LegacyVersionFile {
         HashMap::new()
     }
 
+    fn path_dirs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
     fn remove_plugin(&mut self, _plugin_name: &PluginName) {
         unimplemented!()
     }

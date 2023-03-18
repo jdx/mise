@@ -1,11 +1,14 @@
+#:schema ./schema/rtx.json
+dotenv = '.env'
 [env]
 FOO = "bar"
+THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 
 [tools]
 nodejs = 'lts'
-tiny = {version="1", foo="bar"}
-golang = {version="latest", foo="bar"}
-python = {version="latest", virtualenv="$HOME/.cache/venv"}
+tiny = { version = "1", foo = "bar" }
+golang = { version = "latest", foo = "bar" }
+python = { version = "latest", virtualenv = "$HOME/.cache/venv" }
 
 [plugins]
 nodejs = 'https://github.com/jdxcode/rtx-nodejs'

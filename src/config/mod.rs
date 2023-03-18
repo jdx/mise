@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use color_eyre::eyre::{eyre, Result, WrapErr};
-use color_eyre::Report;
+use color_eyre::eyre::{eyre, Result};
+
 use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{cli, dirs, env, file, hook_env};
+use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -40,6 +40,7 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub plugins: IndexMap<PluginName, Arc<Plugin>>,
     pub env: IndexMap<String, String>,
+    pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
@@ -49,10 +50,10 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let mut plugins = load_plugins()?;
         let global_config = load_rtxrc()?;
         let mut settings = SettingsBuilder::default();
         let config_filenames = load_config_filenames(&IndexMap::new());
+        let mut plugins = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
@@ -87,7 +88,7 @@ impl Config {
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
                 plugins.entry(plugin_name.clone()).or_insert_with(|| {
-                    let mut plugin = Plugin::new(&plugin_name);
+                    let mut plugin = Plugin::new(&settings, &plugin_name);
                     plugin.repo_url = Some(repo_url);
                     Arc::new(plugin)
                 });
@@ -97,6 +98,7 @@ impl Config {
 
         let config = Self {
             env: load_env(&config_files),
+            path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
@@ -253,10 +255,10 @@ impl Config {
     }
 
     pub fn check_for_new_version(&self) {
-        if !console::user_attended_stderr() {
+        if !console::user_attended_stderr() || *env::RTX_HIDE_UPDATE_WARNING {
             return; // not a tty so don't bother
         }
-        if let Some(latest) = cli::version::check_for_new_version() {
+        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
             warn!(
                 "newer rtx version {} available, currently on {}",
                 latest,
@@ -289,23 +291,25 @@ fn load_rtxrc() -> Result<RtxToml> {
             trace!("settings does not exist {:?}", settings_path);
             Ok(RtxToml::init(&settings_path))
         }
-        true => match RtxToml::from_file(&settings_path)
-            .wrap_err_with(|| err_load_settings(&settings_path))
-        {
+        true => match RtxToml::from_file(&settings_path) {
             Ok(cf) => Ok(cf),
             Err(err) => match RtxToml::migrate(&settings_path) {
                 Ok(cf) => Ok(cf),
                 Err(e) => {
-                    error!("Error migrating config.toml: {:#}", e);
-                    Err(err)
+                    trace!("Error migrating config.toml: {:#}", e);
+                    Err(eyre!(
+                        "Error parsing {}: {:#}",
+                        &settings_path.display(),
+                        err
+                    ))
                 }
             },
         },
     }
 }
 
-fn load_plugins() -> Result<IndexMap<PluginName, Arc<Plugin>>> {
-    let plugins = Plugin::list()?
+fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Plugin>>> {
+    let plugins = Plugin::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>()
@@ -356,7 +360,7 @@ fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
-    if env::RTX_CONFIG_FILE.is_none() {
+    if env::RTX_CONFIG_FILE.is_none() && !*env::RTX_USE_TOML {
         // only add ~/.tool-versions if RTX_CONFIG_FILE is not set
         // because that's how the user overrides the default
         let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
@@ -429,6 +433,14 @@ fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<S
     env
 }
 
+fn load_path_dirs(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> Vec<PathBuf> {
+    let mut path_dirs = vec![];
+    for cf in config_files.values().rev() {
+        path_dirs.extend(cf.path_dirs());
+    }
+    path_dirs
+}
+
 fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasMap {
     let mut aliases: AliasMap = IndexMap::new();
 
@@ -444,13 +456,6 @@ fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasM
     }
 
     aliases
-}
-
-fn err_load_settings(settings_path: &Path) -> Report {
-    eyre!(
-        "error loading settings from {}",
-        settings_path.to_string_lossy()
-    )
 }
 
 fn err_no_shims_dir() -> Result<PathBuf> {

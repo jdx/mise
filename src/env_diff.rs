@@ -69,7 +69,6 @@ impl EnvDiff {
             "bash",
             "-c",
             indoc::formatdoc! {"
-                set -e
                 . {script}
                 export -p
             ", script = script.display()}

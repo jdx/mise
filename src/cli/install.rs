@@ -15,6 +15,7 @@ use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::{Plugin, PluginName};
+use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -103,7 +104,7 @@ impl Install {
                 for mut tv in tool_versions {
                     let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
                         Some(plugin) => plugin,
-                        None => Arc::new(Plugin::new(&tv.plugin_name)),
+                        None => Arc::new(Plugin::new(&config.settings, &tv.plugin_name)),
                     };
                     if !plugin.is_installed() {
                         let mut pr = mpr.add();
@@ -166,7 +167,9 @@ impl Install {
                         }
                     })
                     .collect::<Result<Vec<_>>>()?;
-                reshim(&mut config, &ts).with_context(|| "failed to reshim")
+                reshim(&mut config, &ts).with_context(|| "failed to reshim")?;
+                rebuild_symlinks(&config)?;
+                Ok(())
             })
     }
 

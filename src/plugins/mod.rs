@@ -24,6 +24,7 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
@@ -49,7 +50,7 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub fn new(name: &PluginName) -> Self {
+    pub fn new(settings: &Settings, name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
         let fresh_duration = if *PREFER_STALE {
@@ -59,8 +60,7 @@ impl Plugin {
         };
         Self {
             name: name.into(),
-            script_man: ScriptManager::new(plugin_path.clone())
-                .with_env("PATH".into(), get_path_with_fake_asdf()),
+            script_man: build_script_man(settings, name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
@@ -84,10 +84,10 @@ impl Plugin {
         }
     }
 
-    pub fn list() -> Result<Vec<Self>> {
+    pub fn list(settings: &Settings) -> Result<Vec<Self>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .iter()
-            .map(Plugin::new)
+            .map(|name| Plugin::new(settings, name))
             .collect())
     }
 
@@ -243,6 +243,7 @@ impl Plugin {
         Ok(match self.installs_path.exists() {
             true => file::dir_subdirs(&self.installs_path)?
                 .iter()
+                .filter(|v| !is_runtime_symlink(&self.installs_path.join(v)))
                 .map(|v| Versioning::new(v).unwrap_or_default())
                 .sorted()
                 .map(|v| v.to_string())
@@ -521,6 +522,23 @@ impl Plugin {
     }
 }
 
+fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> ScriptManager {
+    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
+        .with_env("PATH".into(), get_path_with_fake_asdf())
+        .with_env(
+            "RTX_DATA_DIR".into(),
+            dirs::ROOT.to_string_lossy().into_owned(),
+        )
+        .with_env("__RTX_SCRIPT".into(), "1".into())
+        .with_env("RTX_PLUGIN_NAME".into(), name.to_string());
+    if let Some(shims_dir) = &settings.shims_dir {
+        let shims_dir = shims_dir.to_string_lossy().to_string();
+        sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
+    }
+
+    sm
+}
+
 impl PartialEq for Plugin {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -539,7 +557,7 @@ mod tests {
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
-        let plugin = Plugin::new(&PluginName::from("tiny"));
+        let plugin = Plugin::new(&settings, &PluginName::from("tiny"));
         let version = plugin
             .latest_version(&settings, Some("1.0.0".into()))
             .unwrap()
@@ -552,7 +570,7 @@ mod tests {
     #[test]
     fn test_latest_stable() {
         let settings = Settings::default();
-        let plugin = Plugin::new(&PluginName::from("dummy"));
+        let plugin = Plugin::new(&settings, &PluginName::from("dummy"));
         let version = plugin.latest_version(&settings, None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }

@@ -4,26 +4,31 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::{Result, Section};
 use log::LevelFilter;
-use toml_edit::{table, value, Array, Item, Value};
+use tera::Context;
+use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, MissingRuntimeBehavior};
+use crate::dirs;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
+    context: Context,
     path: PathBuf,
     toolset: Toolset,
     env: HashMap<String, String>,
+    path_dirs: Vec<PathBuf>,
     settings: SettingsBuilder,
     alias: AliasMap,
-    doc: toml_edit::Document,
+    doc: Document,
     plugins: HashMap<String, String>,
 }
 
@@ -42,8 +47,15 @@ macro_rules! parse_error {
 #[allow(dead_code)] // TODO: remove
 impl RtxToml {
     pub fn init(path: &Path) -> Self {
+        let mut context = BASE_CONTEXT.clone();
+        context.insert("config_root", path.parent().unwrap().to_str().unwrap());
         Self {
             path: path.to_path_buf(),
+            context,
+            toolset: Toolset {
+                source: Some(ToolSource::RtxToml(path.to_path_buf())),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -67,10 +79,11 @@ impl RtxToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        self.doc = s.parse().suggestion("ensure file is valid TOML")?;
-        for (k, v) in self.doc.iter() {
+        let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
+        for (k, v) in doc.iter() {
             match k {
-                "env" => self.env = self.parse_hashmap(k, v)?,
+                "dotenv" => self.parse_dotenv(k, v)?,
+                "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
@@ -78,11 +91,74 @@ impl RtxToml {
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
+        self.doc = doc;
         Ok(())
     }
 
     pub fn settings(&self) -> SettingsBuilder {
         SettingsBuilder::default()
+    }
+
+    fn parse_dotenv(&mut self, k: &str, v: &Item) -> Result<()> {
+        match v.as_str() {
+            Some(filename) => {
+                let path = self.path.parent().unwrap().join(filename);
+                for item in dotenvy::from_path_iter(path)? {
+                    let (k, v) = item?;
+                    self.env.insert(k, v);
+                }
+            }
+            _ => parse_error!(k, v, "string")?,
+        }
+        Ok(())
+    }
+
+    fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
+        let mut v = v.clone();
+        if let Some(table) = v.as_table_like_mut() {
+            if let Some(path) = table.remove("PATH") {
+                self.path_dirs = self.parse_path_env(&format!("{}.PATH", k), &path)?;
+            }
+        }
+        for (k, v) in self.parse_hashmap(k, &v)? {
+            let v = self.parse_template(&k, &v)?;
+            self.env.insert(k, v);
+        }
+        Ok(())
+    }
+
+    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+        match v.as_array() {
+            Some(array) => {
+                if let Some(Some(last)) = array.get(array.len() - 1).map(|v| v.as_str()) {
+                    if last != "$PATH" {
+                        // TODO: allow $PATH to be anywhere in the array
+                        parse_error!(k, v, "array ending with '$PATH'")?;
+                    }
+                }
+                let mut path = Vec::new();
+                let config_root = self.path.parent().unwrap();
+                for v in array {
+                    match v.as_str() {
+                        Some("$PATH") => {}
+                        Some(s) => {
+                            let s = self.parse_template(k, s)?;
+                            let s = match s.strip_prefix("./") {
+                                Some(s) => config_root.join(s),
+                                None => match s.strip_prefix("~/") {
+                                    Some(s) => dirs::HOME.join(s),
+                                    None => s.into(),
+                                },
+                            };
+                            path.push(s);
+                        }
+                        _ => parse_error!(k, v, "string")?,
+                    }
+                }
+                Ok(path)
+            }
+            _ => parse_error!(k, v, "array")?,
+        }
     }
 
     fn parse_alias(&self, k: &str, v: &Item) -> Result<AliasMap> {
@@ -97,9 +173,11 @@ impl RtxToml {
                             for (from, to) in table.iter() {
                                 match to.as_str() {
                                     Some(s) => {
-                                        plugin_aliases.insert(from.into(), s.into());
+                                        let from = self.parse_template(&k, from)?;
+                                        let s = self.parse_template(&k, s)?;
+                                        plugin_aliases.insert(from, s);
                                     }
-                                    _ => parse_error!(format!("{}.{}", k, from), v, "string")?,
+                                    _ => parse_error!(format!("{}.{}", k, from), to, "string")?,
                                 }
                             }
                         }
@@ -119,7 +197,9 @@ impl RtxToml {
                 for (k, v) in table.iter() {
                     match v.as_str() {
                         Some(s) => {
-                            env.insert(k.into(), s.into());
+                            let k = self.parse_template(key, k)?;
+                            let s = self.parse_template(key, s)?;
+                            env.insert(k, s);
                         }
                         _ => parse_error!(key, v, "string")?,
                     }
@@ -131,8 +211,7 @@ impl RtxToml {
     }
 
     fn parse_toolset(&self, key: &str, v: &Item) -> Result<Toolset> {
-        let source = ToolSource::RtxToml(self.path.clone());
-        let mut toolset = Toolset::new(source);
+        let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
 
         match v.as_table_like() {
             Some(table) => {
@@ -251,15 +330,18 @@ impl RtxToml {
 
     fn parse_tool_version_value(&self, key: &str, v: &Value) -> Result<ToolVersionType> {
         match v.as_str() {
-            Some(s) => match s.split_once(':') {
-                Some(("prefix", v)) => Ok(ToolVersionType::Prefix(v.into())),
-                Some(("path", v)) => Ok(ToolVersionType::Path(v.into())),
-                Some(("ref", v)) => Ok(ToolVersionType::Ref(v.into())),
-                Some((unknown, v)) => {
-                    parse_error!(format!("{}.{}", key, unknown), v, "prefix, path, or ref")?
+            Some(s) => {
+                let s = self.parse_template(key, s)?;
+                match s.split_once(':') {
+                    Some(("prefix", v)) => Ok(ToolVersionType::Prefix(v.into())),
+                    Some(("path", v)) => Ok(ToolVersionType::Path(v.into())),
+                    Some(("ref", v)) => Ok(ToolVersionType::Ref(v.into())),
+                    Some((unknown, v)) => {
+                        parse_error!(format!("{}.{}", key, unknown), v, "prefix, path, or ref")?
+                    }
+                    None => Ok(ToolVersionType::Version(s)),
                 }
-                None => Ok(ToolVersionType::Version(s.into())),
-            },
+            }
             _ => parse_error!(key, v, "string")?,
         }
     }
@@ -346,7 +428,7 @@ impl RtxToml {
         match v.as_value() {
             Some(Value::String(s)) => Ok(humantime::parse_duration(s.value())?),
             Some(Value::Integer(i)) => Ok(Duration::from_secs(*i.value() as u64 * 60)),
-            _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+            _ => parse_error!(k, v, "duration")?,
         }
     }
 
@@ -360,21 +442,27 @@ impl RtxToml {
     fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
         match v.as_value().map(|v| v.as_integer()) {
             Some(Some(v)) => Ok(v as usize),
-            _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+            _ => parse_error!(k, v, "usize")?,
         }
     }
 
     fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => Ok(v.into()),
-            _ => Err(eyre!("expected {k} to be a path, got: {v}")),
+            Some(Some(v)) => {
+                let v = self.parse_template(k, v)?;
+                Ok(v.into())
+            }
+            _ => parse_error!(k, v, "path")?,
         }
     }
 
     fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
         match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => Ok(v.into()),
-            _ => Err(eyre!("expected {k} to be a string, got: {v}")),
+            Some(Some(v)) => {
+                let v = self.parse_template(k, v)?;
+                Ok(v)
+            }
+            _ => parse_error!(k, v, "string")?,
         }
     }
 
@@ -442,6 +530,14 @@ impl RtxToml {
             self.doc.as_table_mut().remove("settings");
         }
     }
+
+    fn parse_template(&self, k: &str, input: &str) -> Result<String> {
+        let dir = self.path.parent().unwrap();
+        let output = get_tera(dir)
+            .render_str(input, &self.context)
+            .with_context(|| format!("failed to parse template: {k}='{}'", input))?;
+        Ok(output)
+    }
 }
 
 impl Display for RtxToml {
@@ -465,6 +561,10 @@ impl ConfigFile for RtxToml {
 
     fn env(&self) -> HashMap<String, String> {
         self.env.clone()
+    }
+
+    fn path_dirs(&self) -> Vec<PathBuf> {
+        self.path_dirs.clone()
     }
 
     fn remove_plugin(&mut self, plugin: &PluginName) {
@@ -529,12 +629,6 @@ impl ConfigFile for RtxToml {
     }
 }
 
-#[allow(dead_code)] // TODO: remove
-const ENV_SUGGESTION: &str = r#"
-[env]
-FOO = "bar"
-"#;
-
 #[cfg(test)]
 mod tests {
     use indoc::formatdoc;
@@ -560,7 +654,7 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [env]
         foo="bar"
@@ -572,12 +666,33 @@ mod tests {
             "foo": "bar",
         }
         "###);
+        assert_debug_snapshot!(cf.path_dirs(), @"[]");
+        assert_display_snapshot!(cf);
+    }
+
+    #[test]
+    fn test_path_dirs() {
+        let p = dirs::HOME.join("fixtures/.rtx.toml");
+        let mut cf = RtxToml::init(&p);
+        cf.parse(&formatdoc! {r#"
+        [env]
+        foo="bar"
+        PATH=["/foo", "./bar", "$PATH"]
+        "#})
+            .unwrap();
+
+        assert_debug_snapshot!(cf.env(), @r###"
+        {
+            "foo": "bar",
+        }
+        "###);
+        assert_snapshot!(replace_path(&format!("{:?}", cf.path_dirs())), @r###"["/foo", "~/fixtures/bar"]"###);
         assert_display_snapshot!(cf);
     }
 
     #[test]
     fn test_set_alias() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -595,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -614,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -631,7 +746,7 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -645,7 +760,7 @@ mod tests {
 
     #[test]
     fn test_update_setting() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
@@ -664,7 +779,7 @@ mod tests {
 
     #[test]
     fn test_remove_setting() {
-        let mut cf = RtxToml::init(&PathBuf::default());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true

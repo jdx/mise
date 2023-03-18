@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -189,6 +189,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
     ("fluxctl", "https://github.com/stefansedich/asdf-fluxctl.git"),
     ("fly", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("flyctl", "https://github.com/chessmango/asdf-flyctl.git"),
+    ("flyway", "https://github.com/junminahn/asdf-flyway.git"),
     ("func-e", "https://github.com/carnei-ro/asdf-func-e.git"),
     ("furyctl", "https://github.com/sighupio/asdf-furyctl.git"),
     ("fx", "https://gitlab.com/wt0f/asdf-fx.git"),
@@ -364,6 +365,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
     ("logtalk", "https://github.com/LogtalkDotOrg/asdf-logtalk.git"),
     ("loki-logcli", "https://github.com/comdotlinux/asdf-loki-logcli.git"),
     ("lua", "https://github.com/Stratus3D/asdf-lua.git"),
+    ("lua-language-server", "https://github.com/bellini666/asdf-lua-language-server"),
     ("luaJIT", "https://github.com/smashedtoatoms/asdf-luaJIT.git"),
     ("lucy", "https://github.com/cometkim/asdf-lucy.git"),
     ("mage", "https://github.com/mathew-fleisch/asdf-mage.git"),
@@ -396,6 +398,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
     ("mysql", "https://github.com/iroddis/asdf-mysql.git"),
     ("nancy", "https://github.com/iilyak/asdf-nancy.git"),
     ("nano", "https://github.com/mfakane/asdf-nano.git"),
+    ("nasm", "https://github.com/Dpbm/asdf-nasm.git"),
     ("neko", "https://github.com/asdf-community/asdf-neko.git"),
     ("neovim", "https://github.com/richin13/asdf-neovim.git"),
     ("nerdctl", "https://github.com/dmpe/asdf-nerdctl"),
@@ -506,6 +509,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 619] = [
     ("solidity", "https://github.com/diegodorado/asdf-solidity.git"),
     ("sops", "https://github.com/feniix/asdf-sops.git"),
     ("sopstool", "https://github.com/elementalvoid/asdf-sopstool.git"),
+    ("soracom", "https://github.com/grimoh/asdf-soracom.git"),
     ("sourcery", "https://github.com/younke/asdf-sourcery.git"),
     ("spago", "https://github.com/nsaunders/asdf-spago.git"),
     ("spark", "https://github.com/joshuaballoch/asdf-spark.git"),

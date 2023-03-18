@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rtx.pub/schema/rtx.json",
+  "title": "rtx",
+  "description": "config file for rtx version manager (.rtx.toml)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "dotenv": {
+      "description": "path to .env file",
+      "type": "string"
+    },
+    "env": {
+      "description": "environment variables",
+      "type": "object",
+      "items": {
+        "description": "environment variable value",
+        "type": "string"
+      }
+    },
+    "tools": {
+      "description": "dev tools to use",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/tool"
+            }
+          },
+          {
+            "$ref": "#/$defs/tool"
+          }
+        ]
+      }
+    },
+    "plugins": {
+      "description": "plugins to use",
+      "type": "object",
+      "additionalProperties": {
+        "description": "url to plugin repository",
+        "type": "string"
+      }
+    },
+    "alias": {
+      "description": "custom shorthands for versions",
+      "type": "object",
+      "additionalProperties": {
+        "description": "plugin to set aliases for",
+        "type": "object",
+        "additionalProperties": {
+          "description": "version alias points to",
+          "type": "string"
+        }
+      }
+    },
+    "settings": {"$ref": "#/$defs/settings"}
+  },
+  "$defs": {
+    "tool": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "version of the tool to install"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "description": "version of the tool to install",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version"
+          ]
+        }
+      ]
+    },
+    "settings": {
+      "description": "settings for rtx",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missing_runtime_behavior": {
+          "description": "what to do when a runtime is missing",
+          "type": "string",
+          "enum": [
+            "ignore",
+            "prompt",
+            "autoinstall",
+            "warn",
+            "error"
+          ]
+        },
+        "legacy_version_file": {
+          "description": "should rtx parse legacy version files (e.g. .node-version)",
+          "type": "boolean"
+        },
+        "always_keep_download": {
+          "description": "should rtx keep downloaded files after installation",
+          "type": "boolean"
+        },
+        "plugin_autoupdate_last_check_duration": {
+          "oneOf": [
+            {
+              "description": "how often to check for plugin updates",
+              "type": "string"
+            },
+            {
+              "description": "how often to check for plugin updates",
+              "type": "integer"
+            }
+          ]
+        },
+        "asdf_compat": {
+          "description": "set to true to ensure .tool-versions will be compatible with asdf",
+          "type": "boolean"
+        },
+        "jobs": {
+          "description": "number of tools to install in parallel, default is 4",
+          "type": "integer"
+        },
+        "raw": {
+          "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",
+          "type": "boolean"
+        },
+        "shorthands_file": {
+          "description": "path to file containing shorthand mappings",
+          "type": "string"
+        },
+        "disable_default_shorthands": {
+          "description": "disables built-in shorthands",
+          "type": "boolean"
+        },
+        "experimental": {
+          "description": "enable experimental features",
+          "type": "boolean"
+        },
+        "shims_dir": {
+          "description": "path to directory to output shims",
+          "type": "string"
+        },
+        "log_level": {
+          "description": "log level",
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        "verbose": {
+          "description": "display installation output",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

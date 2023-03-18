@@ -7,15 +7,18 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
-      <excludeFolder url="file://$MODULE_DIR$/test/data" />
-      <excludeFolder url="file://$MODULE_DIR$/plugins" />
-      <excludeFolder url="file://$MODULE_DIR$/installs" />
-      <excludeFolder url="file://$MODULE_DIR$/asdf" />
       <excludeFolder url="file://$MODULE_DIR$/e2e/.rtx" />
-      <excludeFolder url="file://$MODULE_DIR$/e2e/.asdf" />
-      <excludeFolder url="file://$MODULE_DIR$/e2e/.cache" />
+      <excludeFolder url="file://$MODULE_DIR$/plugins" />
+      <excludeFolder url="file://$MODULE_DIR$/test/data" />
       <excludeFolder url="file://$MODULE_DIR$/e2e/.config" />
+      <excludeFolder url="file://$MODULE_DIR$/asdf" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.cache" />
+      <excludeFolder url="file://$MODULE_DIR$/e2e/.asdf" />
+      <excludeFolder url="file://$MODULE_DIR$/installs" />
       <excludeFolder url="file://$MODULE_DIR$/e2e/.local" />
+      <excludeFolder url="file://$MODULE_DIR$/packaging/alpine/src" />
+      <excludeFolder url="file://$MODULE_DIR$/aports" />
+      <excludeFolder url="file://$MODULE_DIR$/.cargo/registry" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />

@@ -9,7 +9,9 @@ use versions::{Chunk, Version};
 
 use crate::config::Config;
 use crate::dirs;
+
 use crate::plugins::Plugin;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::runtimes::RuntimeVersion;
 use crate::ui::progress_report::ProgressReport;
 
@@ -74,8 +76,9 @@ impl ToolVersion {
             _ => (),
         }
 
-        if dirs::INSTALLS.join(&plugin.name).join(&v).exists() {
-            // if the version is already installed, no need to fetch all of the remote versions
+        let existing_path = dirs::INSTALLS.join(&plugin.name).join(&v);
+        if existing_path.exists() && !is_runtime_symlink(&existing_path) {
+            // if the version is already installed, no need to fetch all the remote versions
             let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
             return Ok(rtv);
         }
@@ -108,19 +111,12 @@ impl ToolVersion {
         v: &str,
     ) -> Result<Option<RuntimeVersion>> {
         let (wanted, minus) = v.split_once("!-").unwrap();
-        let wanted = resolve_alias(config, plugin.clone(), wanted)?;
-        let mut wanted = Version::new(&wanted).unwrap();
-        for (i, m) in Version::new(minus).unwrap().chunks.0.iter().enumerate() {
-            let orig = match wanted.nth(i) {
-                Some(c) => c,
-                None => {
-                    warn!("cannot subtract {minus} from {wanted}");
-                    return Ok(None);
-                }
-            };
-            wanted.chunks.0[i] = Chunk::Numeric(orig - m.single_digit().unwrap());
-        }
-        match plugin.latest_version(&config.settings, Some(wanted.to_string()))? {
+        let wanted = match wanted {
+            "latest" => plugin.latest_version(&config.settings, None)?.unwrap(),
+            _ => resolve_alias(config, plugin.clone(), wanted)?,
+        };
+        let wanted = version_sub(&wanted, minus);
+        match plugin.latest_version(&config.settings, Some(wanted))? {
             Some(v) => Ok(RuntimeVersion::new(config, plugin, v, self.clone()).into()),
             None => Ok(None),
         }
@@ -170,7 +166,7 @@ impl ToolVersion {
         }
     }
 
-    pub fn install(&mut self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
+    pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
         match self.r#type {
             ToolVersionType::Version(_) | ToolVersionType::Prefix(_) | ToolVersionType::Ref(_) => {
                 self.rtv.as_ref().unwrap().install(config, pr, force)
@@ -210,6 +206,22 @@ pub fn resolve_alias(config: &Config, plugin: Arc<Plugin>, v: &str) -> Result<St
     Ok(v.to_string())
 }
 
+/// subtracts sub from orig and removes suffix
+/// e.g. version_sub("18.2.3", "2") -> "16"
+/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+fn version_sub(orig: &str, sub: &str) -> String {
+    let mut orig = Version::new(orig).unwrap();
+    let sub = Version::new(sub).unwrap();
+    while orig.chunks.0.len() > sub.chunks.0.len() {
+        orig.chunks.0.pop();
+    }
+    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
+        let m = sub.nth(i).unwrap();
+        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+    }
+    orig.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_str_eq;
@@ -229,5 +241,11 @@ mod tests {
         assert_str_eq!(tv.to_string(), "foo@path:~");
         let tv = ToolVersion::new(foo, ToolVersionType::System);
         assert_str_eq!(tv.to_string(), "foo@system");
+    }
+
+    #[test]
+    fn test_version_sub() {
+        assert_str_eq!(version_sub("18.2.3", "2"), "16");
+        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }
 }

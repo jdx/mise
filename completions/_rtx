@@ -22,9 +22,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -54,9 +54,9 @@ default: 4]: : ' \
 '--quiet[noop]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -75,9 +75,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -101,9 +101,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -123,9 +123,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -141,9 +141,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -162,9 +162,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -222,9 +222,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -241,9 +241,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -259,9 +259,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -285,9 +285,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -333,9 +333,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -351,9 +351,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -370,9 +370,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -388,9 +388,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -414,9 +414,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -432,9 +432,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -450,9 +450,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -504,9 +504,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -524,9 +524,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -538,6 +538,7 @@ sets --jobs=1]' \
 _arguments "${_arguments_options[@]}" \
 '()-c+[Command string to execute]:C: ' \
 '()--command=[Command string to execute]:C: ' \
+'--cd=[Change to this directory before executing the command]:CD: ' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -545,9 +546,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -571,9 +572,9 @@ this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the global config file]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -596,9 +597,9 @@ default: 4]: : ' \
 '--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -616,9 +617,9 @@ default: 4]: : ' \
 '--dry-run[List directories that would be removed without actually removing them]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -642,9 +643,9 @@ default: 4]: : ' \
 '*--verbose[Show installation output]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::runtime -- Runtime(s) to install e.g.\: nodejs@18:' \
@@ -659,9 +660,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -688,9 +689,9 @@ e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions]' 
 '--path[Get the path of the config file]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -716,9 +717,9 @@ default: 4]: : ' \
 '--json[Output in json format]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -735,9 +736,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -756,9 +757,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -778,9 +779,9 @@ default: 4]: : ' \
 '--urls[show the git url for each plugin]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -814,9 +815,9 @@ i.e.: they don'\''t need the full git repo url]' \
 '*--verbose[Show installation output]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::name -- The name of the plugin to install
@@ -843,9 +844,9 @@ e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -864,9 +865,9 @@ default: 4]: : ' \
 '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -882,9 +883,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -903,9 +904,9 @@ default: 4]: : ' \
 '()--all[Update all plugins]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -967,9 +968,9 @@ default: 4]: : ' \
 '--dry-run[Do not actually delete anything]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -986,9 +987,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1006,9 +1007,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1024,9 +1025,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -1050,9 +1051,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1069,9 +1070,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1087,9 +1088,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1107,9 +1108,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1168,9 +1169,9 @@ default: 4]: : ' \
 '--unset[Removes a previously set version]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1187,9 +1188,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1206,9 +1207,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \
@@ -1224,9 +1225,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1252,9 +1253,9 @@ default: 4]: : ' \
 '(--plugin)--version[Show the version instead of the path]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -1271,9 +1272,9 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
-sets --jobs=1]' \
+Sets --jobs=1]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help]' \

@@ -23,6 +23,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::{Plugin, PluginName};
+use crate::runtime_symlinks::rebuild_symlinks;
 use crate::runtimes::RuntimeVersion;
 use crate::shims::reshim;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -168,7 +169,9 @@ impl Toolset {
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
-                reshim(config, self)
+                reshim(config, self)?;
+                rebuild_symlinks(config)?;
+                Ok(())
             })
     }
     fn install_missing_plugins(
@@ -181,7 +184,7 @@ impl Toolset {
             config
                 .plugins
                 .entry(plugin.clone())
-                .or_insert_with(|| Arc::new(Plugin::new(plugin)));
+                .or_insert_with(|| Arc::new(Plugin::new(&config.settings, plugin)));
         }
         config.plugins.sort_keys();
         missing_plugins
@@ -274,7 +277,7 @@ impl Toolset {
     }
     pub fn path_env(&self, config: &Config) -> String {
         let installs = self.list_paths(config);
-        join_paths([installs, env::PATH.clone()].concat())
+        join_paths([config.path_dirs.clone(), installs, env::PATH.clone()].concat())
             .unwrap()
             .to_string_lossy()
             .into()

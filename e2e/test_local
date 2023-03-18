@@ -20,16 +20,20 @@ export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 
 assert_raises "rtx uninstall shfmt@3.6.0"
 
-assert "rtx local" "[env]
+assert "rtx local" "dotenv = '.test-env'
+[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 "
 
-assert "rtx local shfmt@3.5.0" "[env]
+assert "rtx local shfmt@3.5.0" "dotenv = '.test-env'
+[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -42,8 +46,13 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
   exit 1
 fi
 
-assert "rtx local shfmt@3.6.0" "[env]
+assert_raises "rtx uninstall shfmt@3.6.0"
+assert_raises "rtx g shfmt --install-missing"
+
+assert "rtx local shfmt@3.6.0" "dotenv = '.test-env'
+[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -56,8 +65,10 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
   exit 1
 fi
 
-assert "rtx local --rm shfmt" "[env]
+assert "rtx local --rm shfmt" "dotenv = '.test-env'
+[env]
 FOO = \"bar\"
+PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
