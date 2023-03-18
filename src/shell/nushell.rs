@@ -16,12 +16,14 @@ impl Shell for Nushell {
 
         if !is_dir_in_path(dir) {
             out.push_str(&format!(
-                "let-env PATH = ($env.Path | prepend '{}')\n", // TODO: set PATH as Path on windows
+                "let-env PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
                 dir.display()
             ));
         }
 
         out.push_str(&formatdoc! {r#"
+          let-env RTX_SHELL = "nu"
+
           def rtx [command?: string, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             if ($command == null) {{
