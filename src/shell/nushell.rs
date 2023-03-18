@@ -24,12 +24,33 @@ impl Shell for Nushell {
         out.push_str(&formatdoc! {r#"
           let-env RTX_SHELL = "nu"
 
-          def rtx [command?: string, ...rest: string] {{
+          def-env rtx [command?: string, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             if ($command == null) {{
               run-external {exe}
             }} else if ($command in $commands) {{
-              run-external {exe} $command $rest --redirect-stdout | nu -e $in
+              let output = run-external /Users/brianheise/.cargo/bin/rtx $command $rest --redirect-stdout
+              let items = ($output | split row "--")
+
+              let vars = if ($items | length | $in > 0) {{
+                $items.0
+              }} else {{
+                null
+              }}
+
+              let script = if ($items | length | $in > 1) {{
+                $items.1
+              }} else {{
+                null
+              }}
+
+              if not ($vars == null) {{
+                $vars | lines | parse "{{name}} = {{value}}" | transpose -i -r -d | load-env
+              }}
+
+              if not ($script == null) {{
+                nu -c $script
+              }}
             }} else {{
               run-external {exe} $command $rest
             }}
@@ -58,12 +79,16 @@ impl Shell for Nushell {
           }}
           
           let-env config = ($env.config | upsert hooks {{
-              pre_prompt: {{ _rtx_hook }}
-              env_change: {{
-                  PWD: [{{
-                    |before, after| _rtx_hook
-                  }}]
-              }}
+            pre_prompt: [{{
+              condition: {{ $env.RTX_SHELL != "null" }}
+              code: {{ _rtx_hook }}
+            }}]
+            env_change: {{
+                PWD: [{{
+                  condition: {{ $env.RTX_SHELL != "null" }}
+                  code: {{ _rtx_hook }}
+                }}]
+            }}
           }})
             "#});
 
@@ -73,7 +98,7 @@ impl Shell for Nushell {
     // TODO: properly handle deactivate
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-          print $"TODO: properly deactivate nushell"
+          RTX_SHELL = null
         "#}
     }
 
