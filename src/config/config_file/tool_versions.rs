@@ -9,11 +9,13 @@ use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
 use itertools::Itertools;
+use tera::{Context, Tera};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::file::display_path;
 use crate::plugins::PluginName;
+use crate::tera::BASE_CONTEXT;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
 // python 3.11.0 3.10.0
@@ -23,6 +25,7 @@ use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 /// represents asdf's .tool-versions file
 #[derive(Debug, Default)]
 pub struct ToolVersions {
+    context: Context,
     path: PathBuf,
     pre: String,
     plugins: IndexMap<PluginName, ToolVersionPlugin>,
@@ -37,7 +40,10 @@ struct ToolVersionPlugin {
 
 impl ToolVersions {
     pub fn init(filename: &Path) -> ToolVersions {
+        let mut context = BASE_CONTEXT.clone();
+        context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
         ToolVersions {
+            context,
             toolset: Toolset::new(ToolSource::ToolVersions(filename.to_path_buf())),
             path: filename.to_path_buf(),
             ..Default::default()
@@ -51,6 +57,7 @@ impl ToolVersions {
 
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
+        let s = Tera::one_off(s, &cf.context, false)?;
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;
@@ -59,7 +66,7 @@ impl ToolVersions {
             cf.pre.push('\n');
         }
 
-        cf.plugins = Self::parse_plugins(s)?;
+        cf.plugins = Self::parse_plugins(&s)?;
         cf.populate_toolset();
         Ok(cf)
     }
@@ -233,7 +240,8 @@ pub(crate) mod tests {
         shfmt  3.6.0
         # tail comment
         "};
-        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
+        let path = dirs::CURRENT.join(".test-tool-versions");
+        let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_eq!(tv.dump(), orig);
     }
 
@@ -242,7 +250,20 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5
         "};
-        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
+        let path = dirs::CURRENT.join(".test-tool-versions");
+        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        assert_snapshot!(tv.dump(), @r###"
+        ruby 3.0.5
+        "###);
+    }
+
+    #[test]
+    fn test_parse_tera() {
+        let orig = indoc! {"
+        ruby: {{'3.0.5'}}
+        "};
+        let path = dirs::CURRENT.join(".test-tool-versions");
+        let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_snapshot!(tv.dump(), @r###"
         ruby 3.0.5
         "###);
@@ -253,7 +274,8 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5 3.1
         "};
-        let tv = ToolVersions::parse_str(orig, PathBuf::new()).unwrap();
+        let path = dirs::CURRENT.join(".test-tool-versions");
+        let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_display_snapshot!(tv.to_toolset(), @"ruby@3.0.5 ruby@3.1");
     }
 }
