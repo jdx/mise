@@ -7,7 +7,7 @@ use std::time::Duration;
 use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::{Result, Section};
 use log::LevelFilter;
-use tera::{Context, Tera};
+use tera::Context;
 use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
@@ -16,7 +16,7 @@ use crate::config::{AliasMap, MissingRuntimeBehavior};
 use crate::dirs;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
-use crate::tera::BASE_CONTEXT;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
 
 #[derive(Debug, Default)]
@@ -532,7 +532,9 @@ impl RtxToml {
     }
 
     fn parse_template(&self, k: &str, input: &str) -> Result<String> {
-        let output = Tera::one_off(input, &self.context, false)
+        let dir = self.path.parent().unwrap();
+        let output = get_tera(dir)
+            .render_str(input, &self.context)
             .with_context(|| format!("failed to parse template: {k}='{}'", input))?;
         Ok(output)
     }
