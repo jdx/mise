@@ -93,6 +93,7 @@ v18.15.0
   - [Xonsh](#xonsh)
   - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
+- [Shebangs](#shebangs)
 - [Configuration](#configuration)
   - [`.tool-versions`](#tool-versions)
   - [Legacy version files](#legacy-version-files)
@@ -473,6 +474,16 @@ Alternatively, manually remove the following directories to fully clean up:
 - `~/.config/rtx` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/rtx`)
 - on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
 - on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
+
+## Shebangs
+
+You can specify a tool and its version in a shebang without needing to first setup `.tool-versions`/`.rtx.toml` config:
+
+```typescript
+#!/usr/bin/env -S rtx x nodejs@18 -- node
+// "env -S" allows multiple arguments in a shebang
+console.log(`Running node: ${process.version}`);
+```
 
 ## Configuration
 
