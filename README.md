@@ -509,7 +509,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-| --------- | -------------------------------------------------- |
+|-----------|----------------------------------------------------|
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | golang    | `.go-version`, `go.mod`                            |
@@ -518,7 +518,7 @@ in rtx and nvm. Here are some of the supported legacy version files:
 | python    | `.python-version`                                  |
 | ruby      | `.ruby-version`, `Gemfile`                         |
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn      | `.yvmrc`                                           |
+| yarn      | `.yarnrc`                                          |
 
 In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
