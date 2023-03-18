@@ -9,13 +9,13 @@ use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use tera::{Context, Tera};
+use tera::Context;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::file::display_path;
 use crate::plugins::PluginName;
-use crate::tera::BASE_CONTEXT;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
 // python 3.11.0 3.10.0
@@ -57,7 +57,8 @@ impl ToolVersions {
 
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
-        let s = Tera::one_off(s, &cf.context, false)?;
+        let dir = path.parent().unwrap();
+        let s = get_tera(dir).render_str(s, &cf.context)?;
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;
@@ -260,12 +261,14 @@ pub(crate) mod tests {
     #[test]
     fn test_parse_tera() {
         let orig = indoc! {"
-        ruby: {{'3.0.5'}}
+        ruby {{'3.0.5'}}
+        python {{exec(command='echo 3.11.0')}}
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_snapshot!(tv.dump(), @r###"
-        ruby 3.0.5
+        ruby   3.0.5
+        python 3.11.0
         "###);
     }
 
