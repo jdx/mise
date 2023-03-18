@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use color_eyre::eyre::{eyre, Result, WrapErr};
-use color_eyre::Report;
+use color_eyre::eyre::{eyre, Result};
+
 use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -291,15 +291,17 @@ fn load_rtxrc() -> Result<RtxToml> {
             trace!("settings does not exist {:?}", settings_path);
             Ok(RtxToml::init(&settings_path))
         }
-        true => match RtxToml::from_file(&settings_path)
-            .wrap_err_with(|| err_load_settings(&settings_path))
-        {
+        true => match RtxToml::from_file(&settings_path) {
             Ok(cf) => Ok(cf),
             Err(err) => match RtxToml::migrate(&settings_path) {
                 Ok(cf) => Ok(cf),
                 Err(e) => {
-                    error!("Error migrating config.toml: {:#}", e);
-                    Err(err)
+                    trace!("Error migrating config.toml: {:#}", e);
+                    Err(eyre!(
+                        "Error parsing {}: {:#}",
+                        &settings_path.display(),
+                        err
+                    ))
                 }
             },
         },
@@ -454,13 +456,6 @@ fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasM
     }
 
     aliases
-}
-
-fn err_load_settings(settings_path: &Path) -> Report {
-    eyre!(
-        "error loading settings from {}",
-        settings_path.to_string_lossy()
-    )
 }
 
 fn err_no_shims_dir() -> Result<PathBuf> {
