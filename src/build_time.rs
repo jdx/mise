@@ -3,7 +3,7 @@ use chrono::{DateTime, FixedOffset, Months, Utc};
 use console::style;
 use lazy_static::lazy_static;
 
-use crate::env::RTX_HIDE_OUTDATED_BUILD;
+use crate::env::RTX_HIDE_UPDATE_WARNING;
 
 lazy_static! {
     pub static ref BUILD_TIME: DateTime<FixedOffset> =
@@ -12,7 +12,7 @@ lazy_static! {
 
 #[ctor::ctor]
 fn init() {
-    if !*RTX_HIDE_OUTDATED_BUILD
+    if !*RTX_HIDE_UPDATE_WARNING
         && BUILD_TIME.checked_add_months(Months::new(12)).unwrap() < Utc::now()
     {
         eprintln!("{}", render_outdated_message());

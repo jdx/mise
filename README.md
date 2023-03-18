@@ -23,10 +23,10 @@ Note that calling `which node` gives us a real path to the binary, not a shim.
 - **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
-- **No shims** - shims (used by asdf) cause problems, they break `which node`, and add overhead. We don't use them by default.
-- **Better UX** - asdf is full of strange UX decisions (like `asdf plugin add` but also `asdf install`). We've taken care to make rtx easy to use.
-- **Fuzzy matching and aliases** - no need to specify exact version numbers like with asdf.
-- **One command install** - No need to manually install each plugin, just run `rtx install` and it will install all the plugins you need.
+- **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx 
+  does not use them—however you can if you want to.
+- **Fuzzy matching and aliases** - It's enough to just say you want "v18" of node, or the "lts" 
+  version. rtx will figure out the right version without you needing to specify an exact version.
 - **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
 
 ## Quickstart
@@ -40,13 +40,12 @@ $ rtx --version
 rtx 1.25.4
 ```
 
-Hook rtx into to your shell. This will automatically add `~/bin` to `PATH` if it isn't already.
-(choose one, and open a new shell session for the changes to take effect):
+Hook rtx into to your shell (pick the right one for your shell):
 
 ```sh-session
-$ echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
-$ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
-$ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
+echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
+echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
+echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
@@ -60,13 +59,8 @@ Install a runtime and set it as the default:
 $ rtx install nodejs@18
 $ rtx global nodejs@18
 $ node -v
-v18.10.9
+v18.15.0
 ```
-
-> **Note**
->
-> `rtx install` is optional, `rtx global` will prompt to install the runtime if it's not
-> already installed. This is configurable in [`~/.config/rtx/config.toml`](#configuration).
 
 ## Table of Contents
 
@@ -80,7 +74,7 @@ v18.10.9
 - [About](#about)
   - [What do I use this for?](#what-do-i-use-this-for)
   - [How it works](#how-it-works)
-  - [Common example commands](#common-example-commands)
+  - [Common commands](#common-commands)
 - [Installation](#installation)
   - [Standalone](#standalone)
   - [Homebrew](#homebrew)
@@ -190,13 +184,10 @@ directory. Other projects on your machine can use a different set of versions.
 
 rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/asdf-vm/asdf-plugins)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
-For more on how rtx compares to asdf, [see below](#comparison-to-asdf). The goal of this project
-was to create a better front-end to asdf.
+For more on how rtx compares to asdf, [see below](#comparison-to-asdf).
 
 It uses the same `.tool-versions` file that asdf uses. It's also compatible with idiomatic version
 files like `.node-version` and `.ruby-version`. See [Legacy Version Files](#legacy-version-files) below.
-
-Come chat about rtx on [discord](https://discord.gg/mABnUDvP57).
 
 ### What do I use this for?
 
@@ -206,38 +197,41 @@ on the same machine. (For example, one project might require python-3.10 and ano
 
 Using rtx in production is less common but still a supported use-case. Usually a production setup
 won't have different directories for different projects with different dev tool requirements.
-However using `.tool-versions`/`.rtx.toml` config in production provides parity with local development
+That said, using `.tool-versions`/`.rtx.toml` config in production provides parity with local 
+development
 so rtx is still definitely useful in production setups. See the [GitHub Action](#github-actions) for
 an example of using rtx in production.
 
 ### How it works
 
-rtx installs as a shell extension (e.g. `rtx activate zsh`) that sets the `PATH`
+rtx hooks into your shell (with `rtx activate zsh`) and sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
-directory containing a `.tool-versions` file, rtx will automatically activate the correct versions.
+directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the 
+appropriate tool versions in `PATH`.
 
-Every time your prompt starts it will call `rtx hook-env` to fetch new environment variables. This
-should be very fast and it exits early if the the directory wasn't changed or the `.tool-versions`
-files haven't been updated. On my machine this takes 4ms in the fast case, 14ms in the slow case. See [Performance](#performance) for more on this topic.
+After activating, every time your prompt starts it will call `rtx hook-env` to fetch new 
+environment variables.
+This should be very fast. It exits early if the directory wasn't changed or `.tool-versions`/`.rtx.toml` files haven't been modified.
 
 Unlike asdf which uses shim files to dynamically locate runtimes when they're called, rtx modifies
 `PATH` ahead of time so the runtimes are called directly. This is not only faster since it avoids
 any overhead, but it also makes it so commands like `which node` work as expected. This also
 means there isn't any need to run `asdf reshim` after installing new runtime binaries.
 
-rtx does not directly install runtimes. Instead, it uses asdf plugins to install runtimes. See
-[plugins](#plugins) below.
+You should note that rtx does not directly install these tools.
+Instead, it leverages plugins to install runtimes.
+See [plugins](#plugins) below.
 
-### Common example commands
+### Common commands
 
-    rtx install nodejs@18.0.0       Install a specific version number
-    rtx install nodejs@18.0         Install a fuzzy version number
-    rtx local nodejs@18             Use node-18.x in current project
-    rtx global nodejs@18            Use node-18.x as default
+    rtx install nodejs@18.0.0  Install a specific version number 
+    rtx install nodejs@18      Install a fuzzy version number 
+    rtx local nodejs@18        Use node-18.x in current project
+    rtx global nodejs@18       Use node-18.x as default
 
-    rtx install nodejs              Install the version specified in .tool-versions
-    rtx local nodejs@latest         Use latest node in current directory
-    rtx global nodejs@system        Use system node as default
+    rtx install nodejs         Install the version specified in .tool-versions
+    rtx local nodejs@latest    Use latest node in current directory
+    rtx global nodejs@system   Use system node as default
 
     rtx x nodejs@18 -- node app.js  Run `node app.js` with the PATH pointing to node-18.x
 
@@ -248,14 +242,14 @@ rtx does not directly install runtimes. Instead, it uses asdf plugins to install
 Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your rc
 file, rtx will automatically add itself to `PATH`.
 
-```sh-session
-$ curl https://rtx.pub/install.sh | sh
+```
+curl https://rtx.pub/install.sh | sh
 ```
 
 or if you're allergic to `| sh`:
 
-```sh-session
-$ curl https://rtx.pub/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+```
+curl https://rtx.pub/rtx-latest-macos-arm64 > /usr/local/bin/rtx
 ```
 
 It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/rtx/bin/rtx`
@@ -272,73 +266,70 @@ Supported platforms:
 - `linux`
 
 If you need something else, compile it with [cargo](#cargo).
+[Windows isn't currently supported.](https://github.com/jdxcode/rtx/discussions/66)
 
 ### Homebrew
 
-There are 2 ways to install rtx with Homebrew. The recommended method is to use
-the custom tap which will always contain the latest release.
-
-```sh-session
-$ brew install jdxcode/tap/rtx
+```
+brew install rtx
 ```
 
-Alternatively, you can use the built-in tap (homebrew-core), which will be updated
-once Homebrew maintainers merge the PR for a new release:
+Alternatively, use the custom tap (which is updated immediately after a release)):
 
-```sh-session
-$ brew install rtx
+```
+brew install jdxcode/tap/rtx
 ```
 
 ### Cargo
 
 Build from source with Cargo:
 
-```sh-session
-$ cargo install rtx-cli
+```
+cargo install rtx-cli
 ```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
-```sh-session
-$ cargo install cargo-binstall
-$ cargo binstall rtx-cli
+```
+cargo install cargo-binstall
+cargo binstall rtx-cli
 ```
 
 Build from the latest commit in main:
 
-```sh-session
-$ cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
+```
+cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
 ### npm
 
-rtx is available on npm as precompiled binaries. This isn't a node.js package, just distributed
-via npm. It can be useful for JS projects that want to setup rtx via `package.json` or `npx`.
+rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
+via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
 
-```sh-session
-$ npm install -g rtx-cli
+```
+npm install -g rtx-cli
 ```
 
-Or use npx if you just want to test it out for a single command without fully installing:
+Use npx if you just want to test it out for a single command without fully installing:
 
-```sh-session
-$ npx rtx-cli exec python@3.11 -- python some_script.py
+```
+npx rtx-cli exec python@3.11 -- python some_script.py
 ```
 
 ### GitHub Releases
 
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
-```sh-session
-$ curl https://github.com/jdxcode/rtx/releases/download/v1.25.4/rtx-v1.25.4-linux-x64 | tar -xJv
-$ mv rtx/bin/rtx /usr/local/bin
+```
+curl https://github.com/jdxcode/rtx/releases/download/v1.25.4/rtx-v1.25.4-linux-x64 | tar -xJv
+mv rtx/bin/rtx /usr/local/bin
 ```
 
 ### apt
 
 For installation on Ubuntu/Debian:
 
-```sh-session
+```
 wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null
 echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 sudo apt update
@@ -357,7 +348,7 @@ sudo apt install -y rtx
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
-```sh-session
+```
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 dnf install -y rtx
@@ -365,7 +356,7 @@ dnf install -y rtx
 
 ### yum
 
-```sh-session
+```
 yum install -y yum-utils
 yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 yum install -y rtx
@@ -375,7 +366,7 @@ yum install -y rtx
 
 For Alpine Linux:
 
-```sh-session
+```
 apk add rtx --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
 ```
 
@@ -383,7 +374,7 @@ apk add rtx --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
 
 For Arch Linux:
 
-```sh-session
+```
 git clone https://aur.archlinux.org/rtx.git
 cd rtx
 makepkg -si
@@ -432,14 +423,14 @@ systems.
 
 ### Bash
 
-```sh-session
-$ echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
+```
+echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 ```
 
 ### Fish
 
-```sh-session
-$ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
+```
+echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 ### Xonsh
@@ -584,16 +575,13 @@ These settings can also be managed with `rtx settings ls|get|set|unset`.
 ### [experimental] `.rtx.toml`
 
 `.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions`
-file. Think of `~/.config/rtx/config.toml` as just a
-special `.rtx.toml` which is used from any directory on the machine.
-
-It allows for functionality that is not possible with `.tool-versions`, such as:
+file. It allows for functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdxcode/rtx-python#virtualenv-support).
-- specifying plugin repo url for custom plugins so it does not need to be added manually
+- specifying custom plugin urls
 
-Here is what the config looks like:
+Here is what the `.rtx.toml` looks like:
 
 ```toml
 [env]
@@ -629,8 +617,7 @@ my_custom_node = '18'
 ```
 
 `.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not
-require setting `experimental = true` in the global config in part because this config can
-itself contain the setting for `experimental`.
+require setting `experimental = true` to use, however.
 
 #### `[env]` - Arbitrary Environment Variables
 
@@ -657,7 +644,7 @@ PATH = [
 
 _Note: other PATH-like variables like `LD_LIBRARY_PATH` cannot be set this way._
 
-Environment variable values can be templated, see [Templates](#templates) for details.
+Environment variable values can be templates, see [Templates](#templates) for details.
 
 ```toml
 [env]
@@ -680,18 +667,20 @@ rtx can also be configured via environment variables. The following options are 
 
 This is the same as the `missing_runtime_behavior` config option in `~/.config/rtx/config.toml`.
 
-```sh-session
-$ RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@18
-$ RTX_NODEJS_VERSION=18 rtx exec -- node --version
+```
+RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@18
+RTX_NODEJS_VERSION=18 rtx exec -- node --version
 ```
 
 #### `RTX_DATA_DIR`
 
-This is the directory where rtx stores its data. The default is `~/.local/share/rtx`.
+This is the directory where rtx stores plugins and tool installs. The default location is `~/.local/share/rtx`.
 
 #### `RTX_CACHE_DIR`
 
-This is the directory where rtx stores cache. The default is `~/.cache/rtx` on Linux and `~/Library/Caches/rtx` on macOS.
+This is the directory where rtx stores internal cache. The default location is `~/.cache/rtx` on 
+Linux and 
+`~/Library/Caches/rtx` on macOS.
 
 #### `RTX_CONFIG_FILE`
 
@@ -700,33 +689,35 @@ This is the path to the config file. The default is `~/.config/rtx/config.toml`.
 
 #### `RTX_DEFAULT_TOOL_VERSIONS_FILENAME`
 
-Set to something other than ".tool-versions" to have rtx look for configuration with alternate names.
+Set to something other than ".tool-versions" to have rtx look for `.tool-versions` files but with 
+a different name.
 
 #### `RTX_DEFAULT_CONFIG_FILENAME`
 
-Set to something other than ".rtx.toml" to have rtx look for configuration with alternate names.
-
-This is the same as `RTX_DEFAULT_TOOL_VERSIONS_FILENAME` but for `.rtx.toml` format.
+Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config files with a different name.
 
 #### `RTX_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `RTX_NODEJS_VERSION=18` will use nodejs@18.x regardless
-of what is set in `.tool-versions`.
+of what is set in `.tool-versions`/`.rtx.toml`.
 
 #### `RTX_LEGACY_VERSION_FILE`
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, .nvmrc in the case of nodejs's nvm.
+for example, `.nvmrc` in the case of nodejs's nvm. See [legacy version files](#legacy-version-files) for more 
+information.
 
 #### `RTX_USE_TOML`
 
-Set to `1` to use default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
-configuration.
+Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for 
+configuration. This will be default behavior once we hit the [Calver](#calver) release.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
-Can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1`. These adjust the log
-output to the screen.
+These change the verbository of rtx.
+
+You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as 
+`--log-level=trace|debug|info|warn|error`.
 
 #### `RTX_LOG_FILE=~/.rtx/rtx.log`
 
@@ -734,18 +725,19 @@ Output logs to a file.
 
 #### `RTX_LOG_FILE_LEVEL=trace|debug|info|warn|error`
 
-Same as `RTX_LOG_LEVEL` but for the log file output level. This is useful if you want
+Same as `RTX_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
 
 #### `RTX_VERBOSE=1`
 
 This shows the installation output during `rtx install` and `rtx plugin install`.
 This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
-2 configuration for the same thing, but for now it is it's own config.
+2 configuration for the same thing, but for now it is its own config.
 
 #### `RTX_ASDF_COMPAT=1`
 
 Only output `.tool-versions` files in `rtx local|global` which will be usable by asdf.
+This disables rtx functionality that would otherwise make these files incompatible with asdf.
 
 #### `RTX_JOBS=1`
 
@@ -764,7 +756,7 @@ Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
 
-The file should be in toml format:
+The file should be in this toml format:
 
 ```toml
 elixir = "https://github.com/my-org/rtx-elixir.git"
@@ -780,17 +772,9 @@ Currently this disables the following:
 
 - `--fuzzy` as default behavior (`rtx local nodejs@18` will save exact version)
 
-#### `RTX_HIDE_OUTDATED_BUILD=1`
+#### `RTX_HIDE_UPDATE_WARNING=1`
 
-If a release is 12 months old, it will show a warning message every time it launches:
-
-```
-rtx has not been updated in over a year. Please update to the latest version.
-```
-
-You likely do not want to be using rtx if it is that old. I'm doing this instead of
-autoupdating. If, for some reason, you want to stay on some old version, you can hide
-this message with `RTX_HIDE_OUTDATED_BUILD=1`.
+This hides the warning that is displayed when a new version of rtx is available.
 
 #### `RTX_EXPERIMENTAL=1`
 
@@ -1161,9 +1145,9 @@ In `rtx` you can use fuzzy-matching everywhere.
 asdf requires several steps to install a new runtime if the plugin isn't installed, e.g.:
 
 ```sh-session
-$ asdf plugin add nodejs
-$ asdf install nodejs latest:18
-$ asdf local nodejs latest:18
+asdf plugin add nodejs
+asdf install nodejs latest:18
+asdf local nodejs latest:18
 ```
 
 In `rtx` this can all be done in a single step to set the local runtime version. If the plugin
@@ -1201,7 +1185,7 @@ preferable. One example is when calling rtx binaries from an IDE.
 
 To support this, there is experimental support for using rtx in a "shim" mode. To use:
 
-```
+```sh-session
 $ rtx settings set experimental true
 $ rtx settings set shims_dir ~/.rtx/shims
 $ rtx i nodejs@18.0.0
@@ -1237,8 +1221,8 @@ situations where rtx will override direnv's PATH. `use rtx` ensures that direnv 
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
-```sh-session
-$ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
+```
+rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
 ```
 
 Now in your `.envrc` file add the following:
@@ -1333,10 +1317,10 @@ Options:
           Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
 Examples:
-    $ eval "$(rtx activate bash)"
-    $ eval "$(rtx activate zsh)"
-    $ rtx activate fish | source
-    $ execx($(rtx activate xonsh))
+    eval "$(rtx activate bash)"
+    eval "$(rtx activate zsh)"
+    rtx activate fish | source
+    execx($(rtx activate xonsh))
 ```
 ### `rtx alias get`
 
