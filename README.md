@@ -968,7 +968,15 @@ The following context objects are available inside templates:
 - `config_root: PathBuf` – directory containing the `.rtx.toml` file
 
 Templates are parsed with [tera](https://tera.netlify.app/docs). Currently templates are only 
-used for env var values, but in the future they may be used for other things.
+used for env var values, but in the future they may be used for other things. Submit a ticket if
+you think some configuration would benefit from templating with Tera.
+
+Tera is quite powerful. For example, this snippet will get the directory name of the project:
+
+```toml
+[env]
+PROJECT_NAME = "{{config_root | split(pat='/') | last}}"
+```
 
 ## FAQs
 
