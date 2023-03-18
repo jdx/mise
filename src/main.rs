@@ -44,6 +44,7 @@ pub mod runtimes;
 mod shell;
 mod shims;
 mod shorthands;
+pub mod tera;
 #[cfg(test)]
 mod test;
 mod toolset;
