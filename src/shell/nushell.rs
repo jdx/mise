@@ -71,10 +71,7 @@ impl Shell for Nushell {
     // TODO: properly handle deactivate
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        
-        hide rtx
-        hide-env RTX_SHELL
-
+          print $"TODO: properly deactivate nushell"
         "#}
     }
 
