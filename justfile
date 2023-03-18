@@ -1,7 +1,7 @@
 set shell := ["bash", "-uc"]
 
 export RTX_DATA_DIR := "/tmp/rtx"
-export PATH := env_var("PWD") + "/target/debug:" + env_var("PATH")
+export PATH := env_var_or_default("CARGO_TARGET_DIR", "$PWD/target") + "/debug:" + env_var("PATH")
 export RTX_MISSING_RUNTIME_BEHAVIOR := "autoinstall"
 export RUST_TEST_THREADS := "1"
 
@@ -43,10 +43,12 @@ test-coverage:
     	export GITHUB_API_TOKEN="$RTX_GITHUB_BOT_TOKEN"
     fi
 
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+    export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
     cargo test --features clap_mangen
     cargo build --all-features
-    PATH="$PWD/target/debug:$PATH" ./e2e/run_all_tests
-    RTX_SELF_UPDATE_VERSION=1.0.0 ./target/debug/rtx self-update <<EOF
+    ./e2e/run_all_tests
+    RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
     y
     EOF
     cargo build
@@ -57,6 +59,8 @@ test-coverage:
 # delete built files
 clean:
     cargo clean
+    rm -f lcov.info
+    rm -rf e2e/.{asdf,config,local,rtx}/
     rm -rf target
     rm -rf *.profraw
     rm -rf coverage
@@ -92,7 +96,7 @@ render-completions: build
 render-mangen: build
     NO_COLOR=1 rtx mangen
 
-# called by husky precommit hook
+# called by lefthook precommit hook
 pre-commit: render-help render-completions render-mangen
     git add README.md
     git add completions
