@@ -142,6 +142,7 @@ impl RtxToml {
                     match v.as_str() {
                         Some("$PATH") => {}
                         Some(s) => {
+                            let s = self.parse_template(k, s)?;
                             let s = match s.strip_prefix("./") {
                                 Some(s) => config_root.join(s),
                                 None => match s.strip_prefix("~/") {
@@ -172,7 +173,9 @@ impl RtxToml {
                             for (from, to) in table.iter() {
                                 match to.as_str() {
                                     Some(s) => {
-                                        plugin_aliases.insert(from.into(), s.into());
+                                        let from = self.parse_template(&k, from)?;
+                                        let s = self.parse_template(&k, s)?;
+                                        plugin_aliases.insert(from, s);
                                     }
                                     _ => parse_error!(format!("{}.{}", k, from), to, "string")?,
                                 }
@@ -194,7 +197,9 @@ impl RtxToml {
                 for (k, v) in table.iter() {
                     match v.as_str() {
                         Some(s) => {
-                            env.insert(k.into(), s.into());
+                            let k = self.parse_template(key, k)?;
+                            let s = self.parse_template(key, s)?;
+                            env.insert(k, s);
                         }
                         _ => parse_error!(key, v, "string")?,
                     }
@@ -325,15 +330,18 @@ impl RtxToml {
 
     fn parse_tool_version_value(&self, key: &str, v: &Value) -> Result<ToolVersionType> {
         match v.as_str() {
-            Some(s) => match s.split_once(':') {
-                Some(("prefix", v)) => Ok(ToolVersionType::Prefix(v.into())),
-                Some(("path", v)) => Ok(ToolVersionType::Path(v.into())),
-                Some(("ref", v)) => Ok(ToolVersionType::Ref(v.into())),
-                Some((unknown, v)) => {
-                    parse_error!(format!("{}.{}", key, unknown), v, "prefix, path, or ref")?
+            Some(s) => {
+                let s = self.parse_template(key, s)?;
+                match s.split_once(':') {
+                    Some(("prefix", v)) => Ok(ToolVersionType::Prefix(v.into())),
+                    Some(("path", v)) => Ok(ToolVersionType::Path(v.into())),
+                    Some(("ref", v)) => Ok(ToolVersionType::Ref(v.into())),
+                    Some((unknown, v)) => {
+                        parse_error!(format!("{}.{}", key, unknown), v, "prefix, path, or ref")?
+                    }
+                    None => Ok(ToolVersionType::Version(s)),
                 }
-                None => Ok(ToolVersionType::Version(s.into())),
-            },
+            }
             _ => parse_error!(key, v, "string")?,
         }
     }
@@ -440,14 +448,20 @@ impl RtxToml {
 
     fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => Ok(v.into()),
+            Some(Some(v)) => {
+                let v = self.parse_template(k, v)?;
+                Ok(v.into())
+            }
             _ => parse_error!(k, v, "path")?,
         }
     }
 
     fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
         match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => Ok(v.into()),
+            Some(Some(v)) => {
+                let v = self.parse_template(k, v)?;
+                Ok(v)
+            }
             _ => parse_error!(k, v, "string")?,
         }
     }
