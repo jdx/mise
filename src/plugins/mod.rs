@@ -12,6 +12,7 @@ use regex::Regex;
 use versions::Versioning;
 
 pub use script_manager::{Script, ScriptManager};
+pub use autoupdate::PluginAutoupdater;
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
@@ -29,6 +30,7 @@ use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
 mod script_manager;
+mod autoupdate;
 
 pub type PluginName = String;
 
@@ -374,7 +376,7 @@ impl Plugin {
     pub fn autoupdate(&self, _pr: &mut ProgressReport) -> Result<()> {
         trace!("autoupdate({})", self.name);
         // TODO: implement
-        // pr.set_message("Checking for updates...".into());
+        pr.set_message("Checking for updates...".into());
         touch_dir(&self.plugin_path)?;
         Ok(())
     }

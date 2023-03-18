@@ -22,7 +22,7 @@ pub use tool_version_list::ToolVersionList;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{Plugin, PluginAutoupdater, PluginName};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::runtimes::RuntimeVersion;
 use crate::shims::reshim;
@@ -161,6 +161,8 @@ impl Toolset {
                         }
                     })
                     .map(|(plugin, versions)| {
+                        let plugin_autoupdater = PluginAutoupdater::new(plugin.clone());
+                        plugin_autoupdater.autoupdate(config)?;
                         for version in versions {
                             let mut pr = mpr.add();
                             version.resolve(config, plugin.clone())?;

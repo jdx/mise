@@ -15,3 +15,6 @@ nodejs = 'https://github.com/jdxcode/rtx-nodejs'
 
 [alias.tiny]
 abc = '1'
+
+[settings]
+plugin_autoupdate_last_check_duration = '10 seconds'

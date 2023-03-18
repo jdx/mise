@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{Plugin, PluginAutoupdater, PluginName};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
@@ -113,6 +113,8 @@ impl Install {
                             return Err(err)?;
                         }
                     }
+                    let autoupdater = PluginAutoupdater::new(plugin.clone());
+                    autoupdater.autoupdate(&config)?;
                     tv.resolve(&config, plugin)?;
                     versions.push(tv.rtv.unwrap());
                 }
