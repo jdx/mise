@@ -962,16 +962,19 @@ experimental, however, and this needs to be manually set with `shims_dir`.
 
 ## Templates
 
+Templates are used in the following locations:
+
+- `.tool-versions` files
+- env var values in `.rtx.toml`
+- _(Submit a ticket if you want to see it used elsewhere!)_
+
 The following context objects are available inside templates:
 
 - `env: HashMap<String, String>` – current environment variables
 - `config_root: PathBuf` – directory containing the `.rtx.toml` file
 
-Templates are parsed with [tera](https://tera.netlify.app/docs). Currently templates are only 
-used for env var values, but in the future they may be used for other things. Submit a ticket if
-you think some configuration would benefit from templating with Tera.
-
-Tera is quite powerful. For example, this snippet will get the directory name of the project:
+Templates are parsed with [tera](https://tera.netlify.app/docs)—which is quite powerful. For 
+example, this snippet will get the directory name of the project:
 
 ```toml
 [env]
