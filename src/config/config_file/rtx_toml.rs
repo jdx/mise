@@ -13,10 +13,11 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, MissingRuntimeBehavior};
+use crate::dirs;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
+use crate::tera::BASE_CONTEXT;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
-use crate::{dirs, env};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
@@ -46,8 +47,7 @@ macro_rules! parse_error {
 #[allow(dead_code)] // TODO: remove
 impl RtxToml {
     pub fn init(path: &Path) -> Self {
-        let mut context = Context::new();
-        context.insert("env", &*env::PRISTINE_ENV);
+        let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", path.parent().unwrap().to_str().unwrap());
         Self {
             path: path.to_path_buf(),
