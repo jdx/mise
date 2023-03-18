@@ -174,7 +174,7 @@ impl RtxToml {
                                     Some(s) => {
                                         plugin_aliases.insert(from.into(), s.into());
                                     }
-                                    _ => parse_error!(format!("{}.{}", k, from), v, "string")?,
+                                    _ => parse_error!(format!("{}.{}", k, from), to, "string")?,
                                 }
                             }
                         }
@@ -420,7 +420,7 @@ impl RtxToml {
         match v.as_value() {
             Some(Value::String(s)) => Ok(humantime::parse_duration(s.value())?),
             Some(Value::Integer(i)) => Ok(Duration::from_secs(*i.value() as u64 * 60)),
-            _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+            _ => parse_error!(k, v, "duration")?,
         }
     }
 
@@ -434,21 +434,21 @@ impl RtxToml {
     fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
         match v.as_value().map(|v| v.as_integer()) {
             Some(Some(v)) => Ok(v as usize),
-            _ => Err(eyre!("expected {k} to be an integer, got: {v}")),
+            _ => parse_error!(k, v, "usize")?,
         }
     }
 
     fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => Ok(v.into()),
-            _ => Err(eyre!("expected {k} to be a path, got: {v}")),
+            _ => parse_error!(k, v, "path")?,
         }
     }
 
     fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => Ok(v.into()),
-            _ => Err(eyre!("expected {k} to be a string, got: {v}")),
+            _ => parse_error!(k, v, "string")?,
         }
     }
 
@@ -612,12 +612,6 @@ impl ConfigFile for RtxToml {
         self.alias.clone()
     }
 }
-
-#[allow(dead_code)] // TODO: remove
-const ENV_SUGGESTION: &str = r#"
-[env]
-FOO = "bar"
-"#;
 
 #[cfg(test)]
 mod tests {
