@@ -285,7 +285,9 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn load_rtxrc() -> Result<RtxToml> {
-    let settings_path = dirs::CONFIG.join("config.toml");
+    let settings_path = env::RTX_CONFIG_FILE
+        .clone()
+        .unwrap_or(dirs::CONFIG.join("config.toml"));
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);
