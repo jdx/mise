@@ -18,10 +18,10 @@ assert() {
 }
 
 assert_path() {
-  local expected="${1//$HOME/\~}"
+  local expected="${1//$RTX_DATA_DIR/\~\/.rtx}"
   local actual="${PATH/%$orig_path/}"
   actual="${actual/%:/}"
-  actual="${actual//$HOME/\~}"
+  actual="${actual//$RTX_DATA_DIR/\~\/.rtx}"
   if [[ "$actual" != "$expected" ]]; then
     echo "Invalid PATH:  $actual"
     echo "Expected PATH: $expected"
