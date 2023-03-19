@@ -47,7 +47,7 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
 fi
 
 assert_raises "rtx uninstall shfmt@3.6.0"
-assert_raises "rtx g shfmt --install-missing"
+assert_raises "rtx local shfmt --install-missing"
 
 assert "rtx local shfmt@3.6.0" "dotenv = '.test-env'
 [env]
