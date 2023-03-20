@@ -221,7 +221,7 @@ static AFTER_HELP: Lazy<String> = Lazy::new(|| {
 
       rtx install nodejs              Install the .tool-versions node version
       rtx local nodejs                Use latest node in current directory
-      rtx global system               Use system node everywhere unless overridden
+      rtx global nodejs@system               Use system node everywhere unless overridden
 
       rtx x nodejs@18 -- node app.js  Run `node app.js` with PATH pointing to
                                       node-18.x
