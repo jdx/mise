@@ -23,33 +23,25 @@ impl Shell for Nushell {
 
         out.push_str(&formatdoc! {r#"
           let-env RTX_SHELL = "nu"
+          
+          def "parse vars" [] {{
+            $in | lines | parse "{{name}} = {{value}}"
+          }}
+            
+          def "format vars" [] {{
+            $in | reverse | uniq-by name | transpose -i -r -d |
+          }}
 
           def-env rtx [command?: string, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             if ($command == null) {{
               run-external {exe}
             }} else if ($command in $commands) {{
-              let output = run-external /Users/brianheise/.cargo/bin/rtx $command $rest --redirect-stdout
-              let items = ($output | split row "--")
-
-              let vars = if ($items | length | $in > 0) {{
-                $items.0
-              }} else {{
-                null
-              }}
-
-              let script = if ($items | length | $in > 1) {{
-                $items.1
-              }} else {{
-                null
-              }}
-
-              if not ($vars == null) {{
-                $vars | lines | parse "{{name}} = {{value}}" | transpose -i -r -d | load-env
-              }}
-
-              if not ($script == null) {{
-                nu -c $script
+              let vars = (^"{exe}" $command $rest
+                | parse vars )
+              
+              if not ($vars | is-empty) {{
+                $vars | format vars | load-env
               }}
             }} else {{
               run-external {exe} $command $rest
@@ -57,15 +49,11 @@ impl Shell for Nushell {
           }}
           
           def-env _rtx_hook [] {{
-            let lines = (^"{exe}" hook-env{status} -s nu
-              | lines
-              | parse "{{name}} = {{value}}"
-              | where value != ($env.PATH | str join ":"))
+            let vars = (^"{exe}" hook-env{status} $command $rest
+              | parse vars )
             
-            if ($lines | is-empty) {{
-              return
-            }} else {{
-              $lines | transpose -i -r -d | load-env
+            if not ($vars | is-empty) {{
+              $vars | format vars | load-env| load-env
             }}
           }}
           
