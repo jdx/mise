@@ -436,7 +436,11 @@ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ### Nushell
 
 ```sh-session
-$ rtx activate nu | save $nu.config-path --append
+$ do { 
+    let rtxpath = $"($nu.config-path | path dirname | path join "rtx.nu")"; 
+    run-external rtx activate nu --redirect-stdout | save $rtxpath -f;
+    $"\nsource "($rtxpath)"" | save $nu.config-path --append
+  }
 ```
 
 ### Xonsh
