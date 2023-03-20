@@ -29,11 +29,12 @@ impl Shell for Nushell {
           }}
             
           def "format vars" [] {{
-            $in | reverse | uniq-by name | transpose -i -r -d |
+            $in | reverse | uniq-by name | transpose -i -r -d
           }}
 
           def-env rtx [command?: string, ...rest: string] {{
             let commands = ["shell", "deactivate"]
+            
             if ($command == null) {{
               run-external {exe}
             }} else if ($command == "activate") {{
@@ -50,7 +51,7 @@ impl Shell for Nushell {
             }}
           }}
           
-          def-env _rtx_hook [] {{
+          def-env rtx_hook [] {{
             let vars = (^"{exe}" hook-env{status} $command $rest
               | parse vars )
             
@@ -62,12 +63,12 @@ impl Shell for Nushell {
           let-env config = ($env.config | upsert hooks {{
             pre_prompt: [{{
               condition: {{ $env.RTX_SHELL != "null" }}
-              code: {{ _rtx_hook }}
+              code: {{ rtx_hook }}
             }}]
             env_change: {{
                 PWD: [{{
                   condition: {{ $env.RTX_SHELL != "null" }}
-                  code: {{ _rtx_hook }}
+                  code: {{ rtx_hook }}
                 }}]
             }}
           }})
