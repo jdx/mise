@@ -36,6 +36,8 @@ impl Shell for Nushell {
             let commands = ["shell", "deactivate"]
             if ($command == null) {{
               run-external {exe}
+            }} else if ($command == "activate") {{
+              let-env RTX_SHELL = "nu"
             }} else if ($command in $commands) {{
               let vars = (^"{exe}" $command $rest
                 | parse vars )
