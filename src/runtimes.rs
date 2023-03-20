@@ -202,6 +202,9 @@ impl RuntimeVersion {
     }
 
     pub fn exec_env(&self) -> Result<&HashMap<String, String>> {
+        if self.version.as_str() == "system" {
+            return Ok(&*EMPTY_HASH_MAP);
+        }
         if !self.script_man.script_exists(&ExecEnv) || *env::__RTX_SCRIPT {
             // if the script does not exist or we're running from within a script already
             // the second is to prevent infinite loops
