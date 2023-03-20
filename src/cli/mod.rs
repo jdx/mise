@@ -159,7 +159,7 @@ impl Cli {
                 .long_about(LONG_ABOUT)
                 .arg_required_else_help(true)
                 .subcommand_required(true)
-                .after_help(AFTER_HELP.as_str())
+                .after_long_help(AFTER_LONG_HELP.as_str())
                 .arg(args::install_missing::InstallMissing::arg())
                 .arg(args::jobs::Jobs::arg())
                 .arg(args::log_level::LogLevel::arg())
@@ -211,18 +211,17 @@ jq and shellcheck.
 It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
 https://asdf-vm.com/"};
 
-static AFTER_HELP: Lazy<String> = Lazy::new(|| {
+static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! { "
     {}
       rtx install nodejs@18.0.0       Install a specific node version
       rtx install nodejs@18.0         Install a version matching a prefix
+      rtx install nodejs              Install the node version defined in
+                                      .tool-versions or .rtx.toml
       rtx local nodejs@18             Use node-18.x in current project
       rtx global nodejs@18            Use node-18.x as default
-
-      rtx install nodejs              Install the .tool-versions node version
-      rtx local nodejs                Use latest node in current directory
-      rtx global nodejs@system               Use system node everywhere unless overridden
-
+      rtx local nodejs@latest         Use latest node in current directory
+      rtx global nodejs@system        Use system node everywhere unless overridden
       rtx x nodejs@18 -- node app.js  Run `node app.js` with PATH pointing to
                                       node-18.x
 ", style("Examples:").bold().underlined()  }
