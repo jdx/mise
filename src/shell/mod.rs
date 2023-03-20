@@ -13,9 +13,9 @@ mod zsh;
 pub enum ShellType {
     Bash,
     Fish,
+    Nu,
     Xonsh,
     Zsh,
-    Nu,
 }
 
 impl ShellType {
@@ -25,12 +25,12 @@ impl ShellType {
             Some(ShellType::Bash)
         } else if shell.ends_with("fish") {
             Some(ShellType::Fish)
+        } else if shell.ends_with("nu") {
+            Some(ShellType::Nu) 
         } else if shell.ends_with("xonsh") {
             Some(ShellType::Xonsh)
         } else if shell.ends_with("zsh") {
             Some(ShellType::Zsh)
-        } else if shell.ends_with("nu") {
-            Some(ShellType::Nu)
         } else {
             None
         }
@@ -42,9 +42,9 @@ impl Display for ShellType {
         match self {
             Self::Bash => write!(f, "bash"),
             Self::Fish => write!(f, "fish"),
+            Self::Nu => write!(f, "nu"),
             Self::Xonsh => write!(f, "xonsh"),
             Self::Zsh => write!(f, "zsh"),
-            Self::Nu => write!(f, "nu"),
         }
     }
 }
