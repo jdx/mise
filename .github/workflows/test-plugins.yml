@@ -103,7 +103,13 @@ jobs:
       - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
       - run: rtx -v
-      - run: ${{matrix.command}}
+      - name: ${{matrix.command}}
+        uses: nick-fields/retry@v2
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: ${{matrix.command}}
   test-install:
     # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
     # installing is a better-than-nothing smoke test that the plugin is correctly implemented
@@ -174,7 +180,8 @@ jobs:
           path: dist
       - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
       - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
-      - uses: nick-fields/retry@v2
+      - name: rtx install ${{matrix.plugins}}@latest
+        uses: nick-fields/retry@v2
         with:
           timeout_minutes: 20
           max_attempts: 3
