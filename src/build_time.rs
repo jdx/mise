@@ -1,13 +1,16 @@
-use build_time::build_time_utc;
 use chrono::{DateTime, FixedOffset, Months, Utc};
 use console::style;
 use lazy_static::lazy_static;
 
 use crate::env::RTX_HIDE_UPDATE_WARNING;
 
+pub mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 lazy_static! {
     pub static ref BUILD_TIME: DateTime<FixedOffset> =
-        DateTime::parse_from_rfc3339(build_time_utc!()).unwrap();
+        DateTime::parse_from_rfc2822(built_info::BUILT_TIME_UTC).unwrap();
 }
 
 #[ctor::ctor]
