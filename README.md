@@ -640,20 +640,18 @@ These can be simple key/value entries like this:
 NODE_ENV = 'production'
 ```
 
-`PATH` is treated specially, it needs to be defined as an array with `$PATH` at the end:
+`PATH` is treated specially, it needs to be defined as an array in `env_path`:
 
 ```toml
-[env]
-PATH = [
+env_path = [
     # adds an absolute path
     "~/.local/share/bin",
     # adds a path relative to the .rtx.toml, not PWD
     "./node_modules/.bin",
-    "$PATH"
 ]
 ```
 
-_Note: other PATH-like variables like `LD_LIBRARY_PATH` cannot be set this way._
+_Note: `env_path` is a top-level key, it does not go inside of `[env]`._
 
 Environment variable values can be templates, see [Templates](#templates) for details.
 

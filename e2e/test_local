@@ -21,9 +21,9 @@ export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 assert_raises "rtx uninstall shfmt@3.6.0"
 
 assert "rtx local" "dotenv = '.test-env'
+env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
-PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -31,9 +31,9 @@ tiny = \"latest\"
 "
 
 assert "rtx local shfmt@3.5.0" "dotenv = '.test-env'
+env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
-PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -50,9 +50,9 @@ assert_raises "rtx uninstall shfmt@3.6.0"
 assert_raises "rtx local shfmt --install-missing"
 
 assert "rtx local shfmt@3.6.0" "dotenv = '.test-env'
+env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
-PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"
@@ -66,9 +66,9 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
 fi
 
 assert "rtx local --rm shfmt" "dotenv = '.test-env'
+env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
-PATH = [\"/root\", \"./cwd\", \"\$PATH\"]
 
 [tools]
 tiny = \"latest\"

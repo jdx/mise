@@ -10,6 +10,14 @@
       "description": "path to .env file",
       "type": "string"
     },
+    "env_path": {
+      "description": "PATH entries to add",
+      "type": "array",
+      "items": {
+        "description": "a path to add to PATH",
+        "type": "string"
+      }
+    },
     "env": {
       "description": "environment variables",
       "type": "object",
