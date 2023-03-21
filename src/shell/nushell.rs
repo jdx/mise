@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
 use indoc::formatdoc;
 
@@ -6,6 +6,21 @@ use crate::shell::{is_dir_in_path, Shell};
 
 #[derive(Default)]
 pub struct Nushell {}
+
+enum EnvOp<'a> {
+    Set { key: &'a str, val: &'a str },
+    Hide { key: &'a str },
+}
+
+impl<'a> Display for EnvOp<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[allow(clippy::write_with_newline)]
+        match self {
+            EnvOp::Set { key, val } => write!(f, "set,{key},{val}\n"),
+            EnvOp::Hide { key } => write!(f, "hide,{key},\n"),
+        }
+    }
+}
 
 impl Shell for Nushell {
     fn activate(&self, exe: &Path, status: bool) -> String {
@@ -22,66 +37,85 @@ impl Shell for Nushell {
         }
 
         out.push_str(&formatdoc! {r#"
-          let-env RTX_SHELL = "nu"
-          
+          export-env {{
+            let-env RTX_SHELL = "nu"
+            
+            let-env config = ($env.config | upsert hooks {{
+                pre_prompt: [{{
+                condition: {{ "RTX_SHELL" in $env }}
+                code: {{ rtx_hook }}
+                }}]
+                env_change: {{
+                    PWD: [{{
+                    condition: {{ "RTX_SHELL" in $env }}
+                    code: {{ rtx_hook }}
+                    }}]
+                }}
+            }})
+          }}
+            
           def "parse vars" [] {{
-            $in | lines | parse "{{name}} = {{value}}"
+            $in | lines | parse "{{op}},{{name}},{{value}}"
           }}
             
           def "format vars" [] {{
             $in | reverse | uniq-by name | transpose -i -r -d
           }}
-
-          def-env rtx [command?: string, ...rest: string] {{
+            
+          def-env rtx [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             
             if ($command == null) {{
-              run-external {exe}
+                run-external {exe}
             }} else if ($command == "activate") {{
-              let-env RTX_SHELL = "nu"
+                let-env RTX_SHELL = "nu"
             }} else if ($command in $commands) {{
-              let vars = (^"{exe}" $command $rest
+                let vars = (^"{exe}" $command $rest
                 | parse vars )
-              
-              if not ($vars | is-empty) {{
-                $vars | format vars | load-env
-              }}
+                
+                $vars | process load | handle load
+                $vars | process hide | handle hide
             }} else {{
-              run-external {exe} $command $rest
+                run-external {exe} $command $rest
             }}
           }}
-          
-          def-env rtx_hook [] {{
-            let vars = (^"{exe}" hook-env{status} $command $rest
-              | parse vars )
             
-            if not ($vars | is-empty) {{
-              $vars | format vars | load-env| load-env
+          def "process load" [] {{
+            $in | filter {{ |var| $var.op == "set" }} | reject op
+          }}
+            
+          def-env "handle load" [] {{
+            if not ($in | is-empty) {{
+                $in | format vars | load-env
             }}
           }}
-          
-          let-env config = ($env.config | upsert hooks {{
-            pre_prompt: [{{
-              condition: {{ $env.RTX_SHELL != "null" }}
-              code: {{ rtx_hook }}
-            }}]
-            env_change: {{
-                PWD: [{{
-                  condition: {{ $env.RTX_SHELL != "null" }}
-                  code: {{ rtx_hook }}
-                }}]
+            
+          def-env "handle hide" [] {{
+            if not ($in | is-empty) {{
+              for $var in $in {{
+                hide-env $var.name
+              }}
             }}
-          }})
-            "#});
+          }}
+            
+          def "process hide" [] {{
+            $in | filter {{ |var| $var.op == "hide" }} | reject op | reject value
+          }}
+            
+          def-env rtx_hook [] {{
+            let vars = (^"{exe}" hook-env{status} -s nu
+                | parse vars )
+            $vars | process load | handle load
+            $vars | process hide | handle hide
+          }}
+
+        "#});
 
         out
     }
 
-    // TODO: properly handle deactivate
     fn deactivate(&self) -> String {
-        formatdoc! {r#"
-          RTX_SHELL = null
-        "#}
+        self.unset_env("RTX_SHELL")
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
@@ -90,11 +124,12 @@ impl Shell for Nushell {
         let v = v.replace("\\n", "\n");
         let v = v.replace('\'', "");
 
-        format!("{k} = {v}\n")
+        EnvOp::Set { key: &k, val: &v }.to_string()
     }
 
     fn unset_env(&self, k: &str) -> String {
-        format!("{k} = null \n", k = shell_escape::unix::escape(k.into()))
+        let k = shell_escape::unix::escape(k.into());
+        EnvOp::Hide { key: k.as_ref() }.to_string()
     }
 }
 
