@@ -22,11 +22,11 @@ test *args: (test-unit args) test-e2e lint
 # update all test snapshot files
 test-update-snapshots:
     find . -name '*.snap' -delete
-    cargo insta test --accept --features clap_mangen
+    cargo insta test --accept --all-features
 
 # run the rust "unit" tests
 test-unit *args:
-    cargo test --features clap_mangen {{ args }}
+    cargo test --all-features {{ args }}
 
 # runs the E2E tests in ./e2e
 test-e2e: build
@@ -45,7 +45,7 @@ test-coverage:
 
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
-    cargo test --features clap_mangen
+    cargo test --all-features
     cargo build --all-features
     ./e2e/run_all_tests
     RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
@@ -55,6 +55,7 @@ test-coverage:
     rtx implode
     cargo llvm-cov report --html
     cargo llvm-cov report --lcov --output-path lcov.info
+    cargo llvm-cov report
 
 # delete built files
 clean:

@@ -7,7 +7,7 @@ use console::style;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
-use crate::build_time::BUILD_TIME;
+use crate::build_time::{built_info, BUILD_TIME};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::file::modified_duration;
@@ -30,7 +30,7 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
-        "{} {}-{} (built {})",
+        "{} {}-{} ({} {})",
         if cfg!(debug_assertions) {
             format!("{}-DEBUG", env!("CARGO_PKG_VERSION"))
         } else {
@@ -38,6 +38,7 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
         },
         *OS,
         *ARCH,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
         BUILD_TIME.format("%Y-%m-%d"),
     )
 });

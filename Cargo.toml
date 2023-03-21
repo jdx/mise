@@ -13,6 +13,7 @@ keywords = ["rtx"]
 categories = ["command-line-utilities"]
 include = ["src/**/*.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
 rust-version = "1.64.0"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,7 +27,6 @@ path = "src/main.rs"
 
 [dependencies]
 base64 = "0.21.0"
-build-time = "0.1.2"
 chrono = "0.4.23"
 clap = { version = "4.1.8", features = ["env", "derive", "string"] }
 clap_complete = "4.1.4"
@@ -78,6 +78,9 @@ versions = "4.1.0"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3.1"
+
+[build-dependencies]
+built = {version = "0.6.0", features = ["chrono", "git2"]}
 
 [dev-dependencies]
 env_logger = "0.10.0"
