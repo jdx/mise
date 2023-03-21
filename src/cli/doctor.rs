@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use std::fmt::Write;
 use std::process::exit;
 
+use crate::build_time::built_info;
 use crate::cli::command::Command;
 use crate::cli::version::VERSION;
 use crate::config::Config;
@@ -26,6 +27,7 @@ impl Command for Doctor {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         rtxprintln!(out, "{}", rtx_version());
+        rtxprintln!(out, "{}", build_info());
         rtxprintln!(out, "{}", shell());
         rtxprintln!(out, "{}", rtx_env_vars());
         rtxprintln!(
@@ -133,6 +135,16 @@ fn render_plugins(config: &Config) -> String {
 fn rtx_version() -> String {
     let mut s = style("rtx version:\n").bold().to_string();
     s.push_str(&format!("  {}\n", *VERSION));
+    s
+}
+
+fn build_info() -> String {
+    let mut s = style("build:\n").bold().to_string();
+    s.push_str(&format!("  Target: {}\n", built_info::TARGET));
+    s.push_str(&format!("  Features: {}\n", built_info::FEATURES_STR));
+    s.push_str(&format!("  Built: {}\n", built_info::BUILT_TIME_UTC));
+    s.push_str(&format!("  Rust Version: {}\n", built_info::RUSTC_VERSION));
+    s.push_str(&format!("  Profile: {}\n", built_info::PROFILE));
     s
 }
 
