@@ -157,7 +157,7 @@ v18.15.0
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
   - [`rtx plugins uninstall <PLUGIN>...`](#rtx-plugins-uninstall-plugin)
-  - [`rtx plugins update [OPTIONS] [PLUGIN]...`](#rtx-plugins-update-options-plugin)
+  - [`rtx plugins update [PLUGIN]...`](#rtx-plugins-update-plugin)
   - [`rtx prune [OPTIONS] [PLUGINS]...`](#rtx-prune-options-plugins)
   - [`rtx reshim`](#rtx-reshim)
   - [`rtx self-update`](#rtx-self-update)
@@ -1953,25 +1953,21 @@ Arguments:
 Examples:
   $ rtx uninstall nodejs
 ```
-### `rtx plugins update [OPTIONS] [PLUGIN]...`
+### `rtx plugins update [PLUGIN]...`
 
 ```
 Updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
 
-Usage: update [OPTIONS] [PLUGIN]...
+Usage: update [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
           Plugin(s) to update
 
-Options:
-  -a, --all
-          Update all plugins
-
 Examples:
-  $ rtx plugins update --all        # update all plugins
+  $ rtx plugins update              # update all plugins
   $ rtx plugins update nodejs       # update only nodejs
   $ rtx plugins update nodejs@beta  # specify a ref
 ```
