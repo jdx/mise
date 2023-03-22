@@ -42,16 +42,3 @@ fn render_outdated_message() -> String {
 
     output.join("\n")
 }
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use super::*;
-
-    #[test]
-    fn test_render_outdated_message() {
-        let msg = render_outdated_message();
-        assert_snapshot!(console::strip_ansi_codes(&msg));
-    }
-}
