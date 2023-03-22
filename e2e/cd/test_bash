@@ -4,6 +4,10 @@ set -euo pipefail
 
 orig_path="$PATH"
 
+rtx trust
+rtx trust ../.e2e.rtx.toml
+rtx trust 16/.e2e.rtx.toml
+
 # shellcheck disable=SC1090
 eval "$(rtx activate bash --status)" && _rtx_hook
 
