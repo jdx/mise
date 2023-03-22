@@ -68,7 +68,7 @@ clean:
 
 # clippy, cargo fmt --check, and just --fmt
 lint:
-    cargo clippy
+    cargo clippy --all-features
     cargo fmt --all -- --check
     shellcheck scripts/*.sh
     shfmt -d scripts/*.sh
