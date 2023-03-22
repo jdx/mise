@@ -43,6 +43,7 @@ mod reshim;
 mod self_update;
 mod settings;
 mod shell;
+mod trust;
 mod uninstall;
 pub mod version;
 mod r#where;
@@ -83,6 +84,7 @@ pub enum Commands {
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
+    Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Version(version::Version),
     Where(r#where::Where),
@@ -123,6 +125,7 @@ impl Commands {
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
+            Self::Trust(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),

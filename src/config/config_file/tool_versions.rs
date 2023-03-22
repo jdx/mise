@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use crate::config::AliasMap;
+use crate::config::{config_file, AliasMap};
 use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
@@ -58,7 +58,11 @@ impl ToolVersions {
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent().unwrap();
-        let s = get_tera(dir).render_str(s, &cf.context)?;
+        let s = if config_file::is_trusted(&path) {
+            get_tera(dir).render_str(s, &cf.context)?
+        } else {
+            s.to_string()
+        };
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;

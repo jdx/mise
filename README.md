@@ -166,6 +166,7 @@ v18.15.0
   - [`rtx settings set`](#rtx-settings-set)
   - [`rtx settings unset`](#rtx-settings-unset)
   - [`rtx shell`](#rtx-shell)
+  - [`rtx trust`](#rtx-trust)
   - [`rtx uninstall`](#rtx-uninstall)
   - [`rtx version`](#rtx-version)
   - [`rtx where`](#rtx-where)
@@ -2121,6 +2122,36 @@ Examples:
   $ rtx shell nodejs@18
   $ node -v
   v18.0.0
+```
+### `rtx trust`
+
+```
+Marks a config file as trusted
+
+This means rtx will parse the file with potentially dangerous
+features enabled.
+
+This includes:
+- environment variables
+- templates
+- `path:` plugin versions
+
+Usage: trust [OPTIONS] [CONFIG_FILE]
+
+Arguments:
+  [CONFIG_FILE]
+          The config file to trust
+
+Options:
+      --untrust
+          No longer trust this config
+
+Examples:
+  # trusts ~/some_dir/.rtx.toml
+  rtx trust ~/some_dir/.rtx.toml
+
+  # trusts .rtx.toml in the current or parent directory
+  rtx trust
 ```
 ### `rtx uninstall`
 

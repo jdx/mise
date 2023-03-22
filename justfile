@@ -48,6 +48,7 @@ test-coverage:
     cargo test --all-features
     cargo build --all-features
     ./e2e/run_all_tests
+    rtx trust
     RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
     y
     EOF

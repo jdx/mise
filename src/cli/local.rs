@@ -86,7 +86,7 @@ fn get_path() -> PathBuf {
     }
 }
 
-fn get_parent_path() -> Result<PathBuf> {
+pub fn get_parent_path() -> Result<PathBuf> {
     let mut filenames = vec![RTX_DEFAULT_CONFIG_FILENAME.as_str()];
     if !*env::RTX_USE_TOML {
         filenames.push(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
