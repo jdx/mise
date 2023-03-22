@@ -1,4 +1,4 @@
-{ pkgs, lib, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
+{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
 rustPlatform.buildRustPackage {
   pname = "rtx";
   version = "1.26.1";
@@ -9,7 +9,14 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk ];
+  buildInputs = with pkgs; [
+    coreutils
+    bash
+    direnv
+    gnused
+    git
+    gawk
+  ] ++ lib.optional stdenv.isDarwin darwin.apple_sdk.frameworks.Security;
 
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \
