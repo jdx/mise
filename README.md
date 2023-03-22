@@ -132,45 +132,45 @@ v18.15.0
 - [Cache Behavior](#cache-behavior)
   - [Plugin/Runtime Cache](#pluginruntime-cache)
 - [Commands](#commands)
-  - [`rtx activate`](#rtx-activate)
-  - [`rtx alias get`](#rtx-alias-get)
-  - [`rtx alias ls`](#rtx-alias-ls)
-  - [`rtx alias set`](#rtx-alias-set)
-  - [`rtx alias unset`](#rtx-alias-unset)
+  - [`rtx activate [OPTIONS] [SHELL_TYPE]`](#rtx-activate-options-shell_type)
+  - [`rtx alias get <PLUGIN> <ALIAS>`](#rtx-alias-get-plugin-alias)
+  - [`rtx alias ls [OPTIONS]`](#rtx-alias-ls-options)
+  - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
+  - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
-  - [`rtx complete`](#rtx-complete)
-  - [`rtx current`](#rtx-current)
+  - [`rtx complete --shell <SHELL>`](#rtx-complete---shell-shell)
+  - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
-  - [`rtx env`](#rtx-env)
-  - [`rtx exec`](#rtx-exec)
-  - [`rtx global`](#rtx-global)
-  - [`rtx implode`](#rtx-implode)
-  - [`rtx install`](#rtx-install)
-  - [`rtx latest`](#rtx-latest)
-  - [`rtx local`](#rtx-local)
-  - [`rtx ls`](#rtx-ls)
-  - [`rtx ls-remote`](#rtx-ls-remote)
-  - [`rtx plugins install`](#rtx-plugins-install)
-  - [`rtx plugins ls`](#rtx-plugins-ls)
-  - [`rtx plugins ls-remote`](#rtx-plugins-ls-remote)
-  - [`rtx plugins uninstall`](#rtx-plugins-uninstall)
-  - [`rtx plugins update`](#rtx-plugins-update)
-  - [`rtx prune`](#rtx-prune)
+  - [`rtx env [OPTIONS] [RUNTIME]...`](#rtx-env-options-runtime)
+  - [`rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`](#rtx-exec-options-runtime----command)
+  - [`rtx global [OPTIONS] [RUNTIME]...`](#rtx-global-options-runtime)
+  - [`rtx implode [OPTIONS]`](#rtx-implode-options)
+  - [`rtx install [OPTIONS] [RUNTIME]...`](#rtx-install-options-runtime)
+  - [`rtx latest <RUNTIME>`](#rtx-latest-runtime)
+  - [`rtx local [OPTIONS] [RUNTIME]...`](#rtx-local-options-runtime)
+  - [`rtx ls [OPTIONS]`](#rtx-ls-options)
+  - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
+  - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
+  - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
+  - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
+  - [`rtx plugins uninstall <PLUGIN>...`](#rtx-plugins-uninstall-plugin)
+  - [`rtx plugins update [OPTIONS] [PLUGIN]...`](#rtx-plugins-update-options-plugin)
+  - [`rtx prune [OPTIONS] [PLUGINS]...`](#rtx-prune-options-plugins)
   - [`rtx reshim`](#rtx-reshim)
   - [`rtx self-update`](#rtx-self-update)
-  - [`rtx settings get`](#rtx-settings-get)
+  - [`rtx settings get <KEY>`](#rtx-settings-get-key)
   - [`rtx settings ls`](#rtx-settings-ls)
-  - [`rtx settings set`](#rtx-settings-set)
-  - [`rtx settings unset`](#rtx-settings-unset)
-  - [`rtx shell`](#rtx-shell)
-  - [`rtx trust`](#rtx-trust)
-  - [`rtx uninstall`](#rtx-uninstall)
+  - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
+  - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
+  - [`rtx shell [OPTIONS] [RUNTIME]...`](#rtx-shell-options-runtime)
+  - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
+  - [`rtx uninstall <RUNTIME>...`](#rtx-uninstall-runtime)
   - [`rtx version`](#rtx-version)
-  - [`rtx where`](#rtx-where)
-  - [`rtx which`](#rtx-which)
+  - [`rtx where <RUNTIME>`](#rtx-where-runtime)
+  - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
 
 </details>
 <!-- AUTO-GENERATED-CONTENT:END -->
@@ -1305,7 +1305,7 @@ behavior.
 <!-- RTX:COMMANDS -->
 ## Commands
 
-### `rtx activate`
+### `rtx activate [OPTIONS] [SHELL_TYPE]`
 
 ```
 Initializes rtx in the current shell
@@ -1332,7 +1332,7 @@ Examples:
     rtx activate fish | source
     execx($(rtx activate xonsh))
 ```
-### `rtx alias get`
+### `rtx alias get <PLUGIN> <ALIAS>`
 
 ```
 Show an alias for a plugin
@@ -1352,7 +1352,7 @@ Examples:
   $ rtx alias get nodejs lts/hydrogen
   18.0.0
 ```
-### `rtx alias ls`
+### `rtx alias ls [OPTIONS]`
 
 ```
 List aliases
@@ -1374,7 +1374,7 @@ Examples:
   $ rtx aliases
   nodejs    lts/hydrogen   18.0.0
 ```
-### `rtx alias set`
+### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
 ```
 Add/update an alias for a plugin
@@ -1396,7 +1396,7 @@ Arguments:
 Examples:
   $ rtx alias set nodejs lts/hydrogen 18.0.0
 ```
-### `rtx alias unset`
+### `rtx alias unset <PLUGIN> <ALIAS>`
 
 ```
 Clears an alias for a plugin
@@ -1429,7 +1429,7 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
-### `rtx complete`
+### `rtx complete --shell <SHELL>`
 
 ```
 Generate shell completions
@@ -1447,7 +1447,7 @@ Examples:
   $ rtx complete -s zsh  > /usr/local/share/zsh/site-functions/_rtx
   $ rtx complete -s fish > ~/.config/fish/completions/rtx.fish
 ```
-### `rtx current`
+### `rtx current [PLUGIN]`
 
 ```
 Shows current active and installed runtime versions
@@ -1520,7 +1520,7 @@ Examples:
   $ rtx doctor
   [WARN] plugin nodejs is not installed
 ```
-### `rtx env`
+### `rtx env [OPTIONS] [RUNTIME]...`
 
 ```
 Exports env vars to activate rtx a single time
@@ -1546,7 +1546,7 @@ Examples:
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
 ```
-### `rtx exec`
+### `rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`
 
 ```
 Execute a command with runtime(s) set
@@ -1588,7 +1588,7 @@ Examples:
   # Run a command in a different directory:
   rtx x -C /path/to/project nodejs@18 -- node ./app.js
 ```
-### `rtx global`
+### `rtx global [OPTIONS] [RUNTIME]...`
 
 ```
 Sets/gets the global runtime version(s)
@@ -1639,7 +1639,7 @@ Examples:
   $ rtx global nodejs
   18.0.0
 ```
-### `rtx implode`
+### `rtx implode [OPTIONS]`
 
 ```
 Removes rtx CLI and all related data
@@ -1655,7 +1655,7 @@ Options:
       --dry-run
           List directories that would be removed without actually removing them
 ```
-### `rtx install`
+### `rtx install [OPTIONS] [RUNTIME]...`
 
 ```
 Install a runtime
@@ -1689,7 +1689,7 @@ Examples:
   $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs all runtimes specified in .tool-versions or .rtx.toml
 ```
-### `rtx latest`
+### `rtx latest <RUNTIME>`
 
 ```
 Gets the latest available version for a plugin
@@ -1707,7 +1707,7 @@ Examples:
   $ rtx latest nodejs     # get the latest stable version of nodejs
   20.0.0
 ```
-### `rtx local`
+### `rtx local [OPTIONS] [RUNTIME]...`
 
 ```
 Sets/gets tool version in local .tool-versions or .rtx.toml
@@ -1763,7 +1763,7 @@ Examples:
   $ rtx local nodejs
   18.0.0
 ```
-### `rtx ls`
+### `rtx ls [OPTIONS]`
 
 ```
 List installed runtime versions
@@ -1817,7 +1817,7 @@ Examples:
     "python": [...]
   }
 ```
-### `rtx ls-remote`
+### `rtx ls-remote <PLUGIN> [PREFIX]`
 
 ```
 List runtime versions available for install
@@ -1848,7 +1848,7 @@ Examples:
   18.0.0
   18.1.0
 ```
-### `rtx plugins install`
+### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
 
 ```
 Install a plugin
@@ -1895,7 +1895,7 @@ Examples:
   # install the nodejs plugin using a specific ref
   $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
 ```
-### `rtx plugins ls`
+### `rtx plugins ls [OPTIONS]`
 
 ```
 List installed plugins
@@ -1922,7 +1922,7 @@ Examples:
   nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
   ruby                          https://github.com/asdf-vm/asdf-ruby.git
 ```
-### `rtx plugins ls-remote`
+### `rtx plugins ls-remote [OPTIONS]`
 
 ```
 List all available remote plugins
@@ -1942,7 +1942,7 @@ Options:
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
-### `rtx plugins uninstall`
+### `rtx plugins uninstall <PLUGIN>...`
 
 ```
 Removes a plugin
@@ -1956,7 +1956,7 @@ Arguments:
 Examples:
   $ rtx uninstall nodejs
 ```
-### `rtx plugins update`
+### `rtx plugins update [OPTIONS] [PLUGIN]...`
 
 ```
 Updates a plugin to the latest version
@@ -1978,7 +1978,7 @@ Examples:
   $ rtx plugins update nodejs       # update only nodejs
   $ rtx plugins update nodejs@beta  # specify a ref
 ```
-### `rtx prune`
+### `rtx prune [OPTIONS] [PLUGINS]...`
 
 ```
 Delete unused versions of tools
@@ -2030,7 +2030,7 @@ Supports: standalone, brew, deb, rpm
 
 Usage: self-update
 ```
-### `rtx settings get`
+### `rtx settings get <KEY>`
 
 ```
 Show a current setting
@@ -2066,7 +2066,7 @@ Examples:
   $ rtx settings
   legacy_version_file = false
 ```
-### `rtx settings set`
+### `rtx settings set <KEY> <VALUE>`
 
 ```
 Add/update a setting
@@ -2085,7 +2085,7 @@ Arguments:
 Examples:
   $ rtx settings set legacy_version_file true
 ```
-### `rtx settings unset`
+### `rtx settings unset <KEY>`
 
 ```
 Clears a setting
@@ -2101,7 +2101,7 @@ Arguments:
 Examples:
   $ rtx settings unset legacy_version_file
 ```
-### `rtx shell`
+### `rtx shell [OPTIONS] [RUNTIME]...`
 
 ```
 Sets a tool version for the current shell session
@@ -2123,7 +2123,7 @@ Examples:
   $ node -v
   v18.0.0
 ```
-### `rtx trust`
+### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
 ```
 Marks a config file as trusted
@@ -2153,7 +2153,7 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   rtx trust
 ```
-### `rtx uninstall`
+### `rtx uninstall <RUNTIME>...`
 
 ```
 Removes runtime versions
@@ -2175,7 +2175,7 @@ Show rtx version
 
 Usage: version
 ```
-### `rtx where`
+### `rtx where <RUNTIME>`
 
 ```
 Display the installation path for a runtime
@@ -2203,7 +2203,7 @@ Examples:
   $ rtx where nodejs
   /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
 ```
-### `rtx which`
+### `rtx which [OPTIONS] <BIN_NAME>`
 
 ```
 Shows the path that a bin name points to

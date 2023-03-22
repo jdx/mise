@@ -1,3 +1,4 @@
+use clap::builder::StyledStr;
 use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
 use indoc::formatdoc;
@@ -67,20 +68,27 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
     if c.is_hide_set() {
         return None;
     }
-    let name = match parent {
-        Some(p) => format!("{} {}", p, c.get_name()),
-        None => c.get_name().to_string(),
+    let strip_usage = |s: StyledStr| {
+        s.to_string()
+            .strip_prefix("Usage: ")
+            .unwrap_or_default()
+            .to_string()
     };
+    let usage = match parent {
+        Some(p) => format!("{} {}", p, strip_usage(c.render_usage())),
+        None => strip_usage(c.render_usage()),
+    };
+    let about = strip_ansi_codes(&c.render_long_help().to_string())
+        .trim()
+        .to_string();
     Some(formatdoc!(
         "
-        ### `rtx {name}`
+        ### `rtx {usage}`
 
         ```
         {about}
         ```
         ",
-        name = name,
-        about = strip_ansi_codes(&c.render_long_help().to_string()).trim(),
     ))
 }
 
