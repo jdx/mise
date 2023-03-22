@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
@@ -10,12 +11,13 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Config};
-use crate::env;
 use crate::file::display_path;
+use crate::hash::hash_to_str;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolVersionList, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{dirs, env};
 
 pub mod legacy_version;
 pub mod rtx_toml;
@@ -142,6 +144,35 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
         #[allow(clippy::box_default)]
         _ => Ok(Box::new(RtxToml::default())),
     }
+}
+
+pub fn is_trusted(path: &Path) -> bool {
+    trust_path(path.to_path_buf()).unwrap().exists()
+}
+
+pub fn trust(path: &Path) -> Result<()> {
+    let hashed_path = trust_path(path.to_path_buf())?;
+    if !hashed_path.exists() {
+        fs::create_dir_all(hashed_path.parent().unwrap())?;
+        fs::write(hashed_path, "")?;
+    }
+    Ok(())
+}
+
+pub fn untrust(path: &Path) -> Result<()> {
+    let hashed_path = trust_path(path.to_path_buf())?;
+    if hashed_path.exists() {
+        fs::remove_file(hashed_path)?;
+    }
+    Ok(())
+}
+
+fn trust_path(mut path: PathBuf) -> Result<PathBuf> {
+    if path.exists() {
+        path = path.canonicalize()?;
+    }
+    let trust_path = dirs::CACHE.join("trusted-configs").join(hash_to_str(&path));
+    Ok(trust_path)
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
