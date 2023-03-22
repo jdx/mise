@@ -462,9 +462,9 @@ dependencies = [
 
 [[package]]
 name = "dotenvy"
-version = "0.15.6"
+version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03d8c417d7a8cb362e0c37e5d815f5eb7c37f79ff93707329d5a194e42e54ca0"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "duct"
@@ -1527,7 +1527,7 @@ checksum = "b833d8d034ea094b1ea68aa6d5c740e0d04bad9d16568d08ba6f76823a114316"
 
 [[package]]
 name = "rtx-cli"
-version = "1.26.0"
+version = "1.26.1"
 dependencies = [
  "base64",
  "built",
