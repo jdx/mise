@@ -1,0 +1,6 @@
+---
+source: src/cli/trust.rs
+expression: output
+---
+trusted ~/cwd/.test-tool-versions
+
