@@ -1207,14 +1207,10 @@ v18.0.0
 ## direnv
 
 [direnv](https://direnv.net) and rtx both manage environment variables based on directory. Because they both analyze
-the current environment variables before and after their respective "hook" commands are run, they can conflict with each other.
-As a result, there were a [number of issues with direnv](https://github.com/jdxcode/rtx/issues/8).
-However, we think we've mitigated these. If you find that rtx and direnv are not working well together,
-please comment on that ticket ideally with a good description of your directory layout so we can
-reproduce the problem.
+the current environment variables before and after their respective "hook" commands are run, they can sometimes conflict with each other.
 
-If there are remaining issues, they're likely to do with the ordering of PATH. This means it would
-really only be a problem if you were trying to manage the same runtime with direnv and rtx. For example,
+If you have an issue, it's likely to do with the ordering of PATH. This means it would
+really only be a problem if you were trying to manage the same tool with direnv and rtx. For example,
 you may use `layout python` in an `.envrc` but also be maintaining a `.tool-versions` file with python
 in it as well.
 
@@ -1264,7 +1260,8 @@ If you continue to struggle, you can also try using the [experimental shims feat
 
 While making rtx compatible with direnv is, and will always be a major goal of this project, I also
 want rtx to be capable of replacing direnv if needed. This is why rtx includes support for managing
-env vars and virtualenv for python using `.rtx.toml`.
+env vars and [virtualenv](https://github.com/jdxcode/rtx-python#experimental-virtualenv-support)
+for python using `.rtx.toml`.
 
 If you find you continue to need direnv, please open an issue and let me know what it is to see if
 it's something rtx could support. rtx will never be as capable as direnv with a DSL like `.envrc`,
