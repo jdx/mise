@@ -83,6 +83,7 @@ impl RtxToml {
         for (k, v) in doc.iter() {
             match k {
                 "dotenv" => self.parse_dotenv(k, v)?,
+                "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
@@ -116,8 +117,8 @@ impl RtxToml {
     fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
         let mut v = v.clone();
         if let Some(table) = v.as_table_like_mut() {
-            if let Some(path) = table.remove("PATH") {
-                self.path_dirs = self.parse_path_env(&format!("{}.PATH", k), &path)?;
+            if table.contains_key("PATH") {
+                return Err(eyre!("use 'env_path' instead of 'env.PATH'"));
             }
         }
         for (k, v) in self.parse_hashmap(k, &v)? {
@@ -130,17 +131,10 @@ impl RtxToml {
     fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
         match v.as_array() {
             Some(array) => {
-                if let Some(Some(last)) = array.get(array.len() - 1).map(|v| v.as_str()) {
-                    if last != "$PATH" {
-                        // TODO: allow $PATH to be anywhere in the array
-                        parse_error!(k, v, "array ending with '$PATH'")?;
-                    }
-                }
                 let mut path = Vec::new();
                 let config_root = self.path.parent().unwrap();
                 for v in array {
                     match v.as_str() {
-                        Some("$PATH") => {}
                         Some(s) => {
                             let s = self.parse_template(k, s)?;
                             let s = match s.strip_prefix("./") {
@@ -675,9 +669,9 @@ mod tests {
         let p = dirs::HOME.join("fixtures/.rtx.toml");
         let mut cf = RtxToml::init(&p);
         cf.parse(&formatdoc! {r#"
+        env_path=["/foo", "./bar"]
         [env]
         foo="bar"
-        PATH=["/foo", "./bar", "$PATH"]
         "#})
             .unwrap();
 

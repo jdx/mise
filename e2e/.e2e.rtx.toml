@@ -1,7 +1,7 @@
 dotenv = '.test-env'
+env_path = ["/root", "./cwd"]
 [env]
 FOO = "bar"
-PATH = ["/root", "./cwd", "$PATH"]
 
 [tools]
 tiny = "latest"
