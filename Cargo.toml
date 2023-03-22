@@ -11,7 +11,7 @@ readme = "README.md"
 license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
-include = ["src/**/*.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
+include = ["src/**/*.rs", "/build.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
 rust-version = "1.64.0"
 build = "build.rs"
 
@@ -80,7 +80,7 @@ versions = "4.1.0"
 exec = "0.3.1"
 
 [build-dependencies]
-built = {version = "0.6.0", features = ["chrono", "git2"]}
+built = { version = "0.6.0", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 env_logger = "0.10.0"
