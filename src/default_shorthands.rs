@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 628] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 629] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -225,6 +225,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 628] = [
     ("go-junit-report", "https://github.com/jwillker/asdf-go-junit-report.git"),
     ("go-sdk", "https://github.com/yacchi/asdf-go-sdk.git"),
     ("go-swagger", "https://github.com/jfreeland/asdf-go-swagger.git"),
+    ("goconvey", "https://github.com/therounds-contrib/asdf-goconvey.git"),
     ("gohugo", "https://github.com/nklmilojevic/asdf-hugo.git"),
     ("gojq", "https://github.com/jimmidyson/asdf-gojq.git"),
     ("golang", "https://github.com/kennyp/asdf-golang.git"),
