@@ -18,14 +18,14 @@ pub struct Update {
     plugin: Option<Vec<String>>,
 
     /// Update all plugins
-    #[clap(long, short = 'a', conflicts_with = "plugin")]
+    #[clap(long, short = 'a', conflicts_with = "plugin", hide = true)]
     all: bool,
 }
 
 impl Command for Update {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugins: Vec<_> = match (self.plugin, self.all) {
-            (Some(plugins), _) => plugins
+        let plugins: Vec<_> = match self.plugin {
+            Some(plugins) => plugins
                 .into_iter()
                 .map(|p| {
                     let (p, ref_) = match p.split_once('@') {
@@ -38,12 +38,11 @@ impl Command for Update {
                     Ok((plugin, ref_))
                 })
                 .collect::<Result<_>>()?,
-            (_, true) => config
+            None => config
                 .plugins
                 .values()
                 .map(|p| (p, None))
                 .collect::<Vec<_>>(),
-            _ => Err(eyre!("no plugins specified"))?,
         };
 
         for (plugin, ref_) in plugins {
@@ -57,7 +56,7 @@ impl Command for Update {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx plugins update --all        # update all plugins
+      $ rtx plugins update              # update all plugins
       $ rtx plugins update nodejs       # update only nodejs
       $ rtx plugins update nodejs@beta  # specify a ref
     "#, style("Examples:").bold().underlined()}
@@ -65,9 +64,8 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err};
+    use crate::assert_cli;
 
     #[test]
     fn test_plugin_update() {
@@ -77,8 +75,7 @@ mod tests {
             "tiny",
             "https://github.com/jdxcode/rtx-tiny.git"
         );
-        let err = assert_cli_err!("p", "update");
-        assert_str_eq!(err.to_string(), "no plugins specified");
+        // assert_cli!("p", "update"); tested in e2e
         assert_cli!("plugins", "update", "tiny");
     }
 }
