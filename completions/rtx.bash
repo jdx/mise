@@ -357,6 +357,9 @@ _rtx() {
             rtx__help__plugins,install)
                 cmd="rtx__help__plugins__install"
                 ;;
+            rtx__help__plugins,link)
+                cmd="rtx__help__plugins__link"
+                ;;
             rtx__help__plugins,ls)
                 cmd="rtx__help__plugins__ls"
                 ;;
@@ -393,6 +396,9 @@ _rtx() {
             rtx__plugins,install)
                 cmd="rtx__plugins__install"
                 ;;
+            rtx__plugins,link)
+                cmd="rtx__plugins__link"
+                ;;
             rtx__plugins,list)
                 cmd="rtx__plugins__ls"
                 ;;
@@ -416,6 +422,9 @@ _rtx() {
                 ;;
             rtx__plugins__help,install)
                 cmd="rtx__plugins__help__install"
+                ;;
+            rtx__plugins__help,link)
+                cmd="rtx__plugins__help__link"
                 ;;
             rtx__plugins__help,ls)
                 cmd="rtx__plugins__help__ls"
@@ -1745,7 +1754,7 @@ _rtx() {
             return 0
             ;;
         rtx__help__plugins)
-            opts="install ls ls-remote uninstall update"
+            opts="install link ls ls-remote uninstall update"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1759,6 +1768,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__plugins__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__plugins__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2275,7 +2298,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins)
-            opts="-a -u -j -r -v -h --all --urls --install-missing --jobs --log-level --raw --verbose --help install ls ls-remote uninstall update help"
+            opts="-a -u -j -r -v -h --all --urls --install-missing --jobs --log-level --raw --verbose --help install link ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2301,7 +2324,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__help)
-            opts="install ls ls-remote uninstall update help"
+            opts="install link ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2329,6 +2352,20 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__help__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__plugins__help__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2400,6 +2437,32 @@ _rtx() {
             ;;
         rtx__plugins__install)
             opts="-f -a -v -j -r -h --force --all --verbose --install-missing --jobs --log-level --raw --help [NAME] [GIT_URL] [REST]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__plugins__link)
+            opts="-j -r -v -h --install-missing --jobs --log-level --raw --verbose --help <NAME> [PATH]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

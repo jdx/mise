@@ -1,0 +1,8 @@
+---
+source: src/cli/plugins/link.rs
+expression: output
+---
+dummy
+tiny
+tiny-link
+

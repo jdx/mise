@@ -109,7 +109,8 @@ pub fn dir_files(dir: &Path) -> Result<Vec<String>> {
 }
 
 pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
-    if link.exists() {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
         fs::remove_file(link)?;
     }
     symlink(target, link)?;

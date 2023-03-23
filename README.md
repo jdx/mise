@@ -152,6 +152,7 @@ v18.15.0
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
+  - [`rtx plugins link <NAME> [PATH]`](#rtx-plugins-link-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
   - [`rtx plugins uninstall <PLUGIN>...`](#rtx-plugins-uninstall-plugin)
@@ -1889,6 +1890,31 @@ Examples:
 
   # install the nodejs plugin using a specific ref
   $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
+```
+### `rtx plugins link <NAME> [PATH]`
+
+```
+Symlinks a plugin into rtx
+
+This is used for developing a plugin.
+
+Usage: link <NAME> [PATH]
+
+Arguments:
+  <NAME>
+          The name of the plugin
+          e.g.: nodejs, ruby
+
+  [PATH]
+          The local path to the plugin
+          e.g.: ./rtx-nodejs
+
+Examples:
+  # essentially just `ln -s ./rtx-nodejs ~/.local/share/rtx/plugins/nodejs`
+  $ rtx plugins link nodejs ./rtx-nodejs
+
+  # infer plugin name as "nodejs"
+  $ rtx plugins link ./rtx-nodejs
 ```
 ### `rtx plugins ls [OPTIONS]`
 
