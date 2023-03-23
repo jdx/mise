@@ -5,6 +5,7 @@ use crate::env;
 
 mod bash;
 mod fish;
+mod nushell;
 mod xonsh;
 mod zsh;
 
@@ -12,6 +13,7 @@ mod zsh;
 pub enum ShellType {
     Bash,
     Fish,
+    Nu,
     Xonsh,
     Zsh,
 }
@@ -23,6 +25,8 @@ impl ShellType {
             Some(ShellType::Bash)
         } else if shell.ends_with("fish") {
             Some(ShellType::Fish)
+        } else if shell.ends_with("nu") {
+            Some(ShellType::Nu)
         } else if shell.ends_with("xonsh") {
             Some(ShellType::Xonsh)
         } else if shell.ends_with("zsh") {
@@ -38,6 +42,7 @@ impl Display for ShellType {
         match self {
             Self::Bash => write!(f, "bash"),
             Self::Fish => write!(f, "fish"),
+            Self::Nu => write!(f, "nu"),
             Self::Xonsh => write!(f, "xonsh"),
             Self::Zsh => write!(f, "zsh"),
         }
@@ -55,6 +60,7 @@ pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     match shell.or_else(ShellType::load) {
         Some(ShellType::Bash) => Some(Box::<bash::Bash>::default()),
         Some(ShellType::Fish) => Some(Box::<fish::Fish>::default()),
+        Some(ShellType::Nu) => Some(Box::<nushell::Nushell>::default()),
         Some(ShellType::Xonsh) => Some(Box::<xonsh::Xonsh>::default()),
         Some(ShellType::Zsh) => Some(Box::<zsh::Zsh>::default()),
         _ => None,

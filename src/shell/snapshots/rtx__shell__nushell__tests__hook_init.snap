@@ -1,0 +1,59 @@
+---
+source: src/shell/nushell.rs
+expression: "nushell.activate(exe, true)"
+---
+let-env PATH = ($env.PATH | prepend '/some/dir')
+export-env {
+  let-env RTX_SHELL = "nu"
+  
+  let-env config = ($env.config | upsert hooks {
+      pre_prompt: [{
+      condition: { "RTX_SHELL" in $env }
+      code: { rtx_hook }
+      }]
+      env_change: {
+          PWD: [{
+          condition: { "RTX_SHELL" in $env }
+          code: { rtx_hook }
+          }]
+      }
+  })
+}
+  
+def "parse vars" [] {
+  $in | lines | parse "{op},{name},{value}"
+}
+  
+def-env rtx [command?: string, --help, ...rest: string] {
+  let commands = ["shell", "deactivate"]
+  
+  if ($command == null) {
+    ^"/some/dir/rtx"
+  } else if ($command == "activate") {
+    let-env RTX_SHELL = "nu"
+  } else if ($command in $commands) {
+    ^"/some/dir/rtx" $command $rest
+    | parse vars
+    | update-env
+  } else {
+    ^"/some/dir/rtx" /some/dir/rtx $command $rest
+  }
+}
+  
+def-env "update-env" [] {
+  for $var in $in {
+    if $var.op == "set" {
+      let-env $var.name = $"($var.value)"
+    } else if $var.op == "hide" {
+      hide-env $var.name
+    }
+  }
+}
+  
+def-env rtx_hook [] {
+  ^"/some/dir/rtx" hook-env --status -s nu
+    | parse vars
+    | update-env
+}
+
+
