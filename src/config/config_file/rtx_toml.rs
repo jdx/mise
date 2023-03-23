@@ -47,13 +47,13 @@ macro_rules! parse_error {
 }
 
 impl RtxToml {
-    pub fn init(path: &Path) -> Self {
+    pub fn init(path: &Path, is_trusted: bool) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", path.parent().unwrap().to_str().unwrap());
         Self {
             path: path.to_path_buf(),
             context,
-            is_trusted: config_file::is_trusted(path),
+            is_trusted,
             toolset: Toolset {
                 source: Some(ToolSource::RtxToml(path.to_path_buf())),
                 ..Default::default()
@@ -62,19 +62,19 @@ impl RtxToml {
         }
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub fn from_file(path: &Path, is_trusted: bool) -> Result<Self> {
         trace!("parsing: {}", path.display());
-        let mut rf = Self::init(path);
+        let mut rf = Self::init(path, is_trusted);
         let body = fs::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         Ok(rf)
     }
 
-    pub fn migrate(path: &Path) -> Result<RtxToml> {
+    pub fn migrate(path: &Path, is_trusted: bool) -> Result<RtxToml> {
         // attempt to read as new .rtx.toml syntax
         let mut raw = String::from("[settings]\n");
         raw.push_str(&fs::read_to_string(path)?);
-        let mut toml = RtxToml::init(path);
+        let mut toml = RtxToml::init(path, is_trusted);
         toml.parse(&raw)?;
         toml.save()?;
         Ok(toml)
@@ -99,7 +99,7 @@ impl RtxToml {
     }
 
     pub fn settings(&self) -> SettingsBuilder {
-        SettingsBuilder::default()
+        self.settings.clone()
     }
 
     fn parse_dotenv(&mut self, k: &str, v: &Item) -> Result<()> {
@@ -375,6 +375,9 @@ impl RtxToml {
                             settings.plugin_autoupdate_last_check_duration =
                                 Some(self.parse_duration_minutes(&k, v)?)
                         }
+                        "trusted_config_paths" => {
+                            settings.trusted_config_paths = self.parse_paths(&k, v)?;
+                        }
                         "verbose" => settings.verbose = Some(self.parse_bool(&k, v)?),
                         "asdf_compat" => settings.asdf_compat = Some(self.parse_bool(&k, v)?),
                         "jobs" => settings.jobs = Some(self.parse_usize(&k, v)?),
@@ -459,6 +462,26 @@ impl RtxToml {
                 Ok(v.into())
             }
             _ => parse_error!(k, v, "path")?,
+        }
+    }
+
+    fn parse_paths(&mut self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+        match v.as_value().map(|v| v.as_array()) {
+            Some(Some(v)) => {
+                let mut paths = vec![];
+                for (i, v) in v.iter().enumerate() {
+                    let k = format!("{}.{}", k, i);
+                    match v.as_str() {
+                        Some(v) => {
+                            let v = self.parse_template(&k, v)?;
+                            paths.push(v.into());
+                        }
+                        _ => parse_error!(k, v, "path")?,
+                    }
+                }
+                Ok(paths)
+            }
+            _ => parse_error!(k, v, "array of paths")?,
         }
     }
 
@@ -679,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_fixture() {
-        let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml")).unwrap();
+        let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml"), true).unwrap();
 
         assert_debug_snapshot!(cf.env());
         assert_debug_snapshot!(cf.settings());
@@ -692,7 +715,7 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [env]
         foo="bar"
@@ -711,7 +734,7 @@ mod tests {
     #[test]
     fn test_path_dirs() {
         let p = dirs::HOME.join("fixtures/.rtx.toml");
-        let mut cf = RtxToml::init(&p);
+        let mut cf = RtxToml::init(&p, true);
         cf.parse(&formatdoc! {r#"
         env_path=["/foo", "./bar"]
         [env]
@@ -730,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -748,7 +771,7 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [alias.nodejs]
         16 = "16.0.0"
@@ -767,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -784,7 +807,7 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [tools]
         nodejs = ["16.0.0", "18.0.0"]
@@ -798,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_update_setting() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
@@ -817,7 +840,7 @@ mod tests {
 
     #[test]
     fn test_remove_setting() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true

@@ -100,6 +100,9 @@ lazy_static! {
     pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
     pub static ref RTX_SHIMS_DIR: Option<PathBuf> = var_path("RTX_SHIMS_DIR");
     pub static ref RTX_RAW: bool = var_is_true("RTX_RAW");
+    pub static ref RTX_TRUSTED_CONFIG_PATHS: Vec<PathBuf> = var("RTX_TRUSTED_CONFIG_PATHS")
+        .map(|v| split_paths(&v).collect())
+        .unwrap_or_default();
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
     pub static ref PRELOAD_ENV: bool = is_cmd("hook-env") || is_cmd("env") || is_cmd("exec");
 }

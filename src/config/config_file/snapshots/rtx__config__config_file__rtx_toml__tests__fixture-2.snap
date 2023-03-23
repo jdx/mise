@@ -4,16 +4,23 @@ expression: cf.settings()
 ---
 SettingsBuilder {
     experimental: None,
-    missing_runtime_behavior: None,
+    missing_runtime_behavior: Some(
+        Warn,
+    ),
     always_keep_download: None,
     legacy_version_file: None,
     plugin_autoupdate_last_check_duration: None,
-    verbose: None,
+    trusted_config_paths: [],
+    verbose: Some(
+        true,
+    ),
     asdf_compat: None,
     jobs: None,
     shorthands_file: None,
     disable_default_shorthands: None,
     log_level: None,
-    shims_dir: None,
+    shims_dir: Some(
+        "~/.rtx/shims",
+    ),
     raw: None,
 }
