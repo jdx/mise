@@ -58,55 +58,36 @@ impl Shell for Nushell {
             $in | lines | parse "{{op}},{{name}},{{value}}"
           }}
             
-          def "format vars" [] {{
-            $in | reverse | uniq-by name | transpose -i -r -d
-          }}
-            
           def-env rtx [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             
             if ($command == null) {{
-                run-external {exe}
+              ^"{exe}"
             }} else if ($command == "activate") {{
-                let-env RTX_SHELL = "nu"
+              let-env RTX_SHELL = "nu"
             }} else if ($command in $commands) {{
-                let vars = (^"{exe}" $command $rest
-                | parse vars )
-                
-                $vars | process load | handle load
-                $vars | process hide | handle hide
+              ^"{exe}" $command $rest
+              | parse vars
+              | update-env
             }} else {{
-                run-external {exe} $command $rest
+              ^"{exe}" {exe} $command $rest
             }}
           }}
             
-          def "process load" [] {{
-            $in | filter {{ |var| $var.op == "set" }} | reject op
-          }}
-            
-          def-env "handle load" [] {{
-            if not ($in | is-empty) {{
-                $in | format vars | load-env
-            }}
-          }}
-            
-          def-env "handle hide" [] {{
-            if not ($in | is-empty) {{
-              for $var in $in {{
+          def-env "update-env" [] {{
+            for $var in $in {{
+              if $var.op == "set" {{
+                let-env $var.name = $"($var.value)"
+              }} else if $var.op == "hide" {{
                 hide-env $var.name
               }}
             }}
           }}
             
-          def "process hide" [] {{
-            $in | filter {{ |var| $var.op == "hide" }} | reject op | reject value
-          }}
-            
           def-env rtx_hook [] {{
-            let vars = (^"{exe}" hook-env{status} -s nu
-                | parse vars )
-            $vars | process load | handle load
-            $vars | process hide | handle hide
+            ^"{exe}" hook-env{status} -s nu
+              | parse vars
+              | update-env
           }}
 
         "#});
