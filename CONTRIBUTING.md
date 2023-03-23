@@ -2,7 +2,7 @@
 
 ## Development Container
 
-The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use either VSCode's remote container feature or a standalone container to develop rtx. To use it, you'll need to have Docker Desktop installed and running.
+The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use a [GitHub Codespace](https://docs.github.com/codespaces), VSCode's remote container feature or a standalone container to develop rtx. To use it, you'll need to have Docker Desktop installed and running.
 
 Build and run the container with the following commands:
 

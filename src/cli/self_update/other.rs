@@ -18,7 +18,9 @@ pub struct SelfUpdate {}
 
 impl Command for SelfUpdate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let cmd = if cfg!(feature = "brew") {
+        let cmd = if cfg!(feature = "alpine") {
+            "apk upgrade rtx"
+        } else if cfg!(feature = "brew") {
             "brew upgrade rtx"
         } else if cfg!(feature = "deb") {
             "sudo apt update && sudo apt install rtx"

@@ -30,9 +30,10 @@ fn render_outdated_message() -> String {
     ));
     if cfg!(any(
         feature = "self_update",
+        feature = "alpine",
         feature = "brew",
         feature = "deb",
-        feature = "rpm"
+        feature = "rpm",
     )) {
         output.push(format!("{rtx} update with: `rtx self-update`"));
     }
