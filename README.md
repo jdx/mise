@@ -746,7 +746,7 @@ trusted. They can be separated with `:`.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
-These change the verbository of rtx.
+These change the verbosity of rtx.
 
 You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as
 `--log-level=trace|debug|info|warn|error`.
