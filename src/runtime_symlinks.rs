@@ -63,7 +63,7 @@ fn list_symlinks(config: &Config, plugin: &Plugin) -> Result<IndexMap<String, Pa
     }
     symlinks = symlinks
         .into_iter()
-        .sorted_by_key(|(k, _)| Version::new(k).unwrap())
+        .sorted_by_key(|(k, _)| Version::new(k).unwrap_or_default())
         .collect();
     Ok(symlinks)
 }
