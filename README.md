@@ -8,16 +8,6 @@
 <p><em>Polyglot runtime manager (asdf rust clone)</em></p>
 </div>
 
-## 30 Second Demo
-
-The following shows using rtx to install [nodejs](https://nodejs.org) and
-[jq](https://stedolan.github.io/jq/) into a project using a `.tool-versions` file.
-[hyperfine](https://github.com/sharkdp/hyperfine) is used to show the performance using
-rtx vs asdf. (See [Performance](#performance)).
-Note that calling `which node` gives us a real path to the binary, not a shim.
-
-[![demo](./docs/demo.gif)](./docs/demo.gif)
-
 ## Features
 
 - **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
@@ -28,6 +18,14 @@ Note that calling `which node` gives us a real path to the binary, not a shim.
 - **Fuzzy matching and aliases** - It's enough to just say you want "v18" of node, or the "lts" 
   version. rtx will figure out the right version without you needing to specify an exact version.
 - **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
+
+## 30 Second Demo
+
+The following shows using rtx to install different versions
+of [nodejs](https://nodejs.org).
+Note that calling `which node` gives us a real path to node, not a shim.
+
+[![demo](./docs/demo.gif)](./docs/demo.gif)
 
 ## Quickstart
 
@@ -68,8 +66,8 @@ v18.15.0
 <details>
 <summary>Click to expand</summary>
 
-- [30 Second Demo](#30-second-demo)
 - [Features](#features)
+- [30 Second Demo](#30-second-demo)
 - [Quickstart](#quickstart)
 - [About](#about)
   - [What do I use this for?](#what-do-i-use-this-for)
