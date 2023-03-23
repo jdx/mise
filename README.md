@@ -13,9 +13,9 @@
 - **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
-- **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx 
+- **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx
   does not use them—however you can if you want to.
-- **Fuzzy matching and aliases** - It's enough to just say you want "v18" of node, or the "lts" 
+- **Fuzzy matching and aliases** - It's enough to just say you want "v18" of node, or the "lts"
   version. rtx will figure out the right version without you needing to specify an exact version.
 - **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
 
@@ -35,7 +35,7 @@ Install rtx (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.26.1
+rtx 1.26.2
 ```
 
 Hook rtx into to your shell (pick the right one for your shell):
@@ -197,7 +197,7 @@ on the same machine. (For example, one project might require python-3.10 and ano
 
 Using rtx in production is less common but still a supported use-case. Usually a production setup
 won't have different directories for different projects with different dev tool requirements.
-That said, using `.tool-versions`/`.rtx.toml` config in production provides parity with local 
+That said, using `.tool-versions`/`.rtx.toml` config in production provides parity with local
 development
 so rtx is still definitely useful in production setups. See the [GitHub Action](#github-actions) for
 an example of using rtx in production.
@@ -206,10 +206,10 @@ an example of using rtx in production.
 
 rtx hooks into your shell (with `rtx activate zsh`) and sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
-directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the 
+directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
 appropriate tool versions in `PATH`.
 
-After activating, every time your prompt starts it will call `rtx hook-env` to fetch new 
+After activating, every time your prompt starts it will call `rtx hook-env` to fetch new
 environment variables.
 This should be very fast. It exits early if the directory wasn't changed or `.tool-versions`/`.rtx.toml` files haven't been modified.
 
@@ -224,8 +224,8 @@ See [plugins](#plugins) below.
 
 ### Common commands
 
-    rtx install nodejs@18.0.0  Install a specific version number 
-    rtx install nodejs@18      Install a fuzzy version number 
+    rtx install nodejs@18.0.0  Install a specific version number
+    rtx install nodejs@18      Install a fuzzy version number
     rtx local nodejs@18        Use node-18.x in current project
     rtx global nodejs@18       Use node-18.x as default
 
@@ -321,7 +321,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.26.1/rtx-v1.26.1-linux-x64 | tar -xJv
+curl https://github.com/jdxcode/rtx/releases/download/v1.26.2/rtx-v1.26.2-linux-x64 | tar -xJv
 mv rtx/bin/rtx /usr/local/bin
 ```
 
@@ -529,7 +529,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-|-----------|----------------------------------------------------|
+| --------- | -------------------------------------------------- |
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | golang    | `.go-version`, `go.mod`                            |
@@ -554,7 +554,7 @@ You may not even notice.
 
 ### Global config: `~/.config/rtx/config.toml`
 
-rtx can be configured in `~/.config/rtx/config.toml`. The following options are available (defaults shown):
+rtx can be configured in `~/.config/rtx/config.toml`. The following options are available:
 
 ```toml
 [settings]
@@ -606,7 +606,7 @@ Here is what the `.rtx.toml` looks like:
 ```toml
 [env]
 # supports arbitrary env vars so rtx can be used like direnv/dotenv
-NODE_ENV = 'production' 
+NODE_ENV = 'production'
 
 [tools]
 # specify single or multiple versions
@@ -696,8 +696,8 @@ This is the directory where rtx stores plugins and tool installs. The default lo
 
 #### `RTX_CACHE_DIR`
 
-This is the directory where rtx stores internal cache. The default location is `~/.cache/rtx` on 
-Linux and 
+This is the directory where rtx stores internal cache. The default location is `~/.cache/rtx` on
+Linux and
 `~/Library/Caches/rtx` on macOS.
 
 #### `RTX_CONFIG_FILE`
@@ -707,7 +707,7 @@ This is the path to the config file. The default is `~/.config/rtx/config.toml`.
 
 #### `RTX_DEFAULT_TOOL_VERSIONS_FILENAME`
 
-Set to something other than ".tool-versions" to have rtx look for `.tool-versions` files but with 
+Set to something other than ".tool-versions" to have rtx look for `.tool-versions` files but with
 a different name.
 
 #### `RTX_DEFAULT_CONFIG_FILENAME`
@@ -722,19 +722,19 @@ of what is set in `.tool-versions`/`.rtx.toml`.
 #### `RTX_LEGACY_VERSION_FILE`
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of nodejs's nvm. See [legacy version files](#legacy-version-files) for more 
+for example, `.nvmrc` in the case of nodejs's nvm. See [legacy version files](#legacy-version-files) for more
 information.
 
 #### `RTX_USE_TOML`
 
-Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for 
+Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
 configuration. This will be default behavior once we hit the [Calver](#calver) release.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
 These change the verbository of rtx.
 
-You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as 
+You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as
 `--log-level=trace|debug|info|warn|error`.
 
 #### `RTX_LOG_FILE=~/.rtx/rtx.log`
@@ -897,11 +897,11 @@ Here are a list of the changes that will be made:
 ## Directories
 
 The following are the directories that rtx uses.
-These are the default directories, see 
+These are the default directories, see
 [Configuration](#configuration) for information on changing the locations.
 
 > **Tip**
-> 
+>
 > If you often find yourself using these directories (as I do), I suggest setting all of them to `~/.rtx` for easy access.
 
 ### `~/.config/rtx`
@@ -912,26 +912,26 @@ This directory stores the global configuration file `~/.config/rtx/config.toml`.
 
 _On macOS this is `~/Library/Caches/rtx`._
 
-Stores internal cache that rtx uses for things like the list of all available versions of a 
+Stores internal cache that rtx uses for things like the list of all available versions of a
 plugin.
 See [Cache Behavior](#cache-behavior) for more information.
 
 ### `~/.local/share/rtx`
 
 This is the main directory that rtx uses and is where plugins and tools are installed into.
-It is nearly identical to `~/.asdf` in asdf, so much so that you may be able to get by 
-symlinking these together and using asdf and rtx simultaneously. (Supporting this isn't a 
+It is nearly identical to `~/.asdf` in asdf, so much so that you may be able to get by
+symlinking these together and using asdf and rtx simultaneously. (Supporting this isn't a
 project goal, however).
 
 #### `~/.local/share/rtx/downloads`
 
-This is where plugins may optionally cache downloaded assets such as tarballs. Use the 
+This is where plugins may optionally cache downloaded assets such as tarballs. Use the
 `always_keep_downloads` setting to prevent rtx from removing files from here.
 
 #### `~/.local/share/rtx/plugins`
 
-rtx installs plugins to this directory when running `rtx plugins install`. If you are working on a 
-plugin, I suggest 
+rtx installs plugins to this directory when running `rtx plugins install`. If you are working on a
+plugin, I suggest
 symlinking it manually by running:
 
 ```
@@ -944,7 +944,7 @@ This is where tools are installed to when running `rtx install`. For example, `r
 nodejs@18.0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0` For example, `rtx 
 install 0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0`.
 
-This will also create other symlinks to this directory for version prefixes ("18" and "18.15") 
+This will also create other symlinks to this directory for version prefixes ("18" and "18.15")
 and matching aliases ("lts", "latest").
 For example:
 
@@ -955,17 +955,17 @@ latest -> ./18.15.0
 lts -> ./18.15.0
 ```
 
-These are currently experimental and only created when the "experimental" setting is true. 
+These are currently experimental and only created when the "experimental" setting is true.
 
 #### `~/.local/share/rtx/shims`
 
-This will be the default location for storing shims. Currently this functionality is marked as 
+This will be the default location for storing shims. Currently this functionality is marked as
 experimental, however, and this needs to be manually set with `shims_dir`.
 
 ## Templates
 
 > **Warning**
-> 
+>
 > This functionality is experimental and may change in the future.
 
 Templates are used in the following locations:
@@ -983,7 +983,7 @@ As well as these functions:
 
 - `exec(command: &str) -> String` – execute a command and return the output
 
-Templates are parsed with [tera](https://tera.netlify.app/docs)—which is quite powerful. For 
+Templates are parsed with [tera](https://tera.netlify.app/docs)—which is quite powerful. For
 example, this snippet will get the directory name of the project:
 
 ```toml
