@@ -2,5 +2,4 @@
 source: src/cli/local.rs
 expression: output
 ---
-tiny 2
 
