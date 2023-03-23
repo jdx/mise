@@ -1,4 +1,5 @@
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 
 use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
@@ -46,7 +47,7 @@ pub struct Exec {
 
     /// Change to this directory before executing the command
     #[clap(visible_short_alias = 'C', value_hint = ValueHint::DirPath, long)]
-    pub cd: Option<OsString>,
+    pub cd: Option<PathBuf>,
 }
 
 impl Command for Exec {
