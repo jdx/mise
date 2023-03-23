@@ -2,5 +2,4 @@
 source: src/cli/global.rs
 expression: output
 ---
-tiny 2.1.0
 
