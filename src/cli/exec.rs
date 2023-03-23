@@ -1,5 +1,6 @@
 use std::ffi::{OsStr, OsString};
 
+use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use duct::IntoExecutablePath;
@@ -40,11 +41,11 @@ pub struct Exec {
     pub command: Option<Vec<OsString>>,
 
     /// Command string to execute
-    #[clap(short, long = "command", conflicts_with = "command")]
+    #[clap(short, long = "command", value_hint = ValueHint::CommandString, conflicts_with = "command")]
     pub c: Option<OsString>,
 
     /// Change to this directory before executing the command
-    #[clap(visible_short_alias = 'C', long)]
+    #[clap(visible_short_alias = 'C', value_hint = ValueHint::DirPath, long)]
     pub cd: Option<OsString>,
 }
 

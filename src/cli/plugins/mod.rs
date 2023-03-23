@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::output::Output;
 
 mod install;
+mod link;
 mod ls;
 mod ls_remote;
 mod uninstall;
@@ -33,6 +34,7 @@ pub struct Plugins {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Install(install::PluginsInstall),
+    Link(link::PluginsLink),
     Ls(ls::PluginsLs),
     LsRemote(ls_remote::PluginsLsRemote),
     Uninstall(uninstall::PluginsUninstall),
@@ -43,6 +45,7 @@ impl Commands {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match self {
             Self::Install(cmd) => cmd.run(config, out),
+            Self::Link(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
