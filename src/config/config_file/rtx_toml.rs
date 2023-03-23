@@ -12,12 +12,13 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
-use crate::config::{AliasMap, MissingRuntimeBehavior};
-use crate::dirs;
+use crate::config::{config_file, AliasMap, MissingRuntimeBehavior};
+use crate::errors::Error::UntrustedConfig;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
+use crate::{dirs, env};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
@@ -30,6 +31,7 @@ pub struct RtxToml {
     alias: AliasMap,
     doc: Document,
     plugins: HashMap<String, String>,
+    is_trusted: bool,
 }
 
 #[macro_export]
@@ -44,7 +46,6 @@ macro_rules! parse_error {
     }};
 }
 
-#[allow(dead_code)] // TODO: remove
 impl RtxToml {
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
@@ -52,6 +53,7 @@ impl RtxToml {
         Self {
             path: path.to_path_buf(),
             context,
+            is_trusted: config_file::is_trusted(path),
             toolset: Toolset {
                 source: Some(ToolSource::RtxToml(path.to_path_buf())),
                 ..Default::default()
@@ -83,6 +85,7 @@ impl RtxToml {
         for (k, v) in doc.iter() {
             match k {
                 "dotenv" => self.parse_dotenv(k, v)?,
+                "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
@@ -100,6 +103,7 @@ impl RtxToml {
     }
 
     fn parse_dotenv(&mut self, k: &str, v: &Item) -> Result<()> {
+        self.trust_check()?;
         match v.as_str() {
             Some(filename) => {
                 let path = self.path.parent().unwrap().join(filename);
@@ -114,10 +118,11 @@ impl RtxToml {
     }
 
     fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
+        self.trust_check()?;
         let mut v = v.clone();
         if let Some(table) = v.as_table_like_mut() {
-            if let Some(path) = table.remove("PATH") {
-                self.path_dirs = self.parse_path_env(&format!("{}.PATH", k), &path)?;
+            if table.contains_key("PATH") {
+                return Err(eyre!("use 'env_path' instead of 'env.PATH'"));
             }
         }
         for (k, v) in self.parse_hashmap(k, &v)? {
@@ -127,20 +132,14 @@ impl RtxToml {
         Ok(())
     }
 
-    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+    fn parse_path_env(&mut self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+        self.trust_check()?;
         match v.as_array() {
             Some(array) => {
-                if let Some(Some(last)) = array.get(array.len() - 1).map(|v| v.as_str()) {
-                    if last != "$PATH" {
-                        // TODO: allow $PATH to be anywhere in the array
-                        parse_error!(k, v, "array ending with '$PATH'")?;
-                    }
-                }
                 let mut path = Vec::new();
-                let config_root = self.path.parent().unwrap();
+                let config_root = self.path.parent().unwrap().to_path_buf();
                 for v in array {
                     match v.as_str() {
-                        Some("$PATH") => {}
                         Some(s) => {
                             let s = self.parse_template(k, s)?;
                             let s = match s.strip_prefix("./") {
@@ -161,7 +160,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_alias(&self, k: &str, v: &Item) -> Result<AliasMap> {
+    fn parse_alias(&mut self, k: &str, v: &Item) -> Result<AliasMap> {
         match v.as_table_like() {
             Some(table) => {
                 let mut aliases = AliasMap::new();
@@ -190,7 +189,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_hashmap(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+    fn parse_hashmap(&mut self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
         match v.as_table_like() {
             Some(table) => {
                 let mut env = HashMap::new();
@@ -210,7 +209,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_toolset(&self, key: &str, v: &Item) -> Result<Toolset> {
+    fn parse_toolset(&mut self, key: &str, v: &Item) -> Result<Toolset> {
         let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
 
         match v.as_table_like() {
@@ -227,7 +226,7 @@ impl RtxToml {
     }
 
     fn parse_tool_version_list(
-        &self,
+        &mut self,
         key: &str,
         v: &Item,
         plugin_name: &PluginName,
@@ -261,11 +260,18 @@ impl RtxToml {
             },
         }
 
+        for v in tool_version_list.versions.iter() {
+            if let ToolVersionType::Path(_) = v.r#type {
+                // "path:" can be dangerous to run automatically
+                self.trust_check()?;
+            }
+        }
+
         Ok(tool_version_list)
     }
 
     fn parse_tool_version(
-        &self,
+        &mut self,
         key: &str,
         v: &Item,
         plugin_name: &PluginName,
@@ -328,7 +334,7 @@ impl RtxToml {
         Ok(tv)
     }
 
-    fn parse_tool_version_value(&self, key: &str, v: &Value) -> Result<ToolVersionType> {
+    fn parse_tool_version_value(&mut self, key: &str, v: &Value) -> Result<ToolVersionType> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
@@ -346,7 +352,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_settings(&self, key: &str, v: &Item) -> Result<SettingsBuilder> {
+    fn parse_settings(&mut self, key: &str, v: &Item) -> Result<SettingsBuilder> {
         let mut settings = SettingsBuilder::default();
 
         match v.as_table_like() {
@@ -424,7 +430,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_duration_minutes(&self, k: &str, v: &Item) -> Result<Duration> {
+    fn parse_duration_minutes(&mut self, k: &str, v: &Item) -> Result<Duration> {
         match v.as_value() {
             Some(Value::String(s)) => Ok(humantime::parse_duration(s.value())?),
             Some(Value::Integer(i)) => Ok(Duration::from_secs(*i.value() as u64 * 60)),
@@ -432,21 +438,21 @@ impl RtxToml {
         }
     }
 
-    fn parse_bool(&self, k: &str, v: &Item) -> Result<bool> {
+    fn parse_bool(&mut self, k: &str, v: &Item) -> Result<bool> {
         match v.as_value().map(|v| v.as_bool()) {
             Some(Some(v)) => Ok(v),
             _ => parse_error!(k, v, "boolean")?,
         }
     }
 
-    fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
+    fn parse_usize(&mut self, k: &str, v: &Item) -> Result<usize> {
         match v.as_value().map(|v| v.as_integer()) {
             Some(Some(v)) => Ok(v as usize),
             _ => parse_error!(k, v, "usize")?,
         }
     }
 
-    fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
+    fn parse_path(&mut self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
                 let v = self.parse_template(k, v)?;
@@ -456,7 +462,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
+    fn parse_string(&mut self, k: &str, v: &Item) -> Result<String> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
                 let v = self.parse_template(k, v)?;
@@ -466,7 +472,11 @@ impl RtxToml {
         }
     }
 
-    fn parse_missing_runtime_behavior(&self, k: &str, v: &Item) -> Result<MissingRuntimeBehavior> {
+    fn parse_missing_runtime_behavior(
+        &mut self,
+        k: &str,
+        v: &Item,
+    ) -> Result<MissingRuntimeBehavior> {
         let v = self.parse_string("missing_runtime_behavior", v)?;
         match v.to_lowercase().as_str() {
             "warn" => Ok(MissingRuntimeBehavior::Warn),
@@ -479,7 +489,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_log_level(&self, k: &str, v: &Item) -> Result<LevelFilter> {
+    fn parse_log_level(&mut self, k: &str, v: &Item) -> Result<LevelFilter> {
         let level = self.parse_string(k, v)?.parse()?;
         Ok(level)
     }
@@ -531,12 +541,40 @@ impl RtxToml {
         }
     }
 
-    fn parse_template(&self, k: &str, input: &str) -> Result<String> {
+    fn parse_template(&mut self, k: &str, input: &str) -> Result<String> {
+        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+            return Ok(input.to_string());
+        }
+        self.trust_check()?;
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
             .with_context(|| format!("failed to parse template: {k}='{}'", input))?;
         Ok(output)
+    }
+
+    fn trust_check(&mut self) -> Result<()> {
+        let default_cmd = String::new();
+        let cmd = env::ARGS.get(1).unwrap_or(&default_cmd).as_str();
+        if self.is_trusted || cmd == "trust" || cmd == "complete" || cfg!(test) {
+            return Ok(());
+        }
+        if console::user_attended_stderr() && cmd != "hook-env" {
+            let ans = dialoguer::Confirm::new()
+                .with_prompt(&format!(
+                    "Config file {} is not trusted. Would you like to trust it?",
+                    self.path.display()
+                ))
+                .default(false)
+                .interact()
+                .unwrap();
+            if ans {
+                config_file::trust(self.path.as_path())?;
+                self.is_trusted = true;
+                return Ok(());
+            }
+        }
+        Err(UntrustedConfig())?
     }
 }
 
@@ -675,9 +713,9 @@ mod tests {
         let p = dirs::HOME.join("fixtures/.rtx.toml");
         let mut cf = RtxToml::init(&p);
         cf.parse(&formatdoc! {r#"
+        env_path=["/foo", "./bar"]
         [env]
         foo="bar"
-        PATH=["/foo", "./bar", "$PATH"]
         "#})
             .unwrap();
 

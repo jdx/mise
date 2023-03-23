@@ -45,5 +45,5 @@ rtx plugin uninstall tiny
 assert_not_contains "rtx plugin ls" "tiny"
 rtx plugin uninstall tiny
 
-rtx plugin update --all
+rtx plugin update
 rtx plugin update shfmt

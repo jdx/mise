@@ -1,3 +1,19 @@
+# Contributing
+
+## Development Container
+
+The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use a [GitHub Codespace](https://docs.github.com/codespaces), VSCode's remote container feature or a standalone container to develop rtx. To use it, you'll need to have Docker Desktop installed and running.
+
+Build and run the container with the following commands:
+
+```shell
+cd .devcontainer
+docker build  -t local/rtxdevcontainer .
+docker run --rm -it -v "$(pwd)"/../:/workspaces/cached local/rtxdevcontainer
+```
+
+To use the container with VSCode, you'll need to install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension. Once installed, you can open the project in a container by opening the Command Palette (F1) and selecting "Remote-Containers: Open Folder in Container...". Select the root of the rtx project and the container will be built and started.
+
 ## Dependencies
 
 * [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.

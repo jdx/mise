@@ -1,7 +1,7 @@
-{ pkgs, lib, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
+{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
 rustPlatform.buildRustPackage {
   pname = "rtx";
-  version = "1.25.4";
+  version = "1.26.1";
 
   src = lib.cleanSource ./.;
 
@@ -9,7 +9,14 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  buildInputs = with pkgs; [ coreutils bash direnv gnused git gawk ];
+  buildInputs = with pkgs; [
+    coreutils
+    bash
+    direnv
+    gnused
+    git
+    gawk
+  ] ++ lib.optional stdenv.isDarwin darwin.apple_sdk.frameworks.Security;
 
   prePatch = ''
     substituteInPlace ./test/data/plugins/**/bin/* \
@@ -26,7 +33,7 @@ rustPlatform.buildRustPackage {
   # Skip the test_plugin_list_urls as it uses the .git folder, which
   # is excluded by default from Nix.
   checkPhase = ''
-    RUST_BACKTRACE=full cargo test --features clap_mangen -- \
+    RUST_BACKTRACE=full cargo test --all-features -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls
   '';
 

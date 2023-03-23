@@ -1,13 +1,16 @@
-use build_time::build_time_utc;
 use chrono::{DateTime, FixedOffset, Months, Utc};
 use console::style;
 use lazy_static::lazy_static;
 
 use crate::env::RTX_HIDE_UPDATE_WARNING;
 
+pub mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 lazy_static! {
     pub static ref BUILD_TIME: DateTime<FixedOffset> =
-        DateTime::parse_from_rfc3339(build_time_utc!()).unwrap();
+        DateTime::parse_from_rfc2822(built_info::BUILT_TIME_UTC).unwrap();
 }
 
 #[ctor::ctor]
@@ -27,9 +30,10 @@ fn render_outdated_message() -> String {
     ));
     if cfg!(any(
         feature = "self_update",
+        feature = "alpine",
         feature = "brew",
         feature = "deb",
-        feature = "rpm"
+        feature = "rpm",
     )) {
         output.push(format!("{rtx} update with: `rtx self-update`"));
     }
@@ -38,17 +42,4 @@ fn render_outdated_message() -> String {
     ));
 
     output.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use super::*;
-
-    #[test]
-    fn test_render_outdated_message() {
-        let msg = render_outdated_message();
-        assert_snapshot!(console::strip_ansi_codes(&msg));
-    }
 }

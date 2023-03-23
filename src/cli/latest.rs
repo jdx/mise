@@ -25,7 +25,7 @@ pub struct Latest {
 
 impl Command for Latest {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let prefix = match self.runtime.version {
+        let mut prefix = match self.runtime.version {
             RuntimeArgVersion::None => self.asdf_version,
             RuntimeArgVersion::Version(version) => Some(version),
             _ => Err(eyre!(
@@ -42,6 +42,9 @@ impl Command for Latest {
                     .for_stderr()
             )
         })?;
+        if let Some(v) = prefix {
+            prefix = Some(config.resolve_alias(&plugin.name, &v)?);
+        }
 
         plugin.clear_remote_version_cache()?;
         if let Some(version) = plugin.latest_version(&config.settings, prefix)? {
@@ -65,8 +68,9 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use insta::assert_display_snapshot;
+    use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli_err, assert_cli_snapshot};
+    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot};
 
     #[test]
     fn test_latest() {
@@ -88,5 +92,11 @@ mod tests {
     fn test_latest_missing_plugin() {
         let stdout = assert_cli_err!("latest", "invalid_plugin");
         assert_display_snapshot!(stdout);
+    }
+
+    #[test]
+    fn test_latest_alias() {
+        let stdout = assert_cli!("latest", "tiny@lts");
+        assert_str_eq!(stdout, "3.1.0\n");
     }
 }

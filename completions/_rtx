@@ -1179,6 +1179,26 @@ Sets --jobs=1]' \
 '*::runtime -- Runtime version(s) to use:' \
 && ret=0
 ;;
+(trust)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--untrust[No longer trust this config]' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'::config_file -- The config file to trust:' \
+&& ret=0
+;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
@@ -1529,6 +1549,10 @@ esac
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(trust)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1600,6 +1624,7 @@ _rtx_commands() {
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \
+'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
@@ -1950,6 +1975,7 @@ _rtx__help_commands() {
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \
+'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
@@ -2286,6 +2312,16 @@ _rtx__help__shell_commands() {
 _rtx__shell_commands() {
     local commands; commands=()
     _describe -t commands 'rtx shell commands' commands "$@"
+}
+(( $+functions[_rtx__help__trust_commands] )) ||
+_rtx__help__trust_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help trust commands' commands "$@"
+}
+(( $+functions[_rtx__trust_commands] )) ||
+_rtx__trust_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx trust commands' commands "$@"
 }
 (( $+functions[_rtx__help__plugins__uninstall_commands] )) ||
 _rtx__help__plugins__uninstall_commands() {

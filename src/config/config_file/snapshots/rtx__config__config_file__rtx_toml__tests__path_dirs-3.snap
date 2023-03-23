@@ -2,7 +2,7 @@
 source: src/config/config_file/rtx_toml.rs
 expression: cf
 ---
+env_path=["/foo", "./bar"]
 [env]
 foo="bar"
-PATH=["/foo", "./bar", "$PATH"]
 

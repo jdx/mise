@@ -129,6 +129,20 @@ impl Config {
         env::var("__RTX_DIFF").is_ok()
     }
 
+    pub fn resolve_alias(&self, plugin_name: &PluginName, v: &str) -> Result<String> {
+        if let Some(plugin_aliases) = self.aliases.get(plugin_name) {
+            if let Some(alias) = plugin_aliases.get(v) {
+                return Ok(alias.clone());
+            }
+        }
+        if let Some(plugin) = self.plugins.get(plugin_name) {
+            if let Some(alias) = plugin.get_aliases(&self.settings)?.get(v) {
+                return Ok(alias.clone());
+            }
+        }
+        Ok(v.to_string())
+    }
+
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self
@@ -285,7 +299,9 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn load_rtxrc() -> Result<RtxToml> {
-    let settings_path = dirs::CONFIG.join("config.toml");
+    let settings_path = env::RTX_CONFIG_FILE
+        .clone()
+        .unwrap_or(dirs::CONFIG.join("config.toml"));
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);

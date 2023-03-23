@@ -62,7 +62,7 @@ impl ToolVersion {
         plugin: Arc<Plugin>,
         v: &str,
     ) -> Result<RuntimeVersion> {
-        let v = resolve_alias(config, plugin.clone(), v)?;
+        let v = config.resolve_alias(&plugin.name, v)?;
         match v.split_once(':') {
             Some(("ref", r)) => {
                 return self.resolve_ref(config, plugin, r);
@@ -113,7 +113,7 @@ impl ToolVersion {
         let (wanted, minus) = v.split_once("!-").unwrap();
         let wanted = match wanted {
             "latest" => plugin.latest_version(&config.settings, None)?.unwrap(),
-            _ => resolve_alias(config, plugin.clone(), wanted)?,
+            _ => config.resolve_alias(&plugin.name, wanted)?,
         };
         let wanted = version_sub(&wanted, minus);
         match plugin.latest_version(&config.settings, Some(wanted))? {
@@ -192,18 +192,6 @@ impl Display for ToolVersionType {
             ToolVersionType::System => write!(f, "system"),
         }
     }
-}
-
-pub fn resolve_alias(config: &Config, plugin: Arc<Plugin>, v: &str) -> Result<String> {
-    if let Some(plugin_aliases) = config.aliases.get(&plugin.name) {
-        if let Some(alias) = plugin_aliases.get(v) {
-            return Ok(alias.clone());
-        }
-    }
-    if let Some(alias) = plugin.get_aliases(&config.settings)?.get(v) {
-        return Ok(alias.clone());
-    }
-    Ok(v.to_string())
 }
 
 /// subtracts sub from orig and removes suffix

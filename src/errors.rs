@@ -15,6 +15,8 @@ pub enum Error {
     VersionNotFound(PluginName, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
+    #[error("Config file is not trusted.\nTrust it with `rtx trust`.")]
+    UntrustedConfig(),
 }
 
 fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {

@@ -123,14 +123,18 @@ impl Ls {
         runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
         out: &mut Output,
     ) -> Result<()> {
-        for (rtv, _) in runtimes {
-            if self.plugin.is_some() {
-                // only displaying 1 plugin so only show the version
-                rtxprintln!(out, "{}", rtv.version);
-            } else {
-                rtxprintln!(out, "{} {}", rtv.plugin.name, rtv.version);
-            }
-        }
+        runtimes
+            .into_iter()
+            .map(|(rtv, _)| rtv)
+            .filter(|rtv| rtv.is_installed())
+            .for_each(|rtv| {
+                if self.plugin.is_some() {
+                    // only displaying 1 plugin so only show the version
+                    rtxprintln!(out, "{}", rtv.version);
+                } else {
+                    rtxprintln!(out, "{} {}", rtv.plugin.name, rtv.version);
+                }
+            });
         Ok(())
     }
 

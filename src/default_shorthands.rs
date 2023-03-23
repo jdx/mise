@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 629] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -194,6 +194,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("furyctl", "https://github.com/sighupio/asdf-furyctl.git"),
     ("fx", "https://gitlab.com/wt0f/asdf-fx.git"),
     ("fzf", "https://github.com/kompiro/asdf-fzf.git"),
+    ("gallery-dl", "https://github.com/iul1an/asdf-gallery-dl"),
     ("gam", "https://github.com/offbyone/asdf-gam.git"),
     ("gator", "https://github.com/MxNxPx/asdf-gator.git"),
     ("gauche", "https://github.com/sakuro/asdf-gauche.git"),
@@ -224,6 +225,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("go-junit-report", "https://github.com/jwillker/asdf-go-junit-report.git"),
     ("go-sdk", "https://github.com/yacchi/asdf-go-sdk.git"),
     ("go-swagger", "https://github.com/jfreeland/asdf-go-swagger.git"),
+    ("goconvey", "https://github.com/therounds-contrib/asdf-goconvey.git"),
     ("gohugo", "https://github.com/nklmilojevic/asdf-hugo.git"),
     ("gojq", "https://github.com/jimmidyson/asdf-gojq.git"),
     ("golang", "https://github.com/kennyp/asdf-golang.git"),
@@ -336,6 +338,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("kubectl", "https://github.com/asdf-community/asdf-kubectl.git"),
     ("kubectl-bindrole", "https://github.com/looztra/asdf-kubectl-bindrole.git"),
     ("kubectl-buildkit", "https://github.com/ezcater/asdf-kubectl-buildkit.git"),
+    ("kubectl-convert", "https://github.com/iul1an/asdf-kubectl-convert.git"),
     ("kubectl-kots", "https://github.com/ganta/asdf-kubectl-kots.git"),
     ("kubectx", "https://gitlab.com/wt0f/asdf-kubectx.git"),
     ("kubefedctl", "https://github.com/kvokka/asdf-kubefedctl.git"),
@@ -422,6 +425,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("openfaas-faas-cli", "https://github.com/zekker6/asdf-faas-cli.git"),
     ("openresty", "https://github.com/smashedtoatoms/asdf-openresty.git"),
     ("opensearch", "https://github.com/randikabanura/asdf-opensearch.git"),
+    ("opensearch-cli", "https://github.com/iul1an/asdf-opensearch-cli.git"),
     ("openshift-install", "https://github.com/hhemied/asdf-openshift-install.git"),
     ("operator-sdk", "https://github.com/Medium/asdf-operator-sdk.git"),
     ("opsgenie-lamp", "https://github.com/ORCID/asdf-opsgenie-lamp"),
@@ -566,6 +570,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("tfnotify", "https://github.com/jnavarrof/asdf-tfnotify.git"),
     ("tfsec", "https://github.com/woneill/asdf-tfsec.git"),
     ("tfstate-lookup", "https://github.com/carnei-ro/asdf-tfstate-lookup.git"),
+    ("tfswitch", "https://github.com/iul1an/asdf-tfswitch.git"),
     ("tfupdate", "https://github.com/yuokada/asdf-tfupdate.git"),
     ("thrift", "https://github.com/alisaifee/asdf-thrift.git"),
     ("tilt", "https://github.com/eaceaser/asdf-tilt.git"),
@@ -618,6 +623,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 623] = [
     ("yay", "https://github.com/aaaaninja/asdf-yay.git"),
     ("yj", "https://github.com/ryodocx/asdf-yj.git"),
     ("yor", "https://github.com/ordinaryexperts/asdf-yor"),
+    ("youtube-dl", "https://github.com/iul1an/asdf-youtube-dl"),
     ("yq", "https://github.com/sudermanjr/asdf-yq.git"),
     ("ytt", "https://github.com/vmware-tanzu/asdf-carvel.git"),
     ("zbctl", "https://github.com/camunda-community-hub/asdf-zbctl.git"),

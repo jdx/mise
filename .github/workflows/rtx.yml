@@ -28,7 +28,7 @@ jobs:
       - uses: taiki-e/install-action@just
       - uses: taiki-e/install-action@nextest
       - name: Run cargo nextest
-        run: cargo nextest run --features clap_mangen
+        run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
       - run: just lint
@@ -277,3 +277,17 @@ jobs:
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: rtx
+  bump-alpine:
+    runs-on: ubuntu-22.04
+    container: jdxcode/rtx:alpine
+    timeout-minutes: 30
+    needs: [release]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Bump APKBUILD
+        run: sudo -Eu packager ./scripts/release-alpine.sh
+        env:
+          ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
+          ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
