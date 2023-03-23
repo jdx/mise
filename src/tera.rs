@@ -6,6 +6,7 @@ use tera::{Context, Tera, Value};
 
 use crate::cmd::cmd;
 use crate::env;
+use crate::hash::hash_to_str;
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
@@ -29,6 +30,23 @@ pub fn get_tera(dir: &Path) -> Tera {
                 }
                 _ => Err("exec command must be a string".into()),
             }
+        },
+    );
+    tera.register_filter(
+        "hash",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => Ok(Value::String(hash_to_str(s))),
+            _ => Err("hash input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "canonicalize",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).canonicalize()?;
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("hash input must be a string".into()),
         },
     );
     tera

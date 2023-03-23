@@ -18,7 +18,7 @@ use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
-use crate::{dirs, env};
+use crate::{dirs, env, parse_error};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
@@ -32,18 +32,6 @@ pub struct RtxToml {
     doc: Document,
     plugins: HashMap<String, String>,
     is_trusted: bool,
-}
-
-#[macro_export]
-macro_rules! parse_error {
-    ($key:expr, $val:expr, $t:expr) => {{
-        Err(eyre!(
-            r#"expected value of "{}" to be a {}, got: {}"#,
-            $key,
-            $t,
-            $val
-        ))
-    }};
 }
 
 impl RtxToml {

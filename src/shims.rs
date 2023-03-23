@@ -87,7 +87,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         .list_installed_versions(config)?
         .into_par_iter()
         .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
-            Ok(paths) => paths,
+            Ok(paths) => paths.clone(),
             Err(e) => {
                 warn!("Error listing bin paths for {}: {:#}", rtv, e);
                 Vec::new()
