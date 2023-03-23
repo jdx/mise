@@ -88,6 +88,7 @@ v18.15.0
 - [Other Shells](#other-shells)
   - [Bash](#bash)
   - [Fish](#fish)
+  - [Nushell](#nushell)
   - [Xonsh](#xonsh)
   - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
@@ -432,6 +433,16 @@ echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 
 ```
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
+```
+
+### Nushell
+
+```sh-session
+do { 
+  let rtxpath = $"($nu.config-path | path dirname | path join "rtx.nu")"; 
+  run-external rtx activate nu --redirect-stdout | save $rtxpath -f;
+  $"\nsource "($rtxpath)"" | save $nu.config-path --append
+}
 ```
 
 ### Xonsh
@@ -1316,7 +1327,7 @@ Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
           
-          [possible values: bash, fish, xonsh, zsh]
+          [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
       --status
@@ -1534,7 +1545,7 @@ Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
           
-          [possible values: bash, fish, xonsh, zsh]
+          [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
   $ eval "$(rtx env -s bash)"
