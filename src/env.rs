@@ -30,7 +30,10 @@ lazy_static! {
 
     // logging
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
-        ARGS.iter().enumerate().for_each(|(i, arg)| {
+        for (i, arg) in ARGS.iter().enumerate() {
+            if arg == "--" {
+                break;
+            }
             if let Some(("--log-level", level)) = arg.split_once('=') {
                 std::env::set_var("RTX_LOG_LEVEL", level);
             }
@@ -39,7 +42,13 @@ lazy_static! {
                     std::env::set_var("RTX_LOG_LEVEL", level);
                 }
             }
-        });
+            if arg == "--debug" {
+                std::env::set_var("RTX_DEBUG", "1");
+            }
+            if arg == "--trace" {
+                std::env::set_var("RTX_TRACE", "1");
+            }
+        }
         let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
         match log_level.parse::<LevelFilter>() {
             Ok(level) => level,
