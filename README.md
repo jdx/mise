@@ -109,6 +109,7 @@ v18.15.0
   - [`~/.cache/rtx`](#cachertx)
   - [`~/.local/share/rtx`](#localsharertx)
 - [Templates](#templates)
+- [IDE Integration](#ide-integration)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
@@ -369,7 +370,7 @@ yum install -y rtx
 For Alpine Linux:
 
 ```
-apk add rtx --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
+apk add rtx --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing/
 ```
 
 ### aur
@@ -518,7 +519,8 @@ nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
 
-Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local) to create them automatically.
+Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local-options-runtime) to create them 
+automatically.
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
 
 ### Legacy version files
@@ -730,7 +732,7 @@ information.
 #### `RTX_USE_TOML`
 
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
-configuration. This will be default behavior once we hit the [Calver](#calver) release.
+configuration. This will be default behavior once we hit the [Calver](#versioning) release.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
@@ -1120,7 +1122,7 @@ This isn't important for usability reasons so much as making it so plugins conti
 call asdf commands.
 
 If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
+[`RTX_ASDF_COMPAT=1`](#rtxasdfcompat1). That prevents
 rtx from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
 
@@ -1927,7 +1929,7 @@ Examples:
   $ rtx plugins install https://github.com/jdxcode/rtx-nodejs.git
 
   # install the nodejs plugin using a specific ref
-  $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
+  $ rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git#v1.0.0
 ```
 ### `rtx plugins link [OPTIONS] <NAME> [PATH]`
 

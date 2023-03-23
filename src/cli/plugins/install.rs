@@ -178,7 +178,7 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
       $ rtx plugins install https://github.com/jdxcode/rtx-nodejs.git
 
       # install the nodejs plugin using a specific ref
-      $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
+      $ rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git#v1.0.0
     "#, style("Examples:").bold().underlined()}
 });
 
