@@ -18,6 +18,7 @@ aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_day" --no-progr
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "./rtx/schema/rtx.json" "s3://rtx.pub/schema/rtx.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
+aws s3 cp "./rtx/schema/rtx.plugin.json" "s3://rtx.pub/schema/rtx.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 
 aws s3 cp artifacts/rpm/rtx.repo s3://rtx.pub/rpm/ --cache-control "$cache_day" --no-progress
 aws s3 cp artifacts/rpm/packages/ s3://rtx.pub/rpm/packages/ --cache-control "$cache_week" --no-progress --recursive

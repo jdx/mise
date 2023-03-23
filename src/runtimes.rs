@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::env::split_paths;
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{remove_file, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, fs};
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Result, WrapErr};
 use console::style;
 use once_cell::sync::Lazy;
 
@@ -19,6 +18,7 @@ use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
 use crate::plugins::Script::{Download, ExecEnv, Install};
 use crate::plugins::{Plugin, Script, ScriptManager};
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolVersion, ToolVersionType};
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, env, fake_asdf, file};
@@ -33,7 +33,7 @@ pub struct RuntimeVersion {
     download_path: PathBuf,
     cache_path: PathBuf,
     script_man: ScriptManager,
-    bin_paths_cache: CacheManager<Vec<PathBuf>>,
+    list_bin_paths_cache: CacheManager<Vec<PathBuf>>,
     exec_env_cache: CacheManager<HashMap<String, String>>,
 }
 
@@ -51,30 +51,22 @@ impl RuntimeVersion {
             ToolVersionType::Path(p) => dirs::CACHE.join(&plugin.name).join(hash_to_str(&p)),
             _ => dirs::CACHE.join(&plugin.name).join(&version),
         };
-        let mut bin_paths_cache = CacheManager::new(cache_path.join("bin_paths.msgpack.z"))
-            .with_fresh_file(dirs::ROOT.clone())
-            .with_fresh_file(plugin.plugin_path.clone())
-            .with_fresh_file(install_path.clone());
-        let mut exec_env_cache = CacheManager::new(cache_path.join("exec_env.msgpack.z"))
-            .with_fresh_file(dirs::ROOT.clone())
-            .with_fresh_file(plugin.plugin_path.clone())
-            .with_fresh_file(install_path.clone());
-        if plugin.name == "python" {
-            // TODO: remove this for a better solution
-            // this is required for the virtualenv feature to work
-            bin_paths_cache = bin_paths_cache.with_no_cache();
-            exec_env_cache = exec_env_cache.with_no_cache();
-        }
+        let script_man = build_script_man(
+            config,
+            &tv,
+            &version,
+            &plugin.plugin_path,
+            &install_path,
+            &download_path,
+        );
+        let list_bin_paths_cache =
+            Self::list_bin_paths_cache(config, &tv, &plugin, &install_path, &cache_path).unwrap();
+        let exec_env_cache =
+            Self::exec_env_cache(config, &tv, &plugin, &install_path, &cache_path).unwrap();
+
         Self {
-            script_man: build_script_man(
-                config,
-                &tv,
-                &version,
-                &plugin.plugin_path,
-                &install_path,
-                &download_path,
-            ),
-            bin_paths_cache,
+            script_man,
+            list_bin_paths_cache,
             exec_env_cache,
             cache_path,
             download_path,
@@ -82,6 +74,60 @@ impl RuntimeVersion {
             version,
             plugin,
         }
+    }
+
+    fn list_bin_paths_cache(
+        config: &Config,
+        tv: &ToolVersion,
+        plugin: &Arc<Plugin>,
+        install_path: &Path,
+        cache_path: &Path,
+    ) -> Result<CacheManager<Vec<PathBuf>>> {
+        let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
+            Some(key) => {
+                let key = key.join("-");
+                let key = Self::parse_template(config, tv, &key)?;
+                let filename = format!("{}.msgpack.z", key);
+                cache_path.join("list_bin_paths").join(filename)
+            }
+            None => cache_path.join("list_bin_paths.msgpack.z"),
+        };
+        let cm = CacheManager::new(list_bin_paths_filename)
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
+            .with_fresh_file(install_path.to_path_buf());
+        Ok(cm)
+    }
+    fn exec_env_cache(
+        config: &Config,
+        tv: &ToolVersion,
+        plugin: &Arc<Plugin>,
+        install_path: &Path,
+        cache_path: &Path,
+    ) -> Result<CacheManager<HashMap<String, String>>> {
+        let exec_env_filename = match &plugin.toml.exec_env.cache_key {
+            Some(key) => {
+                let key = key.join("-");
+                let key = Self::parse_template(config, tv, &key)?;
+                let filename = format!("{}.msgpack.z", key);
+                cache_path.join("exec_env").join(filename)
+            }
+            None => cache_path.join("exec_env.msgpack.z"),
+        };
+        let cm = CacheManager::new(exec_env_filename)
+            .with_fresh_file(dirs::ROOT.clone())
+            .with_fresh_file(plugin.plugin_path.clone())
+            .with_fresh_file(install_path.to_path_buf());
+        Ok(cm)
+    }
+
+    fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<String> {
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("project_root", &config.project_root);
+        ctx.insert("opts", &tv.options);
+        get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
+            .render_str(tmpl, &ctx)
+            .with_context(|| format!("failed to parse template: {}", tmpl))
     }
 
     pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
@@ -132,7 +178,7 @@ impl RuntimeVersion {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = fs::remove_file(self.incomplete_file_path()) {
+        if let Err(err) = remove_file(self.incomplete_file_path()) {
             debug!("error removing incomplete file: {:?}", err);
         }
         pr.finish();
@@ -140,26 +186,9 @@ impl RuntimeVersion {
         Ok(())
     }
 
-    pub fn list_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
-        let (a, b) = rayon::join(
-            || self.list_exec_env_bin_paths(),
-            || {
-                self.bin_paths_cache
-                    .get_or_try_init(|| self.fetch_bin_paths(settings))
-            },
-        );
-        let mut bin_paths = a?;
-        bin_paths.extend(b?.clone());
-        Ok(bin_paths)
-    }
-
-    fn list_exec_env_bin_paths(&self) -> Result<Vec<PathBuf>> {
-        let env = self.exec_env()?;
-        let bin_paths = match env.get("RTX_ADD_PATH") {
-            Some(paths) => split_paths(paths).collect(),
-            None => vec![],
-        };
-        Ok(bin_paths)
+    pub fn list_bin_paths(&self, settings: &Settings) -> Result<&Vec<PathBuf>> {
+        self.list_bin_paths_cache
+            .get_or_try_init(|| self.fetch_bin_paths(settings))
     }
 
     pub fn which(&self, settings: &Settings, bin_name: &str) -> Result<Option<PathBuf>> {
@@ -344,7 +373,11 @@ fn build_script_man(
             dirs::ROOT.to_string_lossy().to_string(),
         )
         .with_env("__RTX_SCRIPT".into(), "1".into())
-        .with_env("RTX_PLUGIN_NAME".into(), tv.plugin_name.clone());
+        .with_env("RTX_PLUGIN_NAME".into(), tv.plugin_name.clone())
+        .with_env(
+            "RTX_PLUGIN_PATH".into(),
+            plugin_path.to_string_lossy().to_string(),
+        );
     if let Some(shims_dir) = &config.settings.shims_dir {
         let shims_dir = shims_dir.to_string_lossy().to_string();
         sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);

@@ -50,11 +50,6 @@ where
         self
     }
 
-    pub fn with_no_cache(mut self) -> Self {
-        self.no_cache = true;
-        self
-    }
-
     pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,

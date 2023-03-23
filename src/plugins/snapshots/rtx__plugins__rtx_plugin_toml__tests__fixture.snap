@@ -1,0 +1,11 @@
+---
+source: src/plugins/rtx_plugin_toml.rs
+expression: cf.exec_env
+---
+RtxPluginTomlScriptConfig {
+    cache_key: Some(
+        [
+            "{{'1234'}}",
+        ],
+    ),
+}
