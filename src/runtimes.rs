@@ -85,8 +85,7 @@ impl RuntimeVersion {
     ) -> Result<CacheManager<Vec<PathBuf>>> {
         let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
             Some(key) => {
-                let key = key.join("-");
-                let key = Self::parse_template(config, tv, &key)?;
+                let key = render_cache_key(config, tv, key)?;
                 let filename = format!("{}.msgpack.z", key);
                 cache_path.join("list_bin_paths").join(filename)
             }
@@ -107,8 +106,7 @@ impl RuntimeVersion {
     ) -> Result<CacheManager<HashMap<String, String>>> {
         let exec_env_filename = match &plugin.toml.exec_env.cache_key {
             Some(key) => {
-                let key = key.join("-");
-                let key = Self::parse_template(config, tv, &key)?;
+                let key = render_cache_key(config, tv, key)?;
                 let filename = format!("{}.msgpack.z", key);
                 cache_path.join("exec_env").join(filename)
             }
@@ -119,15 +117,6 @@ impl RuntimeVersion {
             .with_fresh_file(plugin.plugin_path.clone())
             .with_fresh_file(install_path.to_path_buf());
         Ok(cm)
-    }
-
-    fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<String> {
-        let mut ctx = BASE_CONTEXT.clone();
-        ctx.insert("project_root", &config.project_root);
-        ctx.insert("opts", &tv.options);
-        get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
-            .render_str(tmpl, &ctx)
-            .with_context(|| format!("failed to parse template: {}", tmpl))
     }
 
     pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
@@ -406,3 +395,27 @@ fn build_script_man(
 }
 
 static EMPTY_HASH_MAP: Lazy<HashMap<String, String>> = Lazy::new(HashMap::new);
+
+fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> Result<String> {
+    let elements = cache_key
+        .iter()
+        .map(|tmpl| {
+            let s = parse_template(config, tv, tmpl)?;
+            let s = s.trim().to_string();
+            //trace!("cache key element: {} -> {}", tmpl, s);
+            let mut s = hash_to_str(&s);
+            s.truncate(10);
+            Ok(s)
+        })
+        .collect::<Result<Vec<String>>>()?;
+    Ok(elements.join("-"))
+}
+
+fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<String> {
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("project_root", &config.project_root);
+    ctx.insert("opts", &tv.options);
+    get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
+        .render_str(tmpl, &ctx)
+        .with_context(|| format!("failed to parse template: {}", tmpl))
+}
