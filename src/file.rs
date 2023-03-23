@@ -9,17 +9,24 @@ use std::os::unix::prelude::*;
 
 use crate::dirs;
 
-pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+pub fn remove_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
-    if path.exists() {
-        trace!("rm -rf {}", path.display());
-        std::fs::remove_dir_all(path)?;
-    }
+    match path.metadata().map(|m| m.file_type()) {
+        Ok(x) if x.is_symlink() || x.is_file() => {
+            trace!("rm {}", path.display());
+            fs::remove_file(path)?;
+        }
+        Ok(x) if x.is_dir() => {
+            trace!("rm -rf {}", path.display());
+            fs::remove_dir_all(path)?;
+        }
+        _ => {}
+    };
     Ok(())
 }
 
-pub fn remove_dir_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
-    remove_dir_all(&path).map_err(|e| {
+pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
+    remove_all(&path).map_err(|e| {
         warn!("failed to remove {}: {}", path.as_ref().display(), e);
         e
     })
@@ -28,7 +35,7 @@ pub fn remove_dir_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
     trace!("mkdir -p {}", path.display());
-    std::fs::create_dir_all(path)?;
+    fs::create_dir_all(path)?;
     Ok(())
 }
 
