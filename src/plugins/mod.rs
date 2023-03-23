@@ -19,7 +19,7 @@ use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
 use crate::fake_asdf::get_path_with_fake_asdf;
-use crate::file::{display_path, remove_dir_all, touch_dir};
+use crate::file::{display_path, remove_all, touch_dir};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
@@ -178,7 +178,7 @@ impl Plugin {
                 return Ok(());
             }
             pr.set_message(format!("removing {}", &dir.to_string_lossy()));
-            remove_dir_all(dir).wrap_err_with(|| {
+            remove_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
                     style(&dir.to_string_lossy()).cyan().for_stderr()

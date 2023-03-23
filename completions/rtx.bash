@@ -2462,7 +2462,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__link)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <NAME> [PATH]"
+            opts="-f -j -r -v -h --force --debug --install-missing --jobs --log-level --raw --trace --verbose --help <NAME> [PATH]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
