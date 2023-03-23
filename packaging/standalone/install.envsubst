@@ -100,48 +100,48 @@ download_file() {
 }
 
 install_rtx() {
-  # download the tarball
-  version="$RTX_VERSION"
-  os="$(get_os)"
-  arch="$(get_arch)"
-  xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-  install_path="${RTX_INSTALL_PATH:-$xdg_data_home/rtx/bin/rtx}"
-  install_dir="$(dirname "$install_path")"
-  tarball_url="https://github.com/jdxcode/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
+	# download the tarball
+	version="$RTX_VERSION"
+	os="$(get_os)"
+	arch="$(get_arch)"
+	xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+	install_path="${RTX_INSTALL_PATH:-$xdg_data_home/rtx/bin/rtx}"
+	install_dir="$(dirname "$install_path")"
+	tarball_url="https://github.com/jdxcode/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
 
-  cache_file=$(download_file "$tarball_url")
-  debug "rtx-setup: tarball=$cache_file"
+	cache_file=$(download_file "$tarball_url")
+	debug "rtx-setup: tarball=$cache_file"
 
-  debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum | sha256sum -c >/dev/null
+	debug "validating checksum"
+	cd "$(dirname "$cache_file")" && get_checksum | sha256sum -c >/dev/null
 
-  # extract tarball
-  mkdir -p "$install_dir"
-  rm -rf "$install_path"
-  cd "$(mktemp -d)"
-  tar -xzf "$cache_file"
-  mv rtx/bin/rtx "$install_path"
-  info "rtx: installed successfully to $install_path"
+	# extract tarball
+	mkdir -p "$install_dir"
+	rm -rf "$install_path"
+	cd "$(mktemp -d)"
+	tar -xzf "$cache_file"
+	mv rtx/bin/rtx "$install_path"
+	info "rtx: installed successfully to $install_path"
 }
 
 after_finish_help() {
-  case "$SHELL" in
-  */zsh)
-    info "rtx: run the following get started:"
-    info "echo -e \"\\\neval \\\"\\\$($install_path activate -s zsh)\\\"\" >> ~/.zshrc"
-    ;;
-  */bash)
-    info "rtx: run the following get started:"
-    info "echo -e \"\\\neval \\\"\\\$($install_path activate -s bash)\\\"\" >> ~/.bashrc"
-    ;;
-  */fish)
-    info "rtx: run the following get started:"
-    info "echo -e \"\\\n$install_path activate -s fish | source\" >> ~/.config/fish/config.fish"
-    ;;
-  *)
-    info "rtx: run \`$install_path --help\` to get started"
-    ;;
-  esac
+	case "${SHELL:-}" in
+	*/zsh)
+		info "rtx: run the following get started:"
+		info "echo -e \"\\\neval \\\"\\\$($install_path activate -s zsh)\\\"\" >> ~/.zshrc"
+		;;
+	*/bash)
+		info "rtx: run the following get started:"
+		info "echo -e \"\\\neval \\\"\\\$($install_path activate -s bash)\\\"\" >> ~/.bashrc"
+		;;
+	*/fish)
+		info "rtx: run the following get started:"
+		info "echo -e \"\\\n$install_path activate -s fish | source\" >> ~/.config/fish/config.fish"
+		;;
+	*)
+		info "rtx: run \`$install_path --help\` to get started"
+		;;
+	esac
 }
 
 install_rtx
