@@ -47,6 +47,7 @@ mod shorthands;
 pub mod tera;
 #[cfg(test)]
 mod test;
+mod toml;
 mod toolset;
 mod ui;
 

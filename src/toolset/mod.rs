@@ -286,7 +286,7 @@ impl Toolset {
         self.list_current_installed_versions()
             .into_par_iter()
             .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
-                Ok(paths) => paths,
+                Ok(paths) => paths.clone(),
                 Err(e) => {
                     warn!("Error listing bin paths for {}: {:#}", rtv, e);
                     Vec::new()
