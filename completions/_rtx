@@ -536,9 +536,9 @@ Sets --jobs=1]' \
 ;;
 (exec)
 _arguments "${_arguments_options[@]}" \
-'()-c+[Command string to execute]:C: ' \
-'()--command=[Command string to execute]:C: ' \
-'--cd=[Change to this directory before executing the command]:CD: ' \
+'()-c+[Command string to execute]:C:_cmdstring' \
+'()--command=[Command string to execute]:C:_cmdstring' \
+'--cd=[Change to this directory before executing the command]:CD:_files -/' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -827,6 +827,28 @@ Can specify multiple plugins\: `rtx plugins install nodejs ruby python`:' \
 '*::rest:' \
 && ret=0
 ;;
+(link)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':name -- The name of the plugin
+e.g.\: nodejs, ruby:' \
+'::path -- The local path to the plugin
+e.g.\: ./rtx-nodejs:_files -/' \
+&& ret=0
+;;
 (ls)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
@@ -927,6 +949,10 @@ _arguments "${_arguments_options[@]}" \
         curcontext="${curcontext%:*:*}:rtx-plugins-help-command-$line[1]:"
         case $line[1] in
             (install)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(link)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -1196,7 +1222,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::config_file -- The config file to trust:' \
+'::config_file -- The config file to trust:_files' \
 && ret=0
 ;;
 (uninstall)
@@ -1478,6 +1504,10 @@ _arguments "${_arguments_options[@]}" \
         curcontext="${curcontext%:*:*}:rtx-help-plugins-command-$line[1]:"
         case $line[1] in
             (install)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(link)
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
@@ -1994,6 +2024,7 @@ _rtx__help__help_commands() {
 _rtx__plugins__help_commands() {
     local commands; commands=(
 'install:Install a plugin' \
+'link:Symlinks a plugin into rtx' \
 'ls:List installed plugins' \
 'ls-remote:List all available remote plugins' \
 'uninstall:Removes a plugin' \
@@ -2077,6 +2108,21 @@ _rtx__help__latest_commands() {
 _rtx__latest_commands() {
     local commands; commands=()
     _describe -t commands 'rtx latest commands' commands "$@"
+}
+(( $+functions[_rtx__help__plugins__link_commands] )) ||
+_rtx__help__plugins__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help plugins link commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__help__link_commands] )) ||
+_rtx__plugins__help__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins help link commands' commands "$@"
+}
+(( $+functions[_rtx__plugins__link_commands] )) ||
+_rtx__plugins__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx plugins link commands' commands "$@"
 }
 (( $+functions[_rtx__help__local_commands] )) ||
 _rtx__help__local_commands() {
@@ -2182,6 +2228,7 @@ _rtx__mangen_commands() {
 _rtx__help__plugins_commands() {
     local commands; commands=(
 'install:Install a plugin' \
+'link:Symlinks a plugin into rtx' \
 'ls:List installed plugins' \
 'ls-remote:List all available remote plugins' \
 'uninstall:Removes a plugin' \
@@ -2195,6 +2242,7 @@ _rtx__plugins_commands() {
 'install:Install a plugin' \
 'i:Install a plugin' \
 'a:Install a plugin' \
+'link:Symlinks a plugin into rtx' \
 'ls:List installed plugins' \
 'list:List installed plugins' \
 'ls-remote:List all available remote plugins' \
