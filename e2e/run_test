@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 export ROOT
 export PATH="$ROOT/target/debug:$PATH"
+export RTX_USE_TOML="0"
 export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
 export RTX_DATA_DIR="$ROOT/e2e/.rtx"
 export RTX_CACHE_DIR="$ROOT/e2e/.rtx/cache"

@@ -134,9 +134,9 @@ pub fn local(
 
     if runtime.is_some() || remove.is_some() {
         cf.save()?;
+    } else {
+        rtxprint!(out, "{}", cf.dump());
     }
-
-    rtxprint!(out, "{}", cf.dump());
 
     Ok(())
 }
@@ -202,30 +202,35 @@ mod tests {
     #[test]
     fn test_local_pin() {
         run_test(|| {
-            let stdout = assert_cli!("local", "--pin", "tiny@1");
+            assert_cli!("local", "--pin", "tiny@1");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
-            let stdout = assert_cli!("local", "--pin", "tiny", "2");
+            assert_cli!("local", "--pin", "tiny", "2");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
         });
     }
     #[test]
     fn test_local_path() {
         run_test(|| {
-            let stdout = assert_cli!("local", "dummy@path:.");
+            assert_cli!("local", "dummy@path:.");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy path:.");
         });
     }
     #[test]
     fn test_local_ref() {
         run_test(|| {
-            let stdout = assert_cli!("local", "dummy@ref:master");
+            assert_cli!("local", "dummy@ref:master");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy ref:master");
         });
     }
     #[test]
     fn test_local_prefix() {
         run_test(|| {
-            let stdout = assert_cli!("local", "dummy@prefix:1");
+            assert_cli!("local", "dummy@prefix:1");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy prefix:1");
         });
     }
@@ -263,7 +268,8 @@ mod tests {
     fn test_local_alias_ref() {
         run_test(|| {
             assert_cli!("alias", "set", "dummy", "m", "ref:master");
-            let stdout = assert_cli!("local", "dummy@m");
+            assert_cli!("local", "dummy@m");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
         });
@@ -275,7 +281,8 @@ mod tests {
             let local_dummy_path = dirs::INSTALLS.join("dummy").join("1.1.0");
             let path_arg = String::from("path:") + &local_dummy_path.to_string_lossy();
             assert_cli!("alias", "set", "dummy", "m", &path_arg);
-            let stdout = assert_cli!("local", "dummy@m");
+            assert_cli!("local", "dummy@m");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             let stdout = assert_cli!("current", "dummy");
             assert_str_eq!(grep(stdout, "dummy"), "~/data/installs/dummy/1.1.0");
@@ -285,7 +292,8 @@ mod tests {
     fn test_local_alias_prefix() {
         run_test(|| {
             assert_cli!("alias", "set", "dummy", "m", "prefix:1");
-            let stdout = assert_cli!("local", "dummy@m");
+            assert_cli!("local", "dummy@m");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
         });
@@ -294,7 +302,8 @@ mod tests {
     fn test_local_alias_system() {
         run_test(|| {
             assert_cli!("alias", "set", "dummy", "m", "system");
-            let stdout = assert_cli!("local", "dummy@m");
+            assert_cli!("local", "dummy@m");
+            let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
         });
