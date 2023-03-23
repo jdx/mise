@@ -42,8 +42,8 @@ Sets --jobs=1]' \
         case $line[1] in
             (activate)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
-'--shell=[Shell type to generate the script for]:SHELL:(bash fish xonsh zsh)' \
+'-s+[Shell type to generate the script for]:SHELL:(bash fish nu xonsh zsh)' \
+'--shell=[Shell type to generate the script for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -61,7 +61,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- Shell type to generate the script for:(bash fish xonsh zsh)' \
+'::shell_type -- Shell type to generate the script for:(bash fish nu xonsh zsh)' \
 && ret=0
 ;;
 (alias)
@@ -515,8 +515,8 @@ Sets --jobs=1]' \
 ;;
 (env)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
-'--shell=[Shell type to generate environment variables for]:SHELL:(bash fish xonsh zsh)' \
+'-s+[Shell type to generate environment variables for]:SHELL:(bash fish nu xonsh zsh)' \
+'--shell=[Shell type to generate environment variables for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -587,8 +587,8 @@ If this is a single runtime with no version, the current value of the global
 ;;
 (hook-env)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
-'--shell=[Shell type to generate script for]:SHELL:(bash fish xonsh zsh)' \
+'-s+[Shell type to generate script for]:SHELL:(bash fish nu xonsh zsh)' \
+'--shell=[Shell type to generate script for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel

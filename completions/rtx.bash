@@ -513,18 +513,18 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -j -r -v -h --shell --status --quiet --install-missing --jobs --log-level --raw --verbose --help bash fish xonsh zsh"
+            opts="-s -q -j -r -v -h --shell --status --quiet --install-missing --jobs --log-level --raw --verbose --help bash fish nu xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --jobs)
@@ -1216,11 +1216,11 @@ _rtx() {
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --jobs)
@@ -2046,11 +2046,11 @@ _rtx() {
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash fish xonsh zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
                     return 0
                     ;;
                 --jobs)

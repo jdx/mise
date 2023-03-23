@@ -26,7 +26,7 @@ impl ShellType {
         } else if shell.ends_with("fish") {
             Some(ShellType::Fish)
         } else if shell.ends_with("nu") {
-            Some(ShellType::Nu) 
+            Some(ShellType::Nu)
         } else if shell.ends_with("xonsh") {
             Some(ShellType::Xonsh)
         } else if shell.ends_with("zsh") {
@@ -60,9 +60,9 @@ pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     match shell.or_else(ShellType::load) {
         Some(ShellType::Bash) => Some(Box::<bash::Bash>::default()),
         Some(ShellType::Fish) => Some(Box::<fish::Fish>::default()),
+        Some(ShellType::Nu) => Some(Box::<nushell::Nushell>::default()),
         Some(ShellType::Xonsh) => Some(Box::<xonsh::Xonsh>::default()),
         Some(ShellType::Zsh) => Some(Box::<zsh::Zsh>::default()),
-        Some(ShellType::Nu) => Some(Box::<nushell::Nushell>::default()),
         _ => None,
     }
 }
