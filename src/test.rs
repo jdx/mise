@@ -18,6 +18,7 @@ fn init() {
     );
     set_current_dir(env::HOME.join("cwd")).unwrap();
     env::set_var("NO_COLOR", "1");
+    env::set_var("RTX_USE_TOML", "0");
     env::set_var("RTX_DATA_DIR", env::HOME.join("data"));
     env::set_var("RTX_CONFIG_DIR", env::HOME.join("config"));
     env::set_var("RTX_CACHE_DIR", env::HOME.join("data/cache"));

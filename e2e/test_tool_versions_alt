@@ -24,11 +24,13 @@ assert() {
 
 assert "rtx local" "shfmt 3.5.0"
 
-assert "rtx local -p shfmt@3.6.0" "shfmt 3.6.0"
+rtx local -p shfmt@3.6.0
+assert "rtx local -p" "shfmt 3.6.0"
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
   exit 1
 fi
 
-assert "rtx local shfmt@3.5.0" "shfmt 3.5.0"
+rtx local -p shfmt@3.5.0
+assert "rtx local shfmt" "3.5.0"
