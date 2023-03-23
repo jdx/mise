@@ -29,6 +29,9 @@ impl ToolVersionList {
                 Ok(_) => {
                     if *env::PRELOAD_ENV {
                         if let Some(rtv) = tv.rtv.as_ref() {
+                            if !rtv.is_installed() {
+                                continue;
+                            }
                             // optimize loading by preloading the rtv
                             let _ = rayon::join(
                                 || rtv.exec_env(),
