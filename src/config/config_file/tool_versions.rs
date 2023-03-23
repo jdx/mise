@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use crate::config::{config_file, AliasMap};
+use crate::config::AliasMap;
 use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
@@ -30,6 +30,7 @@ pub struct ToolVersions {
     pre: String,
     plugins: IndexMap<PluginName, ToolVersionPlugin>,
     toolset: Toolset,
+    is_trusted: bool,
 }
 
 #[derive(Debug, Default)]
@@ -39,26 +40,27 @@ struct ToolVersionPlugin {
 }
 
 impl ToolVersions {
-    pub fn init(filename: &Path) -> ToolVersions {
+    pub fn init(filename: &Path, is_trusted: bool) -> ToolVersions {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
         ToolVersions {
             context,
             toolset: Toolset::new(ToolSource::ToolVersions(filename.to_path_buf())),
             path: filename.to_path_buf(),
+            is_trusted,
             ..Default::default()
         }
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub fn from_file(path: &Path, is_trusted: bool) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
-        Self::parse_str(&read_to_string(path)?, path.to_path_buf())
+        Self::parse_str(&read_to_string(path)?, path.to_path_buf(), is_trusted)
     }
 
-    pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
-        let mut cf = Self::init(&path);
+    pub fn parse_str(s: &str, path: PathBuf, is_trusted: bool) -> Result<Self> {
+        let mut cf = Self::init(&path, is_trusted);
         let dir = path.parent().unwrap();
-        let s = if config_file::is_trusted(&path) {
+        let s = if cf.is_trusted {
             get_tera(dir).render_str(s, &cf.context)?
         } else {
             s.to_string()
@@ -230,8 +232,8 @@ pub(crate) mod tests {
 
     #[test]
     fn test_parse() {
-        let tv =
-            ToolVersions::from_file(dirs::CURRENT.join(".test-tool-versions").as_path()).unwrap();
+        let tv = ToolVersions::from_file(dirs::CURRENT.join(".test-tool-versions").as_path(), true)
+            .unwrap();
         assert_eq!(tv.path, dirs::CURRENT.join(".test-tool-versions"));
         assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
     }
@@ -246,7 +248,7 @@ pub(crate) mod tests {
         # tail comment
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
-        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        let tv = ToolVersions::parse_str(orig, path, false).unwrap();
         assert_eq!(tv.dump(), orig);
     }
 
@@ -256,7 +258,7 @@ pub(crate) mod tests {
         ruby: 3.0.5
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
-        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        let tv = ToolVersions::parse_str(orig, path, false).unwrap();
         assert_snapshot!(tv.dump(), @r###"
         ruby 3.0.5
         "###);
@@ -269,7 +271,7 @@ pub(crate) mod tests {
         python {{exec(command='echo 3.11.0')}}
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
-        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        let tv = ToolVersions::parse_str(orig, path, true).unwrap();
         assert_snapshot!(tv.dump(), @r###"
         ruby   3.0.5
         python 3.11.0
@@ -282,7 +284,7 @@ pub(crate) mod tests {
         ruby: 3.0.5 3.1
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
-        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        let tv = ToolVersions::parse_str(orig, path, true).unwrap();
         assert_display_snapshot!(tv.to_toolset(), @"ruby@3.0.5 ruby@3.1");
     }
 }

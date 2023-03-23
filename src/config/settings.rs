@@ -15,6 +15,7 @@ pub struct Settings {
     pub always_keep_download: bool,
     pub legacy_version_file: bool,
     pub plugin_autoupdate_last_check_duration: Duration,
+    pub trusted_config_paths: Vec<PathBuf>,
     pub verbose: bool,
     pub asdf_compat: bool,
     pub jobs: usize,
@@ -33,6 +34,7 @@ impl Default for Settings {
             always_keep_download: false,
             legacy_version_file: true,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
+            trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
             verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
             asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
@@ -65,6 +67,10 @@ impl Settings {
             "plugin_autoupdate_last_check_duration".to_string(),
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
         );
+        map.insert(
+            "trusted_config_paths".to_string(),
+            format!("{:?}", self.trusted_config_paths),
+        );
         map.insert("verbose".into(), self.verbose.to_string());
         map.insert("asdf_compat".into(), self.asdf_compat.to_string());
         map.insert("jobs".into(), self.jobs.to_string());
@@ -94,6 +100,7 @@ pub struct SettingsBuilder {
     pub always_keep_download: Option<bool>,
     pub legacy_version_file: Option<bool>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
+    pub trusted_config_paths: Vec<PathBuf>,
     pub verbose: Option<bool>,
     pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
@@ -128,6 +135,7 @@ impl SettingsBuilder {
             self.plugin_autoupdate_last_check_duration =
                 other.plugin_autoupdate_last_check_duration;
         }
+        self.trusted_config_paths.extend(other.trusted_config_paths);
         if other.verbose.is_some() {
             self.verbose = other.verbose;
         }
@@ -181,6 +189,9 @@ impl SettingsBuilder {
         settings.plugin_autoupdate_last_check_duration = self
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
+        settings
+            .trusted_config_paths
+            .extend(self.trusted_config_paths.clone());
         settings.verbose = self.verbose.unwrap_or(settings.verbose);
         settings.asdf_compat = self.asdf_compat.unwrap_or(settings.asdf_compat);
         settings.jobs = self.jobs.unwrap_or(settings.jobs);
