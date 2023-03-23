@@ -23,11 +23,13 @@ use crate::file::{display_path, remove_all, touch_dir};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
+use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::script_manager::Script::ParseLegacyFile;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
+mod rtx_plugin_toml;
 mod script_manager;
 
 pub type PluginName = String;
@@ -39,6 +41,7 @@ pub struct Plugin {
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub repo_ref: Option<String>,
+    pub toml: RtxPluginToml,
     cache_path: PathBuf,
     downloads_path: PathBuf,
     installs_path: PathBuf,
@@ -53,6 +56,8 @@ impl Plugin {
     pub fn new(settings: &Settings, name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
+        let toml_path = plugin_path.join("rtx.plugin.toml");
+        let toml = RtxPluginToml::from_file(&toml_path).unwrap();
         let fresh_duration = if *PREFER_STALE {
             None
         } else {
@@ -81,6 +86,7 @@ impl Plugin {
             cache_path,
             repo_url: None,
             repo_ref: None,
+            toml,
         }
     }
 

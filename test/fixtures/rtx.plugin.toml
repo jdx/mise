@@ -1,0 +1,4 @@
+#:schema ../../schema/rtx.plugin.json
+
+[exec-env]
+cache-key = ["{{'1234'}}"]

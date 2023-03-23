@@ -40,7 +40,7 @@ impl Command for PluginsLink {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {
-                let path = PathBuf::from(&self.name);
+                let path = PathBuf::from(&self.name).canonicalize()?;
                 let name = get_name_from_path(&path);
                 (name, path)
             }
