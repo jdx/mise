@@ -10,8 +10,8 @@ use tool_versions::ToolVersions;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
-use crate::config::{AliasMap, Config};
-use crate::file::display_path;
+use crate::config::{AliasMap, Config, Settings};
+use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 use crate::output::Output;
 use crate::plugins::PluginName;
@@ -125,28 +125,37 @@ impl dyn ConfigFile {
     }
 }
 
-pub fn init(path: &Path) -> Box<dyn ConfigFile> {
+pub fn init(path: &Path, is_trusted: bool) -> Box<dyn ConfigFile> {
     if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str())
         || path.extension() == Some("toml".as_ref())
     {
-        return Box::new(RtxToml::init(path));
+        return Box::new(RtxToml::init(path, is_trusted));
     } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
-        return Box::new(ToolVersions::init(path));
+        return Box::new(ToolVersions::init(path, is_trusted));
     }
 
     panic!("Unknown config file type: {}", path.display());
 }
 
-pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
+pub fn parse(path: &Path, is_trusted: bool) -> Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path)?)),
-        Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
+        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path, is_trusted)?)),
+        Some(ConfigFileType::ToolVersions) => {
+            Ok(Box::new(ToolVersions::from_file(path, is_trusted)?))
+        }
         #[allow(clippy::box_default)]
         _ => Ok(Box::new(RtxToml::default())),
     }
 }
 
-pub fn is_trusted(path: &Path) -> bool {
+pub fn is_trusted(settings: &Settings, path: &Path) -> bool {
+    if settings
+        .trusted_config_paths
+        .iter()
+        .any(|p| path.starts_with(replace_path(p)))
+    {
+        return true;
+    }
     trust_path(path.to_path_buf()).unwrap().exists()
 }
 

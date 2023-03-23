@@ -52,6 +52,7 @@ mod tests {
         always_keep_download = true
         legacy_version_file = true
         plugin_autoupdate_last_check_duration = 20
+        trusted_config_paths = []
         verbose = true
         asdf_compat = false
         jobs = 2
