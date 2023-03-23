@@ -13,7 +13,7 @@ use crate::cli::exec::Exec;
 use crate::config::Config;
 use crate::env;
 use crate::fake_asdf;
-use crate::file::{create_dir_all, remove_dir_all};
+use crate::file::{create_dir_all, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
 use crate::runtimes::RuntimeVersion;
@@ -79,7 +79,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         .lock();
 
     // remove old shims
-    let _ = remove_dir_all(&shims_dir);
+    let _ = remove_all(&shims_dir);
     create_dir_all(&shims_dir)?;
     let rtx_bin = config.rtx_bin().unwrap_or(env::RTX_EXE.clone());
 

@@ -278,13 +278,13 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use crate::file::remove_dir_all;
+    use crate::file::remove_all;
     use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
     use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_ls() {
-        let _ = remove_dir_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
         assert_cli_snapshot!("list");
 
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_ls_json() {
-        let _ = remove_dir_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--json");
         assert_cli_snapshot!("ls", "--json", "tiny");
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_ls_parseable() {
-        let _ = remove_dir_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
         assert_cli_snapshot!("ls", "-x");
         assert_cli_snapshot!("ls", "--parseable", "tiny");

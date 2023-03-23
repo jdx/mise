@@ -153,7 +153,7 @@ v18.15.0
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
-  - [`rtx plugins link <NAME> [PATH]`](#rtx-plugins-link-name-path)
+  - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
   - [`rtx plugins uninstall <PLUGIN>...`](#rtx-plugins-uninstall-plugin)
@@ -1929,14 +1929,14 @@ Examples:
   # install the nodejs plugin using a specific ref
   $ rtx plugins install nodejs http://github.com/jdxcode/rtx-nodejs.git#v1.0.0
 ```
-### `rtx plugins link <NAME> [PATH]`
+### `rtx plugins link [OPTIONS] <NAME> [PATH]`
 
 ```
 Symlinks a plugin into rtx
 
 This is used for developing a plugin.
 
-Usage: link <NAME> [PATH]
+Usage: link [OPTIONS] <NAME> [PATH]
 
 Arguments:
   <NAME>
@@ -1946,6 +1946,10 @@ Arguments:
   [PATH]
           The local path to the plugin
           e.g.: ./rtx-nodejs
+
+Options:
+  -f, --force
+          Overwrite existing plugin
 
 Examples:
   # essentially just `ln -s ./rtx-nodejs ~/.local/share/rtx/plugins/nodejs`
