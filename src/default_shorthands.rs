@@ -637,8 +637,8 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 630] = [
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
     // rtx custom shorthands
     ("go",     "https://github.com/kennyp/asdf-golang.git"),
-    ("node",   "https://github.com/jdxcode/rtx-nodejs.git"),
-    ("nodejs", "https://github.com/jdxcode/rtx-nodejs.git"),
-    ("python", "https://github.com/jdxcode/rtx-python.git"),
-    ("tiny",   "https://github.com/jdxcode/rtx-tiny.git"),
+    ("node",   "https://github.com/rtx-plugins/rtx-nodejs.git"),
+    ("nodejs", "https://github.com/rtx-plugins/rtx-nodejs.git"),
+    ("python", "https://github.com/rtx-plugins/rtx-python.git"),
+    ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
 ];
