@@ -52,6 +52,18 @@ pub fn display_path(path: &Path) -> String {
     }
 }
 
+/// replaces "~" with $HOME
+pub fn replace_path(path: &Path) -> PathBuf {
+    let home = dirs::HOME.to_string_lossy();
+    match path.starts_with("~") {
+        true => path
+            .to_string_lossy()
+            .replacen('~', home.as_ref(), 1)
+            .into(),
+        false => path.to_path_buf(),
+    }
+}
+
 pub fn touch_dir(dir: &Path) -> io::Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();

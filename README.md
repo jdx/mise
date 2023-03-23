@@ -577,6 +577,11 @@ always_keep_download = false        # deleted after install by default
 # (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
 plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
 
+# config files with these prefixes will be trusted by default
+trusted_config_paths = [
+    '~/work/my-trusted-projects',
+]
+
 verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
@@ -733,6 +738,11 @@ information.
 
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
 configuration. This will be default behavior once we hit the [Calver](#versioning) release.
+
+#### `RTX_TRUSTED_CONFIG_PATHS`
+
+This is a list of paths that rtx will automatically mark as
+trusted. They can be separated with `:`.
 
 #### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 

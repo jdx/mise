@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::thread;
 
 use color_eyre::eyre::{eyre, Result};
-
 use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -18,12 +17,12 @@ pub use settings::{MissingRuntimeBehavior, Settings};
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::settings::SettingsBuilder;
+use crate::{cli, dirs, duration, env, file, hook_env};
+
 use crate::config::tracking::Tracker;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -51,7 +50,7 @@ pub struct Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let global_config = load_rtxrc()?;
-        let mut settings = SettingsBuilder::default();
+        let mut settings = global_config.settings();
         let config_filenames = load_config_filenames(&IndexMap::new());
         let mut plugins = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
@@ -198,11 +197,13 @@ impl Config {
         let config_files = tracker
             .list_all()?
             .into_par_iter()
-            .map(|path| match config_file::parse(&path) {
-                Ok(cf) => Some((path, cf)),
-                Err(err) => {
-                    error!("Error loading config file: {:#}", err);
-                    None
+            .map(|path| {
+                match config_file::parse(&path, config_file::is_trusted(&self.settings, &path)) {
+                    Ok(cf) => Some((path, cf)),
+                    Err(err) => {
+                        error!("Error loading config file: {:#}", err);
+                        None
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -302,14 +303,15 @@ fn load_rtxrc() -> Result<RtxToml> {
     let settings_path = env::RTX_CONFIG_FILE
         .clone()
         .unwrap_or(dirs::CONFIG.join("config.toml"));
+    let is_trusted = config_file::is_trusted(&Settings::default(), &settings_path);
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);
-            Ok(RtxToml::init(&settings_path))
+            Ok(RtxToml::init(&settings_path, is_trusted))
         }
-        true => match RtxToml::from_file(&settings_path) {
+        true => match RtxToml::from_file(&settings_path, is_trusted) {
             Ok(cf) => Ok(cf),
-            Err(err) => match RtxToml::migrate(&settings_path) {
+            Err(err) => match RtxToml::migrate(&settings_path, is_trusted) {
                 Ok(cf) => Ok(cf),
                 Err(e) => {
                     trace!("Error migrating config.toml: {:#}", e);
@@ -434,10 +436,11 @@ fn parse_config_file(
     legacy_filenames: &IndexMap<String, PluginName>,
     plugins: &IndexMap<PluginName, Arc<Plugin>>,
 ) -> Result<Box<dyn ConfigFile>> {
+    let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => LegacyVersionFile::parse(settings, f.into(), plugins.get(plugin).unwrap())
             .map(|f| Box::new(f) as Box<dyn ConfigFile>),
-        None => config_file::parse(f),
+        None => config_file::parse(f, is_trusted),
     }
 }
 
