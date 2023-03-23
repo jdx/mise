@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use clap::ValueHint;
 use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
@@ -23,6 +24,7 @@ use crate::output::Output;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
 pub struct Trust {
     /// The config file to trust
+    #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     pub config_file: Option<String>,
 
     /// No longer trust this config
