@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+rtx plugins uninstall tiny
+rtx p l "$ROOT/test/data/plugins/tiny"
+assert_contains "rtx p" "tiny"
+assert_fail "rtx p link $ROOT/test/data/plugins/tiny"
+rtx plugins link -f "$ROOT/test/data/plugins/tiny"

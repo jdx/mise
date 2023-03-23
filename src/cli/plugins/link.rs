@@ -1,15 +1,17 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use clap::ValueHint;
-use color_eyre::eyre::Result;
+
+use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::dirs;
-use crate::file::make_symlink;
+use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
 
 /// Symlinks a plugin into rtx
@@ -27,6 +29,10 @@ pub struct PluginsLink {
     /// e.g.: ./rtx-nodejs
     #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: Option<PathBuf>,
+
+    /// Overwrite existing plugin
+    #[clap(long, short = 'f')]
+    force: bool,
 }
 
 impl Command for PluginsLink {
@@ -40,8 +46,19 @@ impl Command for PluginsLink {
             }
         };
         let path = path.canonicalize()?;
+        let symlink = dirs::PLUGINS.join(&name);
+        if symlink.exists() {
+            if self.force {
+                remove_all(&symlink)?;
+            } else {
+                return Err(eyre!(
+                    "plugin {} already exists, use --force to overwrite",
+                    style(&name).cyan().for_stderr()
+                ));
+            }
+        }
         fs::create_dir_all(&*dirs::PLUGINS)?;
-        make_symlink(&path, &dirs::PLUGINS.join(name))?;
+        make_symlink(&path, &symlink)?;
         Ok(())
     }
 }
