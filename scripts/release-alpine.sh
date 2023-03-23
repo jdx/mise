@@ -29,7 +29,7 @@ apkbuild-lint APKBUILD
 
 git add APKBUILD
 git checkout -B "rtx/${RTX_VERSION#v}"
-git commit -m "testing/rtx: ${RTX_VERSION#v}"
+git commit -m "testing/rtx: upgrade to ${RTX_VERSION#v}"
 
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
 git push -f jdxcode
