@@ -1,7 +1,9 @@
+use clap::ValueHint;
 use color_eyre::eyre::Result;
 use console::style;
 use indoc::formatdoc;
 use once_cell::sync::Lazy;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cli::command::Command;
@@ -23,14 +25,14 @@ pub struct PluginsLink {
 
     /// The local path to the plugin
     /// e.g.: ./rtx-nodejs
-    #[clap(value_hint = clap::ValueHint::DirPath, verbatim_doc_comment)]
-    path: Option<String>,
+    #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
+    path: Option<PathBuf>,
 }
 
 impl Command for PluginsLink {
     fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
         let (name, path) = match self.path {
-            Some(path) => (self.name, PathBuf::from(&path)),
+            Some(path) => (self.name, path),
             None => {
                 let path = PathBuf::from(&self.name);
                 let name = get_name_from_path(&path);
@@ -38,6 +40,7 @@ impl Command for PluginsLink {
             }
         };
         let path = path.canonicalize()?;
+        fs::create_dir_all(&*dirs::PLUGINS)?;
         make_symlink(&path, &dirs::PLUGINS.join(name))?;
         Ok(())
     }
