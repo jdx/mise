@@ -94,16 +94,6 @@ brew = []
 deb = []
 rpm = []
 
-[profile.release]
-debug = 0
-
-[profile.release-fast]
-inherits = "release"
-opt-level = 3
-lto = true
-panic = "abort"
-strip = "symbols"
-
 [package.metadata.release]
 allow-branch = ["main"]
 sign-tag = true
