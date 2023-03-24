@@ -372,8 +372,10 @@ yum install -y rtx
 For Alpine Linux:
 
 ```
-apk add rtx --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing/
+apk add rtx
 ```
+
+_rtx lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/rtx/APKBUILD)._
 
 ### aur
 
