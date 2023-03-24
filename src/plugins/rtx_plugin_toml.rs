@@ -10,12 +10,15 @@ use crate::parse_error;
 #[derive(Debug, Default, Clone)]
 pub struct RtxPluginTomlScriptConfig {
     pub cache_key: Option<Vec<String>>,
+    pub data: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct RtxPluginToml {
     pub exec_env: RtxPluginTomlScriptConfig,
+    pub list_aliases: RtxPluginTomlScriptConfig,
     pub list_bin_paths: RtxPluginTomlScriptConfig,
+    pub list_legacy_filenames: RtxPluginTomlScriptConfig,
 }
 
 impl RtxPluginToml {
@@ -41,7 +44,11 @@ impl RtxPluginToml {
         for (k, v) in doc.iter() {
             match k {
                 "exec-env" => self.exec_env = self.parse_script_config(k, v)?,
+                "list-aliases" => self.list_aliases = self.parse_script_config(k, v)?,
                 "list-bin-paths" => self.list_bin_paths = self.parse_script_config(k, v)?,
+                "list-legacy-filenames" => {
+                    self.list_legacy_filenames = self.parse_script_config(k, v)?
+                }
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
@@ -56,6 +63,10 @@ impl RtxPluginToml {
                     let key = format!("{}.{}", key, k);
                     match k {
                         "cache-key" => config.cache_key = Some(self.parse_string_array(k, v)?),
+                        "data" => match v.as_value() {
+                            Some(v) => config.data = Some(self.parse_string(k, v)?),
+                            _ => parse_error!(key, v, "string")?,
+                        },
                         _ => parse_error!(key, v, "one of: cache-key")?,
                     }
                 }
@@ -105,6 +116,10 @@ mod tests {
     #[test]
     fn test_exec_env() {
         let cf = parse(&formatdoc! {r#"
+        [list-aliases]
+        data = "test-aliases"
+        [list-legacy-filenames]
+        data = "test-legacy-filenames"
         [exec-env]
         cache-key = ["foo", "bar"]
         [list-bin-paths]
@@ -119,6 +134,7 @@ mod tests {
                     "bar",
                 ],
             ),
+            data: None,
         }
         "###);
     }
