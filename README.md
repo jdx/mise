@@ -92,7 +92,7 @@ v18.15.0
   - [Xonsh](#xonsh)
   - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
-- [Shebangs](#shebangs)
+- [Shebang](#shebang)
 - [Configuration](#configuration)
   - [`.tool-versions`](#tool-versions)
   - [Legacy version files](#legacy-version-files)
@@ -112,6 +112,8 @@ v18.15.0
 - [IDE Integration](#ide-integration)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
+  - [What does `rtx activate` do?](#what-does-rtx-activate-do)
+  - [`rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`](#rtx-activate-doesnt-work-in-profile-bash_profile-zprofile)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
   - [Windows support?](#windows-support)
   - [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
@@ -487,15 +489,19 @@ Alternatively, manually remove the following directories to fully clean up:
 - on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
 - on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
 
-## Shebangs
+## Shebang
 
-You can specify a tool and its version in a shebang without needing to first setup `.tool-versions`/`.rtx.toml` config:
+You can specify a tool and its version in a shebang without needing to first
+setup `.tool-versions`/`.rtx.toml` config:
 
 ```typescript
 #!/usr/bin/env -S rtx x nodejs@18 -- node
 // "env -S" allows multiple arguments in a shebang
 console.log(`Running node: ${process.version}`);
 ```
+
+This can also be useful in environments where rtx isn't activated
+(such as a non-interactive session).
 
 ## Configuration
 
@@ -1048,6 +1054,35 @@ You can make git ignore these files in 3 different ways:
 - Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to commit the change to the ignore file.
 - Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so there is no need to commit it.
 - Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed with `git add --force .tool-versions`.
+
+### What does `rtx activate` do?
+
+It registers a shell hook to run `rtx hook-env` every time the shell prompt is displayed.
+You may think that is excessive and it should only run on `cd`, however there are many
+situations where it needs to run without the directory changing, for example if the `.rtx.toml`
+was modified.
+
+`rtx hook-env` will exit early in different situations if no changes have been made. This prevents
+blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
+outputs, however it is likely nothing if you're in a shell that has already been activated.
+
+`rtx activate` also creates a shell function (in most shells) called `rtx`. This is a trick that makes it possible for `rtx shell`
+and `rtx deactivate` to work without wrapping them in `eval "$(rtx shell)"`.
+
+### `rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
+
+`rtx activate` should only be used in `rc` files. These are the interactive ones used when
+a real user is using the terminal. (As opposed to being executed by an IDE or something).
+Because rtx only calls `hook-env` when the prompt is displayed, calling `rtx activate` in a
+non-interactive session means the prompt will never be shown.
+
+For this setup, consider using shims instead which will route calls to the correct directory
+by looking at `PWD`. You can also call `rtx exec` instead of expecting things to be directly on PATH.
+You can also run `rtx env` in a non-interactive shell, however that will only setup the global tools.
+It won't modify the environment variables when entering into a different project.
+
+Also see the [shebang](#shebang) example for a way to make scripts call rtx to get the runtime.
+That is another way to use rtx without activation.
 
 ### rtx is failing or not working right
 
