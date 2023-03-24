@@ -272,6 +272,9 @@ impl Plugin {
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+        if let Some(data) = &self.toml.list_aliases.data {
+            return Ok(self.parse_aliases(data).into_iter().collect());
+        }
         if !self.has_list_alias_script() {
             return Ok(IndexMap::new());
         }
@@ -291,6 +294,9 @@ impl Plugin {
     }
 
     pub fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
+        if let Some(data) = &self.toml.list_legacy_filenames.data {
+            return Ok(self.parse_legacy_filenames(data));
+        }
         if !self.has_list_legacy_filenames_script() {
             return Ok(vec![]);
         }
@@ -420,12 +426,13 @@ impl Plugin {
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        Ok(self
-            .script_man
-            .read(settings, &Script::ListLegacyFilenames, settings.verbose)?
-            .split_whitespace()
-            .map(|v| v.into())
-            .collect())
+        let stdout =
+            self.script_man
+                .read(settings, &Script::ListLegacyFilenames, settings.verbose)?;
+        Ok(self.parse_legacy_filenames(&stdout))
+    }
+    fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
+        data.split_whitespace().map(|v| v.into()).collect()
     }
     fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
         let latest_stable = self
@@ -456,8 +463,10 @@ impl Plugin {
         let stdout = self
             .script_man
             .read(settings, &Script::ListAliases, settings.verbose)?;
-        let aliases = stdout
-            .lines()
+        Ok(self.parse_aliases(&stdout))
+    }
+    fn parse_aliases(&self, data: &str) -> Vec<(String, String)> {
+        data.lines()
             .filter_map(|line| {
                 let mut parts = line.split_whitespace().collect_vec();
                 if parts.len() != 2 {
@@ -468,9 +477,7 @@ impl Plugin {
                 }
                 Some((parts.remove(0).into(), parts.remove(0).into()))
             })
-            .collect();
-
-        Ok(aliases)
+            .collect()
     }
 
     pub fn parse_legacy_file(&self, legacy_file: &Path, settings: &Settings) -> Result<String> {
