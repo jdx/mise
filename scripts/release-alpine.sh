@@ -17,10 +17,10 @@ git config --global user.email 6271-jdxcode@users.gitlab.alpinelinux.org
 git clone https://gitlab.alpinelinux.org/alpine/aports /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
-cd testing/rtx
+cd community/rtx
 
 sed -i "s/pkgver=.*/pkgver=${RTX_VERSION#v}/" APKBUILD
-sed -i "s/cargo test --frozen/cargo test --all-features --frozen/" APKBUILD
+sed -i "s/cargo build --release --frozen/cargo build --release --frozen --features alpine/" APKBUILD
 
 abuild checksum
 cat /github/home/.abuild/abuild.conf
@@ -29,7 +29,7 @@ apkbuild-lint APKBUILD
 
 git add APKBUILD
 git checkout -B "rtx/${RTX_VERSION#v}"
-git commit -m "testing/rtx: upgrade to ${RTX_VERSION#v}"
+git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
 
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
 git push -f jdxcode
