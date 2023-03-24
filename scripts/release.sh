@@ -64,7 +64,7 @@ NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
 pushd homebrew-tap
-git add . && git commit -m "rtx $RTX_VERSION"
+git add . && git commit -m "rtx ${RTX_VERSION#v}"
 popd
 
 # we don't want to include these in the github release, only S3
