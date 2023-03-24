@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use console::truncate_str;
 use itertools::Itertools;
+use terminal_size::{terminal_size, Width};
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -71,8 +72,11 @@ impl HookEnv {
             .map(|v| v.to_string())
             .collect_vec();
         if !installed_versions.is_empty() && !*env::RTX_QUIET {
-            let (mut w, _) = term_size::dimensions_stderr().unwrap_or((80, 80));
-            w = max(w, 40);
+            let w = match terminal_size() {
+                Some((Width(w), _)) => w,
+                None => 80,
+            } as usize;
+            let w = max(w, 40);
             let status = installed_versions.into_iter().rev().join(" ");
             rtxstatusln!(out, "{}", truncate_str(&status, w - 4, "..."));
         }
