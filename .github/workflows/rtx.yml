@@ -25,13 +25,15 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
-      - uses: taiki-e/install-action@just
       - uses: taiki-e/install-action@nextest
       - name: Run cargo nextest
         run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
+      - uses: taiki-e/install-action@just
       - run: just lint
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check
 
   coverage:
     runs-on: ubuntu-latest
