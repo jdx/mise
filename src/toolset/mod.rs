@@ -250,7 +250,8 @@ impl Toolset {
             .collect()
     }
     pub fn env_with_path(&self, config: &Config) -> IndexMap<String, String> {
-        let (mut env, path_env) = rayon::join(|| self.env(config), || self.path_env(config));
+        let mut env = self.env(config);
+        let path_env = self.path_env(config);
         env.insert("PATH".to_string(), path_env);
         env
     }
