@@ -10,6 +10,7 @@ use versions::Versioning;
 use crate::build_time::{built_info, BUILD_TIME};
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env::CI;
 use crate::file::modified_duration;
 use crate::output::Output;
 use crate::{dirs, duration};
@@ -66,6 +67,9 @@ fn show_version(out: &mut Output) {
 }
 
 fn show_latest() {
+    if *CI {
+        return;
+    }
     if let Some(latest) = check_for_new_version(duration::DAILY) {
         warn!("rtx version {} available", latest);
         if cfg!(feature = "self_update") {
