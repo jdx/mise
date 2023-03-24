@@ -82,6 +82,7 @@ lazy_static! {
     pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
     pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
     pub static ref DUMB_TERMINAL: bool = cfg!(test) || var("TERM").map_or(false, |term| term == "dumb");
+    pub static ref CI: bool = var_is_true("CI");
     pub static ref RTX_JOBS: usize = var("RTX_JOBS").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
     pub static ref PREFER_STALE: bool = prefer_stale(&ARGS);
     /// essentially, this is whether we show spinners or build output on runtime install

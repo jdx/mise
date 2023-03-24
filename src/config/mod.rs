@@ -17,6 +17,7 @@ pub use settings::{MissingRuntimeBehavior, Settings};
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::env::CI;
 use crate::{cli, dirs, duration, env, file, hook_env};
 
 use crate::config::tracking::Tracker;
@@ -224,6 +225,9 @@ impl Config {
     }
 
     pub fn autoupdate(&self) {
+        if *CI {
+            return;
+        }
         self.check_for_new_version();
         let thread_pool = match ThreadPoolBuilder::new()
             .num_threads(self.settings.jobs)
