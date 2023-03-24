@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::env;
 use crate::plugins::Plugin;
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::{ToolSource, ToolVersion};
@@ -25,25 +24,8 @@ impl ToolVersionList {
     }
     pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>) {
         for tv in &mut self.versions {
-            match tv.resolve(config, plugin.clone()) {
-                Ok(_) => {
-                    if *env::PRELOAD_ENV {
-                        if let Some(rtv) = tv.rtv.as_ref() {
-                            if !rtv.is_installed() {
-                                continue;
-                            }
-                            // optimize loading by preloading the rtv
-                            let _ = rayon::join(
-                                || rtv.exec_env(),
-                                || rtv.list_bin_paths(&config.settings),
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    warn!("failed to resolve tool version: {:#}", err);
-                    return;
-                }
+            if let Err(err) = tv.resolve(config, plugin.clone()) {
+                warn!("failed to resolve tool version: {:#}", err);
             }
         }
     }
