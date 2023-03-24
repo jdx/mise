@@ -8,4 +8,5 @@ RtxPluginTomlScriptConfig {
             "{{'1234'}}",
         ],
     ),
+    data: None,
 }
