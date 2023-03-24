@@ -20,7 +20,6 @@ git config --local core.hooksPath .githooks
 cd community/rtx
 
 sed -i "s/pkgver=.*/pkgver=${RTX_VERSION#v}/" APKBUILD
-sed -i "s/cargo build --release --frozen/cargo build --release --frozen --features alpine/" APKBUILD
 
 abuild checksum
 cat /github/home/.abuild/abuild.conf
