@@ -13,8 +13,7 @@
       "properties": {
         "data": {
           "description": "list of aliases to add",
-          "type": "object",
-          "additionalProperties": {"type": "string"}
+          "type": "string"
         }
       }
     },
@@ -25,8 +24,7 @@
       "properties": {
         "data": {
           "description": "list of legacy filenames to check for",
-          "type": "array",
-          "items": {"type": "string"}
+          "type": "string"
         }
       }
     },
