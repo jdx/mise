@@ -23,6 +23,7 @@ license=('MIT')
 makedepends=('cargo')
 provides=('rtx')
 conflicts=('rtx')
+options=('!lto')
 source=("\$pkgname-\$pkgver.tar.gz::https://github.com/jdxcode/\$pkgname/archive/v\$pkgver.tar.gz")
 sha512sums=('$SHA512')
 
