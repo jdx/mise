@@ -6,22 +6,43 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "list-aliases": {
+      "description": "configuration for bin/list-aliases script",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of aliases to add",
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "list-legacy-filenames": {
+      "description": "configuration for bin/list-legacy-filenames script",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of legacy filenames to check for",
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
     "list-bin-paths": {
-      "allOf": [
-        {"description": "configuration for bin/list-bin-paths script"},
-        {"$ref": "#/$defs/script"}
-      ]
+      "description": "configuration for bin/list-bin-paths script",
+      "additionalProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the results of bin/exec-env separately based on these values",
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
     },
     "exec-env": {
-      "allOf": [
-        {"description": "configuration for bin/exec-env script"},
-        {"$ref": "#/$defs/script"}
-      ]
-    }
-  },
-  "$defs": {
-    "script": {
-      "type": "object",
+      "description": "configuration for bin/exec-env script",
       "additionalProperties": false,
       "properties": {
         "cache-key": {
