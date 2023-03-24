@@ -49,6 +49,9 @@ impl RtxPluginToml {
                 "list-legacy-filenames" => {
                     self.list_legacy_filenames = self.parse_script_config(k, v)?
                 }
+                // this is an old key used in rtx-python
+                // this file is invalid, so just stop parsing entirely if we see it
+                "legacy-filenames" => return Ok(()),
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
