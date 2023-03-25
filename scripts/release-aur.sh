@@ -69,5 +69,5 @@ EOF
 
 cd aur
 git add .SRCINFO PKGBUILD
-git commit -m "rtx $RTX_VERSION"
+git commit -m "rtx ${RTX_VERSION#v}"
 git push

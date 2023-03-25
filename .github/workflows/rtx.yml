@@ -233,8 +233,6 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
-      - name: Wrangler
-        run: npm i -g wrangler@^2.12.2
       - uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
