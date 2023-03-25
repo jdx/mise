@@ -62,7 +62,7 @@ rtx exec direnv -- direnv --version
 rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
 rtx exec elixir erlang -- elixir --version
 rtx exec golang -- go version
-rtx exec java@openjdk -- java -version
+rtx exec java -- java -version
 rtx exec terraform -- terraform -v
 rtx exec yarn -- yarn --version
 rtx exec deno -- deno --version
