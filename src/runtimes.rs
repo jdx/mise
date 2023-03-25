@@ -5,7 +5,7 @@ use std::fs::{remove_file, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::{eyre, Result};
 use console::style;
 use once_cell::sync::Lazy;
 
@@ -417,5 +417,5 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<Strin
     ctx.insert("opts", &tv.options);
     get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
         .render_str(tmpl, &ctx)
-        .with_context(|| format!("failed to parse template: {}", tmpl))
+        .map_err(|err| eyre!("failed to parse template: {} {}", tmpl, err))
 }

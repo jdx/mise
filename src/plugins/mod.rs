@@ -265,10 +265,13 @@ impl Plugin {
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
-            .wrap_err(format!(
-                "Failed listing remote versions for plugin {}",
-                style(&self.name).cyan().for_stderr()
-            ))
+            .map_err(|err| {
+                eyre!(
+                    "Failed listing remote versions for plugin {}: {}",
+                    style(&self.name).cyan().for_stderr(),
+                    err
+                )
+            })
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
@@ -281,10 +284,11 @@ impl Plugin {
         let aliases = self
             .alias_cache
             .get_or_try_init(|| self.fetch_aliases(settings))
-            .with_context(|| {
-                format!(
-                    "Failed fetching aliases for plugin {}",
-                    style(&self.name).cyan().for_stderr()
+            .map_err(|err| {
+                eyre!(
+                    "Failed fetching aliases for plugin {}: {}",
+                    style(&self.name).cyan().for_stderr(),
+                    err
                 )
             })?
             .iter()
@@ -302,10 +306,11 @@ impl Plugin {
         }
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames(settings))
-            .with_context(|| {
-                format!(
-                    "Failed fetching legacy filenames for plugin {}",
-                    style(&self.name).cyan().for_stderr()
+            .map_err(|err| {
+                eyre!(
+                    "Failed fetching legacy filenames for plugin {}: {}",
+                    style(&self.name).cyan().for_stderr(),
+                    err
                 )
             })
             .cloned()
@@ -316,10 +321,11 @@ impl Plugin {
         }
         self.latest_stable_cache
             .get_or_try_init(|| self.fetch_latest_stable(settings))
-            .with_context(|| {
-                format!(
-                    "Failed fetching latest stable version for plugin {}",
-                    style(&self.name).cyan().for_stderr()
+            .map_err(|err| {
+                eyre!(
+                    "Failed fetching latest stable version for plugin {}: {}",
+                    style(&self.name).cyan().for_stderr(),
+                    err
                 )
             })
             .cloned()
@@ -399,9 +405,9 @@ impl Plugin {
             .stderr_capture()
             .unchecked()
             .run()
-            .with_context(|| {
+            .map_err(|err| {
                 let script = self.script_man.get_script_path(&Script::ListAll);
-                format!("Failed to run {}", script.display())
+                eyre!("Failed to run {}: {}", script.display(), err)
             })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();

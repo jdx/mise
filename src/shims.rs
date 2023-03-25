@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
 use rayon::prelude::*;
 
@@ -106,11 +106,12 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
             }
             let bin_name = bin.file_name().into_string().unwrap();
             let symlink_path = shims_dir.join(bin_name);
-            file::make_symlink(&rtx_bin, &symlink_path).with_context(|| {
-                format!(
-                    "Failed to create symlink from {} to {}",
+            file::make_symlink(&rtx_bin, &symlink_path).map_err(|err| {
+                eyre!(
+                    "Failed to create symlink from {} to {}: {}",
                     rtx_bin.display(),
-                    symlink_path.display()
+                    symlink_path.display(),
+                    err
                 )
             })?;
         }
