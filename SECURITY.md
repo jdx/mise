@@ -3,6 +3,8 @@
 rtx is a convenient tool to manage developer tools, however its model is also open to potential risks. The following
 are major areas of rtx and the security considerations currently being made and what needs to be made in the future.
 
+Please open a ticket or send me an email if you have thoughts on how rtx can be made more secure.
+
 ## Core CLI Security
 
 Development of the "core CLI" is done on jdxcode/rtx which only a single developer (me, @jdxcode) has access to.
