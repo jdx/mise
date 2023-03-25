@@ -9,18 +9,16 @@ use crate::toolset::tool_version::ToolVersionType;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<RuntimeArg>,
     install_missing: bool,
+    latest_versions: bool,
 }
 
 impl ToolsetBuilder {
     pub fn new() -> Self {
-        Self {
-            args: Vec::new(),
-            install_missing: false,
-        }
+        Self::default()
     }
 
     pub fn with_args(mut self, args: &[RuntimeArg]) -> Self {
@@ -33,8 +31,16 @@ impl ToolsetBuilder {
         self
     }
 
+    pub fn with_latest_versions(mut self) -> Self {
+        self.latest_versions = true;
+        self
+    }
+
     pub fn build(self, config: &mut Config) -> Result<Toolset> {
-        let mut toolset = Toolset::default();
+        let mut toolset = Toolset {
+            latest_versions: self.latest_versions,
+            ..Default::default()
+        };
         load_config_files(config, &mut toolset);
         load_runtime_env(&mut toolset, env::vars().collect());
         load_runtime_args(&mut toolset, &self.args);
