@@ -1190,7 +1190,7 @@ immediately after activating. Not calling `hook-env` immediately appears to work
 ### Is rtx secure?
 
 Not as much as it should be, though currently a bit more secure than asdf. Work will happen in this area as secure
-supply chains are incredibly important. See [SECURITY.md](./SECURITY.MD) for more information.
+supply chains are incredibly important. See [SECURITY.md](./SECURITY.md) for more information.
 
 ## Comparison to asdf
 
