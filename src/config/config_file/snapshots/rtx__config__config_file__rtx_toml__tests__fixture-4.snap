@@ -119,4 +119,5 @@ Toolset {
             "~/fixtures/.rtx.toml",
         ),
     ),
+    latest_versions: false,
 }
