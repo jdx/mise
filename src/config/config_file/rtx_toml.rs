@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
 use log::LevelFilter;
 use tera::Context;
@@ -560,7 +560,7 @@ impl RtxToml {
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .with_context(|| format!("failed to parse template: {k}='{}'", input))?;
+            .map_err(|err| eyre!("failed to parse template: {k}='{}': {}", input, err))?;
         Ok(output)
     }
 
