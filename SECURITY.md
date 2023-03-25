@@ -1,5 +1,64 @@
 # Security Policy
 
+rtx is a convenient tool to manage developer tools, however its model is also open to potential risks. The following
+are major areas of rtx and the security considerations currently being made and what needs to be made in the future.
+
+## Core CLI Security
+
+Development of the "core CLI" is done on jdxcode/rtx which only a single developer (me, @jdxcode) has access to.
+Other contributors may only submit contributions via public Pull Requests. By reducing the number
+of developers with access down to 1 reduces the chance of keys being leaked greatly.
+
+This does create a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I suddenly died one day
+or otherwise wasn't able to continue development at all there are some successors listed in my GitHub account
+that can take over my account if need be.
+
+The dependencies in the core CLI are a security vector. I've tried to be reasonably judicious about what dependencies
+to allow into the project. I only select dependencies with broad usage across the Rust community where possible.
+I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
+rtx more secure.
+
+## rtx.pub
+
+rtx.pub is the asset host for rtx. It's used to host precompiled rtx CLI binaries, and hosts a "[VERSION](https://rtx.pub/VERSION)"
+which rtx uses to occasionally check for a new version being released. Currently this is hosted with a mix
+of 3 different vendors for CDN, assets, and domain registration. This will be brought down to a single vendor
+to reduce the surface area for security reasons.
+
+## rtx plugins
+
+Plugins are by far the biggest source of potential problems and where the most work still needs to be made.
+
+Eventually we will have 3 types of plugins:
+
+* [core](https://github.com/jdxcode/rtx/issues/236) - plugins that will be hardcoded into the CLI. These will be
+official plugins for the most common languages.
+* community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
+only have @jdxcode as the sole contributor, however this may change in the future for particular plugins with
+dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
+* external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
+secure than installing any random tool from the internet.
+
+Just because a plugin is inside of the shorthand registry (so you can run `rtx install foo@`, does not mean
+I vouch for it. I have no idea who almost anyone that builds those plugins is. If it's coming from the rtx-plugins
+GitHub org, you can have more trust in it. (See the owners with `rtx plugins ls-remote --urls`).
+
+Over time we should be able to move more plugins into being fully maintained by rtx. I plan to add an
+`RTX_PARANOID=1` env var that, when set, will make changes to make rtx behave as securely as possible
+(e.g.: only using core plugins, only allowing plugins that use GPG verification of assets).
+
+## Privacy
+
+Currently the only "phoning home" that rtx does is with the weekly check for new versions. It does not send any
+data (except its version), but using the IP address I'm able to infer some (very) broad usage data for rtx. You
+may opt out of this behavior with `RTX_HIDE_UPDATE_WARNING=1`. You can also audit the [code](https://github.com/jdxcode/rtx/blob/main/src/cli/version.rs)
+yourself to see what it does.
+
+I would like to see some basic, but public analytics information. I think [homebrew](https://docs.brew.sh/Analytics)
+did a great job of doing this, and we'd have a similar model where the data is anonymous and publicly accessible.
+Doing so will help both me and plugin authors to know if we're building effective functionality. It's also a great way
+to get buy-in from organizations to do development with rtx (especially at large tech companies—they all _love_ numbers).
+
 ## Supported Versions
 
 The only supported version is the most recent one.
