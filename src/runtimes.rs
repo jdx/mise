@@ -246,14 +246,14 @@ impl RuntimeVersion {
 
     fn fetch_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
         let list_bin_paths = self.plugin.plugin_path.join("bin/list-bin-paths");
-        let bin_paths = if list_bin_paths.exists() {
+        let bin_paths = if self.version == "system" {
+            Vec::new()
+        } else if list_bin_paths.exists() {
             let output = self
                 .script_man
                 .cmd(settings, &Script::ListBinPaths)
                 .read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
-        } else if self.version == "system" {
-            vec![]
         } else {
             vec!["bin".into()]
         };
