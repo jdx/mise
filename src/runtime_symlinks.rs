@@ -12,9 +12,6 @@ use versions::Version;
 use crate::plugins::Plugin;
 
 pub fn rebuild_symlinks(config: &Config) -> Result<()> {
-    if !config.settings.experimental {
-        return Ok(());
-    }
     for plugin in config.plugins.values() {
         remove_existing_symlinks(plugin)?;
         let symlinks = list_symlinks(config, plugin)?;
