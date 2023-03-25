@@ -108,14 +108,13 @@ fn render_config_files(config: &Config) -> String {
 
 fn render_plugins(config: &Config) -> String {
     let mut s = style("plugins:\n").bold().to_string();
-    let max_plugin_name_len = config
+    let plugins = config
         .plugins
         .values()
-        .map(|p| p.name.len())
-        .max()
-        .unwrap_or(0)
-        + 2;
-    for p in config.plugins.values() {
+        .filter(|p| p.is_installed())
+        .collect::<Vec<_>>();
+    let max_plugin_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0) + 2;
+    for p in plugins {
         let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
         let git = Git::new(p.plugin_path.clone());
         let si = match git.get_remote_url() {
