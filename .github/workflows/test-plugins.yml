@@ -65,7 +65,7 @@ jobs:
               rtx exec -- elixir --version
           - plugin: golang
             command: rtx exec golang@latest -- go version
-          - plugin: java@openjdk
+          - plugin: java
             command: rtx exec java@openjdk -- java -version
           - plugin: terraform
             command: rtx exec terraform@latest -- terraform -v
