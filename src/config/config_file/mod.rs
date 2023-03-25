@@ -54,6 +54,7 @@ impl dyn ConfigFile {
     ) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         let mut ts = self.to_toolset().to_owned();
+        ts.latest_versions = true;
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
             if let Some(tv) = runtime.to_tool_version() {
@@ -76,7 +77,7 @@ impl dyn ConfigFile {
                 .map(|mut tv| {
                     if pin {
                         let plugin = config.plugins.get(&plugin).unwrap();
-                        tv.resolve(config, plugin.clone())?;
+                        tv.resolve(config, plugin.clone(), ts.latest_versions)?;
                         Ok(tv.rtv.unwrap().version)
                     } else {
                         Ok(tv.r#type.to_string())

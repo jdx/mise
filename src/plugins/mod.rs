@@ -199,6 +199,21 @@ impl Plugin {
         Ok(())
     }
 
+    pub fn latest_installed_version(&self) -> Result<Option<String>> {
+        let installed_symlink = self.installs_path.join("latest");
+        if installed_symlink.exists() {
+            let target = installed_symlink.read_link()?;
+            let version = target
+                .file_name()
+                .ok_or_else(|| eyre!("Invalid symlink target"))?
+                .to_string_lossy()
+                .to_string();
+            Ok(Some(version))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn latest_version(
         &self,
         settings: &Settings,
@@ -223,6 +238,22 @@ impl Plugin {
         } else {
             self.latest_version(settings, Some("latest".into()))
         }
+    }
+
+    pub fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
+        let mut query = query;
+        if query == "latest" {
+            query = "[0-9]";
+        }
+        let query_regex =
+            Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
+        let versions = self
+            .list_installed_versions()?
+            .iter()
+            .filter(|v| query_regex.is_match(v))
+            .cloned()
+            .collect_vec();
+        Ok(versions)
     }
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {

@@ -43,10 +43,17 @@ impl ToolVersion {
         }
     }
 
-    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>) -> Result<()> {
+    pub fn resolve(
+        &mut self,
+        config: &Config,
+        plugin: Arc<Plugin>,
+        latest_versions: bool,
+    ) -> Result<()> {
         if self.rtv.is_none() {
             self.rtv = Some(match &self.r#type {
-                ToolVersionType::Version(v) => self.resolve_version(config, plugin, v)?,
+                ToolVersionType::Version(v) => {
+                    self.resolve_version(config, plugin, v, latest_versions)?
+                }
                 ToolVersionType::Prefix(v) => self.resolve_prefix(config, plugin, v)?,
                 ToolVersionType::Ref(r) => self.resolve_ref(config, plugin, r)?,
                 ToolVersionType::Path(path) => self.resolve_path(config, plugin, path)?,
@@ -61,6 +68,7 @@ impl ToolVersion {
         config: &Config,
         plugin: Arc<Plugin>,
         v: &str,
+        latest_versions: bool,
     ) -> Result<RuntimeVersion> {
         let v = config.resolve_alias(&plugin.name, v)?;
         match v.split_once(':') {
@@ -79,21 +87,28 @@ impl ToolVersion {
         let existing_path = dirs::INSTALLS.join(&plugin.name).join(&v);
         if existing_path.exists() && !is_runtime_symlink(&existing_path) {
             // if the version is already installed, no need to fetch all the remote versions
-            let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
-            return Ok(rtv);
+            return Ok(self.build_rtv(config, plugin, &v));
         }
 
         if v == "latest" {
-            let v = plugin.latest_version(&config.settings, None)?;
-            if let Some(v) = v {
-                let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
-                return Ok(rtv);
+            if !latest_versions {
+                if let Some(v) = plugin.latest_installed_version()? {
+                    return Ok(self.build_rtv(config, plugin, &v));
+                }
+            }
+            if let Some(v) = plugin.latest_version(&config.settings, None)? {
+                return Ok(self.build_rtv(config, plugin, &v));
+            }
+        }
+        if !latest_versions {
+            let matches = plugin.list_installed_versions_matching(&v)?;
+            if matches.contains(&v) {
+                return Ok(self.build_rtv(config, plugin, &v));
             }
         }
         let matches = plugin.list_versions_matching(&config.settings, &v)?;
         if matches.contains(&v) {
-            let rtv = RuntimeVersion::new(config, plugin, v, self.clone());
-            return Ok(rtv);
+            return Ok(self.build_rtv(config, plugin, &v));
         }
         if v.contains("!-") {
             if let Some(rtv) = self.resolve_bang(config, plugin.clone(), &v)? {
@@ -117,7 +132,7 @@ impl ToolVersion {
         };
         let wanted = version_sub(&wanted, minus);
         match plugin.latest_version(&config.settings, Some(wanted))? {
-            Some(v) => Ok(RuntimeVersion::new(config, plugin, v, self.clone()).into()),
+            Some(v) => Ok(Some(self.build_rtv(config, plugin, &v))),
             None => Ok(None),
         }
     }
@@ -134,13 +149,11 @@ impl ToolVersion {
             None => prefix,
             // None => Err(VersionNotFound(plugin.name.clone(), prefix.to_string()))?,
         };
-        let rtv = RuntimeVersion::new(config, plugin, v.to_string(), self.clone());
-        Ok(rtv)
+        Ok(self.build_rtv(config, plugin, v))
     }
 
     fn resolve_ref(&self, config: &Config, plugin: Arc<Plugin>, r: &str) -> Result<RuntimeVersion> {
-        let rtv = RuntimeVersion::new(config, plugin, format!("ref-{}", r), self.clone());
-        Ok(rtv)
+        Ok(self.build_rtv(config, plugin, &format!("ref-{}", r)))
     }
 
     fn resolve_path(
@@ -150,12 +163,11 @@ impl ToolVersion {
         path: &PathBuf,
     ) -> Result<RuntimeVersion> {
         let path = fs::canonicalize(path)?;
-        let rtv = RuntimeVersion::new(config, plugin, path.display().to_string(), self.clone());
-        Ok(rtv)
+        Ok(self.build_rtv(config, plugin, &path.display().to_string()))
     }
 
     pub fn resolve_system(&self, config: &Config, plugin: Arc<Plugin>) -> RuntimeVersion {
-        RuntimeVersion::new(config, plugin, "system".to_string(), self.clone())
+        self.build_rtv(config, plugin, "system")
     }
 
     pub fn is_missing(&self) -> bool {
@@ -173,6 +185,10 @@ impl ToolVersion {
             }
             _ => Ok(()),
         }
+    }
+
+    fn build_rtv(&self, config: &Config, plugin: Arc<Plugin>, v: &str) -> RuntimeVersion {
+        RuntimeVersion::new(config, plugin, v.to_string(), self.clone())
     }
 }
 

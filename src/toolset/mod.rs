@@ -42,6 +42,7 @@ mod tool_version_list;
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     pub source: Option<ToolSource>,
+    pub latest_versions: bool,
 }
 
 impl Toolset {
@@ -81,7 +82,7 @@ impl Toolset {
                         return;
                     }
                 };
-                v.resolve(config, plugin.clone());
+                v.resolve(config, plugin.clone(), self.latest_versions);
             });
     }
     pub fn install_missing(&mut self, config: &mut Config, mpr: MultiProgressReport) -> Result<()> {
@@ -163,7 +164,7 @@ impl Toolset {
                     .map(|(plugin, versions)| {
                         for version in versions {
                             let mut pr = mpr.add();
-                            version.resolve(config, plugin.clone())?;
+                            version.resolve(config, plugin.clone(), self.latest_versions)?;
                             version.install(config, &mut pr, false)?;
                         }
                         Ok(())
