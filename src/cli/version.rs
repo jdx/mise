@@ -111,23 +111,25 @@ fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
+    let timeout = Duration::from_secs(3);
     const URL: &str = "http://rtx.pub/VERSION";
     debug!("checking for version from {}", URL);
-    reqwest::blocking::ClientBuilder::new()
-        .timeout(Duration::from_secs(5))
+    let client = reqwest::blocking::ClientBuilder::new()
         .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
         .build()
-        .ok()?
-        .get(URL)
-        .send()
-        .ok()
-        .and_then(|res| {
+        .ok()?;
+    match client.get(URL).timeout(timeout).send() {
+        Ok(res) => {
             if res.status().is_success() {
                 return res.text().ok().map(|text| text.trim().to_string());
             }
             debug!("failed to check for version: {:#?}", res);
-            None
-        })
+        }
+        Err(err) => {
+            debug!("failed to check for version: {:#?}", err);
+        }
+    };
+    None
 }
 
 #[cfg(test)]
