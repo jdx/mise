@@ -21,9 +21,15 @@
     "env": {
       "description": "environment variables",
       "type": "object",
-      "items": {
-        "description": "environment variable value",
-        "type": "string"
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
       }
     },
     "tools": {
@@ -63,7 +69,9 @@
         }
       }
     },
-    "settings": {"$ref": "#/$defs/settings"}
+    "settings": {
+      "$ref": "#/$defs/settings"
+    }
   },
   "$defs": {
     "tool": {
