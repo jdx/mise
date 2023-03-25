@@ -1187,6 +1187,11 @@ This can also be useful if you need to use a runtime right away in an rc file. T
 of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
 immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
 
+### Is rtx secure?
+
+Not as much as it should be, though currently a bit more secure than asdf. Work will happen in this area as secure
+supply chains are incredibly important. See [SECURITY.md](./SECURITY.MD) for more information.
+
 ## Comparison to asdf
 
 rtx is mostly a clone of asdf, but there are notable areas where improvements have been made.
