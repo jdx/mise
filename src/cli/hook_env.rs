@@ -46,10 +46,11 @@ impl Command for HookEnv {
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        let installs = ts.list_paths(&config); // load the active runtime paths
-        diff.path = installs.clone(); // update __RTX_DIFF with the new paths for the next run
+        let mut paths = config.path_dirs.clone();
+        paths.extend(ts.list_paths(&config)); // load the active runtime paths
+        diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
 
-        patches.extend(self.build_path_operations(&installs, &__RTX_DIFF.path)?);
+        patches.extend(self.build_path_operations(&paths, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&config)?);
 
