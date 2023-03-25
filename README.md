@@ -121,6 +121,7 @@ v18.15.0
   - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
   - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
   - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
+  - [Is rtx secure?](#is-rtx-secure)
 - [Comparison to asdf](#comparison-to-asdf)
   - [Performance](#performance)
   - [Environment variables in rtx](#environment-variables-in-rtx)
@@ -976,8 +977,6 @@ For example:
 latest -> ./18.15.0
 lts -> ./18.15.0
 ```
-
-These are currently experimental and only created when the "experimental" setting is true.
 
 #### `~/.local/share/rtx/shims`
 
