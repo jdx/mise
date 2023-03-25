@@ -22,9 +22,9 @@ impl ToolVersionList {
     pub fn add_version(&mut self, version: ToolVersion) {
         self.versions.push(version);
     }
-    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>) {
+    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>, latest_versions: bool) {
         for tv in &mut self.versions {
-            if let Err(err) = tv.resolve(config, plugin.clone()) {
+            if let Err(err) = tv.resolve(config, plugin.clone(), latest_versions) {
                 warn!("failed to resolve tool version: {:#}", err);
             }
         }
@@ -57,7 +57,7 @@ mod tests {
             plugin.name.to_string(),
             ToolVersionType::Version("1.0.0".to_string()),
         ));
-        tvl.resolve(&Config::default(), plugin);
+        tvl.resolve(&Config::default(), plugin, false);
         assert_eq!(tvl.resolved_versions().len(), 0);
         env::remove_var("RTX_FAILURE");
     }

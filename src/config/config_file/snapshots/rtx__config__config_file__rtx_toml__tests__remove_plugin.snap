@@ -9,4 +9,5 @@ Toolset {
             "/tmp/.rtx.toml",
         ),
     ),
+    latest_versions: false,
 }
