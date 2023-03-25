@@ -7,6 +7,7 @@ rm -f src/default_shorthands.rs
 
 custom_plugins=(
 	'("go",     "https://github.com/kennyp/asdf-golang.git"),'
+	'("java",   "https://github.com/rtx-plugins/rtx-java.git"),'
 	'("node",   "https://github.com/rtx-plugins/rtx-nodejs.git"),'
 	'("nodejs", "https://github.com/rtx-plugins/rtx-nodejs.git"),'
 	'("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
