@@ -1,0 +1,7 @@
+---
+source: src/shell/elvish.rs
+expression: replace_path(&deactivate)
+---
+unset-env MISE_SHELL
+unset-env __MISE_DIFF
+unset-env __MISE_WATCH

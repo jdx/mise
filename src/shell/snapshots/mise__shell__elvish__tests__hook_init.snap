@@ -1,0 +1,47 @@
+---
+source: src/shell/elvish.rs
+expression: "elvish.activate(exe, \" --status\".into())"
+---
+var hook-enabled = $false
+
+fn hook-env {
+  if $hook-enabled {
+    eval (/some/dir/mise hook-env --status -s elvish | slurp)
+  }
+}
+
+set after-chdir = (conj $after-chdir {|_| hook-env })
+set edit:before-readline = (conj $edit:before-readline $hook-env~)
+
+fn activate {
+  set-env MISE_SHELL elvish
+  set hook-enabled = $true
+  hook-env
+}
+
+fn deactivate {
+  set hook-enabled = $false
+  eval (/some/dir/mise deactivate | slurp)
+}
+
+fn mise {|@a|
+  if (== (count $a) 0) {
+    /some/dir/mise
+    return
+  }
+
+  if (not (or (has-value $a -h) (has-value $a --help))) {
+    var command = $a[0]
+    if (==s $command shell) {
+      try { eval (/some/dir/mise $@a) } catch { }
+      return
+    } elif (==s $command deactivate) {
+      deactivate
+      return
+    } elif (==s $command activate) {
+      activate
+      return
+    }
+  }
+  /some/dir/mise $@a
+}
