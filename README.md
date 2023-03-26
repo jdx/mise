@@ -142,7 +142,7 @@ v18.15.0
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
-  - [`rtx complete --shell <SHELL>`](#rtx-complete---shell-shell)
+  - [`rtx completion [SHELL_TYPE]`](#rtx-completion-shell_type)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
@@ -444,8 +444,8 @@ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ### Nushell
 
 ```sh-session
-do { 
-  let rtxpath = $"($nu.config-path | path dirname | path join "rtx.nu")"; 
+do {
+  let rtxpath = $"($nu.config-path | path dirname | path join "rtx.nu")";
   run-external rtx activate nu --redirect-stdout | save $rtxpath -f;
   $"\nsource "($rtxpath)"" | save $nu.config-path --append
 }
@@ -528,7 +528,7 @@ nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
 
-Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local-options-runtime) to create them 
+Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local-options-runtime) to create them
 automatically.
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
 
@@ -963,8 +963,8 @@ ln -s ~/src/rtx-my-tool ~/.local/share/rtx/plugins/my-tool
 
 #### `~/.local/share/rtx/installs`
 
-This is where tools are installed to when running `rtx install`. For example, `rtx install 
-nodejs@18.0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0` For example, `rtx 
+This is where tools are installed to when running `rtx install`. For example, `rtx install
+nodejs@18.0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0` For example, `rtx
 install 0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0`.
 
 This will also create other symlinks to this directory for version prefixes ("18" and "18.15")
@@ -1043,7 +1043,7 @@ if a shim is executed. For this we need tighter integration with the IDE and a c
 ambitious, take a look at existing direnv extensions for your IDE and see if you can modify it to work for rtx.
 Direnv and rtx work similarly and there should be a direnv extension that can be used as a starting point.
 
-Alternatively, you may be able to get tighter integration with a direnv extension and using the 
+Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_rtx`](#direnv) direnv function.
 
 ## FAQs
@@ -1156,7 +1156,7 @@ and see what happens.
 rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin
 should be usable in rtx. The commands in rtx are slightly
 different, such as `rtx install nodejs@18.0.0` vs `asdf install nodejs 18.0.0`—this is done so
-multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx 
+multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx
 install nodejs 18.0.0`). This is the case for most commands, though the help for the command may
 say that asdf-style syntax is supported.
 
@@ -1406,7 +1406,7 @@ Usage: activate [OPTIONS] [SHELL_TYPE]
 Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
@@ -1516,23 +1516,23 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
-### `rtx complete --shell <SHELL>`
+### `rtx completion [SHELL_TYPE]`
 
 ```
 Generate shell completions
 
-Usage: complete --shell <SHELL>
+Usage: completion [SHELL_TYPE]
 
-Options:
-  -s, --shell <SHELL>
-          shell type
-          
+Arguments:
+  [SHELL_TYPE]
+          Shell type to generate completions for
+
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Examples:
-  $ rtx complete -s bash > /etc/bash_completion.d/rtx
-  $ rtx complete -s zsh  > /usr/local/share/zsh/site-functions/_rtx
-  $ rtx complete -s fish > ~/.config/fish/completions/rtx.fish
+  $ rtx completion bash > /etc/bash_completion.d/rtx
+  $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
+  $ rtx completion fish > ~/.config/fish/completions/rtx.fish
 ```
 ### `rtx current [PLUGIN]`
 
@@ -1624,7 +1624,7 @@ Arguments:
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
@@ -1662,7 +1662,7 @@ Options:
 
       --cd <CD>
           Change to this directory before executing the command
-          
+
           [short aliases: C]
 
 Examples:
@@ -1869,7 +1869,7 @@ Options:
 
       --parseable
           Output in an easily parseable format
-          
+
           [short aliases: x]
 
       --json
@@ -2324,7 +2324,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-          
+
 
 Options:
       --plugin

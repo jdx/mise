@@ -36,7 +36,7 @@ test-e2e: build
 test-coverage:
     #!/usr/bin/env bash
     set -euxo pipefail
-    source <(cargo llvm-cov show-env --export-prefix) 
+    source <(cargo llvm-cov show-env --export-prefix)
     cargo llvm-cov clean --workspace
 
     if [[ -n "${RTX_GITHUB_BOT_TOKEN:-}" ]]; then
@@ -90,9 +90,9 @@ render-help: build
 
 # regenerate shell completion files
 render-completions: build
-    NO_COLOR=1 rtx complete -s bash > completions/rtx.bash
-    NO_COLOR=1 rtx complete -s zsh > completions/_rtx
-    NO_COLOR=1 rtx complete -s fish > completions/rtx.fish
+    NO_COLOR=1 rtx completion bash > completions/rtx.bash
+    NO_COLOR=1 rtx completion zsh > completions/_rtx
+    NO_COLOR=1 rtx completion fish > completions/rtx.fish
 
 # regenerate manpages
 render-mangen: build
