@@ -17,25 +17,22 @@ use crate::output::Output;
 pub struct Completion {
     /// Shell type to generate completions for
     #[clap()]
-    shell_type: Option<clap_complete::Shell>,
+    shell: Option<clap_complete::Shell>,
 
     /// Shell type to generate completions for
-    #[clap(long, short)]
-    shell: Option<clap_complete::Shell>,
+    #[clap(long = "shell", short = 's', hide = true)]
+    shell_type: Option<clap_complete::Shell>,
 }
 
 impl Command for Completion {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell_type = self.shell_type.or(self.shell);
-        let shell_type = match shell_type {
-            Some(clap_complete::Shell::Bash) => clap_complete::Shell::Bash,
-            Some(clap_complete::Shell::Zsh) => clap_complete::Shell::Zsh,
-            Some(clap_complete::Shell::Fish) => clap_complete::Shell::Fish,
-            _ => clap_complete::Shell::Zsh,
+        let shell = match self.shell.or(self.shell_type) {
+            Some(shell) => shell,
+            None => panic!("no shell provided"),
         };
 
         let mut c = Cursor::new(Vec::new());
-        generate(shell_type, &mut Cli::command(), "rtx", &mut c);
+        generate(shell, &mut Cli::command(), "rtx", &mut c);
         rtxprintln!(out, "{}", String::from_utf8(c.into_inner()).unwrap());
 
         Ok(())

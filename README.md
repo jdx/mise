@@ -135,7 +135,7 @@ v18.15.0
 - [Cache Behavior](#cache-behavior)
   - [Plugin/Runtime Cache](#pluginruntime-cache)
 - [Commands](#commands)
-  - [`rtx activate [OPTIONS] [SHELL_TYPE]`](#rtx-activate-options-shell_type)
+  - [`rtx activate [OPTIONS] [SHELL]`](#rtx-activate-options-shell)
   - [`rtx alias get <PLUGIN> <ALIAS>`](#rtx-alias-get-plugin-alias)
   - [`rtx alias ls [OPTIONS]`](#rtx-alias-ls-options)
   - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
@@ -1516,15 +1516,23 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
+<<<<<<< Updated upstream
 ### `rtx completion [OPTIONS] [SHELL_TYPE]`
+=======
+### `rtx completion [SHELL]`
+>>>>>>> Stashed changes
 
 ```
 Generate shell completions
 
+<<<<<<< Updated upstream
 Usage: completion [OPTIONS] [SHELL_TYPE]
+=======
+Usage: completion [SHELL]
+>>>>>>> Stashed changes
 
 Arguments:
-  [SHELL_TYPE]
+  [SHELL]
           Shell type to generate completions for
           
           [possible values: bash, elvish, fish, powershell, zsh]
