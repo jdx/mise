@@ -21,7 +21,6 @@ test *args: (test-unit args) test-e2e lint
 
 # update all test snapshot files
 test-update-snapshots:
-    find . -name '*.snap' -delete
     cargo insta test --accept --all-features
 
 # run the rust "unit" tests
