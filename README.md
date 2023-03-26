@@ -142,7 +142,7 @@ v18.15.0
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
-  - [`rtx completion [SHELL_TYPE]`](#rtx-completion-shell_type)
+  - [`rtx completion [OPTIONS] [SHELL_TYPE]`](#rtx-completion-options-shell_type)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
@@ -1406,7 +1406,7 @@ Usage: activate [OPTIONS] [SHELL_TYPE]
 Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
-
+          
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
@@ -1516,23 +1516,29 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
-### `rtx completion [SHELL_TYPE]`
+### `rtx completion [OPTIONS] [SHELL_TYPE]`
 
 ```
 Generate shell completions
 
-Usage: completion [SHELL_TYPE]
+Usage: completion [OPTIONS] [SHELL_TYPE]
 
 Arguments:
   [SHELL_TYPE]
           Shell type to generate completions for
+          
+          [possible values: bash, elvish, fish, powershell, zsh]
 
+Options:
+  -s, --shell <SHELL>
+          Shell type to generate completions for
+          
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Examples:
-  $ rtx completion bash > /etc/bash_completion.d/rtx
-  $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
-  $ rtx completion fish > ~/.config/fish/completions/rtx.fish
+  $ rtx completion -s bash > /etc/bash_completion.d/rtx
+  $ rtx completion -s zsh  > /usr/local/share/zsh/site-functions/_rtx
+  $ rtx completion -s fish > ~/.config/fish/completions/rtx.fish
 ```
 ### `rtx current [PLUGIN]`
 
@@ -1624,7 +1630,7 @@ Arguments:
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
-
+          
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
@@ -1662,7 +1668,7 @@ Options:
 
       --cd <CD>
           Change to this directory before executing the command
-
+          
           [short aliases: C]
 
 Examples:
@@ -1869,7 +1875,7 @@ Options:
 
       --parseable
           Output in an easily parseable format
-
+          
           [short aliases: x]
 
       --json
@@ -2324,7 +2330,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-
+          
 
 Options:
       --plugin
