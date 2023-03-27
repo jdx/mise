@@ -98,3 +98,22 @@ fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
     }
     toolset
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_file() {
+        let settings = Settings::default();
+        let path = PathBuf::from("tiny-legacy").join(".rtx-tiny-version");
+        let plugin = Plugin::new(&settings, &PluginName::from("tiny"));
+        let cf = LegacyVersionFile::parse(&settings, path, &plugin).unwrap();
+        let tvl = cf.to_toolset().versions.get("tiny").unwrap();
+        let version = match tvl.versions[0].r#type {
+            ToolVersionType::Version(ref v) => v,
+            _ => panic!("Unexpected version type"),
+        };
+        assert_eq!(version, "2");
+    }
+}
