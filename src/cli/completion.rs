@@ -42,9 +42,9 @@ impl Command for Completion {
 static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
     formatdoc! {r#"
     {}
-      $ rtx completion -s bash > /etc/bash_completion.d/rtx
-      $ rtx completion -s zsh  > /usr/local/share/zsh/site-functions/_rtx
-      $ rtx completion -s fish > ~/.config/fish/completions/rtx.fish
+      $ rtx completion bash > /etc/bash_completion.d/rtx
+      $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
+      $ rtx completion fish > ~/.config/fish/completions/rtx.fish
     "#, style("Examples:").bold().underlined()}
 });
 

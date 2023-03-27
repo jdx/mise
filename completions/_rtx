@@ -346,8 +346,8 @@ esac
 ;;
 (completion)
 _arguments "${_arguments_options[@]}" \
-'-s+[Shell type to generate completions for]:SHELL:(bash elvish fish powershell zsh)' \
-'--shell=[Shell type to generate completions for]:SHELL:(bash elvish fish powershell zsh)' \
+'-s+[Shell type to generate completions for]:SHELL_TYPE:(bash elvish fish powershell zsh)' \
+'--shell=[Shell type to generate completions for]:SHELL_TYPE:(bash elvish fish powershell zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -364,7 +364,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'::shell_type -- Shell type to generate completions for:(bash elvish fish powershell zsh)' \
+'::shell -- Shell type to generate completions for:(bash elvish fish powershell zsh)' \
 && ret=0
 ;;
 (current)

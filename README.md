@@ -135,14 +135,14 @@ v18.15.0
 - [Cache Behavior](#cache-behavior)
   - [Plugin/Runtime Cache](#pluginruntime-cache)
 - [Commands](#commands)
-  - [`rtx activate [OPTIONS] [SHELL]`](#rtx-activate-options-shell)
+  - [`rtx activate [OPTIONS] [SHELL_TYPE]`](#rtx-activate-options-shell_type)
   - [`rtx alias get <PLUGIN> <ALIAS>`](#rtx-alias-get-plugin-alias)
   - [`rtx alias ls [OPTIONS]`](#rtx-alias-ls-options)
   - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
-  - [`rtx completion [OPTIONS] [SHELL_TYPE]`](#rtx-completion-options-shell_type)
+  - [`rtx completion [OPTIONS] [SHELL]`](#rtx-completion-options-shell)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
@@ -1406,7 +1406,7 @@ Usage: activate [OPTIONS] [SHELL_TYPE]
 Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
@@ -1516,37 +1516,29 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
-<<<<<<< Updated upstream
-### `rtx completion [OPTIONS] [SHELL_TYPE]`
-=======
-### `rtx completion [SHELL]`
->>>>>>> Stashed changes
+### `rtx completion [OPTIONS] [SHELL]`
 
 ```
 Generate shell completions
 
-<<<<<<< Updated upstream
-Usage: completion [OPTIONS] [SHELL_TYPE]
-=======
-Usage: completion [SHELL]
->>>>>>> Stashed changes
+Usage: completion [OPTIONS] [SHELL]
 
 Arguments:
   [SHELL]
           Shell type to generate completions for
-          
+
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Options:
   -s, --shell <SHELL>
           Shell type to generate completions for
-          
+
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Examples:
-  $ rtx completion -s bash > /etc/bash_completion.d/rtx
-  $ rtx completion -s zsh  > /usr/local/share/zsh/site-functions/_rtx
-  $ rtx completion -s fish > ~/.config/fish/completions/rtx.fish
+  $ rtx completion bash > /etc/bash_completion.d/rtx
+  $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
+  $ rtx completion fish > ~/.config/fish/completions/rtx.fish
 ```
 ### `rtx current [PLUGIN]`
 
@@ -1638,7 +1630,7 @@ Arguments:
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
@@ -1676,7 +1668,7 @@ Options:
 
       --cd <CD>
           Change to this directory before executing the command
-          
+
           [short aliases: C]
 
 Examples:
@@ -1883,7 +1875,7 @@ Options:
 
       --parseable
           Output in an easily parseable format
-          
+
           [short aliases: x]
 
       --json
@@ -2338,7 +2330,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-          
+
 
 Options:
       --plugin
