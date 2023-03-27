@@ -232,7 +232,7 @@ fn normalize_escape_sequences(input: &str) -> String {
                     }
                 },
                 None => {
-                    error!("Invalid escape sequence");
+                    warn!("Invalid escape sequence: {}", input);
                 }
             }
         } else {
@@ -247,6 +247,7 @@ fn normalize_escape_sequences(input: &str) -> String {
 mod tests {
     use indexmap::indexmap;
     use insta::assert_debug_snapshot;
+    use pretty_assertions::assert_str_eq;
 
     use crate::dirs;
 
@@ -341,10 +342,18 @@ mod tests {
             "TAB" => "\t",
             "VERTICAL_TAB" => "\u{0b}",
         }
-        .into_iter()
-        .map(|(k, v)| (k.into(), v.into()))
-        .collect::<Vec<(String, String)>>();
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect::<Vec<(String, String)>>();
         let ed = EnvDiff::from_bash_script(path.as_path(), orig).unwrap();
         assert_debug_snapshot!(ed);
+    }
+
+    #[test]
+    fn test_invalid_escape_sequence() {
+        let input = r#""\g""#;
+        let output = normalize_escape_sequences(input);
+        // just warns
+        assert_str_eq!(output, r#"\g"#);
     }
 }
