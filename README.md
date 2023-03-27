@@ -142,7 +142,7 @@ v18.15.0
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
-  - [`rtx completion [OPTIONS] [SHELL]`](#rtx-completion-options-shell)
+  - [`rtx completion [SHELL]`](#rtx-completion-shell)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
@@ -1406,7 +1406,7 @@ Usage: activate [OPTIONS] [SHELL_TYPE]
 Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
-
+          
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
@@ -1516,23 +1516,17 @@ Deletes all cache files in rtx
 
 Usage: clear
 ```
-### `rtx completion [OPTIONS] [SHELL]`
+### `rtx completion [SHELL]`
 
 ```
 Generate shell completions
 
-Usage: completion [OPTIONS] [SHELL]
+Usage: completion [SHELL]
 
 Arguments:
   [SHELL]
           Shell type to generate completions for
-
-          [possible values: bash, elvish, fish, powershell, zsh]
-
-Options:
-  -s, --shell <SHELL>
-          Shell type to generate completions for
-
+          
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Examples:
@@ -1630,7 +1624,7 @@ Arguments:
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
-
+          
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
@@ -1668,7 +1662,7 @@ Options:
 
       --cd <CD>
           Change to this directory before executing the command
-
+          
           [short aliases: C]
 
 Examples:
@@ -1875,7 +1869,7 @@ Options:
 
       --parseable
           Output in an easily parseable format
-
+          
           [short aliases: x]
 
       --json
@@ -2330,7 +2324,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-
+          
 
 Options:
       --plugin
