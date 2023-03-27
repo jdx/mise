@@ -17,7 +17,7 @@ mod asdf;
 mod bin_paths;
 mod cache;
 pub mod command;
-mod complete;
+mod completion;
 mod current;
 mod deactivate;
 mod direnv;
@@ -61,7 +61,7 @@ pub enum Commands {
     Asdf(asdf::Asdf),
     BinPaths(bin_paths::BinPaths),
     Cache(cache::Cache),
-    Complete(complete::Complete),
+    Completion(completion::Completion),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
@@ -102,7 +102,7 @@ impl Commands {
             Self::Asdf(cmd) => cmd.run(config, out),
             Self::BinPaths(cmd) => cmd.run(config, out),
             Self::Cache(cmd) => cmd.run(config, out),
-            Self::Complete(cmd) => cmd.run(config, out),
+            Self::Completion(cmd) => cmd.run(config, out),
             Self::Current(cmd) => cmd.run(config, out),
             Self::Deactivate(cmd) => cmd.run(config, out),
             Self::Direnv(cmd) => cmd.run(config, out),
