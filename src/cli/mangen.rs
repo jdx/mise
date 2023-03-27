@@ -34,7 +34,7 @@ mod tests {
     use crate::assert_cli_snapshot;
 
     #[test]
-    fn test_completion() {
+    fn test_complete() {
         assert_cli_snapshot!("mangen");
     }
 }
