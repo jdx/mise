@@ -13,6 +13,7 @@ custom_plugins=(
 	'("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
 	'("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
 	'("python", "https://github.com/rtx-plugins/rtx-python.git"),'
+	'("ruby",   "https://github.com/rtx-plugins/rtx-ruby.git"),'
 	'("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
 )
 
