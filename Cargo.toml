@@ -33,7 +33,7 @@ clap_complete = "4.1.4"
 clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
 console = "0.15.5"
-ctor = "0.1.26"
+ctor = "0.2.0"
 ctrlc = "3.2.5"
 dialoguer = { version = "0.10.3", features = [] }
 dirs-next = "2.0.0"
