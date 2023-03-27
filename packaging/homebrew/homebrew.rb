@@ -29,7 +29,7 @@ class Rtx < Formula
   def install
     bin.install "bin/rtx"
     man1.install "man/man1/rtx.1"
-    generate_completions_from_executable(bin/"rtx", "complete", "--shell")
+    generate_completions_from_executable(bin/"rtx", "completion")
   end
 
   test do

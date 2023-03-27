@@ -30,8 +30,8 @@ _rtx() {
             rtx,cache)
                 cmd="rtx__cache"
                 ;;
-            rtx,complete)
-                cmd="rtx__complete"
+            rtx,completion)
+                cmd="rtx__completion"
                 ;;
             rtx,current)
                 cmd="rtx__current"
@@ -243,8 +243,8 @@ _rtx() {
             rtx__help,cache)
                 cmd="rtx__help__cache"
                 ;;
-            rtx__help,complete)
-                cmd="rtx__help__complete"
+            rtx__help,completion)
+                cmd="rtx__help__completion"
                 ;;
             rtx__help,current)
                 cmd="rtx__help__current"
@@ -496,7 +496,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -931,8 +931,8 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtx__complete)
-            opts="-s -j -r -v -h --shell --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+        rtx__completion)
+            opts="-s -j -r -v -h --shell --debug --install-missing --jobs --log-level --raw --trace --verbose --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1320,7 +1320,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache complete current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1473,7 +1473,7 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtx__help__complete)
+        rtx__help__completion)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

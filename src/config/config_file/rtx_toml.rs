@@ -567,7 +567,7 @@ impl RtxToml {
     fn trust_check(&mut self) -> Result<()> {
         let default_cmd = String::new();
         let cmd = env::ARGS.get(1).unwrap_or(&default_cmd).as_str();
-        if self.is_trusted || cmd == "trust" || cmd == "complete" || cfg!(test) {
+        if self.is_trusted || cmd == "trust" || cmd == "completion" || cfg!(test) {
             return Ok(());
         }
         if console::user_attended_stderr() && cmd != "hook-env" {
