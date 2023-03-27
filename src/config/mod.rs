@@ -17,13 +17,12 @@ pub use settings::{MissingRuntimeBehavior, Settings};
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::env::CI;
-use crate::{cli, dirs, duration, env, file, hook_env};
-
 use crate::config::tracking::Tracker;
+use crate::env::CI;
 use crate::plugins::{Plugin, PluginName};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -71,19 +70,19 @@ impl Config {
         let config_filenames = load_config_filenames(&legacy_files);
         let config_track = track_config_files(&config_filenames);
 
-        let (config_files, should_exit_early) = rayon::join(
-            || {
-                load_all_config_files(
-                    &settings,
-                    &config_filenames,
-                    &plugins,
-                    &legacy_files,
-                    config_files,
-                )
-            },
-            || hook_env::should_exit_early(&config_filenames),
+        let config_files = load_all_config_files(
+            &settings,
+            &config_filenames,
+            &plugins,
+            &legacy_files,
+            config_files,
         );
         let config_files = config_files?;
+        let watch_files = config_files
+            .values()
+            .flat_map(|cf| cf.watch_files())
+            .collect_vec();
+        let should_exit_early = hook_env::should_exit_early(&watch_files);
 
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
