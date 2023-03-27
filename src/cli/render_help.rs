@@ -24,6 +24,7 @@ impl Command for RenderHelp {
         current_readme.next(); // discard existing commands
         doc.push_str(render_commands().as_str());
         doc.push_str(current_readme.next().unwrap());
+        doc = remove_trailing_spaces(&doc) + "\n";
         fs::write("README.md", &doc)?;
         Ok(())
     }
@@ -90,6 +91,13 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
         ```
         ",
     ))
+}
+
+fn remove_trailing_spaces(s: &str) -> String {
+    s.lines()
+        .map(|line| line.trim_end().to_string())
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 #[cfg(test)]

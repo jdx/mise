@@ -1406,7 +1406,7 @@ Usage: activate [OPTIONS] [SHELL_TYPE]
 Arguments:
   [SHELL_TYPE]
           Shell type to generate the script for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
@@ -1526,7 +1526,7 @@ Usage: completion [SHELL]
 Arguments:
   [SHELL]
           Shell type to generate completions for
-          
+
           [possible values: bash, elvish, fish, powershell, zsh]
 
 Examples:
@@ -1624,7 +1624,7 @@ Arguments:
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
-          
+
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
@@ -1662,7 +1662,7 @@ Options:
 
       --cd <CD>
           Change to this directory before executing the command
-          
+
           [short aliases: C]
 
 Examples:
@@ -1869,7 +1869,7 @@ Options:
 
       --parseable
           Output in an easily parseable format
-          
+
           [short aliases: x]
 
       --json
@@ -2324,7 +2324,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-          
+
 
 Options:
       --plugin
