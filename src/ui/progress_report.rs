@@ -121,3 +121,26 @@ impl ProgressReport {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_progress_report() {
+        let mut pr = ProgressReport::new(false);
+        pr.set_prefix("prefix".to_string());
+        assert_eq!(pr.prefix(), "prefix");
+        pr.set_message("message".to_string());
+        pr.finish_with_message("message".to_string());
+    }
+
+    #[test]
+    fn test_progress_report_verbose() {
+        let mut pr = ProgressReport::new(true);
+        pr.set_prefix("prefix".to_string());
+        assert_eq!(pr.prefix(), "prefix");
+        pr.set_message("message".to_string());
+        pr.finish_with_message("message".to_string());
+    }
+}
