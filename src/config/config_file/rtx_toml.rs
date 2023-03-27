@@ -25,6 +25,7 @@ pub struct RtxToml {
     context: Context,
     path: PathBuf,
     toolset: Toolset,
+    dotenv: Option<PathBuf>,
     env: HashMap<String, String>,
     path_dirs: Vec<PathBuf>,
     settings: SettingsBuilder,
@@ -95,10 +96,11 @@ impl RtxToml {
         match v.as_str() {
             Some(filename) => {
                 let path = self.path.parent().unwrap().join(filename);
-                for item in dotenvy::from_path_iter(path)? {
+                for item in dotenvy::from_path_iter(&path)? {
                     let (k, v) = item?;
                     self.env.insert(k, v);
                 }
+                self.dotenv = Some(path);
             }
             _ => parse_error!(k, v, "string")?,
         }
@@ -675,6 +677,13 @@ impl ConfigFile for RtxToml {
 
     fn aliases(&self) -> AliasMap {
         self.alias.clone()
+    }
+
+    fn watch_files(&self) -> Vec<PathBuf> {
+        match &self.dotenv {
+            Some(dotenv) => vec![self.path.clone(), dotenv.clone()],
+            None => vec![self.path.clone()],
+        }
     }
 }
 

@@ -141,8 +141,12 @@ impl HookEnv {
     }
 
     fn build_watch_operation(&self, config: &Config) -> Result<EnvDiffOperation> {
-        let config_filenames: Vec<_> = config.config_files.keys().cloned().collect();
-        let watches = hook_env::build_watches(&config_filenames)?;
+        let watch_files: Vec<_> = config
+            .config_files
+            .values()
+            .flat_map(|p| p.watch_files())
+            .collect();
+        let watches = hook_env::build_watches(&watch_files)?;
         Ok(EnvDiffOperation::Add(
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,

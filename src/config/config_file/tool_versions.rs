@@ -217,6 +217,10 @@ impl ConfigFile for ToolVersions {
     fn aliases(&self) -> AliasMap {
         AliasMap::default()
     }
+
+    fn watch_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 #[cfg(test)]
