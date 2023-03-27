@@ -1,4 +1,4 @@
-#!/usr/bin/fish
+#!/usr/bin/env fish
 
 # Print out list of asdf plugins sorted by number of stars. Full list is
 # persisted to stargazer_count.txt
