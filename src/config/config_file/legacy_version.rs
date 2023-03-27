@@ -76,6 +76,10 @@ impl ConfigFile for LegacyVersionFile {
     fn aliases(&self) -> AliasMap {
         AliasMap::default()
     }
+
+    fn watch_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 impl Display for LegacyVersionFile {

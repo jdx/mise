@@ -19,11 +19,11 @@ use crate::{dirs, env};
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(config_filenames: &[PathBuf]) -> bool {
+pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
     if env::ARGS.len() < 2 || env::ARGS[1] != "hook-env" {
         return false;
     }
-    let watch_files = get_watch_files(config_filenames);
+    let watch_files = get_watch_files(watch_files);
     match env::var("__RTX_WATCH") {
         Ok(raw) => {
             match deserialize_watches(raw) {
@@ -109,9 +109,9 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
-pub fn build_watches(config_filenames: &[PathBuf]) -> Result<HookEnvWatches> {
+pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
     let mut watches = IndexMap::new();
-    for cf in get_watch_files(config_filenames) {
+    for cf in get_watch_files(watch_files) {
         watches.insert(cf.clone(), cf.metadata()?.modified()?);
     }
 
@@ -121,12 +121,12 @@ pub fn build_watches(config_filenames: &[PathBuf]) -> Result<HookEnvWatches> {
     })
 }
 
-pub fn get_watch_files(config_filenames: &[PathBuf]) -> IndexSet<PathBuf> {
+pub fn get_watch_files(watch_files: &[PathBuf]) -> IndexSet<PathBuf> {
     let mut watches = IndexSet::new();
     if dirs::ROOT.exists() {
         watches.insert(dirs::ROOT.clone());
     }
-    for cf in config_filenames {
+    for cf in watch_files {
         watches.insert(cf.clone());
     }
 

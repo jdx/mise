@@ -43,6 +43,7 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn to_toolset(&self) -> &Toolset;
     fn settings(&self) -> SettingsBuilder;
     fn aliases(&self) -> AliasMap;
+    fn watch_files(&self) -> Vec<PathBuf>;
 }
 
 impl dyn ConfigFile {
