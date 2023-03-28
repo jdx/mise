@@ -402,7 +402,7 @@ fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> 
         .map(|tmpl| {
             let s = parse_template(config, tv, tmpl)?;
             let s = s.trim().to_string();
-            //trace!("cache key element: {} -> {}", tmpl, s);
+            trace!("cache key element: {} -> {}", tmpl.trim(), s);
             let mut s = hash_to_str(&s);
             s.truncate(10);
             Ok(s)
