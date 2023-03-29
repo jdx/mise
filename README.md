@@ -40,10 +40,12 @@ rtx 1.27.9
 
 Hook rtx into to your shell (pick the right one for your shell):
 
+> Note: requires rtx to be installed and in your PATH see [installation](#installation)
+
 ```sh-session
-echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
-echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
-echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
+echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
+echo 'eval "$(rtx activate zsh)"' >> ~/.zshrc
+echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
