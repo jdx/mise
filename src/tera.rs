@@ -49,5 +49,25 @@ pub fn get_tera(dir: &Path) -> Tera {
             _ => Err("hash input must be a string".into()),
         },
     );
+    tera.register_filter(
+        "last_modified",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s);
+                let metadata = p.metadata()?;
+                let modified = metadata.modified()?;
+                let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
+                Ok(Value::Number(modified.as_secs().into()))
+            }
+            _ => Err("hash input must be a string".into()),
+        },
+    );
+    tera.register_tester(
+        "file_exists",
+        move |input: Option<&Value>, _args: &[Value]| match input {
+            Some(Value::String(s)) => Ok(Path::new(s).exists()),
+            _ => Err("file_exists input must be a string".into()),
+        },
+    );
     tera
 }
