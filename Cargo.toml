@@ -26,14 +26,14 @@ path = "src/main.rs"
 #harness = false
 
 [dependencies]
-base64 = "<1"
+base64 = "<0.22"
 chrono = { version = "0.4.23", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.0.32", features = ["env", "derive", "string"] }
 clap_complete = "4.0.7"
 clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
 console = "0.15.2"
-ctor = "<1"
+ctor = "<0.3"
 ctrlc = "3.2.3"
 dialoguer = { version = "0.10.2", features = [] }
 dirs-next = "2.0.0"
@@ -52,7 +52,7 @@ lazy_static = "1.4.0"
 log = "0.4.17"
 num_cpus = "1.14.0"
 once_cell = "1.17.0"
-owo-colors = { version = "3.5.0" }
+owo-colors = "3.5.0"
 rayon = "1.6.1"
 regex = "1.7.1"
 reqwest = { version = "0.11.13", default-features = false, features = [
@@ -71,8 +71,8 @@ simplelog = { version = "0.12.0" }
 tera = { version = "1.12.1", default-features = false }
 terminal_size = "0.2.1"
 thiserror = "1.0.38"
-toml = "<1"
-toml_edit = "<1"
+toml = "<0.8"
+toml_edit = "<0.20"
 url = "2.3.1"
 versions = "4.1.0"
 
@@ -83,10 +83,8 @@ exec = "0.3.1"
 built = { version = "0.6.0", features = ["chrono", "git2"] }
 
 [dev-dependencies]
-env_logger = "0.10.0"
 insta = "1.26.0"
 pretty_assertions = "1.3.0"
-test-log = "0.2"
 
 [features]
 alpine = []
