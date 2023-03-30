@@ -143,8 +143,6 @@ static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use test_log::test;
-
     use crate::assert_cli;
     use crate::cli::tests::cli_run;
 

@@ -26,7 +26,6 @@ fn init() {
     env::set_var("RTX_DEFAULT_CONFIG_FILENAME", ".test.rtx.toml");
     env::set_var("RTX_MISSING_RUNTIME_BEHAVIOR", "autoinstall");
     //env::set_var("TERM", "dumb");
-    env_logger::init();
     reset_config();
     assert_cli!("trust");
     assert_cli!("install", "tiny@1", "tiny@2", "tiny@3", "tiny", "dummy");
