@@ -1,8 +1,6 @@
 use color_eyre::eyre::Result;
 use console::style;
 use indexmap::IndexMap;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -19,7 +17,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
 /// as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
     /// Prune only versions from these plugins
     #[clap()]
@@ -71,14 +69,13 @@ impl Prune {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx prune --dry-run
-      rm -rf ~/.local/share/rtx/versions/nodejs/18.0.0
-      rm -rf ~/.local/share/rtx/versions/nodejs/18.0.1
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx prune --dry-run</bold>
+  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.0
+  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.1
+"#
+);
 
 #[cfg(test)]
 mod tests {

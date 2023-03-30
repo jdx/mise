@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -18,7 +15,7 @@ use crate::shell::{get_shell, ShellType};
 /// Otherwise, it will only take effect in the current session.
 /// (e.g. ~/.bashrc)
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {
     /// Shell type to generate the script for
     #[clap(long, short, hide = true)]
@@ -52,12 +49,11 @@ impl Command for Activate {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-        eval "$(rtx activate bash)"
-        eval "$(rtx activate zsh)"
-        rtx activate fish | source
-        execx($(rtx activate xonsh))
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>eval "$(rtx activate bash)"</bold>
+  $ <bold>eval "$(rtx activate zsh)"</bold>
+  $ <bold>rtx activate fish | source</bold>
+  $ <bold>execx($(rtx activate xonsh))</bold>
+"#
+);

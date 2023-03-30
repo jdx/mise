@@ -1,7 +1,4 @@
 use color_eyre::eyre::{eyre, Result};
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
@@ -20,7 +17,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// This behavior can be modified in ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: nodejs, ruby
@@ -164,23 +161,22 @@ fn get_name_from_url(url: &str) -> Result<String> {
     Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # install the nodejs via shorthand
-      $ rtx plugins install nodejs
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # install the nodejs via shorthand
+  $ <bold>rtx plugins install nodejs</bold>
 
-      # install the nodejs plugin using a specific git url
-      $ rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git
+  # install the nodejs plugin using a specific git url
+  $ <bold>rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git</bold>
 
-      # install the nodejs plugin using the git url only
-      # (nodejs is inferred from the url)
-      $ rtx plugins install https://github.com/jdxcode/rtx-nodejs.git
+  # install the nodejs plugin using the git url only
+  # (nodejs is inferred from the url)
+  $ <bold>rtx plugins install https://github.com/jdxcode/rtx-nodejs.git</bold>
 
-      # install the nodejs plugin using a specific ref
-      $ rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git#v1.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+  # install the nodejs plugin using a specific ref
+  $ <bold>rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git#v1.0.0</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

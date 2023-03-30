@@ -2,11 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
-
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -18,7 +15,7 @@ use crate::output::Output;
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, clap::Args)]
-#[clap(alias = "l", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(alias = "l", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsLink {
     /// The name of the plugin
     /// e.g.: nodejs, ruby
@@ -70,16 +67,15 @@ fn get_name_from_path(path: &Path) -> String {
     name.to_string()
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # essentially just `ln -s ./rtx-nodejs ~/.local/share/rtx/plugins/nodejs`
-      $ rtx plugins link nodejs ./rtx-nodejs
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # essentially just `ln -s ./rtx-nodejs ~/.local/share/rtx/plugins/nodejs`
+  $ <bold>rtx plugins link nodejs ./rtx-nodejs</bold>
 
-      # infer plugin name as "nodejs"
-      $ rtx plugins link ./rtx-nodejs
-    "#, style("Examples:").bold().underlined()}
-});
+  # infer plugin name as "nodejs"
+  $ <bold>rtx plugins link ./rtx-nodejs</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

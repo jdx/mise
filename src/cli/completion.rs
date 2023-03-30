@@ -2,9 +2,6 @@ use std::io::Cursor;
 
 use clap_complete::generate;
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::cli::Cli;
@@ -13,7 +10,7 @@ use crate::output::Output;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
-#[clap(alias = "complete", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(alias = "complete", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Completion {
     /// Shell type to generate completions for
     #[clap()]
@@ -39,26 +36,10 @@ impl Command for Completion {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx completion bash > /etc/bash_completion.d/rtx
-      $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
-      $ rtx completion fish > ~/.config/fish/completions/rtx.fish
-    "#, style("Examples:").bold().underlined()}
-});
-
-// #[cfg(test)]
-// mod tests {
-//     use std::fs;
-//
-//     use insta::assert_snapshot;
-//
-//     use crate::{assert_cli, dirs};
-//
-//     #[test]
-//     fn test_completion() {
-//         let stdout = assert_cli!("completion", "-s", "zsh");
-//         assert_snapshot!(stdout);
-//     }
-// }
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx completion bash > /etc/bash_completion.d/rtx</bold>
+  $ <bold>rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx</bold>
+  $ <bold>rtx completion fish > ~/.config/fish/completions/rtx.fish</bold>
+"#
+);

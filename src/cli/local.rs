@@ -1,9 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, ContextCompat, Result};
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -22,7 +19,7 @@ use crate::{dirs, env, file};
 /// This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
 /// is set. A future v2 release of rtx will default to using `.rtx.toml`.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
     /// Runtimes to add to .tool-versions/.rtx.toml
     /// e.g.: nodejs@18
@@ -153,28 +150,27 @@ fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<
     Ok(())
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # set the current version of nodejs to 18.x for the current directory
-      # will use a precise version (e.g.: 18.0.0) in .tool-versions file
-      $ rtx local nodejs@18
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # set the current version of nodejs to 18.x for the current directory
+  # will use a precise version (e.g.: 18.0.0) in .tool-versions file
+  $ <bold>rtx local nodejs@18</bold>
 
-      # set nodejs to 18.x for the current project (recurses up to find .tool-versions)
-      $ rtx local -p nodejs@18
+  # set nodejs to 18.x for the current project (recurses up to find .tool-versions)
+  $ <bold>rtx local -p nodejs@18</bold>
 
-      # set the current version of nodejs to 18.x for the current directory
-      # will use a fuzzy version (e.g.: 18) in .tool-versions file
-      $ rtx local --fuzzy nodejs@18
+  # set the current version of nodejs to 18.x for the current directory
+  # will use a fuzzy version (e.g.: 18) in .tool-versions file
+  $ <bold>rtx local --fuzzy nodejs@18</bold>
 
-      # removes nodejs from .tool-versions
-      $ rtx local --remove=nodejs
+  # removes nodejs from .tool-versions
+  $ <bold>rtx local --remove=nodejs</bold>
 
-      # show the current version of nodejs in .tool-versions
-      $ rtx local nodejs
-      18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+  # show the current version of nodejs in .tool-versions
+  $ <bold>rtx local nodejs</bold>
+  18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {
@@ -200,6 +196,7 @@ mod tests {
             );
         });
     }
+
     #[test]
     fn test_local_pin() {
         run_test(|| {
@@ -211,6 +208,7 @@ mod tests {
             assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
         });
     }
+
     #[test]
     fn test_local_path() {
         run_test(|| {
@@ -219,6 +217,7 @@ mod tests {
             assert_str_eq!(grep(stdout, "dummy"), "dummy path:.");
         });
     }
+
     #[test]
     fn test_local_ref() {
         run_test(|| {
@@ -227,6 +226,7 @@ mod tests {
             assert_str_eq!(grep(stdout, "dummy"), "dummy ref:master");
         });
     }
+
     #[test]
     fn test_local_prefix() {
         run_test(|| {
@@ -235,6 +235,7 @@ mod tests {
             assert_str_eq!(grep(stdout, "dummy"), "dummy prefix:1");
         });
     }
+
     #[test]
     fn test_local_multiple_versions() {
         run_test(|| {
@@ -243,6 +244,7 @@ mod tests {
             assert_cli_snapshot!("bin-paths");
         });
     }
+
     #[test]
     fn test_local_output_current_version() {
         run_test(|| {
@@ -251,6 +253,7 @@ mod tests {
             assert_str_eq!(stdout, "2\n");
         });
     }
+
     #[test]
     fn test_local_invalid_multiple_plugins() {
         run_test(|| {
@@ -258,6 +261,7 @@ mod tests {
             assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
         });
     }
+
     #[test]
     fn test_local_invalid() {
         run_test(|| {
@@ -265,6 +269,7 @@ mod tests {
             assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
         });
     }
+
     #[test]
     fn test_local_alias_ref() {
         run_test(|| {
@@ -275,6 +280,7 @@ mod tests {
             assert_cli_snapshot!("current", "dummy");
         });
     }
+
     #[test]
     fn test_local_alias_path() {
         run_test(|| {
@@ -289,6 +295,7 @@ mod tests {
             assert_str_eq!(grep(stdout, "dummy"), "~/data/installs/dummy/1.1.0");
         });
     }
+
     #[test]
     fn test_local_alias_prefix() {
         run_test(|| {
@@ -299,6 +306,7 @@ mod tests {
             assert_cli_snapshot!("current", "dummy");
         });
     }
+
     #[test]
     fn test_local_alias_system() {
         run_test(|| {

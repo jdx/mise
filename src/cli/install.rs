@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -29,7 +27,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
     /// Runtime(s) to install
     /// e.g.: nodejs@18
@@ -202,15 +200,14 @@ impl Install {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx install nodejs@18.0.0  # install specific nodejs version
-      $ rtx install nodejs@18      # install fuzzy nodejs version
-      $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
-      $ rtx install                # installs all runtimes specified in .tool-versions or .rtx.toml
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx install nodejs@18.0.0</bold>  # install specific nodejs version
+  $ <bold>rtx install nodejs@18</bold>      # install fuzzy nodejs version
+  $ <bold>rtx install nodejs</bold>         # install version specified in .tool-versions or .rtx.toml
+  $ <bold>rtx install</bold>                # installs all runtimes specified in .tool-versions or .rtx.toml
+"#
+);
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
@@ -12,7 +9,7 @@ use crate::output::Output;
 ///
 /// This modifies the contents of ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
+#[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsUnset {
     /// The setting to remove
     pub key: String,
@@ -25,12 +22,11 @@ impl Command for SettingsUnset {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx settings unset legacy_version_file
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx settings unset legacy_version_file</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

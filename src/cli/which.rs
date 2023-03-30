@@ -1,17 +1,13 @@
 use color_eyre::eyre::{eyre, Result};
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 
 /// Shows the path that a bin name points to
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Which {
     #[clap()]
     pub bin_name: String,
@@ -46,17 +42,16 @@ impl Command for Which {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx which node
-      /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
-      $ rtx which node --plugin
-      nodejs
-      $ rtx which node --version
-      18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx which node</bold>
+  /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
+  $ <bold>rtx which node --plugin</bold>
+  nodejs
+  $ <bold>rtx which node --version</bold>
+  18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {
