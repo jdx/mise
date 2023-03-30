@@ -17,7 +17,7 @@ use crate::file::{create_dir_all, display_path, remove_all_with_warning};
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
 use crate::plugins::Script::{Download, ExecEnv, Install};
-use crate::plugins::{Plugin, Script, ScriptManager};
+use crate::plugins::{Plugin, Plugins, Script, ScriptManager};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolVersion, ToolVersionType};
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
@@ -28,7 +28,7 @@ use crate::{dirs, env, fake_asdf, file};
 #[derive(Debug, Clone)]
 pub struct RuntimeVersion {
     pub version: String,
-    pub plugin: Arc<Plugin>,
+    pub plugin: Arc<Plugins>,
     pub install_path: PathBuf,
     download_path: PathBuf,
     cache_path: PathBuf,
@@ -38,24 +38,24 @@ pub struct RuntimeVersion {
 }
 
 impl RuntimeVersion {
-    pub fn new(config: &Config, plugin: Arc<Plugin>, version: String, tv: ToolVersion) -> Self {
+    pub fn new(config: &Config, plugin: Arc<Plugins>, version: String, tv: ToolVersion) -> Self {
         let install_path = match &tv.r#type {
             ToolVersionType::Path(p) => p.clone(),
-            _ => dirs::INSTALLS.join(&plugin.name).join(&version),
+            _ => dirs::INSTALLS.join(plugin.name()).join(&version),
         };
         let download_path = match &tv.r#type {
             ToolVersionType::Path(p) => p.clone(),
-            _ => dirs::DOWNLOADS.join(&plugin.name).join(&version),
+            _ => dirs::DOWNLOADS.join(plugin.name()).join(&version),
         };
         let cache_path = match &tv.r#type {
-            ToolVersionType::Path(p) => dirs::CACHE.join(&plugin.name).join(hash_to_str(&p)),
-            _ => dirs::CACHE.join(&plugin.name).join(&version),
+            ToolVersionType::Path(p) => dirs::CACHE.join(plugin.name()).join(hash_to_str(&p)),
+            _ => dirs::CACHE.join(plugin.name()).join(&version),
         };
         let script_man = build_script_man(
             config,
             &tv,
             &version,
-            &plugin.plugin_path,
+            &plugin,
             &install_path,
             &download_path,
         );
@@ -79,44 +79,52 @@ impl RuntimeVersion {
     fn list_bin_paths_cache(
         config: &Config,
         tv: &ToolVersion,
-        plugin: &Arc<Plugin>,
+        plugin: &Arc<Plugins>,
         install_path: &Path,
         cache_path: &Path,
     ) -> Result<CacheManager<Vec<PathBuf>>> {
-        let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
-            Some(key) => {
-                let key = render_cache_key(config, tv, key)?;
-                let filename = format!("{}.msgpack.z", key);
-                cache_path.join("list_bin_paths").join(filename)
+        match plugin.as_ref() {
+            Plugins::External(plugin) => {
+                let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
+                    Some(key) => {
+                        let key = render_cache_key(config, tv, key)?;
+                        let filename = format!("{}.msgpack.z", key);
+                        cache_path.join("list_bin_paths").join(filename)
+                    }
+                    None => cache_path.join("list_bin_paths.msgpack.z"),
+                };
+                let cm = CacheManager::new(list_bin_paths_filename)
+                    .with_fresh_file(dirs::ROOT.clone())
+                    .with_fresh_file(plugin.plugin_path.clone())
+                    .with_fresh_file(install_path.to_path_buf());
+                Ok(cm)
             }
-            None => cache_path.join("list_bin_paths.msgpack.z"),
-        };
-        let cm = CacheManager::new(list_bin_paths_filename)
-            .with_fresh_file(dirs::ROOT.clone())
-            .with_fresh_file(plugin.plugin_path.clone())
-            .with_fresh_file(install_path.to_path_buf());
-        Ok(cm)
+        }
     }
     fn exec_env_cache(
         config: &Config,
         tv: &ToolVersion,
-        plugin: &Arc<Plugin>,
+        plugin: &Arc<Plugins>,
         install_path: &Path,
         cache_path: &Path,
     ) -> Result<CacheManager<HashMap<String, String>>> {
-        let exec_env_filename = match &plugin.toml.exec_env.cache_key {
-            Some(key) => {
-                let key = render_cache_key(config, tv, key)?;
-                let filename = format!("{}.msgpack.z", key);
-                cache_path.join("exec_env").join(filename)
+        match plugin.as_ref() {
+            Plugins::External(plugin) => {
+                let exec_env_filename = match &plugin.toml.exec_env.cache_key {
+                    Some(key) => {
+                        let key = render_cache_key(config, tv, key)?;
+                        let filename = format!("{}.msgpack.z", key);
+                        cache_path.join("exec_env").join(filename)
+                    }
+                    None => cache_path.join("exec_env.msgpack.z"),
+                };
+                let cm = CacheManager::new(exec_env_filename)
+                    .with_fresh_file(dirs::ROOT.clone())
+                    .with_fresh_file(plugin.plugin_path.clone())
+                    .with_fresh_file(install_path.to_path_buf());
+                Ok(cm)
             }
-            None => cache_path.join("exec_env.msgpack.z"),
-        };
-        let cm = CacheManager::new(exec_env_filename)
-            .with_fresh_file(dirs::ROOT.clone())
-            .with_fresh_file(plugin.plugin_path.clone())
-            .with_fresh_file(install_path.to_path_buf());
-        Ok(cm)
+        }
     }
 
     pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
@@ -201,8 +209,11 @@ impl RuntimeVersion {
     pub fn uninstall(&self, settings: &Settings, pr: &ProgressReport, dryrun: bool) -> Result<()> {
         pr.set_message(format!("uninstall {}", self));
 
-        if self.plugin.plugin_path.join("bin/uninstall").exists() {
-            self.script_man.run(settings, &Script::Uninstall)?;
+        #[allow(irrefutable_let_patterns)]
+        if let Plugins::External(plugin) = self.plugin.as_ref() {
+            if plugin.plugin_path.join("bin/uninstall").exists() {
+                self.script_man.run(settings, &Script::Uninstall)?;
+            }
         }
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -245,23 +256,27 @@ impl RuntimeVersion {
     }
 
     fn fetch_bin_paths(&self, settings: &Settings) -> Result<Vec<PathBuf>> {
-        let list_bin_paths = self.plugin.plugin_path.join("bin/list-bin-paths");
-        let bin_paths = if self.version == "system" {
-            Vec::new()
-        } else if list_bin_paths.exists() {
-            let output = self
-                .script_man
-                .cmd(settings, &Script::ListBinPaths)
-                .read()?;
-            output.split_whitespace().map(|f| f.to_string()).collect()
-        } else {
-            vec!["bin".into()]
-        };
-        let bin_paths = bin_paths
-            .into_iter()
-            .map(|path| self.install_path.join(path))
-            .collect();
-        Ok(bin_paths)
+        match self.plugin.as_ref() {
+            Plugins::External(plugin) => {
+                let list_bin_paths = plugin.plugin_path.join("bin/list-bin-paths");
+                let bin_paths = if self.version == "system" {
+                    Vec::new()
+                } else if list_bin_paths.exists() {
+                    let output = self
+                        .script_man
+                        .cmd(settings, &Script::ListBinPaths)
+                        .read()?;
+                    output.split_whitespace().map(|f| f.to_string()).collect()
+                } else {
+                    vec!["bin".into()]
+                };
+                let bin_paths = bin_paths
+                    .into_iter()
+                    .map(|path| self.install_path.join(path))
+                    .collect();
+                Ok(bin_paths)
+            }
+        }
     }
 
     fn create_install_dirs(&self) -> Result<()> {
@@ -318,13 +333,13 @@ impl RuntimeVersion {
 
 impl Display for RuntimeVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.plugin.name, self.version)
+        write!(f, "{}@{}", self.plugin.name(), self.version)
     }
 }
 
 impl PartialEq for RuntimeVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.plugin.name == other.plugin.name && self.version == other.version
+        self.plugin.name() == other.plugin.name() && self.version == other.version
     }
 }
 
@@ -332,11 +347,14 @@ fn build_script_man(
     config: &Config,
     tv: &ToolVersion,
     version: &str,
-    plugin_path: &Path,
+    plugin: &Plugins,
     install_path: &Path,
     download_path: &Path,
 ) -> ScriptManager {
-    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
+    let plugin_path = match plugin {
+        Plugins::External(plugin) => plugin.plugin_path.clone(),
+    };
+    let mut sm = ScriptManager::new(plugin_path.clone())
         .with_envs(env::PRISTINE_ENV.clone())
         .with_env("PATH".into(), fake_asdf::get_path_with_fake_asdf())
         .with_env(

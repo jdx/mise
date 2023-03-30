@@ -5,6 +5,7 @@ use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
@@ -59,12 +60,15 @@ fn list_versions(mut config: Config, out: &mut Output, args: &Vec<String>) -> Re
         _ => None,
     };
     if let Some(plugin) = plugin {
-        versions.retain(|v| &v.plugin.name == plugin);
+        versions.retain(|v| v.plugin.name() == plugin);
         for version in versions {
             rtxprintln!(out, "{}", version.version);
         }
     } else {
-        for (plugin, versions) in &versions.into_iter().group_by(|v| v.plugin.name.clone()) {
+        for (plugin, versions) in &versions
+            .into_iter()
+            .group_by(|v| v.plugin.name().to_string())
+        {
             rtxprintln!(out, "{}", plugin);
             for version in versions {
                 rtxprintln!(out, "  {}", version.version);

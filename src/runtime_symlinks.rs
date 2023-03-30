@@ -9,13 +9,13 @@ use itertools::Itertools;
 use regex::Regex;
 use versions::Version;
 
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, Plugins};
 
 pub fn rebuild_symlinks(config: &Config) -> Result<()> {
     for plugin in config.plugins.values() {
         remove_existing_symlinks(plugin)?;
         let symlinks = list_symlinks(config, plugin)?;
-        let installs_dir = dirs::INSTALLS.join(&plugin.name);
+        let installs_dir = dirs::INSTALLS.join(plugin.name());
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -27,7 +27,7 @@ pub fn rebuild_symlinks(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: &Plugin) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, plugin: &Plugins) -> Result<IndexMap<String, PathBuf>> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions(plugin)? {
@@ -46,7 +46,7 @@ fn list_symlinks(config: &Config, plugin: &Plugin) -> Result<IndexMap<String, Pa
         symlinks.insert("latest".into(), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(&plugin.name)
+            .get(plugin.name())
             .unwrap_or(&IndexMap::new())
         {
             if from.contains('/') {
@@ -65,7 +65,7 @@ fn list_symlinks(config: &Config, plugin: &Plugin) -> Result<IndexMap<String, Pa
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &Plugin) -> Result<Vec<String>> {
+fn installed_versions(plugin: &dyn Plugin) -> Result<Vec<String>> {
     let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
     let versions = plugin
         .list_installed_versions()?
@@ -75,8 +75,8 @@ fn installed_versions(plugin: &Plugin) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_existing_symlinks(plugin: &Plugin) -> Result<()> {
-    let installs_dir = dirs::INSTALLS.join(&plugin.name);
+fn remove_existing_symlinks(plugin: &Plugins) -> Result<()> {
+    let installs_dir = dirs::INSTALLS.join(plugin.name());
     if !installs_dir.exists() {
         return Ok(());
     }
@@ -103,14 +103,17 @@ mod tests {
     use insta::assert_debug_snapshot;
 
     use crate::config::Config;
-    use crate::plugins::PluginName;
+    use crate::plugins::{ExternalPlugin, PluginName};
 
     use super::*;
 
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = Plugin::new(&config.settings, &PluginName::from("tiny"));
+        let plugin = Plugins::External(ExternalPlugin::new(
+            &config.settings,
+            &PluginName::from("tiny"),
+        ));
         let symlinks = list_symlinks(&config, &plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }

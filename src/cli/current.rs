@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
@@ -24,7 +26,7 @@ impl Command for Current {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
-                Some(plugin) => self.one(ts, out, plugin),
+                Some(plugin) => self.one(ts, out, plugin.clone()),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
                     Ok(())
@@ -36,12 +38,12 @@ impl Command for Current {
 }
 
 impl Current {
-    fn one(&self, ts: Toolset, out: &mut Output, plugin: &Plugin) -> Result<()> {
+    fn one(&self, ts: Toolset, out: &mut Output, plugin: Arc<dyn Plugin>) -> Result<()> {
         if !plugin.is_installed() {
-            warn!("Plugin {} is not installed", plugin.name);
+            warn!("Plugin {} is not installed", plugin.name());
             return Ok(());
         }
-        match ts.list_versions_by_plugin().get(&plugin.name) {
+        match ts.list_versions_by_plugin().get(plugin.name()) {
             Some(versions) => {
                 rtxprintln!(
                     out,
@@ -54,7 +56,7 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", plugin.name);
+                warn!("Plugin {} does not have a version set", plugin.name());
             }
         };
         Ok(())
@@ -67,10 +69,12 @@ impl Current {
             }
             for rtv in &versions {
                 if !rtv.is_installed() {
-                    let source = ts.versions.get(&rtv.plugin.name).unwrap().source.clone();
+                    let source = ts.versions.get(rtv.plugin.name()).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        &rtv.plugin.name, &rtv.version, &source
+                        rtv.plugin.name(),
+                        &rtv.version,
+                        &source
                     );
                 }
             }

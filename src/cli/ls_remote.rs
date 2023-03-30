@@ -5,6 +5,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
+use crate::plugins::Plugin;
 
 /// List runtime versions available for install
 ///

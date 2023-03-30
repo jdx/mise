@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
@@ -104,7 +104,10 @@ impl Install {
                 for mut tv in tool_versions {
                     let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
                         Some(plugin) => plugin,
-                        None => Arc::new(Plugin::new(&config.settings, &tv.plugin_name)),
+                        None => Arc::new(Plugins::External(ExternalPlugin::new(
+                            &config.settings,
+                            &tv.plugin_name,
+                        ))),
                     };
                     if !plugin.is_installed() {
                         let mut pr = mpr.add();
