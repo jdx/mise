@@ -29,7 +29,7 @@ pub struct PluginsLsRemote {
 impl Command for PluginsLsRemote {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let installed_plugins = config
-            .plugins
+            .external_plugins()
             .values()
             .filter(|p| p.is_installed())
             .map(|p| p.name().clone())

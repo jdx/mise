@@ -1,10 +1,10 @@
-use std::sync::Arc;
-
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
+
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins;
 use crate::plugins::Plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -26,7 +26,7 @@ impl Command for Current {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
-                Some(plugin) => self.one(ts, out, plugin.clone()),
+                Some(plugin) => self.one(ts, out, plugin),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
                     Ok(())
@@ -38,10 +38,14 @@ impl Command for Current {
 }
 
 impl Current {
-    fn one(&self, ts: Toolset, out: &mut Output, plugin: Arc<dyn Plugin>) -> Result<()> {
-        if !plugin.is_installed() {
-            warn!("Plugin {} is not installed", plugin.name());
-            return Ok(());
+    fn one(&self, ts: Toolset, out: &mut Output, plugin: &plugins::Plugins) -> Result<()> {
+        match plugin {
+            plugins::Plugins::External(plugin) => {
+                if !plugin.is_installed() {
+                    warn!("Plugin {} is not installed", plugin.name());
+                    return Ok(());
+                }
+            }
         }
         match ts.list_versions_by_plugin().get(plugin.name()) {
             Some(versions) => {

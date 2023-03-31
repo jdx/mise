@@ -109,11 +109,15 @@ impl Install {
                             &tv.plugin_name,
                         ))),
                     };
-                    if !plugin.is_installed() {
-                        let mut pr = mpr.add();
-                        if let Err(err) = plugin.install(&config, &mut pr, false) {
-                            pr.error();
-                            return Err(err)?;
+                    match plugin.as_ref() {
+                        Plugins::External(plugin) => {
+                            if !plugin.is_installed() {
+                                let mut pr = mpr.add();
+                                if let Err(err) = plugin.install(&config, &mut pr, false) {
+                                    pr.error();
+                                    return Err(err)?;
+                                }
+                            }
                         }
                     }
                     tv.resolve(&config, plugin, ts.latest_versions)?;
