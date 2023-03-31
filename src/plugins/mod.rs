@@ -35,8 +35,6 @@ pub trait Plugin: Debug + Send + Sync {
     fn external_commands(&self) -> Result<Vec<Vec<String>>>;
     fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()>;
     fn decorate_progress_bar(&self, pr: &mut ProgressReport);
-    fn needs_autoupdate(&self, settings: &Settings) -> Result<bool>;
-    fn autoupdate(&self, _pr: &mut ProgressReport) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -136,16 +134,6 @@ impl Plugin for Plugins {
     fn decorate_progress_bar(&self, pr: &mut ProgressReport) {
         match self {
             Plugins::External(p) => p.decorate_progress_bar(pr),
-        }
-    }
-    fn needs_autoupdate(&self, settings: &Settings) -> Result<bool> {
-        match self {
-            Plugins::External(p) => p.needs_autoupdate(settings),
-        }
-    }
-    fn autoupdate(&self, pr: &mut ProgressReport) -> Result<()> {
-        match self {
-            Plugins::External(p) => p.autoupdate(pr),
         }
     }
 }
