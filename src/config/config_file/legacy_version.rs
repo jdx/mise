@@ -8,7 +8,7 @@ use color_eyre::eyre::Result;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Settings};
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{Plugin, PluginName, Plugins};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
 
 #[derive(Debug)]
@@ -18,11 +18,11 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Plugin) -> Result<Self> {
+    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Plugins) -> Result<Self> {
         let version = plugin.parse_legacy_file(path.as_path(), settings)?;
 
         Ok(Self {
-            toolset: build_toolset(&path, plugin.name.as_str(), version.as_str()),
+            toolset: build_toolset(&path, plugin.name().as_str(), version.as_str()),
             path,
         })
     }
@@ -102,12 +102,13 @@ fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugins::ExternalPlugin;
 
     #[test]
     fn test_legacy_file() {
         let settings = Settings::default();
         let path = PathBuf::from("tiny-legacy").join(".rtx-tiny-version");
-        let plugin = Plugin::new(&settings, &PluginName::from("tiny"));
+        let plugin = Plugins::External(ExternalPlugin::new(&settings, &PluginName::from("tiny")));
         let cf = LegacyVersionFile::parse(&settings, path, &plugin).unwrap();
         let tvl = cf.to_toolset().versions.get("tiny").unwrap();
         let version = match tvl.versions[0].r#type {

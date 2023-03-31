@@ -4,6 +4,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::config::Config;
+use crate::plugins::Plugin;
 
 pub fn commands(config: &Config) -> Vec<Command> {
     config
@@ -16,7 +17,8 @@ pub fn commands(config: &Config) -> Vec<Command> {
             Err(e) => {
                 warn!(
                     "failed to load external commands for plugin {}: {:#}",
-                    p.name, e
+                    p.name(),
+                    e
                 );
                 vec![]
             }

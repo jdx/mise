@@ -11,6 +11,7 @@ use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::git::Git;
 use crate::output::Output;
+use crate::plugins::{Plugin, Plugins};
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
 use crate::{cli, cmd};
@@ -46,7 +47,7 @@ impl Command for Doctor {
         let mut checks = Vec::new();
         for plugin in config.plugins.values() {
             if !plugin.is_installed() {
-                checks.push(format!("plugin {} is not installed", plugin.name));
+                checks.push(format!("plugin {} is not installed", plugin.name()));
                 continue;
             }
         }
@@ -110,10 +111,14 @@ fn render_plugins(config: &Config) -> String {
         .plugins
         .values()
         .filter(|p| p.is_installed())
+        .map(|p| match p.as_ref() {
+            Plugins::External(p) => p,
+            //_ => None,
+        })
         .collect::<Vec<_>>();
-    let max_plugin_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0) + 2;
+    let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;
     for p in plugins {
-        let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
+        let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
         let git = Git::new(p.plugin_path.clone());
         let si = match git.get_remote_url() {
             Some(url) => {

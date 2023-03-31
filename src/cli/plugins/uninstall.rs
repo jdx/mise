@@ -4,6 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes a plugin
