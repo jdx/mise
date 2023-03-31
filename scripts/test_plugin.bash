@@ -65,7 +65,7 @@ function check_plugin_from_file() {
   test -n "$README_LINE" ||
     fail "Expected a line at README.md with a link to ${PLUGIN_REPO_NO_GIT}"
 
-  BADGE_COLUMN="$(echo "${README_LINE}" | cut --delimiter='|' -f4)"
+  BADGE_COLUMN="$(echo "${README_LINE}" | cut -d '|' -f4)"
   BADGE_URL="$(echo "${BADGE_COLUMN}" | badge_svg)"
 
   # Assert that the badge has "pass" text in it, indicating the plugin is healthy
