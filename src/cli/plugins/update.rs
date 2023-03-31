@@ -4,7 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, PluginName};
 
 /// Updates a plugin to the latest version
 ///
@@ -14,7 +14,7 @@ use crate::plugins::Plugin;
 pub struct Update {
     /// Plugin(s) to update
     #[clap()]
-    plugin: Option<Vec<String>>,
+    plugin: Option<Vec<PluginName>>,
 
     /// Update all plugins
     #[clap(long, short = 'a', conflicts_with = "plugin", hide = true)]
@@ -31,16 +31,16 @@ impl Command for Update {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
-                    let plugin = config.plugins.get(p).ok_or_else(|| {
+                    let plugin = config.external_plugins().remove(p).ok_or_else(|| {
                         eyre!("plugin {} not found", style(p).cyan().for_stderr())
                     })?;
                     Ok((plugin, ref_))
                 })
                 .collect::<Result<_>>()?,
             None => config
-                .plugins
-                .values()
-                .map(|p| (p, None))
+                .external_plugins()
+                .into_iter()
+                .map(|(_, p)| (p, None))
                 .collect::<Vec<_>>(),
         };
 
