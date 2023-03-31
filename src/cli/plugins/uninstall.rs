@@ -34,7 +34,7 @@ impl PluginsUninstall {
         plugin_name: &String,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let plugin = config.plugins.get(plugin_name);
+        let plugin = config.external_plugins().remove(plugin_name);
         match plugin {
             Some(plugin) if plugin.is_installed() => {
                 let mut pr = mpr.add();
