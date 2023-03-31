@@ -17,7 +17,7 @@ use crate::env::PREFER_STALE;
 use crate::errors::Error::PluginNotInstalled;
 use crate::fake_asdf::get_path_with_fake_asdf;
 use crate::file::display_path;
-use crate::file::{remove_all, touch_dir};
+use crate::file::remove_all;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
@@ -572,22 +572,5 @@ impl Plugin for ExternalPlugin {
             style(&self.name).cyan().for_stderr()
         ));
         pr.enable_steady_tick();
-    }
-
-    fn needs_autoupdate(&self, settings: &Settings) -> Result<bool> {
-        if settings.plugin_autoupdate_last_check_duration == Duration::ZERO || !self.is_installed()
-        {
-            return Ok(false);
-        }
-        let updated_duration = self.plugin_path.metadata()?.modified()?.elapsed()?;
-        Ok(updated_duration > settings.plugin_autoupdate_last_check_duration)
-    }
-
-    fn autoupdate(&self, _pr: &mut ProgressReport) -> Result<()> {
-        trace!("autoupdate({})", self.name);
-        // TODO: implement
-        // pr.set_message("Checking for updates...".into());
-        touch_dir(&self.plugin_path)?;
-        Ok(())
     }
 }

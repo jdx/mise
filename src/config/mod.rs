@@ -10,7 +10,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 pub use settings::{MissingRuntimeBehavior, Settings};
 
@@ -21,7 +20,6 @@ use crate::config::tracking::Tracker;
 use crate::env::CI;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
 use crate::shorthands::{get_shorthands, Shorthands};
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
@@ -228,48 +226,6 @@ impl Config {
             return;
         }
         self.check_for_new_version();
-        let thread_pool = match ThreadPoolBuilder::new()
-            .num_threads(self.settings.jobs)
-            .build()
-        {
-            Ok(thread_pool) => thread_pool,
-            Err(err) => {
-                warn!("Error building thread pool: {:#}", err);
-                return;
-            }
-        };
-        if let Err(err) = thread_pool.install(|| -> Result<()> {
-            let plugins: Vec<Arc<Plugins>> = self
-                .plugins
-                .values()
-                .collect_vec()
-                .into_par_iter()
-                .filter(|p| match p.needs_autoupdate(&self.settings) {
-                    Ok(should_autoupdate) => should_autoupdate,
-                    Err(err) => {
-                        debug!("Error checking for autoupdate: {:#}", err);
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
-            if plugins.is_empty() {
-                return Ok(());
-            }
-            let mpr = MultiProgressReport::new(self.settings.verbose);
-            plugins
-                .into_par_iter()
-                .map(|plugin| {
-                    let mut pr = mpr.add();
-                    plugin.autoupdate(&mut pr)?;
-                    pr.clear();
-                    Ok(())
-                })
-                .collect::<Result<_>>()?;
-            Ok(())
-        }) {
-            warn!("Error autoupdating: {:#}", err);
-        }
     }
 
     pub fn check_for_new_version(&self) {
