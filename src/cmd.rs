@@ -11,6 +11,8 @@ use duct::{Expression, IntoExecutablePath};
 /// # Example
 ///
 /// ```
+///     use std::path::Path;
+///     use rtx::cmd;
 ///
 ///     let arg1 = "foo";
 ///     let arg2 = "bar".to_owned();
@@ -40,6 +42,8 @@ macro_rules! cmd {
 /// # Example
 ///
 /// ```
+///     use std::path::Path;
+///     use rtx::cmd;
 ///
 ///     let arg1 = "foo";
 ///     let arg2 = "bar".to_owned();

@@ -17,6 +17,15 @@ build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["xtask"]
+
+[lib]
+name = "rtx"
+path = "src/lib.rs"
+test = false
+doctest = false
+
 [[bin]]
 name = "rtx"
 path = "src/main.rs"
@@ -30,7 +39,6 @@ base64 = "<0.22"
 chrono = { version = "0.4.23", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.0.32", features = ["env", "derive", "string"] }
 clap_complete = "4.0.7"
-clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
 color-print = "0.3.4"
 console = "0.15.2"
