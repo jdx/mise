@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::PluginName;
+use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -38,7 +38,7 @@ impl Command for Prune {
             .collect::<IndexMap<String, RuntimeVersion>>();
 
         if let Some(plugins) = &self.plugins {
-            to_delete.retain(|_, rtv| plugins.contains(&rtv.plugin.name));
+            to_delete.retain(|_, rtv| plugins.contains(rtv.plugin.name()));
         }
 
         for cf in config.get_tracked_config_files()?.values() {

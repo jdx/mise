@@ -6,6 +6,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::shell::get_shell;
 use crate::toolset::{ToolSource, ToolsetBuilder};
 
@@ -37,9 +38,9 @@ impl Command for Shell {
         let shell = get_shell(None).expect("no shell detected");
 
         for rtv in ts.list_current_installed_versions() {
-            let source = &ts.versions.get(&rtv.plugin.name).unwrap().source;
+            let source = &ts.versions.get(rtv.plugin.name()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("RTX_{}_VERSION", rtv.plugin.name.to_uppercase());
+                let k = format!("RTX_{}_VERSION", rtv.plugin.name().to_uppercase());
                 let op = if self.unset {
                     shell.unset_env(&k)
                 } else {

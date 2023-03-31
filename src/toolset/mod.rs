@@ -22,7 +22,7 @@ pub use tool_version_list::ToolVersionList;
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::runtimes::RuntimeVersion;
 use crate::shims::reshim;
@@ -182,10 +182,12 @@ impl Toolset {
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         for plugin in &missing_plugins {
-            config
-                .plugins
-                .entry(plugin.clone())
-                .or_insert_with(|| Arc::new(Plugin::new(&config.settings, plugin)));
+            config.plugins.entry(plugin.clone()).or_insert_with(|| {
+                Arc::new(Plugins::External(ExternalPlugin::new(
+                    &config.settings,
+                    plugin,
+                )))
+            });
         }
         config.plugins.sort_keys();
         missing_plugins
@@ -218,7 +220,8 @@ impl Toolset {
             .map(|p| {
                 let versions = p.list_installed_versions()?;
                 Ok(versions.into_iter().map(|v| {
-                    let tv = ToolVersion::new(p.name.clone(), ToolVersionType::Version(v.clone()));
+                    let tv =
+                        ToolVersion::new(p.name().clone(), ToolVersionType::Version(v.clone()));
                     RuntimeVersion::new(config, p.clone(), v, tv)
                 }))
             })

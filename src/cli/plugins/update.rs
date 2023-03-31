@@ -4,6 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 
 /// Updates a plugin to the latest version
 ///
@@ -44,7 +45,7 @@ impl Command for Update {
         };
 
         for (plugin, ref_) in plugins {
-            rtxprintln!(out, "updating plugin {}", plugin.name);
+            rtxprintln!(out, "updating plugin {}", plugin.name());
             plugin.update(ref_)?;
         }
         Ok(())

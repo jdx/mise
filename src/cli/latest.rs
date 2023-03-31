@@ -5,6 +5,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion}
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 
 /// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
@@ -41,7 +42,7 @@ impl Command for Latest {
             )
         })?;
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(&plugin.name, &v)?);
+            prefix = Some(config.resolve_alias(plugin.name(), &v)?);
         }
 
         plugin.clear_remote_version_cache()?;

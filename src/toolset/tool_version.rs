@@ -10,7 +10,7 @@ use versions::{Chunk, Version};
 use crate::config::Config;
 use crate::dirs;
 
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, Plugins};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::runtimes::RuntimeVersion;
 use crate::ui::progress_report::ProgressReport;
@@ -46,7 +46,7 @@ impl ToolVersion {
     pub fn resolve(
         &mut self,
         config: &Config,
-        plugin: Arc<Plugin>,
+        plugin: Arc<Plugins>,
         latest_versions: bool,
     ) -> Result<()> {
         if self.rtv.is_none() {
@@ -66,11 +66,11 @@ impl ToolVersion {
     fn resolve_version(
         &self,
         config: &Config,
-        plugin: Arc<Plugin>,
+        plugin: Arc<Plugins>,
         v: &str,
         latest_versions: bool,
     ) -> Result<RuntimeVersion> {
-        let v = config.resolve_alias(&plugin.name, v)?;
+        let v = config.resolve_alias(plugin.name(), v)?;
         match v.split_once(':') {
             Some(("ref", r)) => {
                 return self.resolve_ref(config, plugin, r);
@@ -84,7 +84,7 @@ impl ToolVersion {
             _ => (),
         }
 
-        let existing_path = dirs::INSTALLS.join(&plugin.name).join(&v);
+        let existing_path = dirs::INSTALLS.join(plugin.name()).join(&v);
         if existing_path.exists() && !is_runtime_symlink(&existing_path) {
             // if the version is already installed, no need to fetch all the remote versions
             return Ok(self.build_rtv(config, plugin, &v));
@@ -122,13 +122,13 @@ impl ToolVersion {
     fn resolve_bang(
         &self,
         config: &Config,
-        plugin: Arc<Plugin>,
+        plugin: Arc<Plugins>,
         v: &str,
     ) -> Result<Option<RuntimeVersion>> {
         let (wanted, minus) = v.split_once("!-").unwrap();
         let wanted = match wanted {
             "latest" => plugin.latest_version(&config.settings, None)?.unwrap(),
-            _ => config.resolve_alias(&plugin.name, wanted)?,
+            _ => config.resolve_alias(plugin.name(), wanted)?,
         };
         let wanted = version_sub(&wanted, minus);
         match plugin.latest_version(&config.settings, Some(wanted))? {
@@ -140,7 +140,7 @@ impl ToolVersion {
     fn resolve_prefix(
         &self,
         config: &Config,
-        plugin: Arc<Plugin>,
+        plugin: Arc<Plugins>,
         prefix: &str,
     ) -> Result<RuntimeVersion> {
         let matches = plugin.list_versions_matching(&config.settings, prefix)?;
@@ -152,21 +152,26 @@ impl ToolVersion {
         Ok(self.build_rtv(config, plugin, v))
     }
 
-    fn resolve_ref(&self, config: &Config, plugin: Arc<Plugin>, r: &str) -> Result<RuntimeVersion> {
+    fn resolve_ref(
+        &self,
+        config: &Config,
+        plugin: Arc<Plugins>,
+        r: &str,
+    ) -> Result<RuntimeVersion> {
         Ok(self.build_rtv(config, plugin, &format!("ref-{}", r)))
     }
 
     fn resolve_path(
         &self,
         config: &Config,
-        plugin: Arc<Plugin>,
+        plugin: Arc<Plugins>,
         path: &PathBuf,
     ) -> Result<RuntimeVersion> {
         let path = fs::canonicalize(path)?;
         Ok(self.build_rtv(config, plugin, &path.display().to_string()))
     }
 
-    pub fn resolve_system(&self, config: &Config, plugin: Arc<Plugin>) -> RuntimeVersion {
+    pub fn resolve_system(&self, config: &Config, plugin: Arc<Plugins>) -> RuntimeVersion {
         self.build_rtv(config, plugin, "system")
     }
 
@@ -187,7 +192,7 @@ impl ToolVersion {
         }
     }
 
-    fn build_rtv(&self, config: &Config, plugin: Arc<Plugin>, v: &str) -> RuntimeVersion {
+    fn build_rtv(&self, config: &Config, plugin: Arc<Plugins>, v: &str) -> RuntimeVersion {
         RuntimeVersion::new(config, plugin, v.to_string(), self.clone())
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::plugins::Plugin;
+use crate::plugins::Plugins;
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::{ToolSource, ToolVersion};
 
@@ -22,7 +22,7 @@ impl ToolVersionList {
     pub fn add_version(&mut self, version: ToolVersion) {
         self.versions.push(version);
     }
-    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugin>, latest_versions: bool) {
+    pub fn resolve(&mut self, config: &Config, plugin: Arc<Plugins>, latest_versions: bool) {
         for tv in &mut self.versions {
             if let Err(err) = tv.resolve(config, plugin.clone(), latest_versions) {
                 warn!("failed to resolve tool version: {:#}", err);
@@ -43,7 +43,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::config::Config;
-    use crate::plugins::{Plugin, PluginName};
+    use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
     use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType};
 
     #[test]
@@ -51,10 +51,13 @@ mod tests {
         env::set_var("RTX_FAILURE", "1");
         let mut tvl = ToolVersionList::new(ToolSource::Argument);
         let settings = crate::config::Settings::default();
-        let plugin = Arc::new(Plugin::new(&settings, &PluginName::from("dummy")));
+        let plugin = Arc::new(Plugins::External(ExternalPlugin::new(
+            &settings,
+            &PluginName::from("dummy"),
+        )));
         plugin.clear_remote_version_cache().unwrap();
         tvl.add_version(ToolVersion::new(
-            plugin.name.to_string(),
+            plugin.name().to_string(),
             ToolVersionType::Version("1.0.0".to_string()),
         ));
         tvl.resolve(&Config::default(), plugin, false);
