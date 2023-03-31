@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 634] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 636] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -146,7 +146,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 634] = [
     ("djinni", "https://github.com/cross-language-cpp/asdf-djinni.git"),
     ("dmd", "https://github.com/sylph01/asdf-dmd.git"),
     ("docker-compose-v1", "https://github.com/kompiro/asdf-docker-compose-v1"),
-    ("docker-slim", "https://github.com/everpeace/asdf-docker-slim.git"),
+    ("docker-slim", "https://github.com/xataz/asdf-docker-slim.git"),
     ("dockle", "https://github.com/mathew-fleisch/asdf-dockle.git"),
     ("doctl", "https://github.com/maristgeek/asdf-doctl.git"),
     ("doctoolchain", "https://github.com/joschi/asdf-doctoolchain"),
@@ -319,7 +319,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 634] = [
     ("kompose", "https://github.com/technikhil314/asdf-kompose.git"),
     ("kops", "https://github.com/Antiarchitect/asdf-kops.git"),
     ("kotlin", "https://github.com/asdf-community/asdf-kotlin.git"),
-    ("kpack-cli", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
+    ("kp", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("kpt", "https://github.com/nlamirault/asdf-kpt.git"),
     ("krab", "https://github.com/ohkrab/asdf-krab.git"),
     ("krew", "https://github.com/jimmidyson/asdf-krew.git"),
@@ -542,7 +542,9 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 634] = [
     ("swiprolog", "https://github.com/mracos/asdf-swiprolog.git"),
     ("syft", "https://github.com/davidgp1701/asdf-syft.git"),
     ("syncher", "https://github.com/nwillc/syncher.git"),
+    ("talhelper", "https://github.com/bjw-s/asdf-talhelper"),
     ("talos", "https://github.com/particledecay/asdf-talos.git"),
+    ("talosctl", "https://github.com/bjw-s/asdf-talosctl"),
     ("tanka", "https://github.com/trotttrotttrott/asdf-tanka.git"),
     ("task", "https://github.com/particledecay/asdf-task.git"),
     ("tctl", "https://github.com/eko/asdf-tctl.git"),
