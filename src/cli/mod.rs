@@ -31,8 +31,6 @@ mod latest;
 mod local;
 mod ls;
 mod ls_remote;
-#[cfg(feature = "clap_mangen")]
-mod mangen;
 mod plugins;
 mod prune;
 #[cfg(debug_assertions)]
@@ -74,8 +72,6 @@ pub enum Commands {
     Local(local::Local),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
-    #[cfg(feature = "clap_mangen")]
-    Mangen(mangen::Mangen),
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
@@ -115,8 +111,6 @@ impl Commands {
             Self::Local(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
-            #[cfg(feature = "clap_mangen")]
-            Self::Mangen(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
@@ -207,6 +201,12 @@ impl Cli {
             external::execute(&config, command, sub_m, self.external_commands)?;
         }
         Commands::from_arg_matches(&matches)?.run(config, out)
+    }
+}
+
+impl Default for Cli {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
