@@ -4,6 +4,8 @@ use crate::cli::command::Command;
 use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
+use crate::plugins::Plugins;
 
 /// List installed plugins
 ///
@@ -32,14 +34,22 @@ impl Command for PluginsLs {
             .run(config, out);
         }
 
-        for plugin in config.plugins.values() {
-            if self.urls {
-                if let Some(url) = plugin.get_remote_url() {
-                    rtxprintln!(out, "{:29} {}", plugin.name, url);
-                    continue;
+        if self.urls {
+            for plugin in config.plugins.values() {
+                match plugin.as_ref() {
+                    Plugins::External(plugin) => {
+                        if let Some(url) = plugin.get_remote_url() {
+                            rtxprintln!(out, "{:29} {}", plugin.name, url);
+                            continue;
+                        }
+                    } //_ => {}
                 }
+                rtxprintln!(out, "{}", plugin.name());
             }
-            rtxprintln!(out, "{}", plugin.name);
+        } else {
+            for plugin in config.plugins.values() {
+                rtxprintln!(out, "{}", plugin.name());
+            }
         }
         Ok(())
     }

@@ -16,6 +16,7 @@ use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
+use crate::plugins::{Plugin, Plugins};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{dirs, file};
@@ -117,18 +118,20 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         }
     }
     for plugin in config.plugins.values() {
-        match plugin.plugin_path.join("shims").read_dir() {
-            Ok(files) => {
-                for bin in files {
-                    let bin = bin?;
-                    let bin_name = bin.file_name().into_string().unwrap();
-                    let symlink_path = shims_dir.join(bin_name);
-                    make_shim(&bin.path(), &symlink_path)?;
+        match plugin.as_ref() {
+            Plugins::External(plugin) => match plugin.plugin_path.join("shims").read_dir() {
+                Ok(files) => {
+                    for bin in files {
+                        let bin = bin?;
+                        let bin_name = bin.file_name().into_string().unwrap();
+                        let symlink_path = shims_dir.join(bin_name);
+                        make_shim(&bin.path(), &symlink_path)?;
+                    }
                 }
-            }
-            Err(_) => {
-                continue;
-            }
+                Err(_) => {
+                    continue;
+                }
+            },
         }
     }
 
@@ -169,7 +172,11 @@ fn err_no_version_set(bin_name: &str, rtvs: Vec<RuntimeVersion>) -> Result<()> {
     let mut msg = format!("No version is set for shim: {}\n", bin_name);
     msg.push_str("Set a global default version with one of the following:\n");
     for rtv in rtvs {
-        msg.push_str(&format!("rtx global {}@{}\n", rtv.plugin.name, rtv.version));
+        msg.push_str(&format!(
+            "rtx global {}@{}\n",
+            rtv.plugin.name(),
+            rtv.version
+        ));
     }
     Err(eyre!(msg.trim().to_string()))
 }

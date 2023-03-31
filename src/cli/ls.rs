@@ -15,7 +15,7 @@ use crate::config::Config;
 use crate::env::DUMB_TERMINAL;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::PluginName;
+use crate::plugins::{Plugin, PluginName};
 use crate::runtimes::RuntimeVersion;
 use crate::toolset::{ToolSource, ToolsetBuilder};
 
@@ -96,7 +96,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(rtv, _)| rtv.plugin.name.clone())
+            .group_by(|(rtv, _)| rtv.plugin.name().clone())
         {
             let runtimes = runtimes
                 .map(|(rtv, source)| JSONRuntime {
@@ -130,7 +130,7 @@ impl Ls {
                     // only displaying 1 plugin so only show the version
                     rtxprintln!(out, "{}", rtv.version);
                 } else {
-                    rtxprintln!(out, "{} {}", rtv.plugin.name, rtv.version);
+                    rtxprintln!(out, "{} {}", rtv.plugin.name(), rtv.version);
                 }
             });
         Ok(())
@@ -175,15 +175,15 @@ fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
         style(&rtv.version).dim().to_string()
     };
     let unstyled = if missing {
-        format!("{} {} (missing)", &rtv.plugin.name, &rtv.version)
+        format!("{} {} (missing)", &rtv.plugin.name(), &rtv.version)
     } else {
-        format!("{} {}", &rtv.plugin.name, &rtv.version)
+        format!("{} {}", &rtv.plugin.name(), &rtv.version)
     };
 
     let pad = max(0, 25 - unstyled.len() as isize) as usize;
     format!(
         "{} {}{}",
-        style(&rtv.plugin.name).cyan(),
+        style(&rtv.plugin.name()).cyan(),
         styled,
         " ".repeat(pad)
     )
@@ -198,16 +198,21 @@ fn get_runtime_list(
         .list_installed_versions(config)?
         .into_iter()
         .filter(|rtv| match plugin_flag {
-            Some(plugin) => rtv.plugin.name == *plugin,
+            Some(plugin) => rtv.plugin.name() == plugin,
             None => true,
         })
-        .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv))
+        .map(|rtv| ((rtv.plugin.name().clone(), rtv.version.clone()), rtv))
         .collect();
 
     let active = ts
         .list_current_versions()
         .into_iter()
-        .map(|rtv| ((rtv.plugin.name.clone(), rtv.version.clone()), rtv.clone()))
+        .map(|rtv| {
+            (
+                (rtv.plugin.name().clone(), rtv.version.clone()),
+                rtv.clone(),
+            )
+        })
         .collect::<HashMap<(PluginName, String), RuntimeVersion>>();
 
     versions.extend(
@@ -230,7 +235,7 @@ fn get_runtime_list(
             let source = match &active.get(&k) {
                 Some(rtv) => ts
                     .versions
-                    .get(&rtv.plugin.name)
+                    .get(rtv.plugin.name())
                     .map(|tv| tv.source.clone()),
                 None => None,
             };
