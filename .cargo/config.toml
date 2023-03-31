@@ -1,2 +1,4 @@
 [env]
 RUST_TEST_THREADS = '1'
+[alias]
+xtask = "run -p xtask --"

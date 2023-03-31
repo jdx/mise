@@ -93,9 +93,6 @@ _rtx() {
             rtx,ls-remote)
                 cmd="rtx__ls__remote"
                 ;;
-            rtx,mangen)
-                cmd="rtx__mangen"
-                ;;
             rtx,p)
                 cmd="rtx__plugins"
                 ;;
@@ -290,9 +287,6 @@ _rtx() {
                 ;;
             rtx__help,ls-remote)
                 cmd="rtx__help__ls__remote"
-                ;;
-            rtx__help,mangen)
-                cmd="rtx__help__mangen"
                 ;;
             rtx__help,plugins)
                 cmd="rtx__help__plugins"
@@ -496,7 +490,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1320,7 +1314,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote mangen plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1726,20 +1720,6 @@ _rtx() {
             return 0
             ;;
         rtx__help__ls__remote)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtx__help__mangen)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2247,32 +2227,6 @@ _rtx() {
             ;;
         rtx__ls__remote)
             opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN> [PREFIX]"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtx__mangen)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
