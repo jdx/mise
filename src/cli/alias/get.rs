@@ -1,7 +1,4 @@
 use color_eyre::eyre::{eyre, Result};
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -12,7 +9,7 @@ use crate::output::Output;
 /// This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
 ///
 #[derive(Debug, clap::Args)]
-#[clap(after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
+#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasGet {
     /// The plugin to show the alias for
     pub plugin: String,
@@ -32,13 +29,12 @@ impl Command for AliasGet {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx alias get nodejs lts/hydrogen
-      18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+ $ <bold>rtx alias get nodejs lts/hydrogen</bold>
+ 18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {

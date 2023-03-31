@@ -1,18 +1,14 @@
 use color_eyre::eyre::Result;
 use console::style;
 
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
-
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsUninstall {
     /// Plugin(s) to remove
     #[clap(required = true, verbatim_doc_comment)]
@@ -56,9 +52,8 @@ impl PluginsUninstall {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx uninstall nodejs
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx uninstall nodejs</bold>
+"#
+);

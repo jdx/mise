@@ -1,26 +1,24 @@
+use std::fmt::Write;
+use std::process::exit;
+
 use color_eyre::eyre::Result;
 use console::{pad_str, style, Alignment};
 use indenter::indented;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
-use std::fmt::Write;
-use std::process::exit;
 
 use crate::build_time::built_info;
 use crate::cli::command::Command;
 use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::git::Git;
-use crate::{cli, cmd};
-use crate::{duration, env};
-
 use crate::output::Output;
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
+use crate::{cli, cmd};
+use crate::{duration, env};
 
 /// Check rtx installation for possible problems.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {}
 
 impl Command for Doctor {
@@ -173,10 +171,9 @@ fn indent(s: String) -> String {
     out
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx doctor
-      [WARN] plugin nodejs is not installed
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx doctor</bold>
+  [WARN] plugin nodejs is not installed
+"#
+);

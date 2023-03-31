@@ -1,7 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -13,7 +12,7 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// this requires that the shims_dir is set
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Reshim {
     #[clap(hide = true)]
     pub plugin: Option<String>,
@@ -43,13 +42,12 @@ fn err_experimental() -> Result<()> {
     )))
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx settings set experimental true
-      $ rtx settings set shims_dir ~/.rtx/shims
-      $ rtx reshim
-      $ ~/.rtx/shims/node -v
-      v18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx settings set experimental true</bold>
+  $ <bold>rtx settings set shims_dir ~/.rtx/shims</bold>
+  $ <bold>rtx reshim</bold>
+  $ <bold>~/.rtx/shims/node -v</bold>
+  v18.0.0
+"#
+);

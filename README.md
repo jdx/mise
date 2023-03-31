@@ -1414,10 +1414,10 @@ Options:
           Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
 Examples:
-    eval "$(rtx activate bash)"
-    eval "$(rtx activate zsh)"
-    rtx activate fish | source
-    execx($(rtx activate xonsh))
+  $ eval "$(rtx activate bash)"
+  $ eval "$(rtx activate zsh)"
+  $ rtx activate fish | source
+  $ execx($(rtx activate xonsh))
 ```
 ### `rtx alias get <PLUGIN> <ALIAS>`
 
@@ -1436,8 +1436,8 @@ Arguments:
           The alias to show
 
 Examples:
-  $ rtx alias get nodejs lts/hydrogen
-  18.0.0
+ $ rtx alias get nodejs lts/hydrogen
+ 18.0.0
 ```
 ### `rtx alias ls [OPTIONS]`
 
@@ -1666,14 +1666,14 @@ Options:
           [short aliases: C]
 
 Examples:
-  rtx exec nodejs@18 -- node ./app.js  # launch app.js using node-18.x
-  rtx x nodejs@18 -- node ./app.js     # shorter alias
+  $ rtx exec nodejs@18 -- node ./app.js  # launch app.js using node-18.x
+  $ rtx x nodejs@18 -- node ./app.js     # shorter alias
 
   # Specify command as a string:
-  rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
+  $ rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
 
   # Run a command in a different directory:
-  rtx x -C /path/to/project nodejs@18 -- node ./app.js
+  $ rtx x -C /path/to/project nodejs@18 -- node ./app.js
 ```
 ### `rtx global [OPTIONS] [RUNTIME]...`
 
@@ -2260,10 +2260,10 @@ Options:
 
 Examples:
   # trusts ~/some_dir/.rtx.toml
-  rtx trust ~/some_dir/.rtx.toml
+  $ rtx trust ~/some_dir/.rtx.toml
 
   # trusts .rtx.toml in the current or parent directory
-  rtx trust
+  $ rtx trust
 ```
 ### `rtx uninstall <RUNTIME>...`
 

@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
@@ -14,7 +11,7 @@ use crate::output::Output;
 /// note that these versions are cached for commands like `rtx install nodejs@latest`
 /// however _this_ command will always clear that cache and fetch the latest remote versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str(), aliases = ["list-all", "list-remote"])]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_parser = RuntimeArgParser)]
@@ -56,26 +53,24 @@ impl Command for LsRemote {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx ls-remote nodejs
-      18.0.0
-      20.0.0
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx ls-remote nodejs</bold>
+  18.0.0
+  20.0.0
 
-      $ rtx ls-remote nodejs@18
-      18.0.0
-      18.1.0
+  $ <bold>rtx ls-remote nodejs@18</bold>
+  18.0.0
+  18.1.0
 
-      $ rtx ls-remote nodejs 18
-      18.0.0
-      18.1.0
-    "#, style("Examples:").bold().underlined()}
-});
+  $ <bold>rtx ls-remote nodejs 18</bold>
+  18.0.0
+  18.1.0
+"#
+);
 
 #[cfg(test)]
 mod tests {
-
     use crate::assert_cli_snapshot;
 
     #[test]

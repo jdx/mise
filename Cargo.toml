@@ -32,6 +32,7 @@ clap = { version = "4.0.32", features = ["env", "derive", "string"] }
 clap_complete = "4.0.7"
 clap_mangen = { version = "0.2.9", optional = true }
 color-eyre = "0.6.2"
+color-print = "0.3.4"
 console = "0.15.2"
 ctor = "<0.3"
 ctrlc = "3.2.3"

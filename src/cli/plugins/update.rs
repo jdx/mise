@@ -1,7 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -11,7 +9,7 @@ use crate::output::Output;
 ///
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP)]
 pub struct Update {
     /// Plugin(s) to update
     #[clap()]
@@ -53,18 +51,16 @@ impl Command for Update {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx plugins update              # update all plugins
-      $ rtx plugins update nodejs       # update only nodejs
-      $ rtx plugins update nodejs@beta  # specify a ref
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx plugins update</bold>              # update all plugins
+  $ <bold>rtx plugins update nodejs</bold>       # update only nodejs
+  $ <bold>rtx plugins update nodejs@beta</bold>  # specify a ref
+"#
+);
 
 #[cfg(test)]
 mod tests {
-
     use crate::assert_cli;
 
     #[test]
