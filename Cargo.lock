@@ -1599,7 +1599,6 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "clap_mangen",
  "color-eyre",
  "color-print",
  "console",
@@ -2661,6 +2660,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "clap_mangen",
+ "color-eyre",
+ "rtx-cli",
 ]
 
 [[package]]

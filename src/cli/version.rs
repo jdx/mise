@@ -33,9 +33,9 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
         "{} {}-{} ({} {})",
         if cfg!(debug_assertions) {
-            format!("{}-DEBUG", env!("CARGO_PKG_VERSION"))
+            format!("{}-DEBUG", *RAW_VERSION)
         } else {
-            env!("CARGO_PKG_VERSION").to_string()
+            RAW_VERSION.clone()
         },
         *OS,
         *ARCH,
@@ -43,6 +43,8 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
         BUILD_TIME.format("%Y-%m-%d"),
     )
 });
+
+pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
 
 impl Command for Version {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {

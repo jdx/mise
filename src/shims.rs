@@ -22,6 +22,7 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
+#[allow(dead_code)]
 pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Result<Config> {
     let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
     if bin_name == "rtx" || !config.settings.experimental {

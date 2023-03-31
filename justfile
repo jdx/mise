@@ -12,7 +12,7 @@ alias b := test
 
 # just `cargo build`
 build *args:
-    cargo build --all-features {{ args }}
+    cargo build {{ args }}
 
 alias t := test
 
@@ -21,11 +21,11 @@ test *args: (test-unit args) test-e2e lint
 
 # update all test snapshot files
 test-update-snapshots:
-    cargo insta test --accept --all-features
+    cargo insta test --accept
 
 # run the rust "unit" tests
 test-unit *args:
-    cargo test --all-features {{ args }}
+    cargo test {{ args }}
 
 # runs the E2E tests in ./e2e
 test-e2e: build
@@ -44,7 +44,7 @@ test-coverage:
 
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
-    cargo test --all-features
+    cargo test
     cargo build --all-features
     ./e2e/run_all_tests
     rtx trust
@@ -68,7 +68,7 @@ clean:
 
 # clippy, cargo fmt --check, and just --fmt
 lint:
-    cargo clippy --all-features
+    cargo clippy
     cargo fmt --all -- --check
     shellcheck scripts/*.sh
     shfmt -d scripts/*.sh
@@ -76,7 +76,7 @@ lint:
 
 # runs linters but makes fixes when possible
 lint-fix:
-    cargo clippy --all-features --fix --allow-staged --allow-dirty
+    cargo clippy --fix --allow-staged --allow-dirty
     cargo fmt --all
     shellcheck scripts/*.sh
     shfmt -w scripts/*.sh
@@ -94,8 +94,8 @@ render-completions: build
     NO_COLOR=1 rtx completion fish > completions/rtx.fish
 
 # regenerate manpages
-render-mangen: build
-    NO_COLOR=1 rtx mangen
+render-mangen:
+    NO_COLOR=1 cargo xtask mangen
 
 # called by lefthook precommit hook
 pre-commit: render-help render-completions render-mangen
