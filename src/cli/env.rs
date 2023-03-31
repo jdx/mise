@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -15,7 +12,7 @@ use crate::toolset::ToolsetBuilder;
 /// Use this if you don't want to permanently install rtx. It's not necessary to
 /// use this if you have `rtx activate` in your shell rc file.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Env {
     /// Shell type to generate environment variables for
     #[clap(long, short)]
@@ -45,15 +42,14 @@ impl Command for Env {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ eval "$(rtx env -s bash)"
-      $ eval "$(rtx env -s zsh)"
-      $ rtx env -s fish | source
-      $ execx($(rtx env -s xonsh))
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>eval "$(rtx env -s bash)"</bold>
+  $ <bold>eval "$(rtx env -s zsh)"</bold>
+  $ <bold>rtx env -s fish | source</bold>
+  $ <bold>execx($(rtx env -s xonsh))</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

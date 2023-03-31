@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use console::style;
 use indexmap::IndexMap;
-use indoc::formatdoc;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use owo_colors::OwoColorize;
 use serde_derive::Serialize;
 use versions::Versioning;
@@ -26,7 +24,7 @@ use crate::toolset::{ToolSource, ToolsetBuilder};
 /// The "arrow (->)" indicates the runtime is installed, active, and will be used for running commands.
 /// (Assuming `rtx activate` or `rtx env` is in use).
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
     /// Only show runtimes from [PLUGIN]
     #[clap(long, short)]
@@ -243,44 +241,44 @@ fn get_runtime_list(
     Ok(rvs)
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx ls
-      ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-      ⏵  python     3.11.0 (set by ~/.tool-versions)
-         python     3.10.0
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx ls</bold>
+  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  python     3.11.0 (set by ~/.tool-versions)
+     python     3.10.0
 
-      $ rtx ls --current
-      ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
-      ⏵  python     3.11.0 (set by ~/.tool-versions)
+  $ <bold>rtx ls --current</bold>
+  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  python     3.11.0 (set by ~/.tool-versions)
 
-      $ rtx ls --parseable
-      nodejs 18.0.0
-      python 3.11.0
+  $ <bold>rtx ls --parseable</bold>
+  nodejs 18.0.0
+  python 3.11.0
 
-      $ rtx ls --json
-      {{
-        "nodejs": [
-          {{
-            "version": "18.0.0",
-            "install_path": "/Users/jdx/.rtx/installs/nodejs/18.0.0",
-            "source": {{
-              "type": ".rtx.toml",
-              "path": "/Users/jdx/.rtx.toml"
-            }}
-          }}
-        ],
-        "python": [...]
-      }}
-    "#, style("Examples:").bold().underlined()}
-});
+  $ <bold>rtx ls --json</bold>
+  {
+    "nodejs": [
+      {
+        "version": "18.0.0",
+        "install_path": "/Users/jdx/.rtx/installs/nodejs/18.0.0",
+        "source": {
+          "type": ".rtx.toml",
+          "path": "/Users/jdx/.rtx.toml"
+        }
+      }
+    ],
+    "python": [...]
+  }
+"#
+);
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
+
     use crate::file::remove_all;
     use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_ls() {

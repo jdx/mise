@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -23,7 +20,7 @@ use crate::{dirs, env};
 ///
 /// Use `rtx local` to set a runtime version locally in the current directory.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
     /// Runtime(s) to add to .tool-versions
     /// e.g.: nodejs@18
@@ -78,22 +75,21 @@ fn global_file() -> PathBuf {
     })
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # set the current version of nodejs to 18.x
-      # will use a fuzzy version (e.g.: 18) in .tool-versions file
-      $ rtx global --fuzzy nodejs@18
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # set the current version of nodejs to 18.x
+  # will use a fuzzy version (e.g.: 18) in .tool-versions file
+  $ <bold>rtx global --fuzzy nodejs@18</bold>
 
-      # set the current version of nodejs to 18.x
-      # will use a precise version (e.g.: 18.0.0) in .tool-versions file
-      $ rtx global --pin nodejs@18
+  # set the current version of nodejs to 18.x
+  # will use a precise version (e.g.: 18.0.0) in .tool-versions file
+  $ <bold>rtx global --pin nodejs@18</bold>
 
-      # show the current version of nodejs in ~/.tool-versions
-      $ rtx global nodejs
-      18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+  # show the current version of nodejs in ~/.tool-versions
+  $ <bold>rtx global nodejs</bold>
+  18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {

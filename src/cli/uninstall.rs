@@ -1,7 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -12,7 +10,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Runtime(s) to remove
     #[clap(required = true, value_parser = RuntimeArgParser)]
@@ -46,10 +44,9 @@ impl Command for Uninstall {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx uninstall nodejs@18.0.0 # will uninstall specific version
-      $ rtx uninstall nodejs        # will uninstall current nodejs version
-    "#, style("Examples:").underlined().bold()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx uninstall nodejs@18.0.0</bold> # will uninstall specific version
+  $ <bold>rtx uninstall nodejs</bold>        # will uninstall current nodejs version
+"#
+);

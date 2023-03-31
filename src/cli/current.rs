@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -14,7 +11,7 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 /// This is similar to `rtx ls --current`, but this only shows the runtime
 /// and/or version. It's designed to fit into scripts more easily.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Current {
     /// Plugin to show versions of
     /// e.g.: ruby, nodejs
@@ -92,24 +89,23 @@ impl Current {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # outputs `.tool-versions` compatible format
-      $ rtx current
-      python 3.11.0 3.10.0
-      shfmt 3.6.0
-      shellcheck 0.9.0
-      nodejs 18.13.0
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # outputs `.tool-versions` compatible format
+  $ <bold>rtx current</bold>
+  python 3.11.0 3.10.0
+  shfmt 3.6.0
+  shellcheck 0.9.0
+  nodejs 18.13.0
 
-      $ rtx current nodejs
-      18.13.0
+  $ <bold>rtx current nodejs</bold>
+  18.13.0
 
-      # can output multiple versions
-      $ rtx current python
-      3.11.0 3.10.0
-    "#, style("Examples:").bold().underlined()}
-});
+  # can output multiple versions
+  $ <bold>rtx current python</bold>
+  3.11.0 3.10.0
+"#
+);
 
 #[cfg(test)]
 mod tests {

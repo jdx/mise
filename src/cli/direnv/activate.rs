@@ -1,8 +1,5 @@
-use console::style;
-
 use color_eyre::eyre::Result;
-use indoc::{formatdoc, indoc};
-use once_cell::sync::Lazy;
+use indoc::indoc;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -16,7 +13,7 @@ use crate::output::Output;
 /// you should run this command after installing new plugins. Otherwise
 /// direnv may not know to update environment variables when legacy file versions change.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct DirenvActivate {}
 
 impl Command for DirenvActivate {
@@ -36,11 +33,10 @@ impl Command for DirenvActivate {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
-      $ echo 'use rtx' > .envrc
-      $ direnv allow
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh</bold>
+  $ <bold>echo 'use rtx' > .envrc</bold>
+  $ <bold>direnv allow</bold>
+"#
+);

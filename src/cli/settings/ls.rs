@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -14,7 +11,7 @@ use crate::output::Output;
 /// Note that aliases are also stored in this file
 /// but managed separately with `rtx aliases`
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
+#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {}
 
 impl Command for SettingsLs {
@@ -26,13 +23,12 @@ impl Command for SettingsLs {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx settings
-      legacy_version_file = false
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx settings</bold>
+  legacy_version_file = false
+"#
+);
 
 #[cfg(test)]
 mod tests {

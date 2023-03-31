@@ -1,13 +1,10 @@
 use color_eyre::eyre::{eyre, Result};
-
 use console::style;
 use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-
 use crate::output::Output;
 use crate::shell::get_shell;
 use crate::toolset::{ToolSource, ToolsetBuilder};
@@ -16,7 +13,7 @@ use crate::toolset::{ToolSource, ToolsetBuilder};
 ///
 /// Only works in a session where rtx is already activated.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Runtime version(s) to use
     #[clap(value_parser = RuntimeArgParser)]
@@ -66,19 +63,19 @@ fn err_inactive() -> Result<()> {
     )))
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx shell nodejs@18
-      $ node -v
-      v18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx shell nodejs@18</bold>
+  $ <bold>node -v</bold>
+  v18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
     use std::env;
+
+    use insta::assert_display_snapshot;
 
     use crate::{assert_cli_err, assert_cli_snapshot};
 

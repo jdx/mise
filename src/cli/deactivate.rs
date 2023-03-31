@@ -1,7 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -13,7 +12,7 @@ use crate::shell::get_shell;
 ///
 /// This can be used to temporarily disable rtx in a shell session.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Deactivate {}
 
 impl Command for Deactivate {
@@ -42,15 +41,14 @@ fn err_inactive() -> Result<()> {
     )))
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx deactivate bash
-      $ rtx deactivate zsh
-      $ rtx deactivate fish
-      $ execx($(rtx deactivate xonsh))
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx deactivate bash</bold>
+  $ <bold>rtx deactivate zsh</bold>
+  $ <bold>rtx deactivate fish</bold>
+  $ <bold>execx($(rtx deactivate xonsh))</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

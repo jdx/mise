@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
@@ -14,7 +11,7 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// Must be installed.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Where {
     /// Runtime(s) to look up
     /// e.g.: ruby@3
@@ -59,20 +56,19 @@ impl Command for Where {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      # Show the latest installed version of nodejs
-      # If it is is not installed, errors
-      $ rtx where nodejs@18
-      /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  # Show the latest installed version of nodejs
+  # If it is is not installed, errors
+  $ <bold>rtx where nodejs@18</bold>
+  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
 
-      # Show the current, active install directory of nodejs
-      # Errors if nodejs is not referenced in any .tool-version file
-      $ rtx where nodejs
-      /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+  # Show the current, active install directory of nodejs
+  # Errors if nodejs is not referenced in any .tool-version file
+  $ <bold>rtx where nodejs</bold>
+  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {
