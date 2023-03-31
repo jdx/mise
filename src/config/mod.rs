@@ -140,6 +140,16 @@ impl Config {
         Ok(v.to_string())
     }
 
+    pub fn external_plugins(&self) -> IndexMap<PluginName, &ExternalPlugin> {
+        self.plugins
+            .iter()
+            .map(|(name, plugin)| match plugin.as_ref() {
+                Plugins::External(plugin) => (name.clone(), plugin),
+                //_ => None,
+            })
+            .collect()
+    }
+
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self

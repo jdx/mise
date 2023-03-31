@@ -193,6 +193,10 @@ impl Toolset {
         missing_plugins
             .into_par_iter()
             .map(|p| config.plugins.get(&p).unwrap())
+            .filter_map(|p| match p.as_ref() {
+                Plugins::External(p) => Some(p),
+                //_ => None,
+            })
             .filter(|p| !p.is_installed())
             .map(|p| {
                 let mut pr = mpr.add();

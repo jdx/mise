@@ -2,13 +2,15 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use color_eyre::eyre::Result;
+use console::style;
 use indexmap::IndexMap;
+use regex::Regex;
 
 pub use external_plugin::ExternalPlugin;
 pub use script_manager::{Script, ScriptManager};
 
-use crate::config::{Config, Settings};
-use crate::ui::progress_report::ProgressReport;
+use crate::config::Settings;
+use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 
 mod external_plugin;
 mod rtx_plugin_toml;
@@ -18,23 +20,75 @@ pub type PluginName = String;
 
 pub trait Plugin: Debug + Send + Sync {
     fn name(&self) -> &PluginName;
-    fn is_installed(&self) -> bool;
-    fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()>;
-    fn update(&self, gitref: Option<String>) -> Result<()>;
-    fn uninstall(&self, pr: &ProgressReport) -> Result<()>;
-    fn latest_installed_version(&self) -> Result<Option<String>>;
-    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>>;
-    fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>>;
-    fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>>;
-    fn list_installed_versions(&self) -> Result<Vec<String>>;
-    fn clear_remote_version_cache(&self) -> Result<()>;
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>>;
-    fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>>;
-    fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>>;
-    fn parse_legacy_file(&self, path: &Path, settings: &Settings) -> Result<String>;
-    fn external_commands(&self) -> Result<Vec<Vec<String>>>;
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()>;
-    fn decorate_progress_bar(&self, pr: &mut ProgressReport);
+    fn clear_remote_version_cache(&self) -> Result<()>;
+    fn list_installed_versions(&self) -> Result<Vec<String>>;
+    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>>;
+    fn latest_installed_version(&self) -> Result<Option<String>>;
+
+    fn is_installed(&self) -> bool {
+        true
+    }
+
+    fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
+        let mut query = query;
+        if query == "latest" {
+            query = "[0-9]";
+        }
+        let query_regex =
+            Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
+        let versions = self
+            .list_installed_versions()?
+            .iter()
+            .filter(|v| query_regex.is_match(v))
+            .cloned()
+            .collect();
+        Ok(versions)
+    }
+    fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
+        let mut query = query;
+        if query == "latest" {
+            query = "[0-9]";
+        }
+        let version_regex = regex!(
+            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
+        );
+        let query_regex =
+            Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
+        let versions = self
+            .list_remote_versions(settings)?
+            .iter()
+            .filter(|v| !version_regex.is_match(v))
+            .filter(|v| query_regex.is_match(v))
+            .cloned()
+            .collect();
+        Ok(versions)
+    }
+    fn get_aliases(&self, _settings: &Settings) -> Result<IndexMap<String, String>> {
+        Ok(IndexMap::new())
+    }
+    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+    fn parse_legacy_file(&self, _path: &Path, _settings: &Settings) -> Result<String> {
+        unimplemented!()
+    }
+    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+        Ok(vec![])
+    }
+    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn decorate_progress_bar(&self, pr: &mut ProgressReport) {
+        pr.set_style(PROG_TEMPLATE.clone());
+        pr.set_prefix(format!(
+            "{} {} ",
+            style("rtx").dim().for_stderr(),
+            style(self.name()).cyan().for_stderr()
+        ));
+        pr.enable_steady_tick();
+    }
 }
 
 #[derive(Debug)]
@@ -49,26 +103,25 @@ impl Plugin for Plugins {
         }
     }
 
-    fn is_installed(&self) -> bool {
+    fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         match self {
-            Plugins::External(p) => p.is_installed(),
-        }
-    }
-    fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
-        match self {
-            Plugins::External(p) => p.install(config, pr, force),
+            Plugins::External(p) => p.list_remote_versions(settings),
         }
     }
 
-    fn update(&self, gitref: Option<String>) -> Result<()> {
+    fn clear_remote_version_cache(&self) -> Result<()> {
         match self {
-            Plugins::External(p) => p.update(gitref),
+            Plugins::External(p) => p.clear_remote_version_cache(),
         }
     }
-
-    fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
+    fn list_installed_versions(&self) -> Result<Vec<String>> {
         match self {
-            Plugins::External(p) => p.uninstall(pr),
+            Plugins::External(p) => p.list_installed_versions(),
+        }
+    }
+    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>> {
+        match self {
+            Plugins::External(p) => p.latest_version(settings, query),
         }
     }
     fn latest_installed_version(&self) -> Result<Option<String>> {
@@ -76,9 +129,9 @@ impl Plugin for Plugins {
             Plugins::External(p) => p.latest_installed_version(),
         }
     }
-    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>> {
+    fn is_installed(&self) -> bool {
         match self {
-            Plugins::External(p) => p.latest_version(settings, query),
+            Plugins::External(p) => p.is_installed(),
         }
     }
     fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
@@ -89,21 +142,6 @@ impl Plugin for Plugins {
     fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
         match self {
             Plugins::External(p) => p.list_versions_matching(settings, query),
-        }
-    }
-    fn list_installed_versions(&self) -> Result<Vec<String>> {
-        match self {
-            Plugins::External(p) => p.list_installed_versions(),
-        }
-    }
-    fn clear_remote_version_cache(&self) -> Result<()> {
-        match self {
-            Plugins::External(p) => p.clear_remote_version_cache(),
-        }
-    }
-    fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
-        match self {
-            Plugins::External(p) => p.list_remote_versions(settings),
         }
     }
     fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
