@@ -1,7 +1,4 @@
 use color_eyre::eyre::Result;
-use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
@@ -12,7 +9,7 @@ use crate::output::Output;
 ///
 /// This modifies the contents of ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases=["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP.as_str(), verbatim_doc_comment)]
+#[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasUnset {
     /// The plugin to remove the alias from
     pub plugin: String,
@@ -27,12 +24,11 @@ impl Command for AliasUnset {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx alias unset nodejs lts/hydrogen
-    "#, style("Examples:").bold().underlined()}
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx alias unset nodejs lts/hydrogen</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {

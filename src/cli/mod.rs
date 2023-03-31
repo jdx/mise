@@ -1,9 +1,7 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
-use console::style;
-use indoc::{formatdoc, indoc};
+use indoc::indoc;
 use log::LevelFilter;
-use once_cell::sync::Lazy;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -162,7 +160,7 @@ impl Cli {
                 .long_about(LONG_ABOUT)
                 .arg_required_else_help(true)
                 .subcommand_required(true)
-                .after_long_help(AFTER_LONG_HELP.as_str())
+                .after_long_help(AFTER_LONG_HELP)
                 .arg(args::log_level::Debug::arg())
                 .arg(args::install_missing::InstallMissing::arg())
                 .arg(args::jobs::Jobs::arg())
@@ -222,26 +220,26 @@ jq and shellcheck.
 It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
 https://asdf-vm.com/"};
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! { "
-    {}
-      rtx install nodejs@18.0.0       Install a specific node version
-      rtx install nodejs@18.0         Install a version matching a prefix
-      rtx install nodejs              Install the node version defined in
-                                      .tool-versions or .rtx.toml
-      rtx local nodejs@18             Use node-18.x in current project
-      rtx global nodejs@18            Use node-18.x as default
-      rtx local nodejs@latest         Use latest node in current directory
-      rtx global nodejs@system        Use system node everywhere unless overridden
-      rtx x nodejs@18 -- node app.js  Run `node app.js` with PATH pointing to
-                                      node-18.x
-", style("Examples:").bold().underlined()  }
-});
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx install nodejs@18.0.0</bold>       Install a specific node version
+  $ <bold>rtx install nodejs@18.0</bold>         Install a version matching a prefix
+  $ <bold>rtx install nodejs</bold>              Install the node version defined in
+                                  .tool-versions or .rtx.toml
+  $ <bold>rtx local nodejs@18</bold>             Use node-18.x in current project
+  $ <bold>rtx global nodejs@18</bold>            Use node-18.x as default
+  $ <bold>rtx local nodejs@latest</bold>         Use latest node in current directory
+  $ <bold>rtx global nodejs@system</bold>        Use system node everywhere unless overridden
+  $ <bold>rtx x nodejs@18 -- node app.js</bold>  Run `node app.js` with PATH pointing to
+                                  node-18.x
+"#
+);
 
 #[cfg(test)]
 pub mod tests {
-    use crate::dirs;
     use color_eyre::{Section, SectionExt};
+
+    use crate::dirs;
 
     use super::*;
 

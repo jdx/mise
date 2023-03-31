@@ -1,7 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
 use crate::cli::command::Command;
@@ -10,7 +8,7 @@ use crate::output::Output;
 
 /// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {
     /// Runtime to get the latest version of
     #[clap(value_parser = RuntimeArgParser)]
@@ -54,16 +52,15 @@ impl Command for Latest {
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      $ rtx latest nodejs@18  # get the latest version of nodejs 18
-      18.0.0
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx latest nodejs@18</bold>  # get the latest version of nodejs 18
+  18.0.0
 
-      $ rtx latest nodejs     # get the latest stable version of nodejs
-      20.0.0
-    "#, style("Examples:").bold().underlined()}
-});
+  $ <bold>rtx latest nodejs</bold>     # get the latest stable version of nodejs
+  20.0.0
+"#
+);
 
 #[cfg(test)]
 mod tests {

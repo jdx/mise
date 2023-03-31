@@ -3,11 +3,8 @@ use std::path::PathBuf;
 
 use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
-use console::style;
 use duct::IntoExecutablePath;
 use indexmap::IndexMap;
-use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -30,7 +27,7 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP.as_str())]
+#[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Exec {
     /// Runtime(s) to start
     /// e.g.: nodejs@18 python@3.10
@@ -127,19 +124,18 @@ fn parse_command(
     }
 }
 
-static AFTER_LONG_HELP: Lazy<String> = Lazy::new(|| {
-    formatdoc! {r#"
-    {}
-      rtx exec nodejs@18 -- node ./app.js  # launch app.js using node-18.x
-      rtx x nodejs@18 -- node ./app.js     # shorter alias
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx exec nodejs@18 -- node ./app.js</bold>  # launch app.js using node-18.x
+  $ <bold>rtx x nodejs@18 -- node ./app.js</bold>     # shorter alias
 
-      # Specify command as a string:
-      rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
+  # Specify command as a string:
+  $ <bold>rtx exec nodejs@18 python@3.11 --command "node -v && python -V"</bold>
 
-      # Run a command in a different directory:
-      rtx x -C /path/to/project nodejs@18 -- node ./app.js
-    "#, style("Examples:").bold().underlined()}
-});
+  # Run a command in a different directory:
+  $ <bold>rtx x -C /path/to/project nodejs@18 -- node ./app.js</bold>
+"#
+);
 
 #[cfg(test)]
 mod tests {
