@@ -1,11 +1,12 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::Plugin;
+use crate::toolset::ToolVersionRequest;
 
 /// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
@@ -24,9 +25,9 @@ pub struct Latest {
 
 impl Command for Latest {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let mut prefix = match self.runtime.version {
-            RuntimeArgVersion::None => self.asdf_version,
-            RuntimeArgVersion::Version(version) => Some(version),
+        let mut prefix = match self.runtime.tvr {
+            None => self.asdf_version,
+            Some(ToolVersionRequest::Version(_, version)) => Some(version),
             _ => Err(eyre!(
                 "invalid version: {}",
                 style(&self.runtime).cyan().for_stderr()

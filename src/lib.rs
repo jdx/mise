@@ -29,7 +29,6 @@ mod hook_env;
 mod lock_file;
 mod plugins;
 mod runtime_symlinks;
-mod runtimes;
 mod shell;
 mod shims;
 mod shorthands;

@@ -65,7 +65,7 @@ fn list_symlinks(config: &Config, plugin: &Plugins) -> Result<IndexMap<String, P
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &dyn Plugin) -> Result<Vec<String>> {
+fn installed_versions(plugin: &Plugins) -> Result<Vec<String>> {
     let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
     let versions = plugin
         .list_installed_versions()?

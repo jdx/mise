@@ -16,7 +16,7 @@ use crate::config::settings::SettingsBuilder;
 use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
+use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
@@ -122,15 +122,8 @@ impl ToolVersions {
     fn populate_toolset(&mut self) {
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
-                let v = match version.split_once(':') {
-                    Some(("prefix", v)) => ToolVersionType::Prefix(v.to_string()),
-                    Some(("ref", v)) => ToolVersionType::Ref(v.to_string()),
-                    Some(("path", v)) => ToolVersionType::Path(PathBuf::from(v)),
-                    None if version == "system" => ToolVersionType::System,
-                    _ => ToolVersionType::Version(version.to_string()),
-                };
-                self.toolset
-                    .add_version(ToolVersion::new(plugin.clone(), v));
+                let tvr = ToolVersionRequest::new(plugin.clone(), version);
+                self.toolset.add_version(tvr, Default::default())
             }
         }
     }
