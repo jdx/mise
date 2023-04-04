@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 636] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -163,7 +163,9 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 636] = [
     ("dtm", "https://github.com/zhenyuanlau/asdf-dtm.git"),
     ("duf", "https://github.com/NeoHsu/asdf-duf.git"),
     ("dust", "https://github.com/looztra/asdf-dust.git"),
+    ("dvc", "https://github.com/fwfurtado/asdf-dvc.git"),
     ("dyff", "https://gitlab.com/wt0f/asdf-dyff.git"),
+    ("ecspresso", "https://github.com/kayac/asdf-ecspresso.git"),
     ("editorconfig-checker", "https://github.com/gabitchov/asdf-editorconfig-checker.git"),
     ("ejson", "https://github.com/cipherstash/asdf-ejson.git"),
     ("eksctl", "https://github.com/elementalvoid/asdf-eksctl.git"),
@@ -350,6 +352,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 636] = [
     ("kubesec", "https://github.com/vitalis/asdf-kubesec.git"),
     ("kubespy", "https://github.com/jfreeland/asdf-kubespy.git"),
     ("kubeval", "https://github.com/stefansedich/asdf-kubeval.git"),
+    ("kubevela", "https://github.com/gustavclausen/asdf-kubevela.git"),
     ("kubie", "https://github.com/johnhamelink/asdf-kubie.git"),
     ("kustomize", "https://github.com/Banno/asdf-kustomize.git"),
     ("kuttl", "https://github.com/jimmidyson/asdf-kuttl.git"),
@@ -361,6 +364,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 636] = [
     ("leiningen", "https://github.com/miorimmax/asdf-lein.git"),
     ("levant", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("lfe", "https://github.com/asdf-community/asdf-lfe.git"),
+    ("lima", "https://github.com/CrouchingMuppet/asdf-lima.git"),
     ("link", "https://github.com/asdf-community/asdf-link.git"),
     ("linkerd", "https://github.com/kforsthoevel/asdf-linkerd.git"),
     ("liqoctl", "https://github.com/pdemagny/asdf-liqoctl"),
