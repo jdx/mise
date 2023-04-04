@@ -28,6 +28,22 @@ aws s3 cp artifacts/rpm/repodata/ s3://rtx.pub/rpm/repodata/ --cache-control "$c
 aws s3 cp artifacts/deb/pool/ s3://rtx.pub/deb/pool/ --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp artifacts/deb/dists/ s3://rtx.pub/deb/dists/ --cache-control "$cache_day" --no-progress --no-progress --recursive
 
+export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
+export CLOUDFLARE_ZONE_ID=80d977fd09f01db52bec165778088891
+curl -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+	-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+	-H "Content-Type: application/json" \
+	--data '{
+    "prefixes": [
+      "/VERSION",
+      "/SHASUMS",
+      "/install.sh",
+      "/rtx-latest-",
+      "/rpm/repodata/",
+      "/deb/dists/"
+    ]
+  }'
+
 #aws cloudfront create-invalidation --distribution-id E166HHA8DY7YLW --paths \
 #	"/VERSION" \
 #	"/SHASUMS*" \
