@@ -68,6 +68,7 @@ impl Display for Script {
 static INITIAL_ENV: Lazy<IndexMap<String, String>> = Lazy::new(|| {
     (indexmap! {
         "RTX_EXE" => env::RTX_EXE.to_string_lossy(),
+        "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy(),
     })
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
