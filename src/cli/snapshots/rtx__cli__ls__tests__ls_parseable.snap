@@ -2,6 +2,6 @@
 source: src/cli/ls.rs
 expression: output
 ---
-dummy ref-master
+dummy ref:master
 tiny 3.1.0
 

@@ -5,109 +5,110 @@ expression: "replace_path(&format!(\"{:#?}\", cf.toolset))"
 Toolset {
     versions: {
         "terraform": ToolVersionList {
-            versions: [
-                ToolVersion {
-                    plugin_name: "terraform",
-                    type: Version(
+            plugin_name: "terraform",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "terraform",
                         "1.0.0",
                     ),
-                    rtv: None,
-                    options: {},
-                },
+                    {},
+                ),
             ],
             source: RtxToml(
                 "~/fixtures/.rtx.toml",
             ),
         },
         "nodejs": ToolVersionList {
-            versions: [
-                ToolVersion {
-                    plugin_name: "nodejs",
-                    type: Version(
+            plugin_name: "nodejs",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "nodejs",
                         "16",
                     ),
-                    rtv: None,
-                    options: {},
-                },
-                ToolVersion {
-                    plugin_name: "nodejs",
-                    type: Prefix(
+                    {},
+                ),
+                (
+                    Prefix(
+                        "nodejs",
                         "18",
                     ),
-                    rtv: None,
-                    options: {},
-                },
-                ToolVersion {
-                    plugin_name: "nodejs",
-                    type: Ref(
+                    {},
+                ),
+                (
+                    Ref(
+                        "nodejs",
                         "master",
                     ),
-                    rtv: None,
-                    options: {},
-                },
-                ToolVersion {
-                    plugin_name: "nodejs",
-                    type: Path(
+                    {},
+                ),
+                (
+                    Path(
+                        "nodejs",
                         "~/.nodes/14",
                     ),
-                    rtv: None,
-                    options: {},
-                },
+                    {},
+                ),
             ],
             source: RtxToml(
                 "~/fixtures/.rtx.toml",
             ),
         },
         "jq": ToolVersionList {
-            versions: [
-                ToolVersion {
-                    plugin_name: "jq",
-                    type: Prefix(
+            plugin_name: "jq",
+            versions: [],
+            requests: [
+                (
+                    Prefix(
+                        "jq",
                         "1.6",
                     ),
-                    rtv: None,
-                    options: {},
-                },
+                    {},
+                ),
             ],
             source: RtxToml(
                 "~/fixtures/.rtx.toml",
             ),
         },
         "shellcheck": ToolVersionList {
-            versions: [
-                ToolVersion {
-                    plugin_name: "shellcheck",
-                    type: Version(
+            plugin_name: "shellcheck",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "shellcheck",
                         "0.9.0",
                     ),
-                    rtv: None,
-                    options: {},
-                },
+                    {},
+                ),
             ],
             source: RtxToml(
                 "~/fixtures/.rtx.toml",
             ),
         },
         "python": ToolVersionList {
-            versions: [
-                ToolVersion {
-                    plugin_name: "python",
-                    type: Version(
+            plugin_name: "python",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "python",
                         "3.10.0",
                     ),
-                    rtv: None,
-                    options: {
+                    {
                         "venv": ".venv",
                     },
-                },
-                ToolVersion {
-                    plugin_name: "python",
-                    type: Version(
+                ),
+                (
+                    Version(
+                        "python",
                         "3.9.0",
                     ),
-                    rtv: None,
-                    options: {},
-                },
+                    {},
+                ),
             ],
             source: RtxToml(
                 "~/fixtures/.rtx.toml",

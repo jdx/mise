@@ -26,19 +26,25 @@ impl Command for Current {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => match config.plugins.get(plugin_name) {
-                Some(plugin) => self.one(ts, out, plugin),
+                Some(plugin) => self.one(&config, ts, out, plugin),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
                     Ok(())
                 }
             },
-            None => self.all(ts, out),
+            None => self.all(&config, ts, out),
         }
     }
 }
 
 impl Current {
-    fn one(&self, ts: Toolset, out: &mut Output, plugin: &plugins::Plugins) -> Result<()> {
+    fn one(
+        &self,
+        config: &Config,
+        ts: Toolset,
+        out: &mut Output,
+        plugin: &plugins::Plugins,
+    ) -> Result<()> {
         match plugin {
             plugins::Plugins::External(plugin) => {
                 if !plugin.is_installed() {
@@ -47,8 +53,12 @@ impl Current {
                 }
             }
         }
-        match ts.list_versions_by_plugin().get(plugin.name()) {
-            Some(versions) => {
+        match ts
+            .list_versions_by_plugin(config)
+            .into_iter()
+            .find(|(p, _)| p.name() == plugin.name())
+        {
+            Some((_, versions)) => {
                 rtxprintln!(
                     out,
                     "{}",
@@ -66,26 +76,24 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, ts: Toolset, out: &mut Output) -> Result<()> {
-        for (plugin, versions) in ts.list_versions_by_plugin() {
+    fn all(&self, config: &Config, ts: Toolset, out: &mut Output) -> Result<()> {
+        for (plugin, versions) in ts.list_versions_by_plugin(config) {
             if versions.is_empty() {
                 continue;
             }
-            for rtv in &versions {
-                if !rtv.is_installed() {
-                    let source = ts.versions.get(rtv.plugin.name()).unwrap().source.clone();
+            for tv in versions {
+                if !plugin.is_version_installed(tv) {
+                    let source = ts.versions.get(&tv.plugin_name).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        rtv.plugin.name(),
-                        &rtv.version,
-                        &source
+                        tv.plugin_name, &tv.version, &source
                     );
                 }
             }
             rtxprintln!(
                 out,
                 "{} {}",
-                &plugin,
+                plugin.name(),
                 versions
                     .iter()
                     .map(|v| v.version.to_string())

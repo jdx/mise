@@ -7,7 +7,7 @@ use color_eyre::eyre::{eyre, Result};
 
 use tool_versions::ToolVersions;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
+use crate::cli::args::runtime::RuntimeArg;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Config, Settings};
@@ -55,10 +55,11 @@ impl dyn ConfigFile {
     ) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         let mut ts = self.to_toolset().to_owned();
+        ts.resolve(config);
         ts.latest_versions = true;
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
-            if let Some(tv) = runtime.to_tool_version() {
+            if let Some(tv) = &runtime.tvr {
                 plugins_to_update
                     .entry(runtime.plugin.clone())
                     .or_insert_with(Vec::new)
@@ -66,8 +67,11 @@ impl dyn ConfigFile {
             }
         }
         for (plugin, versions) in &plugins_to_update {
-            let mut tvl = ToolVersionList::new(ts.source.as_ref().unwrap().clone());
-            tvl.versions = versions.clone();
+            let mut tvl =
+                ToolVersionList::new(plugin.to_string(), ts.source.as_ref().unwrap().clone());
+            for tv in versions {
+                tvl.requests.push(((*tv).clone(), Default::default()));
+            }
             ts.versions.insert(plugin.clone(), tvl);
         }
         ts.resolve(config);
@@ -75,13 +79,14 @@ impl dyn ConfigFile {
         for (plugin, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()
-                .map(|mut tv| {
+                .map(|tvr| {
                     if pin {
                         let plugin = config.plugins.get(&plugin).unwrap();
-                        tv.resolve(config, plugin.clone(), ts.latest_versions)?;
-                        Ok(tv.rtv.unwrap().version)
+                        let tv =
+                            tvr.resolve(config, plugin, Default::default(), ts.latest_versions)?;
+                        Ok(tv.version)
                     } else {
-                        Ok(tv.r#type.to_string())
+                        Ok(tvr.version())
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -96,7 +101,7 @@ impl dyn ConfigFile {
     /// returns "true" if the runtime was displayed which means the CLI should exit
     pub fn display_runtime(&self, out: &mut Output, runtimes: &[RuntimeArg]) -> Result<bool> {
         // in this situation we just print the current version in the config file
-        if runtimes.len() == 1 && runtimes[0].version == RuntimeArgVersion::None {
+        if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let plugin = &runtimes[0].plugin;
             let tvl = self
                 .to_toolset()
@@ -109,18 +114,15 @@ impl dyn ConfigFile {
                         display_path(self.get_path())
                     )
                 })?
-                .versions
+                .requests
                 .iter()
-                .map(|tv| tv.r#type.to_string())
+                .map(|(tvr, _)| tvr.version())
                 .collect::<Vec<_>>();
             rtxprintln!(out, "{}", tvl.join(" "));
             return Ok(true);
         }
         // check for something like `rtx local nodejs python@latest` which is invalid
-        if runtimes
-            .iter()
-            .any(|r| r.version == RuntimeArgVersion::None)
-        {
+        if runtimes.iter().any(|r| r.tvr.is_none()) {
             return Err(eyre!("invalid input, specify a version for each runtime. Or just specify one runtime to print the current version"));
         }
         Ok(false)

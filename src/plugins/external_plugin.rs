@@ -1,4 +1,7 @@
+use std::collections::HashMap;
 use std::fs;
+use std::fs::{remove_file, File};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
@@ -7,28 +10,31 @@ use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use versions::Versioning;
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
+use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
-use crate::fake_asdf::get_path_with_fake_asdf;
-use crate::file::display_path;
 use crate::file::remove_all;
+use crate::file::{create_dir_all, display_path, remove_all_with_warning};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::lock_file::LockFile;
+use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
-use crate::plugins::Script::ParseLegacyFile;
+use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginName, Script, ScriptManager};
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 
 /// This represents a plugin installed to ~/.local/share/rtx/plugins
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ExternalPlugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
@@ -39,6 +45,7 @@ pub struct ExternalPlugin {
     downloads_path: PathBuf,
     installs_path: PathBuf,
     script_man: ScriptManager,
+    cache: ExternalPluginCache,
     remote_version_cache: CacheManager<Vec<String>>,
     latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
@@ -61,6 +68,7 @@ impl ExternalPlugin {
             script_man: build_script_man(settings, name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
+            cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(fresh_duration)
                 .with_fresh_file(plugin_path.clone())
@@ -95,7 +103,7 @@ impl ExternalPlugin {
     }
 
     pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
-        self.decorate_progress_bar(pr);
+        self.decorate_progress_bar(pr, None);
         let repository = self
             .repo_url
             .as_ref()
@@ -103,7 +111,7 @@ impl ExternalPlugin {
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
         debug!("install {} {:?}", self.name, repository);
 
-        let _lock = self.get_lock(force)?;
+        let _lock = self.get_lock(&self.plugin_path, force)?;
 
         if self.is_installed() {
             self.uninstall(pr)?;
@@ -323,11 +331,11 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn get_lock(&self, force: bool) -> Result<Option<fslock::LockFile>> {
+    fn get_lock(&self, path: &Path, force: bool) -> Result<Option<fslock::LockFile>> {
         let lock = if force {
             None
         } else {
-            let lock = LockFile::new(&self.plugin_path)
+            let lock = LockFile::new(path)
                 .with_callback(|l| {
                     debug!("waiting for lock on {}", display_path(l));
                 })
@@ -336,17 +344,116 @@ impl ExternalPlugin {
         };
         Ok(lock)
     }
+
+    fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
+        self.cache_path(tv).join("incomplete")
+    }
+
+    fn create_install_dirs(&self, tv: &ToolVersion) -> Result<()> {
+        let _ = remove_all_with_warning(self.install_path(tv));
+        let _ = remove_all_with_warning(self.download_path(tv));
+        let _ = remove_all_with_warning(self.cache_path(tv));
+        let _ = remove_file(self.install_path(tv)); // removes if it is a symlink
+        create_dir_all(self.install_path(tv))?;
+        create_dir_all(self.download_path(tv))?;
+        create_dir_all(self.cache_path(tv))?;
+        File::create(self.incomplete_file_path(tv))?;
+        Ok(())
+    }
+    fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
+        let _ = remove_all_with_warning(self.install_path(tv));
+        self.cleanup_install_dirs(settings, tv);
+    }
+    fn cleanup_install_dirs(&self, settings: &Settings, tv: &ToolVersion) {
+        if !settings.always_keep_download {
+            let _ = remove_all_with_warning(self.download_path(tv));
+        }
+    }
+
+    fn fetch_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
+        let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
+            Vec::new()
+        } else if list_bin_paths.exists() {
+            let output = self
+                .script_man_for_tv(config, tv)
+                .cmd(&config.settings, &Script::ListBinPaths)
+                .read()?;
+            output.split_whitespace().map(|f| f.to_string()).collect()
+        } else {
+            vec!["bin".into()]
+        };
+        let bin_paths = bin_paths
+            .into_iter()
+            .map(|path| self.install_path(tv).join(path))
+            .collect();
+        Ok(bin_paths)
+    }
+    fn fetch_exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+        let script = self.script_man_for_tv(config, tv).get_script_path(&ExecEnv);
+        let ed = EnvDiff::from_bash_script(&script, &self.script_man_for_tv(config, tv).env)?;
+        let env = ed
+            .to_patches()
+            .into_iter()
+            .filter_map(|p| match p {
+                EnvDiffOperation::Add(key, value) => Some((key, value)),
+                EnvDiffOperation::Change(key, value) => Some((key, value)),
+                _ => None,
+            })
+            .collect();
+        Ok(env)
+    }
+
+    fn script_man_for_tv(&self, config: &Config, tv: &ToolVersion) -> ScriptManager {
+        let mut sm = self.script_man.clone();
+        for (key, value) in &tv.opts {
+            let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
+            sm = sm.with_env(k, value.clone());
+        }
+        if let Some(project_root) = &config.project_root {
+            let project_root = project_root.to_string_lossy().to_string();
+            sm = sm.with_env("RTX_PROJECT_ROOT".into(), project_root);
+        }
+        let install_type = match &tv.request {
+            ToolVersionRequest::Version(_, _) | ToolVersionRequest::Prefix(_, _) => "version",
+            ToolVersionRequest::Ref(_, _) => "ref",
+            ToolVersionRequest::Path(_, _) => "path",
+            ToolVersionRequest::System(_) => {
+                panic!("should not be called for system tool")
+            }
+        };
+        sm = sm
+            .with_env(
+                "RTX_INSTALL_PATH".into(),
+                self.install_path(tv).to_string_lossy().to_string(),
+            )
+            .with_env(
+                "ASDF_INSTALL_PATH".into(),
+                self.install_path(tv).to_string_lossy().to_string(),
+            )
+            .with_env(
+                "RTX_DOWNLOAD_PATH".into(),
+                self.download_path(tv).to_string_lossy().to_string(),
+            )
+            .with_env(
+                "ASDF_DOWNLOAD_PATH".into(),
+                self.download_path(tv).to_string_lossy().to_string(),
+            )
+            .with_env("RTX_INSTALL_TYPE".into(), install_type.into())
+            .with_env("ASDF_INSTALL_TYPE".into(), install_type.into())
+            .with_env("RTX_INSTALL_VERSION".into(), tv.version.clone())
+            .with_env("ASDF_INSTALL_VERSION".into(), tv.version.clone());
+        sm
+    }
 }
 
 fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> ScriptManager {
     let mut sm = ScriptManager::new(plugin_path.to_path_buf())
-        .with_env("PATH".into(), get_path_with_fake_asdf())
+        .with_env("RTX_PLUGIN_NAME".into(), name.to_string())
         .with_env(
-            "RTX_DATA_DIR".into(),
-            dirs::ROOT.to_string_lossy().into_owned(),
-        )
-        .with_env("__RTX_SCRIPT".into(), "1".into())
-        .with_env("RTX_PLUGIN_NAME".into(), name.to_string());
+            "RTX_PLUGIN_PATH".into(),
+            plugin_path.to_string_lossy().to_string(),
+        );
     if let Some(shims_dir) = &settings.shims_dir {
         let shims_dir = shims_dir.to_string_lossy().to_string();
         sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
@@ -355,15 +462,27 @@ fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> Scri
     sm
 }
 
+impl Eq for ExternalPlugin {}
+
 impl PartialEq for ExternalPlugin {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
+impl Hash for ExternalPlugin {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
 impl Plugin for ExternalPlugin {
     fn name(&self) -> &PluginName {
         &self.name
+    }
+
+    fn toml(&self) -> &RtxPluginToml {
+        &self.toml
     }
 
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
@@ -526,4 +645,132 @@ impl Plugin for ExternalPlugin {
         .run()?;
         exit(result.status.code().unwrap_or(1));
     }
+
+    fn is_version_installed(&self, tv: &ToolVersion) -> bool {
+        match tv.request {
+            ToolVersionRequest::System(_) => true,
+            _ => self.install_path(tv).exists() && !self.incomplete_file_path(tv).exists(),
+        }
+    }
+
+    fn install_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &mut ProgressReport,
+        force: bool,
+    ) -> Result<()> {
+        self.decorate_progress_bar(pr, Some(tv));
+
+        let settings = &config.settings;
+        let _lock = self.get_lock(&self.install_path(tv), force)?;
+        self.create_install_dirs(tv)?;
+
+        let run_script = |script| {
+            self.script_man_for_tv(config, tv).run_by_line(
+                settings,
+                script,
+                |output| {
+                    self.cleanup_install_dirs_on_error(settings, tv);
+                    pr.error();
+                    if !settings.verbose && !output.trim().is_empty() {
+                        pr.println(output);
+                    }
+                },
+                |line| {
+                    if !line.trim().is_empty() {
+                        pr.set_message(line.into());
+                    }
+                },
+                |line| {
+                    if !line.trim().is_empty() {
+                        pr.println(line.into());
+                    }
+                },
+            )
+        };
+
+        if self.script_man_for_tv(config, tv).script_exists(&Download) {
+            pr.set_message("downloading".into());
+            run_script(&Download)?;
+        }
+        pr.set_message("installing".into());
+        run_script(&Install)?;
+        self.cleanup_install_dirs(settings, tv);
+
+        // attempt to touch all the .tool-version files to trigger updates in hook-env
+        let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
+        touch_dirs.extend(config.config_files.keys().cloned());
+        for path in touch_dirs {
+            let err = file::touch_dir(&path);
+            if let Err(err) = err {
+                debug!("error touching config file: {:?} {:?}", path, err);
+            }
+        }
+        if let Err(err) = remove_file(self.incomplete_file_path(tv)) {
+            debug!("error removing incomplete file: {:?}", err);
+        }
+        pr.finish();
+
+        Ok(())
+    }
+
+    fn uninstall_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+        dryrun: bool,
+    ) -> Result<()> {
+        pr.set_message(format!("uninstall {}", self.name()));
+
+        if self.plugin_path.join("bin/uninstall").exists() {
+            self.script_man_for_tv(config, tv)
+                .run(&config.settings, &Script::Uninstall)?;
+        }
+        let rmdir = |dir: &Path| {
+            if !dir.exists() {
+                return Ok(());
+            }
+            pr.set_message(format!("removing {}", display_path(dir)));
+            if dryrun {
+                return Ok(());
+            }
+            remove_all_with_warning(dir)
+        };
+        rmdir(&self.install_path(tv))?;
+        rmdir(&self.download_path(tv))?;
+        Ok(())
+    }
+
+    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        self.cache
+            .list_bin_paths(config, self, tv, || self.fetch_bin_paths(config, tv))
+    }
+
+    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+        if matches!(tv.request, ToolVersionRequest::System(_)) {
+            return Ok(EMPTY_HASH_MAP.clone());
+        }
+        if !self.script_man.script_exists(&ExecEnv) || *env::__RTX_SCRIPT {
+            // if the script does not exist, or we're already running from within a script,
+            // the second is to prevent infinite loops
+            return Ok(EMPTY_HASH_MAP.clone());
+        }
+        self.cache
+            .exec_env(config, self, tv, || self.fetch_exec_env(config, tv))
+    }
+
+    fn which(&self, config: &Config, tv: &ToolVersion, bin_name: &str) -> Result<Option<PathBuf>> {
+        let bin_paths = self.list_bin_paths(config, tv)?;
+        for bin_path in bin_paths {
+            let bin_path = bin_path.join(bin_name);
+            if bin_path.exists() {
+                return Ok(Some(bin_path));
+            }
+        }
+        Ok(None)
+    }
 }
+
+static EMPTY_HASH_MAP: Lazy<HashMap<String, String>> = Lazy::new(HashMap::new);

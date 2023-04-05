@@ -17,7 +17,9 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::create_dir_all;
 use crate::plugins::PluginName;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolVersionType, Toolset};
+use crate::toolset::{
+    ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
+};
 use crate::{dirs, env, parse_error};
 
 #[derive(Debug, Default)]
@@ -206,7 +208,7 @@ impl RtxToml {
             Some(table) => {
                 for (plugin, v) in table.iter() {
                     let k = format!("{}.{}", key, plugin);
-                    let tvl = self.parse_tool_version_list(&k, v, &plugin.into())?;
+                    let tvl = self.parse_tool_version_list(&k, v, &plugin.to_string())?;
                     toolset.versions.insert(plugin.into(), tvl);
                 }
                 Ok(toolset)
@@ -222,15 +224,15 @@ impl RtxToml {
         plugin_name: &PluginName,
     ) -> Result<ToolVersionList> {
         let source = ToolSource::RtxToml(self.path.clone());
-        let mut tool_version_list = ToolVersionList::new(source);
+        let mut tool_version_list = ToolVersionList::new(plugin_name.to_string(), source);
 
         match v {
             Item::ArrayOfTables(v) => {
                 for table in v.iter() {
                     for (tool, v) in table.iter() {
                         let k = format!("{}.{}", key, tool);
-                        let tv = self.parse_tool_version(&k, v, plugin_name)?;
-                        tool_version_list.versions.push(tv);
+                        let (tvr, opts) = self.parse_tool_version(&k, v, plugin_name)?;
+                        tool_version_list.requests.push((tvr, opts));
                     }
                 }
             }
@@ -238,20 +240,22 @@ impl RtxToml {
                 Some(v) => {
                     for v in v.iter() {
                         let item = Item::Value(v.clone());
-                        let tv = self.parse_tool_version(key, &item, plugin_name)?;
-                        tool_version_list.versions.push(tv);
+                        let (tvr, opts) = self.parse_tool_version(key, &item, plugin_name)?;
+                        tool_version_list.requests.push((tvr, opts));
                     }
                 }
                 _ => {
-                    tool_version_list
-                        .versions
-                        .push(self.parse_tool_version(key, v, plugin_name)?)
+                    tool_version_list.requests.push(self.parse_tool_version(
+                        key,
+                        v,
+                        plugin_name,
+                    )?);
                 }
             },
         }
 
-        for v in tool_version_list.versions.iter() {
-            if let ToolVersionType::Path(_) = v.r#type {
+        for (tvr, _) in &tool_version_list.requests {
+            if let ToolVersionRequest::Path(_, _) = tvr {
                 // "path:" can be dangerous to run automatically
                 self.trust_check()?;
             }
@@ -265,36 +269,40 @@ impl RtxToml {
         key: &str,
         v: &Item,
         plugin_name: &PluginName,
-    ) -> Result<ToolVersion> {
-        let mut tv = ToolVersion::new(plugin_name.clone(), ToolVersionType::System);
+    ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
+        let mut tv = ToolVersionRequest::new(plugin_name.clone(), "system");
+        let mut opts = ToolVersionOptions::default();
 
         match v.as_table_like() {
             Some(table) => {
                 if let Some(v) = table.get("version") {
                     match v {
                         Item::Value(v) => {
-                            tv.r#type = self.parse_tool_version_value(key, v)?;
+                            tv = self.parse_tool_version_request(key, v, plugin_name)?;
                         }
                         _ => parse_error!(format!("{}.version", key), v, "string")?,
                     }
                 } else if let Some(path) = table.get("path") {
                     match path.as_str() {
                         Some(s) => {
-                            tv.r#type = ToolVersionType::Path(s.into());
+                            let s = self.parse_template(key, s)?;
+                            tv = ToolVersionRequest::Path(plugin_name.clone(), s.into());
                         }
                         _ => parse_error!(format!("{}.path", key), v, "string")?,
                     }
                 } else if let Some(prefix) = table.get("prefix") {
                     match prefix.as_str() {
                         Some(s) => {
-                            tv.r#type = ToolVersionType::Prefix(s.into());
+                            let s = self.parse_template(key, s)?;
+                            tv = ToolVersionRequest::Prefix(plugin_name.clone(), s);
                         }
                         _ => parse_error!(format!("{}.prefix", key), v, "string")?,
                     }
                 } else if let Some(r) = table.get("ref") {
                     match r.as_str() {
                         Some(s) => {
-                            tv.r#type = ToolVersionType::Ref(s.into());
+                            let s = self.parse_template(key, s)?;
+                            tv = ToolVersionRequest::Ref(plugin_name.clone(), s);
                         }
                         _ => parse_error!(format!("{}.ref", key), v, "string")?,
                     }
@@ -307,7 +315,8 @@ impl RtxToml {
                     }
                     match v.as_str() {
                         Some(s) => {
-                            tv.options.insert(k.into(), s.into());
+                            let s = self.parse_template(key, s)?;
+                            opts.insert(k.into(), s);
                         }
                         _ => parse_error!(format!("{}.{}", key, k), v, "string")?,
                     }
@@ -315,28 +324,25 @@ impl RtxToml {
             }
             _ => match v {
                 Item::Value(v) => {
-                    tv.r#type = self.parse_tool_version_value(key, v)?;
+                    tv = self.parse_tool_version_request(key, v, plugin_name)?;
                 }
                 _ => parse_error!(key, v, "value")?,
             },
         }
 
-        Ok(tv)
+        Ok((tv, opts))
     }
 
-    fn parse_tool_version_value(&mut self, key: &str, v: &Value) -> Result<ToolVersionType> {
+    fn parse_tool_version_request(
+        &mut self,
+        key: &str,
+        v: &Value,
+        plugin_name: &PluginName,
+    ) -> Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
-                match s.split_once(':') {
-                    Some(("prefix", v)) => Ok(ToolVersionType::Prefix(v.into())),
-                    Some(("path", v)) => Ok(ToolVersionType::Path(v.into())),
-                    Some(("ref", v)) => Ok(ToolVersionType::Ref(v.into())),
-                    Some((unknown, v)) => {
-                        parse_error!(format!("{}.{}", key, unknown), v, "prefix, path, or ref")?
-                    }
-                    None => Ok(ToolVersionType::Version(s)),
-                }
+                Ok(ToolVersionRequest::new(plugin_name.clone(), &s))
             }
             _ => parse_error!(key, v, "string")?,
         }
@@ -632,9 +638,14 @@ impl ConfigFile for RtxToml {
 
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
         if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
-            plugin.versions = versions
+            plugin.requests = versions
                 .iter()
-                .map(|v| ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v.clone())))
+                .map(|s| {
+                    (
+                        ToolVersionRequest::new(plugin_name.clone(), s),
+                        Default::default(),
+                    )
+                })
                 .collect();
         }
         let tools = self
