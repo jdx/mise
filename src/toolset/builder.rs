@@ -5,8 +5,7 @@ use itertools::Itertools;
 use crate::cli::args::runtime::RuntimeArg;
 use crate::config::Config;
 use crate::env;
-use crate::toolset::tool_version::ToolVersionType;
-use crate::toolset::{ToolSource, ToolVersion, Toolset};
+use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug, Default)]
@@ -72,8 +71,8 @@ fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) {
             }
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = Toolset::new(source);
-            let version = ToolVersion::new(plugin_name.clone(), ToolVersionType::Version(v));
-            env_ts.add_version(version);
+            let tvr = ToolVersionRequest::new(plugin_name, &v);
+            env_ts.add_version(tvr, Default::default());
             ts.merge(&env_ts);
         }
     }
@@ -83,8 +82,8 @@ fn load_runtime_args(ts: &mut Toolset, args: &[RuntimeArg]) {
     for (_, args) in args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
         let mut arg_ts = Toolset::new(ToolSource::Argument);
         for arg in args {
-            if let Some(version) = arg.to_tool_version() {
-                arg_ts.add_version(version);
+            if let Some(tvr) = &arg.tvr {
+                arg_ts.add_version(tvr.clone(), Default::default());
             }
         }
         ts.merge(&arg_ts);

@@ -5,7 +5,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::toolset::ToolsetBuilder;
+use crate::plugins::Plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes runtime versions
@@ -18,25 +18,35 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = RuntimeArg::double_runtime_condition(&self.runtime);
-        let ts = ToolsetBuilder::new()
-            .with_args(&runtimes)
-            .build(&mut config)?;
-        let runtime_versions = runtimes.iter().filter_map(|a| ts.resolve_runtime_arg(a));
+        let tool_versions = runtimes
+            .iter()
+            .map(|a| {
+                let plugin = match config.plugins.get(&a.plugin) {
+                    Some(plugin) => plugin,
+                    None => todo!(),
+                };
+                let tv = match &a.tvr {
+                    Some(tvr) => tvr.resolve(&config, plugin, Default::default(), false)?,
+                    None => todo!(),
+                };
+                Ok((plugin, tv))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         let mpr = MultiProgressReport::new(config.settings.verbose);
-        for rtv in runtime_versions {
-            if !rtv.is_installed() {
-                warn!("{} is not installed", style(rtv).cyan().for_stderr());
+        for (plugin, tv) in tool_versions {
+            if !plugin.is_version_installed(&tv) {
+                warn!("{} is not installed", style(&tv).cyan().for_stderr());
                 continue;
             }
 
             let mut pr = mpr.add();
-            rtv.decorate_progress_bar(&mut pr);
-            if let Err(err) = rtv.uninstall(&config.settings, &pr, false) {
+            plugin.decorate_progress_bar(&mut pr, Some(&tv));
+            if let Err(err) = plugin.uninstall_version(&config, &tv, &pr, false) {
                 pr.error();
-                return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", rtv)));
+                return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", &tv)));
             }
             pr.finish_with_message("uninstalled".into());
         }

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -16,15 +16,13 @@ use rayon::ThreadPoolBuilder;
 pub use builder::ToolsetBuilder;
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
-pub use tool_version::ToolVersionType;
 pub use tool_version_list::ToolVersionList;
+pub use tool_version_request::ToolVersionRequest;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgVersion};
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
 use crate::runtime_symlinks::rebuild_symlinks;
-use crate::runtimes::RuntimeVersion;
 use crate::shims::reshim;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -32,6 +30,9 @@ mod builder;
 mod tool_source;
 mod tool_version;
 mod tool_version_list;
+mod tool_version_request;
+
+pub type ToolVersionOptions = IndexMap<String, String>;
 
 /// a toolset is a collection of tools for various plugins
 ///
@@ -52,12 +53,14 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn add_version(&mut self, version: ToolVersion) {
-        let versions = self
+    pub fn add_version(&mut self, tvr: ToolVersionRequest, opts: ToolVersionOptions) {
+        let tvl = self
             .versions
-            .entry(version.plugin_name.clone())
-            .or_insert_with(|| ToolVersionList::new(self.source.clone().unwrap()));
-        versions.add_version(version);
+            .entry(tvr.plugin_name().clone())
+            .or_insert_with(|| {
+                ToolVersionList::new(tvr.plugin_name().to_string(), self.source.clone().unwrap())
+            });
+        tvl.requests.push((tvr, opts));
     }
     pub fn merge(&mut self, other: &Toolset) {
         let mut versions = other.versions.clone();
@@ -69,24 +72,20 @@ impl Toolset {
         self.versions = versions;
         self.source = other.source.clone();
     }
-    pub fn resolve(&mut self, config: &Config) {
+    pub fn resolve(&mut self, config: &mut Config) {
+        self.list_missing_plugins(config);
         self.versions
             .iter_mut()
             .collect::<Vec<_>>()
             .par_iter_mut()
-            .for_each(|(p, v)| {
-                let plugin = match config.plugins.get(&p.to_string()) {
-                    Some(p) if p.is_installed() => p,
-                    _ => {
-                        debug!("Plugin {} is not installed", p);
-                        return;
-                    }
-                };
-                v.resolve(config, plugin.clone(), self.latest_versions);
-            });
+            .for_each(|(_, v)| v.resolve(config, self.latest_versions));
     }
     pub fn install_missing(&mut self, config: &mut Config, mpr: MultiProgressReport) -> Result<()> {
-        let versions = self.list_missing_versions();
+        let versions = self
+            .list_missing_versions(config)
+            .into_iter()
+            .cloned()
+            .collect_vec();
         if versions.is_empty() {
             return Ok(());
         }
@@ -118,11 +117,20 @@ impl Toolset {
         Ok(())
     }
 
-    pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
+    pub fn list_missing_plugins(&self, config: &mut Config) -> Vec<PluginName> {
+        for plugin in self.versions.keys() {
+            config.plugins.entry(plugin.clone()).or_insert_with(|| {
+                Arc::new(Plugins::External(ExternalPlugin::new(
+                    &config.settings,
+                    plugin,
+                )))
+            });
+        }
         self.versions
             .keys()
-            .filter(|p| !config.plugins.contains_key(*p))
-            .cloned()
+            .map(|p| config.plugins.get(p).unwrap())
+            .filter(|p| !p.is_installed())
+            .map(|p| p.name().clone())
             .collect()
     }
 
@@ -143,29 +151,35 @@ impl Toolset {
                     .collect_vec();
                 let selected_versions = selected_versions
                     .into_iter()
-                    .map(|v| v.r#type)
+                    .map(|v| (v.plugin_name.clone(), v.request))
                     .collect::<HashSet<_>>();
                 self.install_missing_plugins(config, plugins, &mpr)?;
                 self.versions
                     .iter_mut()
                     .par_bridge()
-                    .filter_map(|(p, v)| {
+                    .filter_map(|(p, v)| match config.plugins.get(&p.to_string()) {
+                        Some(plugin) if plugin.is_installed() => Some((plugin, v)),
+                        _ => None,
+                    })
+                    .map(|(plugin, v)| {
                         let versions = v
                             .versions
                             .iter_mut()
-                            .filter(|v| v.is_missing() && selected_versions.contains(&v.r#type))
+                            .filter(|tv| {
+                                !plugin.is_version_installed(tv)
+                                    && selected_versions
+                                        .contains(&(tv.plugin_name.clone(), tv.request.clone()))
+                            })
                             .collect_vec();
-                        let plugin = config.plugins.get(&p.to_string());
-                        match (plugin, versions.is_empty()) {
-                            (Some(plugin), false) => Some((plugin, versions)),
-                            _ => None,
-                        }
+                        (plugin, versions)
                     })
+                    .filter(|(_, versions)| !versions.is_empty())
                     .map(|(plugin, versions)| {
-                        for version in versions {
+                        for tv in versions {
                             let mut pr = mpr.add();
-                            version.resolve(config, plugin.clone(), self.latest_versions)?;
-                            version.install(config, &mut pr, false)?;
+                            // TODO: is this necessary?
+                            // version.resolve(config, plugin.clone(), self.latest_versions)?;
+                            plugin.install_version(config, tv, &mut pr, false)?;
                         }
                         Ok(())
                     })
@@ -190,7 +204,7 @@ impl Toolset {
             });
         }
         config.plugins.sort_keys();
-        missing_plugins
+        let missing_plugins = missing_plugins
             .into_par_iter()
             .map(|p| config.plugins.get(&p).unwrap())
             .filter_map(|p| match p.as_ref() {
@@ -203,19 +217,36 @@ impl Toolset {
                 p.install(config, &mut pr, false)
             })
             .collect::<Result<Vec<_>>>()?;
+        if !missing_plugins.is_empty() {
+            self.resolve(config);
+        }
         Ok(())
     }
 
-    pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
-        let versions = self
-            .versions
-            .values()
-            .flat_map(|v| v.versions.iter().filter(|v| v.is_missing()).collect_vec())
-            .cloned()
-            .collect_vec();
-        versions
+    pub fn list_missing_versions(&self, config: &Config) -> Vec<&ToolVersion> {
+        self.versions
+            .iter()
+            .map(|(p, tvl)| {
+                let p = config.plugins.get(p).unwrap().clone();
+                (p, tvl)
+            })
+            .flat_map(|(p, tvl)| {
+                tvl.versions
+                    .iter()
+                    .filter(|tv| !p.is_version_installed(tv))
+                    .collect_vec()
+            })
+            .collect()
     }
-    pub fn list_installed_versions(&self, config: &Config) -> Result<Vec<RuntimeVersion>> {
+    pub fn list_installed_versions(
+        &self,
+        config: &Config,
+    ) -> Result<Vec<(Arc<Plugins>, ToolVersion)>> {
+        let current_versions: HashMap<(PluginName, String), (Arc<Plugins>, ToolVersion)> = self
+            .list_current_versions(config)
+            .into_iter()
+            .map(|(p, tv)| ((p.name().clone(), tv.version.clone()), (p, tv)))
+            .collect();
         let versions = config
             .plugins
             .values()
@@ -224,9 +255,15 @@ impl Toolset {
             .map(|p| {
                 let versions = p.list_installed_versions()?;
                 Ok(versions.into_iter().map(|v| {
-                    let tv =
-                        ToolVersion::new(p.name().clone(), ToolVersionType::Version(v.clone()));
-                    RuntimeVersion::new(config, p.clone(), v, tv)
+                    match current_versions.get(&(p.name().clone(), v.clone())) {
+                        Some((p, tv)) => (p.clone(), tv.clone()),
+                        None => {
+                            let tv = ToolVersionRequest::new(p.name().clone(), &v)
+                                .resolve(config, p, Default::default(), false)
+                                .unwrap();
+                            (p.clone(), tv)
+                        }
+                    }
                 }))
             })
             .collect::<Result<Vec<_>>>()?
@@ -236,25 +273,31 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_versions_by_plugin(&self) -> IndexMap<PluginName, Vec<&RuntimeVersion>> {
+    pub fn list_versions_by_plugin(
+        &self,
+        config: &Config,
+    ) -> Vec<(Arc<Plugins>, &Vec<ToolVersion>)> {
         self.versions
             .iter()
             .map(|(p, v)| {
-                let versions = v.resolved_versions();
-                (p.clone(), versions)
+                let p = config.plugins.get(p).unwrap();
+                (p.clone(), &v.versions)
             })
             .collect()
     }
-    pub fn list_current_versions(&self) -> Vec<&RuntimeVersion> {
-        self.list_versions_by_plugin()
-            .into_iter()
-            .flat_map(|(_, v)| v)
+    pub fn list_current_versions(&self, config: &Config) -> Vec<(Arc<Plugins>, ToolVersion)> {
+        self.list_versions_by_plugin(config)
+            .iter()
+            .flat_map(|(p, v)| v.iter().map(|v| (p.clone(), v.clone())))
             .collect()
     }
-    pub fn list_current_installed_versions(&self) -> Vec<&RuntimeVersion> {
-        self.list_current_versions()
+    pub fn list_current_installed_versions(
+        &self,
+        config: &Config,
+    ) -> Vec<(Arc<Plugins>, ToolVersion)> {
+        self.list_current_versions(config)
             .into_iter()
-            .filter(|v| v.is_installed())
+            .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
     pub fn env_with_path(&self, config: &Config) -> IndexMap<String, String> {
@@ -265,10 +308,10 @@ impl Toolset {
     }
     pub fn env(&self, config: &Config) -> IndexMap<String, String> {
         let mut entries: IndexMap<String, String> = self
-            .list_current_installed_versions()
+            .list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|v| match v.exec_env() {
-                Ok(env) => env.clone().into_iter().collect(),
+            .flat_map(|(p, tv)| match p.exec_env(config, &tv) {
+                Ok(env) => env.into_iter().collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
                     Vec::new()
@@ -292,87 +335,22 @@ impl Toolset {
             .into()
     }
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
-        self.list_current_installed_versions()
+        self.list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
-                Ok(paths) => paths.clone(),
+            .flat_map(|(p, tv)| match p.list_bin_paths(config, &tv) {
+                Ok(paths) => paths,
                 Err(e) => {
-                    warn!("Error listing bin paths for {}: {:#}", rtv, e);
+                    warn!("Error listing bin paths for {}: {:#}", tv, e);
                     Vec::new()
                 }
             })
             .collect()
     }
-    pub fn resolve_runtime_arg(&self, arg: &RuntimeArg) -> Option<&RuntimeVersion> {
-        match &arg.version {
-            RuntimeArgVersion::System => None,
-            RuntimeArgVersion::Version(version) => {
-                if let Some(tvl) = self.versions.get(&arg.plugin) {
-                    for tv in tvl.versions.iter() {
-                        match &tv.r#type {
-                            ToolVersionType::Version(v) if v == version => {
-                                return tv.rtv.as_ref();
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None
-            }
-            RuntimeArgVersion::Prefix(version) => {
-                if let Some(tvl) = self.versions.get(&arg.plugin) {
-                    for tv in tvl.versions.iter() {
-                        match &tv.r#type {
-                            ToolVersionType::Prefix(v) if v.starts_with(version) => {
-                                return tv.rtv.as_ref();
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None
-            }
-            RuntimeArgVersion::Ref(ref_) => {
-                if let Some(tvl) = self.versions.get(&arg.plugin) {
-                    for tv in tvl.versions.iter() {
-                        match &tv.r#type {
-                            ToolVersionType::Ref(v) if v == ref_ => {
-                                return tv.rtv.as_ref();
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None
-            }
-            RuntimeArgVersion::Path(path) => {
-                if let Some(tvl) = self.versions.get(&arg.plugin) {
-                    for tv in tvl.versions.iter() {
-                        match &tv.r#type {
-                            ToolVersionType::Path(v) if v == path => {
-                                return tv.rtv.as_ref();
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None
-            }
-            RuntimeArgVersion::None => {
-                let plugin = self.versions.get(&arg.plugin);
-                match plugin {
-                    Some(tvl) => tvl.versions.first().unwrap().rtv.as_ref(),
-                    None => None,
-                }
-            }
-        }
-    }
-
-    pub fn which(&self, config: &Config, bin_name: &str) -> Option<&RuntimeVersion> {
-        self.list_current_installed_versions()
+    pub fn which(&self, config: &Config, bin_name: &str) -> Option<(Arc<Plugins>, ToolVersion)> {
+        self.list_current_installed_versions(config)
             .into_par_iter()
-            .find_first(|v| {
-                if let Ok(x) = v.which(&config.settings, bin_name) {
+            .find_first(|(p, tv)| {
+                if let Ok(x) = p.which(config, tv, bin_name) {
                     x.is_some()
                 } else {
                     false
@@ -380,21 +358,18 @@ impl Toolset {
             })
     }
 
-    pub fn list_rtvs_with_bin(
-        &self,
-        config: &Config,
-        bin_name: &str,
-    ) -> Result<Vec<RuntimeVersion>> {
+    pub fn list_rtvs_with_bin(&self, config: &Config, bin_name: &str) -> Result<Vec<ToolVersion>> {
         Ok(self
             .list_installed_versions(config)?
             .into_par_iter()
-            .filter(|v| match v.which(&config.settings, bin_name) {
+            .filter(|(p, tv)| match p.which(config, tv, bin_name) {
                 Ok(x) => x.is_some(),
                 Err(e) => {
                     warn!("Error running which: {:#}", e);
                     false
                 }
             })
+            .map(|(_, tv)| tv)
             .collect())
     }
 }
@@ -404,7 +379,7 @@ impl Display for Toolset {
         let plugins = &self
             .versions
             .iter()
-            .map(|(_, v)| v.versions.iter().map(|v| v.to_string()).join(" "))
+            .map(|(_, v)| v.requests.iter().map(|(tvr, _)| tvr.to_string()).join(" "))
             .collect_vec();
         write!(f, "{}", plugins.join(", "))
     }

@@ -1,11 +1,12 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::Plugin;
+use crate::toolset::ToolVersionRequest;
 
 /// List runtime versions available for install
 ///
@@ -32,8 +33,8 @@ impl Command for LsRemote {
             .ok_or(PluginNotInstalled(self.plugin.plugin))?;
         plugin.clear_remote_version_cache()?;
 
-        let prefix = match self.plugin.version {
-            RuntimeArgVersion::Version(v) => Some(v),
+        let prefix = match self.plugin.tvr {
+            Some(ToolVersionRequest::Version(_, v)) => Some(v),
             _ => self.prefix,
         };
 

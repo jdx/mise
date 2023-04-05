@@ -2,5 +2,5 @@
 source: src/cli/local.rs
 expression: output
 ---
-ref-master
+ref:master
 

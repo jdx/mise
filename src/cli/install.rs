@@ -6,7 +6,7 @@ use console::style;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
@@ -15,7 +15,7 @@ use crate::output::Output;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
-use crate::toolset::{ToolVersion, ToolVersionType, ToolsetBuilder};
+use crate::toolset::{ToolVersionOptions, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a runtime
@@ -69,27 +69,36 @@ impl Command for Install {
 impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[RuntimeArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
-        let mut tool_versions = vec![];
+        let mut tool_version_requests = vec![];
         let ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
         for runtime in RuntimeArg::double_runtime_condition(runtimes) {
-            match runtime.to_tool_version() {
-                Some(tv) => tool_versions.push(tv),
+            let default_opts = ToolVersionOptions::new();
+            match runtime.tvr {
+                Some(tv) => tool_version_requests.push((runtime.plugin, tv, default_opts.clone())),
                 None => {
-                    if runtime.version == RuntimeArgVersion::None {
+                    if runtime.tvr.is_none() {
                         match ts.versions.get(&runtime.plugin) {
                             Some(tvl) => {
-                                for tv in &tvl.versions {
-                                    tool_versions.push(tv.clone());
+                                for (tvr, opts) in &tvl.requests {
+                                    tool_version_requests.push((
+                                        runtime.plugin.clone(),
+                                        tvr.clone(),
+                                        opts.clone(),
+                                    ));
                                 }
                             }
                             None => {
-                                let tv = ToolVersion::new(
+                                let tvr = ToolVersionRequest::Version(
                                     runtime.plugin.clone(),
-                                    ToolVersionType::Version("latest".into()),
+                                    "latest".into(),
                                 );
-                                tool_versions.push(tv);
+                                tool_version_requests.push((
+                                    runtime.plugin,
+                                    tvr,
+                                    default_opts.clone(),
+                                ));
                             }
                         }
                     }
@@ -100,13 +109,13 @@ impl Install {
             .num_threads(config.settings.jobs)
             .build()?
             .install(|| -> Result<()> {
-                let mut versions = vec![];
-                for mut tv in tool_versions {
-                    let plugin = match config.plugins.get(&tv.plugin_name).cloned() {
+                let mut tool_versions = vec![];
+                for (plugin_name, tvr, opts) in tool_version_requests {
+                    let plugin = match config.plugins.get(&plugin_name).cloned() {
                         Some(plugin) => plugin,
                         None => Arc::new(Plugins::External(ExternalPlugin::new(
                             &config.settings,
-                            &tv.plugin_name,
+                            &plugin_name,
                         ))),
                     };
                     match plugin.as_ref() {
@@ -120,56 +129,56 @@ impl Install {
                             }
                         }
                     }
-                    tv.resolve(&config, plugin, ts.latest_versions)?;
-                    versions.push(tv.rtv.unwrap());
+                    let tv = tvr.resolve(&config, &plugin, opts, ts.latest_versions)?;
+                    tool_versions.push((plugin, tv));
                 }
-                if versions.is_empty() {
+                if tool_versions.is_empty() {
                     warn!("no runtimes to install");
                     warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
                     return Ok(());
                 }
                 let mut to_uninstall = vec![];
-                for rtv in &versions {
-                    if rtv.is_installed() {
+                for (plugin, tv) in &tool_versions {
+                    if plugin.is_version_installed(tv) {
                         if self.force {
-                            to_uninstall.push(rtv.clone());
+                            to_uninstall.push((plugin, tv.clone()));
                         } else {
-                            warn!("{} already installed", style(rtv).cyan().for_stderr());
+                            warn!("{} already installed", style(tv).cyan().for_stderr());
                         }
                     }
                 }
                 if !to_uninstall.is_empty() {
                     to_uninstall
                         .into_par_iter()
-                        .map(|rtv| {
+                        .map(|(plugin, tv)| {
                             let mut pr = mpr.add();
-                            rtv.decorate_progress_bar(&mut pr);
-                            match rtv.uninstall(&config.settings, &pr, false) {
+                            plugin.decorate_progress_bar(&mut pr, Some(&tv));
+                            match plugin.uninstall_version(&config, &tv, &pr, false) {
                                 Ok(_) => {
                                     pr.finish();
                                     Ok(())
                                 }
                                 Err(err) => {
                                     pr.error();
-                                    Err(err.wrap_err(format!("failed to uninstall {}", rtv)))
+                                    Err(err.wrap_err(format!("failed to uninstall {}", tv)))
                                 }
                             }
                         })
                         .collect::<Result<Vec<_>>>()?;
                 }
-                versions
+                tool_versions
                     .into_par_iter()
-                    .map(|rtv| {
-                        if rtv.is_installed() {
+                    .map(|(plugin, tv)| {
+                        if plugin.is_version_installed(&tv) {
                             return Ok(());
                         }
                         let mut pr = mpr.add();
-                        rtv.decorate_progress_bar(&mut pr);
-                        match rtv.install(&config, &mut pr, self.force) {
+                        plugin.decorate_progress_bar(&mut pr, Some(&tv));
+                        match plugin.install_version(&config, &tv, &mut pr, self.force) {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 pr.error();
-                                Err(err.wrap_err(format!("failed to install {}", rtv)))
+                                Err(err.wrap_err(format!("failed to install {}", tv)))
                             }
                         }
                     })
@@ -197,7 +206,7 @@ impl Install {
                 }
             }
         }
-        if ts.list_missing_versions().is_empty() {
+        if ts.list_missing_versions(&config).is_empty() {
             warn!("no runtimes to install");
         }
         let mpr = MultiProgressReport::new(config.settings.verbose);

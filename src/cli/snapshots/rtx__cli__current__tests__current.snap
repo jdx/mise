@@ -3,5 +3,5 @@ source: src/cli/current.rs
 expression: output
 ---
 tiny 3.1.0
-dummy ref-master
+dummy ref:master
 

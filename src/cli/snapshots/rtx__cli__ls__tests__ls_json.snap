@@ -5,7 +5,7 @@ expression: output
 {
   "dummy": [
     {
-      "version": "ref-master",
+      "version": "ref:master",
       "install_path": "~/data/installs/dummy/ref-master",
       "source": {
         "type": ".tool-versions",

@@ -1,13 +1,13 @@
 use color_eyre::eyre::Result;
 use console::style;
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName};
-use crate::runtimes::RuntimeVersion;
-use crate::toolset::ToolsetBuilder;
+use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Delete unused versions of tools
@@ -34,35 +34,39 @@ impl Command for Prune {
         let mut to_delete = ts
             .list_installed_versions(&config)?
             .into_iter()
-            .map(|rtv| (rtv.to_string(), rtv))
-            .collect::<IndexMap<String, RuntimeVersion>>();
+            .map(|(p, tv)| (tv.to_string(), (p, tv)))
+            .collect::<IndexMap<String, (Arc<Plugins>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugins {
-            to_delete.retain(|_, rtv| plugins.contains(rtv.plugin.name()));
+            to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
         }
 
         for cf in config.get_tracked_config_files()?.values() {
             let mut ts = cf.to_toolset().clone();
-            ts.resolve(&config);
-            for rtv in ts.list_current_versions() {
-                to_delete.remove(&rtv.to_string());
+            ts.resolve(&mut config);
+            for (_, tv) in ts.list_current_versions(&config) {
+                to_delete.remove(&tv.to_string());
             }
         }
 
-        self.delete(&config, to_delete.into_values().collect())
+        self.delete(&mut config, to_delete.into_values().collect())
     }
 }
 
 impl Prune {
-    fn delete(&self, config: &Config, to_delete: Vec<RuntimeVersion>) -> Result<()> {
+    fn delete(
+        &self,
+        config: &mut Config,
+        to_delete: Vec<(Arc<Plugins>, ToolVersion)>,
+    ) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
-        for rtv in to_delete {
+        for (p, tv) in to_delete {
             let mut pr = mpr.add();
-            rtv.decorate_progress_bar(&mut pr);
+            p.decorate_progress_bar(&mut pr, Some(&tv));
             if self.dry_run {
                 pr.set_prefix(format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
             }
-            rtv.uninstall(&config.settings, &pr, self.dry_run)?;
+            p.uninstall_version(config, &tv, &pr, self.dry_run)?;
             pr.finish();
         }
         Ok(())

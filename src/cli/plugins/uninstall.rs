@@ -38,7 +38,7 @@ impl PluginsUninstall {
         match plugin {
             Some(plugin) if plugin.is_installed() => {
                 let mut pr = mpr.add();
-                plugin.decorate_progress_bar(&mut pr);
+                plugin.decorate_progress_bar(&mut pr, None);
                 plugin.uninstall(&pr)?;
                 pr.finish_with_message("uninstalled".into());
             }

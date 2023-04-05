@@ -114,12 +114,12 @@ impl ProgressReport {
             None => eprintln!("{}{message}", self.prefix),
         }
     }
-    pub fn clear(&self) {
-        match &self.pb {
-            Some(pb) => pb.finish_and_clear(),
-            None => (),
-        }
-    }
+    // pub fn clear(&self) {
+    //     match &self.pb {
+    //         Some(pb) => pb.finish_and_clear(),
+    //         None => (),
+    //     }
+    // }
 }
 
 #[cfg(test)]

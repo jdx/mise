@@ -27,13 +27,13 @@ impl Command for Which {
         let ts = ToolsetBuilder::new().build(&mut config)?;
 
         match ts.which(&config, &self.bin_name) {
-            Some(rtv) => {
+            Some((p, tv)) => {
                 if self.version {
-                    rtxprintln!(out, "{}", rtv.version);
+                    rtxprintln!(out, "{}", tv.version);
                 } else if self.plugin {
-                    rtxprintln!(out, "{}", rtv.plugin.name());
+                    rtxprintln!(out, "{}", p.name());
                 } else {
-                    let path = rtv.which(&config.settings, &self.bin_name)?;
+                    let path = p.which(&config, &tv, &self.bin_name)?;
                     rtxprintln!(out, "{}", path.unwrap().display());
                 }
                 Ok(())

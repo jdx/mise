@@ -1,68 +1,29 @@
 use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
-use std::path::PathBuf;
 
 use clap::{Arg, Command, Error};
 use color_eyre::eyre::Result;
 use regex::Regex;
 
 use crate::plugins::PluginName;
-use crate::toolset::{ToolVersion, ToolVersionType};
+use crate::toolset::ToolVersionRequest;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RuntimeArg {
     pub plugin: PluginName,
-    pub version: RuntimeArgVersion,
-}
-
-/// The type of runtime argument
-/// Generally, these are in the form of `plugin@version` that's "Version"
-/// but there are some alternatives like `plugin@ref:sha` or `plugin@path:/path/to/runtime`
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum RuntimeArgVersion {
-    /// Nothing was specified, e.g.: `nodejs`
-    None,
-    /// references a version, version prefix, or alias
-    /// e.g.: `nodejs@18`, `nodejs@latest`, `nodejs@lts`
-    Version(String),
-    /// use the system runtime already on PATH
-    /// e.g.: `nodejs@system`
-    System,
-    /// build runtime from source at this VCS sha
-    Ref(String),
-    /// runtime is in a local directory, not managed by rtx
-    Path(PathBuf),
-    Prefix(String),
+    pub tvr: Option<ToolVersionRequest>,
 }
 
 impl RuntimeArg {
     pub fn parse(input: &str) -> Self {
         match input.split_once('@') {
-            Some((plugin, "system")) => Self {
-                plugin: plugin.into(),
-                version: RuntimeArgVersion::System,
-            },
-            Some((plugin, version)) => match version.split_once(':') {
-                Some(("path", path)) => Self {
-                    plugin: plugin.into(),
-                    version: RuntimeArgVersion::Path(path.into()),
-                },
-                Some(("ref", ref_)) => Self {
-                    plugin: plugin.into(),
-                    version: RuntimeArgVersion::Ref(ref_.into()),
-                },
-                Some(("prefix", prefix)) => Self {
-                    plugin: plugin.into(),
-                    version: RuntimeArgVersion::Prefix(prefix.into()),
-                },
-                _ => Self {
-                    plugin: plugin.into(),
-                    version: RuntimeArgVersion::Version(version.into()),
-                },
+            Some((plugin, version)) => Self {
+                plugin: plugin.to_string(),
+                tvr: Some(ToolVersionRequest::new(plugin.to_string(), version)),
             },
             None => Self {
                 plugin: input.into(),
-                version: RuntimeArgVersion::None,
+                tvr: None,
             },
         }
     }
@@ -80,11 +41,8 @@ impl RuntimeArg {
             let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
             let a = runtimes[0].clone();
             let b = runtimes[1].clone();
-            if matches!(a.version, RuntimeArgVersion::None)
-                && matches!(b.version, RuntimeArgVersion::None)
-                && re.is_match(&b.plugin)
-            {
-                runtimes[1].version = RuntimeArgVersion::Version(b.plugin);
+            if matches!(a.tvr, None) && matches!(b.tvr, None) && re.is_match(&b.plugin) {
+                runtimes[1].tvr = Some(ToolVersionRequest::new(a.plugin.clone(), &b.plugin));
                 runtimes[1].plugin = a.plugin;
                 runtimes.remove(0);
             }
@@ -92,52 +50,19 @@ impl RuntimeArg {
         runtimes
     }
 
-    pub fn with_version(self, version: RuntimeArgVersion) -> Self {
-        Self { version, ..self }
-    }
-
-    pub fn to_tool_version(&self) -> Option<ToolVersion> {
-        match self.version {
-            RuntimeArgVersion::Version(ref v) => Some(ToolVersion::new(
-                self.plugin.clone(),
-                ToolVersionType::Version(v.clone()),
-            )),
-            RuntimeArgVersion::Ref(ref v) => Some(ToolVersion::new(
-                self.plugin.clone(),
-                ToolVersionType::Ref(v.clone()),
-            )),
-            RuntimeArgVersion::Path(ref v) => Some(ToolVersion::new(
-                self.plugin.clone(),
-                ToolVersionType::Path(v.clone()),
-            )),
-            RuntimeArgVersion::Prefix(ref v) => Some(ToolVersion::new(
-                self.plugin.clone(),
-                ToolVersionType::Prefix(v.clone()),
-            )),
-            RuntimeArgVersion::System => Some(ToolVersion::new(
-                self.plugin.clone(),
-                ToolVersionType::System,
-            )),
-            RuntimeArgVersion::None => None,
+    pub fn with_version(self, version: &str) -> Self {
+        Self {
+            tvr: Some(ToolVersionRequest::new(self.plugin.clone(), version)),
+            ..self
         }
     }
 }
 
 impl Display for RuntimeArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}@{}", self.plugin, self.version)
-    }
-}
-
-impl Display for RuntimeArgVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeArgVersion::System => write!(f, "system"),
-            RuntimeArgVersion::Version(version) => write!(f, "{version}"),
-            RuntimeArgVersion::Path(path) => write!(f, "path:{}", path.display()),
-            RuntimeArgVersion::Ref(ref_) => write!(f, "ref:{ref_}"),
-            RuntimeArgVersion::Prefix(prefix) => write!(f, "prefix:{prefix}"),
-            RuntimeArgVersion::None => write!(f, "current"),
+        match &self.tvr {
+            Some(tvr) => write!(f, "{}", tvr),
+            _ => write!(f, "{}", self.plugin),
         }
     }
 }
