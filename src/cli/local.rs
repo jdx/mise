@@ -142,7 +142,7 @@ pub fn local(
 fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<()> {
     let mut ts = cf.to_toolset().clone();
     ts.resolve(config);
-    if !ts.list_missing_versions().is_empty() {
+    if !ts.list_missing_versions(config).is_empty() {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         ts.install_missing(config, mpr)?;
     }
@@ -292,7 +292,7 @@ mod tests {
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             let stdout = assert_cli!("current", "dummy");
-            assert_str_eq!(grep(stdout, "dummy"), "~/data/installs/dummy/1.1.0");
+            assert_str_eq!(grep(stdout, "dummy"), "path:~/data/installs/dummy/1.1.0");
         });
     }
 

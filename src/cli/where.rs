@@ -1,10 +1,11 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser, RuntimeArgVersion};
+use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::errors::Error::VersionNotInstalled;
+use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a runtime
@@ -30,27 +31,42 @@ pub struct Where {
 
 impl Command for Where {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let runtime = match self.runtime.version {
-            RuntimeArgVersion::None => match self.asdf_version {
-                Some(version) => self
-                    .runtime
-                    .with_version(RuntimeArgVersion::Version(version)),
-                None => self.runtime,
+        let runtime = match self.runtime.tvr {
+            None => match self.asdf_version {
+                Some(version) => self.runtime.with_version(&version),
+                None => {
+                    let ts = ToolsetBuilder::new()
+                        .with_args(&[self.runtime.clone()])
+                        .build(&mut config)?;
+                    let v = ts
+                        .versions
+                        .get(&self.runtime.plugin)
+                        .and_then(|v| v.requests.first())
+                        .map(|(r, _)| r.version());
+                    self.runtime
+                        .with_version(&v.unwrap_or(String::from("latest")))
+                }
             },
             _ => self.runtime,
         };
 
-        let ts = ToolsetBuilder::new()
-            .with_args(&[runtime.clone()])
-            .build(&mut config)?;
-        match ts.resolve_runtime_arg(&runtime) {
-            Some(rtv) if rtv.is_installed() => {
-                rtxprintln!(out, "{}", rtv.install_path.to_string_lossy());
+        let plugin = match config.plugins.get(&runtime.plugin) {
+            Some(plugin) => plugin,
+            None => Err(PluginNotInstalled(runtime.plugin.clone()))?,
+        };
+
+        match runtime
+            .tvr
+            .as_ref()
+            .map(|tvr| tvr.resolve(&config, plugin, Default::default(), false))
+        {
+            Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
+                rtxprintln!(out, "{}", plugin.install_path(&tv).to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
                 runtime.plugin.to_string(),
-                runtime.version.to_string(),
+                runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
             ))?,
         }
     }

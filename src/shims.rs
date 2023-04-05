@@ -17,8 +17,7 @@ use crate::file::{create_dir_all, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
 use crate::plugins::{Plugin, Plugins};
-use crate::runtimes::RuntimeVersion;
-use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
@@ -45,8 +44,8 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
         let shim = shims_dir.join(bin_name);
         if shim.exists() {
             let ts = ToolsetBuilder::new().build(config)?;
-            if let Some(rtv) = ts.which(config, bin_name) {
-                if let Some(bin) = rtv.which(&config.settings, bin_name)? {
+            if let Some((p, tv)) = ts.which(config, bin_name) {
+                if let Some(bin) = p.which(config, &tv, bin_name)? {
                     return Ok(bin);
                 }
             }
@@ -62,8 +61,8 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
                     return Ok(bin);
                 }
             }
-            let rtvs = ts.list_rtvs_with_bin(config, bin_name)?;
-            err_no_version_set(bin_name, rtvs)?;
+            let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
+            err_no_version_set(bin_name, tvs)?;
         }
     }
     Err(eyre!("{} is not a valid shim", bin_name))
@@ -88,10 +87,10 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
     let paths: Vec<PathBuf> = ts
         .list_installed_versions(config)?
         .into_par_iter()
-        .flat_map(|rtv| match rtv.list_bin_paths(&config.settings) {
-            Ok(paths) => paths.clone(),
+        .flat_map(|(p, tv)| match p.list_bin_paths(config, &tv) {
+            Ok(paths) => paths,
             Err(e) => {
-                warn!("Error listing bin paths for {}: {:#}", rtv, e);
+                warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             }
         })
@@ -166,18 +165,14 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-fn err_no_version_set(bin_name: &str, rtvs: Vec<RuntimeVersion>) -> Result<()> {
-    if rtvs.is_empty() {
+fn err_no_version_set(bin_name: &str, tvs: Vec<ToolVersion>) -> Result<()> {
+    if tvs.is_empty() {
         return Ok(());
     }
     let mut msg = format!("No version is set for shim: {}\n", bin_name);
     msg.push_str("Set a global default version with one of the following:\n");
-    for rtv in rtvs {
-        msg.push_str(&format!(
-            "rtx global {}@{}\n",
-            rtv.plugin.name(),
-            rtv.version
-        ));
+    for tv in tvs {
+        msg.push_str(&format!("rtx global {}@{}\n", tv.plugin_name, tv.version));
     }
     Err(eyre!(msg.trim().to_string()))
 }

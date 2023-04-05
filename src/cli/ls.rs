@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use console::style;
@@ -15,9 +16,8 @@ use crate::config::Config;
 use crate::env::DUMB_TERMINAL;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName};
-use crate::runtimes::RuntimeVersion;
-use crate::toolset::{ToolSource, ToolsetBuilder};
+use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
 /// List installed runtime versions
 ///
@@ -53,7 +53,7 @@ impl Command for Ls {
 
         let mut runtimes = get_runtime_list(&mut config, &self.plugin)?;
         if self.current {
-            runtimes.retain(|(_, source)| source.is_some());
+            runtimes.retain(|(_, _, source)| source.is_some());
         }
         if self.json {
             self.display_json(runtimes, out)
@@ -65,7 +65,7 @@ impl Command for Ls {
     }
 }
 
-type JSONOutput = IndexMap<String, Vec<JSONRuntime>>;
+type JSONOutput = IndexMap<PluginName, Vec<JSONRuntime>>;
 
 #[derive(Serialize)]
 struct JSONRuntime {
@@ -88,20 +88,16 @@ impl Ls {
         Ok(())
     }
 
-    fn display_json(
-        &self,
-        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
-        out: &mut Output,
-    ) -> Result<()> {
+    fn display_json(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(rtv, _)| rtv.plugin.name().clone())
+            .group_by(|(p, _, _)| p.name().to_string())
         {
             let runtimes = runtimes
-                .map(|(rtv, source)| JSONRuntime {
-                    version: rtv.version,
-                    install_path: rtv.install_path,
+                .map(|(p, tv, source)| JSONRuntime {
+                    install_path: p.install_path(&tv),
+                    version: tv.version,
                     source: source.map(|source| source.as_json()),
                 })
                 .collect();
@@ -110,27 +106,23 @@ impl Ls {
                 out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
                 return Ok(());
             }
-            plugins.insert(plugin_name, runtimes);
+            plugins.insert(plugin_name.clone(), runtimes);
         }
         out.stdout.writeln(serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 
-    fn display_parseable(
-        &self,
-        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
-        out: &mut Output,
-    ) -> Result<()> {
+    fn display_parseable(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
         runtimes
             .into_iter()
-            .map(|(rtv, _)| rtv)
-            .filter(|rtv| rtv.is_installed())
-            .for_each(|rtv| {
+            .map(|(p, tv, _)| (p, tv))
+            .filter(|(p, tv)| p.is_version_installed(tv))
+            .for_each(|(_, tv)| {
                 if self.plugin.is_some() {
                     // only displaying 1 plugin so only show the version
-                    rtxprintln!(out, "{}", rtv.version);
+                    rtxprintln!(out, "{}", tv.version);
                 } else {
-                    rtxprintln!(out, "{} {}", rtv.plugin.name(), rtv.version);
+                    rtxprintln!(out, "{} {}", tv.plugin_name, tv.version);
                 }
             });
         Ok(())
@@ -138,14 +130,14 @@ impl Ls {
 
     fn display_user(
         &self,
-        runtimes: Vec<(RuntimeVersion, Option<ToolSource>)>,
+        runtimes: Vec<(Arc<Plugins>, ToolVersion, Option<ToolSource>)>,
         out: &mut Output,
     ) -> Result<()> {
-        for (rtv, source) in runtimes {
+        for (p, tv, source) in runtimes {
             rtxprintln!(
                 out,
                 "{} {} {}",
-                match rtv.is_installed() && source.is_some() {
+                match p.is_version_installed(&tv) && source.is_some() {
                     true =>
                         if *DUMB_TERMINAL {
                             "->"
@@ -154,7 +146,7 @@ impl Ls {
                         },
                     false => "  ",
                 },
-                styled_version(&rtv, !rtv.is_installed(), source.is_some()),
+                styled_version(&tv, !p.is_version_installed(&tv), source.is_some()),
                 match source {
                     Some(source) => format!("(set by {source})"),
                     None => "".into(),
@@ -165,55 +157,52 @@ impl Ls {
     }
 }
 
-fn styled_version(rtv: &RuntimeVersion, missing: bool, active: bool) -> String {
+fn styled_version(tv: &ToolVersion, missing: bool, active: bool) -> String {
     let styled = if missing {
-        style(&rtv.version).strikethrough().red().to_string()
+        style(&tv.version).strikethrough().red().to_string()
             + style(" (missing)").red().to_string().as_str()
     } else if active {
-        style(&rtv.version).green().to_string()
+        style(&tv.version).green().to_string()
     } else {
-        style(&rtv.version).dim().to_string()
+        style(&tv.version).dim().to_string()
     };
     let unstyled = if missing {
-        format!("{} {} (missing)", &rtv.plugin.name(), &rtv.version)
+        format!("{} {} (missing)", &tv.plugin_name, &tv.version)
     } else {
-        format!("{} {}", &rtv.plugin.name(), &rtv.version)
+        format!("{} {}", &tv.plugin_name, &tv.version)
     };
 
     let pad = max(0, 25 - unstyled.len() as isize) as usize;
     format!(
         "{} {}{}",
-        style(&rtv.plugin.name()).cyan(),
+        style(&tv.plugin_name).cyan(),
         styled,
         " ".repeat(pad)
     )
 }
 
+type RuntimeRow = (Arc<Plugins>, ToolVersion, Option<ToolSource>);
+
 fn get_runtime_list(
     config: &mut Config,
     plugin_flag: &Option<PluginName>,
-) -> Result<Vec<(RuntimeVersion, Option<ToolSource>)>> {
+) -> Result<Vec<RuntimeRow>> {
     let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions: HashMap<(PluginName, String), RuntimeVersion> = ts
+    let mut versions: HashMap<(PluginName, String), (Arc<Plugins>, ToolVersion)> = ts
         .list_installed_versions(config)?
         .into_iter()
-        .filter(|rtv| match plugin_flag {
-            Some(plugin) => rtv.plugin.name() == plugin,
+        .filter(|(p, _)| match plugin_flag {
+            Some(plugin) => p.name() == plugin,
             None => true,
         })
-        .map(|rtv| ((rtv.plugin.name().clone(), rtv.version.clone()), rtv))
+        .map(|(p, tv)| ((p.name().clone(), tv.version.clone()), (p, tv)))
         .collect();
 
     let active = ts
-        .list_current_versions()
+        .list_current_versions(config)
         .into_iter()
-        .map(|rtv| {
-            (
-                (rtv.plugin.name().clone(), rtv.version.clone()),
-                rtv.clone(),
-            )
-        })
-        .collect::<HashMap<(PluginName, String), RuntimeVersion>>();
+        .map(|(p, tv)| ((p.name().clone(), tv.version.clone()), (p, tv)))
+        .collect::<HashMap<(PluginName, String), (Arc<Plugins>, ToolVersion)>>();
 
     versions.extend(
         active
@@ -223,23 +212,20 @@ fn get_runtime_list(
                 Some(plugin) => plugin_name == plugin,
                 None => true,
             })
-            .collect::<Vec<((PluginName, String), RuntimeVersion)>>(),
+            .collect::<Vec<((PluginName, String), (Arc<Plugins>, ToolVersion))>>(),
     );
 
-    let rvs: Vec<(RuntimeVersion, Option<ToolSource>)> = versions
+    let rvs: Vec<RuntimeRow> = versions
         .into_iter()
         .sorted_by_cached_key(|((plugin_name, version), _)| {
             (plugin_name.clone(), Versioning::new(version))
         })
-        .map(|(k, rtv)| {
+        .map(|(k, (p, tv))| {
             let source = match &active.get(&k) {
-                Some(rtv) => ts
-                    .versions
-                    .get(rtv.plugin.name())
-                    .map(|tv| tv.source.clone()),
+                Some((_, tv)) => ts.versions.get(&tv.plugin_name).map(|tv| tv.source.clone()),
                 None => None,
             };
-            (rtv, source)
+            (p, tv, source)
         })
         .collect();
 

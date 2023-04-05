@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::path::Path;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
 use console::style;
@@ -9,17 +11,23 @@ use regex::Regex;
 pub use external_plugin::ExternalPlugin;
 pub use script_manager::{Script, ScriptManager};
 
-use crate::config::Settings;
+use crate::config::{Config, Settings};
+use crate::dirs;
+use crate::hash::hash_to_str;
+use crate::plugins::rtx_plugin_toml::RtxPluginToml;
+use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 
 mod external_plugin;
+mod external_plugin_cache;
 mod rtx_plugin_toml;
 mod script_manager;
 
 pub type PluginName = String;
 
-pub trait Plugin: Debug + Send + Sync {
+pub trait Plugin: Debug + Send + Sync + Eq + PartialEq + Hash {
     fn name(&self) -> &PluginName;
+    fn toml(&self) -> &RtxPluginToml;
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>>;
     fn clear_remote_version_cache(&self) -> Result<()>;
     fn list_installed_versions(&self) -> Result<Vec<String>>;
@@ -80,14 +88,58 @@ pub trait Plugin: Debug + Send + Sync {
         unimplemented!()
     }
 
-    fn decorate_progress_bar(&self, pr: &mut ProgressReport) {
+    fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
         pr.set_style(PROG_TEMPLATE.clone());
         pr.set_prefix(format!(
             "{} {} ",
             style("rtx").dim().for_stderr(),
-            style(self.name()).cyan().for_stderr()
+            match tv {
+                Some(tv) => tv.to_string(),
+                None => self.name().to_string(),
+            }
         ));
         pr.enable_steady_tick();
+    }
+
+    fn is_version_installed(&self, tv: &ToolVersion) -> bool;
+    fn install_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &mut ProgressReport,
+        force: bool,
+    ) -> Result<()>;
+    fn uninstall_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+        dryrun: bool,
+    ) -> Result<()>;
+    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>>;
+    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>>;
+    fn which(&self, config: &Config, tv: &ToolVersion, bin_name: &str) -> Result<Option<PathBuf>>;
+    fn install_path(&self, tv: &ToolVersion) -> PathBuf {
+        let pathname = match &tv.request {
+            ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
+            _ => self.tv_pathname(tv),
+        };
+        dirs::INSTALLS.join(self.name()).join(pathname)
+    }
+    fn cache_path(&self, tv: &ToolVersion) -> PathBuf {
+        dirs::CACHE.join(self.name()).join(self.tv_pathname(tv))
+    }
+    fn download_path(&self, tv: &ToolVersion) -> PathBuf {
+        dirs::DOWNLOADS.join(self.name()).join(self.tv_pathname(tv))
+    }
+    fn tv_pathname(&self, tv: &ToolVersion) -> String {
+        match &tv.request {
+            ToolVersionRequest::Version(_, _) => tv.version.to_string(),
+            ToolVersionRequest::Prefix(_, _) => tv.version.to_string(),
+            ToolVersionRequest::Ref(_, r) => format!("ref-{}", r),
+            ToolVersionRequest::Path(_, p) => format!("path-{}", hash_to_str(p)),
+            ToolVersionRequest::System(_) => "system".to_string(),
+        }
     }
 }
 
@@ -96,10 +148,32 @@ pub enum Plugins {
     External(ExternalPlugin),
 }
 
+impl Eq for Plugins {}
+
+impl PartialEq<Self> for Plugins {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Plugins::External(p1), Plugins::External(p2)) => p1 == p2,
+        }
+    }
+}
+impl Hash for Plugins {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Plugins::External(p) => p.hash(state),
+        }
+    }
+}
+
 impl Plugin for Plugins {
     fn name(&self) -> &PluginName {
         match self {
             Plugins::External(p) => p.name(),
+        }
+    }
+    fn toml(&self) -> &RtxPluginToml {
+        match self {
+            Plugins::External(p) => p.toml(),
         }
     }
 
@@ -169,9 +243,51 @@ impl Plugin for Plugins {
             Plugins::External(p) => p.execute_external_command(command, args),
         }
     }
-    fn decorate_progress_bar(&self, pr: &mut ProgressReport) {
+    fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
         match self {
-            Plugins::External(p) => p.decorate_progress_bar(pr),
+            Plugins::External(p) => p.decorate_progress_bar(pr, tv),
+        }
+    }
+    fn is_version_installed(&self, tv: &ToolVersion) -> bool {
+        match self {
+            Plugins::External(p) => p.is_version_installed(tv),
+        }
+    }
+    fn install_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &mut ProgressReport,
+        force: bool,
+    ) -> Result<()> {
+        match self {
+            Plugins::External(p) => p.install_version(config, tv, pr, force),
+        }
+    }
+    fn uninstall_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+        dryrun: bool,
+    ) -> Result<()> {
+        match self {
+            Plugins::External(p) => p.uninstall_version(config, tv, pr, dryrun),
+        }
+    }
+    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        match self {
+            Plugins::External(p) => p.list_bin_paths(config, tv),
+        }
+    }
+    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+        match self {
+            Plugins::External(p) => p.exec_env(config, tv),
+        }
+    }
+    fn which(&self, config: &Config, tv: &ToolVersion, bin_name: &str) -> Result<Option<PathBuf>> {
+        match self {
+            Plugins::External(p) => p.which(config, tv, bin_name),
         }
     }
 }

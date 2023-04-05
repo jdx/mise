@@ -9,7 +9,7 @@ use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Settings};
 use crate::plugins::{Plugin, PluginName, Plugins};
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionType, Toolset};
+use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
 #[derive(Debug)]
 pub struct LegacyVersionFile {
@@ -91,30 +91,10 @@ impl Display for LegacyVersionFile {
 fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
     let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.to_path_buf()));
     if !version.is_empty() {
-        toolset.add_version(ToolVersion::new(
-            plugin.to_string(),
-            ToolVersionType::Version(version.to_string()),
-        ));
+        toolset.add_version(
+            ToolVersionRequest::new(plugin.to_string(), version),
+            Default::default(),
+        );
     }
     toolset
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugins::ExternalPlugin;
-
-    #[test]
-    fn test_legacy_file() {
-        let settings = Settings::default();
-        let path = PathBuf::from("tiny-legacy").join(".rtx-tiny-version");
-        let plugin = Plugins::External(ExternalPlugin::new(&settings, &PluginName::from("tiny")));
-        let cf = LegacyVersionFile::parse(&settings, path, &plugin).unwrap();
-        let tvl = cf.to_toolset().versions.get("tiny").unwrap();
-        let version = match tvl.versions[0].r#type {
-            ToolVersionType::Version(ref v) => v,
-            _ => panic!("Unexpected version type"),
-        };
-        assert_eq!(version, "2");
-    }
 }

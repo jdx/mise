@@ -121,7 +121,7 @@ impl PluginsInstall {
             mpr.warn(format!("plugin {} already installed", name));
         } else {
             let mut pr = mpr.add();
-            plugin.decorate_progress_bar(&mut pr);
+            plugin.decorate_progress_bar(&mut pr, None);
             plugin.install(config, &mut pr, self.force)?;
         }
         Ok(())

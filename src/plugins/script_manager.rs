@@ -1,3 +1,5 @@
+use crate::fake_asdf::get_path_with_fake_asdf;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -7,20 +9,20 @@ use std::{fmt, thread};
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
-use indexmap::{indexmap, IndexMap};
+use indexmap::indexmap;
 use once_cell::sync::Lazy;
 
 use crate::cmd::cmd;
 use crate::config::Settings;
-use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::{basename, display_path};
+use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
 pub struct ScriptManager {
     pub plugin_path: PathBuf,
     pub plugin_name: String,
-    pub env: IndexMap<String, String>,
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,14 +67,22 @@ impl Display for Script {
     }
 }
 
-static INITIAL_ENV: Lazy<IndexMap<String, String>> = Lazy::new(|| {
-    (indexmap! {
-        "RTX_EXE" => env::RTX_EXE.to_string_lossy(),
-        "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy(),
-    })
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v.to_string()))
-    .collect()
+static INITIAL_ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
+    let mut env = env::PRISTINE_ENV.clone();
+    env.extend(
+        (indexmap! {
+            "__RTX_SCRIPT" => "1".to_string(),
+            "ASDF_CONCURRENCY" => num_cpus::get().to_string(),
+            "PATH" => get_path_with_fake_asdf(),
+            "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy().to_string(),
+            "RTX_CONCURRENCY" => num_cpus::get().to_string(),
+            "RTX_DATA_DIR" => dirs::ROOT.to_string_lossy().to_string(),
+            "RTX_EXE" => env::RTX_EXE.to_string_lossy().to_string(),
+        })
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v)),
+    );
+    env
 });
 
 impl ScriptManager {
@@ -86,14 +96,6 @@ impl ScriptManager {
 
     pub fn with_env(mut self, k: String, v: String) -> Self {
         self.env.insert(k, v);
-        self
-    }
-
-    pub fn with_envs<I>(mut self, envs: I) -> Self
-    where
-        I: IntoIterator<Item = (String, String)>,
-    {
-        self.env.extend(envs);
         self
     }
 
@@ -114,13 +116,10 @@ impl ScriptManager {
         // if !script_path.exists() {
         //     return Err(PluginNotInstalled(self.plugin_name.clone()).into());
         // }
-        let mut cmd = cmd(&script_path, args);
+        let mut cmd = cmd(script_path, args).full_env(&self.env);
         if !settings.raw {
             // ignore stdin, otherwise a prompt may show up where the user won't see it
             cmd = cmd.stdin_null();
-        }
-        for (k, v) in self.env.iter() {
-            cmd = cmd.env(k, v);
         }
         cmd
     }
@@ -160,9 +159,7 @@ impl ScriptManager {
         F3: Fn(&str) + Send + Sync,
     {
         let mut cmd = Command::new(self.get_script_path(script));
-        for (k, v) in self.env.iter() {
-            cmd.env(k, v);
-        }
+        cmd.env_clear().envs(&self.env);
         if settings.raw {
             let status = cmd.spawn()?.wait()?;
             match status.success() {
