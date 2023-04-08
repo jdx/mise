@@ -3,6 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 rtx cache clean
+rtx trust .e2e.rtx.toml
 rtx i nodejs
 eval "$(rtx env -s bash)"
 assert "node -v" "v18.0.0"
