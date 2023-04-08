@@ -37,3 +37,27 @@ impl ToolVersionList {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::plugins::{ExternalPlugin, Plugin, Plugins};
+
+    #[test]
+    fn test_tool_version_list() {
+        let mut config = Config::default();
+        let plugin = ExternalPlugin::new(&config.settings, &"tiny".to_string());
+        let plugin = Arc::new(Plugins::External(plugin));
+        config.plugins.insert(plugin.name().clone(), plugin.clone());
+        let mut tvl = ToolVersionList::new(plugin.name().clone(), ToolSource::Argument);
+        tvl.requests.push((
+            ToolVersionRequest::new(plugin.name().clone(), "latest"),
+            ToolVersionOptions::default(),
+        ));
+        tvl.resolve(&config, true);
+        assert_eq!(tvl.versions.len(), 1);
+    }
+}
