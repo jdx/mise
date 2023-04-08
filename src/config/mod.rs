@@ -43,6 +43,7 @@ pub struct Config {
     pub should_exit_early: bool,
     pub project_root: Option<PathBuf>,
     shorthands: OnceCell<HashMap<String, String>>,
+    repo_urls: HashMap<PluginName, String>,
 }
 
 impl Config {
@@ -50,7 +51,7 @@ impl Config {
         let global_config = load_rtxrc()?;
         let mut settings = global_config.settings();
         let config_filenames = load_config_filenames(&IndexMap::new());
-        let mut plugins = load_plugins(&settings.build())?;
+        let plugins = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
@@ -82,13 +83,10 @@ impl Config {
             .collect_vec();
         let should_exit_early = hook_env::should_exit_early(&watch_files);
 
+        let mut repo_urls = HashMap::new();
         for cf in config_files.values() {
             for (plugin_name, repo_url) in cf.plugins() {
-                plugins.entry(plugin_name.clone()).or_insert_with(|| {
-                    let mut plugin = ExternalPlugin::new(&settings, &plugin_name);
-                    plugin.repo_url = Some(repo_url);
-                    Arc::new(Plugins::External(plugin))
-                });
+                repo_urls.insert(plugin_name, repo_url);
             }
         }
         config_track.join().unwrap();
@@ -106,6 +104,7 @@ impl Config {
             global_config,
             plugins,
             should_exit_early,
+            repo_urls,
         };
 
         debug!("{}", &config);
@@ -116,6 +115,14 @@ impl Config {
     pub fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
             .get_or_init(|| get_shorthands(&self.settings))
+    }
+
+    pub fn get_repo_url(&self, plugin_name: &PluginName) -> Option<String> {
+        match self.repo_urls.get(plugin_name) {
+            Some(url) => Some(url),
+            None => self.get_shorthands().get(plugin_name),
+        }
+        .cloned()
     }
 
     pub fn get_all_aliases(&self) -> &AliasMap {

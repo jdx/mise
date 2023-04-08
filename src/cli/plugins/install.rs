@@ -54,12 +54,14 @@ impl Command for PluginsInstall {
         if self.all {
             return self.install_all_missing_plugins(&mut config, mpr);
         }
-        let (name, git_url) =
-            get_name_and_url(&config, &self.name.clone().unwrap(), &self.git_url)?;
-        if git_url.contains("://") {
-            self.install_one(&config, &name, &git_url, &mpr)?;
+        let (name, git_url) = get_name_and_url(&self.name.clone().unwrap(), &self.git_url)?;
+        if git_url.is_some() {
+            self.install_one(&config, &name, git_url, &mpr)?;
         } else {
-            let mut plugins: Vec<PluginName> = vec![name, git_url];
+            let mut plugins: Vec<PluginName> = vec![name];
+            if let Some(second) = self.git_url.clone() {
+                plugins.push(second);
+            };
             plugins.extend(self.rest.clone());
             self.install_many(&mut config, &plugins, mpr)?;
         }
@@ -95,10 +97,7 @@ impl PluginsInstall {
             .install(|| -> Result<()> {
                 plugins
                     .into_par_iter()
-                    .map(|plugin| {
-                        let (_, git_url) = get_name_and_url(config, plugin, &None)?;
-                        self.install_one(config, plugin, &git_url, &mpr)
-                    })
+                    .map(|plugin| self.install_one(config, plugin, None, &mpr))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(())
             })
@@ -108,15 +107,11 @@ impl PluginsInstall {
         &self,
         config: &Config,
         name: &String,
-        git_url: &str,
+        git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         let mut plugin = ExternalPlugin::new(&config.settings, name);
-        let (git_url, ref_) = git_url
-            .split_once('#')
-            .map_or((git_url, None), |(a, b)| (a, Some(b)));
-        plugin.repo_url = Some(git_url.to_string());
-        plugin.repo_ref = ref_.map(|s| s.to_string());
+        plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
             mpr.warn(format!("plugin {} already installed", name));
         } else {
@@ -128,22 +123,15 @@ impl PluginsInstall {
     }
 }
 
-fn get_name_and_url(
-    config: &Config,
-    name: &String,
-    git_url: &Option<String>,
-) -> Result<(String, String)> {
+fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     Ok(match git_url {
-        Some(url) => (name.clone(), url.clone()),
-        None => match name.contains(':') {
-            true => (get_name_from_url(name)?, name.clone()),
-            false => {
-                let git_url = config
-                    .get_shorthands()
-                    .get(name)
-                    .ok_or_else(|| eyre!("could not find plugin {}", name))?;
-                (name.clone(), git_url.to_string())
-            }
+        Some(url) => match url.contains("://") {
+            true => (name.to_string(), Some(url.clone())),
+            false => (name.to_string(), None),
+        },
+        None => match name.contains("://") {
+            true => (get_name_from_url(name)?, Some(name.to_string())),
+            false => (name.to_string(), None),
         },
     })
 }

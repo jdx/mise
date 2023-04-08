@@ -18,23 +18,23 @@ use crate::shims::reshim;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// Install a runtime
+/// Install a tool version
 ///
-/// This will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
+/// This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
 /// It won't be used simply by being installed, however.
 /// For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
-/// Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
+/// Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
 /// Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
-    /// Runtime(s) to install
+    /// Tool version(s) to install
     /// e.g.: nodejs@18
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Option<Vec<RuntimeArg>>,
 
-    /// Only install runtime(s) for <PLUGIN>
+    /// Only install tool version(s) for <PLUGIN>
     #[clap(long, short, conflicts_with = "runtime")]
     plugin: Option<Vec<PluginName>>,
 
@@ -42,7 +42,7 @@ pub struct Install {
     #[clap(long, short, requires = "runtime")]
     force: bool,
 
-    /// Install all missing runtimes as well as all plugins for the current directory
+    /// Install all missing tool versions as well as all plugins for the current directory
     /// This is hidden because it's now the default behavior
     #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"], hide = true)]
     all: bool,
@@ -221,7 +221,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx install nodejs@18.0.0</bold>  # install specific nodejs version
   $ <bold>rtx install nodejs@18</bold>      # install fuzzy nodejs version
   $ <bold>rtx install nodejs</bold>         # install version specified in .tool-versions or .rtx.toml
-  $ <bold>rtx install</bold>                # installs all runtimes specified in .tool-versions or .rtx.toml
+  $ <bold>rtx install</bold>                # installs everything specified in .tool-versions or .rtx.toml
 "#
 );
 
