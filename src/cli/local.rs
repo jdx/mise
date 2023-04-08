@@ -127,8 +127,9 @@ pub fn local(
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
         cf.add_runtimes(&mut config, &runtimes, pin)?;
+    } else {
+        install_missing_runtimes(&mut config, cf.as_ref())?;
     }
-    install_missing_runtimes(&mut config, cf.as_ref())?;
 
     if runtime.is_some() || remove.is_some() {
         cf.save()?;
