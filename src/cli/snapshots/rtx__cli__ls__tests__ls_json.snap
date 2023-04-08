@@ -6,6 +6,7 @@ expression: output
   "dummy": [
     {
       "version": "ref:master",
+      "requested_version": "ref:master",
       "install_path": "~/data/installs/dummy/ref-master",
       "source": {
         "type": ".tool-versions",
@@ -16,6 +17,7 @@ expression: output
   "tiny": [
     {
       "version": "3.1.0",
+      "requested_version": "3",
       "install_path": "~/data/installs/tiny/3.1.0",
       "source": {
         "type": ".tool-versions",

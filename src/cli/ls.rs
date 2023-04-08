@@ -1,10 +1,11 @@
-use std::cmp::max;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use console::style;
+use console::Alignment::Left;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use owo_colors::OwoColorize;
@@ -13,32 +14,33 @@ use versions::Versioning;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::env::DUMB_TERMINAL;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::plugins::{Plugin, PluginName, Plugins};
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
-/// List installed runtime versions
-///
-/// The "arrow (->)" indicates the runtime is installed, active, and will be used for running commands.
-/// (Assuming `rtx activate` or `rtx env` is in use).
+/// List installed and/or currently selected tool versions
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
-    /// Only show runtimes from [PLUGIN]
+    /// Only show tool versions from [PLUGIN]
     #[clap(long, short)]
     plugin: Option<PluginName>,
 
     #[clap(hide = true)]
     plugin_arg: Option<PluginName>,
 
-    /// Only show runtimes currently specified in .tool-versions
+    /// Only show tool versions currently specified in a .tool-versions/.rtx.toml
     #[clap(long, short)]
     current: bool,
 
+    /// Only show tool versions that are installed
+    /// Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed
+    #[clap(long, short)]
+    installed: bool,
+
     /// Output in an easily parseable format
-    #[clap(long, visible_short_alias = 'x', conflicts_with = "json")]
+    #[clap(long, hide = true, visible_short_alias = 'x', conflicts_with = "json")]
     parseable: bool,
 
     /// Output in json format
@@ -55,6 +57,9 @@ impl Command for Ls {
         if self.current {
             runtimes.retain(|(_, _, source)| source.is_some());
         }
+        if self.installed {
+            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv));
+        }
         if self.json {
             self.display_json(runtimes, out)
         } else if self.parseable {
@@ -65,11 +70,12 @@ impl Command for Ls {
     }
 }
 
-type JSONOutput = IndexMap<PluginName, Vec<JSONRuntime>>;
+type JSONOutput = IndexMap<PluginName, Vec<JSONToolVersion>>;
 
 #[derive(Serialize)]
-struct JSONRuntime {
+struct JSONToolVersion {
     version: String,
+    requested_version: Option<String>,
     install_path: PathBuf,
     source: Option<IndexMap<String, String>>,
 }
@@ -95,9 +101,10 @@ impl Ls {
             .group_by(|(p, _, _)| p.name().to_string())
         {
             let runtimes = runtimes
-                .map(|(p, tv, source)| JSONRuntime {
+                .map(|(p, tv, source)| JSONToolVersion {
                     install_path: p.install_path(&tv),
                     version: tv.version,
+                    requested_version: source.as_ref().map(|_| tv.request.version()),
                     source: source.map(|source| source.as_json()),
                 })
                 .collect();
@@ -113,6 +120,8 @@ impl Ls {
     }
 
     fn display_parseable(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
+        warn!("The parseable output format is deprecated and will be removed in a future release.");
+        warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
         runtimes
             .into_iter()
             .map(|(p, tv, _)| (p, tv))
@@ -133,52 +142,55 @@ impl Ls {
         runtimes: Vec<(Arc<Plugins>, ToolVersion, Option<ToolSource>)>,
         out: &mut Output,
     ) -> Result<()> {
-        for (p, tv, source) in runtimes {
-            rtxprintln!(
-                out,
-                "{} {} {}",
-                match p.is_version_installed(&tv) && source.is_some() {
-                    true =>
-                        if *DUMB_TERMINAL {
-                            "->"
-                        } else {
-                            "⏵ "
-                        },
-                    false => "  ",
-                },
-                styled_version(&tv, !p.is_version_installed(&tv), source.is_some()),
-                match source {
-                    Some(source) => format!("(set by {source})"),
-                    None => "".into(),
-                },
-            );
+        let output = runtimes
+            .into_iter()
+            .map(|(p, tv, source)| {
+                let plugin = p.name().to_string();
+                let version = if !p.is_version_installed(&tv) {
+                    VersionStatus::Missing(tv.version)
+                } else if source.is_some() {
+                    VersionStatus::Active(tv.version)
+                } else {
+                    VersionStatus::Inactive(tv.version)
+                };
+                let request = source.map(|source| (source.to_string(), tv.request.version()));
+                (plugin, version, request)
+            })
+            .collect::<Vec<_>>();
+        let (max_plugin_len, max_version_len, max_source_len) = output.iter().fold(
+            (0, 0, 0),
+            |(max_plugin, max_version, max_source), (plugin, version, request)| {
+                let plugin = max_plugin.max(plugin.len());
+                let version = max_version.max(version.to_plain_string().len());
+                let source = match request {
+                    Some((source, _)) => max_source.max(source.len()),
+                    None => max_source,
+                };
+                (plugin.min(10), version.min(15), source.min(30))
+            },
+        );
+        for (plugin, version, request) in output {
+            let pad = |s, len| console::pad_str(s, len, Left, None);
+            let plugin_extra = (plugin.len() as i8 - max_plugin_len as i8).max(0) as usize;
+            let plugin = pad(&plugin, max_plugin_len);
+            let plugin = style(plugin).cyan();
+            let version_extra = (version.to_plain_string().len() as i8 - max_version_len as i8
+                + plugin_extra as i8)
+                .max(0) as usize;
+            let version = version.to_string();
+            let version = pad(&version, max_version_len - plugin_extra);
+            match request {
+                Some((source, requested)) => {
+                    let source = pad(&source, max_source_len - version_extra);
+                    rtxprintln!(out, "{} {} {} {}", plugin, version, source, requested);
+                }
+                None => {
+                    rtxprintln!(out, "{} {}", plugin, version);
+                }
+            }
         }
         Ok(())
     }
-}
-
-fn styled_version(tv: &ToolVersion, missing: bool, active: bool) -> String {
-    let styled = if missing {
-        style(&tv.version).strikethrough().red().to_string()
-            + style(" (missing)").red().to_string().as_str()
-    } else if active {
-        style(&tv.version).green().to_string()
-    } else {
-        style(&tv.version).dim().to_string()
-    };
-    let unstyled = if missing {
-        format!("{} {} (missing)", &tv.plugin_name, &tv.version)
-    } else {
-        format!("{} {}", &tv.plugin_name, &tv.version)
-    };
-
-    let pad = max(0, 25 - unstyled.len() as isize) as usize;
-    format!(
-        "{} {}{}",
-        style(&tv.plugin_name).cyan(),
-        styled,
-        " ".repeat(pad)
-    )
 }
 
 type RuntimeRow = (Arc<Plugins>, ToolVersion, Option<ToolSource>);
@@ -230,6 +242,37 @@ fn get_runtime_list(
         .collect();
 
     Ok(rvs)
+}
+
+enum VersionStatus {
+    Active(String),
+    Inactive(String),
+    Missing(String),
+}
+
+impl VersionStatus {
+    fn to_plain_string(&self) -> String {
+        match self {
+            VersionStatus::Active(version) => version.to_string(),
+            VersionStatus::Inactive(version) => version.to_string(),
+            VersionStatus::Missing(version) => format!("{} (missing)", version),
+        }
+    }
+}
+
+impl Display for VersionStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VersionStatus::Active(version) => write!(f, "{}", style(version).green()),
+            VersionStatus::Inactive(version) => write!(f, "{}", style(version).dim()),
+            VersionStatus::Missing(version) => write!(
+                f,
+                "{} {}",
+                style(version).strikethrough().red(),
+                style("(missing)").red()
+            ),
+        }
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
