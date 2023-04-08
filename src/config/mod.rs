@@ -150,6 +150,18 @@ impl Config {
             .collect()
     }
 
+    pub fn get_or_create_plugin(&mut self, plugin_name: &PluginName) -> Arc<Plugins> {
+        self.plugins
+            .entry(plugin_name.clone())
+            .or_insert_with(|| {
+                Arc::new(Plugins::External(ExternalPlugin::new(
+                    &self.settings,
+                    plugin_name,
+                )))
+            })
+            .clone()
+    }
+
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self

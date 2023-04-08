@@ -94,6 +94,7 @@ lazy_static! {
     };
     pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
     pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
+    pub static ref RTX_CONFIRM: Confirm = var_confirm("RTX_CONFIRM");
     pub static ref RTX_EXPERIMENTAL: bool = var_is_true("RTX_EXPERIMENTAL");
     pub static ref RTX_HIDE_UPDATE_WARNING: bool = var_is_true("RTX_HIDE_UPDATE_WARNING");
     pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
@@ -105,6 +106,12 @@ lazy_static! {
         .map(|v| split_paths(&v).collect())
         .unwrap_or_default();
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
+}
+
+pub enum Confirm {
+    Yes,
+    No,
+    Prompt,
 }
 
 fn get_env_diff() -> EnvDiff {
@@ -134,8 +141,28 @@ fn var_is_true(key: &str) -> bool {
     }
 }
 
+fn var_is_false(key: &str) -> bool {
+    match var(key) {
+        Ok(v) => {
+            let v = v.to_lowercase();
+            v == "n" || v == "no" || v == "false" || v == "0" || v == "off"
+        }
+        Err(_) => false,
+    }
+}
+
 fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from)
+}
+
+fn var_confirm(key: &str) -> Confirm {
+    if var_is_true(key) {
+        Confirm::Yes
+    } else if var_is_false(key) {
+        Confirm::No
+    } else {
+        Confirm::Prompt
+    }
 }
 
 /// this returns the environment as if __RTX_DIFF was reversed.

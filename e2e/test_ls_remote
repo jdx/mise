@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "$0")/assert.sh"
 
 rtx p list-remote | grep nodejs
+rtx p uninstall tiny
+assert_fail "RTX_CONFIRM=no rtx ls-remote tiny"
+assert_contains "RTX_CONFIRM=yes rtx ls-remote tiny" "1.1.0"
