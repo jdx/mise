@@ -1719,12 +1719,12 @@ Options:
 ### `rtx install [OPTIONS] [RUNTIME]...`
 
 ```
-Install a runtime
+Install a tool version
 
-This will install a runtime to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
+This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
 It won't be used simply by being installed, however.
 For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
-Or you can call a runtime explicitly with `rtx exec <PLUGIN>@<VERSION> -- <COMMAND>`.
+Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 
 Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 
@@ -1732,11 +1732,11 @@ Usage: install [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to install e.g.: nodejs@18
+          Tool version(s) to install e.g.: nodejs@18
 
 Options:
   -p, --plugin <PLUGIN>
-          Only install runtime(s) for <PLUGIN>
+          Only install tool version(s) for <PLUGIN>
 
   -f, --force
           Force reinstall even if already installed
@@ -1748,7 +1748,7 @@ Examples:
   $ rtx install nodejs@18.0.0  # install specific nodejs version
   $ rtx install nodejs@18      # install fuzzy nodejs version
   $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
-  $ rtx install                # installs all runtimes specified in .tool-versions or .rtx.toml
+  $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
 ### `rtx latest <RUNTIME>`
 

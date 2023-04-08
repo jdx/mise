@@ -677,8 +677,8 @@ Sets --jobs=1]' \
 ;;
 (install)
 _arguments "${_arguments_options[@]}" \
-'()*-p+[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
-'()*--plugin=[Only install runtime(s) for <PLUGIN>]:PLUGIN: ' \
+'()*-p+[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
+'()*--plugin=[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -686,8 +686,8 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Force reinstall even if already installed]' \
 '--force[Force reinstall even if already installed]' \
-'(-p --plugin -f --force)-a[Install all missing runtimes as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
-'(-p --plugin -f --force)--all[Install all missing runtimes as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
+'(-p --plugin -f --force)-a[Install all missing tool versions as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
+'(-p --plugin -f --force)--all[Install all missing tool versions as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '--debug[Sets log level to debug]' \
@@ -699,7 +699,7 @@ Sets --jobs=1]' \
 '--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to install e.g.\: nodejs@18:' \
+'*::runtime -- Tool version(s) to install e.g.\: nodejs@18:' \
 && ret=0
 ;;
 (latest)
@@ -1723,8 +1723,8 @@ _rtx_commands() {
 'g:Sets/gets the global runtime version(s)' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
 'implode:Removes rtx CLI and all related data' \
-'install:Install a runtime' \
-'i:Install a runtime' \
+'install:Install a tool version' \
+'i:Install a tool version' \
 'latest:Gets the latest available version for a plugin' \
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
 'l:Sets/gets tool version in local .tool-versions or .rtx.toml' \
@@ -2077,7 +2077,7 @@ _rtx__help_commands() {
 'global:Sets/gets the global runtime version(s)' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
 'implode:Removes rtx CLI and all related data' \
-'install:Install a runtime' \
+'install:Install a tool version' \
 'latest:Gets the latest available version for a plugin' \
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
 'ls:List installed and/or currently selected tool versions' \

@@ -120,6 +120,13 @@ impl Git {
             }
         }
     }
+
+    pub fn split_url_and_ref(url: &str) -> (String, Option<String>) {
+        match url.split_once('#') {
+            Some((url, _ref)) => (url.to_string(), Some(_ref.to_string())),
+            None => (url.to_string(), None),
+        }
+    }
 }
 
 fn get_git_version() -> Result<String> {
