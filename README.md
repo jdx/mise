@@ -816,6 +816,10 @@ Currently this disables the following:
 
 This hides the warning that is displayed when a new version of rtx is available.
 
+#### `RTX_CONFIRM=yes|no`
+
+This will automatically answer yes or no to prompts. This is useful for scripting.
+
 #### `RTX_EXPERIMENTAL=1`
 
 Enables experimental features such as shims.
@@ -1372,8 +1376,8 @@ the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the l
 the list of aliases, the bin directories within each runtime installation, and the result of
 running `exec-env` after the runtime was installed.
 
-Remote versions are updated daily by default or anytime that `rtx ls-remote` is called explicitly. The file is
-zlib messagepack, if you want to view it you can run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
+Remote versions are updated daily by default. The file is zlib messagepack, if you want to view it you can
+run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh-session
 cat ~/$RTX_CACHE_DIR/nodejs/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
@@ -1874,8 +1878,8 @@ Examples:
 ```
 List runtime versions available for install
 
-note that these versions are cached for commands like `rtx install nodejs@latest`
-however _this_ command will always clear that cache and fetch the latest remote versions
+note that the results are cached for 24 hours
+run `rtx cache clean` to clear the cache and get fresh results
 
 Usage: ls-remote <PLUGIN> [PREFIX]
 
