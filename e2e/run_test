@@ -3,19 +3,36 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
-export ROOT
-export PATH="$ROOT/target/debug:$PATH"
-export RTX_USE_TOML="0"
-export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
-export RTX_DATA_DIR="$ROOT/e2e/.rtx"
-export RTX_CACHE_DIR="$ROOT/e2e/.rtx/cache"
-export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
-export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
-export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
-unset GOPATH
-
 TEST="$1"
-echo "Running $TEST"
-rm -f "$RTX_CONFIG_FILE"
-cd "$(dirname "$TEST")"
-"./$(basename "$TEST")"
+
+setup_env() {
+  export ROOT
+  export PATH="$ROOT/target/debug:$PATH"
+  export RTX_USE_TOML="0"
+  export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
+  export RTX_DATA_DIR="$ROOT/e2e/.rtx"
+  export RTX_CACHE_DIR="$ROOT/e2e/.rtx/cache"
+  export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
+  export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
+  export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
+  unset GOPATH
+}
+
+setup_config_files() {
+  mkdir -p "$ROOT/e2e/cd/16"
+  cp "$ROOT/e2e/config/".e2e.* "$ROOT/e2e/"
+  cp "$ROOT/e2e/config/"{.node-version,.alternate-tool-versions,.test-env} "$ROOT/e2e/"
+  cp "$ROOT/e2e/config/cd/".e2e.* "$ROOT/e2e/cd/"
+  cp "$ROOT/e2e/config/cd/16/".e2e.* "$ROOT/e2e/cd/16"
+}
+
+run_test() {
+  echo "Running $TEST"
+  rm -f "$RTX_CONFIG_FILE"
+  cd "$(dirname "$TEST")"
+  "./$(basename "$TEST")"
+}
+
+setup_env
+setup_config_files
+run_test

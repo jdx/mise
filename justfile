@@ -8,13 +8,13 @@ export RUST_TEST_THREADS := "1"
 # defaults to `just test`
 default: test
 
-alias b := test
+alias b := build
+alias e := test-e2e
+alias t := test
 
 # just `cargo build`
 build *args:
     cargo build {{ args }}
-
-alias t := test
 
 # run all test types
 test *args: (test-unit args) test-e2e lint
@@ -28,8 +28,17 @@ test-unit *args:
     cargo test {{ args }}
 
 # runs the E2E tests in ./e2e
-test-e2e: build
-    ./e2e/run_all_tests
+
+# specify a test name to run a single test
+test-e2e TEST=("all"):
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ TEST }}" = all ]; then
+        ./e2e/run_all_tests
+    else
+        FILES="$(fd {{ TEST }} e2e/)"
+        ./e2e/run_test "$FILES"
+    fi
 
 # run unit tests w/ coverage
 test-coverage:
@@ -103,5 +112,6 @@ pre-commit: render-help render-completions render-mangen
     git add completions
     git add man
 
+# create/publish a new version of rtx
 release *args:
     cargo release {{ args }}

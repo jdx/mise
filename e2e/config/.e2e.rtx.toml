@@ -1,0 +1,8 @@
+dotenv = '.test-env'
+env_path = ["/root", "./cwd"]
+[env]
+FOO = "bar"
+
+[tools]
+tiny = "latest"
+#golang = {version="1.19.5", foo="bar"}
