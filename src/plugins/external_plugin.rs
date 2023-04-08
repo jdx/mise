@@ -39,7 +39,6 @@ pub struct ExternalPlugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
-    pub repo_ref: Option<String>,
     pub toml: RtxPluginToml,
     cache_path: PathBuf,
     downloads_path: PathBuf,
@@ -86,7 +85,6 @@ impl ExternalPlugin {
             plugin_path,
             cache_path,
             repo_url: None,
-            repo_ref: None,
             toml,
         }
     }
@@ -106,9 +104,10 @@ impl ExternalPlugin {
         self.decorate_progress_bar(pr, None);
         let repository = self
             .repo_url
-            .as_ref()
-            .or_else(|| config.get_shorthands().get(&self.name))
+            .clone()
+            .or_else(|| config.get_repo_url(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
+        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("install {} {:?}", self.name, repository);
 
         let _lock = self.get_lock(&self.plugin_path, force)?;
@@ -118,9 +117,9 @@ impl ExternalPlugin {
         }
 
         let git = Git::new(self.plugin_path.to_path_buf());
-        pr.set_message(format!("cloning {repository}"));
-        git.clone(repository)?;
-        if let Some(ref_) = &self.repo_ref {
+        pr.set_message(format!("cloning {repo_url}"));
+        git.clone(&repo_url)?;
+        if let Some(ref_) = &repo_ref {
             pr.set_message(format!("checking out {ref_}"));
             git.update(Some(ref_.to_string()))?;
         }
@@ -140,7 +139,7 @@ impl ExternalPlugin {
 
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
-            "{repository}#{}",
+            "{repo_url}#{}",
             style(&sha).bright().yellow().for_stderr(),
         ));
         Ok(())

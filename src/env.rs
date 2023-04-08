@@ -108,6 +108,7 @@ lazy_static! {
     pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
     Yes,
     No,
@@ -129,13 +130,7 @@ fn var_is_true(key: &str) -> bool {
     match var(key) {
         Ok(v) => {
             let v = v.to_lowercase();
-            !v.is_empty()
-                && v != "n"
-                && v != "no"
-                && v != "false"
-                && v != "0"
-                && v != "off"
-                && v != " "
+            v == "y" || v == "yes" || v == "true" || v == "1" || v == "on"
         }
         Err(_) => false,
     }
@@ -259,5 +254,19 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("RTX_TEST_PATH");
+    }
+
+    #[test]
+    fn test_var_confirm() {
+        set_var("RTX_TEST_CONFIRM", "true");
+        assert_eq!(var_confirm("RTX_TEST_CONFIRM"), Confirm::Yes);
+        remove_var("RTX_TEST_CONFIRM");
+        set_var("RTX_TEST_CONFIRM", "false");
+        assert_eq!(var_confirm("RTX_TEST_CONFIRM"), Confirm::No);
+        remove_var("RTX_TEST_CONFIRM");
+        set_var("RTX_TEST_CONFIRM", "prompt");
+        assert_eq!(var_confirm("RTX_TEST_CONFIRM"), Confirm::Prompt);
+        remove_var("RTX_TEST_CONFIRM");
+        assert_eq!(var_confirm("RTX_TEST_CONFIRM"), Confirm::Prompt);
     }
 }

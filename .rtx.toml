@@ -11,7 +11,7 @@ golang = { version = "latest", foo = "bar" }
 python = { version = "latest", virtualenv = "$HOME/.cache/venv" }
 
 [plugins]
-node = 'https://github.com/rtx-plugins/rtx-nodejs'
+node = 'https://github.com/rtx-plugins/rtx-nodejs#main'
 
 [alias.tiny]
 abc = '1'
