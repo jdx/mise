@@ -1,3 +1,4 @@
 data/
+!data/plugins
 cache/
 cwd/man/
