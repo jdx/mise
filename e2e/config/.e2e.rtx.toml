@@ -1,4 +1,4 @@
-dotenv = '.test-env'
+env_file = '.test-env'
 env_path = ["/root", "./cwd"]
 [env]
 FOO = "bar"
