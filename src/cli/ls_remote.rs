@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
@@ -5,13 +7,15 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::Plugin;
+use crate::plugins::{ExternalPlugin, Plugin, Plugins};
 use crate::toolset::ToolVersionRequest;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::prompt;
 
 /// List runtime versions available for install
 ///
-/// note that these versions are cached for commands like `rtx install nodejs@latest`
-/// however _this_ command will always clear that cache and fetch the latest remote versions
+/// note that the results are cached for 24 hours
+/// run `rtx cache clean` to clear the cache and get fresh results
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
@@ -26,12 +30,8 @@ pub struct LsRemote {
 }
 
 impl Command for LsRemote {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let plugin = config
-            .plugins
-            .get(&self.plugin.plugin)
-            .ok_or(PluginNotInstalled(self.plugin.plugin))?;
-        plugin.clear_remote_version_cache()?;
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let plugin = self.get_plugin(&mut config)?;
 
         let prefix = match self.plugin.tvr {
             Some(ToolVersionRequest::Version(_, v)) => Some(v),
@@ -52,6 +52,40 @@ impl Command for LsRemote {
         }
 
         Ok(())
+    }
+}
+
+impl LsRemote {
+    fn get_plugin(&self, config: &mut Config) -> Result<Arc<Plugins>> {
+        let plugin_name = self.plugin.plugin.clone();
+        let plugin = config.get_or_create_plugin(&plugin_name);
+        match plugin.as_ref() {
+            Plugins::External(p) => {
+                self.ensure_remote_plugin_is_installed(p, config)?;
+                Ok(plugin)
+            } // _ => {}
+        }
+    }
+
+    fn ensure_remote_plugin_is_installed(
+        &self,
+        plugin: &ExternalPlugin,
+        config: &mut Config,
+    ) -> Result<()> {
+        if plugin.is_installed() {
+            return Ok(());
+        }
+        if prompt::confirm(&format!(
+            "Plugin {} is not installed, would you like to install it?",
+            plugin.name
+        ))? {
+            let mpr = MultiProgressReport::new(config.settings.verbose);
+            let mut pr = mpr.add();
+            plugin.install(config, &mut pr, false)?;
+            return Ok(());
+        }
+
+        Err(PluginNotInstalled(plugin.name.clone()))?
     }
 }
 

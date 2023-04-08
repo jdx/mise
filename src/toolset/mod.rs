@@ -21,7 +21,7 @@ pub use tool_version_request::ToolVersionRequest;
 
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
-use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
+use crate::plugins::{Plugin, PluginName, Plugins};
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -119,12 +119,7 @@ impl Toolset {
 
     pub fn list_missing_plugins(&self, config: &mut Config) -> Vec<PluginName> {
         for plugin in self.versions.keys() {
-            config.plugins.entry(plugin.clone()).or_insert_with(|| {
-                Arc::new(Plugins::External(ExternalPlugin::new(
-                    &config.settings,
-                    plugin,
-                )))
-            });
+            config.get_or_create_plugin(plugin);
         }
         self.versions
             .keys()
@@ -196,12 +191,7 @@ impl Toolset {
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         for plugin in &missing_plugins {
-            config.plugins.entry(plugin.clone()).or_insert_with(|| {
-                Arc::new(Plugins::External(ExternalPlugin::new(
-                    &config.settings,
-                    plugin,
-                )))
-            });
+            config.get_or_create_plugin(plugin);
         }
         config.plugins.sort_keys();
         let missing_plugins = missing_plugins

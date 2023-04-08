@@ -20,6 +20,7 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
+use crate::ui::prompt;
 use crate::{dirs, env, parse_error};
 
 #[derive(Debug, Default)]
@@ -579,15 +580,11 @@ impl RtxToml {
         if self.is_trusted || cmd == "trust" || cmd == "completion" || cfg!(test) {
             return Ok(());
         }
-        if console::user_attended_stderr() && cmd != "hook-env" {
-            let ans = dialoguer::Confirm::new()
-                .with_prompt(&format!(
-                    "Config file {} is not trusted. Would you like to trust it?",
-                    self.path.display()
-                ))
-                .default(false)
-                .interact()
-                .unwrap();
+        if cmd != "hook-env" {
+            let ans = prompt::confirm(&format!(
+                "Config file {} is not trusted. Would you like to trust it?",
+                self.path.display()
+            ))?;
             if ans {
                 config_file::trust(self.path.as_path())?;
                 self.is_trusted = true;
