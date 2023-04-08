@@ -30,20 +30,21 @@ tasks:
 ~/src/rtx ❯ just --list
 Available recipes:
     build *args           # just `cargo build`
+    b *args               # alias for `build`
     clean                 # delete built files
     default               # defaults to `just test`
     lint                  # clippy, cargo fmt --check, and just --fmt
     lint-fix              # runs linters but makes fixes when possible
-    pre-commit            # called by husky precommit hook
-    release *args
+    pre-commit            # called by lefthook precommit hook
+    release *args         # create/publish a new version of rtx
     render-completions    # regenerate shell completion files
     render-help           # regenerate README.md
     render-mangen         # regenerate manpages
     test *args            # run all test types
-    b *args               # alias for `test`
     t *args               # alias for `test`
     test-coverage         # run unit tests w/ coverage
-    test-e2e              # runs the E2E tests in ./e2e
+    test-e2e TEST=("all") # specify a test name to run a single test
+    e TEST=("all")        # alias for `test-e2e`
     test-unit *args       # run the rust "unit" tests
     test-update-snapshots # update all test snapshot files
 ```
