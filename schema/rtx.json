@@ -6,7 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "dotenv": {
+    "env_file": {
       "description": "path to .env file",
       "type": "string"
     },

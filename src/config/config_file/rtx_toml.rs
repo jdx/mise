@@ -28,7 +28,7 @@ pub struct RtxToml {
     context: Context,
     path: PathBuf,
     toolset: Toolset,
-    dotenv: Option<PathBuf>,
+    env_file: Option<PathBuf>,
     env: HashMap<String, String>,
     path_dirs: Vec<PathBuf>,
     settings: SettingsBuilder,
@@ -76,7 +76,8 @@ impl RtxToml {
         let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
-                "dotenv" => self.parse_dotenv(k, v)?,
+                "dotenv" => self.parse_env_file(k, v)?,
+                "env_file" => self.parse_env_file(k, v)?,
                 "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
@@ -94,7 +95,7 @@ impl RtxToml {
         self.settings.clone()
     }
 
-    fn parse_dotenv(&mut self, k: &str, v: &Item) -> Result<()> {
+    fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
         self.trust_check()?;
         match v.as_str() {
             Some(filename) => {
@@ -103,7 +104,7 @@ impl RtxToml {
                     let (k, v) = item?;
                     self.env.insert(k, v);
                 }
-                self.dotenv = Some(path);
+                self.env_file = Some(path);
             }
             _ => parse_error!(k, v, "string")?,
         }
@@ -688,8 +689,8 @@ impl ConfigFile for RtxToml {
     }
 
     fn watch_files(&self) -> Vec<PathBuf> {
-        match &self.dotenv {
-            Some(dotenv) => vec![self.path.clone(), dotenv.clone()],
+        match &self.env_file {
+            Some(env_file) => vec![self.path.clone(), env_file.clone()],
             None => vec![self.path.clone()],
         }
     }
