@@ -759,15 +759,17 @@ the current value of .tool-versions/.rtx.toml will be displayed:' \
 ;;
 (ls)
 _arguments "${_arguments_options[@]}" \
-'-p+[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
-'--plugin=[Only show runtimes from \[PLUGIN\]]:PLUGIN: ' \
+'-p+[Only show tool versions from \[PLUGIN\]]:PLUGIN: ' \
+'--plugin=[Only show tool versions from \[PLUGIN\]]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-c[Only show runtimes currently specified in .tool-versions]' \
-'--current[Only show runtimes currently specified in .tool-versions]' \
+'-c[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
+'--current[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
+'-i[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
+'--installed[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
 '(--json)--parseable[Output in an easily parseable format]' \
 '--json[Output in json format]' \
 '--debug[Sets log level to debug]' \
@@ -1726,8 +1728,8 @@ _rtx_commands() {
 'latest:Gets the latest available version for a plugin' \
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
 'l:Sets/gets tool version in local .tool-versions or .rtx.toml' \
-'ls:List installed runtime versions' \
-'list:List installed runtime versions' \
+'ls:List installed and/or currently selected tool versions' \
+'list:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
@@ -2078,7 +2080,7 @@ _rtx__help_commands() {
 'install:Install a runtime' \
 'latest:Gets the latest available version for a plugin' \
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
-'ls:List installed runtime versions' \
+'ls:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
 'plugins:Manage plugins' \
 'prune:Delete unused versions of tools' \

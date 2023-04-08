@@ -192,7 +192,7 @@ mod tests {
             let stdout = assert_cli!("ls", "--current");
             assert_str_eq!(
                 grep(stdout, "tiny"),
-                "-> tiny 2.1.0                (set by ~/.test-tool-versions)"
+                "tiny  2.1.0      ~/.test-tool-versions 2"
             );
         });
     }
