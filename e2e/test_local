@@ -20,7 +20,7 @@ export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 
 assert_raises "rtx uninstall shfmt@3.6.0"
 
-assert "rtx local" "dotenv = '.test-env'
+assert "rtx local" "env_file = '.test-env'
 env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
@@ -31,7 +31,7 @@ tiny = \"latest\"
 "
 
 rtx local shfmt@3.5.0
-assert "rtx local" "dotenv = '.test-env'
+assert "rtx local" "env_file = '.test-env'
 env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
@@ -51,7 +51,7 @@ assert_raises "rtx uninstall shfmt@3.6.0"
 assert_raises "rtx local shfmt --install-missing"
 
 rtx local shfmt@3.6.0
-assert "rtx local" "dotenv = '.test-env'
+assert "rtx local" "env_file = '.test-env'
 env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"
@@ -68,7 +68,7 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
 fi
 
 rtx local --rm shfmt
-assert "rtx local" "dotenv = '.test-env'
+assert "rtx local" "env_file = '.test-env'
 env_path = [\"/root\", \"./cwd\"]
 [env]
 FOO = \"bar\"

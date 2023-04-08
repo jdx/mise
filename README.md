@@ -686,13 +686,13 @@ Environment variable values can be templates, see [Templates](#templates) for de
 LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
 ```
 
-`dotenv` can be used to specify a [dotenv](https://dotenv.org) file to load:
+`env_file` can be used to specify a [dotenv](https://dotenv.org) file to load:
 
 ```toml
-dotenv = '.env'
+env_file = '.env'
 ```
 
-_Note: `dotenv` goes at the top of the file, above `[env]`._
+_Note: `env_file` goes at the top of the file, above `[env]`._
 
 ### Environment variables
 
