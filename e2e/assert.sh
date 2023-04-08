@@ -1,6 +1,6 @@
 assert() {
   local actual
-  actual="$($1)"
+  actual="$(bash -c "$1")"
   if [[ "$actual" != "$2" ]]; then
     echo "Expected '$2' but got '$actual'"
     exit 1

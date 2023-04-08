@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+rtx cache clean
+rm -rf .rtx/installs/tiny
+rtx trust .e2e.rtx.toml
+
+# this will fail when calling bin/list-all, but it won't stop it from executing
+RTX_TINY_LIST_ALL_FAIL=1 RTX_TINY_VERSION=latest rtx env >/dev/null
+
+# check bin/list-legacy-files
+assert "rtx current tiny" "3.1.0"
+rtx local --remove tiny
+echo "2.0" > .tiny-version
+assert "rtx current tiny" "2.0.1"
+rm .tiny-version
+rtx local tiny@latest
+assert "rtx current tiny" "3.1.0"
