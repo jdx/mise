@@ -5,6 +5,7 @@ expression: output
 [
   {
     "version": "3.1.0",
+    "requested_version": "3",
     "install_path": "~/data/installs/tiny/3.1.0",
     "source": {
       "type": ".tool-versions",
