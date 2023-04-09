@@ -1,5 +1,6 @@
 use crate::fake_asdf::get_path_with_fake_asdf;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ use crate::{cmd, dirs, env};
 pub struct ScriptManager {
     pub plugin_path: PathBuf,
     pub plugin_name: String,
-    pub env: HashMap<String, String>,
+    pub env: HashMap<OsString, OsString>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,8 +67,11 @@ impl Display for Script {
     }
 }
 
-static INITIAL_ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
-    let mut env = env::PRISTINE_ENV.clone();
+static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
+    let mut env: HashMap<OsString, OsString> = env::PRISTINE_ENV
+        .iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
     env.extend(
         (indexmap! {
             "__RTX_SCRIPT" => "1".to_string(),
@@ -79,7 +83,7 @@ static INITIAL_ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
             "RTX_EXE" => env::RTX_EXE.to_string_lossy().to_string(),
         })
         .into_iter()
-        .map(|(k, v)| (k.to_string(), v)),
+        .map(|(k, v)| (k.into(), v.into())),
     );
     env
 });
@@ -93,8 +97,12 @@ impl ScriptManager {
         }
     }
 
-    pub fn with_env(mut self, k: String, v: String) -> Self {
-        self.env.insert(k, v);
+    pub fn with_env<K, V>(mut self, k: K, v: V) -> Self
+    where
+        K: Into<OsString>,
+        V: Into<OsString>,
+    {
+        self.env.insert(k.into(), v.into());
         self
     }
 

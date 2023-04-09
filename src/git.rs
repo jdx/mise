@@ -44,7 +44,7 @@ impl Git {
             "--prune",
             "--update-head-ok",
             "origin",
-            [gitref.as_str(), gitref.as_str()].join(":"),
+            format!("{}:{}", gitref, gitref),
         )
         .run()?;
         let prev_rev = self.current_sha()?;

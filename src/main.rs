@@ -52,6 +52,7 @@ mod toolset;
 mod ui;
 
 fn main() -> Result<()> {
+    build_time::init();
     color_eyre::install()?;
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
