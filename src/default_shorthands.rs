@@ -145,7 +145,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
     ("dive", "https://github.com/looztra/asdf-dive.git"),
     ("djinni", "https://github.com/cross-language-cpp/asdf-djinni.git"),
     ("dmd", "https://github.com/sylph01/asdf-dmd.git"),
-    ("docker-compose-v1", "https://github.com/kompiro/asdf-docker-compose-v1"),
+    ("docker-compose-v1", "https://github.com/yilas/asdf-docker-compose-v1"),
     ("docker-slim", "https://github.com/xataz/asdf-docker-slim.git"),
     ("dockle", "https://github.com/mathew-fleisch/asdf-dockle.git"),
     ("doctl", "https://github.com/maristgeek/asdf-doctl.git"),
