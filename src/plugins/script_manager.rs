@@ -159,8 +159,8 @@ impl ScriptManager {
         script: &Script,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let mut cmd = CmdLineRunner::new(settings, self.get_script_path(script), pr);
-        cmd.env_clear().envs(&self.env);
+        let mut cmd = CmdLineRunner::new(settings, self.get_script_path(script));
+        cmd.with_pr(pr).env_clear().envs(&self.env);
         if let Err(e) = cmd.execute() {
             let status = match e.downcast_ref::<Error>() {
                 Some(ScriptFailed(_, status)) => *status,
