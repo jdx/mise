@@ -21,14 +21,16 @@ mod script_manager;
 pub type PluginName = String;
 
 pub trait Plugin: Debug + Send + Sync {
-    fn get_type(&self) -> PluginType;
-    fn name(&self) -> &PluginName;
+    fn get_type(&self) -> PluginType {
+        PluginType::Core
+    }
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>>;
-    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>>;
+    fn latest_stable_version(&self, _settings: &Settings) -> Result<Option<String>> {
+        Ok(None)
+    }
     fn get_remote_url(&self) -> Option<String> {
         None
     }
-
     fn is_installed(&self) -> bool {
         true
     }
@@ -41,7 +43,6 @@ pub trait Plugin: Debug + Send + Sync {
     fn uninstall(&self, _pr: &ProgressReport) -> Result<()> {
         Ok(())
     }
-
     fn get_aliases(&self, _settings: &Settings) -> Result<IndexMap<String, String>> {
         Ok(IndexMap::new())
     }
@@ -57,16 +58,21 @@ pub trait Plugin: Debug + Send + Sync {
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
         unimplemented!()
     }
-
     fn install_version(
         &self,
         config: &Config,
         tv: &ToolVersion,
         pr: &mut ProgressReport,
     ) -> Result<()>;
-    fn uninstall_version(&self, config: &Config, tv: &ToolVersion) -> Result<()>;
-    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>>;
-    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>>;
+    fn uninstall_version(&self, _config: &Config, _tv: &ToolVersion) -> Result<()> {
+        Ok(())
+    }
+    fn list_bin_paths(&self, _config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path().join("bin")])
+    }
+    fn exec_env(&self, _config: &Config, _tv: &ToolVersion) -> Result<HashMap<String, String>> {
+        Ok(HashMap::new())
+    }
 }
 
 pub enum PluginType {
