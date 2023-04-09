@@ -82,7 +82,7 @@ impl Tool {
         Ok(versions)
     }
 
-    pub fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
+    pub fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         self.plugin.list_remote_versions(settings)
     }
 
@@ -98,10 +98,9 @@ impl Tool {
             Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
         let versions = self
             .list_remote_versions(settings)?
-            .iter()
+            .into_iter()
             .filter(|v| !version_regex.is_match(v))
             .filter(|v| query_regex.is_match(v))
-            .cloned()
             .collect();
         Ok(versions)
     }
