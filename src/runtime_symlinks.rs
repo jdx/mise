@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -47,7 +48,7 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
         for (from, to) in config
             .get_all_aliases()
             .get(&plugin.name)
-            .unwrap_or(&IndexMap::new())
+            .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {
                 continue;
@@ -60,7 +61,7 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
     }
     symlinks = symlinks
         .into_iter()
-        .sorted_by_key(|(k, _)| Version::new(k).unwrap_or_default())
+        .sorted_by_cached_key(|(k, _)| Version::new(k).unwrap_or_default())
         .collect();
     Ok(symlinks)
 }
