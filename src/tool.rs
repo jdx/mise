@@ -170,7 +170,11 @@ impl Tool {
     pub fn is_version_installed(&self, tv: &ToolVersion) -> bool {
         match tv.request {
             ToolVersionRequest::System(_) => true,
-            _ => tv.install_path().exists() && !self.incomplete_file_path(tv).exists(),
+            _ => {
+                tv.install_path().exists()
+                    && !self.incomplete_file_path(tv).exists()
+                    && !is_runtime_symlink(&tv.install_path())
+            }
         }
     }
 
