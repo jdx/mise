@@ -3,7 +3,6 @@ use color_eyre::eyre::{eyre, Result};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 
 /// Shows the path that a bin name points to
@@ -31,7 +30,7 @@ impl Command for Which {
                 if self.version {
                     rtxprintln!(out, "{}", tv.version);
                 } else if self.plugin {
-                    rtxprintln!(out, "{}", p.name());
+                    rtxprintln!(out, "{}", p.name);
                 } else {
                     let path = p.which(&config, &tv, &self.bin_name)?;
                     rtxprintln!(out, "{}", path.unwrap().display());

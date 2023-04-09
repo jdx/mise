@@ -7,8 +7,10 @@ use versions::{Chunk, Version};
 
 use crate::config::Config;
 use crate::dirs;
-use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::hash::hash_to_str;
+use crate::plugins::PluginName;
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::tool::Tool;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
@@ -22,13 +24,13 @@ pub struct ToolVersion {
 
 impl ToolVersion {
     pub fn new(
-        plugin: &Plugins,
+        tool: &Tool,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         version: String,
     ) -> Self {
         ToolVersion {
-            plugin_name: plugin.name().to_string(),
+            plugin_name: tool.name.to_string(),
             version,
             request,
             opts,
@@ -37,138 +39,159 @@ impl ToolVersion {
 
     pub fn resolve(
         config: &Config,
-        plugin: &Plugins,
+        tool: &Tool,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<Self> {
         let tv = match request.clone() {
             ToolVersionRequest::Version(_, v) => {
-                Self::resolve_version(config, plugin, request, latest_versions, &v, opts)?
+                Self::resolve_version(config, tool, request, latest_versions, &v, opts)?
             }
             ToolVersionRequest::Prefix(_, prefix) => {
-                Self::resolve_prefix(config, plugin, request, &prefix, opts)?
+                Self::resolve_prefix(config, tool, request, &prefix, opts)?
             }
             _ => {
                 let version = request.version();
-                Self::new(plugin, request, opts, version)
+                Self::new(tool, request, opts, version)
             }
         };
         Ok(tv)
     }
 
+    pub fn install_path(&self) -> PathBuf {
+        let pathname = match &self.request {
+            ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
+            _ => self.tv_pathname(),
+        };
+        dirs::INSTALLS.join(&self.plugin_name).join(pathname)
+    }
+    pub fn cache_path(&self) -> PathBuf {
+        dirs::CACHE.join(&self.plugin_name).join(self.tv_pathname())
+    }
+    pub fn download_path(&self) -> PathBuf {
+        dirs::DOWNLOADS
+            .join(&self.plugin_name)
+            .join(self.tv_pathname())
+    }
+    fn tv_pathname(&self) -> String {
+        match &self.request {
+            ToolVersionRequest::Version(_, _) => self.version.to_string(),
+            ToolVersionRequest::Prefix(_, _) => self.version.to_string(),
+            ToolVersionRequest::Ref(_, r) => format!("ref-{}", r),
+            ToolVersionRequest::Path(_, p) => format!("path-{}", hash_to_str(p)),
+            ToolVersionRequest::System(_) => "system".to_string(),
+        }
+    }
+
     fn resolve_version(
         config: &Config,
-        plugin: &Plugins,
+        tool: &Tool,
         request: ToolVersionRequest,
         latest_versions: bool,
         v: &str,
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
-        let v = config.resolve_alias(plugin.name(), v)?;
+        let v = config.resolve_alias(&tool.name, v)?;
         match v.split_once(':') {
             Some(("ref", r)) => {
-                return Ok(Self::resolve_ref(plugin, r.to_string(), opts));
+                return Ok(Self::resolve_ref(tool, r.to_string(), opts));
             }
             Some(("path", p)) => {
-                return Self::resolve_path(plugin, PathBuf::from(p), opts);
+                return Self::resolve_path(tool, PathBuf::from(p), opts);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(config, plugin, request, p, opts);
+                return Self::resolve_prefix(config, tool, request, p, opts);
             }
             _ => (),
         }
 
-        let build = |v| Ok(Self::new(plugin, request.clone(), opts.clone(), v));
+        let build = |v| Ok(Self::new(tool, request.clone(), opts.clone(), v));
 
-        let existing_path = dirs::INSTALLS.join(plugin.name()).join(&v);
+        let existing_path = dirs::INSTALLS.join(&tool.name).join(&v);
         if existing_path.exists() && !is_runtime_symlink(&existing_path) {
             // if the version is already installed, no need to fetch all the remote versions
             return build(v);
         }
-        if !plugin.is_installed() {
+        if !tool.is_installed() {
             return build(v);
         }
 
         if v == "latest" {
             if !latest_versions {
-                if let Some(v) = plugin.latest_installed_version()? {
+                if let Some(v) = tool.latest_installed_version()? {
                     return build(v);
                 }
             }
-            if let Some(v) = plugin.latest_version(&config.settings, None)? {
+            if let Some(v) = tool.latest_version(&config.settings, None)? {
                 return build(v);
             }
         }
         if !latest_versions {
-            let matches = plugin.list_installed_versions_matching(&v)?;
+            let matches = tool.list_installed_versions_matching(&v)?;
             if matches.contains(&v) {
                 return build(v);
             }
         }
-        let matches = plugin.list_versions_matching(&config.settings, &v)?;
+        let matches = tool.list_versions_matching(&config.settings, &v)?;
         if matches.contains(&v) {
             return build(v);
         }
         if v.contains("!-") {
-            if let Some(tv) = Self::resolve_bang(config, plugin, request.clone(), &v, &opts)? {
+            if let Some(tv) = Self::resolve_bang(config, tool, request.clone(), &v, &opts)? {
                 return Ok(tv);
             }
         }
-        Self::resolve_prefix(config, plugin, request, &v, opts)
+        Self::resolve_prefix(config, tool, request, &v, opts)
     }
 
     /// resolve a version like `12.0.0!-1` which becomes `11.0.0`, `12.1.0!-0.1` becomes `12.0.0`
     fn resolve_bang(
         config: &Config,
-        plugin: &Plugins,
+        tool: &Tool,
         request: ToolVersionRequest,
         v: &str,
         opts: &ToolVersionOptions,
     ) -> Result<Option<Self>> {
         let (wanted, minus) = v.split_once("!-").unwrap();
         let wanted = match wanted {
-            "latest" => plugin.latest_version(&config.settings, None)?.unwrap(),
-            _ => config.resolve_alias(plugin.name(), wanted)?,
+            "latest" => tool.latest_version(&config.settings, None)?.unwrap(),
+            _ => config.resolve_alias(&tool.name, wanted)?,
         };
         let wanted = version_sub(&wanted, minus);
-        let tv = plugin
+        let tv = tool
             .latest_version(&config.settings, Some(wanted))?
-            .map(|v| Self::new(plugin, request, opts.clone(), v));
+            .map(|v| Self::new(tool, request, opts.clone(), v));
         Ok(tv)
     }
 
     fn resolve_prefix(
         config: &Config,
-        plugin: &Plugins,
+        tool: &Tool,
         request: ToolVersionRequest,
         prefix: &str,
         opts: ToolVersionOptions,
     ) -> Result<Self> {
-        let matches = plugin.list_versions_matching(&config.settings, prefix)?;
+        let matches = tool.list_versions_matching(&config.settings, prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
             // None => Err(VersionNotFound(plugin.name.clone(), prefix.to_string()))?,
         };
-        Ok(Self::new(plugin, request, opts, v.to_string()))
+        Ok(Self::new(tool, request, opts, v.to_string()))
     }
 
-    fn resolve_ref(plugin: &Plugins, r: String, opts: ToolVersionOptions) -> Self {
-        let request = ToolVersionRequest::Ref(plugin.name().clone(), r);
+    fn resolve_ref(tool: &Tool, r: String, opts: ToolVersionOptions) -> Self {
+        let request = ToolVersionRequest::Ref(tool.name.clone(), r);
         let version = request.version();
-        Self::new(plugin, request, opts, version)
+        Self::new(tool, request, opts, version)
     }
 
-    fn resolve_path(
-        plugin: &Plugins,
-        path: PathBuf,
-        opts: ToolVersionOptions,
-    ) -> Result<ToolVersion> {
+    fn resolve_path(tool: &Tool, path: PathBuf, opts: ToolVersionOptions) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolVersionRequest::Path(plugin.name().clone(), path);
+        let request = ToolVersionRequest::Path(tool.name.clone(), path);
         let version = request.version();
-        Ok(Self::new(plugin, request, opts, version))
+        Ok(Self::new(tool, request, opts, version))
     }
 }
 

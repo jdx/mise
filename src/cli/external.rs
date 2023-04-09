@@ -4,11 +4,10 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::config::Config;
-use crate::plugins::Plugin;
 
 pub fn commands(config: &Config) -> Vec<Command> {
     config
-        .plugins
+        .tools
         .values()
         .collect_vec()
         .into_par_iter()
@@ -17,8 +16,7 @@ pub fn commands(config: &Config) -> Vec<Command> {
             Err(e) => {
                 warn!(
                     "failed to load external commands for plugin {}: {:#}",
-                    p.name(),
-                    e
+                    p.name, e
                 );
                 vec![]
             }
@@ -48,7 +46,7 @@ pub fn execute(
 ) -> Result<()> {
     if let Some(_cmd) = external_commands.iter().find(|c| c.get_name() == plugin) {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = config.plugins.get(&plugin.to_string()).unwrap();
+            let plugin = config.tools.get(&plugin.to_string()).unwrap();
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

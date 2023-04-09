@@ -1,13 +1,12 @@
-use std::sync::Arc;
-
 use color_eyre::eyre::Result;
+use std::sync::Arc;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{ExternalPlugin, Plugin, Plugins};
+use crate::tool::Tool;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -33,16 +32,16 @@ impl Command for LsRemote {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let plugin = self.get_plugin(&mut config)?;
 
-        let prefix = match self.plugin.tvr {
+        let prefix = match &self.plugin.tvr {
             Some(ToolVersionRequest::Version(_, v)) => Some(v),
-            _ => self.prefix,
+            _ => self.prefix.as_ref(),
         };
 
         let versions = plugin.list_remote_versions(&config.settings)?.clone();
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
-                .filter(|v| v.starts_with(&prefix))
+                .filter(|v| v.starts_with(prefix))
                 .collect(),
             None => versions,
         };
@@ -56,36 +55,28 @@ impl Command for LsRemote {
 }
 
 impl LsRemote {
-    fn get_plugin(&self, config: &mut Config) -> Result<Arc<Plugins>> {
+    fn get_plugin(&self, config: &mut Config) -> Result<Arc<Tool>> {
         let plugin_name = self.plugin.plugin.clone();
-        let plugin = config.get_or_create_plugin(&plugin_name);
-        match plugin.as_ref() {
-            Plugins::External(p) => {
-                self.ensure_remote_plugin_is_installed(p, config)?;
-                Ok(plugin)
-            } // _ => {}
-        }
+        let tool = config.get_or_create_tool(&plugin_name);
+        self.ensure_remote_plugin_is_installed(&tool, config)?;
+        Ok(tool)
     }
 
-    fn ensure_remote_plugin_is_installed(
-        &self,
-        plugin: &ExternalPlugin,
-        config: &mut Config,
-    ) -> Result<()> {
-        if plugin.is_installed() {
+    fn ensure_remote_plugin_is_installed(&self, tool: &Tool, config: &mut Config) -> Result<()> {
+        if tool.is_installed() {
             return Ok(());
         }
         if prompt::confirm(&format!(
             "Plugin {} is not installed, would you like to install it?",
-            plugin.name
+            tool.name
         ))? {
             let mpr = MultiProgressReport::new(config.settings.verbose);
             let mut pr = mpr.add();
-            plugin.install(config, &mut pr, false)?;
+            tool.install(config, &mut pr, false)?;
             return Ok(());
         }
 
-        Err(PluginNotInstalled(plugin.name.clone()))?
+        Err(PluginNotInstalled(tool.name.clone()))?
     }
 }
 

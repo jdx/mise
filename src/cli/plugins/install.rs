@@ -7,6 +7,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName};
+use crate::tool::Tool;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -116,8 +117,9 @@ impl PluginsInstall {
             mpr.warn(format!("plugin {} already installed", name));
         } else {
             let mut pr = mpr.add();
-            plugin.decorate_progress_bar(&mut pr, None);
-            plugin.install(config, &mut pr, self.force)?;
+            let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
+            tool.decorate_progress_bar(&mut pr, None);
+            tool.install(config, &mut pr, self.force)?;
         }
         Ok(())
     }
