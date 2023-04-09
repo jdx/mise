@@ -111,6 +111,7 @@ v18.15.0
 - [Templates](#templates)
 - [&#91;experimental&#93; Config Environments](#experimental-config-environments)
 - [IDE Integration](#ide-integration)
+- [&#91;experimental&#93; Core Plugins](#experimental-core-plugins)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [What does `rtx activate` do?](#what-does-rtx-activate-do)
@@ -1079,6 +1080,18 @@ Direnv and rtx work similarly and there should be a direnv extension that can be
 
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_rtx`](#direnv) direnv function.
+
+## [experimental] Core Plugins
+
+If you have `experimental = true` in your settings, rtx will include some plugins built into the CLI. These are new and will improve over time. They can be easily overridden by
+installing a plugin with the same name, e.g.: `rtx plugin install python`.
+
+You can see the core plugins with `rtx plugin ls --core`.
+
+* [Python](./docs/python.md)
+* ~NodeJS~ - coming soon
+* ~Ruby~ - coming soon
+* ~Java~ - coming soon
 
 ## FAQs
 

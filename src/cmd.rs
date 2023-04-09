@@ -85,15 +85,11 @@ where
 pub struct CmdLineRunner<'a> {
     cmd: Command,
     settings: &'a Settings,
-    pr: &'a ProgressReport,
+    pr: Option<&'a ProgressReport>,
     stdin: Option<String>,
 }
 impl<'a> CmdLineRunner<'a> {
-    pub fn new<P: AsRef<OsStr>>(
-        settings: &'a Settings,
-        program: P,
-        pr: &'a ProgressReport,
-    ) -> Self {
+    pub fn new<P: AsRef<OsStr>>(settings: &'a Settings, program: P) -> Self {
         let mut cmd = Command::new(program);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
@@ -101,8 +97,8 @@ impl<'a> CmdLineRunner<'a> {
 
         Self {
             cmd,
-            pr,
             settings,
+            pr: None,
             stdin: None,
         }
     }
@@ -124,6 +120,11 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
         self.cmd.arg(arg.as_ref());
+        self
+    }
+
+    pub fn with_pr(&mut self, pr: &'a ProgressReport) -> &mut Self {
+        self.pr = Some(pr);
         self
     }
 
@@ -216,20 +217,32 @@ impl<'a> CmdLineRunner<'a> {
 
     fn on_stdout(&self, line: &str) {
         if !line.trim().is_empty() {
-            self.pr.set_message(line);
+            if let Some(pr) = self.pr {
+                pr.println(line)
+            }
         }
     }
 
     fn on_stderr(&self, line: &str) {
         if !line.trim().is_empty() {
-            self.pr.println(line);
+            match self.pr {
+                Some(pr) => pr.error(),
+                None => eprintln!("{}", line),
+            }
         }
     }
 
     fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
-        self.pr.error();
-        if !self.settings.verbose && !output.trim().is_empty() {
-            self.pr.println(output);
+        match self.pr {
+            Some(pr) => {
+                pr.error();
+                if !self.settings.verbose && !output.trim().is_empty() {
+                    pr.println(output);
+                }
+            }
+            None => {
+                eprintln!("{}", output);
+            }
         }
         let program = self.cmd.get_program().to_string_lossy().to_string();
         Err(ScriptFailed(program, Some(status)))?

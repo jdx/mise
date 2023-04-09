@@ -38,8 +38,6 @@ pub static RTX_ENV: Lazy<Option<String>> = Lazy::new(|| var("RTX_ENV").ok());
 pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
 pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
 pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| current_exe().unwrap_or_else(|_| "rtx".into()));
-pub static RTX_EXPERIMENTAL_CORE_PLUGINS: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_EXPERIMENTAL_CORE_PLUGINS"));
 pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_MISSING_RUNTIME_BEHAVIOR: Lazy<Option<String>> =
@@ -95,6 +93,10 @@ pub static RTX_PYTHON_PATCH_URL: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_PYTHON_PATCH_URL").ok());
 pub static RTX_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("RTX_PYTHON_PATCHES_DIRECTORY"));
+pub static RTX_PYTHON_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("RTX_PYTHON_DEFAULT_PACKAGES_FILE")
+        .unwrap_or_else(|| HOME.join(".default-python-packages"))
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
