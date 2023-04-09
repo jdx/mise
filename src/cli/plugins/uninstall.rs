@@ -38,7 +38,7 @@ impl PluginsUninstall {
                 let mut pr = mpr.add();
                 plugin.decorate_progress_bar(&mut pr, None);
                 plugin.uninstall(&pr)?;
-                pr.finish_with_message("uninstalled".into());
+                pr.finish_with_message("uninstalled");
             }
             _ => mpr.suspend(|| {
                 warn!(

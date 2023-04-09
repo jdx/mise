@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::time::Duration;
 
 use console::style;
@@ -50,11 +51,11 @@ impl ProgressReport {
         }
     }
 
-    pub fn set_prefix(&mut self, prefix: String) {
+    pub fn set_prefix(&mut self, prefix: impl Into<Cow<'static, str>>) {
         match &self.pb {
             Some(pb) => pb.set_prefix(prefix),
             None => {
-                self.prefix = prefix;
+                self.prefix = prefix.into().to_string();
             }
         }
     }
@@ -75,16 +76,22 @@ impl ProgressReport {
             None => (),
         }
     }
-    pub fn set_message(&self, message: String) {
+    pub fn set_message<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
-            Some(pb) => pb.set_message(message.replace('\r', "")),
-            None => eprintln!("{}{message}", self.prefix),
+            Some(pb) => pb.set_message(message.as_ref().replace('\r', "")),
+            None => eprintln!("{}{}", self.prefix, message.as_ref()),
         }
     }
-    pub fn println(&self, message: String) {
+    pub fn println<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(message),
-            None => eprintln!("{message}"),
+            None => eprintln!("{}", message.as_ref()),
+        }
+    }
+    pub fn warn<S: AsRef<str>>(&self, message: S) {
+        match &self.pb {
+            Some(pb) => pb.println(format!("{} {}", style("[WARN]").yellow(), message.as_ref())),
+            None => eprintln!("{}{}", self.prefix, message.as_ref()),
         }
     }
     pub fn error(&self) {
@@ -105,13 +112,13 @@ impl ProgressReport {
             None => (),
         }
     }
-    pub fn finish_with_message(&self, message: String) {
+    pub fn finish_with_message(&self, message: impl Into<Cow<'static, str>>) {
         match &self.pb {
             Some(pb) => {
                 pb.set_style(SUCCESS_TEMPLATE.clone());
-                pb.finish_with_message(message)
+                pb.finish_with_message(message);
             }
-            None => eprintln!("{}{message}", self.prefix),
+            None => eprintln!("{}{}", self.prefix, message.into()),
         }
     }
     // pub fn clear(&self) {
@@ -129,18 +136,18 @@ mod tests {
     #[test]
     fn test_progress_report() {
         let mut pr = ProgressReport::new(false);
-        pr.set_prefix("prefix".to_string());
+        pr.set_prefix("prefix");
         assert_eq!(pr.prefix(), "prefix");
-        pr.set_message("message".to_string());
-        pr.finish_with_message("message".to_string());
+        pr.set_message("message");
+        pr.finish_with_message("message");
     }
 
     #[test]
     fn test_progress_report_verbose() {
         let mut pr = ProgressReport::new(true);
-        pr.set_prefix("prefix".to_string());
+        pr.set_prefix("prefix");
         assert_eq!(pr.prefix(), "prefix");
-        pr.set_message("message".to_string());
-        pr.finish_with_message("message".to_string());
+        pr.set_message("message");
+        pr.finish_with_message("message");
     }
 }

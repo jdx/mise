@@ -90,6 +90,12 @@ pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
+// python
+pub static RTX_PYTHON_PATCH_URL: Lazy<Option<String>> =
+    Lazy::new(|| var("RTX_PYTHON_PATCH_URL").ok());
+pub static RTX_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("RTX_PYTHON_PATCHES_DIRECTORY"));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
     Yes,

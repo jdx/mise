@@ -59,7 +59,6 @@ pub struct Install {
 impl Command for Install {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         config.settings.missing_runtime_behavior = AutoInstall;
-        config.autoupdate();
 
         match &self.runtime {
             Some(runtime) => self.install_runtimes(config, runtime)?,

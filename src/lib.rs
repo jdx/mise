@@ -27,6 +27,7 @@ mod file;
 mod git;
 mod hash;
 mod hook_env;
+mod http;
 mod lock_file;
 mod plugins;
 mod runtime_symlinks;
