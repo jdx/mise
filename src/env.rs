@@ -22,6 +22,7 @@ lazy_static! {
     pub static ref RTX_DATA_DIR: PathBuf = var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx"));
     pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String =var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into());
     pub static ref RTX_DEFAULT_CONFIG_FILENAME: String =var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into());
+    pub static ref RTX_ENV: Option<String> = var("RTX_ENV").ok();
     pub static ref RTX_CONFIG_FILE: Option<PathBuf> = var_path("RTX_CONFIG_FILE");
     pub static ref RTX_USE_TOML: bool = var_is_true("RTX_USE_TOML");
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");

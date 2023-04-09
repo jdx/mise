@@ -109,6 +109,7 @@ v18.15.0
   - [`~/.cache/rtx`](#cachertx)
   - [`~/.local/share/rtx`](#localsharertx)
 - [Templates](#templates)
+- [&#91;experimental&#93; Config Environments](#experimental-config-environments)
 - [IDE Integration](#ide-integration)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
@@ -731,6 +732,12 @@ a different name.
 
 Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config files with a different name.
 
+#### [experimental] `RTX_ENV`
+
+Enables an environment-specific config file such as `.rtx.development.toml`. This is useful
+for setting different versions for different environments. See
+[Config Environments](#experimental-config-environments) for more on how to use this.
+
 #### `RTX_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `RTX_NODEJS_VERSION=18` will use nodejs@18.x regardless
@@ -1021,6 +1028,30 @@ Here's another using `exec()`:
 [aliases]
 current = "{{exec(command='node --version')}}"
 ```
+
+## [experimental] Config Environments
+
+It's possible to have separate `.rtx.toml` files in the same directory for different
+environments like `development` and `production`. To enable, set
+`experimental = true` in `~/.config/rtx/config.toml`, then set `RTX_ENV` to an environment like
+`development` or `production`. rtx will then look for a `.rtx.{RTX_ENV}.toml` file in the current directory.
+
+rtx will also look for "local" files like `.rtx.local.toml` and `.rtx.{RTX_ENV}.local.toml` in
+the current directory. These are intended to not be committed to version control.
+(Add `rtx.*.local.toml` to your `.gitignore` file.)
+
+The priority of these files goes in this order (bottom overrides top):
+
+* `.rtx.toml`
+* `.rtx.local.toml`
+* `.rtx.{RTX_ENV}.toml`
+* `.rtx.{RTX_ENV}.local.toml`
+
+Use `rtx doctor` to see which files are being used.
+
+_Note that currently modifying `RTX_DEFAULT_CONFIG_FILENAME` to something other than `.rtx.toml`
+will not work with this feature. For now, it will disable it entirely. This may change in the
+future._
 
 ## IDE Integration
 
