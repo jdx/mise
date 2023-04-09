@@ -11,7 +11,7 @@ use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::git::Git;
 use crate::output::Output;
-use crate::plugins::{Plugin, Plugins};
+use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
 use crate::{cli, cmd};
@@ -45,9 +45,9 @@ impl Command for Doctor {
         );
 
         let mut checks = Vec::new();
-        for plugin in config.external_plugins().values() {
+        for plugin in config.tools.values() {
             if !plugin.is_installed() {
-                checks.push(format!("plugin {} is not installed", plugin.name()));
+                checks.push(format!("plugin {} is not installed", &plugin.name));
                 continue;
             }
         }
@@ -108,15 +108,15 @@ fn render_config_files(config: &Config) -> String {
 fn render_plugins(config: &Config) -> String {
     let mut s = style("plugins:\n").bold().to_string();
     let plugins = config
-        .plugins
+        .tools
         .values()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();
-    let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;
+    let max_plugin_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0) + 2;
     for p in plugins {
-        let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
-        let si = match p.as_ref() {
-            Plugins::External(p) => {
+        let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
+        let si = match p.plugin.get_type() {
+            PluginType::External => {
                 let git = Git::new(p.plugin_path.clone());
                 match git.get_remote_url() {
                     Some(url) => {
@@ -127,7 +127,8 @@ fn render_plugins(config: &Config) -> String {
                     }
                     None => format!("  {padded_name}\n"),
                 }
-            } //_ => {}
+            }
+            PluginType::Core => format!("  {padded_name}\n"),
         };
         s.push_str(&si);
     }

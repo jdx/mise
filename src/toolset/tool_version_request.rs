@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::plugins::{PluginName, Plugins};
+use crate::plugins::PluginName;
+use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -60,7 +61,7 @@ impl ToolVersionRequest {
     pub fn resolve(
         &self,
         config: &Config,
-        plugin: &Plugins,
+        plugin: &Tool,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<ToolVersion> {

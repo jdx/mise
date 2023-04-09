@@ -47,6 +47,7 @@ pub mod tera;
 #[cfg(test)]
 mod test;
 mod toml;
+mod tool;
 mod toolset;
 mod ui;
 

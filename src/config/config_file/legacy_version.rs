@@ -8,7 +8,8 @@ use color_eyre::eyre::Result;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Settings};
-use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::plugins::PluginName;
+use crate::tool::Tool;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
 #[derive(Debug)]
@@ -18,11 +19,11 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Plugins) -> Result<Self> {
+    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Tool) -> Result<Self> {
         let version = plugin.parse_legacy_file(path.as_path(), settings)?;
 
         Ok(Self {
-            toolset: build_toolset(&path, plugin.name().as_str(), version.as_str()),
+            toolset: build_toolset(&path, plugin.name.as_str(), version.as_str()),
             path,
         })
     }

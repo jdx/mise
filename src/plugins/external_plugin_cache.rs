@@ -1,7 +1,7 @@
 use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::hash::hash_to_str;
-use crate::plugins::{ExternalPlugin, Plugin};
+use crate::plugins::ExternalPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::{dirs, env};
@@ -29,18 +29,18 @@ impl ExternalPluginCache {
     {
         let mut w = self.list_bin_paths.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
-            let list_bin_paths_filename = match &plugin.toml().list_bin_paths.cache_key {
+            let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                 Some(key) => {
                     let key = render_cache_key(config, tv, key);
                     let filename = format!("{}.msgpack.z", key);
-                    plugin.cache_path(tv).join("list_bin_paths").join(filename)
+                    tv.cache_path().join("list_bin_paths").join(filename)
                 }
-                None => plugin.cache_path(tv).join("list_bin_paths.msgpack.z"),
+                None => tv.cache_path().join("list_bin_paths.msgpack.z"),
             };
             CacheManager::new(list_bin_paths_filename)
                 .with_fresh_file(dirs::ROOT.clone())
                 .with_fresh_file(plugin.plugin_path.clone())
-                .with_fresh_file(plugin.install_path(tv))
+                .with_fresh_file(tv.install_path())
         });
         cm.get_or_try_init(fetch).cloned()
     }
@@ -61,14 +61,14 @@ impl ExternalPluginCache {
                 Some(key) => {
                     let key = render_cache_key(config, tv, key);
                     let filename = format!("{}.msgpack.z", key);
-                    plugin.cache_path(tv).join("exec_env").join(filename)
+                    tv.cache_path().join("exec_env").join(filename)
                 }
-                None => plugin.cache_path(tv).join("exec_env.msgpack.z"),
+                None => tv.cache_path().join("exec_env.msgpack.z"),
             };
             CacheManager::new(exec_env_filename)
                 .with_fresh_file(dirs::ROOT.clone())
                 .with_fresh_file(plugin.plugin_path.clone())
-                .with_fresh_file(plugin.install_path(tv))
+                .with_fresh_file(tv.install_path())
         });
         cm.get_or_try_init(fetch).cloned()
     }

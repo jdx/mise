@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs;
-use std::fs::{remove_file, File};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -11,7 +10,6 @@ use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use versions::Versioning;
 
 use crate::cache::CacheManager;
 use crate::cmd::cmd;
@@ -20,15 +18,12 @@ use crate::env::PREFER_STALE;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::remove_all;
-use crate::file::{create_dir_all, display_path, remove_all_with_warning};
 use crate::git::Git;
 use crate::hash::hash_to_str;
-use crate::lock_file::LockFile;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginName, Script, ScriptManager};
-use crate::runtime_symlinks::is_runtime_symlink;
+use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env, file};
@@ -87,135 +82,6 @@ impl ExternalPlugin {
             repo_url: None,
             toml,
         }
-    }
-
-    pub fn list(settings: &Settings) -> Result<Vec<Self>> {
-        Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .iter()
-            .map(|name| Self::new(settings, name))
-            .collect())
-    }
-    pub fn get_remote_url(&self) -> Option<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
-        git.get_remote_url()
-    }
-
-    pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
-        self.decorate_progress_bar(pr, None);
-        let repository = self
-            .repo_url
-            .clone()
-            .or_else(|| config.get_repo_url(&self.name))
-            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
-        debug!("install {} {:?}", self.name, repository);
-
-        let _lock = self.get_lock(&self.plugin_path, force)?;
-
-        if self.is_installed() {
-            self.uninstall(pr)?;
-        }
-
-        let git = Git::new(self.plugin_path.to_path_buf());
-        pr.set_message(format!("cloning {repo_url}"));
-        git.clone(&repo_url)?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("checking out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
-
-        pr.set_message("loading plugin remote versions".into());
-        if self.has_list_all_script() {
-            self.list_remote_versions(&config.settings)?;
-        }
-        if self.has_list_alias_script() {
-            pr.set_message("getting plugin aliases".into());
-            self.get_aliases(&config.settings)?;
-        }
-        if self.has_list_legacy_filenames_script() {
-            pr.set_message("getting plugin legacy filenames".into());
-            self.legacy_filenames(&config.settings)?;
-        }
-
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
-    }
-
-    pub fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
-        if !self.is_installed() {
-            return Ok(());
-        }
-        pr.set_message("uninstalling".into());
-
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("removing {}", &dir.to_string_lossy()));
-            remove_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(&dir.to_string_lossy()).cyan().for_stderr()
-                )
-            })
-        };
-
-        rmdir(&self.downloads_path)?;
-        rmdir(&self.installs_path)?;
-        rmdir(&self.plugin_path)?;
-
-        Ok(())
-    }
-
-    pub fn update(&self, gitref: Option<String>) -> Result<()> {
-        let plugin_path = self.plugin_path.to_path_buf();
-        if plugin_path.is_symlink() {
-            warn!(
-                "Plugin: {} is a symlink, not updating",
-                style(&self.name).cyan().for_stderr()
-            );
-            return Ok(());
-        }
-        let git = Git::new(plugin_path);
-        if !git.is_repo() {
-            warn!(
-                "Plugin {} is not a git repository, not updating",
-                style(&self.name).cyan().for_stderr()
-            );
-            return Ok(());
-        }
-        // TODO: asdf_run_hook "pre_plugin_update"
-        let (_pre, _post) = git.update(gitref)?;
-        // TODO: asdf_run_hook "post_plugin_update"
-        Ok(())
-    }
-
-    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
-        if let Some(latest) = self.get_latest_stable(settings)? {
-            Ok(Some(latest))
-        } else {
-            self.latest_version(settings, Some("latest".into()))
-        }
-    }
-
-    fn get_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
-        if !self.has_latest_stable_script() {
-            return Ok(None);
-        }
-        self.latest_stable_cache
-            .get_or_try_init(|| self.fetch_latest_stable(settings))
-            .map_err(|err| {
-                eyre!(
-                    "Failed fetching latest stable version for plugin {}: {}",
-                    style(&self.name).cyan().for_stderr(),
-                    err
-                )
-            })
-            .cloned()
     }
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
@@ -330,45 +196,6 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn get_lock(&self, path: &Path, force: bool) -> Result<Option<fslock::LockFile>> {
-        let lock = if force {
-            None
-        } else {
-            let lock = LockFile::new(path)
-                .with_callback(|l| {
-                    debug!("waiting for lock on {}", display_path(l));
-                })
-                .lock()?;
-            Some(lock)
-        };
-        Ok(lock)
-    }
-
-    fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        self.cache_path(tv).join("incomplete")
-    }
-
-    fn create_install_dirs(&self, tv: &ToolVersion) -> Result<()> {
-        let _ = remove_all_with_warning(self.install_path(tv));
-        let _ = remove_all_with_warning(self.download_path(tv));
-        let _ = remove_all_with_warning(self.cache_path(tv));
-        let _ = remove_file(self.install_path(tv)); // removes if it is a symlink
-        create_dir_all(self.install_path(tv))?;
-        create_dir_all(self.download_path(tv))?;
-        create_dir_all(self.cache_path(tv))?;
-        File::create(self.incomplete_file_path(tv))?;
-        Ok(())
-    }
-    fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
-        let _ = remove_all_with_warning(self.install_path(tv));
-        self.cleanup_install_dirs(settings, tv);
-    }
-    fn cleanup_install_dirs(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_download {
-            let _ = remove_all_with_warning(self.download_path(tv));
-        }
-    }
-
     fn fetch_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
@@ -384,7 +211,7 @@ impl ExternalPlugin {
         };
         let bin_paths = bin_paths
             .into_iter()
-            .map(|path| self.install_path(tv).join(path))
+            .map(|path| tv.install_path().join(path))
             .collect();
         Ok(bin_paths)
     }
@@ -424,19 +251,19 @@ impl ExternalPlugin {
         sm = sm
             .with_env(
                 "RTX_INSTALL_PATH".into(),
-                self.install_path(tv).to_string_lossy().to_string(),
+                tv.install_path().to_string_lossy().to_string(),
             )
             .with_env(
                 "ASDF_INSTALL_PATH".into(),
-                self.install_path(tv).to_string_lossy().to_string(),
+                tv.install_path().to_string_lossy().to_string(),
             )
             .with_env(
                 "RTX_DOWNLOAD_PATH".into(),
-                self.download_path(tv).to_string_lossy().to_string(),
+                tv.download_path().to_string_lossy().to_string(),
             )
             .with_env(
                 "ASDF_DOWNLOAD_PATH".into(),
-                self.download_path(tv).to_string_lossy().to_string(),
+                tv.download_path().to_string_lossy().to_string(),
             )
             .with_env("RTX_INSTALL_TYPE".into(), install_type.into())
             .with_env("ASDF_INSTALL_TYPE".into(), install_type.into())
@@ -476,14 +303,12 @@ impl Hash for ExternalPlugin {
 }
 
 impl Plugin for ExternalPlugin {
+    fn get_type(&self) -> PluginType {
+        PluginType::External
+    }
     fn name(&self) -> &PluginName {
         &self.name
     }
-
-    fn toml(&self) -> &RtxPluginToml {
-        &self.toml
-    }
-
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
@@ -496,50 +321,120 @@ impl Plugin for ExternalPlugin {
             })
     }
 
-    fn list_installed_versions(&self) -> Result<Vec<String>> {
-        Ok(match self.installs_path.exists() {
-            true => file::dir_subdirs(&self.installs_path)?
-                .iter()
-                .filter(|v| !is_runtime_symlink(&self.installs_path.join(v)))
-                .map(|v| Versioning::new(v).unwrap_or_default())
-                .sorted()
-                .map(|v| v.to_string())
-                .collect(),
-            false => vec![],
-        })
+    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
+        if !self.has_latest_stable_script() {
+            return Ok(None);
+        }
+        self.latest_stable_cache
+            .get_or_try_init(|| self.fetch_latest_stable(settings))
+            .map_err(|err| {
+                eyre!(
+                    "Failed fetching latest stable version for plugin {}: {}",
+                    style(&self.name).cyan().for_stderr(),
+                    err
+                )
+            })
+            .cloned()
     }
 
-    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let matches = self.list_versions_matching(settings, &query)?;
-                let v = match matches.contains(&query) {
-                    true => Some(query),
-                    false => matches.last().map(|v| v.to_string()),
-                };
-                Ok(v)
-            }
-            None => self.latest_stable_version(settings),
-        }
-    }
-
-    fn latest_installed_version(&self) -> Result<Option<String>> {
-        let installed_symlink = self.installs_path.join("latest");
-        if installed_symlink.exists() {
-            let target = installed_symlink.read_link()?;
-            let version = target
-                .file_name()
-                .ok_or_else(|| eyre!("Invalid symlink target"))?
-                .to_string_lossy()
-                .to_string();
-            Ok(Some(version))
-        } else {
-            Ok(None)
-        }
+    fn get_remote_url(&self) -> Option<String> {
+        let git = Git::new(self.plugin_path.to_path_buf());
+        git.get_remote_url()
     }
 
     fn is_installed(&self) -> bool {
         self.plugin_path.exists()
+    }
+
+    fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+        let repository = self
+            .repo_url
+            .clone()
+            .or_else(|| config.get_repo_url(&self.name))
+            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
+        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
+        debug!("install {} {:?}", self.name, repository);
+
+        if self.is_installed() {
+            self.uninstall(pr)?;
+        }
+
+        let git = Git::new(self.plugin_path.to_path_buf());
+        pr.set_message(format!("cloning {repo_url}"));
+        git.clone(&repo_url)?;
+        if let Some(ref_) = &repo_ref {
+            pr.set_message(format!("checking out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+
+        pr.set_message("loading plugin remote versions".into());
+        if self.has_list_all_script() {
+            self.list_remote_versions(&config.settings)?;
+        }
+        if self.has_list_alias_script() {
+            pr.set_message("getting plugin aliases".into());
+            self.get_aliases(&config.settings)?;
+        }
+        if self.has_list_legacy_filenames_script() {
+            pr.set_message("getting plugin legacy filenames".into());
+            self.legacy_filenames(&config.settings)?;
+        }
+
+        let sha = git.current_sha_short()?;
+        pr.finish_with_message(format!(
+            "{repo_url}#{}",
+            style(&sha).bright().yellow().for_stderr(),
+        ));
+        Ok(())
+    }
+
+    fn update(&self, gitref: Option<String>) -> Result<()> {
+        let plugin_path = self.plugin_path.to_path_buf();
+        if plugin_path.is_symlink() {
+            warn!(
+                "Plugin: {} is a symlink, not updating",
+                style(&self.name).cyan().for_stderr()
+            );
+            return Ok(());
+        }
+        let git = Git::new(plugin_path);
+        if !git.is_repo() {
+            warn!(
+                "Plugin {} is not a git repository, not updating",
+                style(&self.name).cyan().for_stderr()
+            );
+            return Ok(());
+        }
+        // TODO: asdf_run_hook "pre_plugin_update"
+        let (_pre, _post) = git.update(gitref)?;
+        // TODO: asdf_run_hook "post_plugin_update"
+        Ok(())
+    }
+
+    fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
+        if !self.is_installed() {
+            return Ok(());
+        }
+        pr.set_message("uninstalling".into());
+
+        let rmdir = |dir: &Path| {
+            if !dir.exists() {
+                return Ok(());
+            }
+            pr.set_message(format!("removing {}", &dir.to_string_lossy()));
+            remove_all(dir).wrap_err_with(|| {
+                format!(
+                    "Failed to remove directory {}",
+                    style(&dir.to_string_lossy()).cyan().for_stderr()
+                )
+            })
+        };
+
+        rmdir(&self.downloads_path)?;
+        rmdir(&self.installs_path)?;
+        rmdir(&self.plugin_path)?;
+
+        Ok(())
     }
 
     fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
@@ -640,34 +535,19 @@ impl Plugin for ExternalPlugin {
         exit(result.status.code().unwrap_or(1));
     }
 
-    fn is_version_installed(&self, tv: &ToolVersion) -> bool {
-        match tv.request {
-            ToolVersionRequest::System(_) => true,
-            _ => self.install_path(tv).exists() && !self.incomplete_file_path(tv).exists(),
-        }
-    }
-
     fn install_version(
         &self,
         config: &Config,
         tv: &ToolVersion,
         pr: &mut ProgressReport,
-        force: bool,
     ) -> Result<()> {
-        self.decorate_progress_bar(pr, Some(tv));
-
-        let settings = &config.settings;
-        let _lock = self.get_lock(&self.install_path(tv), force)?;
-        self.create_install_dirs(tv)?;
-
         let run_script = |script| {
             self.script_man_for_tv(config, tv).run_by_line(
-                settings,
+                &config.settings,
                 script,
                 |output| {
-                    self.cleanup_install_dirs_on_error(settings, tv);
                     pr.error();
-                    if !settings.verbose && !output.trim().is_empty() {
+                    if !config.settings.verbose && !output.trim().is_empty() {
                         pr.println(output);
                     }
                 },
@@ -690,50 +570,15 @@ impl Plugin for ExternalPlugin {
         }
         pr.set_message("installing".into());
         run_script(&Install)?;
-        self.cleanup_install_dirs(settings, tv);
-
-        // attempt to touch all the .tool-version files to trigger updates in hook-env
-        let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
-        touch_dirs.extend(config.config_files.keys().cloned());
-        for path in touch_dirs {
-            let err = file::touch_dir(&path);
-            if let Err(err) = err {
-                debug!("error touching config file: {:?} {:?}", path, err);
-            }
-        }
-        if let Err(err) = remove_file(self.incomplete_file_path(tv)) {
-            debug!("error removing incomplete file: {:?}", err);
-        }
-        pr.finish();
 
         Ok(())
     }
 
-    fn uninstall_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-        dryrun: bool,
-    ) -> Result<()> {
-        pr.set_message(format!("uninstall {}", self.name()));
-
+    fn uninstall_version(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
             self.script_man_for_tv(config, tv)
                 .run(&config.settings, &Script::Uninstall)?;
         }
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("removing {}", display_path(dir)));
-            if dryrun {
-                return Ok(());
-            }
-            remove_all_with_warning(dir)
-        };
-        rmdir(&self.install_path(tv))?;
-        rmdir(&self.download_path(tv))?;
         Ok(())
     }
 
@@ -753,17 +598,6 @@ impl Plugin for ExternalPlugin {
         }
         self.cache
             .exec_env(config, self, tv, || self.fetch_exec_env(config, tv))
-    }
-
-    fn which(&self, config: &Config, tv: &ToolVersion, bin_name: &str) -> Result<Option<PathBuf>> {
-        let bin_paths = self.list_bin_paths(config, tv)?;
-        for bin_path in bin_paths {
-            let bin_path = bin_path.join(bin_name);
-            if bin_path.exists() {
-                return Ok(Some(bin_path));
-            }
-        }
-        Ok(None)
     }
 }
 
