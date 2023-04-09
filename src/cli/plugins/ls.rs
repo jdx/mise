@@ -4,6 +4,7 @@ use crate::cli::command::Command;
 use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::PluginType;
 
 /// List installed plugins
 ///
@@ -13,8 +14,13 @@ use crate::output::Output;
 pub struct PluginsLs {
     /// List all available remote plugins
     /// Same as `rtx plugins ls-remote`
-    #[clap(short, long, verbatim_doc_comment)]
+    #[clap(short, long, hide = true, verbatim_doc_comment)]
     pub all: bool,
+
+    /// The built-in plugins only
+    /// Normally these are not shown
+    #[clap(short, long, verbatim_doc_comment)]
+    pub core: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
@@ -32,8 +38,16 @@ impl Command for PluginsLs {
             .run(config, out);
         }
 
+        let mut plugins = config.tools.values().collect::<Vec<_>>();
+
+        if self.core {
+            plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
+        } else {
+            plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::External));
+        }
+
         if self.urls {
-            for plugin in config.tools.values() {
+            for plugin in plugins {
                 if let Some(url) = plugin.get_remote_url() {
                     rtxprintln!(out, "{:29} {}", plugin.name, url);
                     continue;
@@ -41,7 +55,7 @@ impl Command for PluginsLs {
                 rtxprintln!(out, "{}", plugin.name);
             }
         } else {
-            for plugin in config.tools.values() {
+            for plugin in plugins {
                 rtxprintln!(out, "{}", plugin.name);
             }
         }

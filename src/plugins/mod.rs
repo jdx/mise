@@ -12,6 +12,7 @@ use crate::config::{Config, Settings};
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::ProgressReport;
 
+pub mod core;
 mod external_plugin;
 mod external_plugin_cache;
 mod rtx_plugin_toml;
@@ -23,7 +24,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn get_type(&self) -> PluginType {
         PluginType::Core
     }
-    fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>>;
+    fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>>;
     fn latest_stable_version(&self, _settings: &Settings) -> Result<Option<String>> {
         Ok(None)
     }

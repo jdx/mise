@@ -30,6 +30,7 @@ jobs:
         run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
+          RTX_EXPERIMENTAL_CORE_PLUGINS: "1"
       - uses: taiki-e/install-action@just
       - run: just lint
       - uses: taiki-e/install-action@cargo-deny
@@ -55,8 +56,9 @@ jobs:
         uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RTX_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           RUST_BACKTRACE: "1"
+          RTX_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          RTX_EXPERIMENTAL_CORE_PLUGINS: "1"
         with:
           timeout_minutes: 20
           max_attempts: 3

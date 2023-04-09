@@ -2252,7 +2252,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins)
-            opts="-a -u -j -r -v -h --all --urls --debug --install-missing --jobs --log-level --raw --trace --verbose --help install link ls ls-remote uninstall update help"
+            opts="-a -c -u -j -r -v -h --all --core --urls --debug --install-missing --jobs --log-level --raw --trace --verbose --help install link ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2442,7 +2442,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls)
-            opts="-a -u -j -r -v -h --all --urls --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-a -c -u -j -r -v -h --all --core --urls --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

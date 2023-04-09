@@ -305,7 +305,7 @@ impl Plugin for ExternalPlugin {
     fn get_type(&self) -> PluginType {
         PluginType::External
     }
-    fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
+    fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
             .map_err(|err| {
@@ -315,6 +315,7 @@ impl Plugin for ExternalPlugin {
                     err
                 )
             })
+            .cloned()
     }
 
     fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
