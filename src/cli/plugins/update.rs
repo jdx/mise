@@ -4,7 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::PluginName;
 
 /// Updates a plugin to the latest version
 ///
@@ -31,10 +31,10 @@ impl Command for Update {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
-                    let plugin = config.external_plugins().remove(p).ok_or_else(|| {
+                    let plugin = config.tools.get(p).ok_or_else(|| {
                         eyre!("plugin {} not found", style(p).cyan().for_stderr())
                     })?;
-                    Ok((plugin, ref_))
+                    Ok((plugin.clone(), ref_))
                 })
                 .collect::<Result<_>>()?,
             None => config
@@ -45,7 +45,7 @@ impl Command for Update {
         };
 
         for (plugin, ref_) in plugins {
-            rtxprintln!(out, "updating plugin {}", plugin.name());
+            rtxprintln!(out, "updating plugin {}", plugin.name);
             plugin.update(ref_)?;
         }
         Ok(())

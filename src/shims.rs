@@ -16,7 +16,6 @@ use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
-use crate::plugins::{Plugin, Plugins};
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
@@ -117,21 +116,19 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
             })?;
         }
     }
-    for plugin in config.plugins.values() {
-        match plugin.as_ref() {
-            Plugins::External(plugin) => match plugin.plugin_path.join("shims").read_dir() {
-                Ok(files) => {
-                    for bin in files {
-                        let bin = bin?;
-                        let bin_name = bin.file_name().into_string().unwrap();
-                        let symlink_path = shims_dir.join(bin_name);
-                        make_shim(&bin.path(), &symlink_path)?;
-                    }
+    for plugin in config.tools.values() {
+        match plugin.plugin_path.join("shims").read_dir() {
+            Ok(files) => {
+                for bin in files {
+                    let bin = bin?;
+                    let bin_name = bin.file_name().into_string().unwrap();
+                    let symlink_path = shims_dir.join(bin_name);
+                    make_shim(&bin.path(), &symlink_path)?;
                 }
-                Err(_) => {
-                    continue;
-                }
-            },
+            }
+            Err(_) => {
+                continue;
+            }
         }
     }
 

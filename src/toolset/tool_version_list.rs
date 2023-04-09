@@ -22,7 +22,7 @@ impl ToolVersionList {
     }
     pub fn resolve(&mut self, config: &Config, latest_versions: bool) {
         self.versions.clear();
-        let plugin = match config.plugins.get(&self.plugin_name) {
+        let plugin = match config.tools.get(&self.plugin_name) {
             Some(p) => p,
             _ => {
                 debug!("Plugin {} is not installed", self.plugin_name);
@@ -44,17 +44,19 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::plugins::{ExternalPlugin, Plugin, Plugins};
+    use crate::plugins::ExternalPlugin;
+    use crate::tool::Tool;
 
     #[test]
     fn test_tool_version_list() {
         let mut config = Config::default();
-        let plugin = ExternalPlugin::new(&config.settings, &"tiny".to_string());
-        let plugin = Arc::new(Plugins::External(plugin));
-        config.plugins.insert(plugin.name().clone(), plugin.clone());
-        let mut tvl = ToolVersionList::new(plugin.name().clone(), ToolSource::Argument);
+        let plugin_name = "tiny".to_string();
+        let plugin = ExternalPlugin::new(&config.settings, &plugin_name);
+        let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
+        config.tools.insert(plugin_name.clone(), Arc::new(tool));
+        let mut tvl = ToolVersionList::new(plugin_name.clone(), ToolSource::Argument);
         tvl.requests.push((
-            ToolVersionRequest::new(plugin.name().clone(), "latest"),
+            ToolVersionRequest::new(plugin_name, "latest"),
             ToolVersionOptions::default(),
         ));
         tvl.resolve(&config, true);

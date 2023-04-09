@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;
@@ -12,7 +11,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
+use crate::plugins::PluginName;
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest, ToolsetBuilder};
@@ -111,22 +110,12 @@ impl Install {
             .install(|| -> Result<()> {
                 let mut tool_versions = vec![];
                 for (plugin_name, tvr, opts) in tool_version_requests {
-                    let plugin = match config.plugins.get(&plugin_name).cloned() {
-                        Some(plugin) => plugin,
-                        None => Arc::new(Plugins::External(ExternalPlugin::new(
-                            &config.settings,
-                            &plugin_name,
-                        ))),
-                    };
-                    match plugin.as_ref() {
-                        Plugins::External(plugin) => {
-                            if !plugin.is_installed() {
-                                let mut pr = mpr.add();
-                                if let Err(err) = plugin.install(&config, &mut pr, false) {
-                                    pr.error();
-                                    return Err(err)?;
-                                }
-                            }
+                    let plugin = config.get_or_create_tool(&plugin_name);
+                    if !plugin.is_installed() {
+                        let mut pr = mpr.add();
+                        if let Err(err) = plugin.install(&config, &mut pr, false) {
+                            pr.error();
+                            return Err(err)?;
                         }
                     }
                     let tv = tvr.resolve(&config, &plugin, opts, ts.latest_versions)?;

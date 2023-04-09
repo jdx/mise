@@ -4,7 +4,6 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes a plugin
@@ -34,8 +33,7 @@ impl PluginsUninstall {
         plugin_name: &String,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let plugin = config.external_plugins().remove(plugin_name);
-        match plugin {
+        match config.tools.get(plugin_name) {
             Some(plugin) if plugin.is_installed() => {
                 let mut pr = mpr.add();
                 plugin.decorate_progress_bar(&mut pr, None);

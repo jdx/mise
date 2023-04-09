@@ -5,7 +5,6 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes runtime versions
@@ -23,7 +22,7 @@ impl Command for Uninstall {
         let tool_versions = runtimes
             .iter()
             .map(|a| {
-                let plugin = match config.plugins.get(&a.plugin) {
+                let plugin = match config.tools.get(&a.plugin) {
                     Some(plugin) => plugin,
                     None => todo!(),
                 };

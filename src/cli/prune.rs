@@ -6,7 +6,8 @@ use std::sync::Arc;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::plugins::PluginName;
+use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -35,7 +36,7 @@ impl Command for Prune {
             .list_installed_versions(&config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<IndexMap<String, (Arc<Plugins>, ToolVersion)>>();
+            .collect::<IndexMap<String, (Arc<Tool>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugins {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
@@ -54,11 +55,7 @@ impl Command for Prune {
 }
 
 impl Prune {
-    fn delete(
-        &self,
-        config: &mut Config,
-        to_delete: Vec<(Arc<Plugins>, ToolVersion)>,
-    ) -> Result<()> {
+    fn delete(&self, config: &mut Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         for (p, tv) in to_delete {
             let mut pr = mpr.add();

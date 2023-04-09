@@ -7,7 +7,6 @@ use itertools::Itertools;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 
 /// List all available remote plugins
 ///
@@ -29,10 +28,10 @@ pub struct PluginsLsRemote {
 impl Command for PluginsLsRemote {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let installed_plugins = config
-            .external_plugins()
+            .tools
             .values()
             .filter(|p| p.is_installed())
-            .map(|p| p.name().clone())
+            .map(|p| p.name.clone())
             .collect::<HashSet<_>>();
 
         let shorthands = config.get_shorthands().iter().sorted().collect_vec();
