@@ -1,10 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{remove_file, File};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
 use versions::Versioning;
@@ -140,7 +139,7 @@ impl Tool {
         }
     }
 
-    pub fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+    pub fn get_aliases(&self, settings: &Settings) -> Result<BTreeMap<String, String>> {
         self.plugin.get_aliases(settings)
     }
 

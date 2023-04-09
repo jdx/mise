@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
-use indexmap::IndexMap;
 
 pub use external_plugin::ExternalPlugin;
 pub use rtx_plugin_toml::RtxPluginToml;
@@ -43,8 +42,8 @@ pub trait Plugin: Debug + Send + Sync {
     fn uninstall(&self, _pr: &ProgressReport) -> Result<()> {
         Ok(())
     }
-    fn get_aliases(&self, _settings: &Settings) -> Result<IndexMap<String, String>> {
-        Ok(IndexMap::new())
+    fn get_aliases(&self, _settings: &Settings) -> Result<BTreeMap<String, String>> {
+        Ok(BTreeMap::new())
     }
     fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
         Ok(vec![])

@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
-use indexmap::IndexMap;
 use itertools::Itertools;
+use std::collections::BTreeMap;
 
 use crate::cli::args::runtime::RuntimeArg;
 use crate::config::Config;
@@ -61,7 +61,7 @@ fn load_config_files(config: &Config, ts: &mut Toolset) {
     }
 }
 
-fn load_runtime_env(ts: &mut Toolset, env: IndexMap<String, String>) {
+fn load_runtime_env(ts: &mut Toolset, env: BTreeMap<String, String>) {
     for (k, v) in env {
         if k.starts_with("RTX_") && k.ends_with("_VERSION") {
             let plugin_name = k[4..k.len() - 8].to_lowercase();
