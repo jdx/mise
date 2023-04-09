@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ mod tool_version;
 mod tool_version_list;
 mod tool_version_request;
 
-pub type ToolVersionOptions = IndexMap<String, String>;
+pub type ToolVersionOptions = BTreeMap<String, String>;
 
 /// a toolset is a collection of tools for various plugins
 ///
@@ -283,14 +283,14 @@ impl Toolset {
             .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
-    pub fn env_with_path(&self, config: &Config) -> IndexMap<String, String> {
+    pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
         let mut env = self.env(config);
         let path_env = self.path_env(config);
         env.insert("PATH".to_string(), path_env);
         env
     }
-    pub fn env(&self, config: &Config) -> IndexMap<String, String> {
-        let mut entries: IndexMap<String, String> = self
+    pub fn env(&self, config: &Config) -> BTreeMap<String, String> {
+        let mut entries: BTreeMap<String, String> = self
             .list_current_installed_versions(config)
             .into_par_iter()
             .flat_map(|(p, tv)| match p.exec_env(config, &tv) {
@@ -306,7 +306,6 @@ impl Toolset {
             .filter(|(k, _)| !k.starts_with("RTX_TOOL_OPTS__"))
             .rev()
             .collect();
-        entries.sort_keys();
         entries.extend(config.env.clone());
         entries
     }

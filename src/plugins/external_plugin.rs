@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
@@ -434,12 +433,12 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn get_aliases(&self, settings: &Settings) -> Result<IndexMap<String, String>> {
+    fn get_aliases(&self, settings: &Settings) -> Result<BTreeMap<String, String>> {
         if let Some(data) = &self.toml.list_aliases.data {
             return Ok(self.parse_aliases(data).into_iter().collect());
         }
         if !self.has_list_alias_script() {
-            return Ok(IndexMap::new());
+            return Ok(BTreeMap::new());
         }
         let aliases = self
             .alias_cache

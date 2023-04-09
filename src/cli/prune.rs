@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
 use console::style;
-use indexmap::IndexMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::cli::command::Command;
@@ -36,7 +36,7 @@ impl Command for Prune {
             .list_installed_versions(&config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<IndexMap<String, (Arc<Tool>, ToolVersion)>>();
+            .collect::<BTreeMap<String, (Arc<Tool>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugins {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));

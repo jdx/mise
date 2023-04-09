@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -8,7 +9,6 @@ use color_eyre::eyre::Result;
 use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
@@ -52,10 +52,10 @@ pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
 
 fn have_config_files_been_modified(
     watches: &HookEnvWatches,
-    watch_files: IndexSet<PathBuf>,
+    watch_files: BTreeSet<PathBuf>,
 ) -> bool {
     // make sure they have exactly the same config filenames
-    let watch_keys = watches.files.keys().cloned().collect::<IndexSet<_>>();
+    let watch_keys = watches.files.keys().cloned().collect::<BTreeSet<_>>();
     if watch_keys != watch_files {
         trace!(
             "config files do not match {:?}",
@@ -90,7 +90,7 @@ fn have_rtx_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HookEnvWatches {
-    files: IndexMap<PathBuf, SystemTime>,
+    files: BTreeMap<PathBuf, SystemTime>,
     env_var_hash: String,
 }
 
@@ -110,7 +110,7 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
 }
 
 pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
-    let mut watches = IndexMap::new();
+    let mut watches = BTreeMap::new();
     for cf in get_watch_files(watch_files) {
         watches.insert(cf.clone(), cf.metadata()?.modified()?);
     }
@@ -121,8 +121,8 @@ pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
     })
 }
 
-pub fn get_watch_files(watch_files: &[PathBuf]) -> IndexSet<PathBuf> {
-    let mut watches = IndexSet::new();
+pub fn get_watch_files(watch_files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let mut watches = BTreeSet::new();
     if dirs::ROOT.exists() {
         watches.insert(dirs::ROOT.clone());
     }
@@ -181,34 +181,34 @@ mod tests {
 
     #[test]
     fn test_have_config_files_been_modified() {
-        let files = IndexSet::new();
+        let files = BTreeSet::new();
         let watches = HookEnvWatches {
-            files: IndexMap::new(),
+            files: BTreeMap::new(),
             env_var_hash: "".into(),
         };
         assert!(!have_config_files_been_modified(&watches, files));
 
         let fp = dirs::CURRENT.join(".test-tool-versions");
         let watches = HookEnvWatches {
-            files: IndexMap::from([(fp.clone(), UNIX_EPOCH)]),
+            files: BTreeMap::from([(fp.clone(), UNIX_EPOCH)]),
             env_var_hash: "".into(),
         };
-        let files = IndexSet::from([fp.clone()]);
+        let files = BTreeSet::from([fp.clone()]);
         assert!(have_config_files_been_modified(&watches, files));
 
         let modtime = fp.metadata().unwrap().modified().unwrap();
         let watches = HookEnvWatches {
-            files: IndexMap::from([(fp.clone(), modtime)]),
+            files: BTreeMap::from([(fp.clone(), modtime)]),
             env_var_hash: "".into(),
         };
-        let files = IndexSet::from([fp]);
+        let files = BTreeSet::from([fp]);
         assert!(!have_config_files_been_modified(&watches, files));
     }
 
     #[test]
     fn test_serialize_watches_empty() {
         let watches = HookEnvWatches {
-            files: IndexMap::new(),
+            files: BTreeMap::new(),
             env_var_hash: "".into(),
         };
         let serialized = serialize_watches(&watches).unwrap();
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn test_serialize_watches() {
         let serialized = serialize_watches(&HookEnvWatches {
-            files: IndexMap::from([("foo".into(), UNIX_EPOCH)]),
+            files: BTreeMap::from([("foo".into(), UNIX_EPOCH)]),
             env_var_hash: "testing-123".into(),
         })
         .unwrap();

@@ -27,17 +27,18 @@ pub mod config_file;
 mod settings;
 mod tracking;
 
-type AliasMap = IndexMap<PluginName, IndexMap<String, String>>;
+type AliasMap = BTreeMap<PluginName, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
+type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
 
 #[derive(Debug, Default)]
 pub struct Config {
     pub settings: Settings,
     pub global_config: RtxToml,
-    pub legacy_files: IndexMap<String, PluginName>,
+    pub legacy_files: BTreeMap<String, PluginName>,
     pub config_files: ConfigMap,
-    pub tools: BTreeMap<PluginName, Arc<Tool>>,
-    pub env: IndexMap<String, String>,
+    pub tools: ToolMap,
+    pub env: BTreeMap<String, String>,
     pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
@@ -51,14 +52,14 @@ impl Config {
     pub fn load() -> Result<Self> {
         let global_config = load_rtxrc()?;
         let mut settings = global_config.settings();
-        let config_filenames = load_config_filenames(&IndexMap::new());
+        let config_filenames = load_config_filenames(&BTreeMap::new());
         let tools = load_tools(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
             &tools,
-            &IndexMap::new(),
-            IndexMap::new(),
+            &BTreeMap::new(),
+            ConfigMap::new(),
         )?;
         for cf in config_files.values() {
             settings.merge(cf.settings());
@@ -178,7 +179,7 @@ impl Config {
                     Ok(aliases) => aliases,
                     Err(err) => {
                         eprintln!("Error: {err}");
-                        IndexMap::new()
+                        BTreeMap::new()
                     }
                 };
                 (plugin.name.clone(), aliases)
@@ -188,7 +189,7 @@ impl Config {
             for (from, to) in plugin_aliases {
                 aliases
                     .entry(plugin.to_string())
-                    .or_insert_with(IndexMap::new)
+                    .or_insert_with(BTreeMap::new)
                     .insert(from, to);
             }
         }
@@ -197,7 +198,7 @@ impl Config {
             for (from, to) in plugin_aliases {
                 aliases
                     .entry(plugin.clone())
-                    .or_insert_with(IndexMap::new)
+                    .or_insert_with(BTreeMap::new)
                     .insert(from.clone(), to.clone());
             }
         }
@@ -312,23 +313,17 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_tools(settings: &Settings) -> Result<BTreeMap<PluginName, Arc<Tool>>> {
+fn load_tools(settings: &Settings) -> Result<ToolMap> {
     let plugins = Tool::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .sorted_by_cached_key(|(p, _)| p.to_string())
         .collect();
     Ok(plugins)
 }
 
-fn load_legacy_files(
-    settings: &Settings,
-    tools: &BTreeMap<PluginName, Arc<Tool>>,
-) -> IndexMap<String, PluginName> {
+fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, PluginName> {
     if !settings.legacy_version_file {
-        return IndexMap::new();
+        return BTreeMap::new();
     }
     tools
         .values()
@@ -352,7 +347,7 @@ fn load_legacy_files(
         .collect()
 }
 
-fn load_config_filenames(legacy_filenames: &IndexMap<String, PluginName>) -> Vec<PathBuf> {
+fn load_config_filenames(legacy_filenames: &BTreeMap<String, PluginName>) -> Vec<PathBuf> {
     let mut filenames = vec![
         env::RTX_DEFAULT_CONFIG_FILENAME.as_str(),
         env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str(),
@@ -390,8 +385,8 @@ fn get_global_rtx_toml() -> PathBuf {
 fn load_all_config_files(
     settings: &Settings,
     config_filenames: &[PathBuf],
-    tools: &BTreeMap<PluginName, Arc<Tool>>,
-    legacy_filenames: &IndexMap<String, PluginName>,
+    tools: &ToolMap,
+    legacy_filenames: &BTreeMap<String, PluginName>,
     mut existing: ConfigMap,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
@@ -419,8 +414,8 @@ fn load_all_config_files(
 fn parse_config_file(
     f: &PathBuf,
     settings: &Settings,
-    legacy_filenames: &IndexMap<String, PluginName>,
-    tools: &BTreeMap<PluginName, Arc<Tool>>,
+    legacy_filenames: &BTreeMap<String, PluginName>,
+    tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
     let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
@@ -430,8 +425,8 @@ fn parse_config_file(
     }
 }
 
-fn load_env(config_files: &ConfigMap) -> IndexMap<String, String> {
-    let mut env = IndexMap::new();
+fn load_env(config_files: &ConfigMap) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
     for cf in config_files.values().rev() {
         env.extend(cf.env());
     }
@@ -447,14 +442,14 @@ fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
 }
 
 fn load_aliases(config_files: &ConfigMap) -> AliasMap {
-    let mut aliases: AliasMap = IndexMap::new();
+    let mut aliases: AliasMap = AliasMap::new();
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases() {
             for (from, to) in plugin_aliases {
                 aliases
                     .entry(plugin.clone())
-                    .or_insert_with(IndexMap::new)
+                    .or_insert_with(BTreeMap::new)
                     .insert(from, to);
             }
         }
