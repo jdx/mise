@@ -194,8 +194,6 @@ impl Toolset {
         for plugin in &missing_plugins {
             config.get_or_create_tool(plugin);
         }
-        // TODO: do we need this sort?
-        config.tools.sort_keys();
         let missing_plugins = missing_plugins
             .into_par_iter()
             .map(|p| config.tools.get(&p).unwrap())
