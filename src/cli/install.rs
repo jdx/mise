@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;
@@ -14,8 +15,12 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
-use crate::toolset::{ToolVersionOptions, ToolVersionRequest, ToolsetBuilder};
+use crate::tool::Tool;
+use crate::toolset::{
+    ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::ProgressReport;
 
 /// Install a tool version
 ///
@@ -68,20 +73,46 @@ impl Command for Install {
 impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[RuntimeArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
-        let mut tool_version_requests = vec![];
         let ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
+        ThreadPoolBuilder::new()
+            .num_threads(config.settings.jobs)
+            .build()?
+            .install(|| -> Result<()> {
+                let tool_versions =
+                    self.get_requested_tool_versions(&mut config, &ts, runtimes, &mpr)?;
+                if tool_versions.is_empty() {
+                    warn!("no runtimes to install");
+                    warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+                    return Ok(());
+                }
+                self.uninstall_existing_versions(&config, &mpr, &tool_versions)?;
+                self.install_requested_versions(&config, &mpr, tool_versions)?;
+                reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+                rebuild_symlinks(&config)?;
+                Ok(())
+            })
+    }
+
+    fn get_requested_tool_versions(
+        &self,
+        config: &mut Config,
+        ts: &Toolset,
+        runtimes: &[RuntimeArg],
+        mpr: &MultiProgressReport,
+    ) -> Result<Vec<(Arc<Tool>, ToolVersion)>> {
+        let mut requests = vec![];
         for runtime in RuntimeArg::double_runtime_condition(runtimes) {
             let default_opts = ToolVersionOptions::new();
             match runtime.tvr {
-                Some(tv) => tool_version_requests.push((runtime.plugin, tv, default_opts.clone())),
+                Some(tv) => requests.push((runtime.plugin, tv, default_opts.clone())),
                 None => {
                     if runtime.tvr.is_none() {
                         match ts.versions.get(&runtime.plugin) {
                             Some(tvl) => {
                                 for (tvr, opts) in &tvl.requests {
-                                    tool_version_requests.push((
+                                    requests.push((
                                         runtime.plugin.clone(),
                                         tvr.clone(),
                                         opts.clone(),
@@ -93,89 +124,27 @@ impl Install {
                                     runtime.plugin.clone(),
                                     "latest".into(),
                                 );
-                                tool_version_requests.push((
-                                    runtime.plugin,
-                                    tvr,
-                                    default_opts.clone(),
-                                ));
+                                requests.push((runtime.plugin, tvr, default_opts.clone()));
                             }
                         }
                     }
                 }
             }
         }
-        ThreadPoolBuilder::new()
-            .num_threads(config.settings.jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                let mut tool_versions = vec![];
-                for (plugin_name, tvr, opts) in tool_version_requests {
-                    let plugin = config.get_or_create_tool(&plugin_name);
-                    if !plugin.is_installed() {
-                        let mut pr = mpr.add();
-                        if let Err(err) = plugin.install(&config, &mut pr, false) {
-                            pr.error();
-                            return Err(err)?;
-                        }
-                    }
-                    let tv = tvr.resolve(&config, &plugin, opts, ts.latest_versions)?;
-                    tool_versions.push((plugin, tv));
+        let mut tool_versions = vec![];
+        for (plugin_name, tvr, opts) in requests {
+            let plugin = config.get_or_create_tool(&plugin_name);
+            if !plugin.is_installed() {
+                let mut pr = mpr.add();
+                if let Err(err) = plugin.install(config, &mut pr, false) {
+                    pr.error();
+                    return Err(err)?;
                 }
-                if tool_versions.is_empty() {
-                    warn!("no runtimes to install");
-                    warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
-                    return Ok(());
-                }
-                let mut to_uninstall = vec![];
-                for (plugin, tv) in &tool_versions {
-                    if plugin.is_version_installed(tv) {
-                        if self.force {
-                            to_uninstall.push((plugin, tv.clone()));
-                        } else {
-                            warn!("{} already installed", style(tv).cyan().for_stderr());
-                        }
-                    }
-                }
-                if !to_uninstall.is_empty() {
-                    to_uninstall
-                        .into_par_iter()
-                        .map(|(plugin, tv)| {
-                            let mut pr = mpr.add();
-                            plugin.decorate_progress_bar(&mut pr, Some(&tv));
-                            match plugin.uninstall_version(&config, &tv, &pr, false) {
-                                Ok(_) => {
-                                    pr.finish();
-                                    Ok(())
-                                }
-                                Err(err) => {
-                                    pr.error();
-                                    Err(err.wrap_err(format!("failed to uninstall {}", tv)))
-                                }
-                            }
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                }
-                tool_versions
-                    .into_par_iter()
-                    .map(|(plugin, tv)| {
-                        if plugin.is_version_installed(&tv) {
-                            return Ok(());
-                        }
-                        let mut pr = mpr.add();
-                        plugin.decorate_progress_bar(&mut pr, Some(&tv));
-                        match plugin.install_version(&config, &tv, &mut pr, self.force) {
-                            Ok(_) => Ok(()),
-                            Err(err) => {
-                                pr.error();
-                                Err(err.wrap_err(format!("failed to install {}", tv)))
-                            }
-                        }
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
-                rebuild_symlinks(&config)?;
-                Ok(())
-            })
+            }
+            let tv = tvr.resolve(config, &plugin, opts, ts.latest_versions)?;
+            tool_versions.push((plugin, tv));
+        }
+        Ok(tool_versions)
     }
 
     fn install_missing_runtimes(&self, mut config: Config) -> Result<()> {
@@ -202,6 +171,77 @@ impl Install {
         ts.install_missing(&mut config, mpr)?;
 
         Ok(())
+    }
+
+    fn uninstall_existing_versions(
+        &self,
+        config: &Config,
+        mpr: &MultiProgressReport,
+        tool_versions: &[(Arc<Tool>, ToolVersion)],
+    ) -> Result<()> {
+        let already_installed_tool_versions = tool_versions
+            .iter()
+            .filter(|(t, tv)| t.is_version_installed(tv))
+            .map(|(t, tv)| (t, tv.clone()));
+        if self.force {
+            already_installed_tool_versions
+                .par_bridge()
+                .map(|(tool, tv)| self.uninstall_version(config, tool, &tv, mpr.add()))
+                .collect::<Result<Vec<_>>>()?;
+        } else {
+            for (_, tv) in already_installed_tool_versions {
+                warn!("{} already installed", style(tv).cyan().for_stderr());
+            }
+        }
+        Ok(())
+    }
+    fn install_requested_versions(
+        &self,
+        config: &Config,
+        mpr: &MultiProgressReport,
+        tool_versions: Vec<(Arc<Tool>, ToolVersion)>,
+    ) -> Result<()> {
+        tool_versions
+            .into_par_iter()
+            .filter(|(t, tv)| !t.is_version_installed(tv))
+            .map(|(plugin, tv)| self.install_version(config, &plugin, &tv, mpr.add()))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(())
+    }
+    fn uninstall_version(
+        &self,
+        config: &Config,
+        tool: &Tool,
+        tv: &ToolVersion,
+        mut pr: ProgressReport,
+    ) -> Result<()> {
+        tool.decorate_progress_bar(&mut pr, Some(tv));
+        match tool.uninstall_version(config, tv, &pr, false) {
+            Ok(_) => {
+                pr.finish();
+                Ok(())
+            }
+            Err(err) => {
+                pr.error();
+                Err(err.wrap_err(format!("failed to uninstall {}", tv)))
+            }
+        }
+    }
+    fn install_version(
+        &self,
+        config: &Config,
+        tool: &Tool,
+        tv: &ToolVersion,
+        mut pr: ProgressReport,
+    ) -> Result<()> {
+        tool.decorate_progress_bar(&mut pr, Some(tv));
+        match tool.install_version(config, tv, &mut pr, self.force) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                pr.error();
+                Err(err.wrap_err(format!("failed to install {}", tv)))
+            }
+        }
     }
 }
 
