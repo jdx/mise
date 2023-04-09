@@ -47,7 +47,7 @@ impl Command for Uninstall {
                 pr.error();
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", &tv)));
             }
-            pr.finish_with_message("uninstalled".into());
+            pr.finish_with_message("uninstalled");
         }
         Ok(())
     }

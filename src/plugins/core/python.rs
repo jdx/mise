@@ -1,14 +1,14 @@
 use color_eyre::eyre::{eyre, Result};
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 
 use crate::cache::CacheManager;
+use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::RTX_EXE;
 use crate::file::create_dir_all;
 use crate::git::Git;
-use crate::{cmd, dirs};
+use crate::{cmd, dirs, env, http};
 
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
@@ -86,20 +86,43 @@ impl Plugin for PythonPlugin {
             .cloned()
     }
 
+    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+        Ok(vec![".python-version".to_string()])
+    }
+
     fn install_version(
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &mut ProgressReport,
+        pr: &ProgressReport,
     ) -> Result<()> {
         self.install_python_build()?;
         if matches!(tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
-        // TODO: patch support
-        pr.set_message("running python-build".to_string());
-        let mut cmd = Command::new(self.python_build_bin());
+        pr.set_message("running python-build");
+        let mut cmd = CmdLineRunner::new(&config.settings, self.python_build_bin(), pr);
         cmd.arg(tv.version.as_str()).arg(tv.install_path());
-        cmd::run_by_line_to_pr(&config.settings, cmd, pr)
+        if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
+            pr.set_message(format!("with patch file from: {patch_url}"));
+            cmd.arg("--patch");
+            let http = http::Client::new()?;
+            let patch = http.get(patch_url).send()?.text()?;
+            cmd.stdin_string(patch);
+        }
+        if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {
+            dbg!(patches_dir);
+            let patch_file = patches_dir.join(format!("{}.patch", tv.version));
+            if patch_file.exists() {
+                pr.set_message(format!("with patch file: {}", patch_file.display()));
+                cmd.arg("--patch");
+                let contents = std::fs::read_to_string(&patch_file)?;
+                cmd.stdin_string(contents);
+            } else {
+                pr.warn(format!("patch file not found: {}", patch_file.display()));
+            }
+        }
+        cmd.execute()?;
+        Ok(())
     }
 }

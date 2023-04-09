@@ -65,8 +65,8 @@ mod tests {
         let pr = mpr.add();
         pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
         pr.enable_steady_tick();
-        pr.finish_with_message("test".into());
-        pr.println("".into());
-        pr.set_message("test".into());
+        pr.finish_with_message("test");
+        pr.println("");
+        pr.set_message("test");
     }
 }

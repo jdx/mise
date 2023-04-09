@@ -4,19 +4,20 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::Output;
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
 use indexmap::indexmap;
 use once_cell::sync::Lazy;
 
-use crate::cmd::cmd;
+use crate::cmd::{cmd, CmdLineRunner};
 use crate::config::Settings;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::{basename, display_path};
-use crate::{cmd, dirs, env};
+use crate::ui::progress_report::ProgressReport;
+use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
 pub struct ScriptManager {
@@ -152,22 +153,15 @@ impl ScriptManager {
             .with_context(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line<'a, F1, F2, F3>(
-        &'a self,
+    pub fn run_by_line(
+        &self,
         settings: &Settings,
         script: &Script,
-        on_error: F1,
-        on_stdout: F2,
-        on_stderr: F3,
-    ) -> Result<()>
-    where
-        F1: Fn(String),
-        F2: Fn(&str) + Send + Sync + 'a,
-        F3: Fn(&str) + Send + Sync,
-    {
-        let mut cmd = Command::new(self.get_script_path(script));
+        pr: &ProgressReport,
+    ) -> Result<()> {
+        let mut cmd = CmdLineRunner::new(settings, self.get_script_path(script), pr);
         cmd.env_clear().envs(&self.env);
-        if let Err(e) = cmd::run_by_line(settings, cmd, on_error, on_stdout, on_stderr) {
+        if let Err(e) = cmd.execute() {
             let status = match e.downcast_ref::<Error>() {
                 Some(ScriptFailed(_, status)) => *status,
                 _ => None,

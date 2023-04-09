@@ -361,16 +361,16 @@ impl Plugin for ExternalPlugin {
             git.update(Some(ref_.to_string()))?;
         }
 
-        pr.set_message("loading plugin remote versions".into());
+        pr.set_message("loading plugin remote versions");
         if self.has_list_all_script() {
             self.list_remote_versions(&config.settings)?;
         }
         if self.has_list_alias_script() {
-            pr.set_message("getting plugin aliases".into());
+            pr.set_message("getting plugin aliases");
             self.get_aliases(&config.settings)?;
         }
         if self.has_list_legacy_filenames_script() {
-            pr.set_message("getting plugin legacy filenames".into());
+            pr.set_message("getting plugin legacy filenames");
             self.legacy_filenames(&config.settings)?;
         }
 
@@ -409,7 +409,7 @@ impl Plugin for ExternalPlugin {
         if !self.is_installed() {
             return Ok(());
         }
-        pr.set_message("uninstalling".into());
+        pr.set_message("uninstalling");
 
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -533,36 +533,18 @@ impl Plugin for ExternalPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &mut ProgressReport,
+        pr: &ProgressReport,
     ) -> Result<()> {
         let run_script = |script| {
-            self.script_man_for_tv(config, tv).run_by_line(
-                &config.settings,
-                script,
-                |output| {
-                    pr.error();
-                    if !config.settings.verbose && !output.trim().is_empty() {
-                        pr.println(output);
-                    }
-                },
-                |line| {
-                    if !line.trim().is_empty() {
-                        pr.set_message(line.into());
-                    }
-                },
-                |line| {
-                    if !line.trim().is_empty() {
-                        pr.println(line.into());
-                    }
-                },
-            )
+            self.script_man_for_tv(config, tv)
+                .run_by_line(&config.settings, script, pr)
         };
 
         if self.script_man_for_tv(config, tv).script_exists(&Download) {
-            pr.set_message("downloading".into());
+            pr.set_message("downloading");
             run_script(&Download)?;
         }
-        pr.set_message("installing".into());
+        pr.set_message("installing");
         run_script(&Install)?;
 
         Ok(())
