@@ -735,9 +735,11 @@ Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config 
 
 #### [experimental] `RTX_ENV`
 
-Enables an environment-specific config file such as `.rtx.development.toml`. This is useful
-for setting different versions for different environments. See
-[Config Environments](#experimental-config-environments) for more on how to use this.
+Enables environment-specific config files such as `.rtx.development.toml`.
+Use this for different env vars or different tool versions in
+development/staging/production environments. See
+[Config Environments](#experimental-config-environments) for more on how
+to use this feature.
 
 #### `RTX_${PLUGIN}_VERSION`
 
