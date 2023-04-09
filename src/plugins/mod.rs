@@ -29,7 +29,6 @@ pub trait Plugin: Debug + Send + Sync + Eq + PartialEq + Hash {
     fn name(&self) -> &PluginName;
     fn toml(&self) -> &RtxPluginToml;
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>>;
-    fn clear_remote_version_cache(&self) -> Result<()>;
     fn list_installed_versions(&self) -> Result<Vec<String>>;
     fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>>;
     fn latest_installed_version(&self) -> Result<Option<String>>;
@@ -183,11 +182,6 @@ impl Plugin for Plugins {
         }
     }
 
-    fn clear_remote_version_cache(&self) -> Result<()> {
-        match self {
-            Plugins::External(p) => p.clear_remote_version_cache(),
-        }
-    }
     fn list_installed_versions(&self) -> Result<Vec<String>> {
         match self {
             Plugins::External(p) => p.list_installed_versions(),

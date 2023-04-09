@@ -46,7 +46,6 @@ impl Command for Latest {
             prefix = Some(config.resolve_alias(plugin.name(), &v)?);
         }
 
-        plugin.clear_remote_version_cache()?;
         if let Some(version) = plugin.latest_version(&config.settings, prefix)? {
             rtxprintln!(out, "{}", version);
         }
