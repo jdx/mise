@@ -28,6 +28,7 @@ fn init() {
     //env::set_var("TERM", "dumb");
     reset_config();
     assert_cli!("trust");
+    assert_cli!("plugins", "uninstall", "tiny-link");
     assert_cli!("install", "tiny@1", "tiny@2", "tiny@3", "tiny", "dummy");
 }
 
