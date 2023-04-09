@@ -18,6 +18,7 @@ mod default_shorthands;
 mod direnv;
 mod dirs;
 mod duration;
+#[allow(dead_code)]
 mod env;
 mod env_diff;
 mod errors;

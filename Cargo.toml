@@ -42,7 +42,6 @@ clap_complete = "4.0.7"
 color-eyre = "0.6.2"
 color-print = "0.3.4"
 console = "0.15.2"
-ctor = "<0.3"
 ctrlc = "3.2.3"
 dialoguer = { version = "0.10.2", features = [] }
 dirs-next = "2.0.0"
@@ -57,7 +56,6 @@ indexmap = { version = "1.9.2", features = ["serde"] }
 indicatif = { version = "0.17.3", features = ["default", "improved_unicode"] }
 indoc = "<3"
 itertools = "0.10.3"
-lazy_static = "1.4.0"
 log = "0.4.17"
 num_cpus = "1.14.0"
 once_cell = "1.17.0"
@@ -92,6 +90,7 @@ exec = "0.3.1"
 built = { version = "0.6.0", features = ["chrono", "git2"] }
 
 [dev-dependencies]
+ctor = "<0.3"
 insta = "1.26.0"
 pretty_assertions = "1.3.0"
 

@@ -1,7 +1,7 @@
 set shell := ["bash", "-uc"]
 
 export RTX_DATA_DIR := "/tmp/rtx"
-export PATH := env_var_or_default("CARGO_TARGET_DIR", "$PWD/target") + "/debug:" + env_var("PATH")
+export PATH := env_var_or_default("CARGO_TARGET_DIR", justfile_directory() / "target") / "debug:" + env_var("PATH")
 export RTX_MISSING_RUNTIME_BEHAVIOR := "autoinstall"
 export RUST_TEST_THREADS := "1"
 
@@ -11,6 +11,8 @@ default: test
 alias b := build
 alias e := test-e2e
 alias t := test
+alias l := lint
+alias lf := lint-fix
 
 # just `cargo build`
 build *args:

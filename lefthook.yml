@@ -2,6 +2,6 @@ pre-commit:
   parallel: true
   commands:
     pre-commit:
-      run: just pre-commit
+      run: just -v pre-commit
     lint:
-      run: just lint
+      run: just -v lint
