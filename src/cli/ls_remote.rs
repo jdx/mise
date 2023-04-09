@@ -37,7 +37,7 @@ impl Command for LsRemote {
             _ => self.prefix.as_ref(),
         };
 
-        let versions = plugin.list_remote_versions(&config.settings)?.clone();
+        let versions = plugin.list_remote_versions(&config.settings)?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()

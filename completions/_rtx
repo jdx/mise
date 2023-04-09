@@ -818,6 +818,10 @@ default: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-a[list all available remote plugins]' \
 '--all[list all available remote plugins]' \
+'-c[The built-in plugins only
+Normally these are not shown]' \
+'--core[The built-in plugins only
+Normally these are not shown]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
 '--debug[Sets log level to debug]' \
@@ -911,6 +915,10 @@ default: 4]: : ' \
 Same as `rtx plugins ls-remote`]' \
 '--all[List all available remote plugins
 Same as `rtx plugins ls-remote`]' \
+'-c[The built-in plugins only
+Normally these are not shown]' \
+'--core[The built-in plugins only
+Normally these are not shown]' \
 '-u[Show the git url for each plugin
 e.g.: https://github.com/asdf-vm/asdf-nodejs.git]' \
 '--urls[Show the git url for each plugin

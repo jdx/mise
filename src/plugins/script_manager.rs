@@ -1,11 +1,9 @@
 use crate::fake_asdf::get_path_with_fake_asdf;
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Output, Stdio};
-use std::sync::mpsc::channel;
-use std::{fmt, thread};
+use std::process::{Command, Output};
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
@@ -14,9 +12,10 @@ use once_cell::sync::Lazy;
 
 use crate::cmd::cmd;
 use crate::config::Settings;
+use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::{basename, display_path};
-use crate::{dirs, env};
+use crate::{cmd, dirs, env};
 
 #[derive(Debug, Clone)]
 pub struct ScriptManager {
@@ -160,94 +159,14 @@ impl ScriptManager {
     {
         let mut cmd = Command::new(self.get_script_path(script));
         cmd.env_clear().envs(&self.env);
-        if settings.raw {
-            let status = cmd.spawn()?.wait()?;
-            match status.success() {
-                true => Ok(()),
-                false => {
-                    on_error(String::new());
-                    Err(
-                        ScriptFailed(display_path(&self.get_script_path(script)), Some(status))
-                            .into(),
-                    )
-                }
-            }
-        } else {
-            let mut cp = cmd
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()?;
-            let stdout = BufReader::new(cp.stdout.take().unwrap());
-            let stderr = BufReader::new(cp.stderr.take().unwrap());
-            let (tx, rx) = channel();
-            thread::spawn({
-                let tx = tx.clone();
-                move || {
-                    for line in stdout.lines() {
-                        let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
-                    }
-                    tx.send(ChildProcessOutput::Done).unwrap();
-                }
-            });
-            thread::spawn({
-                let tx = tx.clone();
-                move || {
-                    for line in stderr.lines() {
-                        let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
-                    }
-                    tx.send(ChildProcessOutput::Done).unwrap();
-                }
-            });
-            thread::spawn(move || {
-                let status = cp.wait().unwrap();
-                tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
-                tx.send(ChildProcessOutput::Done).unwrap();
-            });
-            let mut combined_output = vec![];
-            let mut wait_for_count = 3;
-            let mut status = None;
-            for line in rx {
-                match line {
-                    ChildProcessOutput::Stdout(line) => {
-                        on_stdout(&line);
-                        combined_output.push(line);
-                    }
-                    ChildProcessOutput::Stderr(line) => {
-                        on_stderr(&line);
-                        combined_output.push(line);
-                    }
-                    ChildProcessOutput::ExitStatus(s) => {
-                        status = Some(s);
-                    }
-                    ChildProcessOutput::Done => {
-                        wait_for_count -= 1;
-                        if wait_for_count == 0 {
-                            break;
-                        }
-                    }
-                }
-            }
-            let status = status.unwrap();
-
-            if !status.success() {
-                on_error(combined_output.join("\n"));
-                Err(ScriptFailed(
-                    display_path(&self.get_script_path(script)),
-                    Some(status),
-                ))?;
-            }
-
-            Ok(())
+        if let Err(e) = cmd::run_by_line(settings, cmd, on_error, on_stdout, on_stderr) {
+            let status = match e.downcast_ref::<Error>() {
+                Some(ScriptFailed(_, status)) => *status,
+                _ => None,
+            };
+            let path = display_path(&self.get_script_path(script));
+            return Err(ScriptFailed(path, status).into());
         }
+        Ok(())
     }
-}
-
-enum ChildProcessOutput {
-    Stdout(String),
-    Stderr(String),
-    ExitStatus(ExitStatus),
-    Done,
 }
