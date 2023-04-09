@@ -1,0 +1,2 @@
+[env]
+FOO=".rtx.local.toml"
