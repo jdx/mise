@@ -496,11 +496,6 @@ impl Plugin for ExternalPlugin {
             })
     }
 
-    fn clear_remote_version_cache(&self) -> Result<()> {
-        self.remote_version_cache.clear()?;
-        self.latest_stable_cache.clear()
-    }
-
     fn list_installed_versions(&self) -> Result<Vec<String>> {
         Ok(match self.installs_path.exists() {
             true => file::dir_subdirs(&self.installs_path)?
