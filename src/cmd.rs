@@ -1,6 +1,6 @@
 use color_eyre::Result;
-use std::ffi::OsString;
-use std::io::{BufRead, BufReader};
+use std::ffi::{OsStr, OsString};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
 use std::thread;
@@ -82,57 +82,63 @@ where
     duct::cmd(program, args)
 }
 
-pub fn run_by_line_to_pr(settings: &Settings, cmd: Command, pr: &mut ProgressReport) -> Result<()> {
-    run_by_line(
-        settings,
-        cmd,
-        |output| {
-            pr.error();
-            if !settings.verbose && !output.trim().is_empty() {
-                pr.println(output);
-            }
-        },
-        |line| {
-            if !line.trim().is_empty() {
-                pr.set_message(line.into());
-            }
-        },
-        |line| {
-            if !line.trim().is_empty() {
-                pr.println(line.into());
-            }
-        },
-    )
+pub struct CmdLineRunner<'a> {
+    cmd: Command,
+    settings: &'a Settings,
+    pr: &'a ProgressReport,
+    stdin: Option<String>,
 }
+impl<'a> CmdLineRunner<'a> {
+    pub fn new<P: AsRef<OsStr>>(
+        settings: &'a Settings,
+        program: P,
+        pr: &'a ProgressReport,
+    ) -> Self {
+        let mut cmd = Command::new(program);
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
-pub fn run_by_line<'a, F1, F2, F3>(
-    settings: &Settings,
-    mut cmd: Command,
-    on_error: F1,
-    on_stdout: F2,
-    on_stderr: F3,
-) -> Result<()>
-where
-    F1: Fn(String),
-    F2: Fn(&str) + Send + Sync + 'a,
-    F3: Fn(&str) + Send + Sync,
-{
-    let program = cmd.get_program().to_string_lossy().to_string();
-    if settings.raw {
-        let status = cmd.spawn()?.wait()?;
-        match status.success() {
-            true => Ok(()),
-            false => {
-                on_error(String::new());
-                Err(ScriptFailed(program, Some(status)).into())
-            }
+        Self {
+            cmd,
+            pr,
+            settings,
+            stdin: None,
         }
-    } else {
-        let mut cp = cmd
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+    }
+
+    pub fn env_clear(&mut self) -> &mut Self {
+        self.cmd.env_clear();
+        self
+    }
+
+    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.cmd.envs(vars);
+        self
+    }
+
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+        self.cmd.arg(arg.as_ref());
+        self
+    }
+
+    pub fn stdin_string(&mut self, input: impl Into<String>) -> &mut Self {
+        self.cmd.stdin(Stdio::piped());
+        self.stdin = Some(input.into());
+        self
+    }
+
+    pub fn execute(mut self) -> Result<()> {
+        debug!("Executing command: {:?}", self.cmd);
+        if self.settings.raw {
+            return self.execute_raw();
+        }
+        let mut cp = self.cmd.spawn()?;
         let stdout = BufReader::new(cp.stdout.take().unwrap());
         let stderr = BufReader::new(cp.stderr.take().unwrap());
         let (tx, rx) = channel();
@@ -156,6 +162,12 @@ where
                 tx.send(ChildProcessOutput::Done).unwrap();
             }
         });
+        if let Some(text) = self.stdin.take() {
+            let mut stdin = cp.stdin.take().unwrap();
+            thread::spawn(move || {
+                stdin.write_all(text.as_bytes()).unwrap();
+            });
+        }
         thread::spawn(move || {
             let status = cp.wait().unwrap();
             tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
@@ -167,11 +179,11 @@ where
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
-                    on_stdout(&line);
+                    self.on_stdout(&line);
                     combined_output.push(line);
                 }
                 ChildProcessOutput::Stderr(line) => {
-                    on_stderr(&line);
+                    self.on_stderr(&line);
                     combined_output.push(line);
                 }
                 ChildProcessOutput::ExitStatus(s) => {
@@ -188,11 +200,39 @@ where
         let status = status.unwrap();
 
         if !status.success() {
-            on_error(combined_output.join("\n"));
-            Err(ScriptFailed(program, Some(status)))?;
+            self.on_error(combined_output.join("\n"), status)?;
         }
 
         Ok(())
+    }
+
+    fn execute_raw(mut self) -> Result<()> {
+        let status = self.cmd.spawn()?.wait()?;
+        match status.success() {
+            true => Ok(()),
+            false => self.on_error(String::new(), status),
+        }
+    }
+
+    fn on_stdout(&self, line: &str) {
+        if !line.trim().is_empty() {
+            self.pr.set_message(line);
+        }
+    }
+
+    fn on_stderr(&self, line: &str) {
+        if !line.trim().is_empty() {
+            self.pr.println(line);
+        }
+    }
+
+    fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
+        self.pr.error();
+        if !self.settings.verbose && !output.trim().is_empty() {
+            self.pr.println(output);
+        }
+        let program = self.cmd.get_program().to_string_lossy().to_string();
+        Err(ScriptFailed(program, Some(status)))?
     }
 }
 
