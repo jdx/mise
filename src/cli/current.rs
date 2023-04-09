@@ -4,8 +4,7 @@ use crate::cli::command::Command;
 
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins;
-use crate::plugins::Plugin;
+use crate::tool::Tool;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -29,7 +28,7 @@ impl Command for Current {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
-            Some(plugin_name) => match config.plugins.get(plugin_name) {
+            Some(plugin_name) => match config.tools.get(plugin_name) {
                 Some(plugin) => self.one(&config, ts, out, plugin),
                 None => {
                     warn!("Plugin {} is not installed", plugin_name);
@@ -42,25 +41,15 @@ impl Command for Current {
 }
 
 impl Current {
-    fn one(
-        &self,
-        config: &Config,
-        ts: Toolset,
-        out: &mut Output,
-        plugin: &plugins::Plugins,
-    ) -> Result<()> {
-        match plugin {
-            plugins::Plugins::External(plugin) => {
-                if !plugin.is_installed() {
-                    warn!("Plugin {} is not installed", plugin.name());
-                    return Ok(());
-                }
-            }
+    fn one(&self, config: &Config, ts: Toolset, out: &mut Output, tool: &Tool) -> Result<()> {
+        if !tool.is_installed() {
+            warn!("Plugin {} is not installed", tool.name);
+            return Ok(());
         }
         match ts
             .list_versions_by_plugin(config)
             .into_iter()
-            .find(|(p, _)| p.name() == plugin.name())
+            .find(|(p, _)| p.name == tool.name)
         {
             Some((_, versions)) => {
                 rtxprintln!(
@@ -74,7 +63,7 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", plugin.name());
+                warn!("Plugin {} does not have a version set", tool.name);
             }
         };
         Ok(())
@@ -97,7 +86,7 @@ impl Current {
             rtxprintln!(
                 out,
                 "{} {}",
-                plugin.name(),
+                &plugin.name,
                 versions
                     .iter()
                     .map(|v| v.version.to_string())

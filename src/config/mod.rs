@@ -18,8 +18,9 @@ use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
 use crate::env::CI;
-use crate::plugins::{ExternalPlugin, Plugin, PluginName, Plugins};
+use crate::plugins::{ExternalPlugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
+use crate::tool::Tool;
 use crate::{cli, dirs, duration, env, file, hook_env};
 
 pub mod config_file;
@@ -35,7 +36,7 @@ pub struct Config {
     pub global_config: RtxToml,
     pub legacy_files: IndexMap<String, PluginName>,
     pub config_files: ConfigMap,
-    pub plugins: IndexMap<PluginName, Arc<Plugins>>,
+    pub tools: IndexMap<PluginName, Arc<Tool>>,
     pub env: IndexMap<String, String>,
     pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
@@ -51,11 +52,11 @@ impl Config {
         let global_config = load_rtxrc()?;
         let mut settings = global_config.settings();
         let config_filenames = load_config_filenames(&IndexMap::new());
-        let plugins = load_plugins(&settings.build())?;
+        let tools = load_plugins(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
-            &plugins,
+            &tools,
             &IndexMap::new(),
             IndexMap::new(),
         )?;
@@ -65,14 +66,14 @@ impl Config {
         let settings = settings.build();
         trace!("Settings: {:#?}", settings);
 
-        let legacy_files = load_legacy_files(&settings, &plugins);
+        let legacy_files = load_legacy_files(&settings, &tools);
         let config_filenames = load_config_filenames(&legacy_files);
         let config_track = track_config_files(&config_filenames);
 
         let config_files = load_all_config_files(
             &settings,
             &config_filenames,
-            &plugins,
+            &tools,
             &legacy_files,
             config_files,
         );
@@ -102,7 +103,7 @@ impl Config {
             settings,
             legacy_files,
             global_config,
-            plugins,
+            tools,
             should_exit_early,
             repo_urls,
         };
@@ -139,7 +140,7 @@ impl Config {
                 return Ok(alias.clone());
             }
         }
-        if let Some(plugin) = self.plugins.get(plugin_name) {
+        if let Some(plugin) = self.tools.get(plugin_name) {
             if let Some(alias) = plugin.get_aliases(&self.settings)?.get(v) {
                 return Ok(alias.clone());
             }
@@ -147,24 +148,21 @@ impl Config {
         Ok(v.to_string())
     }
 
-    pub fn external_plugins(&self) -> IndexMap<PluginName, &ExternalPlugin> {
-        self.plugins
+    pub fn external_plugins(&self) -> Vec<(&PluginName, Arc<Tool>)> {
+        self.tools
             .iter()
-            .map(|(name, plugin)| match plugin.as_ref() {
-                Plugins::External(plugin) => (name.clone(), plugin),
-                //_ => None,
-            })
+            .filter(|(_, tool)| matches!(tool.plugin.get_type(), PluginType::External))
+            .map(|(name, tool)| (name, tool.clone()))
             .collect()
     }
 
-    pub fn get_or_create_plugin(&mut self, plugin_name: &PluginName) -> Arc<Plugins> {
-        self.plugins
+    pub fn get_or_create_tool(&mut self, plugin_name: &PluginName) -> Arc<Tool> {
+        self.tools
             .entry(plugin_name.clone())
             .or_insert_with(|| {
-                Arc::new(Plugins::External(ExternalPlugin::new(
-                    &self.settings,
-                    plugin_name,
-                )))
+                let plugin = ExternalPlugin::new(&self.settings, plugin_name);
+                let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
+                Arc::new(tool)
             })
             .clone()
     }
@@ -172,7 +170,7 @@ impl Config {
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self
-            .plugins
+            .tools
             .values()
             .par_bridge()
             .map(|plugin| {
@@ -183,7 +181,7 @@ impl Config {
                         IndexMap::new()
                     }
                 };
-                (plugin.name(), aliases)
+                (plugin.name.clone(), aliases)
             })
             .collect();
         for (plugin, plugin_aliases) in plugin_aliases {
@@ -314,10 +312,10 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Plugins>>> {
-    let plugins = ExternalPlugin::list(settings)?
+fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Tool>>> {
+    let plugins = Tool::list(settings)?
         .into_par_iter()
-        .map(|p| (p.name.clone(), Arc::new(Plugins::External(p))))
+        .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>()
         .into_iter()
         .sorted_by_cached_key(|(p, _)| p.to_string())
@@ -327,20 +325,20 @@ fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Plugins>
 
 fn load_legacy_files(
     settings: &Settings,
-    plugins: &IndexMap<PluginName, Arc<Plugins>>,
+    tools: &IndexMap<PluginName, Arc<Tool>>,
 ) -> IndexMap<String, PluginName> {
     if !settings.legacy_version_file {
         return IndexMap::new();
     }
-    plugins
+    tools
         .values()
         .collect_vec()
         .into_par_iter()
-        .filter_map(|plugin| match plugin.legacy_filenames(settings) {
+        .filter_map(|tool| match tool.legacy_filenames(settings) {
             Ok(filenames) => Some(
                 filenames
                     .iter()
-                    .map(|f| (f.to_string(), plugin.name().to_string()))
+                    .map(|f| (f.to_string(), tool.name.to_string()))
                     .collect_vec(),
             ),
             Err(err) => {
@@ -392,7 +390,7 @@ fn get_global_rtx_toml() -> PathBuf {
 fn load_all_config_files(
     settings: &Settings,
     config_filenames: &[PathBuf],
-    plugins: &IndexMap<PluginName, Arc<Plugins>>,
+    tools: &IndexMap<PluginName, Arc<Tool>>,
     legacy_filenames: &IndexMap<String, PluginName>,
     mut existing: IndexMap<PathBuf, Box<dyn ConfigFile>>,
 ) -> Result<ConfigMap> {
@@ -406,7 +404,7 @@ fn load_all_config_files(
             // already parsed so just return it
             Some(cf) => Ok((f, cf)),
             // need to parse this config file
-            None => match parse_config_file(&f, settings, legacy_filenames, plugins) {
+            None => match parse_config_file(&f, settings, legacy_filenames, tools) {
                 Ok(cf) => Ok((f, cf)),
                 Err(err) => Err(eyre!("error parsing: {} {:#}", f.display(), err)),
             },
@@ -422,11 +420,11 @@ fn parse_config_file(
     f: &PathBuf,
     settings: &Settings,
     legacy_filenames: &IndexMap<String, PluginName>,
-    plugins: &IndexMap<PluginName, Arc<Plugins>>,
+    tools: &IndexMap<PluginName, Arc<Tool>>,
 ) -> Result<Box<dyn ConfigFile>> {
     let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
-        Some(plugin) => LegacyVersionFile::parse(settings, f.into(), plugins.get(plugin).unwrap())
+        Some(plugin) => LegacyVersionFile::parse(settings, f.into(), tools.get(plugin).unwrap())
             .map(|f| Box::new(f) as Box<dyn ConfigFile>),
         None => config_file::parse(f, is_trusted),
     }
@@ -493,11 +491,7 @@ fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
 
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let plugins = self
-            .plugins
-            .keys()
-            .map(|p| p.to_string())
-            .collect::<Vec<_>>();
+        let plugins = self.tools.keys().map(|p| p.to_string()).collect::<Vec<_>>();
         let config_files = self
             .config_files
             .iter()

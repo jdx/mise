@@ -16,7 +16,8 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{Plugin, PluginName, Plugins};
+use crate::plugins::PluginName;
+use crate::tool::Tool;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
 /// List installed and/or currently selected tool versions
@@ -84,7 +85,7 @@ impl Ls {
     fn verify_plugin(&self, config: &Config) -> Result<()> {
         match &self.plugin {
             Some(plugin_name) => {
-                let plugin = config.plugins.get(plugin_name);
+                let plugin = config.tools.get(plugin_name);
                 if plugin.is_none() || !plugin.unwrap().is_installed() {
                     return Err(PluginNotInstalled(plugin_name.clone()))?;
                 }
@@ -98,11 +99,11 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(p, _, _)| p.name().to_string())
+            .group_by(|(p, _, _)| p.name.to_string())
         {
             let runtimes = runtimes
-                .map(|(p, tv, source)| JSONToolVersion {
-                    install_path: p.install_path(&tv),
+                .map(|(_, tv, source)| JSONToolVersion {
+                    install_path: tv.install_path(),
                     version: tv.version,
                     requested_version: source.as_ref().map(|_| tv.request.version()),
                     source: source.map(|source| source.as_json()),
@@ -137,15 +138,11 @@ impl Ls {
         Ok(())
     }
 
-    fn display_user(
-        &self,
-        runtimes: Vec<(Arc<Plugins>, ToolVersion, Option<ToolSource>)>,
-        out: &mut Output,
-    ) -> Result<()> {
+    fn display_user(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
         let output = runtimes
             .into_iter()
             .map(|(p, tv, source)| {
-                let plugin = p.name().to_string();
+                let plugin = p.name.to_string();
                 let version = if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
@@ -179,9 +176,9 @@ impl Ls {
                 .max(0) as usize;
             let version = version.to_string();
             let version = pad(&version, max_version_len - plugin_extra);
-            match request {
+            match &request {
                 Some((source, requested)) => {
-                    let source = pad(&source, max_source_len - version_extra);
+                    let source = pad(source, max_source_len - version_extra);
                     rtxprintln!(out, "{} {} {} {}", plugin, version, source, requested);
                 }
                 None => {
@@ -193,28 +190,28 @@ impl Ls {
     }
 }
 
-type RuntimeRow = (Arc<Plugins>, ToolVersion, Option<ToolSource>);
+type RuntimeRow = (Arc<Tool>, ToolVersion, Option<ToolSource>);
 
 fn get_runtime_list(
     config: &mut Config,
     plugin_flag: &Option<PluginName>,
 ) -> Result<Vec<RuntimeRow>> {
     let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions: HashMap<(PluginName, String), (Arc<Plugins>, ToolVersion)> = ts
+    let mut versions: HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)> = ts
         .list_installed_versions(config)?
         .into_iter()
         .filter(|(p, _)| match plugin_flag {
-            Some(plugin) => p.name() == plugin,
+            Some(plugin) => &p.name == plugin,
             None => true,
         })
-        .map(|(p, tv)| ((p.name().clone(), tv.version.clone()), (p, tv)))
+        .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
         .collect();
 
     let active = ts
         .list_current_versions(config)
         .into_iter()
-        .map(|(p, tv)| ((p.name().clone(), tv.version.clone()), (p, tv)))
-        .collect::<HashMap<(PluginName, String), (Arc<Plugins>, ToolVersion)>>();
+        .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
+        .collect::<HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)>>();
 
     versions.extend(
         active
@@ -224,7 +221,7 @@ fn get_runtime_list(
                 Some(plugin) => plugin_name == plugin,
                 None => true,
             })
-            .collect::<Vec<((PluginName, String), (Arc<Plugins>, ToolVersion))>>(),
+            .collect::<Vec<((PluginName, String), (Arc<Tool>, ToolVersion))>>(),
     );
 
     let rvs: Vec<RuntimeRow> = versions

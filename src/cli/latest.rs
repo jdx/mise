@@ -5,7 +5,6 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 
 /// Gets the latest available version for a plugin
@@ -33,7 +32,7 @@ impl Command for Latest {
                 style(&self.runtime).cyan().for_stderr()
             ))?,
         };
-        let plugin = config.plugins.get(&self.runtime.plugin).ok_or_else(|| {
+        let plugin = config.tools.get(&self.runtime.plugin).ok_or_else(|| {
             eyre!(
                 "plugin {} not found. run {} to install it",
                 style(self.runtime.plugin.to_string()).cyan().for_stderr(),
@@ -43,7 +42,7 @@ impl Command for Latest {
             )
         })?;
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(plugin.name(), &v)?);
+            prefix = Some(config.resolve_alias(&plugin.name, &v)?);
         }
 
         if let Some(version) = plugin.latest_version(&config.settings, prefix)? {

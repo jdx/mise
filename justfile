@@ -77,7 +77,7 @@ clean:
 
 # clippy, cargo fmt --check, and just --fmt
 lint:
-    cargo clippy
+    cargo clippy -- -Dwarnings
     cargo fmt --all -- --check
     shellcheck scripts/*.sh
     shfmt -d scripts/*.sh
@@ -85,7 +85,7 @@ lint:
 
 # runs linters but makes fixes when possible
 lint-fix:
-    cargo clippy --fix --allow-staged --allow-dirty
+    cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
     cargo fmt --all
     shellcheck scripts/*.sh
     shfmt -w scripts/*.sh

@@ -5,7 +5,6 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
 use crate::output::Output;
-use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a runtime
@@ -50,7 +49,7 @@ impl Command for Where {
             _ => self.runtime,
         };
 
-        let plugin = match config.plugins.get(&runtime.plugin) {
+        let plugin = match config.tools.get(&runtime.plugin) {
             Some(plugin) => plugin,
             None => Err(PluginNotInstalled(runtime.plugin.clone()))?,
         };
@@ -61,7 +60,7 @@ impl Command for Where {
             .map(|tvr| tvr.resolve(&config, plugin, Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
-                rtxprintln!(out, "{}", plugin.install_path(&tv).to_string_lossy());
+                rtxprintln!(out, "{}", tv.install_path().to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
