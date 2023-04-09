@@ -75,7 +75,7 @@ pub fn replace_path(input: &str) -> String {
         .to_string();
     let home = env::HOME.to_string_lossy().to_string();
     input
-        .replace(path.as_str(), "$PATH")
-        .replace(home.as_str(), "~")
-        .replace(env::RTX_EXE.to_string_lossy().as_ref(), "rtx")
+        .replace(&path, "$PATH")
+        .replace(&home, "~")
+        .replace(&*env::RTX_EXE.to_string_lossy(), "rtx")
 }

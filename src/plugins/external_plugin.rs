@@ -237,7 +237,7 @@ impl ExternalPlugin {
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();
-            sm = sm.with_env("RTX_PROJECT_ROOT".into(), project_root);
+            sm = sm.with_env("RTX_PROJECT_ROOT", project_root);
         }
         let install_type = match &tv.request {
             ToolVersionRequest::Version(_, _) | ToolVersionRequest::Prefix(_, _) => "version",
@@ -249,39 +249,36 @@ impl ExternalPlugin {
         };
         sm = sm
             .with_env(
-                "RTX_INSTALL_PATH".into(),
+                "RTX_INSTALL_PATH",
                 tv.install_path().to_string_lossy().to_string(),
             )
             .with_env(
-                "ASDF_INSTALL_PATH".into(),
+                "ASDF_INSTALL_PATH",
                 tv.install_path().to_string_lossy().to_string(),
             )
             .with_env(
-                "RTX_DOWNLOAD_PATH".into(),
+                "RTX_DOWNLOAD_PATH",
                 tv.download_path().to_string_lossy().to_string(),
             )
             .with_env(
-                "ASDF_DOWNLOAD_PATH".into(),
+                "ASDF_DOWNLOAD_PATH",
                 tv.download_path().to_string_lossy().to_string(),
             )
-            .with_env("RTX_INSTALL_TYPE".into(), install_type.into())
-            .with_env("ASDF_INSTALL_TYPE".into(), install_type.into())
-            .with_env("RTX_INSTALL_VERSION".into(), tv.version.clone())
-            .with_env("ASDF_INSTALL_VERSION".into(), tv.version.clone());
+            .with_env("RTX_INSTALL_TYPE", install_type)
+            .with_env("ASDF_INSTALL_TYPE", install_type)
+            .with_env("RTX_INSTALL_VERSION", tv.version.clone())
+            .with_env("ASDF_INSTALL_VERSION", tv.version.clone());
         sm
     }
 }
 
 fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> ScriptManager {
     let mut sm = ScriptManager::new(plugin_path.to_path_buf())
-        .with_env("RTX_PLUGIN_NAME".into(), name.to_string())
-        .with_env(
-            "RTX_PLUGIN_PATH".into(),
-            plugin_path.to_string_lossy().to_string(),
-        );
+        .with_env("RTX_PLUGIN_NAME", name.to_string())
+        .with_env("RTX_PLUGIN_PATH", plugin_path.to_string_lossy().to_string());
     if let Some(shims_dir) = &settings.shims_dir {
         let shims_dir = shims_dir.to_string_lossy().to_string();
-        sm = sm.with_env("RTX_SHIMS_DIR".into(), shims_dir);
+        sm = sm.with_env("RTX_SHIMS_DIR", shims_dir);
     }
 
     sm

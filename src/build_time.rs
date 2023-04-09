@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset, Months, Utc};
 use console::style;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 use crate::env::RTX_HIDE_UPDATE_WARNING;
 
@@ -8,13 +8,11 @@ pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-lazy_static! {
-    pub static ref BUILD_TIME: DateTime<FixedOffset> =
-        DateTime::parse_from_rfc2822(built_info::BUILT_TIME_UTC).unwrap();
-}
+pub static BUILD_TIME: Lazy<DateTime<FixedOffset>> =
+    Lazy::new(|| DateTime::parse_from_rfc2822(built_info::BUILT_TIME_UTC).unwrap());
 
-#[ctor::ctor]
-fn init() {
+#[allow(dead_code)]
+pub fn init() {
     if !*RTX_HIDE_UPDATE_WARNING
         && BUILD_TIME.checked_add_months(Months::new(12)).unwrap() < Utc::now()
     {

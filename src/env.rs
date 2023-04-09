@@ -3,112 +3,92 @@ pub use std::env::*;
 use std::path::PathBuf;
 
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use log::LevelFilter;
+use once_cell::sync::Lazy;
 
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 
-lazy_static! {
-    pub static ref ARGS: Vec<String> = args().collect();
+pub static ARGS: Lazy<Vec<String>> = Lazy::new(|| args().collect());
+pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 
-    // paths and directories
-    pub static ref HOME: PathBuf = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    pub static ref PWD: PathBuf =current_dir().unwrap_or_else(|_| PathBuf::new());
-    pub static ref XDG_CACHE_HOME: PathBuf = dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache"));
-    pub static ref XDG_DATA_HOME: PathBuf =var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share"));
-    pub static ref XDG_CONFIG_HOME: PathBuf =var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config"));
-    pub static ref RTX_CACHE_DIR: PathBuf =var_path("RTX_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("rtx"));
-    pub static ref RTX_CONFIG_DIR: PathBuf =var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx"));
-    pub static ref RTX_DATA_DIR: PathBuf = var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx"));
-    pub static ref RTX_DEFAULT_TOOL_VERSIONS_FILENAME: String =var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into());
-    pub static ref RTX_DEFAULT_CONFIG_FILENAME: String =var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into());
-    pub static ref RTX_ENV: Option<String> = var("RTX_ENV").ok();
-    pub static ref RTX_CONFIG_FILE: Option<PathBuf> = var_path("RTX_CONFIG_FILE");
-    pub static ref RTX_USE_TOML: bool = var_is_true("RTX_USE_TOML");
-    pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
-    pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
-    pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
-    pub static ref RTX_EXPERIMENTAL_CORE_PLUGINS: bool = var_is_true("RTX_EXPERIMENTAL_CORE_PLUGINS");
+// paths and directories
+pub static HOME: Lazy<PathBuf> =
+    Lazy::new(|| dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/")));
+pub static PWD: Lazy<PathBuf> = Lazy::new(|| current_dir().unwrap_or_else(|_| PathBuf::new()));
+pub static XDG_CACHE_HOME: Lazy<PathBuf> =
+    Lazy::new(|| dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache")));
+pub static XDG_DATA_HOME: Lazy<PathBuf> =
+    Lazy::new(|| dirs_next::data_dir().unwrap_or_else(|| HOME.join(".local/share")));
+pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
+    Lazy::new(|| dirs_next::config_dir().unwrap_or_else(|| HOME.join(".config")));
+pub static RTX_CACHE_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("RTX_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("rtx")));
+pub static RTX_CONFIG_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx")));
+pub static RTX_DATA_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx")));
+pub static RTX_TMP_DIR: Lazy<PathBuf> = Lazy::new(|| temp_dir().join("rtx"));
 
-    // logging
-    pub static ref RTX_LOG_LEVEL: log::LevelFilter = {
-        for (i, arg) in ARGS.iter().enumerate() {
-            if arg == "--" {
-                break;
-            }
-            if let Some(("--log-level", level)) = arg.split_once('=') {
-                std::env::set_var("RTX_LOG_LEVEL", level);
-            }
-            if arg == "--log-level" {
-                if let Some(level) = ARGS.get(i + 1) {
-                    std::env::set_var("RTX_LOG_LEVEL", level);
-                }
-            }
-            if arg == "--debug" {
-                std::env::set_var("RTX_DEBUG", "1");
-            }
-            if arg == "--trace" {
-                std::env::set_var("RTX_TRACE", "1");
-            }
-        }
-        let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
-        match log_level.parse::<LevelFilter>() {
-            Ok(level) => level,
-            _ => {
-                if *RTX_TRACE {
-                    log::LevelFilter::Trace
-                } else if *RTX_DEBUG {
-                    log::LevelFilter::Debug
-                } else if *RTX_QUIET {
-                    log::LevelFilter::Warn
-                } else {
-                    log::LevelFilter::Info
-                }
-            }
-        }
-    };
-    pub static ref RTX_LOG_FILE_LEVEL: log::LevelFilter = {
-        let log_level = var("RTX_LOG_FILE_LEVEL").unwrap_or_default();
-        match log_level.parse::<log::LevelFilter>() {
-            Ok(level) => level,
-            _ => *RTX_LOG_LEVEL,
-        }
-    };
-    pub static ref RTX_MISSING_RUNTIME_BEHAVIOR: Option<String> =var("RTX_MISSING_RUNTIME_BEHAVIOR").ok();
-    pub static ref __RTX_DIFF: EnvDiff = get_env_diff();
-    /// true if inside of a script like bin/exec-env or bin/install
-    /// used to prevent infinite loops
-    pub static ref __RTX_SCRIPT: bool = var_is_true("__RTX_SCRIPT");
-    pub static ref RTX_QUIET: bool = var_is_true("RTX_QUIET");
-    pub static ref RTX_DEBUG: bool = var_is_true("RTX_DEBUG");
-    pub static ref RTX_TRACE: bool = var_is_true("RTX_TRACE");
-    pub static ref RTX_VERBOSE: bool = *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE");
-    pub static ref DUMB_TERMINAL: bool = cfg!(test) || var("TERM").map_or(false, |term| term == "dumb");
-    pub static ref CI: bool = var_is_true("CI");
-    pub static ref RTX_JOBS: usize = var("RTX_JOBS").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
-    pub static ref PREFER_STALE: bool = prefer_stale(&ARGS);
-    /// essentially, this is whether we show spinners or build output on runtime install
-    pub static ref PRISTINE_ENV: HashMap<String, String> =
-        get_pristine_env(&__RTX_DIFF, vars().collect());
-    pub static ref PATH: Vec<PathBuf> = match PRISTINE_ENV.get("PATH") {
-        Some(path) => split_paths(path).collect(),
-        None => vec![],
-    };
-    pub static ref DIRENV_DIR: Option<String> = var("DIRENV_DIR").ok();
-    pub static ref DIRENV_DIFF: Option<String> = var("DIRENV_DIFF").ok();
-    pub static ref RTX_CONFIRM: Confirm = var_confirm("RTX_CONFIRM");
-    pub static ref RTX_EXPERIMENTAL: bool = var_is_true("RTX_EXPERIMENTAL");
-    pub static ref RTX_HIDE_UPDATE_WARNING: bool = var_is_true("RTX_HIDE_UPDATE_WARNING");
-    pub static ref RTX_ASDF_COMPAT: bool = var_is_true("RTX_ASDF_COMPAT");
-    pub static ref RTX_SHORTHANDS_FILE: Option<PathBuf> = var_path("RTX_SHORTHANDS_FILE");
-    pub static ref RTX_DISABLE_DEFAULT_SHORTHANDS: bool = var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS");
-    pub static ref RTX_SHIMS_DIR: Option<PathBuf> = var_path("RTX_SHIMS_DIR");
-    pub static ref RTX_RAW: bool = var_is_true("RTX_RAW");
-    pub static ref RTX_TRUSTED_CONFIG_PATHS: Vec<PathBuf> = var("RTX_TRUSTED_CONFIG_PATHS")
+pub static RTX_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
+    var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
+});
+pub static RTX_DEFAULT_CONFIG_FILENAME: Lazy<String> =
+    Lazy::new(|| var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into()));
+pub static RTX_ENV: Lazy<Option<String>> = Lazy::new(|| var("RTX_ENV").ok());
+pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
+pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
+pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| current_exe().unwrap_or_else(|_| "rtx".into()));
+pub static RTX_EXPERIMENTAL_CORE_PLUGINS: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_EXPERIMENTAL_CORE_PLUGINS"));
+pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
+pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
+pub static RTX_MISSING_RUNTIME_BEHAVIOR: Lazy<Option<String>> =
+    Lazy::new(|| var("RTX_MISSING_RUNTIME_BEHAVIOR").ok());
+pub static RTX_QUIET: Lazy<bool> = Lazy::new(|| var_is_true("RTX_QUIET"));
+pub static RTX_DEBUG: Lazy<bool> = Lazy::new(|| var_is_true("RTX_DEBUG"));
+pub static RTX_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_TRACE"));
+pub static RTX_VERBOSE: Lazy<bool> =
+    Lazy::new(|| *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE"));
+pub static RTX_JOBS: Lazy<usize> = Lazy::new(|| {
+    var("RTX_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4)
+});
+
+/// true if inside a script like bin/exec-env or bin/install
+/// used to prevent infinite loops
+pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
+pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
+pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
+pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS));
+
+/// essentially, this is whether we show spinners or build output on runtime install
+pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
+    Lazy::new(|| get_pristine_env(&__RTX_DIFF, vars().collect()));
+pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH") {
+    Some(path) => split_paths(path).collect(),
+    None => vec![],
+});
+pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
+pub static RTX_CONFIRM: Lazy<Confirm> = Lazy::new(|| var_confirm("RTX_CONFIRM"));
+pub static RTX_EXPERIMENTAL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_EXPERIMENTAL"));
+pub static RTX_HIDE_UPDATE_WARNING: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_HIDE_UPDATE_WARNING"));
+pub static RTX_ASDF_COMPAT: Lazy<bool> = Lazy::new(|| var_is_true("RTX_ASDF_COMPAT"));
+pub static RTX_SHORTHANDS_FILE: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("RTX_SHORTHANDS_FILE"));
+pub static RTX_DISABLE_DEFAULT_SHORTHANDS: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS"));
+pub static RTX_SHIMS_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_SHIMS_DIR"));
+pub static RTX_RAW: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RAW"));
+pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    var("RTX_TRUSTED_CONFIG_PATHS")
         .map(|v| split_paths(&v).collect())
-        .unwrap_or_default();
-    pub static ref GITHUB_API_TOKEN: Option<String> = var("GITHUB_API_TOKEN").ok();
-}
+        .unwrap_or_default()
+});
+#[allow(unused)]
+pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
@@ -221,6 +201,51 @@ fn prefer_stale(args: &[String]) -> bool {
         .contains(&c.as_str());
     }
     false
+}
+
+fn log_level() -> LevelFilter {
+    for (i, arg) in ARGS.iter().enumerate() {
+        if arg == "--" {
+            break;
+        }
+        if let Some(("--log-level", level)) = arg.split_once('=') {
+            set_var("RTX_LOG_LEVEL", level);
+        }
+        if arg == "--log-level" {
+            if let Some(level) = ARGS.get(i + 1) {
+                set_var("RTX_LOG_LEVEL", level);
+            }
+        }
+        if arg == "--debug" {
+            set_var("RTX_DEBUG", "1");
+        }
+        if arg == "--trace" {
+            set_var("RTX_TRACE", "1");
+        }
+    }
+    let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
+    match log_level.parse::<LevelFilter>() {
+        Ok(level) => level,
+        _ => {
+            if *RTX_TRACE {
+                LevelFilter::Trace
+            } else if *RTX_DEBUG {
+                LevelFilter::Debug
+            } else if *RTX_QUIET {
+                LevelFilter::Warn
+            } else {
+                LevelFilter::Info
+            }
+        }
+    }
+}
+
+fn log_file_level() -> LevelFilter {
+    let log_level = var("RTX_LOG_FILE_LEVEL").unwrap_or_default();
+    match log_level.parse::<LevelFilter>() {
+        Ok(level) => level,
+        _ => *RTX_LOG_LEVEL,
+    }
 }
 
 #[cfg(test)]
