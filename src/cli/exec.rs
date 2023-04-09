@@ -1,10 +1,10 @@
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
 use duct::IntoExecutablePath;
-use indexmap::IndexMap;
 
 use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
@@ -67,7 +67,7 @@ impl Command for Exec {
 
 impl Exec {
     #[cfg(not(test))]
-    fn exec<T, U, E>(&self, program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+    fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
@@ -87,7 +87,7 @@ impl Exec {
     }
 
     #[cfg(test)]
-    fn exec<T, U, E>(&self, program: T, args: U, env: IndexMap<E, E>) -> Result<()>
+    fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
