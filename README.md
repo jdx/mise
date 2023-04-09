@@ -1323,8 +1323,12 @@ Using rtx in CI/CD is a great way to synchronize tool versions for dev/build.
 Use [`jdxcode/rtx-action`](https://github.com/jdxcode/rtx-action):
 
 ```yaml
-- uses: jdxcode/rtx-action@v1
-- run: node -v # will be the node version from `.tool-versions`
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jdxcode/rtx-action@v1
+      - run: node -v # will be the node version from `.rtx.toml`/`.tool-versions`
 ```
 
 ## Shims
