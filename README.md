@@ -1990,9 +1990,9 @@ Can also show remotely available plugins to install.
 Usage: ls [OPTIONS]
 
 Options:
-  -a, --all
-          List all available remote plugins
-          Same as `rtx plugins ls-remote`
+  -c, --core
+          The built-in plugins only
+          Normally these are not shown
 
   -u, --urls
           Show the git url for each plugin

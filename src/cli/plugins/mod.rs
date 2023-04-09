@@ -21,8 +21,13 @@ pub struct Plugins {
     /// list all available remote plugins
     ///
     /// same as `rtx plugins ls-remote`
-    #[clap(short, long)]
+    #[clap(short, long, hide = true)]
     pub all: bool,
+
+    /// The built-in plugins only
+    /// Normally these are not shown
+    #[clap(short, long, verbatim_doc_comment)]
+    pub core: bool,
 
     /// show the git url for each plugin
     ///
@@ -58,6 +63,7 @@ impl Command for Plugins {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
+            core: self.core,
             urls: self.urls,
         }));
 

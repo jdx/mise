@@ -128,7 +128,7 @@ fn render_plugins(config: &Config) -> String {
                     None => format!("  {padded_name}\n"),
                 }
             }
-            PluginType::Core => format!("  {padded_name}\n"),
+            PluginType::Core => format!("  {padded_name} (core)\n"),
         };
         s.push_str(&si);
     }

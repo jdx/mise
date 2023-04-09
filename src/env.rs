@@ -27,6 +27,7 @@ lazy_static! {
     pub static ref RTX_TMP_DIR: PathBuf = temp_dir().join("rtx");
     pub static ref SHELL: String = var("SHELL").unwrap_or_else(|_| "sh".into());
     pub static ref RTX_EXE: PathBuf = current_exe().unwrap_or_else(|_| "rtx".into());
+    pub static ref RTX_EXPERIMENTAL_CORE_PLUGINS: bool = var_is_true("RTX_EXPERIMENTAL_CORE_PLUGINS");
 
     // logging
     pub static ref RTX_LOG_LEVEL: log::LevelFilter = {

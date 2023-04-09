@@ -17,8 +17,9 @@ use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
-use crate::env::CI;
-use crate::plugins::{ExternalPlugin, PluginName, PluginType};
+use crate::env::{CI, RTX_EXPERIMENTAL_CORE_PLUGINS};
+use crate::plugins::core::PythonPlugin;
+use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::tool::Tool;
 use crate::{cli, dirs, duration, env, file, hook_env};
@@ -162,8 +163,7 @@ impl Config {
             .entry(plugin_name.clone())
             .or_insert_with(|| {
                 let plugin = ExternalPlugin::new(&self.settings, plugin_name);
-                let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
-                Arc::new(tool)
+                build_tool(plugin_name.clone(), Box::new(plugin))
             })
             .clone()
     }
@@ -314,11 +314,31 @@ fn load_rtxrc() -> Result<RtxToml> {
 }
 
 fn load_tools(settings: &Settings) -> Result<ToolMap> {
+    let mut tools = ToolMap::new();
+    if *RTX_EXPERIMENTAL_CORE_PLUGINS {
+        tools.extend(load_core_tools(settings));
+    }
     let plugins = Tool::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
-        .collect();
-    Ok(plugins)
+        .collect::<Vec<_>>();
+    tools.extend(plugins);
+    Ok(tools)
+}
+
+fn load_core_tools(settings: &Settings) -> ToolMap {
+    let tools = [("python", PythonPlugin::new)].map(|(name, plugin)| {
+        let plugin = plugin(settings, name.to_string());
+        (
+            name.to_string(),
+            build_tool(name.to_string(), Box::new(plugin)),
+        )
+    });
+    ToolMap::from_iter(tools)
+}
+
+fn build_tool(name: PluginName, plugin: Box<dyn Plugin>) -> Arc<Tool> {
+    Arc::new(Tool::new(name, plugin))
 }
 
 fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, PluginName> {
@@ -486,7 +506,12 @@ fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
 
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let plugins = self.tools.keys().map(|p| p.to_string()).collect::<Vec<_>>();
+        let plugins = self
+            .tools
+            .iter()
+            .filter(|(_, t)| matches!(t.plugin.get_type(), PluginType::External))
+            .map(|(p, _)| p.to_string())
+            .collect::<Vec<_>>();
         let config_files = self
             .config_files
             .iter()
