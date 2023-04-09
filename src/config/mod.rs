@@ -250,16 +250,9 @@ impl Config {
         None
     }
 
-    pub fn autoupdate(&self) {
-        if *CI {
-            return;
-        }
-        self.check_for_new_version();
-    }
-
     pub fn check_for_new_version(&self) {
-        if !console::user_attended_stderr() || *env::RTX_HIDE_UPDATE_WARNING {
-            return; // not a tty so don't bother
+        if *CI || !console::user_attended_stderr() || *env::RTX_HIDE_UPDATE_WARNING {
+            return;
         }
         if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
             warn!(

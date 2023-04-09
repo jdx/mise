@@ -49,8 +49,9 @@ pub trait Plugin: Debug + Send + Sync {
     fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
         Ok(vec![])
     }
-    fn parse_legacy_file(&self, _path: &Path, _settings: &Settings) -> Result<String> {
-        unimplemented!()
+    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+        let contents = std::fs::read_to_string(path)?;
+        Ok(contents.trim().to_string())
     }
     fn external_commands(&self) -> Result<Vec<Vec<String>>> {
         Ok(vec![])
@@ -58,12 +59,8 @@ pub trait Plugin: Debug + Send + Sync {
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
         unimplemented!()
     }
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &mut ProgressReport,
-    ) -> Result<()>;
+    fn install_version(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport)
+        -> Result<()>;
     fn uninstall_version(&self, _config: &Config, _tv: &ToolVersion) -> Result<()> {
         Ok(())
     }
