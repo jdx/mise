@@ -8,7 +8,7 @@ THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 nodejs = 'lts'
 tiny = { version = "1", foo = "bar" }
 golang = { version = "latest", foo = "bar" }
-python = { version = "latest", virtualenv = "$HOME/.cache/venv" }
+python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 
 [plugins]
 node = 'https://github.com/rtx-plugins/rtx-nodejs#main'
