@@ -150,7 +150,7 @@ pub struct FindUp {
 }
 
 impl FindUp {
-    pub fn new(from: &Path, filenames: &[&str]) -> Self {
+    pub fn new(from: &Path, filenames: &[String]) -> Self {
         let filenames: Vec<String> = filenames.iter().map(|s| s.to_string()).collect();
         Self {
             current_dir: from.to_path_buf(),
@@ -183,6 +183,7 @@ impl Iterator for FindUp {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use std::ops::Deref;
 
     use crate::dirs;
@@ -192,7 +193,10 @@ mod tests {
     #[test]
     fn test_find_up() {
         let path = &dirs::CURRENT;
-        let filenames = vec![".rtxrc", ".rtxrc.toml", ".test-tool-versions"];
+        let filenames = vec![".rtxrc", ".rtxrc.toml", ".test-tool-versions"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect_vec();
         #[allow(clippy::needless_collect)]
         let find_up = FindUp::new(path, &filenames).collect::<Vec<_>>();
         let mut find_up = find_up.into_iter();
