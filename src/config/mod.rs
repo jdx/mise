@@ -17,7 +17,7 @@ use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
-use crate::env::{CI, RTX_EXPERIMENTAL_CORE_PLUGINS};
+use crate::env::CI;
 use crate::plugins::core::PythonPlugin;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
@@ -309,7 +309,7 @@ fn load_rtxrc() -> Result<RtxToml> {
 
 fn load_tools(settings: &Settings) -> Result<ToolMap> {
     let mut tools = ToolMap::new();
-    if *RTX_EXPERIMENTAL_CORE_PLUGINS {
+    if settings.experimental {
         tools.extend(load_core_tools(settings));
     }
     let plugins = Tool::list(settings)?
