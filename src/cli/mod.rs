@@ -200,8 +200,29 @@ impl Cli {
         if let Some((command, sub_m)) = matches.subcommand() {
             external::execute(&config, command, sub_m, self.external_commands)?;
         }
-        Commands::from_arg_matches(&matches)?.run(config, out)
+        let cmd = Commands::from_arg_matches(&matches)?;
+        if !is_fast_command(&cmd) {
+            config.check_for_new_version();
+        }
+        cmd.run(config, out)
     }
+}
+
+fn is_fast_command(cmd: &Commands) -> bool {
+    matches!(
+        cmd,
+        Commands::Version(..)
+            | Commands::Activate(..)
+            | Commands::Asdf(..)
+            | Commands::Completion(..)
+            | Commands::HookEnv(..)
+            | Commands::Direnv(..)
+            | Commands::Env(..)
+            | Commands::Exec(..)
+            | Commands::Shell(..)
+            | Commands::Where(..)
+            | Commands::Which(..)
+    )
 }
 
 impl Default for Cli {

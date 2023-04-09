@@ -51,7 +51,6 @@ pub struct Global {
 
 impl Command for Global {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        config.autoupdate();
         local(
             config,
             out,
