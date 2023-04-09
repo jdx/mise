@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,7 +36,7 @@ pub struct Config {
     pub global_config: RtxToml,
     pub legacy_files: IndexMap<String, PluginName>,
     pub config_files: ConfigMap,
-    pub tools: IndexMap<PluginName, Arc<Tool>>,
+    pub tools: BTreeMap<PluginName, Arc<Tool>>,
     pub env: IndexMap<String, String>,
     pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
@@ -52,7 +52,7 @@ impl Config {
         let global_config = load_rtxrc()?;
         let mut settings = global_config.settings();
         let config_filenames = load_config_filenames(&IndexMap::new());
-        let tools = load_plugins(&settings.build())?;
+        let tools = load_tools(&settings.build())?;
         let config_files = load_all_config_files(
             &settings.build(),
             &config_filenames,
@@ -217,7 +217,7 @@ impl Config {
         }
     }
 
-    pub fn get_tracked_config_files(&self) -> Result<IndexMap<PathBuf, Box<dyn ConfigFile>>> {
+    pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let tracker = Tracker::new();
         let config_files = tracker
             .list_all()?
@@ -312,7 +312,7 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Tool>>> {
+fn load_tools(settings: &Settings) -> Result<BTreeMap<PluginName, Arc<Tool>>> {
     let plugins = Tool::list(settings)?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
@@ -325,7 +325,7 @@ fn load_plugins(settings: &Settings) -> Result<IndexMap<PluginName, Arc<Tool>>> 
 
 fn load_legacy_files(
     settings: &Settings,
-    tools: &IndexMap<PluginName, Arc<Tool>>,
+    tools: &BTreeMap<PluginName, Arc<Tool>>,
 ) -> IndexMap<String, PluginName> {
     if !settings.legacy_version_file {
         return IndexMap::new();
@@ -390,9 +390,9 @@ fn get_global_rtx_toml() -> PathBuf {
 fn load_all_config_files(
     settings: &Settings,
     config_filenames: &[PathBuf],
-    tools: &IndexMap<PluginName, Arc<Tool>>,
+    tools: &BTreeMap<PluginName, Arc<Tool>>,
     legacy_filenames: &IndexMap<String, PluginName>,
-    mut existing: IndexMap<PathBuf, Box<dyn ConfigFile>>,
+    mut existing: ConfigMap,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
         .iter()
@@ -420,7 +420,7 @@ fn parse_config_file(
     f: &PathBuf,
     settings: &Settings,
     legacy_filenames: &IndexMap<String, PluginName>,
-    tools: &IndexMap<PluginName, Arc<Tool>>,
+    tools: &BTreeMap<PluginName, Arc<Tool>>,
 ) -> Result<Box<dyn ConfigFile>> {
     let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
@@ -430,7 +430,7 @@ fn parse_config_file(
     }
 }
 
-fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<String, String> {
+fn load_env(config_files: &ConfigMap) -> IndexMap<String, String> {
     let mut env = IndexMap::new();
     for cf in config_files.values().rev() {
         env.extend(cf.env());
@@ -438,7 +438,7 @@ fn load_env(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> IndexMap<S
     env
 }
 
-fn load_path_dirs(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> Vec<PathBuf> {
+fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
     let mut path_dirs = vec![];
     for cf in config_files.values().rev() {
         path_dirs.extend(cf.path_dirs());
@@ -446,7 +446,7 @@ fn load_path_dirs(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> Vec<
     path_dirs
 }
 
-fn load_aliases(config_files: &IndexMap<PathBuf, Box<dyn ConfigFile>>) -> AliasMap {
+fn load_aliases(config_files: &ConfigMap) -> AliasMap {
     let mut aliases: AliasMap = IndexMap::new();
 
     for config_file in config_files.values() {

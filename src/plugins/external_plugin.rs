@@ -306,9 +306,6 @@ impl Plugin for ExternalPlugin {
     fn get_type(&self) -> PluginType {
         PluginType::External
     }
-    fn name(&self) -> &PluginName {
-        &self.name
-    }
     fn list_remote_versions(&self, settings: &Settings) -> Result<&Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
