@@ -135,7 +135,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn execute(mut self) -> Result<()> {
-        debug!("Executing command: {:?}", self.cmd);
+        debug!("$ {} {}", self.get_program(), self.get_args().join(" "));
         if self.settings.raw {
             return self.execute_raw();
         }
@@ -246,6 +246,17 @@ impl<'a> CmdLineRunner<'a> {
         }
         let program = self.cmd.get_program().to_string_lossy().to_string();
         Err(ScriptFailed(program, Some(status)))?
+    }
+
+    fn get_program(&self) -> String {
+        self.cmd.get_program().to_string_lossy().to_string()
+    }
+
+    fn get_args(&self) -> Vec<String> {
+        self.cmd
+            .get_args()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
     }
 }
 
