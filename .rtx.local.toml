@@ -1,2 +1,3 @@
+#:schema ./schema/rtx.json
 [env]
 FOO=".rtx.local.toml"
