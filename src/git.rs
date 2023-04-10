@@ -36,7 +36,7 @@ impl Git {
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.remote_default_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
-        cmd!(
+        if let Err(err) = cmd!(
             "git",
             "-C",
             &self.dir,
@@ -46,7 +46,10 @@ impl Git {
             "origin",
             format!("{}:{}", gitref, gitref),
         )
-        .run()?;
+        .run()
+        {
+            debug!("failed to fetch: {:#}", err);
+        }
         let prev_rev = self.current_sha()?;
         cmd!(
             "git",
