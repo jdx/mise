@@ -25,7 +25,7 @@ pub struct Prune {
     pub plugins: Option<Vec<PluginName>>,
 
     /// Do not actually delete anything
-    #[clap(long)]
+    #[clap(long, short_alias = 'n')]
     pub dry_run: bool,
 }
 
