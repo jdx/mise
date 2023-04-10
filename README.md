@@ -696,6 +696,11 @@ env_file = '.env'
 
 _Note: `env_file` goes at the top of the file, above `[env]`._
 
+```toml
+[env]
+NODE_ENV = false # unset a previously set NODE_ENV
+```
+
 ### Environment variables
 
 rtx can also be configured via environment variables. The following options are available:
