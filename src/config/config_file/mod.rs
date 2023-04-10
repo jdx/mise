@@ -35,6 +35,9 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn get_path(&self) -> &Path;
     fn plugins(&self) -> HashMap<PluginName, String>;
     fn env(&self) -> HashMap<String, String>;
+    fn env_remove(&self) -> Vec<String> {
+        vec![]
+    }
     fn path_dirs(&self) -> Vec<PathBuf>;
     fn remove_plugin(&mut self, plugin_name: &PluginName);
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
