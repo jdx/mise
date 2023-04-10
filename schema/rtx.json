@@ -150,6 +150,14 @@
           "description": "disables built-in shorthands",
           "type": "boolean"
         },
+        "trusted_config_paths": {
+          "description": "config files with these prefixes will be trusted by default",
+          "type": "array",
+          "items": {
+            "description": "a path to add to PATH",
+            "type": "string"
+          }
+        },
         "experimental": {
           "description": "enable experimental features",
           "type": "boolean"
