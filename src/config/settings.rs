@@ -30,7 +30,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             experimental: *RTX_EXPERIMENTAL,
-            missing_runtime_behavior: MissingRuntimeBehavior::Prompt,
+            missing_runtime_behavior: MissingRuntimeBehavior::Warn,
             always_keep_download: false,
             legacy_version_file: true,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),

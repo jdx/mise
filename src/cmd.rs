@@ -218,7 +218,7 @@ impl<'a> CmdLineRunner<'a> {
     fn on_stdout(&self, line: &str) {
         if !line.trim().is_empty() {
             if let Some(pr) = self.pr {
-                pr.println(line)
+                pr.set_message(line)
             }
         }
     }
@@ -226,7 +226,7 @@ impl<'a> CmdLineRunner<'a> {
     fn on_stderr(&self, line: &str) {
         if !line.trim().is_empty() {
             match self.pr {
-                Some(pr) => pr.error(),
+                Some(pr) => pr.println(line),
                 None => eprintln!("{}", line),
             }
         }
