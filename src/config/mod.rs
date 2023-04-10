@@ -448,6 +448,10 @@ fn load_env(config_files: &ConfigMap) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     for cf in config_files.values().rev() {
         env.extend(cf.env());
+        for k in cf.env_remove() {
+            // remove values set to "false"
+            env.remove(&k);
+        }
     }
     env
 }

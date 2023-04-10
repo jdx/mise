@@ -30,6 +30,7 @@ pub struct RtxToml {
     toolset: Toolset,
     env_file: Option<PathBuf>,
     env: HashMap<String, String>,
+    env_remove: Vec<String>,
     path_dirs: Vec<PathBuf>,
     settings: SettingsBuilder,
     alias: AliasMap,
@@ -111,7 +112,7 @@ impl RtxToml {
         Ok(())
     }
 
-    fn parse_env(&mut self, k: &str, v: &Item) -> Result<()> {
+    fn parse_env(&mut self, key: &str, v: &Item) -> Result<()> {
         self.trust_check()?;
         let mut v = v.clone();
         if let Some(table) = v.as_table_like_mut() {
@@ -119,9 +120,24 @@ impl RtxToml {
                 return Err(eyre!("use 'env_path' instead of 'env.PATH'"));
             }
         }
-        for (k, v) in self.parse_hashmap(k, &v)? {
-            let v = self.parse_template(&k, &v)?;
-            self.env.insert(k, v);
+        match v.as_table_like() {
+            Some(table) => {
+                for (k, v) in table.iter() {
+                    let key = format!("{}.{}", key, k);
+                    let k = self.parse_template(&key, k)?;
+                    if let Some(v) = v.as_str() {
+                        let v = self.parse_template(&key, v)?;
+                        self.env.insert(k, v);
+                    } else if let Some(v) = v.as_bool() {
+                        if !v {
+                            self.env_remove.push(k);
+                        }
+                    } else {
+                        parse_error!(key, v, "string or bool")?;
+                    }
+                }
+            }
+            _ => parse_error!(key, v, "table")?,
         }
         Ok(())
     }
@@ -616,6 +632,10 @@ impl ConfigFile for RtxToml {
 
     fn env(&self) -> HashMap<String, String> {
         self.env.clone()
+    }
+
+    fn env_remove(&self) -> Vec<String> {
+        self.env_remove.clone()
     }
 
     fn path_dirs(&self) -> Vec<PathBuf> {
