@@ -573,7 +573,7 @@ rtx can be configured in `~/.config/rtx/config.toml`. The following options are 
 ```toml
 [settings]
 # whether to prompt to install plugins and runtimes if they're not already installed
-missing_runtime_behavior = 'prompt' # other options: 'ignore', 'warn', 'prompt', 'autoinstall'
+missing_runtime_behavior = 'warn' # other options: 'ignore', 'warn', 'prompt', 'autoinstall'
 
 # plugins can read the versions files used by other version managers (if enabled by the plugin)
 # for example, .nvmrc in the case of nodejs's nvm
