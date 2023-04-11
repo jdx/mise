@@ -101,7 +101,15 @@ impl RtxToml {
         match v.as_str() {
             Some(filename) => {
                 let path = self.path.parent().unwrap().join(filename);
-                for item in dotenvy::from_path_iter(&path)? {
+                let dotenv = match dotenvy::from_path_iter(&path) {
+                    Ok(dotenv) => dotenv,
+                    Err(e) => Err(eyre!(
+                        "failed to parse dotenv file: {}\n{:#}",
+                        path.display(),
+                        e
+                    ))?,
+                };
+                for item in dotenv {
                     let (k, v) = item?;
                     self.env.insert(k, v);
                 }

@@ -420,7 +420,7 @@ fn load_all_config_files(
             // need to parse this config file
             None => match parse_config_file(&f, settings, legacy_filenames, tools) {
                 Ok(cf) => Ok((f, cf)),
-                Err(err) => Err(eyre!("error parsing: {} {:#}", f.display(), err)),
+                Err(err) => Err(eyre!("error reading config: {}\n{:#}", f.display(), err)),
             },
         })
         .collect::<Vec<Result<_>>>()
