@@ -123,6 +123,7 @@ v18.15.0
   - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
   - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
   - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
+  - [How do I disable/force CLI color output?](#how-do-i-disableforce-cli-color-output)
   - [Is rtx secure?](#is-rtx-secure)
 - [Comparison to asdf](#comparison-to-asdf)
   - [Performance](#performance)
@@ -1239,6 +1240,15 @@ eval "$(rtx hook-env)"
 This can also be useful if you need to use a runtime right away in an rc file. The default behavior
 of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
 immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
+
+### How do I disable/force CLI color output?
+
+rtx uses [console.rs](https://docs.rs/console/latest/console/fn.colors_enabled.html) which
+honors the [clicolors spec](https://bixense.com/clicolors/):
+
+* `CLICOLOR != 0`: ANSI colors are supported and should be used when the program isn’t piped.
+* `CLICOLOR == 0`: Don’t output ANSI color escape codes.
+* `CLICOLOR_FORCE != 0`: ANSI colors should be enabled no matter what.
 
 ### Is rtx secure?
 

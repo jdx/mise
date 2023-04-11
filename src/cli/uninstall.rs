@@ -5,6 +5,7 @@ use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes runtime versions
@@ -17,20 +18,25 @@ pub struct Uninstall {
 }
 
 impl Command for Uninstall {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = RuntimeArg::double_runtime_condition(&self.runtime);
         let tool_versions = runtimes
             .iter()
             .map(|a| {
-                let plugin = match config.tools.get(&a.plugin) {
-                    Some(plugin) => plugin,
-                    None => todo!(),
-                };
+                let tool = config.get_or_create_tool(&a.plugin);
                 let tv = match &a.tvr {
-                    Some(tvr) => tvr.resolve(&config, plugin, Default::default(), false)?,
-                    None => todo!(),
+                    Some(tvr) => tvr.resolve(&config, &tool, Default::default(), false)?,
+                    None => {
+                        let ts = ToolsetBuilder::new().build(&mut config)?;
+                        let tv = ts
+                            .versions
+                            .get(&a.plugin)
+                            .and_then(|v| v.versions.first())
+                            .expect("no version found");
+                        tv.clone()
+                    }
                 };
-                Ok((plugin, tv))
+                Ok((tool, tv))
             })
             .collect::<Result<Vec<_>>>()?;
 

@@ -265,7 +265,11 @@ impl Display for VersionStatus {
             VersionStatus::Missing(version) => write!(
                 f,
                 "{} {}",
-                style(version).strikethrough().red(),
+                if console::colors_enabled() {
+                    style(version).strikethrough().red().to_string()
+                } else {
+                    version.to_string()
+                },
                 style("(missing)").red()
             ),
         }
