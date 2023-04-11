@@ -9,7 +9,6 @@ use crate::config::Config;
 use crate::dirs;
 use crate::hash::hash_to_str;
 use crate::plugins::PluginName;
-use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tool::Tool;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
@@ -108,13 +107,13 @@ impl ToolVersion {
 
         let build = |v| Ok(Self::new(tool, request.clone(), opts.clone(), v));
 
-        let existing_path = dirs::INSTALLS.join(&tool.name).join(&v);
-        if existing_path.exists() && !is_runtime_symlink(&existing_path) {
-            // if the version is already installed, no need to fetch all the remote versions
-            return build(v);
-        }
         if !tool.is_installed() {
             return build(v);
+        }
+        let existing = build(v.clone())?;
+        if tool.is_version_installed(&existing) {
+            // if the version is already installed, no need to fetch all the remote versions
+            return Ok(existing);
         }
 
         if v == "latest" {
