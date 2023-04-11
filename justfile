@@ -32,7 +32,7 @@ test-unit *args:
 # runs the E2E tests in ./e2e
 
 # specify a test name to run a single test
-test-e2e TEST=("all"):
+test-e2e TEST=("all"): build
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "{{ TEST }}" = all ]; then
