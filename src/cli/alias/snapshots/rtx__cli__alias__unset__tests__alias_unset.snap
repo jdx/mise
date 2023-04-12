@@ -1,5 +1,5 @@
 ---
-source: src/cli/alias/set.rs
+source: src/cli/alias/unset.rs
 expression: output
 ---
 nodejs               lts                  18
@@ -13,5 +13,4 @@ nodejs               lts/gallium          16
 nodejs               lts/hydrogen         18
 tiny                 lts                  3.1.0
 tiny                 lts-prev             2.0.0
-tiny                 my/alias             3.0
 

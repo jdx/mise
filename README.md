@@ -1095,7 +1095,7 @@ installing a plugin with the same name, e.g.: `rtx plugin install python`.
 You can see the core plugins with `rtx plugin ls --core`.
 
 * [Python](./docs/python.md)
-* ~NodeJS~ - coming soon
+* [NodeJS](./docs/nodejs.md)
 * ~Ruby~ - coming soon
 * ~Java~ - coming soon
 
