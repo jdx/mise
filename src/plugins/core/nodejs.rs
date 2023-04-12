@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env::{join_paths, split_paths};
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::Duration;
@@ -107,6 +108,9 @@ impl NodeJSPlugin {
             let npm = self.npm_path(tv);
             let mut cmd = CmdLineRunner::new(settings, npm);
             cmd.with_pr(pr).arg("install").arg("--global").arg(package);
+            let mut path = split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+            path.insert(0, tv.install_path().join("bin"));
+            cmd.env("PATH", join_paths(path)?);
             cmd.execute()?;
         }
         Ok(())
