@@ -93,20 +93,18 @@ impl PythonPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let body =
-            std::fs::read_to_string(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE).unwrap_or_default();
-        for package in body.lines() {
-            let package = package.trim();
-            if package.is_empty() {
-                continue;
-            }
-            pr.set_message(format!("installing default package: {}", package));
-            let pip = self.pip_path(tv);
-            let mut cmd = CmdLineRunner::new(settings, pip);
-            cmd.with_pr(pr).arg("install").arg(package);
-            cmd.execute()?;
+        if !env::RTX_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
+            return Ok(());
         }
-        Ok(())
+        pr.set_message("installing default packages");
+        let pip = self.pip_path(tv);
+        let mut cmd = CmdLineRunner::new(settings, pip);
+        cmd.with_pr(pr)
+            .arg("install")
+            .arg("--upgrade")
+            .arg("-r")
+            .arg(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE);
+        cmd.execute()
     }
 
     fn get_virtualenv(
