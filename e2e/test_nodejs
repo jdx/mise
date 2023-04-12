@@ -3,6 +3,8 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
+export RTX_NODEJS_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-nodejs-packages"
+
 rtx plugin uninstall nodejs
 rtx i nodejs nodejs@lts/hydrogen
 assert_contains "rtx x nodejs@lts/hydrogen -- node --version" "v18."
