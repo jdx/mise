@@ -5,7 +5,7 @@ FOO = "bar"
 THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 
 [tools]
-nodejs = 'lts'
+#nodejs = 'lts'
 tiny = { version = "1", foo = "bar" }
 golang = { version = "latest", foo = "bar" }
 python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }

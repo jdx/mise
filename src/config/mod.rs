@@ -18,7 +18,7 @@ use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
 use crate::env::CI;
-use crate::plugins::core::PythonPlugin;
+use crate::plugins::core::{NodeJSPlugin, PythonPlugin};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::tool::Tool;
@@ -321,14 +321,16 @@ fn load_tools(settings: &Settings) -> Result<ToolMap> {
 }
 
 fn load_core_tools(settings: &Settings) -> ToolMap {
-    let tools = [("python", PythonPlugin::new)].map(|(name, plugin)| {
-        let plugin = plugin(settings, name.to_string());
+    let tools: Vec<Box<dyn Plugin>> = vec![
+        Box::new(PythonPlugin::new(settings, "python".to_string())),
+        Box::new(NodeJSPlugin::new(settings, "nodejs".to_string())),
+    ];
+    ToolMap::from_iter(tools.into_iter().map(|plugin| {
         (
-            name.to_string(),
-            build_tool(name.to_string(), Box::new(plugin)),
+            plugin.name().to_string(),
+            build_tool(plugin.name().to_string(), plugin),
         )
-    });
-    ToolMap::from_iter(tools)
+    }))
 }
 
 fn build_tool(name: PluginName, plugin: Box<dyn Plugin>) -> Arc<Tool> {
