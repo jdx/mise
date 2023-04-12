@@ -42,13 +42,13 @@ impl Shell for Nushell {
             
             let-env config = ($env.config | upsert hooks {{
                 pre_prompt: [{{
-                condition: {{ "RTX_SHELL" in $env }}
-                code: {{ rtx_hook }}
+                condition: {{|| "RTX_SHELL" in $env }}
+                code: {{|| rtx_hook }}
                 }}]
                 env_change: {{
                     PWD: [{{
-                    condition: {{ "RTX_SHELL" in $env }}
-                    code: {{ rtx_hook }}
+                    condition: {{|| "RTX_SHELL" in $env }}
+                    code: {{|| rtx_hook }}
                     }}]
                 }}
             }})
