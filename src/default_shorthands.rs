@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -324,7 +324,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
     ("kp", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("kpt", "https://github.com/nlamirault/asdf-kpt.git"),
     ("krab", "https://github.com/ohkrab/asdf-krab.git"),
-    ("krew", "https://github.com/jimmidyson/asdf-krew.git"),
+    ("krew", "https://github.com/bjw-s/asdf-krew.git"),
     ("kscript", "https://github.com/edgelevel/asdf-kscript.git"),
     ("ksonnet", "https://github.com/Banno/asdf-ksonnet.git"),
     ("ktlint", "https://github.com/esensar/asdf-ktlint.git"),
@@ -486,6 +486,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
     ("ripgrep", "https://gitlab.com/wt0f/asdf-ripgrep.git"),
     ("rke", "https://github.com/particledecay/asdf-rke.git"),
     ("rlwrap", "https://github.com/asdf-community/asdf-rlwrap.git"),
+    ("rome", "https://github.com/kichiemon/asdf-rome.git"),
     ("rstash", "https://github.com/carlduevel/asdf-rstash.git"),
     ("ruby", "https://github.com/asdf-vm/asdf-ruby.git"),
     ("rust", "https://github.com/code-lever/asdf-rust.git"),
@@ -596,6 +597,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 640] = [
     ("upx", "https://github.com/jimmidyson/asdf-upx.git"),
     ("usql", "https://github.com/itspngu/asdf-usql.git"),
     ("v", "https://github.com/jthegedus/asdf-v.git"),
+    ("vale", "https://github.com/pdemagny/asdf-vale"),
     ("vals", "https://github.com/dex4er/asdf-vals.git"),
     ("vault", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("vcluster", "https://gitlab.com/wt0f/asdf-vcluster.git"),
