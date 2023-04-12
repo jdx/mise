@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+export RTX_EXPERIMENTAL=1
+rtx plugin uninstall nodejs
+rtx i nodejs nodejs@lts/hydrogen
+assert_contains "rtx x nodejs@lts/hydrogen -- node --version" "v18."
+assert "rtx x -- node --version" "v18.0.0"
+assert_contains "rtx nodejs nodebuild --version" "node-build "

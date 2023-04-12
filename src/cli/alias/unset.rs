@@ -36,7 +36,7 @@ mod tests {
     use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
-    fn test_settings_unset() {
+    fn test_alias_unset() {
         reset_config();
 
         assert_cli!("alias", "unset", "tiny", "my/alias");

@@ -299,6 +299,10 @@ impl Hash for ExternalPlugin {
 }
 
 impl Plugin for ExternalPlugin {
+    fn name(&self) -> &PluginName {
+        &self.name
+    }
+
     fn get_type(&self) -> PluginType {
         PluginType::External
     }
