@@ -7,6 +7,7 @@ use log::LevelFilter;
 use once_cell::sync::Lazy;
 
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
+use crate::file::replace_path;
 
 pub static ARGS: Lazy<Vec<String>> = Lazy::new(|| args().collect());
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
@@ -154,7 +155,7 @@ fn var_is_false(key: &str) -> bool {
 }
 
 fn var_path(key: &str) -> Option<PathBuf> {
-    var_os(key).map(PathBuf::from)
+    var_os(key).map(PathBuf::from).map(replace_path)
 }
 
 fn var_confirm(key: &str) -> Confirm {

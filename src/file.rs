@@ -53,13 +53,10 @@ pub fn display_path(path: &Path) -> String {
 }
 
 /// replaces "~" with $HOME
-pub fn replace_path(path: &Path) -> PathBuf {
-    let home = dirs::HOME.to_string_lossy();
-    match path.starts_with("~") {
-        true => path
-            .to_string_lossy()
-            .replacen('~', home.as_ref(), 1)
-            .into(),
+pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
+    let path = path.as_ref();
+    match path.starts_with("~/") {
+        true => dirs::HOME.join(path.strip_prefix("~/").unwrap()),
         false => path.to_path_buf(),
     }
 }
@@ -230,5 +227,11 @@ mod tests {
             .join(dirs::HOME.deref().strip_prefix("/").unwrap())
             .join("cwd");
         assert_eq!(display_path(&path), path.display().to_string());
+    }
+
+    #[test]
+    fn test_replace_path() {
+        assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
+        assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
     }
 }
