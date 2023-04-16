@@ -70,7 +70,7 @@ impl Shell for Nushell {
               | parse vars
               | update-env
             }} else {{
-              ^"{exe}" {exe} $command $rest
+              ^"{exe}" $command $rest
             }}
           }}
             

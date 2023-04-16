@@ -36,7 +36,7 @@ def-env rtx [command?: string, --help, ...rest: string] {
     | parse vars
     | update-env
   } else {
-    ^"/some/dir/rtx" /some/dir/rtx $command $rest
+    ^"/some/dir/rtx" $command $rest
   }
 }
   
