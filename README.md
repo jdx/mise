@@ -29,7 +29,7 @@ Note that calling `which node` gives us a real path to node, not a shim.
 
 ## Quickstart
 
-Install rtx (other methods [here](#installation)):
+Install rtx on MacOS (other methods [here](#installation)):
 
 ```sh-session
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
