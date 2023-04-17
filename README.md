@@ -400,7 +400,7 @@ For NixOS or those using the Nix package manager:
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rtx-flake = {
-      url = "github:chadac/rtx/add-nix-flake";
+      url = "github:jdxcode/rtx";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
