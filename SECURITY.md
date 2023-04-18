@@ -33,8 +33,8 @@ Plugins are by far the biggest source of potential problems and where the most w
 
 Eventually we will have 3 types of plugins:
 
-* [core](https://github.com/jdxcode/rtx/issues/236) - plugins that will be hardcoded into the CLI. These will be
-official plugins for the most common languages.
+* [core](https://github.com/jdxcode/rtx/issues/236) - plugins that are hardcoded into the CLI. These will be
+official plugins for the most common languages. Currently, these are only used when "experimental" is enabled.
 * community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
 only have @jdxcode as the sole contributor, however this may change in the future for particular plugins with
 dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
