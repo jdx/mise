@@ -91,7 +91,7 @@ impl Display for LegacyVersionFile {
 
 fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
     let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.to_path_buf()));
-    if !version.is_empty() {
+    for version in version.split_whitespace() {
         toolset.add_version(
             ToolVersionRequest::new(plugin.to_string(), version),
             Default::default(),

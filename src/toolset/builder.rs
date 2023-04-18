@@ -71,8 +71,10 @@ fn load_runtime_env(ts: &mut Toolset, env: BTreeMap<String, String>) {
             }
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = Toolset::new(source);
-            let tvr = ToolVersionRequest::new(plugin_name, &v);
-            env_ts.add_version(tvr, Default::default());
+            for v in v.split_whitespace() {
+                let tvr = ToolVersionRequest::new(plugin_name.clone(), v);
+                env_ts.add_version(tvr, Default::default());
+            }
             ts.merge(&env_ts);
         }
     }
