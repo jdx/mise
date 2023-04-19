@@ -12,7 +12,7 @@ RUN cargo install cargo-insta cargo-llvm-cov
 
 # Install dependencies
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get update \
     && apt-get -y install --no-install-recommends \
     # shells, direnv, shellcheck

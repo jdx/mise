@@ -105,10 +105,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   python 3.11.0 3.10.0
   shfmt 3.6.0
   shellcheck 0.9.0
-  nodejs 18.13.0
+  nodejs 20.0.0
 
   $ <bold>rtx current nodejs</bold>
-  18.13.0
+  20.0.0
 
   # can output multiple versions
   $ <bold>rtx current python</bold>

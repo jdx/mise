@@ -286,9 +286,9 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -s j -l jobs -d 'Number 
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'Save exact version to `~/.tool-versions`
-e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions'
+e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'Save fuzzy version to `~/.tool-versions`
-e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l path -d 'Get the path of the global config file'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l debug -d 'Sets log level to debug'
@@ -352,8 +352,8 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -l log-level -d 'Set the 
 complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l pin -d 'Save exact version to `.tool-versions`
-e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1'
+e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions'
+complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l path -d 'Get the path of the config file'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l install-missing -d 'Automatically install missing tools'

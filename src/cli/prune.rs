@@ -73,8 +73,8 @@ impl Prune {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx prune --dry-run</bold>
-  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.0
-  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.1
+  rm -rf ~/.local/share/rtx/versions/nodejs/20.0.0
+  rm -rf ~/.local/share/rtx/versions/nodejs/20.0.1
 "#
 );
 

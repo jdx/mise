@@ -96,7 +96,8 @@ lint-fix:
 # regenerate README.md
 render-help: build
     NO_COLOR=1 rtx render-help
-    npx markdown-magic
+    #npx markdown-magic
+    md-magic
 
 # regenerate shell completion files
 render-completions: build

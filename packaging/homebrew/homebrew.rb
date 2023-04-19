@@ -34,7 +34,7 @@ class Rtx < Formula
 
   test do
     system "#{bin}/rtx --version"
-    system "#{bin}/rtx", "install", "nodejs@18.13.0"
-    assert_match "v18.13.0", shell_output("#{bin}/rtx exec nodejs@18.13.0 -- node -v")
+    system "#{bin}/rtx", "install", "nodejs@20.0.0"
+    assert_match "v20.0.0", shell_output("#{bin}/rtx exec nodejs@20.0.0 -- node -v")
   end
 end

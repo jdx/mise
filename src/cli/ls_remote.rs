@@ -86,13 +86,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   18.0.0
   20.0.0
 
-  $ <bold>rtx ls-remote nodejs@18</bold>
-  18.0.0
-  18.1.0
+  $ <bold>rtx ls-remote nodejs@20</bold>
+  20.0.0
+  20.1.0
 
-  $ <bold>rtx ls-remote nodejs 18</bold>
-  18.0.0
-  18.1.0
+  $ <bold>rtx ls-remote nodejs 20</bold>
+  20.0.0
+  20.1.0
 "#
 );
 

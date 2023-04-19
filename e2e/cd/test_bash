@@ -6,7 +6,7 @@ orig_path="$PATH"
 
 rtx trust
 rtx trust ../.e2e.rtx.toml
-rtx trust 16/.e2e.rtx.toml
+rtx trust 18/.e2e.rtx.toml
 
 # shellcheck disable=SC1090
 eval "$(rtx activate bash --status)" && _rtx_hook
@@ -33,21 +33,21 @@ assert_path() {
   fi
 }
 
-test "$(node -v)" = "v18.0.0"
-assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/18.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:\$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
+test "$(node -v)" = "v20.0.0"
+assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/20.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:\$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
 assert "$FOO" "cd"
 
-cd 16 && _rtx_hook
-test "$(node -v)" = "v16.0.0"
-assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/16.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
-assert "$FOO" "16"
+cd 18 && _rtx_hook
+test "$(node -v)" = "v18.0.0"
+assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/18.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
+assert "$FOO" "18"
 
 cd .. && _rtx_hook
-test "$(node -v)" = "v18.0.0"
-assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/18.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:\$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
+test "$(node -v)" = "v20.0.0"
+assert_path "/root:\$ROOT/e2e/cwd:\$ROOT/e2e/.rtx/installs/nodejs/20.0.0/bin:\$ROOT/e2e/.rtx/installs/tiny/3.1.0/bin:\$ROOT/e2e/.rtx/installs/shellcheck/0.9.0/bin:\$ROOT/e2e/.rtx/installs/shfmt/3.6.0/bin"
 
-rtx shell nodejs@16.0.0 && _rtx_hook
-test "$(node -v)" = "v16.0.0"
+rtx shell nodejs@18.0.0 && _rtx_hook
+test "$(node -v)" = "v18.0.0"
 
 rtx deactivate
 assert_path ""

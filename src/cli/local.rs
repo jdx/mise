@@ -22,7 +22,7 @@ use crate::{dirs, env, file};
 #[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
     /// Runtimes to add to .tool-versions/.rtx.toml
-    /// e.g.: nodejs@18
+    /// e.g.: nodejs@20
     /// if this is a single runtime with no version,
     /// the current value of .tool-versions/.rtx.toml will be displayed
     #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
@@ -34,12 +34,12 @@ pub struct Local {
     parent: bool,
 
     /// Save exact version to `.tool-versions`
-    /// e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
+    /// e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `.tool-versions`
-    /// e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions
+    /// e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions
     /// This is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
@@ -152,23 +152,23 @@ fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # set the current version of nodejs to 18.x for the current directory
-  # will use a precise version (e.g.: 18.0.0) in .tool-versions file
-  $ <bold>rtx local nodejs@18</bold>
+  # set the current version of nodejs to 20.x for the current directory
+  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+  $ <bold>rtx local nodejs@20</bold>
 
-  # set nodejs to 18.x for the current project (recurses up to find .tool-versions)
-  $ <bold>rtx local -p nodejs@18</bold>
+  # set nodejs to 20.x for the current project (recurses up to find .tool-versions)
+  $ <bold>rtx local -p nodejs@20</bold>
 
-  # set the current version of nodejs to 18.x for the current directory
-  # will use a fuzzy version (e.g.: 18) in .tool-versions file
-  $ <bold>rtx local --fuzzy nodejs@18</bold>
+  # set the current version of nodejs to 20.x for the current directory
+  # will use a fuzzy version (e.g.: 20) in .tool-versions file
+  $ <bold>rtx local --fuzzy nodejs@20</bold>
 
   # removes nodejs from .tool-versions
   $ <bold>rtx local --remove=nodejs</bold>
 
   # show the current version of nodejs in .tool-versions
   $ <bold>rtx local nodejs</bold>
-  18.0.0
+  20.0.0
 "#
 );
 

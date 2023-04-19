@@ -9,23 +9,23 @@ The code for this is inside of the rtx repository at [`./src/plugins/core/nodejs
 
 ## Usage
 
-The following installs the latest version of nodejs-18.x and makes it the global
+The following installs the latest version of nodejs-20.x and makes it the global
 default:
 
 ```sh-session
-$ rtx install nodejs@18
-$ rtx global nodejs@18
+$ rtx install nodejs@20
+$ rtx global nodejs@20
 ```
 
 Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build) to install pre-compiled binaries and compile from source if necessary. You can check its [README](https://github.com/nodenv/node-build/blob/master/README.md) for additional settings and some troubleshooting.
 
 
 ```sh-session
-$ rtx global nodejs@16 nodejs@18
+$ rtx global nodejs@18 nodejs@20
 $ nodejs -V
-16.0.0
-$ nodejs.11 -V
 18.0.0
+$ nodejs.11 -V
+20.0.0
 ```
 
 ## Configuration
