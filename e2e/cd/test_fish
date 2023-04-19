@@ -5,21 +5,21 @@ set -gx PATH $ROOT/target/debug:$PATH
 set -l orig_node (node -v)
 
 #set -l fish_trace 1
-rtx install nodejs@18.0.0 nodejs@16.0.0; or exit
+rtx install nodejs@20.0.0 nodejs@18.0.0; or exit
 
 rtx activate --status fish | source
 __rtx_env_eval
 
-test (node -v) = "v18.0.0"; or exit
+test (node -v) = "v20.0.0"; or exit
 
-cd 16 && __rtx_env_eval
-test (node -v) = "v16.0.0"; or exit
+cd 18 && __rtx_env_eval
+test (node -v) = "v18.0.0"; or exit
 
 cd .. && __rtx_env_eval
-test (node -v) = "v18.0.0"; or exit
+test (node -v) = "v20.0.0"; or exit
 
-rtx shell nodejs@16.0.0 && __rtx_env_eval
-test (node -v) = "v16.0.0"; or exit
+rtx shell nodejs@18.0.0 && __rtx_env_eval
+test (node -v) = "v18.0.0"; or exit
 
 rtx deactivate
 test (node -v) = $orig_node; or exit

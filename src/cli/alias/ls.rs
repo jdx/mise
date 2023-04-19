@@ -12,7 +12,7 @@ use crate::plugins::PluginName;
 /// For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
 ///
 ///   [alias.nodejs]
-///   lts = "18.0.0"
+///   lts = "20.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasLs {
@@ -41,7 +41,7 @@ impl Command for AliasLs {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx aliases</bold>
-  nodejs    lts/hydrogen   18.0.0
+  nodejs    lts/hydrogen   20.0.0
 "#
 );
 
