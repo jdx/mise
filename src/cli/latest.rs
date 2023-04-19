@@ -54,8 +54,8 @@ impl Command for Latest {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx latest nodejs@18</bold>  # get the latest version of nodejs 18
-  18.0.0
+  $ <bold>rtx latest nodejs@20</bold>  # get the latest version of nodejs 20
+  20.0.0
 
   $ <bold>rtx latest nodejs</bold>     # get the latest stable version of nodejs
   20.0.0

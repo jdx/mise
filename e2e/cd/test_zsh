@@ -14,22 +14,22 @@ assert_path() {
   fi
 }
 
-rtx install nodejs@18.0.0 nodejs@16.0.0
+rtx install nodejs@20.0.0 nodejs@18.0.0
 # shellcheck disable=SC1090
 eval "$(rtx activate zsh --status)" && _rtx_hook
 
 #rtx install
-test "$(node -v)" = "v18.0.0"
+test "$(node -v)" = "v20.0.0"
 
-cd 16 && _rtx_hook
+cd 18 && _rtx_hook
 #rtx install
-test "$(node -v)" = "v16.0.0"
+test "$(node -v)" = "v18.0.0"
 
 cd .. && _rtx_hook
-test "$(node -v)" = "v18.0.0"
+test "$(node -v)" = "v20.0.0"
 
-rtx shell nodejs@16.0.0 && _rtx_hook
-test "$(node -v)" = "v16.0.0"
+rtx shell nodejs@18.0.0 && _rtx_hook
+test "$(node -v)" = "v18.0.0"
 
 rtx deactivate
 assert_path ""

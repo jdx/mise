@@ -48,6 +48,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx settings set shims_dir ~/.rtx/shims</bold>
   $ <bold>rtx reshim</bold>
   $ <bold>~/.rtx/shims/node -v</bold>
-  v18.0.0
+  v20.0.0
 "#
 );

@@ -4,8 +4,8 @@ source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
 eval "$(rtx activate bash)" && eval "$(rtx hook-env)"
+assert "node -v" "v20.0.0"
+rtx shell nodejs@18.0.0 && eval "$(rtx hook-env)"
 assert "node -v" "v18.0.0"
-rtx shell nodejs@16.0.0 && eval "$(rtx hook-env)"
-assert "node -v" "v16.0.0"
-export RTX_NODEJS_VERSION=18.0.0 && eval "$(rtx hook-env)"
-assert "node -v" "v18.0.0"
+export RTX_NODEJS_VERSION=20.0.0 && eval "$(rtx hook-env)"
+assert "node -v" "v20.0.0"
