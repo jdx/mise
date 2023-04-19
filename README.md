@@ -15,7 +15,7 @@
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
 - **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx
   does not use them—however you can if you want to.
-- **Fuzzy matching and aliases** - It's enough to just say you want "v18" of node, or the "lts"
+- **Fuzzy matching and aliases** - It's enough to just say you want "v20" of node, or the "lts"
   version. rtx will figure out the right version without you needing to specify an exact version.
 - **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
 
@@ -54,10 +54,10 @@ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 Install a runtime and set it as the default:
 
 ```sh-session
-$ rtx install nodejs@18
-$ rtx global nodejs@18
+$ rtx install nodejs@20
+$ rtx global nodejs@20
 $ node -v
-v18.15.0
+v20.0.0
 ```
 
 ## Table of Contents
@@ -232,16 +232,16 @@ See [plugins](#plugins) below.
 
 ### Common commands
 
-    rtx install nodejs@18.0.0  Install a specific version number
-    rtx install nodejs@18      Install a fuzzy version number
-    rtx local nodejs@18        Use node-18.x in current project
-    rtx global nodejs@18       Use node-18.x as default
+    rtx install nodejs@20.0.0  Install a specific version number
+    rtx install nodejs@20      Install a fuzzy version number
+    rtx local nodejs@20        Use node-20.x in current project
+    rtx global nodejs@20       Use node-20.x as default
 
     rtx install nodejs         Install the version specified in .tool-versions
     rtx local nodejs@latest    Use latest node in current directory
     rtx global nodejs@system   Use system node as default
 
-    rtx x nodejs@18 -- node app.js  Run `node app.js` with the PATH pointing to node-18.x
+    rtx x nodejs@20 -- node app.js  Run `node app.js` with the PATH pointing to node-20.x
 
 ## Installation
 
@@ -500,7 +500,7 @@ You can specify a tool and its version in a shebang without needing to first
 setup `.tool-versions`/`.rtx.toml` config:
 
 ```typescript
-#!/usr/bin/env -S rtx x nodejs@18 -- node
+#!/usr/bin/env -S rtx x nodejs@20 -- node
 // "env -S" allows multiple arguments in a shebang
 console.log(`Running node: ${process.version}`);
 ```
@@ -516,7 +516,7 @@ The `.tool-versions` file is used to specify the runtime versions for a project.
 is:
 
 ```
-nodejs      18.0.0       # comments are allowed
+nodejs      20.0.0       # comments are allowed
 ruby        3            # can be fuzzy version
 shellcheck  latest       # also supports "latest"
 jq          1.6
@@ -526,7 +526,7 @@ shfmt       path:./shfmt # use a custom runtime
 nodejs      lts          # use lts version of nodejs (not supported by all plugins)
 
 # The following syntax is experimental and subject to change
-nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 16 if lts is 18)
+nodejs      lts!-2       # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
 
@@ -606,7 +606,7 @@ shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims ar
 log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
 
 [alias.nodejs]
-my_custom_node = '18'  # makes `rtx install nodejs@my_custom_node` install node-18.x
+my_custom_node = '20'  # makes `rtx install nodejs@my_custom_node` install node-20.x
                        # this can also be specified in a plugin (see below in "Aliases")
 ```
 
@@ -634,7 +634,7 @@ terraform = '1.0.0'
 erlang = ['23.3', '24.0']
 
 # supports everything you can do with .tool-versions currently
-nodejs = ['16', 'prefix:18', 'ref:master', 'path:~/.nodes/14']
+nodejs = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 
 # send arbitrary options to the plugin, passed as:
 # RTX_TOOL_OPTS__VENV=.venv
@@ -651,7 +651,7 @@ missing_runtime_behavior = 'warn'
 shims_dir = '~/.rtx/shims'
 
 [alias.nodejs] # project-local aliases
-my_custom_node = '18'
+my_custom_node = '20'
 ```
 
 `.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not
@@ -709,8 +709,8 @@ rtx can also be configured via environment variables. The following options are 
 This is the same as the `missing_runtime_behavior` config option in `~/.config/rtx/config.toml`.
 
 ```
-RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@18
-RTX_NODEJS_VERSION=18 rtx exec -- node --version
+RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install nodejs@20
+RTX_NODEJS_VERSION=20 rtx exec -- node --version
 ```
 
 #### `RTX_DATA_DIR`
@@ -747,7 +747,7 @@ to use this feature.
 
 #### `RTX_${PLUGIN}_VERSION`
 
-Set the version for a runtime. For example, `RTX_NODEJS_VERSION=18` will use nodejs@18.x regardless
+Set the version for a runtime. For example, `RTX_NODEJS_VERSION=20` will use nodejs@20.x regardless
 of what is set in `.tool-versions`/`.rtx.toml`.
 
 #### `RTX_LEGACY_VERSION_FILE`
@@ -824,7 +824,7 @@ installing plugins, e.g.: `rtx plugin install nodejs https://github.com/asdf-vm/
 
 Currently this disables the following:
 
-- `--fuzzy` as default behavior (`rtx local nodejs@18` will save exact version)
+- `--fuzzy` as default behavior (`rtx local nodejs@20` will save exact version)
 
 #### `RTX_HIDE_UPDATE_WARNING=1`
 
@@ -845,14 +845,14 @@ Set a directory to output shims when running `rtx reshim`. Requires `experimenta
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for nodejs@18.x.
+versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for nodejs@20.x.
 So you can use the runtime with `nodejs lts/hydrogen` in `.tool-versions`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
 
 ```toml
 [alias.nodejs]
-my_custom_18 = '18'
+my_custom_20 = '20'
 ```
 
 Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing node.js
@@ -981,18 +981,18 @@ ln -s ~/src/rtx-my-tool ~/.local/share/rtx/plugins/my-tool
 #### `~/.local/share/rtx/installs`
 
 This is where tools are installed to when running `rtx install`. For example, `rtx install
-nodejs@18.0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0` For example, `rtx
-install 0.0` will install to `~/.local/share/rtx/installs/nodejs/18.0.0`.
+nodejs@20.0.0` will install to `~/.local/share/rtx/installs/nodejs/20.0.0` For example, `rtx
+install 0.0` will install to `~/.local/share/rtx/installs/nodejs/20.0.0`.
 
-This will also create other symlinks to this directory for version prefixes ("18" and "18.15")
+This will also create other symlinks to this directory for version prefixes ("20" and "20.15")
 and matching aliases ("lts", "latest").
 For example:
 
 ```
-18 -> ./18.15.0
-18.15 -> ./18.15.0
-latest -> ./18.15.0
-lts -> ./18.15.0
+20 -> ./20.15.0
+20.15 -> ./20.15.0
+latest -> ./20.15.0
+lts -> ./20.15.0
 ```
 
 #### `~/.local/share/rtx/shims`
@@ -1208,9 +1208,9 @@ and see what happens.
 
 rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin
 should be usable in rtx. The commands in rtx are slightly
-different, such as `rtx install nodejs@18.0.0` vs `asdf install nodejs 18.0.0`—this is done so
+different, such as `rtx install nodejs@20.0.0` vs `asdf install nodejs 20.0.0`—this is done so
 multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx
-install nodejs 18.0.0`). This is the case for most commands, though the help for the command may
+install nodejs 20.0.0`). This is the case for most commands, though the help for the command may
 say that asdf-style syntax is supported.
 
 When in doubt, just try asdf syntax and see if it works. If it doesn't open a ticket. It may
@@ -1300,16 +1300,16 @@ variables like [dotenv](https://github.com/motdotla/dotenv) or [direnv](https://
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in rtx but may use slightly different syntax. rtx has more forgiving commands,
-such as using fuzzy-matching, e.g.: `rtx install nodejs@18`. While in asdf you _can_ run
-`asdf install nodejs latest:18`, you can't use `latest:18` in a `.tool-versions` file or many other places.
+such as using fuzzy-matching, e.g.: `rtx install nodejs@20`. While in asdf you _can_ run
+`asdf install nodejs latest:20`, you can't use `latest:20` in a `.tool-versions` file or many other places.
 In `rtx` you can use fuzzy-matching everywhere.
 
 asdf requires several steps to install a new runtime if the plugin isn't installed, e.g.:
 
 ```sh-session
 asdf plugin add nodejs
-asdf install nodejs latest:18
-asdf local nodejs latest:18
+asdf install nodejs latest:20
+asdf local nodejs latest:20
 ```
 
 In `rtx` this can all be done in a single step to set the local runtime version. If the plugin
@@ -1354,10 +1354,10 @@ To support this, there is experimental support for using rtx in a "shim" mode. T
 ```sh-session
 $ rtx settings set experimental true
 $ rtx settings set shims_dir ~/.rtx/shims
-$ rtx i nodejs@18.0.0
+$ rtx i nodejs@20.0.0
 $ rtx reshim
 $ ~/.rtx/shims/node -v
-v18.0.0
+v20.0.0
 ```
 
 ## direnv
@@ -1403,7 +1403,7 @@ easier to manage, I encourage _not_ actually using `.tool-versions` at all, and 
 setting environment variables entirely in `.envrc`:
 
 ```
-export RTX_NODEJS_VERSION=18.0.0
+export RTX_NODEJS_VERSION=20.0.0
 export RTX_PYTHON_VERSION=3.11
 ```
 
@@ -1503,7 +1503,7 @@ Arguments:
 
 Examples:
  $ rtx alias get nodejs lts/hydrogen
- 18.0.0
+ 20.0.0
 ```
 ### `rtx alias ls [OPTIONS]`
 
@@ -1515,7 +1515,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
 
   [alias.nodejs]
-  lts = "18.0.0"
+  lts = "20.0.0"
 
 Usage: ls [OPTIONS]
 
@@ -1525,7 +1525,7 @@ Options:
 
 Examples:
   $ rtx aliases
-  nodejs    lts/hydrogen   18.0.0
+  nodejs    lts/hydrogen   20.0.0
 ```
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
@@ -1680,7 +1680,7 @@ set.
 
 Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
 Note that only the plugin specified will be overridden, so if a `.tool-versions` file
-includes "nodejs 18" but you run `rtx exec python@3.11`; it will still load nodejs@18.
+includes "nodejs 20" but you run `rtx exec python@3.11`; it will still load nodejs@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
 
@@ -1688,7 +1688,7 @@ Usage: exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]
 
 Arguments:
   [RUNTIME]...
-          Runtime(s) to start e.g.: nodejs@18 python@3.10
+          Runtime(s) to start e.g.: nodejs@20 python@3.10
 
   [COMMAND]...
           Command string to execute (same as --command)
@@ -1703,14 +1703,14 @@ Options:
           [short aliases: C]
 
 Examples:
-  $ rtx exec nodejs@18 -- node ./app.js  # launch app.js using node-18.x
-  $ rtx x nodejs@18 -- node ./app.js     # shorter alias
+  $ rtx exec nodejs@20 -- node ./app.js  # launch app.js using node-20.x
+  $ rtx x nodejs@20 -- node ./app.js     # shorter alias
 
   # Specify command as a string:
-  $ rtx exec nodejs@18 python@3.11 --command "node -v && python -V"
+  $ rtx exec nodejs@20 python@3.11 --command "node -v && python -V"
 
   # Run a command in a different directory:
-  $ rtx x -C /path/to/project nodejs@18 -- node ./app.js
+  $ rtx x -C /path/to/project nodejs@20 -- node ./app.js
 ```
 ### `rtx global [OPTIONS] [RUNTIME]...`
 
@@ -1730,18 +1730,18 @@ Usage: global [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtime(s) to add to .tool-versions
-          e.g.: nodejs@18
+          e.g.: nodejs@20
           If this is a single runtime with no version, the current value of the global
           .tool-versions will be displayed
 
 Options:
       --pin
           Save exact version to `~/.tool-versions`
-          e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to ~/.tool-versions
+          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions
 
       --fuzzy
           Save fuzzy version to `~/.tool-versions`
-          e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to ~/.tool-versions
+          e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions
           this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
@@ -1751,17 +1751,17 @@ Options:
           Get the path of the global config file
 
 Examples:
-  # set the current version of nodejs to 18.x
-  # will use a fuzzy version (e.g.: 18) in .tool-versions file
-  $ rtx global --fuzzy nodejs@18
+  # set the current version of nodejs to 20.x
+  # will use a fuzzy version (e.g.: 20) in .tool-versions file
+  $ rtx global --fuzzy nodejs@20
 
-  # set the current version of nodejs to 18.x
-  # will use a precise version (e.g.: 18.0.0) in .tool-versions file
-  $ rtx global --pin nodejs@18
+  # set the current version of nodejs to 20.x
+  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+  $ rtx global --pin nodejs@20
 
   # show the current version of nodejs in ~/.tool-versions
   $ rtx global nodejs
-  18.0.0
+  20.0.0
 ```
 ### `rtx implode [OPTIONS]`
 
@@ -1795,7 +1795,7 @@ Usage: install [OPTIONS] [RUNTIME]...
 
 Arguments:
   [RUNTIME]...
-          Tool version(s) to install e.g.: nodejs@18
+          Tool version(s) to install e.g.: nodejs@20
 
 Options:
   -p, --plugin <PLUGIN>
@@ -1808,8 +1808,8 @@ Options:
           Show installation output
 
 Examples:
-  $ rtx install nodejs@18.0.0  # install specific nodejs version
-  $ rtx install nodejs@18      # install fuzzy nodejs version
+  $ rtx install nodejs@20.0.0  # install specific nodejs version
+  $ rtx install nodejs@20      # install fuzzy nodejs version
   $ rtx install nodejs         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
@@ -1825,8 +1825,8 @@ Arguments:
           Runtime to get the latest version of
 
 Examples:
-  $ rtx latest nodejs@18  # get the latest version of nodejs 18
-  18.0.0
+  $ rtx latest nodejs@20  # get the latest version of nodejs 20
+  20.0.0
 
   $ rtx latest nodejs     # get the latest stable version of nodejs
   20.0.0
@@ -1846,7 +1846,7 @@ Usage: local [OPTIONS] [RUNTIME]...
 Arguments:
   [RUNTIME]...
           Runtimes to add to .tool-versions/.rtx.toml
-          e.g.: nodejs@18
+          e.g.: nodejs@20
           if this is a single runtime with no version,
           the current value of .tool-versions/.rtx.toml will be displayed
 
@@ -1857,10 +1857,10 @@ Options:
 
       --pin
           Save exact version to `.tool-versions`
-          e.g.: `rtx local --pin nodejs@18` will save `nodejs 18.0.0` to .tool-versions
+          e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions
 
       --fuzzy
-          Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@18` will save `nodejs 18` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1
+          Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions
@@ -1869,23 +1869,23 @@ Options:
           Get the path of the config file
 
 Examples:
-  # set the current version of nodejs to 18.x for the current directory
-  # will use a precise version (e.g.: 18.0.0) in .tool-versions file
-  $ rtx local nodejs@18
+  # set the current version of nodejs to 20.x for the current directory
+  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+  $ rtx local nodejs@20
 
-  # set nodejs to 18.x for the current project (recurses up to find .tool-versions)
-  $ rtx local -p nodejs@18
+  # set nodejs to 20.x for the current project (recurses up to find .tool-versions)
+  $ rtx local -p nodejs@20
 
-  # set the current version of nodejs to 18.x for the current directory
-  # will use a fuzzy version (e.g.: 18) in .tool-versions file
-  $ rtx local --fuzzy nodejs@18
+  # set the current version of nodejs to 20.x for the current directory
+  # will use a fuzzy version (e.g.: 20) in .tool-versions file
+  $ rtx local --fuzzy nodejs@20
 
   # removes nodejs from .tool-versions
   $ rtx local --remove=nodejs
 
   # show the current version of nodejs in .tool-versions
   $ rtx local nodejs
-  18.0.0
+  20.0.0
 ```
 ### `rtx ls [OPTIONS]`
 
@@ -1909,24 +1909,24 @@ Options:
 
 Examples:
   $ rtx ls
-  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
   ⏵  python     3.11.0 (set by ~/.tool-versions)
      python     3.10.0
 
   $ rtx ls --current
-  ⏵  nodejs     18.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
   ⏵  python     3.11.0 (set by ~/.tool-versions)
 
   $ rtx ls --parseable
-  nodejs 18.0.0
+  nodejs 20.0.0
   python 3.11.0
 
   $ rtx ls --json
   {
     "nodejs": [
       {
-        "version": "18.0.0",
-        "install_path": "/Users/jdx/.rtx/installs/nodejs/18.0.0",
+        "version": "20.0.0",
+        "install_path": "/Users/jdx/.rtx/installs/nodejs/20.0.0",
         "source": {
           "type": ".rtx.toml",
           "path": "/Users/jdx/.rtx.toml"
@@ -1959,13 +1959,13 @@ Examples:
   18.0.0
   20.0.0
 
-  $ rtx ls-remote nodejs@18
-  18.0.0
-  18.1.0
+  $ rtx ls-remote nodejs@20
+  20.0.0
+  20.1.0
 
-  $ rtx ls-remote nodejs 18
-  18.0.0
-  18.1.0
+  $ rtx ls-remote nodejs 20
+  20.0.0
+  20.1.0
 ```
 ### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
 
@@ -1973,7 +1973,7 @@ Examples:
 Install a plugin
 
 note that rtx automatically can install plugins when you install a runtime
-e.g.: `rtx install nodejs@18` will autoinstall the nodejs plugin
+e.g.: `rtx install nodejs@20` will autoinstall the nodejs plugin
 
 This behavior can be modified in ~/.config/rtx/config.toml
 
@@ -2144,8 +2144,8 @@ Options:
 
 Examples:
   $ rtx prune --dry-run
-  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.0
-  rm -rf ~/.local/share/rtx/versions/nodejs/18.0.1
+  rm -rf ~/.local/share/rtx/versions/nodejs/20.0.0
+  rm -rf ~/.local/share/rtx/versions/nodejs/20.0.1
 ```
 ### `rtx reshim`
 
@@ -2161,7 +2161,7 @@ Examples:
   $ rtx settings set shims_dir ~/.rtx/shims
   $ rtx reshim
   $ ~/.rtx/shims/node -v
-  v18.0.0
+  v20.0.0
 ```
 ### `rtx self-update`
 
@@ -2263,9 +2263,9 @@ Options:
           Removes a previously set version
 
 Examples:
-  $ rtx shell nodejs@18
+  $ rtx shell nodejs@20
   $ node -v
-  v18.0.0
+  v20.0.0
 ```
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
@@ -2339,13 +2339,13 @@ Arguments:
 Examples:
   # Show the latest installed version of nodejs
   # If it is is not installed, errors
-  $ rtx where nodejs@18
-  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+  $ rtx where nodejs@20
+  /home/jdx/.local/share/rtx/installs/nodejs/20.0.0
 
   # Show the current, active install directory of nodejs
   # Errors if nodejs is not referenced in any .tool-version file
   $ rtx where nodejs
-  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+  /home/jdx/.local/share/rtx/installs/nodejs/20.0.0
 ```
 ### `rtx which [OPTIONS] <BIN_NAME>`
 
@@ -2367,10 +2367,10 @@ Options:
 
 Examples:
   $ rtx which node
-  /home/username/.local/share/rtx/installs/nodejs/18.0.0/bin/node
+  /home/username/.local/share/rtx/installs/nodejs/20.0.0/bin/node
   $ rtx which node --plugin
   nodejs
   $ rtx which node --version
-  18.0.0
+  20.0.0
 ```
 <!-- RTX:COMMANDS -->

@@ -27,14 +27,14 @@ Toolset {
                 (
                     Version(
                         "nodejs",
-                        "16",
+                        "18",
                     ),
                     {},
                 ),
                 (
                     Prefix(
                         "nodejs",
-                        "18",
+                        "20",
                     ),
                     {},
                 ),
@@ -48,7 +48,7 @@ Toolset {
                 (
                     Path(
                         "nodejs",
-                        "~/.nodes/14",
+                        "~/.nodes/18",
                     ),
                     {},
                 ),

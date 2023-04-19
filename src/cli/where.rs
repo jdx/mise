@@ -75,13 +75,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   # Show the latest installed version of nodejs
   # If it is is not installed, errors
-  $ <bold>rtx where nodejs@18</bold>
-  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+  $ <bold>rtx where nodejs@20</bold>
+  /home/jdx/.local/share/rtx/installs/nodejs/20.0.0
 
   # Show the current, active install directory of nodejs
   # Errors if nodejs is not referenced in any .tool-version file
   $ <bold>rtx where nodejs</bold>
-  /home/jdx/.local/share/rtx/installs/nodejs/18.0.0
+  /home/jdx/.local/share/rtx/installs/nodejs/20.0.0
 "#
 );
 

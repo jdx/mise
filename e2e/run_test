@@ -19,11 +19,11 @@ setup_env() {
 }
 
 setup_config_files() {
-  mkdir -p "$ROOT/e2e/cd/16"
+  mkdir -p "$ROOT/e2e/cd/18"
   cp "$ROOT/e2e/config/".e2e.* "$ROOT/e2e/"
   cp "$ROOT/e2e/config/"{.node-version,.alternate-tool-versions,.test-env} "$ROOT/e2e/"
   cp "$ROOT/e2e/config/cd/".e2e.* "$ROOT/e2e/cd/"
-  cp "$ROOT/e2e/config/cd/16/".e2e.* "$ROOT/e2e/cd/16"
+  cp "$ROOT/e2e/config/cd/18/".e2e.* "$ROOT/e2e/cd/18"
 }
 
 run_test() {

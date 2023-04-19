@@ -225,7 +225,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       - uses: actions/setup-node@v3
         with:
-          node-version: "18.x"
+          node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
       - name: Set AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
