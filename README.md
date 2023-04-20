@@ -146,6 +146,7 @@ v20.0.0
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear`](#rtx-cache-clear)
   - [`rtx completion [SHELL]`](#rtx-completion-shell)
+  - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
@@ -1599,6 +1600,35 @@ Examples:
   $ rtx completion bash > /etc/bash_completion.d/rtx
   $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
   $ rtx completion fish > ~/.config/fish/completions/rtx.fish
+```
+### `rtx current [PLUGIN]`
+
+```
+Shows current active and installed runtime versions
+
+This is similar to `rtx ls --current`, but this only shows the runtime
+and/or version. It's designed to fit into scripts more easily.
+
+Usage: current [PLUGIN]
+
+Arguments:
+  [PLUGIN]
+          Plugin to show versions of e.g.: ruby, nodejs
+
+Examples:
+  # outputs `.tool-versions` compatible format
+  $ rtx current
+  python 3.11.0 3.10.0
+  shfmt 3.6.0
+  shellcheck 0.9.0
+  nodejs 20.0.0
+
+  $ rtx current nodejs
+  20.0.0
+
+  # can output multiple versions
+  $ rtx current python
+  3.11.0 3.10.0
 ```
 ### `rtx deactivate`
 
