@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 646] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -126,6 +126,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
     ("ctlptl", "https://github.com/ezcater/asdf-ctlptl.git"),
     ("ctop", "https://github.com/NeoHsu/asdf-ctop.git"),
     ("cue", "https://github.com/asdf-community/asdf-cue.git"),
+    ("cyclonedx", "https://github.com/xeedio/asdf-cyclonedx.git"),
     ("dagger", "https://github.com/virtualstaticvoid/asdf-dagger.git"),
     ("dart", "https://github.com/PatOConnor43/asdf-dart.git"),
     ("dasel", "https://github.com/asdf-community/asdf-dasel.git"),
@@ -186,6 +187,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
     ("firebase", "https://github.com/jthegedus/asdf-firebase.git"),
     ("fission", "https://github.com/virtualstaticvoid/asdf-fission.git"),
     ("flarectl", "https://github.com/ORCID/asdf-flarectl.git"),
+    ("flatc", "https://github.com/TheOpenDictionary/asdf-flatc.git"),
     ("flutter", "https://github.com/oae/asdf-flutter.git"),
     ("flux2", "https://github.com/tablexi/asdf-flux2.git"),
     ("fluxctl", "https://github.com/stefansedich/asdf-fluxctl.git"),
@@ -422,6 +424,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
     ("oci", "https://github.com/yasn77/asdf-oci.git"),
     ("odin", "https://github.com/jtakakura/asdf-odin"),
     ("odo", "https://github.com/rm3l/asdf-odo.git"),
+    ("okta-aws-cli", "https://github.com/bennythejudge/asdf-plugin-okta-aws-cli.git"),
     ("okteto", "https://github.com/BradenM/asdf-okteto"),
     ("om", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("opa", "https://github.com/tochukwuvictor/asdf-opa.git"),
@@ -512,6 +515,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 642] = [
     ("skaffold", "https://github.com/nklmilojevic/asdf-skaffold.git"),
     ("skate", "https://github.com/chessmango/asdf-skate.git"),
     ("sloth", "https://github.com/slok/asdf-sloth.git"),
+    ("smithy", "https://github.com/aws/asdf-smithy.git"),
     ("smlnj", "https://github.com/samontea/asdf-smlnj.git"),
     ("snyk", "https://github.com/nirfuchs/asdf-snyk.git"),
     ("soft-serve", "https://github.com/chessmango/asdf-soft-serve.git"),
