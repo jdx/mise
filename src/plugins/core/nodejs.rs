@@ -87,6 +87,10 @@ impl NodeJSPlugin {
         Ok(versions)
     }
 
+    fn node_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join("bin/node")
+    }
+
     fn npm_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/npm")
     }
@@ -114,6 +118,12 @@ impl NodeJSPlugin {
             cmd.execute()?;
         }
         Ok(())
+    }
+
+    fn test_node(&self, config: &&Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        let mut cmd = CmdLineRunner::new(&config.settings, self.node_path(tv));
+        cmd.with_pr(pr).arg("-v");
+        cmd.execute()
     }
 }
 
@@ -177,6 +187,7 @@ impl Plugin for NodeJSPlugin {
         }
         cmd.arg(tv.install_path());
         cmd.execute()?;
+        self.test_node(&config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
     }

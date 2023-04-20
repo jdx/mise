@@ -142,6 +142,12 @@ impl PythonPlugin {
         let symlink_target = symlink.read_link().unwrap_or_default();
         Ok(symlink_target == target)
     }
+
+    fn test_python(&self, config: &&Config, tv: &ToolVersion) -> Result<()> {
+        let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv));
+        cmd.arg("--version");
+        cmd.execute()
+    }
 }
 
 impl Plugin for PythonPlugin {
@@ -194,6 +200,7 @@ impl Plugin for PythonPlugin {
             }
         }
         cmd.execute()?;
+        self.test_python(&config, tv)?;
         self.get_virtualenv(config, tv, Some(pr))?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
