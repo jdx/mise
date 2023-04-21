@@ -8,15 +8,15 @@ Please open a ticket or send me an email if you have thoughts on how rtx can be 
 ## Core CLI Security
 
 Development of the "core CLI" is done on jdxcode/rtx which only a single developer (me, @jdxcode) has access to.
-Other contributors may only submit contributions via public Pull Requests. By reducing the number
-of developers with access down to 1 reduces the chance of keys being leaked greatly.
+Other contributors may only submit contributions via public Pull Requests. Reducing the number
+of developers with access down to 1 minimizes the chance of keys being leaked.
 
 This does create a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I suddenly died one day
 or otherwise wasn't able to continue development at all there are some successors listed in my GitHub account
 that can take over my account if need be.
 
-The dependencies in the core CLI are a security vector. I've tried to be reasonably judicious about what dependencies
-to allow into the project. I only select dependencies with broad usage across the Rust community where possible.
+The dependencies in the core CLI are a security vector. I've tried to be judicious about what dependencies make it into
+the project. I only select dependencies with broad usage across the Rust community where possible.
 I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
 rtx more secure.
 
@@ -31,7 +31,7 @@ to reduce the surface area for security reasons.
 
 Plugins are by far the biggest source of potential problems and where the most work still needs to be made.
 
-Eventually we will have 3 types of plugins:
+There are 3 types of plugins:
 
 * [core](https://github.com/jdxcode/rtx/issues/236) - plugins that are hardcoded into the CLI. These will be
 official plugins for the most common languages. Currently, these are only used when "experimental" is enabled.
@@ -42,7 +42,7 @@ dedicated owners/collaborators. If you'd like your plugin to be moved here, ask 
 secure than installing any random tool from the internet.
 
 Just because a plugin is inside of the shorthand registry (so you can run `rtx install foo@`, does not mean
-I vouch for it. I have no idea who almost anyone that builds those plugins is. If it's coming from the rtx-plugins
+I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the rtx-plugins
 GitHub org, you can have more trust in it. (See the owners with `rtx plugins ls-remote --urls`).
 
 Over time we should be able to move more plugins into being fully maintained by rtx. I plan to add an
