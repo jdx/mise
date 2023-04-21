@@ -14,6 +14,7 @@ use crate::env::{
 };
 use crate::file::create_dir_all;
 use crate::git::Git;
+use crate::lock_file::LockFile;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
@@ -46,11 +47,20 @@ impl NodeJSPlugin {
         self.node_build_path().join("bin/node-build")
     }
     fn install_or_update_node_build(&self) -> Result<()> {
+        let _lock = self.lock_node_build();
         if self.node_build_path().exists() {
             self.update_node_build()
         } else {
             self.install_node_build()
         }
+    }
+
+    fn lock_node_build(&self) -> Result<fslock::LockFile, std::io::Error> {
+        LockFile::new(&self.node_build_path())
+            .with_callback(|l| {
+                trace!("install_or_update_node_build {}", l.display());
+            })
+            .lock()
     }
     fn install_node_build(&self) -> Result<()> {
         if self.node_build_path().exists() {

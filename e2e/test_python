@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+export RTX_EXPERIMENTAL=1
+export RTX_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
+
+rtx i python@3.11
+assert_contains "rtx x python@3.11 -- python --version" "Python 3.11"

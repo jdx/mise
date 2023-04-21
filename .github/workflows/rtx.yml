@@ -36,8 +36,13 @@ jobs:
       - run: cargo deny check
 
   coverage:
+    name: coverage-${{matrix.tranche}}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche: [0, 1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -45,6 +50,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: coverage
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
@@ -57,6 +63,8 @@ jobs:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
           RTX_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          TEST_TRANCHE: ${{matrix.tranche}}
+          TEST_TRANCHE_COUNT: 4
         with:
           timeout_minutes: 20
           max_attempts: 3
