@@ -324,3 +324,9 @@ impl Tool {
         Ok(lock)
     }
 }
+
+impl PartialEq for Tool {
+    fn eq(&self, other: &Self) -> bool {
+        self.plugin_path == other.plugin_path
+    }
+}

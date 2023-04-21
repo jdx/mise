@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;
+use itertools::Itertools;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -200,10 +201,21 @@ impl Install {
         mpr: &MultiProgressReport,
         tool_versions: Vec<(Arc<Tool>, ToolVersion)>,
     ) -> Result<()> {
-        tool_versions
-            .into_par_iter()
+        let grouped_tool_versions: Vec<(Arc<Tool>, Vec<ToolVersion>)> = tool_versions
+            .into_iter()
             .filter(|(t, tv)| !t.is_version_installed(tv))
-            .map(|(plugin, tv)| self.install_version(config, &plugin, &tv, mpr.add()))
+            .group_by(|(t, _)| t.clone())
+            .into_iter()
+            .map(|(t, tvs)| (t, tvs.map(|(_, tv)| tv).collect()))
+            .collect();
+        grouped_tool_versions
+            .into_par_iter()
+            .map(|(tool, versions)| {
+                for tv in versions {
+                    self.install_version(config, &tool, &tv, mpr.add())?;
+                }
+                Ok(())
+            })
             .collect::<Result<Vec<_>>>()?;
         Ok(())
     }
