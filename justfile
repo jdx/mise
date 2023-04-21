@@ -55,18 +55,19 @@ test-coverage:
 
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
-    cargo test
     cargo build --all-features
     ./e2e/run_all_tests
-    rtx trust
-    RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
-    y
+    if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
+        cargo test
+        rtx trust
+        rtx implode
+    elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
+        rtx trust
+        RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
+        y
     EOF
-    cargo build
-    rtx implode
-    cargo llvm-cov report --html
+    fi
     cargo llvm-cov report --lcov --output-path lcov.info
-    cargo llvm-cov report
 
 # delete built files
 clean:

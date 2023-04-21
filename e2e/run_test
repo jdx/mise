@@ -29,7 +29,9 @@ setup_config_files() {
 run_test() {
   echo "Running $TEST"
   rm -f "$RTX_CONFIG_FILE"
+  rtx trust "$ROOT/e2e/.e2e.rtx.toml" >/dev/null
   cd "$(dirname "$TEST")"
+
   "./$(basename "$TEST")"
 }
 
