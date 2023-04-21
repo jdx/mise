@@ -170,6 +170,21 @@ impl Plugin for NodeJSPlugin {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
+    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+        Ok(vec![vec![self.name.clone(), "nodebuild".into()]])
+    }
+
+    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
+        match command {
+            "nodebuild" => {
+                self.install_or_update_node_build()?;
+                cmd::cmd(self.node_build_bin(), args).run()?;
+            }
+            _ => unreachable!(),
+        }
+        exit(0);
+    }
+
     fn install_version(
         &self,
         config: &Config,
@@ -200,20 +215,5 @@ impl Plugin for NodeJSPlugin {
         self.test_node(&config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
-    }
-
-    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
-        Ok(vec![vec![self.name.clone(), "nodebuild".into()]])
-    }
-
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
-        match command {
-            "nodebuild" => {
-                self.install_or_update_node_build()?;
-                cmd::cmd(self.node_build_bin(), args).run()?;
-            }
-            _ => unreachable!(),
-        }
-        exit(0);
     }
 }
