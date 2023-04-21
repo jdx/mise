@@ -324,6 +324,7 @@ fn load_core_tools(settings: &Settings) -> ToolMap {
     let tools: Vec<Box<dyn Plugin>> = vec![
         Box::new(PythonPlugin::new(settings, "python".to_string())),
         Box::new(NodeJSPlugin::new(settings, "nodejs".to_string())),
+        Box::new(NodeJSPlugin::new(settings, "node".to_string())),
     ];
     ToolMap::from_iter(tools.into_iter().map(|plugin| {
         (
