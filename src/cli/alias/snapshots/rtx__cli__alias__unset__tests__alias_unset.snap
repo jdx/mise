@@ -2,6 +2,15 @@
 source: src/cli/alias/unset.rs
 expression: output
 ---
+node                 lts                  18
+node                 lts/argon            4
+node                 lts/boron            6
+node                 lts/carbon           8
+node                 lts/dubnium          10
+node                 lts/erbium           12
+node                 lts/fermium          14
+node                 lts/gallium          16
+node                 lts/hydrogen         18
 nodejs               lts                  18
 nodejs               lts/argon            4
 nodejs               lts/boron            6
