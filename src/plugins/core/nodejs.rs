@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::env::{join_paths, split_paths};
+use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::Duration;
@@ -130,8 +131,19 @@ impl NodeJSPlugin {
         Ok(())
     }
 
-    fn test_node(&self, config: &&Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn install_npm_shim(&self, tv: &ToolVersion) -> Result<()> {
+        fs::write(self.npm_path(tv), include_str!("assets/nodejs_npm_shim"))?;
+        Ok(())
+    }
+
+    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         let mut cmd = CmdLineRunner::new(&config.settings, self.node_path(tv));
+        cmd.with_pr(pr).arg("-v");
+        cmd.execute()
+    }
+
+    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        let mut cmd = CmdLineRunner::new(&config.settings, self.npm_path(tv));
         cmd.with_pr(pr).arg("-v");
         cmd.execute()
     }
@@ -212,7 +224,9 @@ impl Plugin for NodeJSPlugin {
         }
         cmd.arg(tv.install_path());
         cmd.execute()?;
-        self.test_node(&config, tv, pr)?;
+        self.test_node(config, tv, pr)?;
+        self.install_npm_shim(tv)?;
+        self.test_npm(config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
     }
