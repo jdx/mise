@@ -62,13 +62,11 @@ Type "http rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx" Enter Sleep 2s
 Type "chmod +x ~/bin/rtx" Sleep 1s Enter Sleep 1s
 Type "rtx -v" Sleep 1s Enter Sleep 1s
 Type 'eval "$(rtx activate bash)"' Sleep 1s Enter Sleep 2s
-Type "rtx install node@lts" Sleep 2s Enter Sleep 8s
-Type "rtx global node@lts" Sleep 2s Enter Sleep 3s
+Type "rtx use -g node@lts" Sleep 2s Enter Sleep 3s
 Type "node -v" Sleep 1s Enter Sleep 3s
 Type "which node" Sleep 1s Enter Sleep 5s
 Type "cd ~/myproj" Sleep 1s Enter Sleep 1s
-Type "rtx install node@19" Sleep 2s Enter Sleep 8s
-Type "rtx local node@19" Sleep 2s Enter Sleep 2s
+Type "rtx use node@19" Sleep 2s Enter Sleep 2s
 Type "node -v" Sleep 1s Enter Sleep 3s
 Type "cd .." Sleep 1s Enter Sleep 2s
 Type "node -v" Sleep 1s Enter Sleep 3s

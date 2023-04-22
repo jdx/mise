@@ -73,9 +73,6 @@ Exports env vars to activate rtx a single time
 rtx\-exec(1)
 Execute a command with runtime(s) set
 .TP
-rtx\-global(1)
-Sets/gets the global runtime version(s)
-.TP
 rtx\-implode(1)
 Removes rtx CLI and all related data
 .TP
@@ -84,9 +81,6 @@ Install a tool version
 .TP
 rtx\-latest(1)
 Gets the latest available version for a plugin
-.TP
-rtx\-local(1)
-Sets/gets tool version in local .tool\-versions or .rtx.toml
 .TP
 rtx\-ls(1)
 List installed and/or currently selected tool versions
@@ -118,6 +112,9 @@ Marks a config file as trusted
 rtx\-uninstall(1)
 Removes runtime versions
 .TP
+rtx\-use(1)
+Change the active version of a tool. This will install the tool if it is not already installed.
+.TP
 rtx\-version(1)
 Show rtx version
 .TP
@@ -135,10 +132,10 @@ Examples:
   $ rtx install node@20.0         Install a version matching a prefix
   $ rtx install node              Install the node version defined in
                                   .tool\-versions or .rtx.toml
-  $ rtx local node@20             Use node\-20.x in current project
-  $ rtx global node@20            Use node\-20.x as default
-  $ rtx local node@latest         Use latest node in current directory
-  $ rtx global node@system        Use system node everywhere unless overridden
+  $ rtx use node@20               Use node\-20.x in current project
+  $ rtx use \-g node@20            Use node\-20.x as default
+  $ rtx use node@latest           Use latest node in current directory
+  $ rtx use \-g node@system        Use system node everywhere unless overridden
   $ rtx x node@20 \-\- node app.js  Run `node app.js` with PATH pointing to
                                   node\-20.x
 .SH VERSION

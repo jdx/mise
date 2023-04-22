@@ -163,7 +163,7 @@ fn err_no_version_set(bin_name: &str, tvs: Vec<ToolVersion>) -> Result<()> {
     let mut msg = format!("No version is set for shim: {}\n", bin_name);
     msg.push_str("Set a global default version with one of the following:\n");
     for tv in tvs {
-        msg.push_str(&format!("rtx global {}@{}\n", tv.plugin_name, tv.version));
+        msg.push_str(&format!("rtx use -g {}@{}\n", tv.plugin_name, tv.version));
     }
     Err(eyre!(msg.trim().to_string()))
 }

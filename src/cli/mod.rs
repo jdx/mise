@@ -41,6 +41,7 @@ mod settings;
 mod shell;
 mod trust;
 mod uninstall;
+mod r#use;
 pub mod version;
 mod r#where;
 mod r#which;
@@ -80,6 +81,7 @@ pub enum Commands {
     Shell(shell::Shell),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
+    Use(r#use::Use),
     Version(version::Version),
     Where(r#where::Where),
     Which(which::Which),
@@ -119,6 +121,7 @@ impl Commands {
             Self::Shell(cmd) => cmd.run(config, out),
             Self::Trust(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
+            Self::Use(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),
             Self::Which(cmd) => cmd.run(config, out),
@@ -247,10 +250,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx install node@20.0</bold>         Install a version matching a prefix
   $ <bold>rtx install node</bold>              Install the node version defined in
                                   .tool-versions or .rtx.toml
-  $ <bold>rtx local node@20</bold>             Use node-20.x in current project
-  $ <bold>rtx global node@20</bold>            Use node-20.x as default
-  $ <bold>rtx local node@latest</bold>         Use latest node in current directory
-  $ <bold>rtx global node@system</bold>        Use system node everywhere unless overridden
+  $ <bold>rtx use node@20</bold>               Use node-20.x in current project
+  $ <bold>rtx use -g node@20</bold>            Use node-20.x as default
+  $ <bold>rtx use node@latest</bold>           Use latest node in current directory
+  $ <bold>rtx use -g node@system</bold>        Use system node everywhere unless overridden
   $ <bold>rtx x node@20 -- node app.js</bold>  Run `node app.js` with PATH pointing to
                                   node-20.x
 "#
