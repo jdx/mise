@@ -69,7 +69,6 @@ v20.0.0
 - [30 Second Demo](#30-second-demo)
 - [Quickstart](#quickstart)
 - [About](#about)
-  - [What do I use this for?](#what-do-i-use-this-for)
   - [How it works](#how-it-works)
   - [Common commands](#common-commands)
 - [Installation](#installation)
@@ -93,10 +92,10 @@ v20.0.0
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
-  - [`.tool-versions`](#tool-versions)
+  - [`.rtx.toml`](#rtxtoml)
   - [Legacy version files](#legacy-version-files)
+  - [`.tool-versions`](#tool-versions)
   - [Global config: `~/.config/rtx/config.toml`](#global-config-configrtxconfigtoml)
-  - [[experimental] `.rtx.toml`](#experimental-rtxtoml)
   - [Environment variables](#environment-variables)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
@@ -193,21 +192,9 @@ rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecos
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
 For more on how rtx compares to asdf, [see below](#comparison-to-asdf).
 
-It uses the same `.tool-versions` file that asdf uses. It's also compatible with idiomatic version
-files like `.node-version` and `.ruby-version`. See [Legacy Version Files](#legacy-version-files) below.
-
-### What do I use this for?
-
-Typically, developers would use rtx to manage versions of their dev tools for _local_ development.
-The main purpose of using rtx is being able to have different versions of languages for different projects
-on the same machine. (For example, one project might require python-3.10 and another python-3.11).
-
-Using rtx in production is less common but still a supported use-case. Usually a production setup
-won't have different directories for different projects with different dev tool requirements.
-That said, using `.tool-versions`/`.rtx.toml` config in production provides parity with local
-development
-so rtx is still definitely useful in production setups. See the [GitHub Action](#github-actions) for
-an example of using rtx in production.
+rtx can be configured in many ways. The most typical is by `.rtx.toml`, but it's also compatible
+with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
+`.ruby-version`. See [Configuration](#configuration) for more.
 
 ### How it works
 
@@ -216,7 +203,7 @@ environment variable to point your shell to the correct runtime binaries. When y
 directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
 appropriate tool versions in `PATH`.
 
-After activating, every time your prompt starts it will call `rtx hook-env` to fetch new
+After activating, every time your prompt displays it will call `rtx hook-env` to fetch new
 environment variables.
 This should be very fast. It exits early if the directory wasn't changed or `.tool-versions`/`.rtx.toml` files haven't been modified.
 
@@ -236,7 +223,7 @@ See [plugins](#plugins) below.
     rtx use node@20          Use node-20.x in current project
     rtx use -g node@20       Use node-20.x as global default
 
-    rtx install node         Install the version specified in .tool-versions
+    rtx install node         Install the current version specified in .tool-versions/.rtx.toml
     rtx use node@latest      Use latest node in current directory
     rtx use -g node@system   Use system node as global default
 
@@ -509,120 +496,16 @@ This can also be useful in environments where rtx isn't activated
 
 ## Configuration
 
-### `.tool-versions`
+### `.rtx.toml`
 
-The `.tool-versions` file is used to specify the runtime versions for a project. An example of this
-is:
-
-```
-node      20.0.0       # comments are allowed
-ruby        3            # can be fuzzy version
-shellcheck  latest       # also supports "latest"
-jq          1.6
-erlang      ref:master   # compile from vcs ref
-golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
-shfmt       path:./shfmt # use a custom runtime
-node      lts          # use lts version of node (not supported by all plugins)
-
-# The following syntax is experimental and subject to change
-node      lts!-2       # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
-python      latest!-0.1  # install python-3.10 if the latest is 3.11
-```
-
-See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
-
-### Legacy version files
-
-rtx supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
-and `.python-version`. These are ideal for setting the runtime version of a project without forcing
-other developers to use a specific tool like rtx/asdf.
-
-They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
-in rtx and nvm. Here are some of the supported legacy version files:
-
-| Plugin     | "Legacy" (Idiomatic) Files                         |
-|------------| -------------------------------------------------- |
-| crystal    | `.crystal-version`                                 |
-| elixir     | `.exenv-version`                                   |
-| golang     | `.go-version`, `go.mod`                            |
-| java       | `.java-version`                                    |
-| node       | `.nvmrc`, `.node-version`                          |
-| python     | `.python-version`                                  |
-| ruby       | `.ruby-version`, `Gemfile`                         |
-| terraform  | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn       | `.yarnrc`                                          |
-
-In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
-There is a performance cost to having these when they're parsed as it's performed by the plugin in
-`bin/parse-version-file`. However these are [cached](#cache-behavior) so it's not a huge deal.
-You may not even notice.
-
-> **Note**
->
-> asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
-> that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-> version files since they're version files not specific to asdf/rtx and can be used by other tools.
-> (`.nvmrc` being a notable exception, which is tied to a specific tool.)
-
-### Global config: `~/.config/rtx/config.toml`
-
-rtx can be configured in `~/.config/rtx/config.toml`. The following options are available:
-
-```toml
-[tools]
-# global tool versions go here
-node = 'lts'
-python = ['3.10', '3.11']
-
-[settings]
-# whether to prompt to install plugins and runtimes if they're not already installed
-missing_runtime_behavior = 'warn' # other options: 'ignore', 'warn', 'prompt', 'autoinstall'
-
-# plugins can read the versions files used by other version managers (if enabled by the plugin)
-# for example, .nvmrc in the case of node's nvm
-legacy_version_file = true         # enabled by default (different than asdf)
-
-# configure `rtx install` to always keep the downloaded archive
-always_keep_download = false        # deleted after install by default
-
-# configure how frequently (in minutes) to fetch updated plugin repository changes
-# this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
-plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
-
-# config files with these prefixes will be trusted by default
-trusted_config_paths = [
-    '~/work/my-trusted-projects',
-]
-
-verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
-asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
-jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
-raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
-
-shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
-disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
-
-experimental = false # enable experimental features
-log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
-
-[alias.node]
-my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20.x
-                       # this can also be specified in a plugin (see below in "Aliases")
-```
-
-These settings can also be managed with `rtx settings ls|get|set|unset`.
-
-### [experimental] `.rtx.toml`
-
-`.rtx.toml` is a new config file that replaces both the global config and the `.tool-versions`
-file. It allows for functionality that is not possible with `.tool-versions`, such as:
+`.rtx.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
+that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdxcode/rtx-python#virtualenv-support).
 - specifying custom plugin urls
 
-Here is what the `.rtx.toml` looks like:
+Here is what an `.rtx.toml` looks like:
 
 ```toml
 [env]
@@ -648,14 +531,34 @@ python = 'https://github.com/jdxcode/rtx-python'
 
 [settings] # project-local settings
 verbose = true
-missing_runtime_behavior = 'warn'
 
 [alias.node] # project-local aliases
 my_custom_node = '20'
 ```
 
-`.rtx.toml` is currently experimental and may change in minor versions of rtx. It does not
-require setting `experimental = true` to use, however.
+`.rtx.toml` files are hierarchical. The configuration in a file in the current directory will
+override conflicting configuration in parent directories. For example, if `~/src/myproj/.rtx.toml`
+defines the following:
+
+```toml
+[tools]
+node = '20'
+python = '3.10'
+```
+
+And `~/src/myproj/backend/.rtx.toml` defines:
+
+```toml
+[tools]
+node = '18'
+ruby = '3.1'
+```
+
+Then when inside of `~/src/myproj/backend`, `node` will be `18`, `python` will be `3.10`, and `ruby`
+will be `3.1`. You can check the active versions with `rtx ls --current`.
+
+You can also have environment specific config files like `.rtx.production.toml`, see
+[Config Environments](#experimental-config-environments) for more details.
 
 #### `[env]` - Arbitrary Environment Variables
 
@@ -700,18 +603,115 @@ _Note: `env_file` goes at the top of the file, above `[env]`._
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
+### Legacy version files
+
+rtx supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
+and `.python-version`. These are ideal for setting the runtime version of a project without forcing
+other developers to use a specific tool like rtx/asdf.
+
+They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
+in rtx and nvm. Here are some of the supported legacy version files:
+
+| Plugin     | "Legacy" (Idiomatic) Files                         |
+|------------| -------------------------------------------------- |
+| crystal    | `.crystal-version`                                 |
+| elixir     | `.exenv-version`                                   |
+| golang     | `.go-version`, `go.mod`                            |
+| java       | `.java-version`                                    |
+| node       | `.nvmrc`, `.node-version`                          |
+| python     | `.python-version`                                  |
+| ruby       | `.ruby-version`, `Gemfile`                         |
+| terraform  | `.terraform-version`, `.packer-version`, `main.tf` |
+| yarn       | `.yarnrc`                                          |
+
+In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
+There is a performance cost to having these when they're parsed as it's performed by the plugin in
+`bin/parse-version-file`. However these are [cached](#cache-behavior) so it's not a huge deal.
+You may not even notice.
+
+> **Note**
+>
+> asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
+> that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
+> version files since they're version files not specific to asdf/rtx and can be used by other tools.
+> (`.nvmrc` being a notable exception, which is tied to a specific tool.)
+
+### `.tool-versions`
+
+The `.tool-versions` file is asdf's config file and it can be used in rtx just like `.rtx.toml`.
+It isn't as flexible so it's recommended to use `.rtx.toml` instead. It can be useful if you
+already have a lot of `.tool-versions` files or work on a team that uses asdf.
+
+Here is an example with all the supported syntax:
+
+```
+node        20.0.0       # comments are allowed
+ruby        3            # can be fuzzy version
+shellcheck  latest       # also supports "latest"
+jq          1.6
+erlang      ref:master   # compile from vcs ref
+golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
+shfmt       path:./shfmt # use a custom runtime
+node        lts          # use lts version of node (not supported by all plugins)
+
+# The following syntax is experimental and subject to change
+node        lts!-2       # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
+python      latest!-0.1  # install python-3.10 if the latest is 3.11
+```
+
+See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
+
+### Global config: `~/.config/rtx/config.toml`
+
+rtx can be configured in `~/.config/rtx/config.toml`. It's like local `.rtx.toml` files except that
+it is used for all directories.
+
+```toml
+[tools]
+# global tool versions go here
+# you can set these with `rtx use -g`
+node = 'lts'
+python = ['3.10', '3.11']
+
+[settings]
+# plugins can read the versions files used by other version managers (if enabled by the plugin)
+# for example, .nvmrc in the case of node's nvm
+legacy_version_file = true         # enabled by default (different than asdf)
+
+# configure `rtx install` to always keep the downloaded archive
+always_keep_download = false        # deleted after install by default
+
+# configure how frequently (in minutes) to fetch updated plugin repository changes
+# this is updated whenever a new runtime is installed
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdxcode/rtx/issues/128)
+plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
+
+# config files with these prefixes will be trusted by default
+trusted_config_paths = [
+    '~/work/my-trusted-projects',
+]
+
+verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
+asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
+jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
+
+shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
+disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+
+experimental = false # enable experimental features
+log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
+
+[alias.node]
+my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20.x
+                       # this can also be specified in a plugin (see below in "Aliases")
+```
+
+These settings can also be managed with `rtx settings ls|get|set|unset`.
+
 ### Environment variables
 
 rtx can also be configured via environment variables. The following options are available:
-
-#### `RTX_MISSING_RUNTIME_BEHAVIOR`
-
-This is the same as the `missing_runtime_behavior` config option in `~/.config/rtx/config.toml`.
-
-```
-RTX_MISSING_RUNTIME_BEHAVIOR=ignore rtx install node@20
-RTX_NODE_VERSION=20 rtx exec -- node --version
-```
 
 #### `RTX_DATA_DIR`
 
@@ -839,8 +839,8 @@ Enables experimental features.
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for node@20.x.
-So you can use the runtime with `node lts/hydrogen` in `.tool-versions`.
+versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for node@20.x
+so you can use set it with `node lts/hydrogen` in `.tool-versions`/`.rtx.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
 
