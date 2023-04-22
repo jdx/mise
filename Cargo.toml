@@ -11,7 +11,7 @@ readme = "README.md"
 license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
-include = ["src/**/*.rs", "/build.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
+include = ["src/**/*.rs", "src/plugins/core/assets/**", "/build.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
 rust-version = "1.64.0"
 build = "build.rs"
 
