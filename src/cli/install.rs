@@ -27,7 +27,7 @@ use crate::ui::progress_report::ProgressReport;
 ///
 /// This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
 /// It won't be used simply by being installed, however.
-/// For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
+/// For that, you must set up a `.rtx.toml`/`.tool-version` file manually or with `rtx use`.
 /// Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
 /// Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`

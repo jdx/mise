@@ -58,9 +58,9 @@ jobs:
             command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
             command: |
-              rtx global erlang@latest
+              rtx use --global erlang@latest
               eval "$(rtx env bash)"
-              rtx global elixir@latest
+              rtx use --global elixir@latest
               eval "$(rtx env bash)"
               rtx exec -- elixir --version
           - plugin: golang

@@ -20,7 +20,7 @@ use crate::{dirs, env};
 ///
 /// Use `rtx local` to set a runtime version locally in the current directory.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "g", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, hide = true, alias = "g", after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
     /// Runtime(s) to add to .tool-versions
     /// e.g.: node@20
@@ -30,12 +30,12 @@ pub struct Global {
     runtime: Option<Vec<RuntimeArg>>,
 
     /// Save exact version to `~/.tool-versions`
-    /// e.g.: `rtx local --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+    /// e.g.: `rtx global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `~/.tool-versions`
-    /// e.g.: `rtx local --fuzzy node@20` will save `node 20` to ~/.tool-versions
+    /// e.g.: `rtx global --fuzzy node@20` will save `node 20` to ~/.tool-versions
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
