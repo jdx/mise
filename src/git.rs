@@ -1,7 +1,7 @@
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 
 use crate::cmd;
 use crate::file::touch_dir;
@@ -36,34 +36,23 @@ impl Git {
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.remote_default_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
-        if let Err(err) = cmd!(
-            "git",
-            "-C",
-            &self.dir,
+        self.run_git_command(&[
             "fetch",
             "--prune",
             "--update-head-ok",
             "origin",
-            format!("{}:{}", gitref, gitref),
-        )
-        .run()
-        {
-            debug!("failed to fetch: {:#}", err);
-        }
+            format!("{}:{}", gitref, gitref).as_str(),
+        ])?;
         let prev_rev = self.current_sha()?;
-        cmd!(
-            "git",
-            "-C",
-            &self.dir,
+        self.run_git_command(&[
             "-c",
             "advice.detachedHead=false",
             "-c",
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            gitref
-        )
-        .run()?;
+            gitref.as_str(),
+        ])?;
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
 
@@ -128,6 +117,31 @@ impl Git {
         match url.split_once('#') {
             Some((url, _ref)) => (url.to_string(), Some(_ref.to_string())),
             None => (url.to_string(), None),
+        }
+    }
+
+    pub fn run_git_command(&self, args: &[&str]) -> Result<()> {
+        let dir = self.dir.to_string_lossy();
+        let mut cmd_args = vec!["-C", &dir];
+        cmd_args.extend(args.iter().cloned());
+        match cmd::cmd("git", &cmd_args)
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run()
+        {
+            Ok(res) => {
+                if res.status.success() {
+                    Ok(())
+                } else {
+                    Err(eyre!(
+                        "git failed: {:?} {}",
+                        cmd_args,
+                        String::from_utf8(res.stdout).unwrap()
+                    ))
+                }
+            }
+            Err(err) => Err(eyre!("git failed: {:?} {:#}", cmd_args, err)),
         }
     }
 }

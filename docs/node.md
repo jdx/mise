@@ -15,14 +15,14 @@ default:
 
 ```sh-session
 $ rtx install node@20
-$ rtx global node@20
+$ rtx use -g node@20
 ```
 
 Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build) to install pre-compiled binaries and compile from source if necessary. You can check its [README](https://github.com/nodenv/node-build/blob/master/README.md) for additional settings and some troubleshooting.
 
 
 ```sh-session
-$ rtx global node@18 node@20
+$ rtx use -g node@18 node@20
 $ node -V
 18.0.0
 $ node.11 -V
