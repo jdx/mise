@@ -2229,8 +2229,9 @@ Examples:
 ### `rtx use [OPTIONS] [TOOL]...`
 
 ```
-Change the active version of a tool. This will install the tool if it is not already installed.
+Change the active version of a tool locally or globally.
 
+This will install the tool if it is not already installed.
 By default, this will use an `.rtx.toml` file in the current directory.
 Use the --global flag to use the global config file instead.
 This replaces asdf's `local` and `global` commands, however those are still available in rtx.
