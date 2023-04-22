@@ -16,9 +16,9 @@ _rtx() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -47,11 +47,11 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate the script for]:SHELL:(bash fish nu xonsh zsh)' \
 '--shell=[Shell type to generate the script for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
 '-q[noop]' \
 '--quiet[noop]' \
 '--debug[Sets log level to debug]' \
@@ -73,9 +73,9 @@ _arguments "${_arguments_options[@]}" \
 '-p+[filter aliases by plugin]:PLUGIN: ' \
 '--plugin=[filter aliases by plugin]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -101,9 +101,9 @@ Sets --jobs=1]' \
             (get)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -125,9 +125,9 @@ _arguments "${_arguments_options[@]}" \
 '-p+[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '--plugin=[Show aliases for <PLUGIN>]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -145,9 +145,9 @@ Sets --jobs=1]' \
 (set)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -168,9 +168,9 @@ Sets --jobs=1]' \
 (unset)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -230,9 +230,9 @@ esac
 (asdf)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -251,9 +251,9 @@ Sets --jobs=1]' \
 (bin-paths)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -271,9 +271,9 @@ Sets --jobs=1]' \
 (cache)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -299,9 +299,9 @@ Sets --jobs=1]' \
             (clear)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -349,9 +349,9 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate completions for]:SHELL_TYPE:(bash elvish fish powershell zsh)' \
 '--shell=[Shell type to generate completions for]:SHELL_TYPE:(bash elvish fish powershell zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -370,9 +370,9 @@ Sets --jobs=1]' \
 (current)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -391,9 +391,9 @@ Sets --jobs=1]' \
 (deactivate)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -411,9 +411,9 @@ Sets --jobs=1]' \
 (direnv)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -439,9 +439,9 @@ Sets --jobs=1]' \
             (envrc)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -459,9 +459,9 @@ Sets --jobs=1]' \
 (exec)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -479,9 +479,9 @@ Sets --jobs=1]' \
 (activate)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -535,9 +535,9 @@ esac
 (doctor)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -557,9 +557,9 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate environment variables for]:SHELL:(bash fish nu xonsh zsh)' \
 '--shell=[Shell type to generate environment variables for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -581,9 +581,9 @@ _arguments "${_arguments_options[@]}" \
 '()--command=[Command string to execute]:C:_cmdstring' \
 '--cd=[Change to this directory before executing the command]:CD:_files -/' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -603,14 +603,14 @@ Sets --jobs=1]' \
 _arguments "${_arguments_options[@]}" \
 '*--remove=[Remove the plugin(s) from ~/.tool-versions]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'--pin[Save exact version to `~/.tool-versions`
-e.g.: `rtx local --pin node@20` will save `node 20.0.0` to ~/.tool-versions]' \
-'--fuzzy[Save fuzzy version to `~/.tool-versions`
-e.g.: `rtx local --fuzzy node@20` will save `node 20` to ~/.tool-versions
+'--pin[Save exact version to \`~/.tool-versions\`
+e.g.\: \`rtx local --pin node@20\` will save \`node 20.0.0\` to ~/.tool-versions]' \
+'--fuzzy[Save fuzzy version to \`~/.tool-versions\`
+e.g.\: \`rtx local --fuzzy node@20\` will save \`node 20\` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the global config file]' \
 '--debug[Sets log level to debug]' \
@@ -635,11 +635,11 @@ _arguments "${_arguments_options[@]}" \
 '-s+[Shell type to generate script for]:SHELL:(bash fish nu xonsh zsh)' \
 '--shell=[Shell type to generate script for]:SHELL:(bash fish nu xonsh zsh)' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'--status[Show "rtx: <PLUGIN>@<VERSION>" message when changing directories]' \
+'--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
@@ -656,9 +656,9 @@ Sets --jobs=1]' \
 (implode)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--config[Also remove config directory]' \
 '--dry-run[List directories that would be removed without actually removing them]' \
@@ -680,9 +680,9 @@ _arguments "${_arguments_options[@]}" \
 '()*-p+[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
 '()*--plugin=[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Force reinstall even if already installed]' \
 '--force[Force reinstall even if already installed]' \
@@ -705,9 +705,9 @@ Sets --jobs=1]' \
 (latest)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -728,17 +728,17 @@ Sets --jobs=1]' \
 _arguments "${_arguments_options[@]}" \
 '*--remove=[Remove the plugin(s) from .tool-versions]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-p[Recurse up to find a .tool-versions file rather than using the current directory only
-by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
+by default this command will only set the runtime in the current directory ("\$PWD/.tool-versions")]' \
 '--parent[Recurse up to find a .tool-versions file rather than using the current directory only
-by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")]' \
-'--pin[Save exact version to `.tool-versions`
-e.g.: `rtx local --pin node@20` will save `node 20.0.0` to .tool-versions]' \
-'--fuzzy[Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
+by default this command will only set the runtime in the current directory ("\$PWD/.tool-versions")]' \
+'--pin[Save exact version to \`.tool-versions\`
+e.g.\: \`rtx local --pin node@20\` will save \`node 20.0.0\` to .tool-versions]' \
+'--fuzzy[Save fuzzy version to \`.tool-versions\` e.g.\: \`rtx local --fuzzy node@20\` will save \`node 20\` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the config file]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -762,9 +762,9 @@ _arguments "${_arguments_options[@]}" \
 '-p+[Only show tool versions from \[PLUGIN\]]:PLUGIN: ' \
 '--plugin=[Only show tool versions from \[PLUGIN\]]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
 '--current[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
@@ -789,9 +789,9 @@ Sets --jobs=1]' \
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -812,9 +812,9 @@ same as the first argument after the "@":' \
 (plugins)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-a[list all available remote plugins]' \
 '--all[list all available remote plugins]' \
@@ -848,18 +848,18 @@ Sets --jobs=1]' \
             (install)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Reinstall even if plugin exists]' \
 '--force[Reinstall even if plugin exists]' \
 '(-f --force)-a[Install all missing plugins
 This will only install plugins that have matching shorthands.
-i.e.: they don'\''t need the full git repo url]' \
+i.e.\: they don'\''t need the full git repo url]' \
 '(-f --force)--all[Install all missing plugins
 This will only install plugins that have matching shorthands.
-i.e.: they don'\''t need the full git repo url]' \
+i.e.\: they don'\''t need the full git repo url]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '--debug[Sets log level to debug]' \
@@ -881,9 +881,9 @@ Can specify multiple plugins\: `rtx plugins install node ruby python`:' \
 (link)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Overwrite existing plugin]' \
 '--force[Overwrite existing plugin]' \
@@ -907,22 +907,22 @@ e.g.\: ./rtx-node:_files -/' \
 (ls)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-a[List all available remote plugins
-Same as `rtx plugins ls-remote`]' \
+Same as \`rtx plugins ls-remote\`]' \
 '--all[List all available remote plugins
-Same as `rtx plugins ls-remote`]' \
+Same as \`rtx plugins ls-remote\`]' \
 '-c[The built-in plugins only
 Normally these are not shown]' \
 '--core[The built-in plugins only
 Normally these are not shown]' \
 '-u[Show the git url for each plugin
-e.g.: https://github.com/asdf-vm/asdf-node.git]' \
+e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
 '--urls[Show the git url for each plugin
-e.g.: https://github.com/asdf-vm/asdf-node.git]' \
+e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
@@ -939,12 +939,12 @@ Sets --jobs=1]' \
 (ls-remote)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
-'-u[Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git]' \
-'--urls[Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git]' \
+'-u[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
+'--urls[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
 '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -962,9 +962,9 @@ Sets --jobs=1]' \
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -983,9 +983,9 @@ Sets --jobs=1]' \
 (update)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '()-a[Update all plugins]' \
 '()--all[Update all plugins]' \
@@ -1054,9 +1054,9 @@ esac
 (prune)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--dry-run[Do not actually delete anything]' \
 '--debug[Sets log level to debug]' \
@@ -1076,9 +1076,9 @@ Sets --jobs=1]' \
 (reshim)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1098,9 +1098,9 @@ Sets --jobs=1]' \
 (self-update)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1118,9 +1118,9 @@ Sets --jobs=1]' \
 (settings)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1146,9 +1146,9 @@ Sets --jobs=1]' \
             (get)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1167,9 +1167,9 @@ Sets --jobs=1]' \
 (ls)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1187,9 +1187,9 @@ Sets --jobs=1]' \
 (set)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1209,9 +1209,9 @@ Sets --jobs=1]' \
 (unset)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1270,9 +1270,9 @@ esac
 (shell)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-u[Removes a previously set version]' \
 '--unset[Removes a previously set version]' \
@@ -1293,9 +1293,9 @@ Sets --jobs=1]' \
 (trust)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--untrust[No longer trust this config]' \
 '--debug[Sets log level to debug]' \
@@ -1315,9 +1315,9 @@ Sets --jobs=1]' \
 (uninstall)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1336,9 +1336,9 @@ Sets --jobs=1]' \
 (version)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1356,9 +1356,9 @@ Sets --jobs=1]' \
 (where)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1384,9 +1384,9 @@ used for asdf compatibility:' \
 (which)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '(--version)--plugin[Show the plugin name instead of the path]' \
 '(--plugin)--version[Show the version instead of the path]' \
@@ -1407,9 +1407,9 @@ Sets --jobs=1]' \
 (render-help)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
-default: 4]: : ' \
+default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
@@ -1787,10 +1787,10 @@ _rtx__alias_commands() {
 'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
-These can come from user config or from plugins in `bin/list-aliases`.' \
+These can come from user config or from plugins in \`bin/list-aliases\`.' \
 'list:List aliases
 Shows the aliases that can be specified.
-These can come from user config or from plugins in `bin/list-aliases`.' \
+These can come from user config or from plugins in \`bin/list-aliases\`.' \
 'set:Add/update an alias for a plugin' \
 'add:Add/update an alias for a plugin' \
 'create:Add/update an alias for a plugin' \
@@ -1809,7 +1809,7 @@ _rtx__help__alias_commands() {
 'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
-These can come from user config or from plugins in `bin/list-aliases`.' \
+These can come from user config or from plugins in \`bin/list-aliases\`.' \
 'set:Add/update an alias for a plugin' \
 'unset:Clears an alias for a plugin' \
     )
@@ -2025,7 +2025,7 @@ _rtx__alias__help_commands() {
 'get:Show an alias for a plugin' \
 'ls:List aliases
 Shows the aliases that can be specified.
-These can come from user config or from plugins in `bin/list-aliases`.' \
+These can come from user config or from plugins in \`bin/list-aliases\`.' \
 'set:Add/update an alias for a plugin' \
 'unset:Clears an alias for a plugin' \
 'help:Print this message or the help of the given subcommand(s)' \
