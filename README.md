@@ -51,11 +51,10 @@ echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 > If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
 > of an `.envrc`, see the [direnv section](#direnv) below.
 
-Install a runtime and set it as the default:
+Install a runtime and set it as the global default:
 
 ```sh-session
-$ rtx install node@20
-$ rtx global node@20
+$ rtx use --global node@20
 $ node -v
 v20.0.0
 ```
@@ -152,11 +151,9 @@ v20.0.0
   - [`rtx doctor`](#rtx-doctor)
   - [`rtx env [OPTIONS] [RUNTIME]...`](#rtx-env-options-runtime)
   - [`rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`](#rtx-exec-options-runtime----command)
-  - [`rtx global [OPTIONS] [RUNTIME]...`](#rtx-global-options-runtime)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
   - [`rtx install [OPTIONS] [RUNTIME]...`](#rtx-install-options-runtime)
   - [`rtx latest <RUNTIME>`](#rtx-latest-runtime)
-  - [`rtx local [OPTIONS] [RUNTIME]...`](#rtx-local-options-runtime)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
@@ -175,6 +172,7 @@ v20.0.0
   - [`rtx shell [OPTIONS] [RUNTIME]...`](#rtx-shell-options-runtime)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall <RUNTIME>...`](#rtx-uninstall-runtime)
+  - [`rtx use [OPTIONS] [TOOL]...`](#rtx-use-options-tool)
   - [`rtx version`](#rtx-version)
   - [`rtx where <RUNTIME>`](#rtx-where-runtime)
   - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
@@ -235,12 +233,12 @@ See [plugins](#plugins) below.
 
     rtx install node@20.0.0  Install a specific version number
     rtx install node@20      Install a fuzzy version number
-    rtx local node@20        Use node-20.x in current project
-    rtx global node@20       Use node-20.x as default
+    rtx use node@20          Use node-20.x in current project
+    rtx use -g node@20       Use node-20.x as global default
 
     rtx install node         Install the version specified in .tool-versions
-    rtx local node@latest    Use latest node in current directory
-    rtx global node@system   Use system node as default
+    rtx use node@latest      Use latest node in current directory
+    rtx use -g node@system   Use system node as global default
 
     rtx x node@20 -- node app.js  Run `node app.js` with the PATH pointing to node-20.x
 
@@ -531,8 +529,6 @@ node      lts!-2       # install 2 versions behind the latest lts (e.g.: 18 if l
 python      latest!-0.1  # install python-3.10 if the latest is 3.11
 ```
 
-Create `.tool-versions` files manually, or use [`rtx local`](#rtx-local-options-runtime) to create them
-automatically.
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
 
 ### Legacy version files
@@ -573,6 +569,11 @@ You may not even notice.
 rtx can be configured in `~/.config/rtx/config.toml`. The following options are available:
 
 ```toml
+[tools]
+# global tool versions go here
+node = 'lts'
+python = ['3.10', '3.11']
+
 [settings]
 # whether to prompt to install plugins and runtimes if they're not already installed
 missing_runtime_behavior = 'warn' # other options: 'ignore', 'warn', 'prompt', 'autoinstall'
@@ -760,6 +761,8 @@ information.
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
 configuration. This will be default behavior once we hit the [Calver](#versioning) release.
 
+For now this is not used by `rtx use` which will only use `.rtx.toml` unless `--path` is specified.
+
 #### `RTX_TRUSTED_CONFIG_PATHS`
 
 This is a list of paths that rtx will automatically mark as
@@ -820,10 +823,6 @@ node = "https://github.com/my-org/rtx-node.git"
 
 Disables the shorthand aliases for installing plugins. You will have to specify full urls when
 installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
-
-Currently this disables the following:
-
-- `--fuzzy` as default behavior (`rtx local node@20` will save exact version)
 
 #### `RTX_HIDE_UPDATE_WARNING=1`
 
@@ -1724,57 +1723,6 @@ Examples:
   # Run a command in a different directory:
   $ rtx x -C /path/to/project node@20 -- node ./app.js
 ```
-### `rtx global [OPTIONS] [RUNTIME]...`
-
-```
-Sets/gets the global runtime version(s)
-
-Displays the contents of ~/.tool-versions after writing.
-The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
-If `$RTX_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
-Otherwise, it will be parsed as a `.tool-versions` file.
-A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
-
-Use `rtx local` to set a runtime version locally in the current directory.
-
-Usage: global [OPTIONS] [RUNTIME]...
-
-Arguments:
-  [RUNTIME]...
-          Runtime(s) to add to .tool-versions
-          e.g.: node@20
-          If this is a single runtime with no version, the current value of the global
-          .tool-versions will be displayed
-
-Options:
-      --pin
-          Save exact version to `~/.tool-versions`
-          e.g.: `rtx local --pin node@20` will save `node 20.0.0` to ~/.tool-versions
-
-      --fuzzy
-          Save fuzzy version to `~/.tool-versions`
-          e.g.: `rtx local --fuzzy node@20` will save `node 20` to ~/.tool-versions
-          this is the default behavior unless RTX_ASDF_COMPAT=1
-
-      --remove <PLUGIN>
-          Remove the plugin(s) from ~/.tool-versions
-
-      --path
-          Get the path of the global config file
-
-Examples:
-  # set the current version of node to 20.x
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ rtx global --fuzzy node@20
-
-  # set the current version of node to 20.x
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ rtx global --pin node@20
-
-  # show the current version of node in ~/.tool-versions
-  $ rtx global node
-  20.0.0
-```
 ### `rtx implode [OPTIONS]`
 
 ```
@@ -1798,7 +1746,7 @@ Install a tool version
 
 This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
 It won't be used simply by being installed, however.
-For that, you must set up a `.tool-version` file manually or with `rtx local/global`.
+For that, you must set up a `.rtx.toml`/`.tool-version` file manually or with `rtx use`.
 Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 
 Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
@@ -1841,62 +1789,6 @@ Examples:
   20.0.0
 
   $ rtx latest node     # get the latest stable version of node
-  20.0.0
-```
-### `rtx local [OPTIONS] [RUNTIME]...`
-
-```
-Sets/gets tool version in local .tool-versions or .rtx.toml
-
-Use this to set a tool's version when within a directory
-Use `rtx global` to set a runtime version globally
-This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
-is set. A future v2 release of rtx will default to using `.rtx.toml`.
-
-Usage: local [OPTIONS] [RUNTIME]...
-
-Arguments:
-  [RUNTIME]...
-          Runtimes to add to .tool-versions/.rtx.toml
-          e.g.: node@20
-          if this is a single runtime with no version,
-          the current value of .tool-versions/.rtx.toml will be displayed
-
-Options:
-  -p, --parent
-          Recurse up to find a .tool-versions file rather than using the current directory only
-          by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
-
-      --pin
-          Save exact version to `.tool-versions`
-          e.g.: `rtx local --pin node@20` will save `node 20.0.0` to .tool-versions
-
-      --fuzzy
-          Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1
-
-      --remove <PLUGIN>
-          Remove the plugin(s) from .tool-versions
-
-      --path
-          Get the path of the config file
-
-Examples:
-  # set the current version of node to 20.x for the current directory
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ rtx local node@20
-
-  # set node to 20.x for the current project (recurses up to find .tool-versions)
-  $ rtx local -p node@20
-
-  # set the current version of node to 20.x for the current directory
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ rtx local --fuzzy node@20
-
-  # removes node from .tool-versions
-  $ rtx local --remove=node
-
-  # show the current version of node in .tool-versions
-  $ rtx local node
   20.0.0
 ```
 ### `rtx ls [OPTIONS]`
@@ -2333,6 +2225,51 @@ Arguments:
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
   $ rtx uninstall node        # will uninstall current node version
+```
+### `rtx use [OPTIONS] [TOOL]...`
+
+```
+Change the active version of a tool. This will install the tool if it is not already installed.
+
+By default, this will use an `.rtx.toml` file in the current directory.
+Use the --global flag to use the global config file instead.
+This replaces asdf's `local` and `global` commands, however those are still available in rtx.
+
+Usage: use [OPTIONS] [TOOL]...
+
+Arguments:
+  [TOOL]...
+          Tool(s) to add to config file
+          e.g.: node@20
+          If no version is specified, it will default to @latest
+
+Options:
+      --pin
+          Save exact version to config file
+          e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+
+      --fuzzy
+          Save fuzzy version to config file
+          e.g.: `rtx use --fuzzy node@20` will save `node 20` to ~/.tool-versions
+          this is the default behavior unless RTX_ASDF_COMPAT=1
+
+      --remove <TOOL>
+          Remove the tool(s) from config file
+
+  -g, --global
+          Use the global config file (~/.config/rtx/config.toml) instead of the local one
+
+  -p, --path <PATH>
+          Specify a path to a config file
+
+Examples:
+  # set the current version of node to 20.x in .rtx.toml of current directory
+  # will write the fuzzy version (e.g.: 20)
+  $ rtx use node@20
+
+  # set the current version of node to 20.x in ~/.config/rtx/config.toml
+  # will write the precise version (e.g.: 20.0.0)
+  $ rtx use -g --pin node@20
 ```
 ### `rtx version`
 

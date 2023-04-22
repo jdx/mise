@@ -150,6 +150,9 @@ impl NodePlugin {
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         let mut cmd = CmdLineRunner::new(&config.settings, self.npm_path(tv));
+        let mut path = split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+        path.insert(0, tv.install_path().join("bin"));
+        cmd.env("PATH", join_paths(path)?);
         cmd.with_pr(pr).arg("-v");
         cmd.execute()
     }

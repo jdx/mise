@@ -54,9 +54,6 @@ _rtx() {
             rtx,exec)
                 cmd="rtx__exec"
                 ;;
-            rtx,g)
-                cmd="rtx__global"
-                ;;
             rtx,global)
                 cmd="rtx__global"
                 ;;
@@ -74,9 +71,6 @@ _rtx() {
                 ;;
             rtx,install)
                 cmd="rtx__install"
-                ;;
-            rtx,l)
-                cmd="rtx__local"
                 ;;
             rtx,latest)
                 cmd="rtx__latest"
@@ -120,8 +114,14 @@ _rtx() {
             rtx,trust)
                 cmd="rtx__trust"
                 ;;
+            rtx,u)
+                cmd="rtx__use"
+                ;;
             rtx,uninstall)
                 cmd="rtx__uninstall"
+                ;;
+            rtx,use)
+                cmd="rtx__use"
                 ;;
             rtx,version)
                 cmd="rtx__version"
@@ -315,6 +315,9 @@ _rtx() {
             rtx__help,uninstall)
                 cmd="rtx__help__uninstall"
                 ;;
+            rtx__help,use)
+                cmd="rtx__help__use"
+                ;;
             rtx__help,version)
                 cmd="rtx__help__version"
                 ;;
@@ -490,7 +493,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1314,7 +1317,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote plugins prune reshim self-update settings shell trust uninstall use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1986,6 +1989,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__use)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2922,6 +2939,44 @@ _rtx() {
                 return 0
             fi
             case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__use)
+            opts="-g -p -j -r -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --remove)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --path)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0

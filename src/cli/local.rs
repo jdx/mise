@@ -19,7 +19,7 @@ use crate::{dirs, env, file};
 /// This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
 /// is set. A future v2 release of rtx will default to using `.rtx.toml`.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "l", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
     /// Runtimes to add to .tool-versions/.rtx.toml
     /// e.g.: node@20
@@ -322,6 +322,7 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
+        let _ = fs::remove_file(dirs::CURRENT.join(".test.rtx.toml"));
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
         let orig = fs::read_to_string(&cf_path).unwrap();
 
