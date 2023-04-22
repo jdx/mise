@@ -79,7 +79,6 @@ pub static RTX_SHORTHANDS_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("RTX_SHORTHANDS_FILE"));
 pub static RTX_DISABLE_DEFAULT_SHORTHANDS: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS"));
-pub static RTX_SHIMS_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_SHIMS_DIR"));
 pub static RTX_RAW: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RAW"));
 pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     var("RTX_TRUSTED_CONFIG_PATHS")
