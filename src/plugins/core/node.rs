@@ -10,9 +10,7 @@ use color_eyre::eyre::Result;
 use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::{
-    RTX_EXE, RTX_NODEJS_CONCURRENCY, RTX_NODEJS_FORCE_COMPILE, RTX_NODEJS_VERBOSE_INSTALL,
-};
+use crate::env::{RTX_EXE, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE, RTX_NODE_VERBOSE_INSTALL};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::lock_file::LockFile;
@@ -22,14 +20,15 @@ use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, dirs, env};
 
 #[derive(Debug)]
-pub struct NodeJSPlugin {
+pub struct NodePlugin {
     pub name: PluginName,
     cache_path: PathBuf,
     remote_version_cache: CacheManager<Vec<String>>,
+    legacy_file_support: bool,
 }
 
-impl NodeJSPlugin {
-    pub fn new(name: PluginName) -> NodeJSPlugin {
+impl NodePlugin {
+    pub fn new(name: PluginName) -> Self {
         let cache_path = dirs::CACHE.join(&name);
         let fresh_duration = Some(Duration::from_secs(60 * 60 * 12)); // 12 hours
         Self {
@@ -38,6 +37,14 @@ impl NodeJSPlugin {
                 .with_fresh_file(RTX_EXE.clone()),
             name,
             cache_path,
+            legacy_file_support: false,
+        }
+    }
+
+    pub fn with_legacy_file_support(self) -> Self {
+        Self {
+            legacy_file_support: true,
+            ..self
         }
     }
 
@@ -112,8 +119,7 @@ impl NodeJSPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let body =
-            std::fs::read_to_string(&*env::RTX_NODEJS_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = fs::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -132,7 +138,7 @@ impl NodeJSPlugin {
     }
 
     fn install_npm_shim(&self, tv: &ToolVersion) -> Result<()> {
-        fs::write(self.npm_path(tv), include_str!("assets/nodejs_npm_shim"))?;
+        fs::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
         Ok(())
     }
 
@@ -149,7 +155,7 @@ impl NodeJSPlugin {
     }
 }
 
-impl Plugin for NodeJSPlugin {
+impl Plugin for NodePlugin {
     fn name(&self) -> &PluginName {
         &self.name
     }
@@ -179,7 +185,11 @@ impl Plugin for NodeJSPlugin {
     }
 
     fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
-        Ok(vec![".node-version".into(), ".nvmrc".into()])
+        if self.legacy_file_support {
+            Ok(vec![".node-version".into(), ".nvmrc".into()])
+        } else {
+            Ok(vec![])
+        }
     }
 
     fn external_commands(&self) -> Result<Vec<Vec<String>>> {
@@ -207,8 +217,8 @@ impl Plugin for NodeJSPlugin {
         pr.set_message("running node-build");
         let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin());
         cmd.with_pr(pr).arg(tv.version.as_str());
-        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODEJS_FORCE_COMPILE {
-            let make_opts = String::from(" -j") + &RTX_NODEJS_CONCURRENCY.to_string();
+        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
+            let make_opts = String::from(" -j") + &RTX_NODE_CONCURRENCY.to_string();
             cmd.env(
                 "MAKE_OPTS",
                 env::var("MAKE_OPTS").unwrap_or_default() + &make_opts,
@@ -219,7 +229,7 @@ impl Plugin for NodeJSPlugin {
             );
             cmd.arg("--compile");
         }
-        if *RTX_NODEJS_VERBOSE_INSTALL {
+        if *RTX_NODE_VERBOSE_INSTALL {
             cmd.arg("--verbose");
         }
         cmd.arg(tv.install_path());

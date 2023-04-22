@@ -10,7 +10,6 @@ pub struct Bash {}
 impl Shell for Bash {
     fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
-        let exe = exe.display();
         let status = if status { " --status" } else { "" };
         let mut out = String::new();
         if !is_dir_in_path(dir) {
@@ -23,17 +22,17 @@ impl Shell for Bash {
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
-                command {exe}
+                command rtx
                 return
               fi
               shift
 
               case "$command" in
               deactivate|shell)
-                eval "$({exe} "$command" "$@")"
+                eval "$(command rtx "$command" "$@")"
                 ;;
               *)
-                command {exe} "$command" "$@"
+                command rtx "$command" "$@"
                 ;;
               esac
             }}
@@ -41,7 +40,7 @@ impl Shell for Bash {
             _rtx_hook() {{
               local previous_exit_status=$?;
               trap -- '' SIGINT;
-              eval "$("{exe}" hook-env{status} -s bash)";
+              eval "$(rtx hook-env{status} -s bash)";
               trap - SIGINT;
               return $previous_exit_status;
             }};

@@ -11,7 +11,7 @@ use crate::plugins::PluginName;
 ///
 /// For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
 ///
-///   [alias.nodejs]
+///   [alias.node]
 ///   lts = "20.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
@@ -28,6 +28,8 @@ impl Command for AliasLs {
                 if plugin_name != plugin {
                     continue;
                 }
+            } else if config.is_plugin_hidden(plugin_name) {
+                continue;
             }
 
             for (from, to) in aliases.iter() {
@@ -41,7 +43,7 @@ impl Command for AliasLs {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx aliases</bold>
-  nodejs    lts/hydrogen   20.0.0
+  node    lts/hydrogen   20.0.0
 "#
 );
 

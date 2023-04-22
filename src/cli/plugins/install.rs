@@ -14,20 +14,20 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// Install a plugin
 ///
 /// note that rtx automatically can install plugins when you install a runtime
-/// e.g.: `rtx install nodejs@20` will autoinstall the nodejs plugin
+/// e.g.: `rtx install node@20` will autoinstall the node plugin
 ///
 /// This behavior can be modified in ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsInstall {
     /// The name of the plugin to install
-    /// e.g.: nodejs, ruby
-    /// Can specify multiple plugins: `rtx plugins install nodejs ruby python`
+    /// e.g.: node, ruby
+    /// Can specify multiple plugins: `rtx plugins install node ruby python`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
     name: Option<String>,
 
     /// The git url of the plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/asdf-vm/asdf-node.git
     #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment)]
     git_url: Option<String>,
 
@@ -153,18 +153,18 @@ fn get_name_from_url(url: &str) -> Result<String> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # install the nodejs via shorthand
-  $ <bold>rtx plugins install nodejs</bold>
+  # install the node via shorthand
+  $ <bold>rtx plugins install node</bold>
 
-  # install the nodejs plugin using a specific git url
-  $ <bold>rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git</bold>
+  # install the node plugin using a specific git url
+  $ <bold>rtx plugins install node https://github.com/rtx-plugins/rtx-nodejs.git</bold>
 
-  # install the nodejs plugin using the git url only
-  # (nodejs is inferred from the url)
-  $ <bold>rtx plugins install https://github.com/jdxcode/rtx-nodejs.git</bold>
+  # install the node plugin using the git url only
+  # (node is inferred from the url)
+  $ <bold>rtx plugins install https://github.com/rtx-plugins/rtx-nodejs.git</bold>
 
-  # install the nodejs plugin using a specific ref
-  $ <bold>rtx plugins install nodejs https://github.com/jdxcode/rtx-nodejs.git#v1.0.0</bold>
+  # install the node plugin using a specific ref
+  $ <bold>rtx plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0</bold>
 "#
 );
 

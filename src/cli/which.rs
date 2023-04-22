@@ -45,9 +45,9 @@ impl Command for Which {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx which node</bold>
-  /home/username/.local/share/rtx/installs/nodejs/20.0.0/bin/node
+  /home/username/.local/share/rtx/installs/node/20.0.0/bin/node
   $ <bold>rtx which node --plugin</bold>
-  nodejs
+  node
   $ <bold>rtx which node --version</bold>
   20.0.0
 "#

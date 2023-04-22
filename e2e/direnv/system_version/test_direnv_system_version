@@ -9,11 +9,11 @@ _rtx_hook && _direnv_hook
 
 # use old node version on purpose to not conflict with unknown system node version
 custom_node_version="18.0.0"
-rtx_nodejs_path_segment="${RTX_DATA_DIR}/installs/nodejs"
+rtx_node_path_segment="${RTX_DATA_DIR}/installs/node"
 
-# with nodejs@system rtx should not add a nodejs path segment
-if [[ $PATH == *"${rtx_nodejs_path_segment}"* ]]; then
-  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment} must not be in PATH: ${PATH}"
+# with node@system rtx should not add a node path segment
+if [[ $PATH == *"${rtx_node_path_segment}"* ]]; then
+  echo "Rtx node path segment: ${rtx_node_path_segment} must not be in PATH: ${PATH}"
   exit 1
 fi
 
@@ -29,8 +29,8 @@ direnv allow rtx-direnv-system-version-reset/load-first
 
 # test
 
-# install custom nodejs version
-rtx i nodejs@$custom_node_version && _rtx_hook
+# install custom node version
+rtx i node@$custom_node_version && _rtx_hook
 
 cd rtx-direnv-system-version-reset/load-first && _rtx_hook && _direnv_hook
 node_version=$(node -v)
@@ -39,16 +39,16 @@ if [[ $node_version != "v${custom_node_version}" ]]; then
   exit 1
 fi
 
-if [[ ! $PATH == *"${rtx_nodejs_path_segment}/${custom_node_version}"* ]]; then
-  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment}/${custom_node_version} must be in PATH: ${PATH}"
+if [[ ! $PATH == *"${rtx_node_path_segment}/${custom_node_version}"* ]]; then
+  echo "Rtx node path segment: ${rtx_node_path_segment}/${custom_node_version} must be in PATH: ${PATH}"
   exit 1
 fi
 
 cd .. && _rtx_hook && _direnv_hook
 
-# with nodejs@system rtx should not add a nodejs path segment
-if [[ $PATH == *"${rtx_nodejs_path_segment}"* ]]; then
-  echo "Rtx nodejs path segment: ${rtx_nodejs_path_segment} must not be in PATH: ${PATH}"
+# with node@system rtx should not add a node path segment
+if [[ $PATH == *"${rtx_node_path_segment}"* ]]; then
+  echo "Rtx node path segment: ${rtx_node_path_segment} must not be in PATH: ${PATH}"
   exit 1
 fi
 

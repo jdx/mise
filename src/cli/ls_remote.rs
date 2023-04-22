@@ -82,15 +82,15 @@ impl LsRemote {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx ls-remote nodejs</bold>
+  $ <bold>rtx ls-remote node</bold>
   18.0.0
   20.0.0
 
-  $ <bold>rtx ls-remote nodejs@20</bold>
+  $ <bold>rtx ls-remote node@20</bold>
   20.0.0
   20.1.0
 
-  $ <bold>rtx ls-remote nodejs 20</bold>
+  $ <bold>rtx ls-remote node 20</bold>
   20.0.0
   20.1.0
 "#

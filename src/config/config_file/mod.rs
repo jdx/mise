@@ -124,7 +124,7 @@ impl dyn ConfigFile {
             rtxprintln!(out, "{}", tvl.join(" "));
             return Ok(true);
         }
-        // check for something like `rtx local nodejs python@latest` which is invalid
+        // check for something like `rtx local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
             return Err(eyre!("invalid input, specify a version for each runtime. Or just specify one runtime to print the current version"));
         }

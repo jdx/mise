@@ -66,7 +66,7 @@ mod tests {
             shorthands["elixir"],
             "https://github.com/asdf-vm/asdf-elixir.git"
         );
-        assert_str_eq!(shorthands["nodejs"], "https://nodejs");
+        assert_str_eq!(shorthands["node"], "https://node");
         assert_str_eq!(shorthands["xxxxxx"], "https://xxxxxx");
     }
 
