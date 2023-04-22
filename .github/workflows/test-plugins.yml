@@ -46,8 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - plugin: nodejs
-            command: rtx exec nodejs@latest -- node -v
+          - plugin: node
+            command: rtx exec node@latest -- node -v
           - plugin: ruby
             command: rtx exec ruby@latest -- ruby --version
           - plugin: python

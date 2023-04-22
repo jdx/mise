@@ -263,10 +263,16 @@ impl Tool {
         self.plugin.parse_legacy_file(path, settings)
     }
     pub fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        self.plugin.list_bin_paths(config, tv)
+        match tv.request {
+            ToolVersionRequest::System(_) => Ok(vec![]),
+            _ => self.plugin.list_bin_paths(config, tv),
+        }
     }
     pub fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
-        self.plugin.exec_env(config, tv)
+        match tv.request {
+            ToolVersionRequest::System(_) => Ok(HashMap::new()),
+            _ => self.plugin.exec_env(config, tv),
+        }
     }
 
     pub fn which(

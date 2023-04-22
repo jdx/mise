@@ -180,6 +180,6 @@ fn indent(s: String) -> String {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx doctor</bold>
-  [WARN] plugin nodejs is not installed
+  [WARN] plugin node is not installed
 "#
 );

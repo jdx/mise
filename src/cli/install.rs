@@ -35,7 +35,7 @@ use crate::ui::progress_report::ProgressReport;
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
     /// Tool version(s) to install
-    /// e.g.: nodejs@20
+    /// e.g.: node@20
     #[clap(value_parser = RuntimeArgParser)]
     runtime: Option<Vec<RuntimeArg>>,
 
@@ -258,9 +258,9 @@ impl Install {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx install nodejs@20.0.0</bold>  # install specific nodejs version
-  $ <bold>rtx install nodejs@20</bold>      # install fuzzy nodejs version
-  $ <bold>rtx install nodejs</bold>         # install version specified in .tool-versions or .rtx.toml
+  $ <bold>rtx install node@20.0.0</bold>  # install specific node version
+  $ <bold>rtx install node@20</bold>      # install fuzzy node version
+  $ <bold>rtx install node</bold>         # install version specified in .tool-versions or .rtx.toml
   $ <bold>rtx install</bold>                # installs everything specified in .tool-versions or .rtx.toml
 "#
 );

@@ -2,10 +2,10 @@
 set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
-rtx i nodejs
+rtx i node
 eval "$(rtx env -s bash)"
 assert "node -v" "v20.0.0"
-rtx i nodejs@18.0.0
-eval "$(rtx env -s bash nodejs@18.0.0)"
+rtx i node@18.0.0
+eval "$(rtx env -s bash node@18.0.0)"
 assert "node -v" "v18.0.0"
 assert "rtx x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"

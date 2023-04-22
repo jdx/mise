@@ -15,7 +15,7 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Current {
     /// Plugin to show versions of
-    /// e.g.: ruby, nodejs
+    /// e.g.: ruby, node
     #[clap()]
     plugin: Option<String>,
 }
@@ -101,9 +101,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   python 3.11.0 3.10.0
   shfmt 3.6.0
   shellcheck 0.9.0
-  nodejs 20.0.0
+  node 20.0.0
 
-  $ <bold>rtx current nodejs</bold>
+  $ <bold>rtx current node</bold>
   20.0.0
 
   # can output multiple versions

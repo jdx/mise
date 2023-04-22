@@ -7,7 +7,7 @@ set -gx RTX_SHELL fish
 
 function rtx
   if test (count $argv) -eq 0
-    command /some/dir/rtx
+    command rtx
     return
   end
 
@@ -16,21 +16,21 @@ function rtx
 
   switch "$command"
   case deactivate shell
-    source (/some/dir/rtx "$command" $argv|psub)
+    source (command rtx "$command" $argv|psub)
   case '*'
-    command /some/dir/rtx "$command" $argv
+    command rtx "$command" $argv
   end
 end
 
 function __rtx_env_eval --on-event fish_prompt --description 'Update rtx environment when changing directories';
-    /some/dir/rtx hook-env --status -s fish | source;
+    rtx hook-env --status -s fish | source;
 
     if test "$rtx_fish_mode" != "disable_arrow";
         function __rtx_cd_hook --on-variable PWD --description 'Update rtx environment when changing directories';
             if test "$rtx_fish_mode" = "eval_after_arrow";
                 set -g __rtx_env_again 0;
             else;
-                /some/dir/rtx hook-env --status -s fish | source;
+                rtx hook-env --status -s fish | source;
             end;
         end;
     end;
@@ -39,7 +39,7 @@ end;
 function __rtx_env_eval_2 --on-event fish_preexec --description 'Update rtx environment when changing directories';
     if set -q __rtx_env_again;
         set -e __rtx_env_again;
-        /some/dir/rtx hook-env --status -s fish | source;
+        rtx hook-env --status -s fish | source;
         echo;
     end;
 

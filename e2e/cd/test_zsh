@@ -18,7 +18,7 @@ assert_path() {
   fi
 }
 
-rtx install nodejs@20.0.0 nodejs@18.0.0
+rtx install node@20.0.0 node@18.0.0
 # shellcheck disable=SC1090
 eval "$(rtx activate zsh --status)" && _rtx_hook
 
@@ -32,7 +32,7 @@ test "$(node -v)" = "v18.0.0"
 cd .. && _rtx_hook
 test "$(node -v)" = "v20.0.0"
 
-rtx shell nodejs@18.0.0 && _rtx_hook
+rtx shell node@18.0.0 && _rtx_hook
 test "$(node -v)" = "v18.0.0"
 
 rtx deactivate

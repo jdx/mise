@@ -3,10 +3,10 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
-export RTX_NODEJS_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-nodejs-packages"
+export RTX_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-node-packages"
 
-rtx plugin uninstall nodejs
-rtx i nodejs nodejs@lts/hydrogen
-assert_contains "rtx x nodejs@lts/hydrogen -- node --version" "v18."
+rtx plugin uninstall node
+rtx i node node@lts/hydrogen
+assert_contains "rtx x node@lts/hydrogen -- node --version" "v18."
 assert "rtx x -- node --version" "v20.0.0"
-assert_contains "rtx nodejs nodebuild --version" "node-build "
+assert_contains "rtx node nodebuild --version" "node-build "

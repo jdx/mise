@@ -20,34 +20,34 @@ Toolset {
                 "~/fixtures/.rtx.toml",
             ),
         },
-        "nodejs": ToolVersionList {
-            plugin_name: "nodejs",
+        "node": ToolVersionList {
+            plugin_name: "node",
             versions: [],
             requests: [
                 (
                     Version(
-                        "nodejs",
+                        "node",
                         "18",
                     ),
                     {},
                 ),
                 (
                     Prefix(
-                        "nodejs",
+                        "node",
                         "20",
                     ),
                     {},
                 ),
                 (
                     Ref(
-                        "nodejs",
+                        "node",
                         "master",
                     ),
                     {},
                 ),
                 (
                     Path(
-                        "nodejs",
+                        "node",
                         "~/.nodes/18",
                     ),
                     {},

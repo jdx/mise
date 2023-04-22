@@ -10,7 +10,6 @@ pub struct Fish {}
 impl Shell for Fish {
     fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
-        let exe = exe.display();
         let status = if status { " --status" } else { "" };
         let description = "'Update rtx environment when changing directories'";
         let mut out = String::new();
@@ -26,7 +25,7 @@ impl Shell for Fish {
 
             function rtx
               if test (count $argv) -eq 0
-                command {exe}
+                command rtx
                 return
               end
 
@@ -35,21 +34,21 @@ impl Shell for Fish {
 
               switch "$command"
               case deactivate shell
-                source ({exe} "$command" $argv|psub)
+                source (command rtx "$command" $argv|psub)
               case '*'
-                command {exe} "$command" $argv
+                command rtx "$command" $argv
               end
             end
 
             function __rtx_env_eval --on-event fish_prompt --description {description};
-                {exe} hook-env{status} -s fish | source;
+                rtx hook-env{status} -s fish | source;
 
                 if test "$rtx_fish_mode" != "disable_arrow";
                     function __rtx_cd_hook --on-variable PWD --description {description};
                         if test "$rtx_fish_mode" = "eval_after_arrow";
                             set -g __rtx_env_again 0;
                         else;
-                            {exe} hook-env{status} -s fish | source;
+                            rtx hook-env{status} -s fish | source;
                         end;
                     end;
                 end;
@@ -58,7 +57,7 @@ impl Shell for Fish {
             function __rtx_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __rtx_env_again;
                     set -e __rtx_env_again;
-                    {exe} hook-env{status} -s fish | source;
+                    rtx hook-env{status} -s fish | source;
                     echo;
                 end;
 
@@ -101,17 +100,17 @@ mod tests {
     fn test_hook_init() {
         let fish = Fish::default();
         let exe = Path::new("/some/dir/rtx");
-        insta::assert_snapshot!(fish.activate(exe, true));
+        assert_snapshot!(fish.activate(exe, true));
     }
 
     #[test]
     fn test_set_env() {
-        insta::assert_snapshot!(Fish::default().set_env("FOO", "1"));
+        assert_snapshot!(Fish::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_unset_env() {
-        insta::assert_snapshot!(Fish::default().unset_env("FOO"));
+        assert_snapshot!(Fish::default().unset_env("FOO"));
     }
 
     #[test]

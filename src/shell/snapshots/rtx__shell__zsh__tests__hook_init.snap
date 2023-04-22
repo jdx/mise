@@ -9,24 +9,24 @@ rtx() {
   local command
   command="${1:-}"
   if [ "$#" = 0 ]; then
-    command /some/dir/rtx
+    command rtx
     return
   fi
   shift
 
   case "$command" in
   deactivate|shell)
-    eval "$(/some/dir/rtx "$command" "$@")"
+    eval "$(command rtx "$command" "$@")"
     ;;
   *)
-    command /some/dir/rtx "$command" "$@"
+    command rtx "$command" "$@"
     ;;
   esac
 }
 
 _rtx_hook() {
   trap -- '' SIGINT;
-  eval "$("/some/dir/rtx" hook-env --status -s zsh)";
+  eval "$(rtx hook-env --status -s zsh)";
   trap - SIGINT;
 }
 typeset -ag precmd_functions;

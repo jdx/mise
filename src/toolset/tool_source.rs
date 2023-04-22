@@ -77,8 +77,8 @@ mod tests {
         let ts = ToolSource::Argument;
         assert_str_eq!(ts.to_string(), "--runtime");
 
-        let ts = ToolSource::Environment("RTX_NODEJS_VERSION".to_string(), "18".to_string());
-        assert_str_eq!(ts.to_string(), "RTX_NODEJS_VERSION=18");
+        let ts = ToolSource::Environment("RTX_NODE_VERSION".to_string(), "18".to_string());
+        assert_str_eq!(ts.to_string(), "RTX_NODE_VERSION=18");
     }
 
     #[test]
@@ -118,12 +118,12 @@ mod tests {
             }
         );
 
-        let ts = ToolSource::Environment("RTX_NODEJS_VERSION".to_string(), "18".to_string());
+        let ts = ToolSource::Environment("RTX_NODE_VERSION".to_string(), "18".to_string());
         assert_eq!(
             ts.as_json(),
             indexmap! {
                 "type".to_string() => "environment".to_string(),
-                "key".to_string() => "RTX_NODEJS_VERSION".to_string(),
+                "key".to_string() => "RTX_NODE_VERSION".to_string(),
                 "value".to_string() => "18".to_string(),
             }
         );

@@ -286,9 +286,9 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -s j -l jobs -d 'Number 
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'Save exact version to `~/.tool-versions`
-e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to ~/.tool-versions'
+e.g.: `rtx local --pin node@20` will save `node 20.0.0` to ~/.tool-versions'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l fuzzy -d 'Save fuzzy version to `~/.tool-versions`
-e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to ~/.tool-versions
+e.g.: `rtx local --fuzzy node@20` will save `node 20` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l path -d 'Get the path of the global config file'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l debug -d 'Sets log level to debug'
@@ -352,8 +352,8 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -l log-level -d 'Set the 
 complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l pin -d 'Save exact version to `.tool-versions`
-e.g.: `rtx local --pin nodejs@20` will save `nodejs 20.0.0` to .tool-versions'
-complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy nodejs@20` will save `nodejs 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1'
+e.g.: `rtx local --pin node@20` will save `node 20.0.0` to .tool-versions'
+complete -c rtx -n "__fish_seen_subcommand_from local" -l fuzzy -d 'Save fuzzy version to `.tool-versions` e.g.: `rtx local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l path -d 'Get the path of the config file'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l install-missing -d 'Automatically install missing tools'
@@ -441,7 +441,7 @@ Same as `rtx plugins ls-remote`'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s c -l core -d 'The built-in plugins only
 Normally these are not shown'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin
-e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
+e.g.: https://github.com/asdf-vm/asdf-node.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
@@ -452,7 +452,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/asdf-vm/asdf-nodejs.git'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l only-names -d 'Only show the name of each plugin by default it will show a "*" next to installed plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l install-missing -d 'Automatically install missing tools'

@@ -18,12 +18,12 @@ use crate::output::Output;
 #[clap(alias = "l", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsLink {
     /// The name of the plugin
-    /// e.g.: nodejs, ruby
+    /// e.g.: node, ruby
     #[clap(verbatim_doc_comment)]
     name: String,
 
     /// The local path to the plugin
-    /// e.g.: ./rtx-nodejs
+    /// e.g.: ./rtx-node
     #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: Option<PathBuf>,
 
@@ -69,11 +69,11 @@ fn get_name_from_path(path: &Path) -> String {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # essentially just `ln -s ./rtx-nodejs ~/.local/share/rtx/plugins/nodejs`
-  $ <bold>rtx plugins link nodejs ./rtx-nodejs</bold>
+  # essentially just `ln -s ./rtx-node ~/.local/share/rtx/plugins/node`
+  $ <bold>rtx plugins link node ./rtx-node</bold>
 
-  # infer plugin name as "nodejs"
-  $ <bold>rtx plugins link ./rtx-nodejs</bold>
+  # infer plugin name as "node"
+  $ <bold>rtx plugins link ./rtx-node</bold>
 "#
 );
 
