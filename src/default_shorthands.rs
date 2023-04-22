@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 646] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 647] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -102,6 +102,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 646] = [
     ("cmake", "https://github.com/srivathsanmurali/asdf-cmake.git"),
     ("cmctl", "https://github.com/asdf-community/asdf-cmctl.git"),
     ("cockroach", "https://github.com/salasrod/asdf-cockroach.git"),
+    ("cocoapods", "https://github.com/ronnnnn/asdf-cocoapods.git"),
     ("codefresh", "https://github.com/gurukulkarni/asdf-codefresh.git"),
     ("codeql", "https://github.com/bored-engineer/asdf-codeql.git"),
     ("colima", "https://github.com/CrouchingMuppet/asdf-colima.git"),
@@ -415,7 +416,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 646] = [
     ("nfpm", "https://github.com/ORCID/asdf-nfpm"),
     ("nim", "https://github.com/asdf-community/asdf-nim.git"),
     ("ninja", "https://github.com/asdf-community/asdf-ninja.git"),
-    ("node", "https://github.com/asdf-vm/asdf-node.git"),
+    ("nodejs", "https://github.com/asdf-vm/asdf-nodejs.git"),
     ("nomad", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("nova", "https://github.com/elementalvoid/asdf-nova.git"),
     ("nsc", "https://github.com/dex4er/asdf-nsc.git"),
