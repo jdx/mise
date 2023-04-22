@@ -55,6 +55,7 @@ mod tests {
         disable_default_shorthands = false
         log_level = INFO
         raw = false
+        paranoid = false
         "###);
 
         reset_config();

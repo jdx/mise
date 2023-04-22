@@ -43,6 +43,7 @@ pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_MISSING_RUNTIME_BEHAVIOR: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_MISSING_RUNTIME_BEHAVIOR").ok());
+pub static RTX_PARANOID: Lazy<bool> = Lazy::new(|| var_is_true("RTX_PARANOID"));
 pub static RTX_QUIET: Lazy<bool> = Lazy::new(|| var_is_true("RTX_QUIET"));
 pub static RTX_DEBUG: Lazy<bool> = Lazy::new(|| var_is_true("RTX_DEBUG"));
 pub static RTX_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_TRACE"));

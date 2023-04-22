@@ -23,6 +23,7 @@ pub struct Settings {
     pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
     pub raw: bool,
+    pub paranoid: bool,
 }
 
 impl Default for Settings {
@@ -41,6 +42,7 @@ impl Default for Settings {
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
             raw: *RTX_RAW,
+            paranoid: *RTX_PARANOID,
         }
     }
 }
@@ -84,6 +86,7 @@ impl Settings {
         );
         map.insert("log_level".into(), self.log_level.to_string());
         map.insert("raw".into(), self.raw.to_string());
+        map.insert("paranoid".into(), self.paranoid.to_string());
         map
     }
 }
@@ -103,6 +106,7 @@ pub struct SettingsBuilder {
     pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
     pub raw: Option<bool>,
+    pub paranoid: Option<bool>,
 }
 
 impl SettingsBuilder {
@@ -151,6 +155,9 @@ impl SettingsBuilder {
         if other.raw.is_some() {
             self.raw = other.raw;
         }
+        if other.paranoid.is_some() {
+            self.paranoid = other.paranoid;
+        }
         self
     }
 
@@ -192,6 +199,7 @@ impl SettingsBuilder {
             .unwrap_or(settings.disable_default_shorthands);
         settings.log_level = self.log_level.unwrap_or(settings.log_level);
         settings.raw = self.raw.unwrap_or(settings.raw);
+        settings.paranoid = self.paranoid.unwrap_or(settings.paranoid);
 
         if settings.raw {
             settings.verbose = true;

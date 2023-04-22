@@ -20,4 +20,5 @@ SettingsBuilder {
     disable_default_shorthands: None,
     log_level: None,
     raw: None,
+    paranoid: None,
 }
