@@ -38,7 +38,11 @@ impl Command for PluginsLs {
             .run(config, out);
         }
 
-        let mut plugins = config.tools.values().collect::<Vec<_>>();
+        let mut plugins = config
+            .tools
+            .values()
+            .filter(|p| !config.is_plugin_hidden(p.plugin.name()))
+            .collect::<Vec<_>>();
 
         if self.core {
             plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
