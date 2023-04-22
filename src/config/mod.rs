@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::thread;
 
 use color_eyre::eyre::{eyre, Result};
-use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -18,7 +17,7 @@ use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
 use crate::env::CI;
-use crate::plugins::core::{NodeJSPlugin, PythonPlugin};
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::tool::Tool;
@@ -163,7 +162,7 @@ impl Config {
         self.tools
             .entry(plugin_name.clone())
             .or_insert_with(|| {
-                let plugin = ExternalPlugin::new(&self.settings, plugin_name);
+                let plugin = ExternalPlugin::new(plugin_name);
                 build_tool(plugin_name.clone(), Box::new(plugin))
             })
             .clone()
@@ -205,18 +204,6 @@ impl Config {
         }
 
         aliases
-    }
-
-    pub fn get_shims_dir(&self) -> Result<PathBuf> {
-        match self.settings.shims_dir.clone() {
-            Some(mut shims_dir) => {
-                if shims_dir.starts_with("~") {
-                    shims_dir = dirs::HOME.join(shims_dir.strip_prefix("~")?);
-                }
-                Ok(shims_dir)
-            }
-            None => err_no_shims_dir(),
-        }
     }
 
     pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
@@ -310,28 +297,14 @@ fn load_rtxrc() -> Result<RtxToml> {
 fn load_tools(settings: &Settings) -> Result<ToolMap> {
     let mut tools = ToolMap::new();
     if settings.experimental {
-        tools.extend(load_core_tools(settings));
+        tools.extend(CORE_PLUGINS.clone());
     }
-    let plugins = Tool::list(settings)?
+    let plugins = Tool::list()?
         .into_par_iter()
         .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>();
     tools.extend(plugins);
     Ok(tools)
-}
-
-fn load_core_tools(settings: &Settings) -> ToolMap {
-    let tools: Vec<Box<dyn Plugin>> = vec![
-        Box::new(PythonPlugin::new(settings, "python".to_string())),
-        Box::new(NodeJSPlugin::new(settings, "nodejs".to_string())),
-        Box::new(NodeJSPlugin::new(settings, "node".to_string())),
-    ];
-    ToolMap::from_iter(tools.into_iter().map(|plugin| {
-        (
-            plugin.name().to_string(),
-            build_tool(plugin.name().to_string(), plugin),
-        )
-    }))
 }
 
 fn build_tool(name: PluginName, plugin: Box<dyn Plugin>) -> Arc<Tool> {
@@ -482,16 +455,6 @@ fn load_aliases(config_files: &ConfigMap) -> AliasMap {
     }
 
     aliases
-}
-
-fn err_no_shims_dir() -> Result<PathBuf> {
-    Err(eyre!(indoc::formatdoc!(
-        r#"
-           rtx is not configured to use shims.
-           Please set the `{}` setting to a directory.
-           "#,
-        style("shims_dir").yellow()
-    )))
 }
 
 fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {

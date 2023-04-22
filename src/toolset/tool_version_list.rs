@@ -51,7 +51,7 @@ mod tests {
     fn test_tool_version_list() {
         let mut config = Config::default();
         let plugin_name = "tiny".to_string();
-        let plugin = ExternalPlugin::new(&config.settings, &plugin_name);
+        let plugin = ExternalPlugin::new(&plugin_name);
         let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
         config.tools.insert(plugin_name.clone(), Arc::new(tool));
         let mut tvl = ToolVersionList::new(plugin_name.clone(), ToolSource::Argument);

@@ -162,10 +162,6 @@
           "description": "enable experimental features",
           "type": "boolean"
         },
-        "shims_dir": {
-          "description": "path to directory to output shims",
-          "type": "string"
-        },
         "log_level": {
           "description": "log level",
           "type": "string",

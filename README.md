@@ -602,8 +602,7 @@ raw = false         # set to true to directly pipe plugins to stdin/stdout/stder
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 
-experimental = false # enable experimental features such as shims
-shims_dir = '~/.local/share/rtx/shims' # [experimental] directory where shims are stored
+experimental = false # enable experimental features
 log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
 
 [alias.nodejs]
@@ -649,7 +648,6 @@ python = 'https://github.com/jdxcode/rtx-python'
 [settings] # project-local settings
 verbose = true
 missing_runtime_behavior = 'warn'
-shims_dir = '~/.rtx/shims'
 
 [alias.nodejs] # project-local aliases
 my_custom_node = '20'
@@ -774,7 +772,7 @@ These change the verbosity of rtx.
 You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as
 `--log-level=trace|debug|info|warn|error`.
 
-#### `RTX_LOG_FILE=~/.rtx/rtx.log`
+#### `RTX_LOG_FILE=~/rtx.log`
 
 Output logs to a file.
 
@@ -837,11 +835,7 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 
 #### `RTX_EXPERIMENTAL=1`
 
-Enables experimental features such as shims.
-
-#### [experimental] `RTX_SHIMS_DIR=~/.local/share/rtx/shims`
-
-Set a directory to output shims when running `rtx reshim`. Requires `experimental = true`.
+Enables experimental features.
 
 ## Aliases
 
@@ -998,8 +992,8 @@ lts -> ./20.15.0
 
 #### `~/.local/share/rtx/shims`
 
-This will be the default location for storing shims. Currently this functionality is marked as
-experimental, however, and this needs to be manually set with `shims_dir`.
+This is where rtx places shims. Generally these are used for IDE integration or if `rtx activate`
+does not work for some reason.
 
 ## Templates
 
@@ -1063,17 +1057,10 @@ future._
 
 ## IDE Integration
 
-IDEs work better with shims than they do environment variable modifications. The simplest way to setup rtx
-to work inside of an IDE is to enable the experimental shims functionality, then set the shims directory:
+IDEs work better with shims than they do environment variable modifications. The simplest way is
+to add the rtx shim directory to PATH.
 
-```
-rtx settings set experimental true
-rtx settings set shims_dir ~/.local/share/rtx/shims
-```
-
-_Note: this directory will be the default when shims is no longer experimental._
-
-Then you need to add them to PATH. For IntelliJ and VSCode—and likely others, you can modify `~/.zprofile`
+For IntelliJ and VSCode—and likely others, you can modify `~/.zprofile`
 with the following:
 
 ```
@@ -1088,14 +1075,14 @@ Direnv and rtx work similarly and there should be a direnv extension that can be
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_rtx`](#direnv) direnv function.
 
-## [experimental] Core Plugins
+## Core Plugins
 
-If you have `experimental = true` in your settings, rtx will include some plugins built into the CLI. These are new and will improve over time. They can be easily overridden by
-installing a plugin with the same name, e.g.: `rtx plugin install python`.
+rtx comes with some plugins built into the CLI written in Rust. These are new and will improve over 
+time. They can be easily overridden by installing a plugin with the same name, e.g.: `rtx plugin install python`.
 
 You can see the core plugins with `rtx plugin ls --core`.
 
-* [Python](./docs/python.md)
+* [experimental] [Python](./docs/python.md)
 * [NodeJS](./docs/nodejs.md)
 * ~Ruby~ - coming soon
 * ~Java~ - coming soon
@@ -1350,14 +1337,12 @@ jobs:
 While the PATH design of rtx works great in most cases, there are some situations where shims are
 preferable. One example is when calling rtx binaries from an IDE.
 
-To support this, there is experimental support for using rtx in a "shim" mode. To use:
+To support this, rtx does have a shim dir that can be used. It's located at `~/.local/share/rtx/shims`.
 
 ```sh-session
-$ rtx settings set experimental true
-$ rtx settings set shims_dir ~/.rtx/shims
 $ rtx i nodejs@20.0.0
-$ rtx reshim
-$ ~/.rtx/shims/node -v
+$ rtx reshim # may be required if new shims need to be created
+$ ~/.local/share/rtx/shims/node -v
 v20.0.0
 ```
 
@@ -1411,7 +1396,7 @@ export RTX_PYTHON_VERSION=3.11
 Of course if you use `rtx activate`, then these steps won't have been necessary and you can use rtx
 as if direnv was not used.
 
-If you continue to struggle, you can also try using the [experimental shims feature](#shims).
+If you continue to struggle, you can also try using the [shims method](#shims).
 
 ### Do you need direnv?
 
@@ -2180,17 +2165,27 @@ Examples:
 ### `rtx reshim`
 
 ```
-[experimental] rebuilds the shim farm
+rebuilds the shim farm
 
-this requires that the shims_dir is set
+This creates new shims in ~/.local/share/rtx/shims for CLIs that have been added.
+rtx will try to do this automatically for commands like `npm i -g` but there are
+other ways to install things (like using yarn or pnpm for node) that rtx does
+not know about and so it will be necessary to call this explicitly.
+
+If you think rtx should automatically call this for a particular command, please
+open an issue on the rtx repo. You can also setup a shell function to reshim
+automatically (it's really fast so you don't need to worry about overhead):
+
+npm() {
+  command npm "$@"
+  rtx reshim
+}
 
 Usage: reshim
 
 Examples:
-  $ rtx settings set experimental true
-  $ rtx settings set shims_dir ~/.rtx/shims
   $ rtx reshim
-  $ ~/.rtx/shims/node -v
+  $ ~/.local/share/rtx/shims/node -v
   v20.0.0
 ```
 ### `rtx self-update`

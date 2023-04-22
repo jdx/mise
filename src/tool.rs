@@ -35,11 +35,11 @@ impl Tool {
         }
     }
 
-    pub fn list(settings: &Settings) -> Result<Vec<Self>> {
+    pub fn list() -> Result<Vec<Self>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .iter()
             .map(|name| {
-                let plugin = ExternalPlugin::new(settings, name);
+                let plugin = ExternalPlugin::new(name);
                 Self::new(name.to_string(), Box::new(plugin))
             })
             .collect())
