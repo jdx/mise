@@ -59,7 +59,6 @@ pub fn reset_config() {
             legacy_version_file= true
             plugin_autoupdate_last_check_duration = 20
             jobs = 2
-            shims_dir = '~/data/shims'
 
             [alias.tiny]
             "my/alias" = '3.0'

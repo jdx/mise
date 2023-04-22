@@ -46,7 +46,7 @@ pub struct ExternalPlugin {
 }
 
 impl ExternalPlugin {
-    pub fn new(settings: &Settings, name: &PluginName) -> Self {
+    pub fn new(name: &PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(name);
         let cache_path = dirs::CACHE.join(name);
         let toml_path = plugin_path.join("rtx.plugin.toml");
@@ -58,7 +58,7 @@ impl ExternalPlugin {
         };
         Self {
             name: name.into(),
-            script_man: build_script_man(settings, name, &plugin_path),
+            script_man: build_script_man(name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(name),
             installs_path: dirs::INSTALLS.join(name),
             cache: ExternalPluginCache::default(),
@@ -272,16 +272,11 @@ impl ExternalPlugin {
     }
 }
 
-fn build_script_man(settings: &Settings, name: &str, plugin_path: &Path) -> ScriptManager {
-    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
+fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
+    ScriptManager::new(plugin_path.to_path_buf())
         .with_env("RTX_PLUGIN_NAME", name.to_string())
-        .with_env("RTX_PLUGIN_PATH", plugin_path.to_string_lossy().to_string());
-    if let Some(shims_dir) = &settings.shims_dir {
-        let shims_dir = shims_dir.to_string_lossy().to_string();
-        sm = sm.with_env("RTX_SHIMS_DIR", shims_dir);
-    }
-
-    sm
+        .with_env("RTX_PLUGIN_PATH", plugin_path.to_string_lossy().to_string())
+        .with_env("RTX_SHIMS_DIR", &*dirs::SHIMS)
 }
 
 impl Eq for ExternalPlugin {}

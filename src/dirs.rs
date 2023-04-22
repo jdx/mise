@@ -12,3 +12,4 @@ pub static CONFIG: Lazy<PathBuf> = Lazy::new(|| env::RTX_CONFIG_DIR.clone());
 pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("plugins"));
 pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("downloads"));
 pub static INSTALLS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("installs"));
+pub static SHIMS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("shims"));

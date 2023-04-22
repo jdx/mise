@@ -1742,7 +1742,7 @@ _rtx_commands() {
 'plugins:Manage plugins' \
 'p:Manage plugins' \
 'prune:Delete unused versions of tools' \
-'reshim:\[experimental\] rebuilds the shim farm' \
+'reshim:rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \
@@ -2092,7 +2092,7 @@ _rtx__help_commands() {
 'ls-remote:List runtime versions available for install' \
 'plugins:Manage plugins' \
 'prune:Delete unused versions of tools' \
-'reshim:\[experimental\] rebuilds the shim farm' \
+'reshim:rebuilds the shim farm' \
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \

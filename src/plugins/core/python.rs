@@ -23,7 +23,7 @@ pub struct PythonPlugin {
 }
 
 impl PythonPlugin {
-    pub fn new(_settings: &Settings, name: PluginName) -> Self {
+    pub fn new(name: PluginName) -> Self {
         let cache_path = dirs::CACHE.join(&name);
         let fresh_duration = Some(Duration::from_secs(60 * 60 * 12)); // 12 hours
         Self {

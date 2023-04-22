@@ -22,7 +22,6 @@ pub struct Settings {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: bool,
     pub log_level: LevelFilter,
-    pub shims_dir: Option<PathBuf>,
     pub raw: bool,
 }
 
@@ -41,7 +40,6 @@ impl Default for Settings {
             shorthands_file: RTX_SHORTHANDS_FILE.clone(),
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             log_level: *RTX_LOG_LEVEL,
-            shims_dir: RTX_SHIMS_DIR.clone(),
             raw: *RTX_RAW,
         }
     }
@@ -85,9 +83,6 @@ impl Settings {
             self.disable_default_shorthands.to_string(),
         );
         map.insert("log_level".into(), self.log_level.to_string());
-        if let Some(shims) = &self.shims_dir {
-            map.insert("shims_dir".into(), shims.to_string_lossy().to_string());
-        }
         map.insert("raw".into(), self.raw.to_string());
         map
     }
@@ -107,7 +102,6 @@ pub struct SettingsBuilder {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: Option<bool>,
     pub log_level: Option<LevelFilter>,
-    pub shims_dir: Option<PathBuf>,
     pub raw: Option<bool>,
 }
 
@@ -154,9 +148,6 @@ impl SettingsBuilder {
         if other.log_level.is_some() {
             self.log_level = other.log_level;
         }
-        if other.shims_dir.is_some() {
-            self.shims_dir = other.shims_dir;
-        }
         if other.raw.is_some() {
             self.raw = other.raw;
         }
@@ -200,7 +191,6 @@ impl SettingsBuilder {
             .disable_default_shorthands
             .unwrap_or(settings.disable_default_shorthands);
         settings.log_level = self.log_level.unwrap_or(settings.log_level);
-        settings.shims_dir = self.shims_dir.clone().or(settings.shims_dir);
         settings.raw = self.raw.unwrap_or(settings.raw);
 
         if settings.raw {
