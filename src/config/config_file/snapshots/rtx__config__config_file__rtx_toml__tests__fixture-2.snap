@@ -19,8 +19,5 @@ SettingsBuilder {
     shorthands_file: None,
     disable_default_shorthands: None,
     log_level: None,
-    shims_dir: Some(
-        "~/.rtx/shims",
-    ),
     raw: None,
 }

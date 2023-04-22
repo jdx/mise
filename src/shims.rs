@@ -23,7 +23,7 @@ use crate::{dirs, file};
 #[allow(dead_code)]
 pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Result<Config> {
     let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
-    if bin_name == "rtx" || !config.settings.experimental {
+    if bin_name == "rtx" {
         return Ok(config);
     }
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
@@ -39,48 +39,42 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
 }
 
 fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
-    if let Ok(shims_dir) = config.get_shims_dir() {
-        let shim = shims_dir.join(bin_name);
-        if shim.exists() {
-            let ts = ToolsetBuilder::new().build(config)?;
-            if let Some((p, tv)) = ts.which(config, bin_name) {
-                if let Some(bin) = p.which(config, &tv, bin_name)? {
-                    return Ok(bin);
-                }
+    let shim = dirs::SHIMS.join(bin_name);
+    if shim.exists() {
+        let ts = ToolsetBuilder::new().build(config)?;
+        if let Some((p, tv)) = ts.which(config, bin_name) {
+            if let Some(bin) = p.which(config, &tv, bin_name)? {
+                return Ok(bin);
             }
-            // fallback for "system"
-            for path in &*env::PATH {
-                if fs::canonicalize(path).unwrap_or_default()
-                    == fs::canonicalize(&shims_dir).unwrap_or_default()
-                {
-                    continue;
-                }
-                let bin = path.join(bin_name);
-                if bin.exists() {
-                    return Ok(bin);
-                }
-            }
-            let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
-            err_no_version_set(bin_name, tvs)?;
         }
+        // fallback for "system"
+        for path in &*env::PATH {
+            if fs::canonicalize(path).unwrap_or_default()
+                == fs::canonicalize(&*dirs::SHIMS).unwrap_or_default()
+            {
+                continue;
+            }
+            let bin = path.join(bin_name);
+            if bin.exists() {
+                return Ok(bin);
+            }
+        }
+        let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
+        err_no_version_set(bin_name, tvs)?;
     }
     Err(eyre!("{} is not a valid shim", bin_name))
 }
 
 pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
-    if !config.settings.experimental || config.settings.shims_dir.is_none() {
-        return Ok(());
-    }
-    let shims_dir = config.get_shims_dir()?;
-    let _lock = LockFile::new(&shims_dir)
+    let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
         })
         .lock();
 
     // remove old shims
-    let _ = remove_all(&shims_dir);
-    create_dir_all(&shims_dir)?;
+    let _ = remove_all(&*dirs::SHIMS);
+    create_dir_all(&*dirs::SHIMS)?;
     let rtx_bin = config.rtx_bin().unwrap_or(env::RTX_EXE.clone());
 
     let paths: Vec<PathBuf> = ts
@@ -105,7 +99,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
                 continue;
             }
             let bin_name = bin.file_name().into_string().unwrap();
-            let symlink_path = shims_dir.join(bin_name);
+            let symlink_path = dirs::SHIMS.join(bin_name);
             file::make_symlink(&rtx_bin, &symlink_path).map_err(|err| {
                 eyre!(
                     "Failed to create symlink from {} to {}: {}",
@@ -122,7 +116,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
-                    let symlink_path = shims_dir.join(bin_name);
+                    let symlink_path = dirs::SHIMS.join(bin_name);
                     make_shim(&bin.path(), &symlink_path)?;
                 }
             }

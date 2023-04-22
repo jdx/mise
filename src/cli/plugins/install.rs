@@ -111,7 +111,7 @@ impl PluginsInstall {
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = ExternalPlugin::new(&config.settings, name);
+        let mut plugin = ExternalPlugin::new(name);
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
             mpr.warn(format!("plugin {} already installed", name));

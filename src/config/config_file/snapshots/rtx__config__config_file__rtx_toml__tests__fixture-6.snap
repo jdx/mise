@@ -21,8 +21,6 @@ nodejs = 'https://github.com/jdxcode/rtx-nodejs'
 [settings]
 verbose = true
 missing_runtime_behavior = 'warn'
-shims_dir = '~/.rtx/shims'
 
 [alias.nodejs]
 my_custom_node = '18'
-

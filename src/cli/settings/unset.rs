@@ -54,7 +54,6 @@ mod tests {
         jobs = 2
         disable_default_shorthands = false
         log_level = INFO
-        shims_dir = ~/data/shims
         raw = false
         "###);
 

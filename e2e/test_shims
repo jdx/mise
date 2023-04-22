@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "$0")/assert.sh"
 
-assert() {
-  local actual
-  actual="$($*)"
-  if [[ "$actual" != "$2" ]]; then
-    echo "Expected '$2' but got '$actual'"
-    exit 1
-  fi
-}
-
-rtx settings set experimental true
-rtx settings set shims_dir "$RTX_DATA_DIR/shims"
 rtx reshim
 assert "$RTX_DATA_DIR/shims/node -v" "v20.0.0"
-rtx settings unset experimental
-rtx settings unset shims_dir
