@@ -9,17 +9,17 @@ rtx() {
   local command
   command="${1:-}"
   if [ "$#" = 0 ]; then
-    command /some/dir/rtx
+    command rtx
     return
   fi
   shift
 
   case "$command" in
   deactivate|shell)
-    eval "$(/some/dir/rtx "$command" "$@")"
+    eval "$(command rtx "$command" "$@")"
     ;;
   *)
-    command /some/dir/rtx "$command" "$@"
+    command rtx "$command" "$@"
     ;;
   esac
 }
@@ -27,7 +27,7 @@ rtx() {
 _rtx_hook() {
   local previous_exit_status=$?;
   trap -- '' SIGINT;
-  eval "$("/some/dir/rtx" hook-env --status -s bash)";
+  eval "$(rtx hook-env --status -s bash)";
   trap - SIGINT;
   return $previous_exit_status;
 };

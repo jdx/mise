@@ -788,14 +788,14 @@ mod tests {
     fn test_set_alias() {
         let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
-        [alias.nodejs]
+        [alias.node]
         16 = "16.0.0"
         18 = "18.0.0"
         "#})
             .unwrap();
 
-        cf.set_alias("nodejs", "18", "18.0.1");
-        cf.set_alias("nodejs", "20", "20.0.0");
+        cf.set_alias("node", "18", "18.0.1");
+        cf.set_alias("node", "20", "20.0.0");
         cf.set_alias("python", "3.10", "3.10.0");
 
         assert_debug_snapshot!(cf.alias);
@@ -806,7 +806,7 @@ mod tests {
     fn test_remove_alias() {
         let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
-        [alias.nodejs]
+        [alias.node]
         16 = "16.0.0"
         18 = "18.0.0"
 
@@ -814,7 +814,7 @@ mod tests {
         "3.10" = "3.10.0"
         "#})
             .unwrap();
-        cf.remove_alias("nodejs", "16");
+        cf.remove_alias("node", "16");
         cf.remove_alias("python", "3.10");
 
         assert_debug_snapshot!(cf.alias);
@@ -826,11 +826,11 @@ mod tests {
         let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [tools]
-        nodejs = ["16.0.0", "18.0.0"]
+        node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
         cf.replace_versions(
-            &PluginName::from("nodejs"),
+            &PluginName::from("node"),
             &["16.0.1".into(), "18.0.1".into()],
         );
 
@@ -843,10 +843,10 @@ mod tests {
         let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
         cf.parse(&formatdoc! {r#"
         [tools]
-        nodejs = ["16.0.0", "18.0.0"]
+        node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.remove_plugin(&PluginName::from("nodejs"));
+        cf.remove_plugin(&PluginName::from("node"));
 
         assert_debug_snapshot!(cf.toolset);
         assert_display_snapshot!(cf);
@@ -858,7 +858,7 @@ mod tests {
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
-        [alias.nodejs]
+        [alias.node]
         18 = "18.0.0"
         "#})
             .unwrap();
@@ -866,7 +866,7 @@ mod tests {
         assert_display_snapshot!(cf.dump(), @r###"
         [settings]
         legacy_version_file = false
-        [alias.nodejs]
+        [alias.node]
         18 = "18.0.0"
         "###);
     }

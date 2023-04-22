@@ -23,14 +23,14 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
 /// Note that only the plugin specified will be overridden, so if a `.tool-versions` file
-/// includes "nodejs 20" but you run `rtx exec python@3.11`; it will still load nodejs@20.
+/// includes "node 20" but you run `rtx exec python@3.11`; it will still load node@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Exec {
     /// Runtime(s) to start
-    /// e.g.: nodejs@20 python@3.10
+    /// e.g.: node@20 python@3.10
     #[clap(value_parser = RuntimeArgParser)]
     pub runtime: Vec<RuntimeArg>,
 
@@ -125,14 +125,14 @@ fn parse_command(
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx exec nodejs@20 -- node ./app.js</bold>  # launch app.js using node-20.x
-  $ <bold>rtx x nodejs@20 -- node ./app.js</bold>     # shorter alias
+  $ <bold>rtx exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
+  $ <bold>rtx x node@20 -- node ./app.js</bold>     # shorter alias
 
   # Specify command as a string:
-  $ <bold>rtx exec nodejs@20 python@3.11 --command "node -v && python -V"</bold>
+  $ <bold>rtx exec node@20 python@3.11 --command "node -v && python -V"</bold>
 
   # Run a command in a different directory:
-  $ <bold>rtx x -C /path/to/project nodejs@20 -- node ./app.js</bold>
+  $ <bold>rtx x -C /path/to/project node@20 -- node ./app.js</bold>
 "#
 );
 

@@ -9,13 +9,11 @@ use crate::config::Config;
 use crate::output::Output;
 
 /// List all available remote plugins
-///
-/// These are fetched from https://github.com/asdf-vm/asdf-plugins
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list-remote", long_about = LONG_ABOUT, verbatim_doc_comment, alias = "list-all")]
 pub struct PluginsLsRemote {
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/rtx-plugins/rtx-nodejs.git
     #[clap(short, long)]
     pub urls: bool,
 
@@ -63,7 +61,7 @@ impl Command for PluginsLsRemote {
 const LONG_ABOUT: &str = r#"
 List all available remote plugins
 
-These are fetched from https://github.com/asdf-vm/asdf-plugins
+The full list is here: https://github.com/jdxcode/rtx/blob/main/src/default_shorthands.rs
 
 Examples:
   $ rtx plugins ls-remote

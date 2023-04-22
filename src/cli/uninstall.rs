@@ -61,7 +61,7 @@ impl Command for Uninstall {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx uninstall nodejs@18.0.0</bold> # will uninstall specific version
-  $ <bold>rtx uninstall nodejs</bold>        # will uninstall current nodejs version
+  $ <bold>rtx uninstall node@18.0.0</bold> # will uninstall specific version
+  $ <bold>rtx uninstall node</bold>        # will uninstall current node version
 "#
 );

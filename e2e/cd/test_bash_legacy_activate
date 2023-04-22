@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-rtx install nodejs@20.0.0 nodejs@18.0.0
+rtx install node@20.0.0 node@18.0.0
 # shellcheck disable=SC1090
 eval "$(rtx activate -s bash --status)"
 _rtx_hook
