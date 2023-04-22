@@ -1783,8 +1783,8 @@ _rtx_commands() {
 'shell:Sets a tool version for the current shell session' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
-'use:Change the active version of a tool. This will install the tool if it is not already installed.' \
-'u:Change the active version of a tool. This will install the tool if it is not already installed.' \
+'use:Change the active version of a tool locally or globally.' \
+'u:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
 'which:Shows the path that a bin name points to' \
@@ -2135,7 +2135,7 @@ _rtx__help_commands() {
 'shell:Sets a tool version for the current shell session' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
-'use:Change the active version of a tool. This will install the tool if it is not already installed.' \
+'use:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
 'which:Shows the path that a bin name points to' \
