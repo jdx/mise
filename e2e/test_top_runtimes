@@ -56,7 +56,7 @@ exit 0 # disable for now for faster releases
 # 15 kustomize
 # 15 graalvm
 
-rtx exec nodejs -- node -v
+rtx exec node -- node -v
 rtx exec python -- python -V
 rtx exec direnv -- direnv --version
 rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell

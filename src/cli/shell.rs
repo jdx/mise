@@ -64,7 +64,7 @@ fn err_inactive() -> Result<()> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx shell nodejs@20</bold>
+  $ <bold>rtx shell node@20</bold>
   $ <bold>node -v</bold>
   v20.0.0
 "#

@@ -31,7 +31,7 @@ pub struct Plugins {
 
     /// show the git url for each plugin
     ///
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/asdf-vm/asdf-node.git
     #[clap(short, long)]
     pub urls: bool,
 }

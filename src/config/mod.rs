@@ -17,7 +17,7 @@ use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
 use crate::env::CI;
-use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::core::{CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::tool::Tool;
@@ -249,6 +249,15 @@ impl Config {
             );
         }
     }
+
+    pub fn is_plugin_hidden(&self, plugin_name: &PluginName) -> bool {
+        self.tools.get(plugin_name).map_or(false, |tool| {
+            if matches!(tool.plugin.get_type(), PluginType::External) {
+                return false;
+            }
+            plugin_name == "nodejs" || plugin_name == "golang"
+        })
+    }
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
@@ -295,9 +304,9 @@ fn load_rtxrc() -> Result<RtxToml> {
 }
 
 fn load_tools(settings: &Settings) -> Result<ToolMap> {
-    let mut tools = ToolMap::new();
+    let mut tools = CORE_PLUGINS.clone();
     if settings.experimental {
-        tools.extend(CORE_PLUGINS.clone());
+        tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
     }
     let plugins = Tool::list()?
         .into_par_iter()

@@ -26,7 +26,7 @@ impl Command for AliasUnset {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx alias unset nodejs lts/hydrogen</bold>
+  $ <bold>rtx alias unset node lts/hydrogen</bold>
 "#
 );
 

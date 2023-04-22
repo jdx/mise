@@ -279,24 +279,24 @@ impl Display for VersionStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx ls</bold>
-  ⏵  nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
   ⏵  python     3.11.0 (set by ~/.tool-versions)
      python     3.10.0
 
   $ <bold>rtx ls --current</bold>
-  ⏵  nodejs     20.0.0 (set by ~/src/myapp/.tool-versions)
+  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
   ⏵  python     3.11.0 (set by ~/.tool-versions)
 
   $ <bold>rtx ls --parseable</bold>
-  nodejs 20.0.0
+  node 20.0.0
   python 3.11.0
 
   $ <bold>rtx ls --json</bold>
   {
-    "nodejs": [
+    "node": [
       {
         "version": "20.0.0",
-        "install_path": "/Users/jdx/.rtx/installs/nodejs/20.0.0",
+        "install_path": "/Users/jdx/.rtx/installs/node/20.0.0",
         "source": {
           "type": ".rtx.toml",
           "path": "/Users/jdx/.rtx.toml"

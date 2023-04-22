@@ -243,15 +243,15 @@ https://asdf-vm.com/"};
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx install nodejs@20.0.0</bold>       Install a specific node version
-  $ <bold>rtx install nodejs@20.0</bold>         Install a version matching a prefix
-  $ <bold>rtx install nodejs</bold>              Install the node version defined in
+  $ <bold>rtx install node@20.0.0</bold>       Install a specific node version
+  $ <bold>rtx install node@20.0</bold>         Install a version matching a prefix
+  $ <bold>rtx install node</bold>              Install the node version defined in
                                   .tool-versions or .rtx.toml
-  $ <bold>rtx local nodejs@20</bold>             Use node-20.x in current project
-  $ <bold>rtx global nodejs@20</bold>            Use node-20.x as default
-  $ <bold>rtx local nodejs@latest</bold>         Use latest node in current directory
-  $ <bold>rtx global nodejs@system</bold>        Use system node everywhere unless overridden
-  $ <bold>rtx x nodejs@20 -- node app.js</bold>  Run `node app.js` with PATH pointing to
+  $ <bold>rtx local node@20</bold>             Use node-20.x in current project
+  $ <bold>rtx global node@20</bold>            Use node-20.x as default
+  $ <bold>rtx local node@latest</bold>         Use latest node in current directory
+  $ <bold>rtx global node@system</bold>        Use system node everywhere unless overridden
+  $ <bold>rtx x node@20 -- node app.js</bold>  Run `node app.js` with PATH pointing to
                                   node-20.x
 "#
 );

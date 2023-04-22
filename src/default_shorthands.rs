@@ -415,7 +415,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 646] = [
     ("nfpm", "https://github.com/ORCID/asdf-nfpm"),
     ("nim", "https://github.com/asdf-community/asdf-nim.git"),
     ("ninja", "https://github.com/asdf-community/asdf-ninja.git"),
-    ("nodejs", "https://github.com/asdf-vm/asdf-nodejs.git"),
+    ("node", "https://github.com/asdf-vm/asdf-node.git"),
     ("nomad", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("nova", "https://github.com/elementalvoid/asdf-nova.git"),
     ("nsc", "https://github.com/dex4er/asdf-nsc.git"),

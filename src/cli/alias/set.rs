@@ -30,7 +30,7 @@ impl Command for AliasSet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx alias set nodejs lts/hydrogen 18.0.0</bold>
+  $ <bold>rtx alias set node lts/hydrogen 18.0.0</bold>
 "#
 );
 

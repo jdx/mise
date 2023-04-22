@@ -23,7 +23,7 @@ pub struct PluginsLs {
     pub core: bool,
 
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+    /// e.g.: https://github.com/asdf-vm/asdf-node.git
     #[clap(short, long, verbatim_doc_comment)]
     pub urls: bool,
 }
@@ -66,11 +66,11 @@ impl Command for PluginsLs {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx plugins ls</bold>
-  nodejs
+  node
   ruby
 
   $ <bold>rtx plugins ls --urls</bold>
-  nodejs                        https://github.com/asdf-vm/asdf-nodejs.git
+  node                        https://github.com/asdf-vm/asdf-node.git
   ruby                          https://github.com/asdf-vm/asdf-ruby.git
 "#
 );
