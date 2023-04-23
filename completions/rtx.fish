@@ -263,6 +263,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell typ
 complete -c rtx -n "__fish_seen_subcommand_from env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -l log-level -d 'Set the log output verbosity' -r
+complete -c rtx -n "__fish_seen_subcommand_from env" -l json -d 'Output in JSON format'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
