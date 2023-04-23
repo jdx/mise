@@ -7,7 +7,7 @@ use filetime::{set_file_times, FileTime};
 use std::os::unix::fs::symlink;
 use std::os::unix::prelude::*;
 
-use crate::dirs;
+use crate::{dirs, env};
 
 pub fn remove_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
@@ -176,6 +176,16 @@ impl Iterator for FindUp {
         }
         self.next()
     }
+}
+
+pub fn which(name: &str) -> Option<PathBuf> {
+    for path in &*env::PATH {
+        let bin = path.join(name);
+        if is_executable(&bin) {
+            return Some(bin);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
