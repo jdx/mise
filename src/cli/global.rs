@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::cli::local::local;
 use crate::config::Config;
@@ -10,7 +10,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
 
-/// Sets/gets the global runtime version(s)
+/// Sets/gets the global tool version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
 /// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
@@ -18,16 +18,16 @@ use crate::{dirs, env};
 /// Otherwise, it will be parsed as a `.tool-versions` file.
 /// A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
 ///
-/// Use `rtx local` to set a runtime version locally in the current directory.
+/// Use `rtx local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "g", after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
-    /// Runtime(s) to add to .tool-versions
+    /// Tool(s) to add to .tool-versions
     /// e.g.: node@20
-    /// If this is a single runtime with no version, the current value of the global
+    /// If this is a single tool with no version, the current value of the global
     /// .tool-versions will be displayed
-    #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
-    runtime: Option<Vec<RuntimeArg>>,
+    #[clap(value_parser = ToolArgParser, verbatim_doc_comment)]
+    tool: Option<Vec<ToolArg>>,
 
     /// Save exact version to `~/.tool-versions`
     /// e.g.: `rtx global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
@@ -55,7 +55,7 @@ impl Command for Global {
             config,
             out,
             &global_file(),
-            self.runtime,
+            self.tool,
             self.remove,
             self.pin,
             self.fuzzy,
@@ -122,11 +122,11 @@ mod tests {
 
         // can only request a version one plugin at a time
         let err = assert_cli_err!("global", "tiny", "dummy");
-        assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+        assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
 
         // this is just invalid
         let err = assert_cli_err!("global", "tiny", "dummy@latest");
-        assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+        assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
 
         assert_cli_snapshot!("global", "--path");
 

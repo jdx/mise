@@ -1,7 +1,7 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
@@ -12,14 +12,14 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
-    /// Runtime(s) to remove
-    #[clap(required = true, value_parser = RuntimeArgParser)]
-    runtime: Vec<RuntimeArg>,
+    /// Tool(s) to remove
+    #[clap(required = true, value_parser = ToolArgParser)]
+    tool: Vec<ToolArg>,
 }
 
 impl Command for Uninstall {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let runtimes = RuntimeArg::double_runtime_condition(&self.runtime);
+        let runtimes = ToolArg::double_tool_condition(&self.tool);
         let tool_versions = runtimes
             .iter()
             .map(|a| {

@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
@@ -13,13 +13,13 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Where {
-    /// Runtime(s) to look up
+    /// Tool(s) to look up
     /// e.g.: ruby@3
     /// if "@<PREFIX>" is specified, it will show the latest installed version
     /// that matches the prefix
     /// otherwise, it will show the current, active installed version
-    #[clap(required = true, value_parser = RuntimeArgParser, verbatim_doc_comment)]
-    runtime: RuntimeArg,
+    #[clap(required = true, value_parser = ToolArgParser, verbatim_doc_comment)]
+    tool: ToolArg,
 
     /// the version prefix to use when querying the latest version
     /// same as the first argument after the "@"
@@ -30,23 +30,22 @@ pub struct Where {
 
 impl Command for Where {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let runtime = match self.runtime.tvr {
+        let runtime = match self.tool.tvr {
             None => match self.asdf_version {
-                Some(version) => self.runtime.with_version(&version),
+                Some(version) => self.tool.with_version(&version),
                 None => {
                     let ts = ToolsetBuilder::new()
-                        .with_args(&[self.runtime.clone()])
+                        .with_args(&[self.tool.clone()])
                         .build(&mut config)?;
                     let v = ts
                         .versions
-                        .get(&self.runtime.plugin)
+                        .get(&self.tool.plugin)
                         .and_then(|v| v.requests.first())
                         .map(|(r, _)| r.version());
-                    self.runtime
-                        .with_version(&v.unwrap_or(String::from("latest")))
+                    self.tool.with_version(&v.unwrap_or(String::from("latest")))
                 }
             },
-            _ => self.runtime,
+            _ => self.tool,
         };
 
         let plugin = match config.tools.get(&runtime.plugin) {

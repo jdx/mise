@@ -29,7 +29,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
     args[0] = which_shim(&mut config, bin_name)?.into();
     let exec = Exec {
-        runtime: vec![],
+        tool: vec![],
         c: None,
         command: Some(args),
         cd: None,

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::cli::local::local;
 use crate::config::{Config, MissingRuntimeBehavior};
@@ -23,8 +23,8 @@ pub struct Use {
     /// Tool(s) to add to config file
     /// e.g.: node@20
     /// If no version is specified, it will default to @latest
-    #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment, required_unless_present = "remove")]
-    tool: Vec<RuntimeArg>,
+    #[clap(value_parser = ToolArgParser, verbatim_doc_comment, required_unless_present = "remove")]
+    tool: Vec<ToolArg>,
 
     /// Save exact version to config file
     /// e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions
@@ -58,7 +58,7 @@ impl Command for Use {
             .into_iter()
             .map(|r| match &r.tvr {
                 Some(_) => r,
-                None => RuntimeArg::parse(&format!("{}@latest", r.plugin)),
+                None => ToolArg::parse(&format!("{}@latest", r.plugin)),
             })
             .collect();
         let path = match (self.global, self.path) {

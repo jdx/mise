@@ -9,12 +9,12 @@ use crate::plugins::PluginName;
 use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RuntimeArg {
+pub struct ToolArg {
     pub plugin: PluginName,
     pub tvr: Option<ToolVersionRequest>,
 }
 
-impl RuntimeArg {
+impl ToolArg {
     pub fn parse(input: &str) -> Self {
         match input.split_once('@') {
             Some((plugin, version)) => Self {
@@ -35,19 +35,19 @@ impl RuntimeArg {
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.
-    pub fn double_runtime_condition(runtimes: &[RuntimeArg]) -> Vec<RuntimeArg> {
-        let mut runtimes = runtimes.to_vec();
-        if runtimes.len() == 2 {
+    pub fn double_tool_condition(tools: &[ToolArg]) -> Vec<ToolArg> {
+        let mut tools = tools.to_vec();
+        if tools.len() == 2 {
             let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
-            let a = runtimes[0].clone();
-            let b = runtimes[1].clone();
+            let a = tools[0].clone();
+            let b = tools[1].clone();
             if matches!(a.tvr, None) && matches!(b.tvr, None) && re.is_match(&b.plugin) {
-                runtimes[1].tvr = Some(ToolVersionRequest::new(a.plugin.clone(), &b.plugin));
-                runtimes[1].plugin = a.plugin;
-                runtimes.remove(0);
+                tools[1].tvr = Some(ToolVersionRequest::new(a.plugin.clone(), &b.plugin));
+                tools[1].plugin = a.plugin;
+                tools.remove(0);
             }
         }
-        runtimes
+        tools
     }
 
     pub fn with_version(self, version: &str) -> Self {
@@ -58,7 +58,7 @@ impl RuntimeArg {
     }
 }
 
-impl Display for RuntimeArg {
+impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
             Some(tvr) => write!(f, "{}", tvr),
@@ -68,10 +68,10 @@ impl Display for RuntimeArg {
 }
 
 #[derive(Debug, Clone)]
-pub struct RuntimeArgParser;
+pub struct ToolArgParser;
 
-impl clap::builder::TypedValueParser for RuntimeArgParser {
-    type Value = RuntimeArg;
+impl clap::builder::TypedValueParser for ToolArgParser {
+    type Value = ToolArg;
 
     fn parse_ref(
         &self,
@@ -88,6 +88,6 @@ impl clap::builder::TypedValueParser for RuntimeArgParser {
         _arg: Option<&Arg>,
         value: OsString,
     ) -> Result<Self::Value, Error> {
-        Ok(RuntimeArg::parse(&value.to_string_lossy()))
+        Ok(ToolArg::parse(&value.to_string_lossy()))
     }
 }

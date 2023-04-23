@@ -7,7 +7,7 @@ use color_eyre::eyre::{eyre, Result};
 
 use tool_versions::ToolVersions;
 
-use crate::cli::args::runtime::RuntimeArg;
+use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
 use crate::config::{AliasMap, Config, Settings};
@@ -53,7 +53,7 @@ impl dyn ConfigFile {
     pub fn add_runtimes(
         &mut self,
         config: &mut Config,
-        runtimes: &[RuntimeArg],
+        runtimes: &[ToolArg],
         pin: bool,
     ) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
@@ -99,10 +99,10 @@ impl dyn ConfigFile {
         Ok(())
     }
 
-    /// this is for `rtx local|global RUNTIME` which will display the version instead of setting it
-    /// it's only valid to use a single runtime in this case
-    /// returns "true" if the runtime was displayed which means the CLI should exit
-    pub fn display_runtime(&self, out: &mut Output, runtimes: &[RuntimeArg]) -> Result<bool> {
+    /// this is for `rtx local|global TOOL` which will display the version instead of setting it
+    /// it's only valid to use a single tool in this case
+    /// returns "true" if the tool was displayed which means the CLI should exit
+    pub fn display_runtime(&self, out: &mut Output, runtimes: &[ToolArg]) -> Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let plugin = &runtimes[0].plugin;
@@ -126,7 +126,7 @@ impl dyn ConfigFile {
         }
         // check for something like `rtx local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
-            return Err(eyre!("invalid input, specify a version for each runtime. Or just specify one runtime to print the current version"));
+            return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
         }
         Ok(false)
     }
