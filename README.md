@@ -148,7 +148,7 @@ v20.0.0
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
-  - [`rtx env [OPTIONS] [RUNTIME]...`](#rtx-env-options-runtime)
+  - [`rtx env [OPTIONS] [TOOL]...`](#rtx-env-options-tool)
   - [`rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`](#rtx-exec-options-runtime----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
   - [`rtx install [OPTIONS] [RUNTIME]...`](#rtx-install-options-runtime)
@@ -1655,7 +1655,7 @@ Examples:
   $ rtx doctor
   [WARN] plugin node is not installed
 ```
-### `rtx env [OPTIONS] [RUNTIME]...`
+### `rtx env [OPTIONS] [TOOL]...`
 
 ```
 Exports env vars to activate rtx a single time
@@ -1663,17 +1663,22 @@ Exports env vars to activate rtx a single time
 Use this if you don't want to permanently install rtx. It's not necessary to
 use this if you have `rtx activate` in your shell rc file.
 
-Usage: env [OPTIONS] [RUNTIME]...
+Usage: env [OPTIONS] [TOOL]...
 
 Arguments:
-  [RUNTIME]...
-          Runtime version to use
+  [TOOL]...
+          Tool version(s) to use
 
 Options:
   -s, --shell <SHELL>
           Shell type to generate environment variables for
 
           [possible values: bash, fish, nu, xonsh, zsh]
+
+      --json
+          Output in JSON format
+
+          [short aliases: J]
 
 Examples:
   $ eval "$(rtx env -s bash)"
@@ -1810,6 +1815,8 @@ Options:
 
       --json
           Output in json format
+
+          [short aliases: J]
 
 Examples:
   $ rtx ls

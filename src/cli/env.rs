@@ -5,7 +5,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Exports env vars to activate rtx a single time
 ///
@@ -15,29 +15,47 @@ use crate::toolset::ToolsetBuilder;
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Env {
     /// Shell type to generate environment variables for
-    #[clap(long, short)]
+    #[clap(long, short, overrides_with = "json")]
     shell: Option<ShellType>,
 
-    /// Runtime version to use
+    /// Tool version(s) to use
     #[clap(value_parser = RuntimeArgParser)]
-    runtime: Vec<RuntimeArg>,
+    tool: Vec<RuntimeArg>,
+
+    /// Output in JSON format
+    #[clap(long, visible_short_alias = 'J', overrides_with = "shell")]
+    json: bool,
 }
 
 impl Command for Env {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
-            .with_args(&self.runtime)
+            .with_args(&self.tool)
             .build(&mut config)?;
+        if self.json {
+            self.output_json(config, out, ts)
+        } else {
+            self.output_shell(config, out, ts)
+        }
+    }
+}
+
+impl Env {
+    fn output_json(&self, config: Config, out: &mut Output, ts: Toolset) -> Result<()> {
+        let env = ts.env_with_path(&config);
+        rtxprintln!(out, "{}", serde_json::to_string_pretty(&env)?);
+        Ok(())
+    }
+
+    fn output_shell(&self, config: Config, out: &mut Output, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-
         for (k, v) in ts.env_with_path(&config) {
             let k = k.to_string();
             let v = v.to_string();
             rtxprint!(out, "{}", shell.set_env(&k, &v));
         }
-
         Ok(())
     }
 }
@@ -57,9 +75,9 @@ mod tests {
 
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
     use crate::cli::tests::grep;
     use crate::dirs;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_env() {
@@ -109,5 +127,10 @@ mod tests {
         env::set_var("SHELL", "");
         let stdout = assert_cli!("env");
         assert!(stdout.contains("export PATH="));
+    }
+
+    #[test]
+    fn test_env_json() {
+        assert_cli_snapshot!("env", "-J");
     }
 }
