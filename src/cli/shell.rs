@@ -2,7 +2,7 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
@@ -15,9 +15,9 @@ use crate::toolset::{ToolSource, ToolsetBuilder};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
-    /// Runtime version(s) to use
-    #[clap(value_parser = RuntimeArgParser)]
-    runtime: Vec<RuntimeArg>,
+    /// Tool(s) to use
+    #[clap(value_parser = ToolArgParser)]
+    tool: Vec<ToolArg>,
 
     /// Removes a previously set version
     #[clap(long, short)]
@@ -28,7 +28,7 @@ impl Command for Shell {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
-            .with_args(&self.runtime)
+            .with_args(&self.tool)
             .build(&mut config)?;
         if !config.is_activated() {
             err_inactive()?;

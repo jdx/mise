@@ -573,7 +573,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::tool -- Tool version(s) to use:' \
+'*::tool -- Tool(s) to use:' \
 && ret=0
 ;;
 (exec)
@@ -597,7 +597,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to start e.g.\: node@20 python@3.10:' \
+'*::tool -- Tool(s) to start e.g.\: node@20 python@3.10:' \
 && ret=0
 ;;
 (global)
@@ -625,9 +625,9 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to add to .tool-versions
+'*::tool -- Tool(s) to add to .tool-versions
 e.g.\: node@20
-If this is a single runtime with no version, the current value of the global
+If this is a single tool with no version, the current value of the global
 .tool-versions will be displayed:' \
 && ret=0
 ;;
@@ -678,8 +678,6 @@ Sets --jobs=1]' \
 ;;
 (install)
 _arguments "${_arguments_options[@]}" \
-'()*-p+[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
-'()*--plugin=[Only install tool version(s) for <PLUGIN>]:PLUGIN: ' \
 '-j+[Number of plugins and runtimes to install in parallel
 default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
@@ -687,8 +685,6 @@ default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-f[Force reinstall even if already installed]' \
 '--force[Force reinstall even if already installed]' \
-'(-p --plugin -f --force)-a[Install all missing tool versions as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
-'(-p --plugin -f --force)--all[Install all missing tool versions as well as all plugins for the current directory This is hidden because it'\''s now the default behavior]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '--debug[Sets log level to debug]' \
@@ -700,7 +696,7 @@ Sets --jobs=1]' \
 '--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Tool version(s) to install e.g.\: node@20:' \
+'*::tool -- Tool(s) to install e.g.\: node@20:' \
 && ret=0
 ;;
 (latest)
@@ -721,7 +717,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':runtime -- Runtime to get the latest version of:' \
+':tool -- Tool to get the latest version of:' \
 '::asdf_version -- The version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility:' \
 && ret=0
 ;;
@@ -734,9 +730,9 @@ default\: 4]: : ' \
 default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-p[Recurse up to find a .tool-versions file rather than using the current directory only
-by default this command will only set the runtime in the current directory ("\$PWD/.tool-versions")]' \
+by default this command will only set the tool in the current directory ("\$PWD/.tool-versions")]' \
 '--parent[Recurse up to find a .tool-versions file rather than using the current directory only
-by default this command will only set the runtime in the current directory ("\$PWD/.tool-versions")]' \
+by default this command will only set the tool in the current directory ("\$PWD/.tool-versions")]' \
 '--pin[Save exact version to \`.tool-versions\`
 e.g.\: \`rtx local --pin node@20\` will save \`node 20.0.0\` to .tool-versions]' \
 '--fuzzy[Save fuzzy version to \`.tool-versions\` e.g.\: \`rtx local --fuzzy node@20\` will save \`node 20\` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
@@ -752,9 +748,9 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtimes to add to .tool-versions/.rtx.toml
+'*::tool -- Tool(s) to add to .tool-versions/.rtx.toml
 e.g.\: node@20
-if this is a single runtime with no version,
+if this is a single tool with no version,
 the current value of .tool-versions/.rtx.toml will be displayed:' \
 && ret=0
 ;;
@@ -1288,7 +1284,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime version(s) to use:' \
+'*::tool -- Tool(s) to use:' \
 && ret=0
 ;;
 (trust)
@@ -1331,7 +1327,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::runtime -- Runtime(s) to remove:' \
+'*::tool -- Tool(s) to remove:' \
 && ret=0
 ;;
 (use)
@@ -1405,7 +1401,7 @@ Sets --jobs=1]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-':runtime -- Runtime(s) to look up
+':tool -- Tool(s) to look up
 e.g.\: ruby@3
 if "@<PREFIX>" is specified, it will show the latest installed version
 that matches the prefix
@@ -1763,9 +1759,9 @@ _rtx_commands() {
 'doctor:Check rtx installation for possible problems.' \
 'env:Exports env vars to activate rtx a single time' \
 'e:Exports env vars to activate rtx a single time' \
-'exec:Execute a command with runtime(s) set' \
-'x:Execute a command with runtime(s) set' \
-'global:Sets/gets the global runtime version(s)' \
+'exec:Execute a command with tool(s) set' \
+'x:Execute a command with tool(s) set' \
+'global:Sets/gets the global tool version(s)' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
 'implode:Removes rtx CLI and all related data' \
 'install:Install a tool version' \
@@ -2119,8 +2115,8 @@ _rtx__help_commands() {
 'direnv:Output direnv function to use rtx inside direnv' \
 'doctor:Check rtx installation for possible problems.' \
 'env:Exports env vars to activate rtx a single time' \
-'exec:Execute a command with runtime(s) set' \
-'global:Sets/gets the global runtime version(s)' \
+'exec:Execute a command with tool(s) set' \
+'global:Sets/gets the global tool version(s)' \
 'hook-env:\[internal\] called by activate hook to update env vars directory change' \
 'implode:Removes rtx CLI and all related data' \
 'install:Install a tool version' \

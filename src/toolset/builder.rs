@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
-use crate::cli::args::runtime::RuntimeArg;
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
@@ -10,7 +10,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
-    args: Vec<RuntimeArg>,
+    args: Vec<ToolArg>,
     install_missing: bool,
     latest_versions: bool,
 }
@@ -20,7 +20,7 @@ impl ToolsetBuilder {
         Self::default()
     }
 
-    pub fn with_args(mut self, args: &[RuntimeArg]) -> Self {
+    pub fn with_args(mut self, args: &[ToolArg]) -> Self {
         self.args = args.to_vec();
         self
     }
@@ -80,7 +80,7 @@ fn load_runtime_env(ts: &mut Toolset, env: BTreeMap<String, String>) {
     }
 }
 
-fn load_runtime_args(ts: &mut Toolset, args: &[RuntimeArg]) {
+fn load_runtime_args(ts: &mut Toolset, args: &[ToolArg]) {
     for (_, args) in args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
         let mut arg_ts = Toolset::new(ToolSource::Argument);
         for arg in args {
