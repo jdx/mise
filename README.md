@@ -315,8 +315,8 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.29.1/rtx-v1.29.1-linux-x64
-mv rtx-v1.27.10-linux-x64 /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v1.29.1/rtx-v1.29.1-linux-x64 > /usr/local/bin/rtx
+chmod +x /usr/local/bin/rtx
 ```
 
 ### apt
