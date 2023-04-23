@@ -149,10 +149,10 @@ v20.0.0
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
   - [`rtx env [OPTIONS] [TOOL]...`](#rtx-env-options-tool)
-  - [`rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`](#rtx-exec-options-runtime----command)
+  - [`rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`](#rtx-exec-options-tool----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
-  - [`rtx install [OPTIONS] [RUNTIME]...`](#rtx-install-options-runtime)
-  - [`rtx latest <RUNTIME>`](#rtx-latest-runtime)
+  - [`rtx install [OPTIONS] [TOOL]...`](#rtx-install-options-tool)
+  - [`rtx latest <TOOL>`](#rtx-latest-tool)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
@@ -168,12 +168,12 @@ v20.0.0
   - [`rtx settings ls`](#rtx-settings-ls)
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
   - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
-  - [`rtx shell [OPTIONS] [RUNTIME]...`](#rtx-shell-options-runtime)
+  - [`rtx shell [OPTIONS] [TOOL]...`](#rtx-shell-options-tool)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
-  - [`rtx uninstall <RUNTIME>...`](#rtx-uninstall-runtime)
+  - [`rtx uninstall <TOOL>...`](#rtx-uninstall-tool)
   - [`rtx use [OPTIONS] [TOOL]...`](#rtx-use-options-tool)
   - [`rtx version`](#rtx-version)
-  - [`rtx where <RUNTIME>`](#rtx-where-runtime)
+  - [`rtx where <TOOL>`](#rtx-where-tool)
   - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
 
 </details>
@@ -1667,7 +1667,7 @@ Usage: env [OPTIONS] [TOOL]...
 
 Arguments:
   [TOOL]...
-          Tool version(s) to use
+          Tool(s) to use
 
 Options:
   -s, --shell <SHELL>
@@ -1686,25 +1686,24 @@ Examples:
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
 ```
-### `rtx exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]`
+### `rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`
 
 ```
-Execute a command with runtime(s) set
+Execute a command with tool(s) set
 
-use this to avoid modifying the shell session or running ad-hoc commands with the rtx runtimes
-set.
+use this to avoid modifying the shell session or running ad-hoc commands with rtx tools set.
 
-Runtimes will be loaded from .tool-versions, though they can be overridden with <RUNTIME> args
+Tools will be loaded from .rtx.toml/.tool-versions, though they can be overridden with <RUNTIME> args
 Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 includes "node 20" but you run `rtx exec python@3.11`; it will still load node@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
 
-Usage: exec [OPTIONS] [RUNTIME]... [-- <COMMAND>...]
+Usage: exec [OPTIONS] [TOOL]... [-- <COMMAND>...]
 
 Arguments:
-  [RUNTIME]...
-          Runtime(s) to start e.g.: node@20 python@3.10
+  [TOOL]...
+          Tool(s) to start e.g.: node@20 python@3.10
 
   [COMMAND]...
           Command string to execute (same as --command)
@@ -1744,7 +1743,7 @@ Options:
       --dry-run
           List directories that would be removed without actually removing them
 ```
-### `rtx install [OPTIONS] [RUNTIME]...`
+### `rtx install [OPTIONS] [TOOL]...`
 
 ```
 Install a tool version
@@ -1754,18 +1753,15 @@ It won't be used simply by being installed, however.
 For that, you must set up a `.rtx.toml`/`.tool-version` file manually or with `rtx use`.
 Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 
-Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
+Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 
-Usage: install [OPTIONS] [RUNTIME]...
+Usage: install [OPTIONS] [TOOL]...
 
 Arguments:
-  [RUNTIME]...
-          Tool version(s) to install e.g.: node@20
+  [TOOL]...
+          Tool(s) to install e.g.: node@20
 
 Options:
-  -p, --plugin <PLUGIN>
-          Only install tool version(s) for <PLUGIN>
-
   -f, --force
           Force reinstall even if already installed
 
@@ -1778,16 +1774,16 @@ Examples:
   $ rtx install node         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
-### `rtx latest <RUNTIME>`
+### `rtx latest <TOOL>`
 
 ```
 Gets the latest available version for a plugin
 
-Usage: latest <RUNTIME>
+Usage: latest <TOOL>
 
 Arguments:
-  <RUNTIME>
-          Runtime to get the latest version of
+  <TOOL>
+          Tool to get the latest version of
 
 Examples:
   $ rtx latest node@20  # get the latest version of node 20
@@ -1883,7 +1879,7 @@ Examples:
 ```
 Install a plugin
 
-note that rtx automatically can install plugins when you install a runtime
+note that rtx automatically can install plugins when you install a tool
 e.g.: `rtx install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/rtx/config.toml
@@ -2166,18 +2162,18 @@ Arguments:
 Examples:
   $ rtx settings unset legacy_version_file
 ```
-### `rtx shell [OPTIONS] [RUNTIME]...`
+### `rtx shell [OPTIONS] [TOOL]...`
 
 ```
 Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
-Usage: shell [OPTIONS] [RUNTIME]...
+Usage: shell [OPTIONS] [TOOL]...
 
 Arguments:
-  [RUNTIME]...
-          Runtime version(s) to use
+  [TOOL]...
+          Tool(s) to use
 
 Options:
   -u, --unset
@@ -2218,16 +2214,16 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   $ rtx trust
 ```
-### `rtx uninstall <RUNTIME>...`
+### `rtx uninstall <TOOL>...`
 
 ```
 Removes runtime versions
 
-Usage: uninstall <RUNTIME>...
+Usage: uninstall <TOOL>...
 
 Arguments:
-  <RUNTIME>...
-          Runtime(s) to remove
+  <TOOL>...
+          Tool(s) to remove
 
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
@@ -2286,18 +2282,18 @@ Show rtx version
 
 Usage: version
 ```
-### `rtx where <RUNTIME>`
+### `rtx where <TOOL>`
 
 ```
 Display the installation path for a runtime
 
 Must be installed.
 
-Usage: where <RUNTIME>
+Usage: where <TOOL>
 
 Arguments:
-  <RUNTIME>
-          Runtime(s) to look up
+  <TOOL>
+          Tool(s) to look up
           e.g.: ruby@3
           if "@<PREFIX>" is specified, it will show the latest installed version
           that matches the prefix

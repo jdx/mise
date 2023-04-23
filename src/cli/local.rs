@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, ContextCompat, Result};
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
@@ -15,21 +15,21 @@ use crate::{dirs, env, file};
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
 ///
 /// Use this to set a tool's version when within a directory
-/// Use `rtx global` to set a runtime version globally
+/// Use `rtx global` to set a tool version globally
 /// This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
 /// is set. A future v2 release of rtx will default to using `.rtx.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
-    /// Runtimes to add to .tool-versions/.rtx.toml
+    /// Tool(s) to add to .tool-versions/.rtx.toml
     /// e.g.: node@20
-    /// if this is a single runtime with no version,
+    /// if this is a single tool with no version,
     /// the current value of .tool-versions/.rtx.toml will be displayed
-    #[clap(value_parser = RuntimeArgParser, verbatim_doc_comment)]
-    runtime: Option<Vec<RuntimeArg>>,
+    #[clap(value_parser = ToolArgParser, verbatim_doc_comment)]
+    tool: Option<Vec<ToolArg>>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
-    /// by default this command will only set the runtime in the current directory ("$PWD/.tool-versions")
+    /// by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
     #[clap(short, long, verbatim_doc_comment)]
     parent: bool,
 
@@ -64,7 +64,7 @@ impl Command for Local {
             config,
             out,
             &path,
-            self.runtime,
+            self.tool,
             self.remove,
             self.pin,
             self.fuzzy,
@@ -96,7 +96,7 @@ pub fn local(
     mut config: Config,
     out: &mut Output,
     path: &Path,
-    runtime: Option<Vec<RuntimeArg>>,
+    runtime: Option<Vec<ToolArg>>,
     remove: Option<Vec<PluginName>>,
     pin: bool,
     fuzzy: bool,
@@ -119,7 +119,7 @@ pub fn local(
     }
 
     if let Some(runtimes) = &runtime {
-        let runtimes = RuntimeArg::double_runtime_condition(&runtimes.clone());
+        let runtimes = ToolArg::double_tool_condition(&runtimes.clone());
         if cf.display_runtime(out, &runtimes)? {
             install_missing_runtimes(&mut config, cf.as_ref())?;
             return Ok(());
@@ -258,7 +258,7 @@ mod tests {
     fn test_local_invalid_multiple_plugins() {
         run_test(|| {
             let err = assert_cli_err!("local", "tiny", "dummy");
-            assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+            assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
         });
     }
 
@@ -266,7 +266,7 @@ mod tests {
     fn test_local_invalid() {
         run_test(|| {
             let err = assert_cli_err!("local", "tiny", "dummy@latest");
-            assert_str_eq!(err.to_string(), "invalid input, specify a version for each runtime. Or just specify one runtime to print the current version");
+            assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
         });
     }
 

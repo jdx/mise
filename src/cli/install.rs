@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
@@ -7,13 +6,13 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
-use crate::errors::Error::PluginNotInstalled;
+
 use crate::output::Output;
-use crate::plugins::PluginName;
+
 use crate::runtime_symlinks::rebuild_symlinks;
 use crate::shims::reshim;
 use crate::tool::Tool;
@@ -30,27 +29,18 @@ use crate::ui::progress_report::ProgressReport;
 /// For that, you must set up a `.rtx.toml`/`.tool-version` file manually or with `rtx use`.
 /// Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
-/// Runtimes will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
+/// Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
-    /// Tool version(s) to install
+    /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_parser = RuntimeArgParser)]
-    runtime: Option<Vec<RuntimeArg>>,
-
-    /// Only install tool version(s) for <PLUGIN>
-    #[clap(long, short, conflicts_with = "runtime")]
-    plugin: Option<Vec<PluginName>>,
+    #[clap(value_parser = ToolArgParser)]
+    tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
-    #[clap(long, short, requires = "runtime")]
+    #[clap(long, short, requires = "tool")]
     force: bool,
-
-    /// Install all missing tool versions as well as all plugins for the current directory
-    /// This is hidden because it's now the default behavior
-    #[clap(long, short, conflicts_with_all = ["runtime", "plugin", "force"], hide = true)]
-    all: bool,
 
     /// Show installation output
     #[clap(long, short, action = clap::ArgAction::Count)]
@@ -61,7 +51,7 @@ impl Command for Install {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         config.settings.missing_runtime_behavior = AutoInstall;
 
-        match &self.runtime {
+        match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
         }
@@ -71,7 +61,7 @@ impl Command for Install {
 }
 
 impl Install {
-    fn install_runtimes(&self, mut config: Config, runtimes: &[RuntimeArg]) -> Result<()> {
+    fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         let ts = ToolsetBuilder::new()
             .with_latest_versions()
@@ -99,11 +89,11 @@ impl Install {
         &self,
         config: &mut Config,
         ts: &Toolset,
-        runtimes: &[RuntimeArg],
+        runtimes: &[ToolArg],
         mpr: &MultiProgressReport,
     ) -> Result<Vec<(Arc<Tool>, ToolVersion)>> {
         let mut requests = vec![];
-        for runtime in RuntimeArg::double_runtime_condition(runtimes) {
+        for runtime in ToolArg::double_tool_condition(runtimes) {
             let default_opts = ToolVersionOptions::new();
             match runtime.tvr {
                 Some(tv) => requests.push((runtime.plugin, tv, default_opts.clone())),
@@ -151,19 +141,6 @@ impl Install {
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
-        if let Some(plugins) = &self.plugin {
-            let plugins = plugins.iter().collect::<HashSet<&PluginName>>();
-            for plugin in ts.versions.keys().cloned().collect::<Vec<_>>() {
-                if !plugins.contains(&plugin) {
-                    ts.versions.remove(&plugin);
-                }
-            }
-            for plugin in plugins {
-                if !ts.versions.contains_key(plugin) {
-                    Err(PluginNotInstalled(plugin.to_string()))?;
-                }
-            }
-        }
         if ts.list_missing_versions(&config).is_empty() {
             warn!("no runtimes to install");
         }

@@ -1,7 +1,7 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
@@ -11,9 +11,9 @@ use crate::toolset::ToolVersionRequest;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {
-    /// Runtime to get the latest version of
-    #[clap(value_parser = RuntimeArgParser)]
-    runtime: RuntimeArg,
+    /// Tool to get the latest version of
+    #[clap(value_parser = ToolArgParser)]
+    tool: ToolArg,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
@@ -24,19 +24,19 @@ pub struct Latest {
 
 impl Command for Latest {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let mut prefix = match self.runtime.tvr {
+        let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolVersionRequest::Version(_, version)) => Some(version),
             _ => Err(eyre!(
                 "invalid version: {}",
-                style(&self.runtime).cyan().for_stderr()
+                style(&self.tool).cyan().for_stderr()
             ))?,
         };
-        let plugin = config.tools.get(&self.runtime.plugin).ok_or_else(|| {
+        let plugin = config.tools.get(&self.tool.plugin).ok_or_else(|| {
             eyre!(
                 "plugin {} not found. run {} to install it",
-                style(self.runtime.plugin.to_string()).cyan().for_stderr(),
-                style(format!("rtx plugin install {}", self.runtime.plugin))
+                style(self.tool.plugin.to_string()).cyan().for_stderr(),
+                style(format!("rtx plugin install {}", self.tool.plugin))
                     .yellow()
                     .for_stderr()
             )
