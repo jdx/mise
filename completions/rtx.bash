@@ -1215,7 +1215,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -j -r -v -h --shell --debug --install-missing --jobs --log-level --raw --trace --verbose --help [RUNTIME]..."
+            opts="-s -j -r -v -h --shell --json --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
