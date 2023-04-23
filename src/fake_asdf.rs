@@ -1,3 +1,4 @@
+use std::env::{join_paths, split_paths};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::{fs, io};
@@ -34,15 +35,14 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
 }
 
 pub fn get_path_with_fake_asdf() -> String {
-    let mut path = vec![];
+    let mut path = split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
     match setup() {
         Ok(fake_asdf_path) => {
-            path.push(fake_asdf_path.to_string_lossy().to_string());
+            path.insert(0, fake_asdf_path);
         }
         Err(e) => {
             warn!("Failed to setup fake asdf: {:#}", e);
         }
     };
-    path.push(env::var("PATH").unwrap());
-    path.join(":")
+    join_paths(path).unwrap().to_string_lossy().to_string()
 }

@@ -12,7 +12,7 @@ use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::cmd;
+use crate::{cmd, file};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {
@@ -66,8 +66,9 @@ impl EnvDiff {
     {
         let env: HashMap<OsString, OsString> =
             env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
+        let bash_path = file::which("bash").unwrap_or("/bin/bash".into());
         let out = cmd!(
-            "bash",
+            bash_path,
             "-c",
             indoc::formatdoc! {"
                 . {script}
