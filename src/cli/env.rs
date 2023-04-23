@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
@@ -18,9 +18,9 @@ pub struct Env {
     #[clap(long, short, overrides_with = "json")]
     shell: Option<ShellType>,
 
-    /// Tool version(s) to use
-    #[clap(value_parser = RuntimeArgParser)]
-    tool: Vec<RuntimeArg>,
+    /// Tool(s) to use
+    #[clap(value_parser = ToolArgParser)]
+    tool: Vec<ToolArg>,
 
     /// Output in JSON format
     #[clap(long, visible_short_alias = 'J', overrides_with = "shell")]

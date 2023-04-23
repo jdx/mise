@@ -13,7 +13,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a plugin
 ///
-/// note that rtx automatically can install plugins when you install a runtime
+/// note that rtx automatically can install plugins when you install a tool
 /// e.g.: `rtx install node@20` will autoinstall the node plugin
 ///
 /// This behavior can be modified in ~/.config/rtx/config.toml

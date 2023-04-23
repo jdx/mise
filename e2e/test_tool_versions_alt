@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
 export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
@@ -6,7 +7,7 @@ export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
 
 git checkout .alternate-tool-versions
 
-rtx i -p shfmt
+rtx i shfmt
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
   exit 1

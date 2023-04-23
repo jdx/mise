@@ -1,7 +1,7 @@
 use color_eyre::eyre::Result;
 use std::sync::Arc;
 
-use crate::cli::args::runtime::{RuntimeArg, RuntimeArgParser};
+use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
@@ -19,8 +19,8 @@ use crate::ui::prompt;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
-    #[clap(value_parser = RuntimeArgParser)]
-    plugin: RuntimeArg,
+    #[clap(value_parser = ToolArgParser)]
+    plugin: ToolArg,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
