@@ -75,7 +75,7 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
     // remove old shims
     let _ = remove_all(&*dirs::SHIMS);
     create_dir_all(&*dirs::SHIMS)?;
-    let rtx_bin = config.rtx_bin().unwrap_or(env::RTX_EXE.clone());
+    let rtx_bin = file::which("rtx").unwrap_or(env::RTX_EXE.clone());
 
     let paths: Vec<PathBuf> = ts
         .list_installed_versions(config)?
