@@ -180,6 +180,9 @@ impl Plugin for PythonPlugin {
         cmd.with_pr(pr)
             .arg(tv.version.as_str())
             .arg(tv.install_path());
+        if config.settings.verbose {
+            cmd.arg("--verbose");
+        }
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
             pr.set_message(format!("with patch file from: {patch_url}"));
             cmd.arg("--patch");
