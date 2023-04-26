@@ -232,7 +232,7 @@ impl Plugin for NodePlugin {
             );
             cmd.arg("--compile");
         }
-        if *RTX_NODE_VERBOSE_INSTALL {
+        if config.settings.verbose || *RTX_NODE_VERBOSE_INSTALL {
             cmd.arg("--verbose");
         }
         cmd.arg(tv.install_path());
