@@ -896,7 +896,7 @@ rtx is currently a new project and is under very rapid development. Slight behav
 occur between releases.
 Features marked as "experimental" may change significantly or be removed entirely.
 
-Starting June 1, 2023\*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on
+Starting August 6, 2023\*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on
 its behavior for the long term.
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
