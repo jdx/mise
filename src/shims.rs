@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -145,9 +144,7 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         fake_asdf_dir = fake_asdf::setup()?.display(),
         target = target.display()},
     )?;
-    let mut perms = shim.metadata()?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(shim, perms)?;
+    file::make_executable(shim)?;
     trace!(
         "shim created from {} to {}",
         target.display(),
