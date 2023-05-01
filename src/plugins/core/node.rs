@@ -17,7 +17,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{cmd, dirs, env};
+use crate::{cmd, dirs, env, file};
 
 #[derive(Debug)]
 pub struct NodePlugin {
@@ -138,7 +138,9 @@ impl NodePlugin {
     }
 
     fn install_npm_shim(&self, tv: &ToolVersion) -> Result<()> {
+        fs::remove_file(self.npm_path(tv)).ok();
         fs::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
+        file::make_executable(&self.npm_path(tv))?;
         Ok(())
     }
 
