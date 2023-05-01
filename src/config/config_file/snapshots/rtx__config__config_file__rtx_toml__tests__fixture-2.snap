@@ -8,6 +8,7 @@ SettingsBuilder {
         Warn,
     ),
     always_keep_download: None,
+    always_keep_install: None,
     legacy_version_file: None,
     plugin_autoupdate_last_check_duration: None,
     trusted_config_paths: [],
