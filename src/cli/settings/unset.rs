@@ -46,6 +46,7 @@ mod tests {
         experimental = true
         missing_runtime_behavior = autoinstall
         always_keep_download = true
+        always_keep_install = true
         legacy_version_file = true
         plugin_autoupdate_last_check_duration = 20
         trusted_config_paths = []

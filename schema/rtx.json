@@ -118,6 +118,10 @@
           "description": "should rtx keep downloaded files after installation",
           "type": "boolean"
         },
+        "always_keep_install": {
+          "description": "should rtx keep install files after installation even if the installation fails",
+          "type": "boolean"
+        },
         "plugin_autoupdate_last_check_duration": {
           "oneOf": [
             {

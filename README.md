@@ -680,6 +680,7 @@ legacy_version_file = true         # enabled by default (different than asdf)
 
 # configure `rtx install` to always keep the downloaded archive
 always_keep_download = false        # deleted after install by default
+always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
@@ -783,6 +784,14 @@ Output logs to a file.
 
 Same as `RTX_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
+
+#### `RTX_ALWAYS_KEEP_DOWNLOAD=1`
+
+Set to "1" to always keep the downloaded archive. By default it is deleted after install.
+
+#### `RTX_ALWAYS_KEEP_INSTALL=1`
+
+Set to "1" to always keep the install directory. By default it is deleted on failure.
 
 #### `RTX_VERBOSE=1`
 

@@ -393,6 +393,9 @@ impl RtxToml {
                         "always_keep_download" => {
                             settings.always_keep_download = Some(self.parse_bool(&k, v)?)
                         }
+                        "always_keep_install" => {
+                            settings.always_keep_install = Some(self.parse_bool(&k, v)?)
+                        }
                         "plugin_autoupdate_last_check_duration" => {
                             settings.plugin_autoupdate_last_check_duration =
                                 Some(self.parse_duration_minutes(&k, v)?)

@@ -23,6 +23,7 @@ impl Command for SettingsSet {
             "experimental" => parse_bool(&self.value)?,
             "missing_runtime_behavior" => self.value.into(),
             "always_keep_download" => parse_bool(&self.value)?,
+            "always_keep_install" => parse_bool(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
             "verbose" => parse_bool(&self.value)?,
