@@ -85,6 +85,11 @@ pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         .map(|v| split_paths(&v).collect())
         .unwrap_or_default()
 });
+pub static RTX_ALWAYS_KEEP_DOWNLOAD: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_DOWNLOAD"));
+pub static RTX_ALWAYS_KEEP_INSTALL: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_INSTALL"));
+
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 

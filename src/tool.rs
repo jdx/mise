@@ -307,11 +307,13 @@ impl Tool {
         Ok(())
     }
     fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
-        let _ = remove_all_with_warning(tv.install_path());
-        self.cleanup_install_dirs(settings, tv);
+        if !settings.always_keep_install {
+            let _ = remove_all_with_warning(tv.install_path());
+            self.cleanup_install_dirs(settings, tv);
+        }
     }
     fn cleanup_install_dirs(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_download {
+        if !settings.always_keep_download && !settings.always_keep_install {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
