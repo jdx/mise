@@ -13,6 +13,7 @@ pub struct Settings {
     pub experimental: bool,
     pub missing_runtime_behavior: MissingRuntimeBehavior,
     pub always_keep_download: bool,
+    pub always_keep_install: bool,
     pub legacy_version_file: bool,
     pub plugin_autoupdate_last_check_duration: Duration,
     pub trusted_config_paths: Vec<PathBuf>,
@@ -30,7 +31,8 @@ impl Default for Settings {
         Self {
             experimental: *RTX_EXPERIMENTAL,
             missing_runtime_behavior: MissingRuntimeBehavior::Warn,
-            always_keep_download: false,
+            always_keep_download: *RTX_ALWAYS_KEEP_DOWNLOAD,
+            always_keep_install: *RTX_ALWAYS_KEEP_INSTALL,
             legacy_version_file: true,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
@@ -56,6 +58,10 @@ impl Settings {
         map.insert(
             "always_keep_download".to_string(),
             self.always_keep_download.to_string(),
+        );
+        map.insert(
+            "always_keep_install".to_string(),
+            self.always_keep_install.to_string(),
         );
         map.insert(
             "legacy_version_file".to_string(),
@@ -93,6 +99,7 @@ pub struct SettingsBuilder {
     pub experimental: Option<bool>,
     pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
     pub always_keep_download: Option<bool>,
+    pub always_keep_install: Option<bool>,
     pub legacy_version_file: Option<bool>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
     pub trusted_config_paths: Vec<PathBuf>,
@@ -121,6 +128,9 @@ impl SettingsBuilder {
         }
         if other.always_keep_download.is_some() {
             self.always_keep_download = other.always_keep_download;
+        }
+        if other.always_keep_install.is_some() {
+            self.always_keep_install = other.always_keep_install;
         }
         if other.legacy_version_file.is_some() {
             self.legacy_version_file = other.legacy_version_file;
@@ -174,6 +184,9 @@ impl SettingsBuilder {
         settings.always_keep_download = self
             .always_keep_download
             .unwrap_or(settings.always_keep_download);
+        settings.always_keep_install = self
+            .always_keep_install
+            .unwrap_or(settings.always_keep_install);
         settings.legacy_version_file = self
             .legacy_version_file
             .unwrap_or(settings.legacy_version_file);
