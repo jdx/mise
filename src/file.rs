@@ -140,6 +140,13 @@ pub fn is_executable(path: &Path) -> bool {
     false
 }
 
+pub fn make_executable(path: &Path) -> Result<()> {
+    let mut perms = path.metadata()?.permissions();
+    perms.set_mode(perms.mode() | 0o111);
+    fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
 pub struct FindUp {
     current_dir: PathBuf,
     current_dir_filenames: Vec<String>,
