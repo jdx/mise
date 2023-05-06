@@ -10,7 +10,7 @@ if [ ! -d aur-bin ]; then
 fi
 git -C aur-bin pull
 
-cat >aur/PKGBUILD <<EOF
+cat >aur-bin/PKGBUILD <<EOF
 # Maintainer: Jeff Dickey <releases at rtx dot pub>
 
 pkgname=rtx-bin
@@ -42,7 +42,7 @@ check() {
 }
 EOF
 
-cat >aur/.SRCINFO <<EOF
+cat >aur-bin/.SRCINFO <<EOF
 pkgbase = rtx
 	pkgdesc = Polyglot runtime manager
 	pkgver = ${RTX_VERSION#v*}
