@@ -272,6 +272,9 @@ jobs:
       - name: Release to aur
         run: scripts/release-aur.sh
         working-directory: rtx
+      - name: Release aur-bin
+        run: scripts/release-aur-bin.sh
+        working-directory: rtx
   bump-homebrew-formula:
     runs-on: macos-latest
     if: startsWith(github.event.ref, 'refs/tags/v')
