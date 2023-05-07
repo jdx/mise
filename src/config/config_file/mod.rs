@@ -59,7 +59,6 @@ impl dyn ConfigFile {
         let mpr = MultiProgressReport::new(config.settings.verbose);
         let mut ts = self.to_toolset().to_owned();
         ts.resolve(config);
-        ts.latest_versions = true;
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
             if let Some(tv) = &runtime.tvr {

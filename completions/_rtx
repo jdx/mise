@@ -806,6 +806,29 @@ Sets --jobs=1]' \
 same as the first argument after the "@":' \
 && ret=0
 ;;
+(outdated)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--debug[Sets log level to debug]' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--trace[Sets log level to trace]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::tool -- Tool(s) to show outdated versions for
+e.g.\: node@20 python@3.10
+If not specified, all tools in global and local configs will be shown:' \
+&& ret=0
+;;
 (plugins)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
@@ -1330,6 +1353,29 @@ Sets --jobs=1]' \
 '*::tool -- Tool(s) to remove:' \
 && ret=0
 ;;
+(upgrade)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--debug[Sets log level to debug]' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--trace[Sets log level to trace]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'*::tool -- Tool(s) to upgrade
+e.g.\: node@20 python@3.10
+If not specified, all current tools will be upgraded:' \
+&& ret=0
+;;
 (use)
 _arguments "${_arguments_options[@]}" \
 '*--remove=[Remove the tool(s) from config file]:TOOL: ' \
@@ -1614,6 +1660,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(outdated)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (plugins)
 _arguments "${_arguments_options[@]}" \
 ":: :_rtx__help__plugins_commands" \
@@ -1710,6 +1760,10 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(upgrade)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
 (use)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1771,6 +1825,7 @@ _rtx_commands() {
 'ls:List installed and/or currently selected tool versions' \
 'list:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
+'outdated:\[experimental\] Shows outdated tool versions' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
 'prune:Delete unused versions of tools' \
@@ -1780,6 +1835,7 @@ _rtx_commands() {
 'shell:Sets a tool version for the current shell session' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
+'upgrade:\[experimental\] Upgrades outdated tool versions' \
 'use:Change the active version of a tool locally or globally.' \
 'u:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
@@ -2124,6 +2180,7 @@ _rtx__help_commands() {
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
 'ls:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
+'outdated:\[experimental\] Shows outdated tool versions' \
 'plugins:Manage plugins' \
 'prune:Delete unused versions of tools' \
 'reshim:rebuilds the shim farm' \
@@ -2132,6 +2189,7 @@ _rtx__help_commands() {
 'shell:Sets a tool version for the current shell session' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
+'upgrade:\[experimental\] Upgrades outdated tool versions' \
 'use:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
@@ -2339,6 +2397,16 @@ _rtx__plugins__help__ls-remote_commands() {
 _rtx__plugins__ls-remote_commands() {
     local commands; commands=()
     _describe -t commands 'rtx plugins ls-remote commands' commands "$@"
+}
+(( $+functions[_rtx__help__outdated_commands] )) ||
+_rtx__help__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help outdated commands' commands "$@"
+}
+(( $+functions[_rtx__outdated_commands] )) ||
+_rtx__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx outdated commands' commands "$@"
 }
 (( $+functions[_rtx__help__plugins_commands] )) ||
 _rtx__help__plugins_commands() {
@@ -2556,6 +2624,16 @@ _rtx__plugins__help__update_commands() {
 _rtx__plugins__update_commands() {
     local commands; commands=()
     _describe -t commands 'rtx plugins update commands' commands "$@"
+}
+(( $+functions[_rtx__help__upgrade_commands] )) ||
+_rtx__help__upgrade_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help upgrade commands' commands "$@"
+}
+(( $+functions[_rtx__upgrade_commands] )) ||
+_rtx__upgrade_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx upgrade commands' commands "$@"
 }
 (( $+functions[_rtx__help__use_commands] )) ||
 _rtx__help__use_commands() {

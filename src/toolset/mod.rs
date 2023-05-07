@@ -283,6 +283,25 @@ impl Toolset {
             .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
+    pub fn list_outdated_versions(&self, config: &Config) -> Vec<(Arc<Tool>, ToolVersion, String)> {
+        self.list_current_versions(config)
+            .into_iter()
+            .filter_map(|(t, tv)| {
+                let latest = match tv.latest_version(config, &t) {
+                    Ok(latest) => latest,
+                    Err(e) => {
+                        warn!("Error getting latest version for {}: {:#}", t.name, e);
+                        return None;
+                    }
+                };
+                if !t.is_version_installed(&tv) || tv.version != latest {
+                    Some((t, tv, latest))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
     pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
         let mut env = self.env(config);
         let path_env = self.path_env(config);
