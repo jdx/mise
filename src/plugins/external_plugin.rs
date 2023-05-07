@@ -247,6 +247,10 @@ impl ExternalPlugin {
                 panic!("should not be called for system tool")
             }
         };
+        let install_version = match &tv.request {
+            ToolVersionRequest::Ref(_, v) => v, // should not have "ref:" prefix
+            _ => &tv.version,
+        };
         sm = sm
             .with_env(
                 "RTX_INSTALL_PATH",
@@ -266,8 +270,8 @@ impl ExternalPlugin {
             )
             .with_env("RTX_INSTALL_TYPE", install_type)
             .with_env("ASDF_INSTALL_TYPE", install_type)
-            .with_env("RTX_INSTALL_VERSION", tv.version.clone())
-            .with_env("ASDF_INSTALL_VERSION", tv.version.clone());
+            .with_env("RTX_INSTALL_VERSION", install_version)
+            .with_env("ASDF_INSTALL_VERSION", install_version);
         sm
     }
 }
