@@ -20,7 +20,6 @@ pkgdesc='Polyglot runtime manager'
 arch=('x86_64')
 url='https://github.com/jdxcode/rtx'
 license=('MIT')
-makedepends=('cargo')
 provides=('rtx')
 conflicts=('rtx')
 options=('!lto')
@@ -43,7 +42,7 @@ check() {
 EOF
 
 cat >aur-bin/.SRCINFO <<EOF
-pkgbase = rtx
+pkgbase = rtx-bin
 	pkgdesc = Polyglot runtime manager
 	pkgver = ${RTX_VERSION#v*}
 	pkgrel = 1
