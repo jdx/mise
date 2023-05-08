@@ -3,7 +3,9 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
+TAR_GZ_URI="https://github.com/jdxcode/rtx/releases/download/${RTX_VERSION}/rtx-${RTX_VERSION}-linux-x64.tar.gz"
+
+SHA512=$(curl -L "$TAR_GZ_URI" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur-bin ]; then
 	git clone ssh://aur@aur.archlinux.org/rtx-bin.git aur-bin
@@ -23,11 +25,11 @@ license=('MIT')
 provides=('rtx')
 conflicts=('rtx')
 options=('!lto')
-source=("\$pkgname-\$pkgver.tar.gz::https://github.com/jdxcode/\$pkgname/archive/v\$pkgver.tar.gz")
+source=("rtx-\$pkgver.tar.gz::${TAR_GZ_URI}")
 sha512sums=('$SHA512')
 
 prepare() {
-    tar -xzf rtx-v\$pkgver-linux-x64.tar.gz
+    tar -xzf rtx-\$pkgver.tar.gz
 }
 
 package() {
@@ -51,7 +53,7 @@ pkgbase = rtx-bin
 	license = MIT
 	provides = rtx
 	conflicts = rtx
-	source = rtx-${RTX_VERSION#v*}.tar.gz::https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz
+	source = rtx-${RTX_VERSION#v*}.tar.gz::${TAR_GZ_URI}
 	sha512sums = $SHA512
 
 pkgname = rtx-bin
