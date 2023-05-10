@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::env::{join_paths, split_paths};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
@@ -181,6 +181,14 @@ impl Plugin for NodePlugin {
             ("lts/fermium", "14"),
             ("lts/gallium", "16"),
             ("lts/hydrogen", "18"),
+            ("lts-argon", "4"),
+            ("lts-boron", "6"),
+            ("lts-carbon", "8"),
+            ("lts-dubnium", "10"),
+            ("lts-erbium", "12"),
+            ("lts-fermium", "14"),
+            ("lts-gallium", "16"),
+            ("lts-hydrogen", "18"),
             ("lts", "18"),
         ]
         .into_iter()
@@ -244,5 +252,11 @@ impl Plugin for NodePlugin {
         self.test_npm(config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
+    }
+
+    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+        let body = fs::read_to_string(path)?;
+        // trim "v" prefix
+        Ok(body.trim().strip_prefix('v').unwrap_or(&body).to_string())
     }
 }
