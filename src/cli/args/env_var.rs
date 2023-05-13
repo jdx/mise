@@ -49,3 +49,34 @@ impl clap::builder::TypedValueParser for EnvVarArgParser {
         return Err(err);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::EnvVarArg;
+
+    #[test]
+    fn invalid_value() {
+        let res = EnvVarArg::parse("NO_EQUAL_SIGN");
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn valid_values() {
+        let values = [
+            ("FOO=", new_arg("FOO", "")),
+            ("FOO=bar", new_arg("FOO", "bar")),
+        ];
+
+        for (input, want) in values {
+            let got = EnvVarArg::parse(input);
+            assert_eq!(got, Some(want));
+        }
+    }
+
+    fn new_arg(key: &str, value: &str) -> EnvVarArg {
+        EnvVarArg {
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
+}
