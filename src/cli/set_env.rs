@@ -8,19 +8,26 @@ use crate::dirs;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
 use crate::output::Output;
 
+use super::args::env_var::{EnvVarArg, EnvVarArgParser};
+
 /// Set/update environment variables for the current directory
 ///
 /// This modifies the contents of ./.rtx.toml
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SetEnv {
-    args: Vec<String>,
+    /// Environment variable(s) to set
+    /// e.g.: NODE_ENV=production
+    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment, required = true)]
+    env_vars: Vec<EnvVarArg>,
 }
 
 impl Command for SetEnv {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mut rtx_toml = get_local_rtx_toml(&config)?;
-        rtx_toml.update_env("HEY", "1234");
+        for ev in self.env_vars {
+            rtx_toml.update_env(&ev.key, ev.value);
+        }
         rtx_toml.save()
     }
 }
