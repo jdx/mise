@@ -37,6 +37,7 @@ mod prune;
 mod render_help;
 mod reshim;
 mod self_update;
+mod set_env;
 mod settings;
 mod shell;
 mod trust;
@@ -77,6 +78,7 @@ pub enum Commands {
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
     SelfUpdate(self_update::SelfUpdate),
+    SetEnv(set_env::SetEnv),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Trust(trust::Trust),
@@ -117,6 +119,7 @@ impl Commands {
             Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
             Self::SelfUpdate(cmd) => cmd.run(config, out),
+            Self::SetEnv(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
             Self::Trust(cmd) => cmd.run(config, out),
