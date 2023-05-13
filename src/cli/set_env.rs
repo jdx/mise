@@ -8,7 +8,9 @@ use crate::dirs;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
 use crate::output::Output;
 
-/// Set environment variables for the current directory
+/// Set/update environment variables for the current directory
+///
+/// This modifies the contents of ./.rtx.toml
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SetEnv {
