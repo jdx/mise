@@ -168,7 +168,8 @@ impl Ls {
         );
         for (plugin, version, request) in output {
             let pad = |s, len| console::pad_str(s, len, Left, None);
-            let plugin_extra = (plugin.len() as i8 - max_plugin_len as i8).max(0) as usize;
+            let plugin_extra =
+                ((plugin.len() as i8 - max_plugin_len as i8).max(0) as usize).min(max_version_len);
             let plugin = pad(&plugin, max_plugin_len);
             let plugin = style(plugin).cyan();
             let version_extra = (version.to_plain_string().len() as i8 - max_version_len as i8
@@ -236,6 +237,8 @@ fn get_runtime_list(
             };
             (p, tv, source)
         })
+        // if it isn't installed and it's not specified, don't show it
+        .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
         .collect();
 
     Ok(rvs)
