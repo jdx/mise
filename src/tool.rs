@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -19,7 +20,6 @@ use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
-#[derive(Debug)]
 pub struct Tool {
     pub name: String,
     pub plugin: Box<dyn Plugin>,
@@ -398,10 +398,37 @@ impl PartialEq for Tool {
     }
 }
 
+impl Debug for Tool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tool")
+            .field("name", &self.name)
+            .field("installs_path", &self.installs_path)
+            .field("plugin", &self.plugin)
+            .finish()
+    }
+}
+
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     let v = match list.contains(&query.to_string()) {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     };
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::PluginName;
+
+    #[test]
+    fn test_debug() {
+        let plugin = ExternalPlugin::new(&PluginName::from("dummy"));
+        let tool = Tool::new("dummy".to_string(), Box::new(plugin));
+        let debug = format!("{:?}", tool);
+        assert!(debug.contains("Tool"));
+        assert!(debug.contains("name"));
+        assert!(debug.contains("installs_path"));
+        assert!(debug.contains("plugin"));
+    }
 }

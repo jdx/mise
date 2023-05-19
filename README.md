@@ -638,9 +638,8 @@ go          prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19
 shfmt       path:./shfmt # use a custom runtime
 node        lts          # use lts version of node (not supported by all plugins)
 
-# The following syntax is experimental and subject to change
-node        lts!-2       # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
-python      latest!-0.1  # install python-3.10 if the latest is 3.11
+node        sub-2:lts      # install 2 versions behind the latest lts (e.g.: 18 if lts is 20)
+python      sub-0.1:latest # install python-3.10 if the latest is 3.11
 ```
 
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
