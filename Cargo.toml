@@ -38,7 +38,7 @@ path = "src/main.rs"
 base64 = "<0.22"
 chrono = { version = "0.4.23", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.2.5", features = ["env", "derive", "string"] }
-clap_complete = "4.0.7"
+clap_complete = "4.2.3"
 color-eyre = "0.6.2"
 color-print = "0.3.4"
 console = "0.15.2"
