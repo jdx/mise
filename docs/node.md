@@ -36,13 +36,13 @@ $ node.11 -V
 - `RTX_NODE_VERBOSE_INSTALL`: Enables verbose output for downloading and building.
 - `RTX_NODE_FORCE_COMPILE`: Forces compilation from source instead of preferring pre-compiled binaries
 - `RTX_NODE_CONCURRENCY`: How many jobs should be used in compilation. Defaults to half the computer cores
-- `RTX_NODE_DEFAULT_PACKAGES_FILE`: location of default packages file, defaults to `$HOME/.default-node-packages`
+- `RTX_NODE_DEFAULT_PACKAGES_FILE`: location of default packages file, defaults to `$HOME/.default-npm-packages`
 - `NODEJS_ORG_MIRROR`: (Legacy) overrides the default mirror used for downloading the 
   distibutions, alternative to the `NODE_BUILD_MIRROR_URL` node-build env var
 
 ## Default node packages
 
-rtx-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-node-packages` file that lists one package per line, for example:
+rtx-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-npm-packages` file that lists one package per line, for example:
 
 ```
 lodash

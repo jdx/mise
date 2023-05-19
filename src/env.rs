@@ -116,11 +116,16 @@ pub static RTX_NODE_VERBOSE_INSTALL: Lazy<bool> =
 pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_NODE_FORCE_COMPILE"));
 pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
+        // post-calver we can probably remove these checks
         let p = HOME.join(".default-nodejs-packages");
         if p.exists() {
             return p;
         }
-        HOME.join(".default-node-packages")
+        let p = HOME.join(".default-node-packages");
+        if p.exists() {
+            return p;
+        }
+        HOME.join(".default-npm-packages")
     })
 });
 
