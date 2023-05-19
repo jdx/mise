@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
+use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
-use crate::cmd::cmd;
 use crate::config::{Config, Settings};
 use crate::env::PREFER_STALE;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -493,9 +493,10 @@ impl Plugin for ExternalPlugin {
         Ok(legacy_version)
     }
 
-    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+    fn external_commands(&self) -> Result<Vec<Command>> {
         let command_path = self.plugin_path.join("lib/commands");
-        if !self.is_installed() || !command_path.exists() {
+        if !self.is_installed() || !command_path.exists() || self.name == "direnv" {
+            // asdf-direnv is disabled since it conflicts with rtx's built-in direnv functionality
             return Ok(vec![]);
         }
         let mut commands = vec![];
@@ -503,7 +504,7 @@ impl Plugin for ExternalPlugin {
             if !command.starts_with("command-") || !command.ends_with(".bash") {
                 continue;
             }
-            let mut command = command
+            let command = command
                 .strip_prefix("command-")
                 .unwrap()
                 .strip_suffix(".bash")
@@ -511,24 +512,47 @@ impl Plugin for ExternalPlugin {
                 .split('-')
                 .map(|s| s.to_string())
                 .collect::<Vec<String>>();
-            command.insert(0, self.name.clone());
             commands.push(command);
         }
-        Ok(commands)
+        if commands.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let topic = Command::new(self.name.clone())
+            .about(format!("Commands provided by {} plugin", &self.name))
+            .subcommands(commands.into_iter().map(|cmd| {
+                Command::new(cmd.join("-"))
+                    .about(format!("{} command", cmd.join("-")))
+                    .arg(
+                        clap::Arg::new("args")
+                            .num_args(1..)
+                            .allow_hyphen_values(true)
+                            .trailing_var_arg(true),
+                    )
+            }));
+        Ok(vec![topic])
     }
 
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
+    fn execute_external_command(
+        &self,
+        config: &Config,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<()> {
         if !self.is_installed() {
             return Err(PluginNotInstalled(self.name.clone()).into());
         }
-        let result = cmd(
+        let script = Script::RunExternalCommand(
             self.plugin_path
                 .join("lib/commands")
                 .join(format!("command-{command}.bash")),
             args,
-        )
-        .unchecked()
-        .run()?;
+        );
+        let result = self
+            .script_man
+            .cmd(&config.settings, &script)
+            .unchecked()
+            .run()?;
         exit(result.status.code().unwrap_or(1));
     }
 
