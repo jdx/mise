@@ -73,6 +73,12 @@ impl ToolVersion {
             .join(&self.plugin_name)
             .join(self.tv_pathname())
     }
+    pub fn latest_version(&self, config: &Config, tool: &Tool) -> Result<String> {
+        let tv = self
+            .request
+            .resolve(config, tool, self.opts.clone(), true)?;
+        Ok(tv.version)
+    }
     fn tv_pathname(&self) -> String {
         match &self.request {
             ToolVersionRequest::Version(_, _) => self.version.to_string(),
@@ -130,6 +136,9 @@ impl ToolVersion {
             let matches = tool.list_installed_versions_matching(&v)?;
             if matches.contains(&v) {
                 return build(v);
+            }
+            if let Some(v) = matches.last() {
+                return build(v.clone());
             }
         }
         let matches = tool.list_versions_matching(&config.settings, &v)?;

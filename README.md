@@ -155,6 +155,7 @@ v20.0.0
   - [`rtx latest <TOOL>`](#rtx-latest-tool)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
+  - [`rtx outdated [TOOL]...`](#rtx-outdated-tool)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
@@ -171,6 +172,7 @@ v20.0.0
   - [`rtx shell [OPTIONS] [TOOL]...`](#rtx-shell-options-tool)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall <TOOL>...`](#rtx-uninstall-tool)
+  - [`rtx upgrade [TOOL]...`](#rtx-upgrade-tool)
   - [`rtx use [OPTIONS] [TOOL]...`](#rtx-use-options-tool)
   - [`rtx version`](#rtx-version)
   - [`rtx where <TOOL>`](#rtx-where-tool)
@@ -1883,6 +1885,29 @@ Examples:
   20.0.0
   20.1.0
 ```
+### `rtx outdated [TOOL]...`
+
+```
+[experimental] Shows outdated tool versions
+
+Usage: outdated [TOOL]...
+
+Arguments:
+  [TOOL]...
+          Tool(s) to show outdated versions for
+          e.g.: node@20 python@3.10
+          If not specified, all tools in global and local configs will be shown
+
+Examples:
+  $ rtx outdated
+  Plugin  Requested  Current  Latest
+  python  3.11       3.11.0   3.11.1
+  node    20         20.0.0   20.1.0
+
+  $ rtx outdated node
+  Plugin  Requested  Current  Latest
+  node    20         20.0.0   20.1.0
+```
 ### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
 
 ```
@@ -2237,6 +2262,19 @@ Arguments:
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
   $ rtx uninstall node        # will uninstall current node version
+```
+### `rtx upgrade [TOOL]...`
+
+```
+[experimental] Upgrades outdated tool versions
+
+Usage: upgrade [TOOL]...
+
+Arguments:
+  [TOOL]...
+          Tool(s) to upgrade
+          e.g.: node@20 python@3.10
+          If not specified, all current tools will be upgraded
 ```
 ### `rtx use [OPTIONS] [TOOL]...`
 

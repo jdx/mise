@@ -17,3 +17,15 @@ assert "rtx current tiny" "2.0.1"
 rm .tiny-version
 rtx local tiny@latest
 assert "rtx current tiny" "3.1.0"
+
+# test outdated/upgrade
+rtx settings set experimental true
+rm -rf .rtx/installs/tiny
+rtx use tiny@3
+mv .rtx/installs/tiny/{3.1.0,3.0.0}
+assert "rtx current tiny" "3.0.0"
+assert "rtx outdated tiny" "Tool    Requested  Current  Latest
+tiny    3          3.0.0    3.1.0"
+rtx upgrade tiny
+assert "rtx current tiny" "3.1.0"
+assert "rtx outdated tiny" ""
