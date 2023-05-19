@@ -8,7 +8,6 @@ use console::style;
 use console::Alignment::Left;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use owo_colors::OwoColorize;
 use serde_derive::Serialize;
 use versions::Versioning;
 
