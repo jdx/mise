@@ -11,7 +11,7 @@ pub fn commands(config: &Config) -> Vec<Command> {
         .values()
         .collect_vec()
         .into_par_iter()
-        .map(|p| match p.external_commands() {
+        .flat_map(|p| match p.external_commands() {
             Ok(commands) => commands,
             Err(e) => {
                 warn!(
@@ -20,20 +20,6 @@ pub fn commands(config: &Config) -> Vec<Command> {
                 );
                 vec![]
             }
-        })
-        .collect::<Vec<Vec<Vec<String>>>>()
-        .into_iter()
-        .filter(|commands| !commands.is_empty())
-        .filter(|commands| commands[0][0] != "direnv")
-        .map(|commands| {
-            Command::new(commands[0][0].to_string()).subcommands(commands.into_iter().map(|cmd| {
-                Command::new(cmd[1..].join("-")).arg(
-                    clap::Arg::new("args")
-                        .num_args(1..)
-                        .allow_hyphen_values(true)
-                        .trailing_var_arg(true),
-                )
-            }))
         })
         .collect()
 }
@@ -52,7 +38,7 @@ pub fn execute(
                 .unwrap_or_default()
                 .map(|s| s.to_string_lossy().to_string())
                 .collect();
-            plugin.execute_external_command(subcommand, args)?;
+            plugin.execute_external_command(config, subcommand, args)?;
         }
     }
 

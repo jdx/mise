@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{remove_file, File};
 use std::path::{Path, PathBuf};
 
+use clap::Command;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 use itertools::Itertools;
@@ -254,11 +255,16 @@ impl Tool {
         self.plugin.uninstall(pr)
     }
 
-    pub fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+    pub fn external_commands(&self) -> Result<Vec<Command>> {
         self.plugin.external_commands()
     }
-    pub fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
-        self.plugin.execute_external_command(command, args)
+    pub fn execute_external_command(
+        &self,
+        config: &Config,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<()> {
+        self.plugin.execute_external_command(config, command, args)
     }
     pub fn parse_legacy_file(&self, path: &Path, settings: &Settings) -> Result<String> {
         self.plugin.parse_legacy_file(path, settings)
