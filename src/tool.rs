@@ -59,6 +59,14 @@ impl Tool {
             true => file::dir_subdirs(&self.installs_path)?
                 .iter()
                 .filter(|v| !is_runtime_symlink(&self.installs_path.join(v)))
+                // TODO: share logic with incomplete_file_path
+                .filter(|v| {
+                    !dirs::CACHE
+                        .join(&self.name)
+                        .join(v)
+                        .join("incomplete")
+                        .exists()
+                })
                 .map(|v| Versioning::new(v).unwrap_or_default())
                 .sorted()
                 .map(|v| v.to_string())
@@ -68,19 +76,8 @@ impl Tool {
     }
 
     pub fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
-        let mut query = query;
-        if query == "latest" {
-            query = "[0-9]";
-        }
-        let query_regex =
-            Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
-        let versions = self
-            .list_installed_versions()?
-            .iter()
-            .filter(|v| query_regex.is_match(v))
-            .cloned()
-            .collect();
-        Ok(versions)
+        let versions = self.list_installed_versions()?;
+        Ok(self.fuzzy_match_filter(versions, query))
     }
 
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
@@ -88,22 +85,8 @@ impl Tool {
     }
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
-        let mut query = query;
-        if query == "latest" {
-            query = "[0-9]";
-        }
-        let version_regex = regex!(
-            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
-        );
-        let query_regex =
-            Regex::new((String::from(r"^\s*") + query).as_str()).expect("error parsing regex");
-        let versions = self
-            .list_remote_versions(settings)?
-            .into_iter()
-            .filter(|v| !version_regex.is_match(v))
-            .filter(|v| query_regex.is_match(v))
-            .collect();
-        Ok(versions)
+        let versions = self.list_remote_versions(settings)?;
+        Ok(self.fuzzy_match_filter(versions, query))
     }
 
     pub fn latest_version(
@@ -237,6 +220,7 @@ impl Tool {
         };
         rmdir(&tv.install_path())?;
         rmdir(&tv.download_path())?;
+        rmdir(&tv.cache_path())?;
         Ok(())
     }
 
@@ -337,6 +321,30 @@ impl Tool {
             Some(lock)
         };
         Ok(lock)
+    }
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+        let mut query = query;
+        if query == "latest" {
+            query = "[0-9].*";
+        }
+        let query_regex =
+            Regex::new(&format!("^{}([-.].+)?$", query)).expect("error parsing regex");
+        let version_regex = regex!(
+            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
+        );
+        versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if version_regex.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect()
     }
 }
 
