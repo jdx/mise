@@ -156,13 +156,14 @@ impl Tool {
 
     pub fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
         pr.set_style(PROG_TEMPLATE.clone());
+        let tool = match tv {
+            Some(tv) => tv.to_string(),
+            None => self.name.to_string(),
+        };
         pr.set_prefix(format!(
             "{} {} ",
             style("rtx").dim().for_stderr(),
-            match tv {
-                Some(tv) => tv.to_string(),
-                None => self.name.to_string(),
-            }
+            style(tool).cyan().for_stderr(),
         ));
         pr.enable_steady_tick();
     }
