@@ -62,7 +62,7 @@ rtx uses a `.tool-versions` or `.rtx.toml` file for auto-switching between softw
 We provide a command for running the installed `node-build` command:
 
 ```bash
-rtx node nodebuild --version
+rtx node node-build --version
 ```
 
 ### node-build advanced variations
@@ -75,7 +75,7 @@ Some of them will work out of the box, and some will need a bit of investigation
 To list all the available variations run:
 
 ```bash
-rtx node nodebuild --definitions
+rtx node node-build --definitions
 ```
 
 _Note that this command only lists the current `node-build` definitions. You might want to [update the local `node-build` repository](#updating-node-build-definitions) before listing them._

@@ -1,3 +1,4 @@
+use clap::Command;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -54,10 +55,15 @@ pub trait Plugin: Debug + Send + Sync {
         let contents = std::fs::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
-    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+    fn external_commands(&self) -> Result<Vec<Command>> {
         Ok(vec![])
     }
-    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
+    fn execute_external_command(
+        &self,
+        _config: &Config,
+        _command: &str,
+        _args: Vec<String>,
+    ) -> Result<()> {
         unimplemented!()
     }
     fn install_version(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport)
