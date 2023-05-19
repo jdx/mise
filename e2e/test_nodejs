@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
-export RTX_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-node-packages"
+export RTX_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-npm-packages"
 
 rtx plugin uninstall node
 rtx i node node@lts/hydrogen
