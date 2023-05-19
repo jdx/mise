@@ -45,6 +45,7 @@ pub enum Script {
     ExecEnv,
     Install,
     ListBinPaths,
+    RunExternalCommand(PathBuf, Vec<String>),
     Uninstall,
 }
 
@@ -62,6 +63,7 @@ impl Display for Script {
             Script::Install => write!(f, "install"),
             Script::Uninstall => write!(f, "uninstall"),
             Script::ListBinPaths => write!(f, "list-bin-paths"),
+            Script::RunExternalCommand(_, _) => write!(f, "run-external-command"),
             Script::ExecEnv => write!(f, "exec-env"),
             Script::Download => write!(f, "download"),
         }
@@ -108,7 +110,10 @@ impl ScriptManager {
     }
 
     pub fn get_script_path(&self, script: &Script) -> PathBuf {
-        self.plugin_path.join("bin").join(script.to_string())
+        match script {
+            Script::RunExternalCommand(path, _) => path.clone(),
+            _ => self.plugin_path.join("bin").join(script.to_string()),
+        }
     }
 
     pub fn script_exists(&self, script: &Script) -> bool {
@@ -118,6 +123,7 @@ impl ScriptManager {
     pub fn cmd(&self, settings: &Settings, script: &Script) -> Expression {
         let args = match script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
+            Script::RunExternalCommand(_, args) => args.clone(),
             _ => vec![],
         };
         let script_path = self.get_script_path(script);

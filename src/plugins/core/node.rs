@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Duration;
 
+use clap::Command;
 use color_eyre::eyre::Result;
 
 use crate::cache::CacheManager;
@@ -205,13 +206,33 @@ impl Plugin for NodePlugin {
         }
     }
 
-    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
-        Ok(vec![vec![self.name.clone(), "nodebuild".into()]])
+    fn external_commands(&self) -> Result<Vec<Command>> {
+        if self.legacy_file_support {
+            // sort of a hack to get this not to display for nodejs
+            let topic = Command::new("node")
+                .about("Commands for the node plugin")
+                .subcommands(vec![Command::new("node-build")
+                    .about("Use/manage rtx's internal node-build")
+                    .arg(
+                        clap::Arg::new("args")
+                            .num_args(1..)
+                            .allow_hyphen_values(true)
+                            .trailing_var_arg(true),
+                    )]);
+            Ok(vec![topic])
+        } else {
+            Ok(vec![])
+        }
     }
 
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
+    fn execute_external_command(
+        &self,
+        _config: &Config,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<()> {
         match command {
-            "nodebuild" => {
+            "node-build" => {
                 self.install_or_update_node_build()?;
                 cmd::cmd(self.node_build_bin(), args).run()?;
             }
