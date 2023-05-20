@@ -49,6 +49,11 @@
           "items": {"type": "string"}
         }
       }
+    },
+    "peers": {
+      "description": "other plugins this plugin will use if it is included",
+      "type": "array",
+      "items": {"type": "string"}
     }
   }
 }
