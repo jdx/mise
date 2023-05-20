@@ -2318,7 +2318,7 @@ Options:
           Use the global config file (~/.config/rtx/config.toml) instead of the local one
 
   -p, --path <PATH>
-          Specify a path to a config file
+          Specify a path to a config file or directory
 
 Examples:
   # set the current version of node to 20.x in .rtx.toml of current directory
