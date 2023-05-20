@@ -635,7 +635,7 @@ complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l trace -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from use" -l remove -d 'Remove the tool(s) from config file' -r
-complete -c rtx -n "__fish_seen_subcommand_from use" -s p -l path -d 'Specify a path to a config file' -r -F
+complete -c rtx -n "__fish_seen_subcommand_from use" -s p -l path -d 'Specify a path to a config file or directory' -r -F
 complete -c rtx -n "__fish_seen_subcommand_from use" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -l log-level -d 'Set the log output verbosity' -r

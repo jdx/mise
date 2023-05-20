@@ -132,15 +132,11 @@ impl dyn ConfigFile {
 }
 
 pub fn init(path: &Path, is_trusted: bool) -> Box<dyn ConfigFile> {
-    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str())
-        || path.extension() == Some("toml".as_ref())
-    {
-        return Box::new(RtxToml::init(path, is_trusted));
-    } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
-        return Box::new(ToolVersions::init(path, is_trusted));
+    match detect_config_file_type(path) {
+        Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path, is_trusted)),
+        Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path, is_trusted)),
+        _ => panic!("Unknown config file type: {}", path.display()),
     }
-
-    panic!("Unknown config file type: {}", path.display());
 }
 
 pub fn parse(path: &Path, is_trusted: bool) -> Result<Box<dyn ConfigFile>> {
