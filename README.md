@@ -73,23 +73,7 @@ v20.0.0
   - [Common commands](#common-commands)
 - [Installation](#installation)
   - [Download binary](#download-binary)
-    - [Standalone](#standalone)
-    - [Homebrew](#homebrew)
-    - [Cargo](#cargo)
-    - [npm](#npm)
-    - [GitHub Releases](#github-releases)
-    - [apt](#apt)
-    - [dnf](#dnf)
-    - [yum](#yum)
-    - [apk](#apk)
-    - [aur](#aur)
-    - [nix](#nix)
   - [Register shell hook](#register-shell-hook)
-    - [Bash](#bash)
-    - [Fish](#fish)
-    - [Nushell](#nushell)
-    - [Xonsh](#xonsh)
-    - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
@@ -1120,10 +1104,19 @@ You can make git ignore these files in 3 different ways:
 
 ### What does `rtx activate` do?
 
-It registers a shell hook to run `rtx hook-env` every time the shell prompt is displayed.
+It registers a shell hook to run `rtx hook-env` every time the shell prompt is *displayed*.
 You may think that is excessive and it should only run on `cd`, however there are many
 situations where it needs to run without the directory changing, for example if the `.rtx.toml`
 was modified.
+
+Note my emphasis on the word *displayed*. This means if you attempt to use `rtx activate` in a
+non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
+never modify PATH. For this type of setup, you can either call `rtx hook-env` manually every time
+you wish to update PATH, or use [shims](#shims) instead.
+
+Or if you only need to use rtx for certain commands, just prefix the commands with
+[`rtx x --`](#rtx-exec-options-tool----command).
+For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
 blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
@@ -1135,14 +1128,14 @@ and `rtx deactivate` to work without wrapping them in `eval "$(rtx shell)"`.
 ### `rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
 
 `rtx activate` should only be used in `rc` files. These are the interactive ones used when
-a real user is using the terminal. (As opposed to being executed by an IDE or something).
-Because rtx only calls `hook-env` when the prompt is displayed, calling `rtx activate` in a
-non-interactive session means the prompt will never be shown.
+a real user is using the terminal. (As opposed to being executed by an IDE or something). The prompt
+isn't displayed in non-interactive environments so PATH won't be modified.
 
-For this setup, consider using shims instead which will route calls to the correct directory
-by looking at `PWD`. You can also call `rtx exec` instead of expecting things to be directly on PATH.
-You can also run `rtx env` in a non-interactive shell, however that will only setup the global tools.
-It won't modify the environment variables when entering into a different project.
+For non-interactive setups, consider using shims instead which will route calls to the correct
+directory by looking at `PWD` every time they're executed. You can also call `rtx exec` instead of
+expecting things to be directly on PATH. You can also run `rtx env` in a non-interactive shell, however that
+will only setup the global tools. It won't modify the environment variables when entering into a
+different project.
 
 Also see the [shebang](#shebang) example for a way to make scripts call rtx to get the runtime.
 That is another way to use rtx without activation.
@@ -1468,7 +1461,11 @@ Initializes rtx in the current shell
 
 This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
-(e.g. ~/.bashrc)
+(e.g. ~/.zshrc, ~/.bashrc)
+
+This is only intended to be used in interactive sessions, not scripts.
+rtx is only capable of updating PATH when the prompt is displayed to the user.
+For non-interactive use-cases, use shims instead.
 
 Usage: activate [OPTIONS] [SHELL_TYPE]
 
