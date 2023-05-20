@@ -72,23 +72,24 @@ v20.0.0
   - [How it works](#how-it-works)
   - [Common commands](#common-commands)
 - [Installation](#installation)
-  - [Standalone](#standalone)
-  - [Homebrew](#homebrew)
-  - [Cargo](#cargo)
-  - [npm](#npm)
-  - [GitHub Releases](#github-releases)
-  - [apt](#apt)
-  - [dnf](#dnf)
-  - [yum](#yum)
-  - [apk](#apk)
-  - [aur](#aur)
-  - [nix](#nix)
-- [Other Shells](#other-shells)
-  - [Bash](#bash)
-  - [Fish](#fish)
-  - [Nushell](#nushell)
-  - [Xonsh](#xonsh)
-  - [Something else?](#something-else)
+  - [Download binary](#download-binary)
+    - [Standalone](#standalone)
+    - [Homebrew](#homebrew)
+    - [Cargo](#cargo)
+    - [npm](#npm)
+    - [GitHub Releases](#github-releases)
+    - [apt](#apt)
+    - [dnf](#dnf)
+    - [yum](#yum)
+    - [apk](#apk)
+    - [aur](#aur)
+    - [nix](#nix)
+  - [Register shell hook](#register-shell-hook)
+    - [Bash](#bash)
+    - [Fish](#fish)
+    - [Nushell](#nushell)
+    - [Xonsh](#xonsh)
+    - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
@@ -233,7 +234,16 @@ See [plugins](#plugins) below.
 
 ## Installation
 
-### Standalone
+Installing rtx consists of two steps.
+1. Download the binary.
+   This depends on the device and operating system you are running rtx in.
+1. Register a shell hook.
+   This depends on the shell you are using.
+   Read more about this step in the [FAQ](#what-does-rtx-activate-do).
+
+### Download binary
+
+#### Standalone
 
 Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your rc
 file, rtx will automatically add itself to `PATH`.
@@ -264,7 +274,7 @@ Supported platforms:
 If you need something else, compile it with [cargo](#cargo).
 [Windows isn't currently supported.](https://github.com/jdxcode/rtx/discussions/66)
 
-### Homebrew
+#### Homebrew
 
 ```
 brew install rtx
@@ -276,7 +286,7 @@ Alternatively, use the custom tap (which is updated immediately after a release)
 brew install jdxcode/tap/rtx
 ```
 
-### Cargo
+#### Cargo
 
 Build from source with Cargo:
 
@@ -297,7 +307,7 @@ Build from the latest commit in main:
 cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
-### npm
+#### npm
 
 rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
@@ -312,7 +322,7 @@ Use npx if you just want to test it out for a single command without fully insta
 npx rtx-cli exec python@3.11 -- python some_script.py
 ```
 
-### GitHub Releases
+#### GitHub Releases
 
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
@@ -321,7 +331,7 @@ curl https://github.com/jdxcode/rtx/releases/download/v1.30.1/rtx-v1.30.1-linux-
 chmod +x /usr/local/bin/rtx
 ```
 
-### apt
+#### apt
 
 For installation on Ubuntu/Debian:
 
@@ -340,7 +350,7 @@ sudo apt install -y rtx
 > echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
-### dnf
+#### dnf
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
@@ -350,7 +360,7 @@ dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 dnf install -y rtx
 ```
 
-### yum
+#### yum
 
 ```
 yum install -y yum-utils
@@ -358,7 +368,7 @@ yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 yum install -y rtx
 ```
 
-### apk
+#### apk
 
 For Alpine Linux:
 
@@ -368,7 +378,7 @@ apk add rtx
 
 _rtx lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/rtx/APKBUILD)._
 
-### aur
+#### aur
 
 For Arch Linux:
 
@@ -378,7 +388,7 @@ cd rtx
 makepkg -si
 ```
 
-### nix
+#### nix
 
 For NixOS or those using the Nix package manager:
 
@@ -417,21 +427,21 @@ You can also import the package directly using
 `rtx-flake.packages.${system}.rtx`. It supports all default Nix
 systems.
 
-## Other Shells
+### Register shell hook
 
-### Bash
+#### Bash
 
 ```
 echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 ```
 
-### Fish
+#### Fish
 
 ```
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-### Nushell
+#### Nushell
 
 ```sh-session
 do {
@@ -441,7 +451,7 @@ do {
 }
 ```
 
-### Xonsh
+#### Xonsh
 
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
 
@@ -462,7 +472,7 @@ echo 'execx($(~/bin/rtx activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xons
 
 Given that `rtx` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs don't have these two set differently (might throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to make sure they match)
 
-### Something else?
+#### Something else?
 
 Adding a new shell is not hard at all since very little shell code is
 in this project.
