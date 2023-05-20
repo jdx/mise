@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
 
@@ -6,7 +6,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::cli::local::local;
 use crate::config::{Config, MissingRuntimeBehavior};
-use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
+use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
@@ -45,7 +45,7 @@ pub struct Use {
     #[clap(short, long, overrides_with = "path")]
     global: bool,
 
-    /// Specify a path to a config file
+    /// Specify a path to a config file or directory
     #[clap(short, long, overrides_with = "global", value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 }
@@ -63,8 +63,8 @@ impl Command for Use {
             .collect();
         let path = match (self.global, self.path) {
             (true, _) => global_file(),
-            (false, Some(p)) => p,
-            (false, None) => dirs::CURRENT.join(&*RTX_DEFAULT_CONFIG_FILENAME),
+            (false, Some(p)) => config_file_from_dir(&p),
+            (false, None) => config_file_from_dir(&dirs::CURRENT),
         };
         local(
             config,
@@ -83,6 +83,19 @@ fn global_file() -> PathBuf {
     env::RTX_CONFIG_FILE
         .clone()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+}
+
+fn config_file_from_dir(p: &Path) -> PathBuf {
+    if !p.is_dir() {
+        return p.to_path_buf();
+    }
+    let rtx_toml = p.join(&*RTX_DEFAULT_CONFIG_FILENAME);
+    let tool_versions = p.join(&*RTX_DEFAULT_TOOL_VERSIONS_FILENAME);
+    if tool_versions.exists() && !rtx_toml.exists() {
+        tool_versions
+    } else {
+        rtx_toml
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -107,7 +120,7 @@ mod tests {
     #[test]
     fn test_use_local() {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
-        let _ = fs::remove_file(&cf_path);
+        fs::write(&cf_path, "").unwrap();
 
         assert_cli!("use", "tiny@2");
         assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
@@ -128,6 +141,15 @@ mod tests {
         assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
 
         let _ = fs::remove_file(&cf_path);
+    }
+
+    #[test]
+    fn test_use_local_tool_versions() {
+        let cf_path = dirs::CURRENT.join(".test-tool-versions");
+        fs::write(&cf_path, "").unwrap();
+
+        assert_cli!("use", "tiny@3");
+        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
     }
 
     #[test]
