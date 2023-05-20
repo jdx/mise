@@ -63,7 +63,7 @@ fn load_config_files(config: &Config, ts: &mut Toolset) {
 
 fn load_runtime_env(ts: &mut Toolset, env: BTreeMap<String, String>) {
     for (k, v) in env {
-        if k.starts_with("RTX_") && k.ends_with("_VERSION") {
+        if k.starts_with("RTX_") && k.ends_with("_VERSION") && k != "RTX_VERSION" {
             let plugin_name = k[4..k.len() - 8].to_lowercase();
             if plugin_name == "install" {
                 // ignore RTX_INSTALL_VERSION
