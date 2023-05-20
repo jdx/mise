@@ -929,8 +929,6 @@ Here are a list of the changes that will be made:
   already exists the format will be preserved.)
 - `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path
   can be changed with `RTX_CONFIG_FILE`.
-- `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file
-  that is read anywhere such as from `/tmp`.
 - (more to be added)
 
 ## Directories
