@@ -40,7 +40,7 @@ impl Command for Uninstall {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
                 warn!("{} is not installed", style(&tv).cyan().for_stderr());

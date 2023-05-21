@@ -191,7 +191,6 @@ impl Plugin for PythonPlugin {
             cmd.stdin_string(patch);
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {
-            dbg!(patches_dir);
             let patch_file = patches_dir.join(format!("{}.patch", tv.version));
             if patch_file.exists() {
                 pr.set_message(format!("with patch file: {}", patch_file.display()));

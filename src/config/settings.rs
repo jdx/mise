@@ -36,7 +36,7 @@ impl Default for Settings {
             legacy_version_file: true,
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
-            verbose: *RTX_VERBOSE || !console::user_attended_stderr(),
+            verbose: *RTX_VERBOSE,
             asdf_compat: *RTX_ASDF_COMPAT,
             jobs: *RTX_JOBS,
             shorthands_file: RTX_SHORTHANDS_FILE.clone(),
