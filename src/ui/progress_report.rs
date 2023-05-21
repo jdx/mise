@@ -79,19 +79,19 @@ impl ProgressReport {
     pub fn set_message<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.set_message(message.as_ref().replace('\r', "")),
-            None => eprintln!("{}{}", self.prefix, message.as_ref()),
+            None => eprintln!("{}", message.as_ref()),
         }
     }
     pub fn println<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(message),
-            None => eprintln!("{}", message.as_ref()),
+            None => println!("{}", message.as_ref()),
         }
     }
     pub fn warn<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(format!("{} {}", style("[WARN]").yellow(), message.as_ref())),
-            None => eprintln!("{}{}", self.prefix, message.as_ref()),
+            None => eprintln!("{}", message.as_ref()),
         }
     }
     pub fn error(&self) {
@@ -118,7 +118,7 @@ impl ProgressReport {
                 pb.set_style(SUCCESS_TEMPLATE.clone());
                 pb.finish_with_message(message);
             }
-            None => eprintln!("{}{}", self.prefix, message.into()),
+            None => eprintln!("{}", message.into()),
         }
     }
     // pub fn clear(&self) {

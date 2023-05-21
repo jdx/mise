@@ -56,7 +56,7 @@ impl Command for Prune {
 
 impl Prune {
     fn delete(&self, config: &mut Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (p, tv) in to_delete {
             let mut pr = mpr.add();
             p.decorate_progress_bar(&mut pr, Some(&tv));

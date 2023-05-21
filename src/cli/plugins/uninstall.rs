@@ -17,7 +17,7 @@ pub struct PluginsUninstall {
 
 impl Command for PluginsUninstall {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
 
         for plugin_name in &self.plugin {
             self.uninstall_one(&config, plugin_name, &mpr)?;
