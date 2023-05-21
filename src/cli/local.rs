@@ -25,7 +25,7 @@ pub struct Local {
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/.rtx.toml will be displayed
-    #[clap(value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only

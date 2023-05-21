@@ -35,7 +35,7 @@ use crate::ui::progress_report::ProgressReport;
 pub struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
