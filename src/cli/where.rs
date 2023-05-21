@@ -18,7 +18,7 @@ pub struct Where {
     /// if "@<PREFIX>" is specified, it will show the latest installed version
     /// that matches the prefix
     /// otherwise, it will show the current, active installed version
-    #[clap(required = true, value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(required = true, value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     tool: ToolArg,
 
     /// the version prefix to use when querying the latest version

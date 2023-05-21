@@ -105,7 +105,7 @@ v20.0.0
   - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
   - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
   - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
-  - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
+  - [rtx isn't working when calling from tmux or another shell initialization script](#rtx-isnt-working-when-calling-from-tmux-or-another-shell-initialization-script)
   - [How do I disable/force CLI color output?](#how-do-i-disableforce-cli-color-output)
   - [Is rtx secure?](#is-rtx-secure)
 - [Comparison to asdf](#comparison-to-asdf)
@@ -133,14 +133,14 @@ v20.0.0
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
-  - [`rtx env [OPTIONS] [TOOL]...`](#rtx-env-options-tool)
-  - [`rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`](#rtx-exec-options-tool----command)
+  - [`rtx env [OPTIONS] [TOOL@VERSION]...`](#rtx-env-options-toolversion)
+  - [`rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`](#rtx-exec-options-toolversion----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
-  - [`rtx install [OPTIONS] [TOOL]...`](#rtx-install-options-tool)
-  - [`rtx latest <TOOL>`](#rtx-latest-tool)
+  - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
+  - [`rtx latest <TOOL@VERSION>`](#rtx-latest-toolversion)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
-  - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
-  - [`rtx outdated [TOOL]...`](#rtx-outdated-tool)
+  - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
+  - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
@@ -154,13 +154,13 @@ v20.0.0
   - [`rtx settings ls`](#rtx-settings-ls)
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
   - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
-  - [`rtx shell [OPTIONS] [TOOL]...`](#rtx-shell-options-tool)
+  - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
-  - [`rtx uninstall <TOOL>...`](#rtx-uninstall-tool)
-  - [`rtx upgrade [TOOL]...`](#rtx-upgrade-tool)
-  - [`rtx use [OPTIONS] [TOOL]...`](#rtx-use-options-tool)
+  - [`rtx uninstall <TOOL@VERSION>...`](#rtx-uninstall-toolversion)
+  - [`rtx upgrade [TOOL@VERSION]...`](#rtx-upgrade-toolversion)
+  - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
-  - [`rtx where <TOOL>`](#rtx-where-tool)
+  - [`rtx where <TOOL@VERSION>`](#rtx-where-toolversion)
   - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
 
 </details>
@@ -1113,7 +1113,7 @@ never modify PATH. For this type of setup, you can either call `rtx hook-env` ma
 you wish to update PATH, or use [shims](#shims) instead.
 
 Or if you only need to use rtx for certain commands, just prefix the commands with
-[`rtx x --`](#rtx-exec-options-tool----command).
+[`rtx x --`](#rtx-exec-options-toolversion----command).
 For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
@@ -1217,23 +1217,22 @@ This isn't important for usability reasons so much as making it so plugins conti
 call asdf commands.
 
 If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`RTX_ASDF_COMPAT=1`](#rtxasdfcompat1). That prevents
+[`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
 rtx from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
 
-### rtx isn't working with tmux
+### rtx isn't working when calling from tmux or another shell initialization script
 
-It's been reported that PATH doesn't work correctly with tmux. The fix seems to be calling `hook-env`
-right after activating:
+`rtx activate` will not update PATH until the shell prompt is displayed. So if you need to access a
+tool provided by rtx before the prompt is displayed you must manually call `hook-env`:
 
 ```bash
 eval "$(rtx activate bash)"
 eval "$(rtx hook-env)"
+python --version # will work only after calling hook-env explicitly
 ```
 
-This can also be useful if you need to use a runtime right away in an rc file. The default behavior
-of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
-immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
+For more information, see [What does `rtx activate` do?](#what-does-rtx-activate-do)
 
 ### How do I disable/force CLI color output?
 
@@ -1671,7 +1670,7 @@ Examples:
   $ rtx doctor
   [WARN] plugin node is not installed
 ```
-### `rtx env [OPTIONS] [TOOL]...`
+### `rtx env [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Exports env vars to activate rtx a single time
@@ -1679,10 +1678,10 @@ Exports env vars to activate rtx a single time
 Use this if you don't want to permanently install rtx. It's not necessary to
 use this if you have `rtx activate` in your shell rc file.
 
-Usage: env [OPTIONS] [TOOL]...
+Usage: env [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to use
 
 Options:
@@ -1702,7 +1701,7 @@ Examples:
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
 ```
-### `rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`
+### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
 ```
 Execute a command with tool(s) set
@@ -1715,10 +1714,10 @@ includes "node 20" but you run `rtx exec python@3.11`; it will still load node@2
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
 
-Usage: exec [OPTIONS] [TOOL]... [-- <COMMAND>...]
+Usage: exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to start e.g.: node@20 python@3.10
 
   [COMMAND]...
@@ -1759,7 +1758,7 @@ Options:
       --dry-run
           List directories that would be removed without actually removing them
 ```
-### `rtx install [OPTIONS] [TOOL]...`
+### `rtx install [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Install a tool version
@@ -1771,10 +1770,10 @@ Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <CO
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 
-Usage: install [OPTIONS] [TOOL]...
+Usage: install [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to install e.g.: node@20
 
 Options:
@@ -1790,15 +1789,15 @@ Examples:
   $ rtx install node         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
-### `rtx latest <TOOL>`
+### `rtx latest <TOOL@VERSION>`
 
 ```
 Gets the latest available version for a plugin
 
-Usage: latest <TOOL>
+Usage: latest <TOOL@VERSION>
 
 Arguments:
-  <TOOL>
+  <TOOL@VERSION>
           Tool to get the latest version of
 
 Examples:
@@ -1859,7 +1858,7 @@ Examples:
     "python": [...]
   }
 ```
-### `rtx ls-remote <PLUGIN> [PREFIX]`
+### `rtx ls-remote <TOOL@VERSION> [PREFIX]`
 
 ```
 List runtime versions available for install
@@ -1867,10 +1866,10 @@ List runtime versions available for install
 note that the results are cached for 24 hours
 run `rtx cache clean` to clear the cache and get fresh results
 
-Usage: ls-remote <PLUGIN> [PREFIX]
+Usage: ls-remote <TOOL@VERSION> [PREFIX]
 
 Arguments:
-  <PLUGIN>
+  <TOOL@VERSION>
           Plugin to get versions for
 
   [PREFIX]
@@ -1890,15 +1889,15 @@ Examples:
   20.0.0
   20.1.0
 ```
-### `rtx outdated [TOOL]...`
+### `rtx outdated [TOOL@VERSION]...`
 
 ```
 [experimental] Shows outdated tool versions
 
-Usage: outdated [TOOL]...
+Usage: outdated [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to show outdated versions for
           e.g.: node@20 python@3.10
           If not specified, all tools in global and local configs will be shown
@@ -2201,17 +2200,17 @@ Arguments:
 Examples:
   $ rtx settings unset legacy_version_file
 ```
-### `rtx shell [OPTIONS] [TOOL]...`
+### `rtx shell [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
-Usage: shell [OPTIONS] [TOOL]...
+Usage: shell [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to use
 
 Options:
@@ -2253,35 +2252,35 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   $ rtx trust
 ```
-### `rtx uninstall <TOOL>...`
+### `rtx uninstall <TOOL@VERSION>...`
 
 ```
 Removes runtime versions
 
-Usage: uninstall <TOOL>...
+Usage: uninstall <TOOL@VERSION>...
 
 Arguments:
-  <TOOL>...
+  <TOOL@VERSION>...
           Tool(s) to remove
 
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
   $ rtx uninstall node        # will uninstall current node version
 ```
-### `rtx upgrade [TOOL]...`
+### `rtx upgrade [TOOL@VERSION]...`
 
 ```
 [experimental] Upgrades outdated tool versions
 
-Usage: upgrade [TOOL]...
+Usage: upgrade [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to upgrade
           e.g.: node@20 python@3.10
           If not specified, all current tools will be upgraded
 ```
-### `rtx use [OPTIONS] [TOOL]...`
+### `rtx use [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Change the active version of a tool locally or globally.
@@ -2291,10 +2290,10 @@ By default, this will use an `.rtx.toml` file in the current directory.
 Use the --global flag to use the global config file instead.
 This replaces asdf's `local` and `global` commands, however those are still available in rtx.
 
-Usage: use [OPTIONS] [TOOL]...
+Usage: use [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to add to config file
           e.g.: node@20
           If no version is specified, it will default to @latest
@@ -2334,17 +2333,17 @@ Show rtx version
 
 Usage: version
 ```
-### `rtx where <TOOL>`
+### `rtx where <TOOL@VERSION>`
 
 ```
 Display the installation path for a runtime
 
 Must be installed.
 
-Usage: where <TOOL>
+Usage: where <TOOL@VERSION>
 
 Arguments:
-  <TOOL>
+  <TOOL@VERSION>
           Tool(s) to look up
           e.g.: ruby@3
           if "@<PREFIX>" is specified, it will show the latest installed version
