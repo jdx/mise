@@ -39,9 +39,7 @@ impl Shell for Bash {
 
             _rtx_hook() {{
               local previous_exit_status=$?;
-              trap -- '' SIGINT;
               eval "$(rtx hook-env{status} -s bash)";
-              trap - SIGINT;
               return $previous_exit_status;
             }};
             if ! [[ "${{PROMPT_COMMAND:-}}" =~ _rtx_hook ]]; then
