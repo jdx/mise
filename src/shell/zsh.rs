@@ -42,9 +42,7 @@ impl Shell for Zsh {
             }}
 
             _rtx_hook() {{
-              trap -- '' SIGINT;
               eval "$(rtx hook-env{status} -s zsh)";
-              trap - SIGINT;
             }}
             typeset -ag precmd_functions;
             if [[ -z "${{precmd_functions[(r)_rtx_hook]+1}}" ]]; then
