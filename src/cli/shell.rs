@@ -16,7 +16,7 @@ use crate::toolset::{ToolSource, ToolsetBuilder};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Tool(s) to use
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 
     /// Removes a previously set version

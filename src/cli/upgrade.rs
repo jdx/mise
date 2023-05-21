@@ -24,7 +24,7 @@ pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
-    #[clap(value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 }
 

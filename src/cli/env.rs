@@ -19,7 +19,7 @@ pub struct Env {
     shell: Option<ShellType>,
 
     /// Tool(s) to use
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 
     /// Output in JSON format
