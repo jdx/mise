@@ -886,4 +886,15 @@ mod tests {
         assert_display_snapshot!(cf.dump(), @r###"
         "###);
     }
+
+    #[test]
+    fn test_fail_with_unknown_key() {
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let err = cf
+            .parse(&formatdoc! {r#"
+        invalid_key = true
+        "#})
+            .unwrap_err();
+        assert_snapshot!(err.to_string(), @"unknown key: invalid_key");
+    }
 }

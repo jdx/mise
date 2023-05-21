@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_invalid_escape_sequence() {
-        let input = r#""\g""#;
+        let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns
         assert_str_eq!(output, r#"\g"#);
