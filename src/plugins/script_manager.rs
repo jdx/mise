@@ -155,9 +155,9 @@ impl ScriptManager {
         }
     }
 
-    pub fn read(&self, settings: &Settings, script: &Script, verbose: bool) -> Result<String> {
+    pub fn read(&self, settings: &Settings, script: &Script) -> Result<String> {
         let mut cmd = self.cmd(settings, script);
-        if !verbose && !settings.raw {
+        if !settings.verbose {
             cmd = cmd.stderr_null();
         }
         cmd.read()
