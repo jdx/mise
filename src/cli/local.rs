@@ -143,7 +143,7 @@ fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<
     let mut ts = cf.to_toolset().clone();
     ts.resolve(config);
     if !ts.list_missing_versions(config).is_empty() {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         ts.install_missing(config, mpr)?;
     }
 
