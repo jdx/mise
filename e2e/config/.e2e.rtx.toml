@@ -1,3 +1,4 @@
+#:schema ../../schema/rtx.json
 env_file = '.test-env'
 env_path = ["/root", "./cwd"]
 [env]
@@ -6,3 +7,6 @@ FOO = "bar"
 [tools]
 tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}
+
+[plugins]
+tiny-ref = "https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4"
