@@ -40,7 +40,8 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
-
+    use crate::{dirs, env};
+    use std::fs;
     use std::sync::Arc;
 
     use super::*;
@@ -61,5 +62,24 @@ mod tests {
         ));
         tvl.resolve(&config, true);
         assert_eq!(tvl.versions.len(), 1);
+    }
+
+    #[test]
+    fn test_tool_version_list_failure() {
+        env::set_var("RTX_FAILURE", "1");
+        fs::remove_dir_all(dirs::CACHE.join("dummy")).unwrap();
+        let mut config = Config::default();
+        let plugin_name = "dummy".to_string();
+        let plugin = ExternalPlugin::new(&plugin_name);
+        let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
+        config.tools.insert(plugin_name.clone(), Arc::new(tool));
+        let mut tvl = ToolVersionList::new(plugin_name.clone(), ToolSource::Argument);
+        tvl.requests.push((
+            ToolVersionRequest::new(plugin_name, "latest"),
+            ToolVersionOptions::default(),
+        ));
+        tvl.resolve(&config, true);
+        assert_eq!(tvl.versions.len(), 0);
+        env::remove_var("RTX_FAILURE");
     }
 }

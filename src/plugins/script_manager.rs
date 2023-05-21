@@ -93,9 +93,14 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
 
 impl ScriptManager {
     pub fn new(plugin_path: PathBuf) -> Self {
+        let mut env = INITIAL_ENV.clone();
+        if let Some(failure) = env::var_os("RTX_FAILURE") {
+            // used for testing failure cases
+            env.insert("RTX_FAILURE".into(), failure);
+        }
         Self {
             plugin_name: basename(&plugin_path).expect("invalid plugin path"),
-            env: INITIAL_ENV.clone(),
+            env,
             plugin_path,
         }
     }
