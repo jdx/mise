@@ -56,7 +56,7 @@ impl dyn ConfigFile {
         runtimes: &[ToolArg],
         pin: bool,
     ) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         let mut ts = self.to_toolset().to_owned();
         ts.resolve(config);
         let mut plugins_to_update = HashMap::new();

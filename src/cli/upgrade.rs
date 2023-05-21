@@ -61,7 +61,7 @@ type GroupedToolVersions = Vec<(Arc<Tool>, Vec<(ToolVersion, String)>)>;
 
 impl Upgrade {
     fn upgrade(&self, config: &mut Config, outdated: OutputVec) -> Result<()> {
-        let mut mpr = MultiProgressReport::new(config.settings.verbose);
+        let mut mpr = MultiProgressReport::new(config.show_progress_bars());
         ThreadPoolBuilder::new()
             .num_threads(config.settings.jobs)
             .build()?

@@ -46,7 +46,7 @@ impl ToolsetBuilder {
         toolset.resolve(config);
 
         if self.install_missing {
-            let mpr = MultiProgressReport::new(config.settings.verbose);
+            let mpr = MultiProgressReport::new(config.show_progress_bars());
             toolset.install_missing(config, mpr)?;
         }
 

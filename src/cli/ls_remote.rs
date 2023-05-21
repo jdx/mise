@@ -70,7 +70,7 @@ impl LsRemote {
             "Plugin {} is not installed, would you like to install it?",
             tool.name
         ))? {
-            let mpr = MultiProgressReport::new(config.settings.verbose);
+            let mpr = MultiProgressReport::new(config.show_progress_bars());
             let mut pr = mpr.add();
             tool.install(config, &mut pr, false)?;
             return Ok(());
