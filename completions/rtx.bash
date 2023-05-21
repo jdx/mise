@@ -3133,12 +3133,20 @@ _rtx() {
             return 0
             ;;
         rtx__which)
-            opts="-j -r -v -h --plugin --version --debug --install-missing --jobs --log-level --raw --trace --verbose --help <BIN_NAME>"
+            opts="-t -j -r -v -h --plugin --version --tool --debug --install-missing --jobs --log-level --raw --trace --verbose --help <BIN_NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --tool)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
