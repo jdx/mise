@@ -118,9 +118,9 @@ impl ExternalPlugin {
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        let stdout =
-            self.script_man
-                .read(settings, &Script::ListLegacyFilenames, settings.verbose)?;
+        let stdout = self
+            .script_man
+            .read(settings, &Script::ListLegacyFilenames)?;
         Ok(self.parse_legacy_filenames(&stdout))
     }
     fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
@@ -129,7 +129,7 @@ impl ExternalPlugin {
     fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
         let latest_stable = self
             .script_man
-            .read(settings, &Script::LatestStable, settings.verbose)?
+            .read(settings, &Script::LatestStable)?
             .trim()
             .to_string();
         Ok(if latest_stable.is_empty() {
@@ -152,9 +152,7 @@ impl ExternalPlugin {
         self.script_man.script_exists(&Script::LatestStable)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        let stdout = self
-            .script_man
-            .read(settings, &Script::ListAliases, settings.verbose)?;
+        let stdout = self.script_man.read(settings, &Script::ListAliases)?;
         Ok(self.parse_aliases(&stdout))
     }
     fn parse_aliases(&self, data: &str) -> Vec<(String, String)> {
@@ -483,7 +481,7 @@ impl Plugin for ExternalPlugin {
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(settings, &script, settings.verbose)?,
+            true => self.script_man.read(settings, &script)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()
