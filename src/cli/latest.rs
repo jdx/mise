@@ -12,7 +12,7 @@ use crate::toolset::ToolVersionRequest;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {
     /// Tool to get the latest version of
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: ToolArg,
 
     /// The version prefix to use when querying the latest version

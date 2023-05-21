@@ -1227,7 +1227,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -j -r -v -h --shell --json --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-s -j -r -v -h --shell --json --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1261,7 +1261,7 @@ _rtx() {
             return 0
             ;;
         rtx__exec)
-            opts="-c -j -r -v -h --command --cd --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]... [COMMAND]..."
+            opts="-c -j -r -v -h --command --cd --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1299,7 +1299,7 @@ _rtx() {
             return 0
             ;;
         rtx__global)
-            opts="-j -r -v -h --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-j -r -v -h --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2159,7 +2159,7 @@ _rtx() {
             return 0
             ;;
         rtx__install)
-            opts="-f -v -j -r -h --force --verbose --debug --install-missing --jobs --log-level --raw --trace --help [TOOL]..."
+            opts="-f -v -j -r -h --force --verbose --debug --install-missing --jobs --log-level --raw --trace --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2185,7 +2185,7 @@ _rtx() {
             return 0
             ;;
         rtx__latest)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL> [ASDF_VERSION]"
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2211,7 +2211,7 @@ _rtx() {
             return 0
             ;;
         rtx__local)
-            opts="-p -j -r -v -h --parent --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-p -j -r -v -h --parent --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2275,7 +2275,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls__remote)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN> [PREFIX]"
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [PREFIX]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2301,7 +2301,7 @@ _rtx() {
             return 0
             ;;
         rtx__outdated)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2939,7 +2939,7 @@ _rtx() {
             return 0
             ;;
         rtx__shell)
-            opts="-u -j -r -v -h --unset --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-u -j -r -v -h --unset --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2991,7 +2991,7 @@ _rtx() {
             return 0
             ;;
         rtx__uninstall)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL>..."
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3017,7 +3017,7 @@ _rtx() {
             return 0
             ;;
         rtx__upgrade)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3043,7 +3043,7 @@ _rtx() {
             return 0
             ;;
         rtx__use)
-            opts="-g -p -j -r -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL]..."
+            opts="-g -p -j -r -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3107,7 +3107,7 @@ _rtx() {
             return 0
             ;;
         rtx__where)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL> [ASDF_VERSION]"
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

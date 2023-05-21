@@ -13,7 +13,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Tool(s) to remove
-    #[clap(required = true, value_parser = ToolArgParser)]
+    #[clap(required = true, value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 }
 
