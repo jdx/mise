@@ -178,3 +178,34 @@ impl ScriptManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_script_manager() {
+        let plugin_path = PathBuf::from("/tmp/asdf");
+        let script_manager = ScriptManager::new(plugin_path.clone());
+        assert_eq!(script_manager.plugin_path, plugin_path);
+        assert_eq!(script_manager.plugin_name, "asdf");
+    }
+
+    #[test]
+    fn test_get_script_path() {
+        let plugin_path = PathBuf::from("/tmp/asdf");
+        let script_manager = ScriptManager::new(plugin_path.clone());
+
+        let test = |script, expected| {
+            assert_eq!(script_manager.get_script_path(script), expected);
+        };
+
+        test(
+            &Script::LatestStable,
+            plugin_path.join("bin").join("latest-stable"),
+        );
+
+        let script = Script::RunExternalCommand(PathBuf::from("/bin/ls"), vec!["-l".to_string()]);
+        test(&script, PathBuf::from("/bin/ls"));
+    }
+}
