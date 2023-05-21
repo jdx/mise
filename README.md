@@ -1,9 +1,9 @@
 <div align="center">
 <h1><a href="https://github.com/jdxcode/rtx">rtx</a></h1>
 <a href="https://crates.io/crates/rtx-cli"><img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge"></a>
-<a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2332CD32&style=for-the-badge"></a>
-<a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2332CD32&style=for-the-badge"></a>
-<a href="https://codecov.io/gh/jdxcode/rtx"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2332CD32&style=for-the-badge"></a>
+<a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
+<a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2320A920&style=for-the-badge"></a>
+<a href="https://codecov.io/gh/jdxcode/rtx"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
 <p><em>Polyglot runtime manager (asdf rust clone)</em></p>
 </div>
@@ -22,7 +22,7 @@
 ## 30 Second Demo
 
 The following shows using rtx to install different versions
-of [nodejs](https://nodejs.org).
+of [node](https://nodejs.org).
 Note that calling `which node` gives us a real path to node, not a shim.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
