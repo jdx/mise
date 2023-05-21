@@ -672,6 +672,8 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from where" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c rtx -n "__fish_seen_subcommand_from which" -s t -l tool -d 'Use a specific tool@version
+e.g.: `rtx which npm --tool=node@20`' -r
 complete -c rtx -n "__fish_seen_subcommand_from which" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from which" -l log-level -d 'Set the log output verbosity' -r
