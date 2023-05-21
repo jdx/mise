@@ -85,7 +85,7 @@ impl ProgressReport {
     pub fn println<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(message),
-            None => println!("{}", message.as_ref()),
+            None => eprintln!("{}", message.as_ref()),
         }
     }
     pub fn warn<S: AsRef<str>>(&self, message: S) {
