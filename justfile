@@ -55,10 +55,10 @@ test-coverage:
 
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
+    cargo test
     cargo build --all-features
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
-        cargo test
         rtx trust
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
