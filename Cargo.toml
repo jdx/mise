@@ -41,7 +41,7 @@ clap = { version = "4.2.5", features = ["env", "derive", "string"] }
 clap_complete = "4.2.3"
 color-eyre = "0.6.2"
 color-print = "0.3.4"
-console = "0.15.6"
+console = "0.15.7"
 ctrlc = "<3.3"
 dialoguer = { version = "0.10.2", features = [] }
 dirs-next = "2.0.0"
