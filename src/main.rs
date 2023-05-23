@@ -85,12 +85,11 @@ fn run(args: &Vec<String>) -> Result<()> {
 }
 
 fn handle_ctrlc() {
-    ctrlc::set_handler(move || {
+    let _ = ctrlc::set_handler(move || {
         let _ = Term::stderr().show_cursor();
         debug!("Ctrl-C pressed, exiting...");
         exit(1);
-    })
-    .expect("Error setting Ctrl-C handler");
+    });
 }
 
 fn display_friendly_err(err: Report) {
