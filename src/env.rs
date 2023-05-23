@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use itertools::Itertools;
 use log::LevelFilter;
@@ -53,6 +54,9 @@ pub static RTX_JOBS: Lazy<usize> = Lazy::new(|| {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4)
+});
+pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
+    var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
 
 /// true if inside a script like bin/exec-env or bin/install
@@ -179,6 +183,12 @@ fn var_confirm(key: &str) -> Confirm {
     } else {
         Confirm::Prompt
     }
+}
+
+fn var_duration(key: &str) -> Option<Duration> {
+    var(key)
+        .ok()
+        .map(|v| v.parse::<humantime::Duration>().unwrap().into())
 }
 
 /// this returns the environment as if __RTX_DIFF was reversed.

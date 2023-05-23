@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::mpsc::channel;
 use std::time::Duration;
+use std::{fs, thread};
 
 use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
@@ -13,7 +14,7 @@ use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
-use crate::env::PREFER_STALE;
+use crate::env::{PREFER_STALE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::remove_all;
@@ -84,13 +85,15 @@ impl ExternalPlugin {
     }
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
-        let result = self
-            .script_man
-            .cmd(settings, &Script::ListAll)
-            .stdout_capture()
-            .stderr_capture()
-            .unchecked()
-            .run()
+        let cmd = self.script_man.cmd(settings, &Script::ListAll);
+        let (tx, rx) = channel();
+        thread::spawn(move || {
+            let result = cmd.stdout_capture().stderr_capture().unchecked().run();
+            tx.send(result).unwrap();
+        });
+        let result = rx
+            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .with_context(|| format!("timed out fetching remote versions for {}", self.name))?
             .map_err(|err| {
                 let script = self.script_man.get_script_path(&Script::ListAll);
                 eyre!("Failed to run {}: {}", script.display(), err)
