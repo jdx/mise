@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, Context, Result};
 
 use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::RTX_EXE;
+use crate::env::{RTX_EXE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::plugins::{Plugin, PluginName};
@@ -69,13 +71,27 @@ impl PythonPlugin {
             self.python_build_path().display()
         );
         let git = Git::new(self.python_build_path());
-        git.update(None)?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = git.update(None);
+            tx.send(result).unwrap();
+        });
+        rx.recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .context("timed out updating python-build")??;
         Ok(())
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         self.install_or_update_python_build()?;
-        let output = cmd!(self.python_build_bin(), "--definitions").read()?;
+        let python_build_bin = self.python_build_bin();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let output = cmd!(python_build_bin, "--definitions").read();
+            tx.send(output).unwrap();
+        });
+        let output = rx
+            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .context("timed out fetching python versions")??;
         Ok(output.split('\n').map(|s| s.to_string()).collect())
     }
 
