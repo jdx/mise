@@ -1,17 +1,21 @@
 use std::collections::BTreeMap;
 use std::env::{join_paths, split_paths};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::mpsc;
 use std::time::Duration;
+use std::{fs, thread};
 
 use clap::Command;
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Context, Result};
 
 use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::{RTX_EXE, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE, RTX_NODE_VERBOSE_INSTALL};
+use crate::env::{
+    RTX_EXE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE,
+    RTX_NODE_VERBOSE_INSTALL,
+};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::lock_file::LockFile;
@@ -91,13 +95,27 @@ impl NodePlugin {
             self.node_build_path().display()
         );
         let git = Git::new(self.node_build_path());
-        git.update(None)?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = git.update(None);
+            tx.send(result).unwrap();
+        });
+        rx.recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .context("timed out updating node-build")??;
         Ok(())
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         self.install_or_update_node_build()?;
-        let output = cmd!(self.node_build_bin(), "--definitions").read()?;
+        let node_build_bin = self.node_build_bin();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let output = cmd!(node_build_bin, "--definitions").read();
+            tx.send(output).unwrap();
+        });
+        let output = rx
+            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .context("timed out fetching node versions")??;
         let versions = output
             .split('\n')
             .filter(|s| regex!(r"^[0-9].+$").is_match(s))
@@ -206,6 +224,12 @@ impl Plugin for NodePlugin {
         }
     }
 
+    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+        let body = fs::read_to_string(path)?;
+        // trim "v" prefix
+        Ok(body.trim().strip_prefix('v').unwrap_or(&body).to_string())
+    }
+
     fn external_commands(&self) -> Result<Vec<Command>> {
         if self.legacy_file_support {
             // sort of a hack to get this not to display for nodejs
@@ -273,11 +297,5 @@ impl Plugin for NodePlugin {
         self.test_npm(config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())
-    }
-
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
-        let body = fs::read_to_string(path)?;
-        // trim "v" prefix
-        Ok(body.trim().strip_prefix('v').unwrap_or(&body).to_string())
     }
 }
