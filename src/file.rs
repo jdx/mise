@@ -46,7 +46,7 @@ pub fn basename(path: &Path) -> Option<String> {
 /// replaces $HOME with "~"
 pub fn display_path(path: &Path) -> String {
     let home = dirs::HOME.to_string_lossy();
-    match path.starts_with(home.as_ref()) {
+    match path.starts_with(home.as_ref()) && home != "/" {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
     }
