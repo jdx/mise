@@ -1,7 +1,7 @@
 { pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
 rustPlatform.buildRustPackage {
   pname = "rtx";
-  version = "1.30.3";
+  version = "1.30.4";
 
   src = lib.cleanSource ./.;
 
