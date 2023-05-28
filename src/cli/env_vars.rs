@@ -16,7 +16,7 @@ use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 /// Use the --file option to specify another file.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct SetEnv {
+pub struct EnvVars {
     #[clap(long, verbatim_doc_comment, default_value = ".rtx.toml")]
     file: String,
 
@@ -26,7 +26,7 @@ pub struct SetEnv {
     env_vars: Vec<EnvVarArg>,
 }
 
-impl Command for SetEnv {
+impl Command for EnvVars {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mut rtx_toml = get_local_rtx_toml(&config)?;
         for ev in self.env_vars {
