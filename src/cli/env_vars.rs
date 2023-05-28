@@ -12,13 +12,16 @@ use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 
 /// Manage environment variables
 ///
-/// By default this command modifies '.rtx.toml' in the current directory.
-/// Use the --file option to specify another file.
+/// By default this command modifies ".rtx.toml" in the current directory.
+/// You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or using the --file option.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct EnvVars {
-    #[clap(long, verbatim_doc_comment, default_value = ".rtx.toml")]
-    file: String,
+    /// The TOML file to update
+    ///
+    /// Defaults to RTX_DEFAULT_CONFIG_FILENAME environment variable, or ".rtx.toml".
+    #[clap(long, verbatim_doc_comment, required = false)]
+    file: Option<String>,
 
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
@@ -28,7 +31,11 @@ pub struct EnvVars {
 
 impl Command for EnvVars {
     fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mut rtx_toml = get_local_rtx_toml(&config)?;
+        let filename = self
+            .file
+            .unwrap_or_else(|| RTX_DEFAULT_CONFIG_FILENAME.to_string());
+
+        let mut rtx_toml = get_rtx_toml(&config, filename.as_str())?;
         for ev in self.env_vars {
             rtx_toml.update_env(&ev.key, ev.value);
         }
@@ -36,8 +43,8 @@ impl Command for EnvVars {
     }
 }
 
-fn get_local_rtx_toml(config: &Config) -> Result<RtxToml> {
-    let path = dirs::CURRENT.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
+fn get_rtx_toml(config: &Config, filename: &str) -> Result<RtxToml> {
+    let path = dirs::CURRENT.join(filename);
     let is_trusted = config_file::is_trusted(&config.settings, &path);
     let rtx_toml = if path.exists() {
         RtxToml::from_file(&path, is_trusted)?
