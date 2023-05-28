@@ -10,12 +10,16 @@ use crate::output::Output;
 
 use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 
-/// Set/update environment variables for the current directory
+/// Manage environment variables
 ///
-/// This modifies the contents of ./.rtx.toml
+/// By default this command modifies '.rtx.toml' in the current directory.
+/// Use the --file option to specify another file.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SetEnv {
+    #[clap(long, verbatim_doc_comment, default_value = ".rtx.toml")]
+    file: String,
+
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment, required = true)]
