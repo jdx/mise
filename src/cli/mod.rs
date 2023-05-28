@@ -21,6 +21,7 @@ mod deactivate;
 mod direnv;
 mod doctor;
 mod env;
+mod env_vars;
 pub mod exec;
 mod external;
 mod global;
@@ -37,7 +38,6 @@ mod prune;
 mod render_help;
 mod reshim;
 mod self_update;
-mod set_env;
 mod settings;
 mod shell;
 mod trust;
@@ -78,7 +78,7 @@ pub enum Commands {
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
     SelfUpdate(self_update::SelfUpdate),
-    SetEnv(set_env::SetEnv),
+    SetEnv(env_vars::SetEnv),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Trust(trust::Trust),
