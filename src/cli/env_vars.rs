@@ -13,7 +13,7 @@ use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 /// Manage environment variables
 ///
 /// By default this command modifies ".rtx.toml" in the current directory.
-/// You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or using the --file option.
+/// You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct EnvVars {
@@ -23,9 +23,15 @@ pub struct EnvVars {
     #[clap(long, verbatim_doc_comment, required = false)]
     file: Option<String>,
 
+    /// Remove the environment variable from config file
+    ///
+    /// Can be used multiple times.
+    #[clap(long, value_name = "ENV_VAR", verbatim_doc_comment, aliases = ["rm", "unset"])]
+    remove: Option<Vec<String>>,
+
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
-    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment, required = true)]
+    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment, required_unless_present = "remove")]
     env_vars: Vec<EnvVarArg>,
 }
 
@@ -36,6 +42,13 @@ impl Command for EnvVars {
             .unwrap_or_else(|| RTX_DEFAULT_CONFIG_FILENAME.to_string());
 
         let mut rtx_toml = get_rtx_toml(&config, filename.as_str())?;
+
+        if let Some(env_names) = &self.remove {
+            for name in env_names {
+                rtx_toml.remove_env(name);
+            }
+        }
+
         for ev in self.env_vars {
             rtx_toml.update_env(&ev.key, ev.value);
         }

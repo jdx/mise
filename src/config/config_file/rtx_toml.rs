@@ -598,6 +598,16 @@ impl RtxToml {
         env_tbl.insert(key, toml_edit::value(value));
     }
 
+    pub fn remove_env(&mut self, key: &str) {
+        let env_tbl = self
+            .doc
+            .entry("env")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap();
+        env_tbl.remove(key);
+    }
+
     fn parse_template(&mut self, k: &str, input: &str) -> Result<String> {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
