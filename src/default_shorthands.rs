@@ -8,7 +8,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 674] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -157,6 +157,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("doctoolchain", "https://github.com/joschi/asdf-doctoolchain"),
     ("docuum", "https://github.com/bradym/asdf-docuum.git"),
     ("dome", "https://github.com/jtakakura/asdf-dome.git"),
+    ("doppler", "https://github.com/takutakahashi/asdf-doppler.git"),
     ("dotenv-linter", "https://github.com/wesleimp/asdf-dotenv-linter.git"),
     ("dotnet", "https://github.com/hensou/asdf-dotnet"),
     ("dotnet-core", "https://github.com/emersonsoares/asdf-dotnet-core.git"),
@@ -484,6 +485,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("purescript", "https://github.com/nsaunders/asdf-purescript.git"),
     ("purty", "https://github.com/nsaunders/asdf-purty.git"),
     ("python", "https://github.com/danhper/asdf-python.git"),
+    ("qdns", "https://github.com/moritz-makandra/asdf-plugin-qdns.git"),
     ("quarkus", "https://github.com/asdf-community/asdf-quarkus.git"),
     ("rabbitmq", "https://github.com/w-sanches/asdf-rabbitmq.git"),
     ("racket", "https://github.com/asdf-community/asdf-racket.git"),
@@ -510,6 +512,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("ruby", "https://github.com/asdf-vm/asdf-ruby.git"),
     ("rust", "https://github.com/code-lever/asdf-rust.git"),
     ("rust-analyzer", "https://github.com/Xyven1/asdf-rust-analyzer"),
+    ("rye", "https://github.com/Azuki-bar/asdf-rye"),
     ("saml2aws", "https://github.com/elementalvoid/asdf-saml2aws.git"),
     ("sbcl", "https://github.com/smashedtoatoms/asdf-sbcl.git"),
     ("sbt", "https://github.com/bram2000/asdf-sbt.git"),
@@ -551,6 +554,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("spruce", "https://github.com/woneill/asdf-spruce.git"),
     ("sqldef", "https://github.com/cometkim/asdf-sqldef.git"),
     ("sqlite", "https://github.com/cLupus/asdf-sqlite.git"),
+    ("sshuttle", "https://github.com/xanmanning/asdf-sshuttle.git"),
     ("stack", "https://github.com/sestrella/asdf-ghcup.git"),
     ("starboard", "https://github.com/zufardhiyaulhaq/asdf-starboard.git"),
     ("starport", "https://github.com/nikever/asdf-starport.git"),
@@ -606,6 +610,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("tilt", "https://github.com/eaceaser/asdf-tilt.git"),
     ("timoni", "https://github.com/Smana/asdf-timoni.git"),
     ("titan", "https://github.com/gabitchov/asdf-titan.git"),
+    ("tlsg-cli", "https://github.com/0ghny/asdf-tlsgcli.git"),
     ("tmux", "https://github.com/aphecetche/asdf-tmux.git"),
     ("tokei", "https://github.com/gasuketsu/asdf-tokei.git"),
     ("tomcat", "https://github.com/mbutov/asdf-tomcat"),
@@ -645,6 +650,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("weave-gitops", "https://github.com/deas/asdf-weave-gitops"),
     ("websocat", "https://github.com/bdellegrazie/asdf-websocat.git"),
     ("wren-cli", "https://github.com/jtakakura/asdf-wren-cli.git"),
+    ("wrk", "https://github.com/ivanvc/asdf-wrk.git"),
     ("wtfutil", "https://github.com/NeoHsu/asdf-wtfutil.git"),
     ("xc", "https://github.com/airtonix/asdf-xc"),
     ("xchtmlreport", "https://github.com/younke/asdf-xchtmlreport.git"),
@@ -652,6 +658,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 667] = [
     ("xcodes", "https://github.com/younke/asdf-xcodes.git"),
     ("xh", "https://github.com/NeoHsu/asdf-xh"),
     ("yadm", "https://github.com/particledecay/asdf-yadm.git"),
+    ("yamlfmt", "https://github.com/kachick/asdf-yamlfmt.git"),
     ("yamllint", "https://github.com/ericcornelissen/asdf-yamllint.git"),
     ("yarn", "https://github.com/twuni/asdf-yarn.git"),
     ("yay", "https://github.com/aaaaninja/asdf-yay.git"),
