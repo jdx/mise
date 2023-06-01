@@ -156,7 +156,7 @@ jobs:
           - pnpm
           - ocaml
           # TODO: - rebar install erlang first
-          - julia
+          # TODO: - julia seems to have quit working, likely an issue with the plugin
           - elm
           # TODO: - R install libcurl
           - nim
