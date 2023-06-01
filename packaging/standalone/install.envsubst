@@ -113,7 +113,7 @@ install_rtx() {
 	debug "rtx-setup: tarball=$cache_file"
 
 	debug "validating checksum"
-	cd "$(dirname "$cache_file")" && get_checksum | sha256sum -c >/dev/null
+	cd "$(dirname "$cache_file")" && get_checksum | shasum -c >/dev/null
 
 	# extract tarball
 	mkdir -p "$install_dir"
