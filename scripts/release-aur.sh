@@ -41,7 +41,11 @@ build() {
 
 package() {
     cd "\$srcdir/\$pkgname-\$pkgver"
-    install -Dm0755 -t "\$pkgdir/usr/bin/" "target/release/\$pkgname"
+    install -Dm755 target/release/rtx "\$pkgdir/usr/bin/rtx"
+    install -Dm644 man/man1/rtx.1 "\$pkgdir/usr/share/man/man1/rtx.1"
+    install -Dm644 completions/rtx.bash "\$pkgdir/usr/share/bash-completion/completions/rtx"
+    install -Dm644 completions/rtx.fish "\$pkgdir/usr/share/fish/completions/rtx.fish"
+    install -Dm644 completions/_rtx "\$pkgdir/usr/share/zsh/site-functions/_zsh"
 }
 
 check() {
