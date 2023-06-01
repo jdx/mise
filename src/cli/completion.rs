@@ -10,7 +10,7 @@ use crate::output::Output;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
-#[clap(alias = "complete", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Completion {
     /// Shell type to generate completions for
     #[clap()]
