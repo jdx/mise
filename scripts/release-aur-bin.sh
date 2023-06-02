@@ -36,9 +36,6 @@ package() {
     cd "\$srcdir/"
     install -Dm755 rtx/bin/rtx "\$pkgdir/usr/bin/rtx"
     install -Dm644 rtx/man/man1/rtx.1 "\$pkgdir/usr/share/man/man1/rtx.1"
-    install -Dm644 rtx/completions/rtx.bash "\$pkgdir/usr/share/bash-completion/completions/rtx"
-    install -Dm644 rtx/completions/rtx.fish "\$pkgdir/usr/share/fish/completions/rtx.fish"
-    install -Dm644 rtx/completions/_rtx "\$pkgdir/usr/share/zsh/site-functions/_zsh"
 }
 
 check() {
