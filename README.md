@@ -35,7 +35,7 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.30.5
+rtx 1.31.0
 ```
 
 Hook rtx into to your shell (pick the right one for your shell):
@@ -134,6 +134,7 @@ v20.0.0
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
   - [`rtx env [OPTIONS] [TOOL@VERSION]...`](#rtx-env-options-toolversion)
+  - [`rtx env-vars [OPTIONS] [ENV_VARS]...`](#rtx-env-vars-options-env_vars)
   - [`rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`](#rtx-exec-options-toolversion----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
   - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
@@ -311,7 +312,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.30.5/rtx-v1.30.5-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v1.31.0/rtx-v1.31.0-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
@@ -1700,6 +1701,32 @@ Examples:
   $ eval "$(rtx env -s zsh)"
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
+```
+### `rtx env-vars [OPTIONS] [ENV_VARS]...`
+
+```
+Manage environment variables
+
+By default this command modifies ".rtx.toml" in the current directory.
+You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
+
+Usage: env-vars [OPTIONS] [ENV_VARS]...
+
+Arguments:
+  [ENV_VARS]...
+          Environment variable(s) to set
+          e.g.: NODE_ENV=production
+
+Options:
+      --file <FILE>
+          The TOML file to update
+
+          Defaults to RTX_DEFAULT_CONFIG_FILENAME environment variable, or ".rtx.toml".
+
+      --remove <ENV_VAR>
+          Remove the environment variable from config file
+
+          Can be used multiple times.
 ```
 ### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 

@@ -51,6 +51,9 @@ _rtx() {
             rtx,env)
                 cmd="rtx__env"
                 ;;
+            rtx,env-vars)
+                cmd="rtx__env__vars"
+                ;;
             rtx,exec)
                 cmd="rtx__exec"
                 ;;
@@ -263,6 +266,9 @@ _rtx() {
                 ;;
             rtx__help,env)
                 cmd="rtx__help__env"
+                ;;
+            rtx__help,env-vars)
+                cmd="rtx__help__env__vars"
                 ;;
             rtx__help,exec)
                 cmd="rtx__help__exec"
@@ -505,7 +511,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1260,6 +1266,40 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtx__env__vars)
+            opts="-j -r -v -h --file --remove --debug --install-missing --jobs --log-level --raw --trace --verbose --help [ENV_VARS]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --remove)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtx__exec)
             opts="-c -j -r -v -h --command --cd --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -1329,7 +1369,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1595,6 +1635,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__env)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__env__vars)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
