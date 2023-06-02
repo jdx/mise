@@ -21,6 +21,7 @@ mod deactivate;
 mod direnv;
 mod doctor;
 mod env;
+mod env_vars;
 pub mod exec;
 mod external;
 mod global;
@@ -66,6 +67,7 @@ pub enum Commands {
     Direnv(direnv::Direnv),
     Doctor(doctor::Doctor),
     Env(env::Env),
+    EnvVars(env_vars::EnvVars),
     Exec(exec::Exec),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
@@ -108,6 +110,7 @@ impl Commands {
             Self::Direnv(cmd) => cmd.run(config, out),
             Self::Doctor(cmd) => cmd.run(config, out),
             Self::Env(cmd) => cmd.run(config, out),
+            Self::EnvVars(cmd) => cmd.run(config, out),
             Self::Exec(cmd) => cmd.run(config, out),
             Self::Global(cmd) => cmd.run(config, out),
             Self::HookEnv(cmd) => cmd.run(config, out),
