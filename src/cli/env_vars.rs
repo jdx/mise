@@ -70,42 +70,51 @@ fn get_rtx_toml(config: &Config, filename: &str) -> Result<RtxToml> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::PathBuf};
+
+    use insta::assert_snapshot;
 
     use crate::{assert_cli, dirs};
 
-    fn remove_config_file(filename: &str) {
+    fn remove_config_file(filename: &str) -> PathBuf {
         let cf_path = dirs::CURRENT.join(filename);
         let _ = fs::remove_file(&cf_path);
+        cf_path
     }
 
     #[test]
     fn test_env_vars() {
-        remove_config_file(".test.rtx.toml");
-        remove_config_file(".test-custom.rtx.toml");
-
+        // Using the default file
+        let filename = ".test.rtx.toml";
+        let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "FOO=bar");
-        assert_cli!("env-vars", "--file", ".test-custom.rtx.toml", "FOO=bar");
+        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        remove_config_file(filename);
 
-        remove_config_file(".test.rtx.toml");
-        remove_config_file(".test-custom.rtx.toml");
+        // Using a custom file
+        let filename = ".test-custom.rtx.toml";
+        let cf_path = remove_config_file(filename);
+        assert_cli!("env-vars", "--file", filename, "FOO=bar");
+        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        remove_config_file(filename);
     }
 
     #[test]
     fn test_env_vars_remove() {
-        remove_config_file(".test.rtx.toml");
-        remove_config_file(".test-custom.rtx.toml");
-
+        // Using the default file
+        let filename = ".test.rtx.toml";
+        let cf_path = remove_config_file(filename);
+        assert_cli!("env-vars", "BAZ=quux");
         assert_cli!("env-vars", "--remove", "BAZ");
-        assert_cli!(
-            "env-vars",
-            "--file",
-            ".test-custom.rtx.toml",
-            "--remove",
-            "BAZ"
-        );
+        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        remove_config_file(filename);
 
-        remove_config_file(".test.rtx.toml");
-        remove_config_file(".test-custom.rtx.toml");
+        // Using a custom file
+        let filename = ".test-custom.rtx.toml";
+        let cf_path = remove_config_file(filename);
+        assert_cli!("env-vars", "--file", filename, "BAZ=quux");
+        assert_cli!("env-vars", "--file", filename, "--remove", "BAZ");
+        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        remove_config_file(filename);
     }
 }
