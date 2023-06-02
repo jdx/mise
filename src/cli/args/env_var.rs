@@ -46,7 +46,7 @@ impl clap::builder::TypedValueParser for EnvVarArgParser {
             ContextKind::InvalidValue,
             ContextValue::String(value.to_string_lossy().into()),
         );
-        return Err(err);
+        Err(err)
     }
 }
 
