@@ -45,6 +45,7 @@ pub enum Script {
     ExecEnv,
     Install,
     ListBinPaths,
+    RunExternalCommand(PathBuf, Vec<String>),
     Uninstall,
 }
 
@@ -62,6 +63,7 @@ impl Display for Script {
             Script::Install => write!(f, "install"),
             Script::Uninstall => write!(f, "uninstall"),
             Script::ListBinPaths => write!(f, "list-bin-paths"),
+            Script::RunExternalCommand(_, _) => write!(f, "run-external-command"),
             Script::ExecEnv => write!(f, "exec-env"),
             Script::Download => write!(f, "download"),
         }
@@ -91,9 +93,14 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
 
 impl ScriptManager {
     pub fn new(plugin_path: PathBuf) -> Self {
+        let mut env = INITIAL_ENV.clone();
+        if let Some(failure) = env::var_os("RTX_FAILURE") {
+            // used for testing failure cases
+            env.insert("RTX_FAILURE".into(), failure);
+        }
         Self {
             plugin_name: basename(&plugin_path).expect("invalid plugin path"),
-            env: INITIAL_ENV.clone(),
+            env,
             plugin_path,
         }
     }
@@ -108,7 +115,10 @@ impl ScriptManager {
     }
 
     pub fn get_script_path(&self, script: &Script) -> PathBuf {
-        self.plugin_path.join("bin").join(script.to_string())
+        match script {
+            Script::RunExternalCommand(path, _) => path.clone(),
+            _ => self.plugin_path.join("bin").join(script.to_string()),
+        }
     }
 
     pub fn script_exists(&self, script: &Script) -> bool {
@@ -118,6 +128,7 @@ impl ScriptManager {
     pub fn cmd(&self, settings: &Settings, script: &Script) -> Expression {
         let args = match script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
+            Script::RunExternalCommand(_, args) => args.clone(),
             _ => vec![],
         };
         let script_path = self.get_script_path(script);
@@ -144,9 +155,9 @@ impl ScriptManager {
         }
     }
 
-    pub fn read(&self, settings: &Settings, script: &Script, verbose: bool) -> Result<String> {
+    pub fn read(&self, settings: &Settings, script: &Script) -> Result<String> {
         let mut cmd = self.cmd(settings, script);
-        if !verbose && !settings.raw {
+        if !settings.verbose {
             cmd = cmd.stderr_null();
         }
         cmd.read()
@@ -170,5 +181,36 @@ impl ScriptManager {
             return Err(ScriptFailed(path, status).into());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_script_manager() {
+        let plugin_path = PathBuf::from("/tmp/asdf");
+        let script_manager = ScriptManager::new(plugin_path.clone());
+        assert_eq!(script_manager.plugin_path, plugin_path);
+        assert_eq!(script_manager.plugin_name, "asdf");
+    }
+
+    #[test]
+    fn test_get_script_path() {
+        let plugin_path = PathBuf::from("/tmp/asdf");
+        let script_manager = ScriptManager::new(plugin_path.clone());
+
+        let test = |script, expected| {
+            assert_eq!(script_manager.get_script_path(script), expected);
+        };
+
+        test(
+            &Script::LatestStable,
+            plugin_path.join("bin").join("latest-stable"),
+        );
+
+        let script = Script::RunExternalCommand(PathBuf::from("/bin/ls"), vec!["-l".to_string()]);
+        test(&script, PathBuf::from("/bin/ls"));
     }
 }

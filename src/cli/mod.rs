@@ -32,6 +32,7 @@ mod latest;
 mod local;
 mod ls;
 mod ls_remote;
+mod outdated;
 mod plugins;
 mod prune;
 #[cfg(debug_assertions)]
@@ -42,6 +43,7 @@ mod settings;
 mod shell;
 mod trust;
 mod uninstall;
+mod upgrade;
 mod r#use;
 pub mod version;
 mod r#where;
@@ -75,6 +77,7 @@ pub enum Commands {
     Local(local::Local),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
@@ -83,6 +86,7 @@ pub enum Commands {
     Shell(shell::Shell),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
+    Upgrade(upgrade::Upgrade),
     Use(r#use::Use),
     Version(version::Version),
     Where(r#where::Where),
@@ -115,6 +119,7 @@ impl Commands {
             Self::Local(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),
+            Self::Outdated(cmd) => cmd.run(config, out),
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
@@ -124,6 +129,7 @@ impl Commands {
             Self::Shell(cmd) => cmd.run(config, out),
             Self::Trust(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
+            Self::Upgrade(cmd) => cmd.run(config, out),
             Self::Use(cmd) => cmd.run(config, out),
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),

@@ -35,7 +35,7 @@ use crate::ui::progress_report::ProgressReport;
 pub struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
@@ -62,7 +62,7 @@ impl Command for Install {
 
 impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         let ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
@@ -144,7 +144,7 @@ impl Install {
         if ts.list_missing_versions(&config).is_empty() {
             warn!("no runtimes to install");
         }
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         ts.install_missing(&mut config, mpr)?;
 
         Ok(())

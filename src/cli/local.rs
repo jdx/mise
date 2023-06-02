@@ -25,7 +25,7 @@ pub struct Local {
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/.rtx.toml will be displayed
-    #[clap(value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
@@ -143,7 +143,7 @@ fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<
     let mut ts = cf.to_toolset().clone();
     ts.resolve(config);
     if !ts.list_missing_versions(config).is_empty() {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         ts.install_missing(config, mpr)?;
     }
 

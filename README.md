@@ -1,9 +1,9 @@
 <div align="center">
 <h1><a href="https://github.com/jdxcode/rtx">rtx</a></h1>
 <a href="https://crates.io/crates/rtx-cli"><img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge"></a>
-<a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2332CD32&style=for-the-badge"></a>
-<a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2332CD32&style=for-the-badge"></a>
-<a href="https://codecov.io/gh/jdxcode/rtx"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2332CD32&style=for-the-badge"></a>
+<a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
+<a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2320A920&style=for-the-badge"></a>
+<a href="https://codecov.io/gh/jdxcode/rtx"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
 <p><em>Polyglot runtime manager (asdf rust clone)</em></p>
 </div>
@@ -22,7 +22,7 @@
 ## 30 Second Demo
 
 The following shows using rtx to install different versions
-of [nodejs](https://nodejs.org).
+of [node](https://nodejs.org).
 Note that calling `which node` gives us a real path to node, not a shim.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
@@ -35,7 +35,7 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.29.6
+rtx 1.30.6
 ```
 
 Hook rtx into to your shell (pick the right one for your shell):
@@ -72,23 +72,8 @@ v20.0.0
   - [How it works](#how-it-works)
   - [Common commands](#common-commands)
 - [Installation](#installation)
-  - [Standalone](#standalone)
-  - [Homebrew](#homebrew)
-  - [Cargo](#cargo)
-  - [npm](#npm)
-  - [GitHub Releases](#github-releases)
-  - [apt](#apt)
-  - [dnf](#dnf)
-  - [yum](#yum)
-  - [apk](#apk)
-  - [aur](#aur)
-  - [nix](#nix)
-- [Other Shells](#other-shells)
-  - [Bash](#bash)
-  - [Fish](#fish)
-  - [Nushell](#nushell)
-  - [Xonsh](#xonsh)
-  - [Something else?](#something-else)
+  - [Download binary](#download-binary)
+  - [Register shell hook](#register-shell-hook)
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
@@ -120,7 +105,7 @@ v20.0.0
   - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
   - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
   - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
-  - [rtx isn't working with tmux](#rtx-isnt-working-with-tmux)
+  - [rtx isn't working when calling from tmux or another shell initialization script](#rtx-isnt-working-when-calling-from-tmux-or-another-shell-initialization-script)
   - [How do I disable/force CLI color output?](#how-do-i-disableforce-cli-color-output)
   - [Is rtx secure?](#is-rtx-secure)
 - [Comparison to asdf](#comparison-to-asdf)
@@ -148,13 +133,14 @@ v20.0.0
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
   - [`rtx doctor`](#rtx-doctor)
-  - [`rtx env [OPTIONS] [TOOL]...`](#rtx-env-options-tool)
-  - [`rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`](#rtx-exec-options-tool----command)
+  - [`rtx env [OPTIONS] [TOOL@VERSION]...`](#rtx-env-options-toolversion)
+  - [`rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`](#rtx-exec-options-toolversion----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
-  - [`rtx install [OPTIONS] [TOOL]...`](#rtx-install-options-tool)
-  - [`rtx latest <TOOL>`](#rtx-latest-tool)
+  - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
+  - [`rtx latest <TOOL@VERSION>`](#rtx-latest-toolversion)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
-  - [`rtx ls-remote <PLUGIN> [PREFIX]`](#rtx-ls-remote-plugin-prefix)
+  - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
+  - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
   - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
@@ -168,12 +154,13 @@ v20.0.0
   - [`rtx settings ls`](#rtx-settings-ls)
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
   - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
-  - [`rtx shell [OPTIONS] [TOOL]...`](#rtx-shell-options-tool)
+  - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
-  - [`rtx uninstall <TOOL>...`](#rtx-uninstall-tool)
-  - [`rtx use [OPTIONS] [TOOL]...`](#rtx-use-options-tool)
+  - [`rtx uninstall <TOOL@VERSION>...`](#rtx-uninstall-toolversion)
+  - [`rtx upgrade [TOOL@VERSION]...`](#rtx-upgrade-toolversion)
+  - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
-  - [`rtx where <TOOL>`](#rtx-where-tool)
+  - [`rtx where <TOOL@VERSION>`](#rtx-where-toolversion)
   - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
 
 </details>
@@ -231,7 +218,16 @@ See [plugins](#plugins) below.
 
 ## Installation
 
-### Standalone
+Installing rtx consists of two steps.
+1. Download the binary.
+   This depends on the device and operating system you are running rtx in.
+1. Register a shell hook.
+   This depends on the shell you are using.
+   Read more about this step in the [FAQ](#what-does-rtx-activate-do).
+
+### Download binary
+
+#### Standalone
 
 Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your rc
 file, rtx will automatically add itself to `PATH`.
@@ -262,7 +258,7 @@ Supported platforms:
 If you need something else, compile it with [cargo](#cargo).
 [Windows isn't currently supported.](https://github.com/jdxcode/rtx/discussions/66)
 
-### Homebrew
+#### Homebrew
 
 ```
 brew install rtx
@@ -274,7 +270,7 @@ Alternatively, use the custom tap (which is updated immediately after a release)
 brew install jdxcode/tap/rtx
 ```
 
-### Cargo
+#### Cargo
 
 Build from source with Cargo:
 
@@ -295,7 +291,7 @@ Build from the latest commit in main:
 cargo install rtx-cli --git https://github.com/jdxcode/rtx --branch main
 ```
 
-### npm
+#### npm
 
 rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
@@ -310,16 +306,16 @@ Use npx if you just want to test it out for a single command without fully insta
 npx rtx-cli exec python@3.11 -- python some_script.py
 ```
 
-### GitHub Releases
+#### GitHub Releases
 
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.29.6/rtx-v1.29.6-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v1.30.6/rtx-v1.30.6-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
-### apt
+#### apt
 
 For installation on Ubuntu/Debian:
 
@@ -338,7 +334,7 @@ sudo apt install -y rtx
 > echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
-### dnf
+#### dnf
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
@@ -348,7 +344,7 @@ dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 dnf install -y rtx
 ```
 
-### yum
+#### yum
 
 ```
 yum install -y yum-utils
@@ -356,7 +352,7 @@ yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 yum install -y rtx
 ```
 
-### apk
+#### apk
 
 For Alpine Linux:
 
@@ -366,7 +362,7 @@ apk add rtx
 
 _rtx lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/rtx/APKBUILD)._
 
-### aur
+#### aur
 
 For Arch Linux:
 
@@ -376,7 +372,7 @@ cd rtx
 makepkg -si
 ```
 
-### nix
+#### nix
 
 For NixOS or those using the Nix package manager:
 
@@ -415,21 +411,21 @@ You can also import the package directly using
 `rtx-flake.packages.${system}.rtx`. It supports all default Nix
 systems.
 
-## Other Shells
+### Register shell hook
 
-### Bash
+#### Bash
 
 ```
 echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 ```
 
-### Fish
+#### Fish
 
 ```
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-### Nushell
+#### Nushell
 
 ```sh-session
 do {
@@ -439,7 +435,7 @@ do {
 }
 ```
 
-### Xonsh
+#### Xonsh
 
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
 
@@ -460,7 +456,7 @@ echo 'execx($(~/bin/rtx activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xons
 
 Given that `rtx` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs don't have these two set differently (might throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to make sure they match)
 
-### Something else?
+#### Something else?
 
 Adding a new shell is not hard at all since very little shell code is
 in this project.
@@ -933,8 +929,6 @@ Here are a list of the changes that will be made:
   already exists the format will be preserved.)
 - `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path
   can be changed with `RTX_CONFIG_FILE`.
-- `~/.tool-versions` will become simply another `.tool-versions` instead of being a special file
-  that is read anywhere such as from `/tmp`.
 - (more to be added)
 
 ## Directories
@@ -1108,10 +1102,19 @@ You can make git ignore these files in 3 different ways:
 
 ### What does `rtx activate` do?
 
-It registers a shell hook to run `rtx hook-env` every time the shell prompt is displayed.
+It registers a shell hook to run `rtx hook-env` every time the shell prompt is *displayed*.
 You may think that is excessive and it should only run on `cd`, however there are many
 situations where it needs to run without the directory changing, for example if the `.rtx.toml`
 was modified.
+
+Note my emphasis on the word *displayed*. This means if you attempt to use `rtx activate` in a
+non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
+never modify PATH. For this type of setup, you can either call `rtx hook-env` manually every time
+you wish to update PATH, or use [shims](#shims) instead.
+
+Or if you only need to use rtx for certain commands, just prefix the commands with
+[`rtx x --`](#rtx-exec-options-toolversion----command).
+For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
 blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
@@ -1123,14 +1126,14 @@ and `rtx deactivate` to work without wrapping them in `eval "$(rtx shell)"`.
 ### `rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
 
 `rtx activate` should only be used in `rc` files. These are the interactive ones used when
-a real user is using the terminal. (As opposed to being executed by an IDE or something).
-Because rtx only calls `hook-env` when the prompt is displayed, calling `rtx activate` in a
-non-interactive session means the prompt will never be shown.
+a real user is using the terminal. (As opposed to being executed by an IDE or something). The prompt
+isn't displayed in non-interactive environments so PATH won't be modified.
 
-For this setup, consider using shims instead which will route calls to the correct directory
-by looking at `PWD`. You can also call `rtx exec` instead of expecting things to be directly on PATH.
-You can also run `rtx env` in a non-interactive shell, however that will only setup the global tools.
-It won't modify the environment variables when entering into a different project.
+For non-interactive setups, consider using shims instead which will route calls to the correct
+directory by looking at `PWD` every time they're executed. You can also call `rtx exec` instead of
+expecting things to be directly on PATH. You can also run `rtx env` in a non-interactive shell, however that
+will only setup the global tools. It won't modify the environment variables when entering into a
+different project.
 
 Also see the [shebang](#shebang) example for a way to make scripts call rtx to get the runtime.
 That is another way to use rtx without activation.
@@ -1214,23 +1217,22 @@ This isn't important for usability reasons so much as making it so plugins conti
 call asdf commands.
 
 If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`RTX_ASDF_COMPAT=1`](#rtxasdfcompat1). That prevents
+[`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
 rtx from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
 
-### rtx isn't working with tmux
+### rtx isn't working when calling from tmux or another shell initialization script
 
-It's been reported that PATH doesn't work correctly with tmux. The fix seems to be calling `hook-env`
-right after activating:
+`rtx activate` will not update PATH until the shell prompt is displayed. So if you need to access a
+tool provided by rtx before the prompt is displayed you must manually call `hook-env`:
 
 ```bash
 eval "$(rtx activate bash)"
 eval "$(rtx hook-env)"
+python --version # will work only after calling hook-env explicitly
 ```
 
-This can also be useful if you need to use a runtime right away in an rc file. The default behavior
-of `rtx activate` is that it will only run `hook-env` when the shell is about to be displayed, not
-immediately after activating. Not calling `hook-env` immediately appears to work better with direnv.
+For more information, see [What does `rtx activate` do?](#what-does-rtx-activate-do)
 
 ### How do I disable/force CLI color output?
 
@@ -1456,7 +1458,11 @@ Initializes rtx in the current shell
 
 This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
-(e.g. ~/.bashrc)
+(e.g. ~/.zshrc, ~/.bashrc)
+
+This is only intended to be used in interactive sessions, not scripts.
+rtx is only capable of updating PATH when the prompt is displayed to the user.
+For non-interactive use-cases, use shims instead.
 
 Usage: activate [OPTIONS] [SHELL_TYPE]
 
@@ -1664,7 +1670,7 @@ Examples:
   $ rtx doctor
   [WARN] plugin node is not installed
 ```
-### `rtx env [OPTIONS] [TOOL]...`
+### `rtx env [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Exports env vars to activate rtx a single time
@@ -1672,10 +1678,10 @@ Exports env vars to activate rtx a single time
 Use this if you don't want to permanently install rtx. It's not necessary to
 use this if you have `rtx activate` in your shell rc file.
 
-Usage: env [OPTIONS] [TOOL]...
+Usage: env [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to use
 
 Options:
@@ -1695,7 +1701,7 @@ Examples:
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
 ```
-### `rtx exec [OPTIONS] [TOOL]... [-- <COMMAND>...]`
+### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
 ```
 Execute a command with tool(s) set
@@ -1708,10 +1714,10 @@ includes "node 20" but you run `rtx exec python@3.11`; it will still load node@2
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
 
-Usage: exec [OPTIONS] [TOOL]... [-- <COMMAND>...]
+Usage: exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to start e.g.: node@20 python@3.10
 
   [COMMAND]...
@@ -1752,7 +1758,7 @@ Options:
       --dry-run
           List directories that would be removed without actually removing them
 ```
-### `rtx install [OPTIONS] [TOOL]...`
+### `rtx install [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Install a tool version
@@ -1764,10 +1770,10 @@ Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <CO
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
 
-Usage: install [OPTIONS] [TOOL]...
+Usage: install [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to install e.g.: node@20
 
 Options:
@@ -1783,15 +1789,15 @@ Examples:
   $ rtx install node         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
-### `rtx latest <TOOL>`
+### `rtx latest <TOOL@VERSION>`
 
 ```
 Gets the latest available version for a plugin
 
-Usage: latest <TOOL>
+Usage: latest <TOOL@VERSION>
 
 Arguments:
-  <TOOL>
+  <TOOL@VERSION>
           Tool to get the latest version of
 
 Examples:
@@ -1852,7 +1858,7 @@ Examples:
     "python": [...]
   }
 ```
-### `rtx ls-remote <PLUGIN> [PREFIX]`
+### `rtx ls-remote <TOOL@VERSION> [PREFIX]`
 
 ```
 List runtime versions available for install
@@ -1860,10 +1866,10 @@ List runtime versions available for install
 note that the results are cached for 24 hours
 run `rtx cache clean` to clear the cache and get fresh results
 
-Usage: ls-remote <PLUGIN> [PREFIX]
+Usage: ls-remote <TOOL@VERSION> [PREFIX]
 
 Arguments:
-  <PLUGIN>
+  <TOOL@VERSION>
           Plugin to get versions for
 
   [PREFIX]
@@ -1882,6 +1888,29 @@ Examples:
   $ rtx ls-remote node 20
   20.0.0
   20.1.0
+```
+### `rtx outdated [TOOL@VERSION]...`
+
+```
+[experimental] Shows outdated tool versions
+
+Usage: outdated [TOOL@VERSION]...
+
+Arguments:
+  [TOOL@VERSION]...
+          Tool(s) to show outdated versions for
+          e.g.: node@20 python@3.10
+          If not specified, all tools in global and local configs will be shown
+
+Examples:
+  $ rtx outdated
+  Plugin  Requested  Current  Latest
+  python  3.11       3.11.0   3.11.1
+  node    20         20.0.0   20.1.0
+
+  $ rtx outdated node
+  Plugin  Requested  Current  Latest
+  node    20         20.0.0   20.1.0
 ```
 ### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
 
@@ -2171,17 +2200,17 @@ Arguments:
 Examples:
   $ rtx settings unset legacy_version_file
 ```
-### `rtx shell [OPTIONS] [TOOL]...`
+### `rtx shell [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
 
-Usage: shell [OPTIONS] [TOOL]...
+Usage: shell [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to use
 
 Options:
@@ -2223,22 +2252,35 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   $ rtx trust
 ```
-### `rtx uninstall <TOOL>...`
+### `rtx uninstall <TOOL@VERSION>...`
 
 ```
 Removes runtime versions
 
-Usage: uninstall <TOOL>...
+Usage: uninstall <TOOL@VERSION>...
 
 Arguments:
-  <TOOL>...
+  <TOOL@VERSION>...
           Tool(s) to remove
 
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
   $ rtx uninstall node        # will uninstall current node version
 ```
-### `rtx use [OPTIONS] [TOOL]...`
+### `rtx upgrade [TOOL@VERSION]...`
+
+```
+[experimental] Upgrades outdated tool versions
+
+Usage: upgrade [TOOL@VERSION]...
+
+Arguments:
+  [TOOL@VERSION]...
+          Tool(s) to upgrade
+          e.g.: node@20 python@3.10
+          If not specified, all current tools will be upgraded
+```
+### `rtx use [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Change the active version of a tool locally or globally.
@@ -2248,10 +2290,10 @@ By default, this will use an `.rtx.toml` file in the current directory.
 Use the --global flag to use the global config file instead.
 This replaces asdf's `local` and `global` commands, however those are still available in rtx.
 
-Usage: use [OPTIONS] [TOOL]...
+Usage: use [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  [TOOL]...
+  [TOOL@VERSION]...
           Tool(s) to add to config file
           e.g.: node@20
           If no version is specified, it will default to @latest
@@ -2273,7 +2315,7 @@ Options:
           Use the global config file (~/.config/rtx/config.toml) instead of the local one
 
   -p, --path <PATH>
-          Specify a path to a config file
+          Specify a path to a config file or directory
 
 Examples:
   # set the current version of node to 20.x in .rtx.toml of current directory
@@ -2291,17 +2333,17 @@ Show rtx version
 
 Usage: version
 ```
-### `rtx where <TOOL>`
+### `rtx where <TOOL@VERSION>`
 
 ```
 Display the installation path for a runtime
 
 Must be installed.
 
-Usage: where <TOOL>
+Usage: where <TOOL@VERSION>
 
 Arguments:
-  <TOOL>
+  <TOOL@VERSION>
           Tool(s) to look up
           e.g.: ruby@3
           if "@<PREFIX>" is specified, it will show the latest installed version
@@ -2328,7 +2370,7 @@ Usage: which [OPTIONS] <BIN_NAME>
 
 Arguments:
   <BIN_NAME>
-
+          The bin name to look up
 
 Options:
       --plugin
@@ -2336,6 +2378,10 @@ Options:
 
       --version
           Show the version instead of the path
+
+  -t, --tool <TOOL@VERSION>
+          Use a specific tool@version
+          e.g.: `rtx which npm --tool=node@20`
 
 Examples:
   $ rtx which node

@@ -19,7 +19,7 @@ use crate::ui::prompt;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
-    #[clap(value_parser = ToolArgParser)]
+    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     plugin: ToolArg,
 
     /// The version prefix to use when querying the latest version
@@ -70,7 +70,7 @@ impl LsRemote {
             "Plugin {} is not installed, would you like to install it?",
             tool.name
         ))? {
-            let mpr = MultiProgressReport::new(config.settings.verbose);
+            let mpr = MultiProgressReport::new(config.show_progress_bars());
             let mut pr = mpr.add();
             tool.install(config, &mut pr, false)?;
             return Ok(());

@@ -56,10 +56,9 @@ impl dyn ConfigFile {
         runtimes: &[ToolArg],
         pin: bool,
     ) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         let mut ts = self.to_toolset().to_owned();
         ts.resolve(config);
-        ts.latest_versions = true;
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
             if let Some(tv) = &runtime.tvr {
@@ -133,15 +132,11 @@ impl dyn ConfigFile {
 }
 
 pub fn init(path: &Path, is_trusted: bool) -> Box<dyn ConfigFile> {
-    if path.ends_with(env::RTX_DEFAULT_CONFIG_FILENAME.as_str())
-        || path.extension() == Some("toml".as_ref())
-    {
-        return Box::new(RtxToml::init(path, is_trusted));
-    } else if path.ends_with(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()) {
-        return Box::new(ToolVersions::init(path, is_trusted));
+    match detect_config_file_type(path) {
+        Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path, is_trusted)),
+        Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path, is_trusted)),
+        _ => panic!("Unknown config file type: {}", path.display()),
     }
-
-    panic!("Unknown config file type: {}", path.display());
 }
 
 pub fn parse(path: &Path, is_trusted: bool) -> Result<Box<dyn ConfigFile>> {

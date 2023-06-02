@@ -13,7 +13,11 @@ use crate::shell::{get_shell, ShellType};
 ///
 /// This should go into your shell's rc file.
 /// Otherwise, it will only take effect in the current session.
-/// (e.g. ~/.bashrc)
+/// (e.g. ~/.zshrc, ~/.bashrc)
+///
+/// This is only intended to be used in interactive sessions, not scripts.
+/// rtx is only capable of updating PATH when the prompt is displayed to the user.
+/// For non-interactive use-cases, use shims instead.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {

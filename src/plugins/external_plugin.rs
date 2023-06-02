@@ -1,19 +1,20 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::mpsc::channel;
 use std::time::Duration;
+use std::{fs, thread};
 
+use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
-use crate::cmd::cmd;
 use crate::config::{Config, Settings};
-use crate::env::PREFER_STALE;
+use crate::env::{PREFER_STALE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::remove_all;
@@ -84,13 +85,15 @@ impl ExternalPlugin {
     }
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
-        let result = self
-            .script_man
-            .cmd(settings, &Script::ListAll)
-            .stdout_capture()
-            .stderr_capture()
-            .unchecked()
-            .run()
+        let cmd = self.script_man.cmd(settings, &Script::ListAll);
+        let (tx, rx) = channel();
+        thread::spawn(move || {
+            let result = cmd.stdout_capture().stderr_capture().unchecked().run();
+            tx.send(result).unwrap();
+        });
+        let result = rx
+            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+            .with_context(|| format!("timed out fetching remote versions for {}", self.name))?
             .map_err(|err| {
                 let script = self.script_man.get_script_path(&Script::ListAll);
                 eyre!("Failed to run {}: {}", script.display(), err)
@@ -118,9 +121,9 @@ impl ExternalPlugin {
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        let stdout =
-            self.script_man
-                .read(settings, &Script::ListLegacyFilenames, settings.verbose)?;
+        let stdout = self
+            .script_man
+            .read(settings, &Script::ListLegacyFilenames)?;
         Ok(self.parse_legacy_filenames(&stdout))
     }
     fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
@@ -129,7 +132,7 @@ impl ExternalPlugin {
     fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
         let latest_stable = self
             .script_man
-            .read(settings, &Script::LatestStable, settings.verbose)?
+            .read(settings, &Script::LatestStable)?
             .trim()
             .to_string();
         Ok(if latest_stable.is_empty() {
@@ -152,9 +155,7 @@ impl ExternalPlugin {
         self.script_man.script_exists(&Script::LatestStable)
     }
     fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        let stdout = self
-            .script_man
-            .read(settings, &Script::ListAliases, settings.verbose)?;
+        let stdout = self.script_man.read(settings, &Script::ListAliases)?;
         Ok(self.parse_aliases(&stdout))
     }
     fn parse_aliases(&self, data: &str) -> Vec<(String, String)> {
@@ -483,7 +484,7 @@ impl Plugin for ExternalPlugin {
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(settings, &script, settings.verbose)?,
+            true => self.script_man.read(settings, &script)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()
@@ -493,9 +494,10 @@ impl Plugin for ExternalPlugin {
         Ok(legacy_version)
     }
 
-    fn external_commands(&self) -> Result<Vec<Vec<String>>> {
+    fn external_commands(&self) -> Result<Vec<Command>> {
         let command_path = self.plugin_path.join("lib/commands");
-        if !self.is_installed() || !command_path.exists() {
+        if !self.is_installed() || !command_path.exists() || self.name == "direnv" {
+            // asdf-direnv is disabled since it conflicts with rtx's built-in direnv functionality
             return Ok(vec![]);
         }
         let mut commands = vec![];
@@ -503,7 +505,7 @@ impl Plugin for ExternalPlugin {
             if !command.starts_with("command-") || !command.ends_with(".bash") {
                 continue;
             }
-            let mut command = command
+            let command = command
                 .strip_prefix("command-")
                 .unwrap()
                 .strip_suffix(".bash")
@@ -511,24 +513,47 @@ impl Plugin for ExternalPlugin {
                 .split('-')
                 .map(|s| s.to_string())
                 .collect::<Vec<String>>();
-            command.insert(0, self.name.clone());
             commands.push(command);
         }
-        Ok(commands)
+        if commands.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let topic = Command::new(self.name.clone())
+            .about(format!("Commands provided by {} plugin", &self.name))
+            .subcommands(commands.into_iter().map(|cmd| {
+                Command::new(cmd.join("-"))
+                    .about(format!("{} command", cmd.join("-")))
+                    .arg(
+                        clap::Arg::new("args")
+                            .num_args(1..)
+                            .allow_hyphen_values(true)
+                            .trailing_var_arg(true),
+                    )
+            }));
+        Ok(vec![topic])
     }
 
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
+    fn execute_external_command(
+        &self,
+        config: &Config,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<()> {
         if !self.is_installed() {
             return Err(PluginNotInstalled(self.name.clone()).into());
         }
-        let result = cmd(
+        let script = Script::RunExternalCommand(
             self.plugin_path
                 .join("lib/commands")
                 .join(format!("command-{command}.bash")),
             args,
-        )
-        .unchecked()
-        .run()?;
+        );
+        let result = self
+            .script_man
+            .cmd(&config.settings, &script)
+            .unchecked()
+            .run()?;
         exit(result.status.code().unwrap_or(1));
     }
 

@@ -17,6 +17,7 @@ use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
 use crate::env::CI;
+use crate::file::display_path;
 use crate::plugins::core::{CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
@@ -134,6 +135,10 @@ impl Config {
 
     pub fn is_activated(&self) -> bool {
         env::var("__RTX_DIFF").is_ok()
+    }
+
+    pub fn show_progress_bars(&self) -> bool {
+        self.settings.verbose || !console::user_attended_stderr()
     }
 
     pub fn resolve_alias(&self, plugin_name: &PluginName, v: &str) -> Result<String> {
@@ -483,11 +488,7 @@ impl Display for Config {
         let config_files = self
             .config_files
             .iter()
-            .map(|(p, _)| {
-                p.to_string_lossy()
-                    .to_string()
-                    .replace(&dirs::HOME.to_string_lossy().to_string(), "~")
-            })
+            .map(|(p, _)| display_path(p))
             .collect::<Vec<_>>();
         writeln!(f, "Files: {}", config_files.join(", "))?;
         write!(f, "Installed Plugins: {}", plugins.join(", "))

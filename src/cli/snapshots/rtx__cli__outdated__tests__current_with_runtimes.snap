@@ -1,5 +1,5 @@
 ---
-source: src/cli/global.rs
+source: src/cli/outdated.rs
 expression: output
 ---
 

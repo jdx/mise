@@ -13,7 +13,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Tool(s) to remove
-    #[clap(required = true, value_parser = ToolArgParser)]
+    #[clap(required = true, value_name="TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 }
 
@@ -40,7 +40,7 @@ impl Command for Uninstall {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mpr = MultiProgressReport::new(config.settings.verbose);
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
                 warn!("{} is not installed", style(&tv).cyan().for_stderr());
