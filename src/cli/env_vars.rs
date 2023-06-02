@@ -67,3 +67,45 @@ fn get_rtx_toml(config: &Config, filename: &str) -> Result<RtxToml> {
 
     Ok(rtx_toml)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use crate::{assert_cli, dirs};
+
+    fn remove_config_file(filename: &str) {
+        let cf_path = dirs::CURRENT.join(filename);
+        let _ = fs::remove_file(&cf_path);
+    }
+
+    #[test]
+    fn test_env_vars() {
+        remove_config_file(".test.rtx.toml");
+        remove_config_file(".test-custom.rtx.toml");
+
+        assert_cli!("env-vars", "FOO=bar");
+        assert_cli!("env-vars", "--file", ".test-custom.rtx.toml", "FOO=bar");
+
+        remove_config_file(".test.rtx.toml");
+        remove_config_file(".test-custom.rtx.toml");
+    }
+
+    #[test]
+    fn test_env_vars_remove() {
+        remove_config_file(".test.rtx.toml");
+        remove_config_file(".test-custom.rtx.toml");
+
+        assert_cli!("env-vars", "--remove", "BAZ");
+        assert_cli!(
+            "env-vars",
+            "--file",
+            ".test-custom.rtx.toml",
+            "--remove",
+            "BAZ"
+        );
+
+        remove_config_file(".test.rtx.toml");
+        remove_config_file(".test-custom.rtx.toml");
+    }
+}
