@@ -163,6 +163,17 @@ impl Tool {
         }
     }
 
+    pub fn is_version_outdated(&self, config: &Config, tv: &ToolVersion) -> bool {
+        let latest = match tv.latest_version(config, self) {
+            Ok(latest) => latest,
+            Err(e) => {
+                debug!("Error getting latest version for {}: {:#}", self.name, e);
+                return false;
+            }
+        };
+        !self.is_version_installed(tv) || tv.version != latest
+    }
+
     pub fn install_version(
         &self,
         config: &Config,
