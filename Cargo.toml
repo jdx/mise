@@ -53,7 +53,7 @@ fslock = "0.2.1"
 humantime = "2.1.0"
 indenter = "0.3.3"
 indexmap = { version = "1.9.2", features = ["serde"] }
-indicatif = { version = "0.17.3", features = ["default", "improved_unicode"] }
+indicatif = { version = "0.17.5", features = ["default", "improved_unicode"] }
 indoc = "<3"
 itertools = "0.10.3"
 log = "0.4.18"
