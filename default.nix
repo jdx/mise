@@ -1,4 +1,4 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
+{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl, installShellFiles }:
 rustPlatform.buildRustPackage {
   pname = "rtx";
   version = "1.32.0";
@@ -8,6 +8,8 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ./Cargo.lock;
   };
+
+  nativeBuildInputs = [ installShellFiles ];
 
   buildInputs = with pkgs; [
     coreutils
@@ -35,6 +37,15 @@ rustPlatform.buildRustPackage {
   checkPhase = ''
     RUST_BACKTRACE=full cargo test --all-features -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls
+  '';
+
+  postInstall = ''
+      installManPage man/man1/rtx.1
+
+      installShellCompletion --cmd rtx \
+        --bash <($out/bin/rtx completion bash) \
+        --fish <($out/bin/rtx completion fish) \
+        --zsh <($out/bin/rtx completion zsh)
   '';
 
   # Need this to ensure openssl-src's build uses an available version of `perl`
