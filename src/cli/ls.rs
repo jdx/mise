@@ -65,7 +65,7 @@ impl Command for Ls {
         } else if self.parseable {
             self.display_parseable(runtimes, out)
         } else {
-            self.display_user(runtimes, out)
+            self.display_user(&config, runtimes, out)
         }
     }
 }
@@ -137,7 +137,12 @@ impl Ls {
         Ok(())
     }
 
-    fn display_user(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
+    fn display_user(
+        &self,
+        config: &Config,
+        runtimes: Vec<RuntimeRow>,
+        out: &mut Output,
+    ) -> Result<()> {
         let output = runtimes
             .into_iter()
             .map(|(p, tv, source)| {
@@ -145,7 +150,7 @@ impl Ls {
                 let version = if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
-                    VersionStatus::Active(tv.version)
+                    VersionStatus::Active(tv.version.clone(), p.is_version_outdated(config, &tv))
                 } else {
                     VersionStatus::Inactive(tv.version)
                 };
@@ -244,7 +249,7 @@ fn get_runtime_list(
 }
 
 enum VersionStatus {
-    Active(String),
+    Active(String, bool),
     Inactive(String),
     Missing(String),
 }
@@ -252,7 +257,13 @@ enum VersionStatus {
 impl VersionStatus {
     fn to_plain_string(&self) -> String {
         match self {
-            VersionStatus::Active(version) => version.to_string(),
+            VersionStatus::Active(version, outdated) => {
+                if *outdated {
+                    format!("{} (outdated)", version)
+                } else {
+                    version.to_string()
+                }
+            }
             VersionStatus::Inactive(version) => version.to_string(),
             VersionStatus::Missing(version) => format!("{} (missing)", version),
         }
@@ -262,7 +273,18 @@ impl VersionStatus {
 impl Display for VersionStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            VersionStatus::Active(version) => write!(f, "{}", style(version).green()),
+            VersionStatus::Active(version, outdated) => {
+                if *outdated {
+                    write!(
+                        f,
+                        "{} {}",
+                        style(version).yellow(),
+                        style("(outdated)").yellow()
+                    )
+                } else {
+                    write!(f, "{}", style(version).green())
+                }
+            }
             VersionStatus::Inactive(version) => write!(f, "{}", style(version).dim()),
             VersionStatus::Missing(version) => write!(
                 f,

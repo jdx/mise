@@ -51,6 +51,16 @@ get_arch() {
 	fi
 }
 
+shasum_bin() {
+  if command -v shasum >/dev/null 2>&1; then
+    echo "shasum"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    echo "sha256sum"
+  else
+    error "rtx install requires shasum or sha256sum but neither is installed. Aborting."
+  fi
+}
+
 get_checksum() {
 	os="$(get_os)"
 	arch="$(get_arch)"
@@ -113,7 +123,7 @@ install_rtx() {
 	debug "rtx-setup: tarball=$cache_file"
 
 	debug "validating checksum"
-	cd "$(dirname "$cache_file")" && get_checksum | shasum -c >/dev/null
+	cd "$(dirname "$cache_file")" && get_checksum | "$(shasum_bin)" -c >/dev/null
 
 	# extract tarball
 	mkdir -p "$install_dir"
