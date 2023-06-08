@@ -238,7 +238,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 674] = [
     ("goconvey", "https://github.com/therounds-contrib/asdf-goconvey.git"),
     ("gohugo", "https://github.com/nklmilojevic/asdf-hugo.git"),
     ("gojq", "https://github.com/jimmidyson/asdf-gojq.git"),
-    ("golang", "https://github.com/kennyp/asdf-golang.git"),
+    ("golang", "https://github.com/rtx-plugins/rtx-golang.git"),
     ("golangci-lint", "https://github.com/hypnoglow/asdf-golangci-lint.git"),
     ("gomigrate", "https://github.com/joschi/asdf-gomigrate.git"),
     ("gomplate", "https://github.com/sneakybeaky/asdf-gomplate.git"),
@@ -676,7 +676,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 674] = [
     ("zoxide", "https://github.com/nyrst/asdf-zoxide"),
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
     // rtx custom shorthands
-    ("go",     "https://github.com/kennyp/asdf-golang.git"),
+    ("go",     "https://github.com/rtx-plugins/rtx-golang.git"),
     ("java",   "https://github.com/rtx-plugins/rtx-java.git"),
     ("node",   "https://github.com/rtx-plugins/rtx-nodejs.git"),
     ("nodejs", "https://github.com/rtx-plugins/rtx-nodejs.git"),
