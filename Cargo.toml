@@ -79,7 +79,7 @@ terminal_size = "0.2.1"
 thiserror = "1.0.38"
 toml = "<0.8"
 toml_edit = "<0.20"
-url = "2.3.1"
+url = "2.4.0"
 versions = "5.0.0"
 
 [target.'cfg(unix)'.dependencies]
