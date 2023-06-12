@@ -303,7 +303,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 674] = [
     ("jless", "https://github.com/jc00ke/asdf-jless.git"),
     ("jmespath", "https://github.com/skyzyx/asdf-jmespath.git"),
     ("jmeter", "https://github.com/comdotlinux/asdf-jmeter"),
-    ("jq", "https://github.com/azmcode/asdf-jq.git"),
+    ("jq", "https://github.com/lsanwick/asdf-jq.git"),
     ("jqp", "https://gitlab.com/wt0f/asdf-jqp.git"),
     ("jreleaser", "https://github.com/joschi/asdf-jreleaser.git"),
     ("jsonnet", "https://github.com/Banno/asdf-jsonnet.git"),
