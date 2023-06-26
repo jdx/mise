@@ -86,7 +86,7 @@ versions = "5.0.0"
 exec = "0.3.1"
 
 [build-dependencies]
-built = { version = "0.6.0", features = ["chrono", "git2"] }
+built = { version = "0.6.1", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 ctor = "<0.3"
