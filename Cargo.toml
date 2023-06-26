@@ -90,7 +90,7 @@ built = { version = "0.6.0", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 ctor = "<0.3"
-insta = "1.26.0"
+insta = "1.30.0"
 pretty_assertions = "1.3.0"
 
 [features]
