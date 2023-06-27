@@ -185,6 +185,7 @@ impl ExternalPlugin {
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
         self.cache_path
             .join("legacy")
+            .join(&self.name)
             .join(hash_to_str(&legacy_file.to_string_lossy()))
             .with_extension("txt")
     }
