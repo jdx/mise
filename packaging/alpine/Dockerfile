@@ -1,4 +1,4 @@
-FROM alpine:3
+FROM alpine:edge
 RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools
 RUN apk fix
 RUN adduser -D packager
