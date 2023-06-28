@@ -673,7 +673,8 @@ python = ['3.10', '3.11']
 [settings]
 # plugins can read the versions files used by other version managers (if enabled by the plugin)
 # for example, .nvmrc in the case of node's nvm
-legacy_version_file = true         # enabled by default (different than asdf)
+legacy_version_file = true                     # enabled by default (unlike asdf)
+legacy_version_file_disable_tools = ['python'] # disable for specific tools
 
 # configure `rtx install` to always keep the downloaded archive
 always_keep_download = false        # deleted after install by default
@@ -696,6 +697,7 @@ raw = false         # set to true to directly pipe plugins to stdin/stdout/stder
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
 experimental = false # enable experimental features
 log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
@@ -748,13 +750,19 @@ to use this feature.
 Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use node@20.x regardless
 of what is set in `.tool-versions`/`.rtx.toml`.
 
-#### `RTX_LEGACY_VERSION_FILE`
+#### `RTX_LEGACY_VERSION_FILE=1`
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
 for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files) for more
 information.
 
-#### `RTX_USE_TOML`
+Set to "0" to disable legacy version file parsing.
+
+#### `RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS=nodejs,python`
+
+Disable legacy version file parsing for specific tools. Separate with `,`.
+
+#### `RTX_USE_TOML=0`
 
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
 configuration. This will be default behavior once we hit the [Calver](#versioning) release.
@@ -829,6 +837,11 @@ node = "https://github.com/my-org/rtx-node.git"
 
 Disables the shorthand aliases for installing plugins. You will have to specify full urls when
 installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
+
+#### `RTX_DISABLE_TOOLS=python,nodejs`
+
+Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
+all.
 
 #### `RTX_HIDE_UPDATE_WARNING=1`
 

@@ -114,6 +114,14 @@
           "description": "should rtx parse legacy version files (e.g. .node-version)",
           "type": "boolean"
         },
+        "legacy_version_file_disable_tools": {
+          "description": "tools that should not have their legacy version files parsed",
+          "type": "array",
+          "items": {
+              "description": "tool name",
+              "type": "string"
+          }
+        },
         "always_keep_download": {
           "description": "should rtx keep downloaded files after installation",
           "type": "boolean"
@@ -153,6 +161,14 @@
         "disable_default_shorthands": {
           "description": "disables built-in shorthands",
           "type": "boolean"
+        },
+        "disable_tools": {
+          "description": "tools that should not be used",
+          "type": "array",
+          "items": {
+            "description": "tool name",
+            "type": "string"
+          }
         },
         "trusted_config_paths": {
           "description": "config files with these prefixes will be trusted by default",
