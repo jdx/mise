@@ -308,6 +308,9 @@ fn load_tools(settings: &Settings) -> Result<ToolMap> {
         .map(|p| (p.name.clone(), Arc::new(p)))
         .collect::<Vec<_>>();
     tools.extend(plugins);
+    for tool in &settings.disable_tools {
+        tools.remove(tool);
+    }
     Ok(tools)
 }
 
@@ -323,6 +326,11 @@ fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, P
         .values()
         .collect_vec()
         .into_par_iter()
+        .filter(|tool| {
+            !settings
+                .legacy_version_file_disable_tools
+                .contains(&tool.name)
+        })
         .filter_map(|tool| match tool.legacy_filenames(settings) {
             Ok(filenames) => Some(
                 filenames
