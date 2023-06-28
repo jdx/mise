@@ -34,7 +34,7 @@ fn init_log_file(log_file: PathBuf) -> Result<File> {
 
 fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {
     let trace_level = if level >= LevelFilter::Trace {
-        LevelFilter::Trace
+        LevelFilter::Error
     } else {
         LevelFilter::Off
     };
@@ -43,8 +43,8 @@ fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {
         ConfigBuilder::new()
             .set_time_level(LevelFilter::Off)
             .set_thread_level(trace_level)
-            .set_target_level(trace_level)
             .set_location_level(trace_level)
+            .set_target_level(LevelFilter::Error)
             .build(),
         TerminalMode::Stderr,
         ColorChoice::Auto,
