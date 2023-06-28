@@ -1,8 +1,8 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use indexmap::IndexMap;
 use log::LevelFilter;
 
 use crate::env;
@@ -15,13 +15,15 @@ pub struct Settings {
     pub always_keep_download: bool,
     pub always_keep_install: bool,
     pub legacy_version_file: bool,
+    pub legacy_version_file_disable_tools: BTreeSet<String>,
     pub plugin_autoupdate_last_check_duration: Duration,
-    pub trusted_config_paths: Vec<PathBuf>,
+    pub trusted_config_paths: BTreeSet<PathBuf>,
     pub verbose: bool,
     pub asdf_compat: bool,
     pub jobs: usize,
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: bool,
+    pub disable_tools: BTreeSet<String>,
     pub log_level: LevelFilter,
     pub raw: bool,
 }
@@ -33,7 +35,8 @@ impl Default for Settings {
             missing_runtime_behavior: MissingRuntimeBehavior::Warn,
             always_keep_download: *RTX_ALWAYS_KEEP_DOWNLOAD,
             always_keep_install: *RTX_ALWAYS_KEEP_INSTALL,
-            legacy_version_file: true,
+            legacy_version_file: *RTX_LEGACY_VERSION_FILE != Some(false),
+            legacy_version_file_disable_tools: RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS.clone(),
             plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
             trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
             verbose: *RTX_VERBOSE,
@@ -41,6 +44,7 @@ impl Default for Settings {
             jobs: *RTX_JOBS,
             shorthands_file: RTX_SHORTHANDS_FILE.clone(),
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
+            disable_tools: RTX_DISABLE_TOOLS.clone(),
             log_level: *RTX_LOG_LEVEL,
             raw: *RTX_RAW,
         }
@@ -48,8 +52,8 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn to_index_map(&self) -> IndexMap<String, String> {
-        let mut map = IndexMap::new();
+    pub fn to_index_map(&self) -> BTreeMap<String, String> {
+        let mut map = BTreeMap::new();
         map.insert("experimental".to_string(), self.experimental.to_string());
         map.insert(
             "missing_runtime_behavior".to_string(),
@@ -68,12 +72,21 @@ impl Settings {
             self.legacy_version_file.to_string(),
         );
         map.insert(
+            "legacy_version_file_disable_tools".to_string(),
+            format!(
+                "{:?}",
+                self.legacy_version_file_disable_tools
+                    .iter()
+                    .collect::<Vec<_>>()
+            ),
+        );
+        map.insert(
             "plugin_autoupdate_last_check_duration".to_string(),
             (self.plugin_autoupdate_last_check_duration.as_secs() / 60).to_string(),
         );
         map.insert(
             "trusted_config_paths".to_string(),
-            format!("{:?}", self.trusted_config_paths),
+            format!("{:?}", self.trusted_config_paths.iter().collect::<Vec<_>>()),
         );
         map.insert("verbose".into(), self.verbose.to_string());
         map.insert("asdf_compat".into(), self.asdf_compat.to_string());
@@ -88,6 +101,10 @@ impl Settings {
             "disable_default_shorthands".into(),
             self.disable_default_shorthands.to_string(),
         );
+        map.insert(
+            "disable_tools".into(),
+            format!("{:?}", self.disable_tools.iter().collect::<Vec<_>>()),
+        );
         map.insert("log_level".into(), self.log_level.to_string());
         map.insert("raw".into(), self.raw.to_string());
         map
@@ -101,13 +118,15 @@ pub struct SettingsBuilder {
     pub always_keep_download: Option<bool>,
     pub always_keep_install: Option<bool>,
     pub legacy_version_file: Option<bool>,
+    pub legacy_version_file_disable_tools: BTreeSet<String>,
     pub plugin_autoupdate_last_check_duration: Option<Duration>,
-    pub trusted_config_paths: Vec<PathBuf>,
+    pub trusted_config_paths: BTreeSet<PathBuf>,
     pub verbose: Option<bool>,
     pub asdf_compat: Option<bool>,
     pub jobs: Option<usize>,
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: Option<bool>,
+    pub disable_tools: BTreeSet<String>,
     pub log_level: Option<LevelFilter>,
     pub raw: Option<bool>,
 }
@@ -135,6 +154,8 @@ impl SettingsBuilder {
         if other.legacy_version_file.is_some() {
             self.legacy_version_file = other.legacy_version_file;
         }
+        self.legacy_version_file_disable_tools
+            .extend(other.legacy_version_file_disable_tools);
         if other.plugin_autoupdate_last_check_duration.is_some() {
             self.plugin_autoupdate_last_check_duration =
                 other.plugin_autoupdate_last_check_duration;
@@ -155,6 +176,7 @@ impl SettingsBuilder {
         if other.disable_default_shorthands.is_some() {
             self.disable_default_shorthands = other.disable_default_shorthands;
         }
+        self.disable_tools.extend(other.disable_tools);
         if other.log_level.is_some() {
             self.log_level = other.log_level;
         }
@@ -190,6 +212,9 @@ impl SettingsBuilder {
         settings.legacy_version_file = self
             .legacy_version_file
             .unwrap_or(settings.legacy_version_file);
+        settings
+            .legacy_version_file_disable_tools
+            .extend(self.legacy_version_file_disable_tools.clone());
         settings.plugin_autoupdate_last_check_duration = self
             .plugin_autoupdate_last_check_duration
             .unwrap_or(settings.plugin_autoupdate_last_check_duration);
@@ -203,6 +228,7 @@ impl SettingsBuilder {
         settings.disable_default_shorthands = self
             .disable_default_shorthands
             .unwrap_or(settings.disable_default_shorthands);
+        settings.disable_tools.extend(self.disable_tools.clone());
         settings.log_level = self.log_level.unwrap_or(settings.log_level);
         settings.raw = self.raw.unwrap_or(settings.raw);
 

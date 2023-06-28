@@ -43,19 +43,21 @@ mod tests {
 
         let stdout = assert_cli!("settings");
         assert_snapshot!(stdout, @r###"
-        experimental = true
-        missing_runtime_behavior = autoinstall
         always_keep_download = true
         always_keep_install = true
+        asdf_compat = false
+        disable_default_shorthands = false
+        disable_tools = []
+        experimental = true
+        jobs = 2
         legacy_version_file = true
+        legacy_version_file_disable_tools = []
+        log_level = INFO
+        missing_runtime_behavior = autoinstall
         plugin_autoupdate_last_check_duration = 20
+        raw = false
         trusted_config_paths = []
         verbose = true
-        asdf_compat = false
-        jobs = 2
-        disable_default_shorthands = false
-        log_level = INFO
-        raw = false
         "###);
 
         reset_config();

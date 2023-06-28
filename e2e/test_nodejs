@@ -17,3 +17,10 @@ rtx use nodejs@20.1.0
 assert "rtx x -- node --version" "v20.1.0"
 assert_contains "rtx nodejs nodebuild --version" "node-build "
 rtx plugin uninstall nodejs
+
+# RTX_LEGACY_VERSION_FILE env var
+RTX_LEGACY_VERSION_FILE=1 assert_contains "rtx current node" "20.0.0"
+RTX_LEGACY_VERSION_FILE=0 assert_not_contains "rtx current node" "20.0.0"
+
+# disable nodejs plugin
+RTX_DISABLE_TOOLS=node assert_not_contains "rtx plugins --core" "node"

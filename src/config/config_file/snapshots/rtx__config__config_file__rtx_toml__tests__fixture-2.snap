@@ -10,8 +10,11 @@ SettingsBuilder {
     always_keep_download: None,
     always_keep_install: None,
     legacy_version_file: None,
+    legacy_version_file_disable_tools: {
+        "disabled_tool_from_legacy_file",
+    },
     plugin_autoupdate_last_check_duration: None,
-    trusted_config_paths: [],
+    trusted_config_paths: {},
     verbose: Some(
         true,
     ),
@@ -19,6 +22,9 @@ SettingsBuilder {
     jobs: None,
     shorthands_file: None,
     disable_default_shorthands: None,
+    disable_tools: {
+        "disabled_tool",
+    },
     log_level: None,
     raw: None,
 }
