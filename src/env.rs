@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -83,8 +83,20 @@ pub static RTX_SHORTHANDS_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("RTX_SHORTHANDS_FILE"));
 pub static RTX_DISABLE_DEFAULT_SHORTHANDS: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS"));
+pub static RTX_LEGACY_VERSION_FILE: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("RTX_LEGACY_VERSION_FILE"));
+pub static RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS: Lazy<BTreeSet<String>> = Lazy::new(|| {
+    var("RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS")
+        .map(|v| v.split(',').map(|s| s.to_string()).collect())
+        .unwrap_or_default()
+});
+pub static RTX_DISABLE_TOOLS: Lazy<BTreeSet<String>> = Lazy::new(|| {
+    var("RTX_DISABLE_TOOLS")
+        .map(|v| v.split(',').map(|s| s.to_string()).collect())
+        .unwrap_or_default()
+});
 pub static RTX_RAW: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RAW"));
-pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<BTreeSet<PathBuf>> = Lazy::new(|| {
     var("RTX_TRUSTED_CONFIG_PATHS")
         .map(|v| split_paths(&v).collect())
         .unwrap_or_default()
@@ -168,6 +180,18 @@ fn var_is_false(key: &str) -> bool {
             v == "n" || v == "no" || v == "false" || v == "0" || v == "off"
         }
         Err(_) => false,
+    }
+}
+
+fn var_option_bool(key: &str) -> Option<bool> {
+    match var(key) {
+        Ok(_) if var_is_true(key) => Some(true),
+        Ok(_) if var_is_false(key) => Some(false),
+        Ok(v) => {
+            warn!("Invalid value for env var {}={}", key, v);
+            None
+        }
+        _ => None,
     }
 }
 

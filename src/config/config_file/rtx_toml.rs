@@ -390,6 +390,10 @@ impl RtxToml {
                         "legacy_version_file" => {
                             settings.legacy_version_file = Some(self.parse_bool(&k, v)?)
                         }
+                        "legacy_version_file_disable_tools" => {
+                            settings.legacy_version_file_disable_tools =
+                                self.parse_string_array(&k, v)?.into_iter().collect()
+                        }
                         "always_keep_download" => {
                             settings.always_keep_download = Some(self.parse_bool(&k, v)?)
                         }
@@ -401,7 +405,8 @@ impl RtxToml {
                                 Some(self.parse_duration_minutes(&k, v)?)
                         }
                         "trusted_config_paths" => {
-                            settings.trusted_config_paths = self.parse_paths(&k, v)?;
+                            settings.trusted_config_paths =
+                                self.parse_paths(&k, v)?.into_iter().collect();
                         }
                         "verbose" => settings.verbose = Some(self.parse_bool(&k, v)?),
                         "asdf_compat" => settings.asdf_compat = Some(self.parse_bool(&k, v)?),
@@ -411,6 +416,10 @@ impl RtxToml {
                         }
                         "disable_default_shorthands" => {
                             settings.disable_default_shorthands = Some(self.parse_bool(&k, v)?)
+                        }
+                        "disable_tools" => {
+                            settings.disable_tools =
+                                self.parse_string_array(&k, v)?.into_iter().collect()
                         }
                         "log_level" => settings.log_level = Some(self.parse_log_level(&k, v)?),
                         "raw" => settings.raw = Some(self.parse_bool(&k, v)?),
@@ -516,6 +525,16 @@ impl RtxToml {
                 Ok(v)
             }
             _ => parse_error!(k, v, "string")?,
+        }
+    }
+
+    fn parse_string_array(&self, k: &String, v: &Item) -> Result<Vec<String>> {
+        match v
+            .as_array()
+            .map(|v| v.iter().map(|v| v.as_str().unwrap().to_string()).collect())
+        {
+            Some(v) => Ok(v),
+            _ => parse_error!(k, v, "array of strings")?,
         }
     }
 
