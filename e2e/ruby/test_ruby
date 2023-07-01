@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-
 set -e
 
-assert() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
-}
+source "$(dirname "$0")/../assert.sh"
 
-export RTX_MISSING_RUNTIME_BEHAVIOR=ignore
-assert "rtx plugin install ruby"
-assert "rtx current ruby" "3.0.5"
+export RTX_EXPERIMENTAL=1
+export RTX_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
+export RTX_RUBY_VERBOSE_INSTALL=1
+
+cat >Gemfile <<EOF
+# frozen_string_literal: true
+
+ruby "3.0.5"
+
+source "https://rubygems.org"
+git_source(:github) { |repo| "https://github.com/#{repo}.git" }
+EOF
+
+rtx i ruby
+assert_contains "rtx x -- ruby --version" "ruby 3.0.5"
+
+rm Gemfile

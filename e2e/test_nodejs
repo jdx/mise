@@ -12,7 +12,7 @@ assert "rtx x -- node --version" "v20.0.0"
 assert_contains "rtx node node-build --version" "node-build "
 
 # test rtx-nodejs
-rtx plugin i nodejs
+rtx plugin i nodejs https://github.com/rtx-plugins/rtx-nodejs
 rtx use nodejs@20.1.0
 assert "rtx x -- node --version" "v20.1.0"
 assert_contains "rtx node nodebuild --version" "node-build "

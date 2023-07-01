@@ -3,10 +3,10 @@
 The following are instructions for using the node rtx core plugin. This is used when there isn't a 
 git plugin installed named "node".
 
-If you want to use [asdf-node](https://github.com/asdf-vm/asdf-nodejs) or
-[rtx-node](https://github.com/rtx-plugins/rtx-nodejs) then use `rtx plugins install node URL`.
+If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) or
+[rtx-node](https://github.com/rtx-plugins/rtx-nodejs) then run `rtx plugins install node GIT_URL`.
 
-The code for this is inside of the rtx repository at [`./src/plugins/core/node.rs`](https://github.com/jdxcode/rtx/blob/main/src/plugins/core/node.rs).
+The code for this is inside the rtx repository at [`./src/plugins/core/node.rs`](https://github.com/jdxcode/rtx/blob/main/src/plugins/core/node.rs).
 
 ## Usage
 
@@ -14,30 +14,20 @@ The following installs the latest version of node-20.x and makes it the global
 default:
 
 ```sh-session
-$ rtx install node@20
 $ rtx use -g node@20
 ```
 
 Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build) to install pre-compiled binaries and compile from source if necessary. You can check its [README](https://github.com/nodenv/node-build/blob/master/README.md) for additional settings and some troubleshooting.
 
-
-```sh-session
-$ rtx use -g node@18 node@20
-$ node -V
-18.0.0
-$ node.11 -V
-20.0.0
-```
-
 ## Configuration
 
 `node-build` already has a [handful of settings](https://github.com/nodenv/node-build#custom-build-configuration), in additional to that `rtx-node` has a few extra configuration variables:
 
-- `RTX_NODE_VERBOSE_INSTALL`: Enables verbose output for downloading and building.
-- `RTX_NODE_FORCE_COMPILE`: Forces compilation from source instead of preferring pre-compiled binaries
-- `RTX_NODE_CONCURRENCY`: How many jobs should be used in compilation. Defaults to half the computer cores
-- `RTX_NODE_DEFAULT_PACKAGES_FILE`: location of default packages file, defaults to `$HOME/.default-npm-packages`
-- `NODEJS_ORG_MIRROR`: (Legacy) overrides the default mirror used for downloading the 
+- `RTX_NODE_VERBOSE_INSTALL` [bool]: Enables verbose output for downloading and building.
+- `RTX_NODE_FORCE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries
+- `RTX_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores
+- `RTX_NODE_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-npm-packages`
+- `NODEJS_ORG_MIRROR` [string]: (Legacy) overrides the default mirror used for downloading the 
   distibutions, alternative to the `NODE_BUILD_MIRROR_URL` node-build env var
 
 ## Default node packages
@@ -90,3 +80,9 @@ want to update `node-build` manually for some reason you can clear the cache and
 rtx cache clean
 rtx ls-remote node
 ```
+
+## "nodejs" -> "node" Alias
+
+You cannot install/use a plugin named "nodejs". If you attempt this, rtx will just renamed it to 
+"node". See the [FAQ](https://github.com/jdxcode/rtx#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
+for an explanation.
