@@ -24,6 +24,7 @@
    scripts/format.bash
    ```
 1. Create a PR following the instructions in the PR template.
+   1. Make sure you use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), both in the commit messages and the pull request title
 
 ## Fixing an existing plugin
 
