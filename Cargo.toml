@@ -52,7 +52,7 @@ flate2 = "1.0.26"
 fslock = "0.2.1"
 humantime = "2.1.0"
 indenter = "0.3.3"
-indexmap = { version = "1.9.2", features = ["serde"] }
+indexmap = { version = "2.0.0", features = ["serde"] }
 indicatif = { version = "0.17.5", features = ["default", "improved_unicode"] }
 indoc = "<3"
 itertools = "0.11.0"
