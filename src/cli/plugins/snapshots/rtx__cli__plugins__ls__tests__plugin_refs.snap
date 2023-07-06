@@ -1,0 +1,7 @@
+---
+source: src/cli/plugins/ls.rs
+expression: output
+---
+dummy                         plugin_list_refs 61c8283
+tiny                          plugin_list_refs 61c8283
+

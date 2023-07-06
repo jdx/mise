@@ -120,4 +120,9 @@ mod tests {
             "zephyr                        https://github.com/nsaunders/asdf-zephyr.git"
         );
     }
+
+    #[test]
+    fn test_plugin_refs() {
+        assert_cli_snapshot!("plugin", "ls", "--refs");
+    }
 }
