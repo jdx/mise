@@ -33,6 +33,12 @@ pub trait Plugin: Debug + Send + Sync {
     fn get_remote_url(&self) -> Option<String> {
         None
     }
+    fn current_sha_short(&self) -> Result<String> {
+        Ok(String::from(""))
+    }
+    fn current_abbrev_ref(&self) -> Result<String> {
+        Ok(String::from(""))
+    }
     fn is_installed(&self) -> bool {
         true
     }

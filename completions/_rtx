@@ -967,6 +967,8 @@ Normally these are not shown]' \
 e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
 '--urls[Show the git url for each plugin
 e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
+'--refs[Show the git refs for each plugin
+e.g.\: main\ 1234abc]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
