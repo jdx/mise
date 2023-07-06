@@ -34,6 +34,12 @@ pub struct Plugins {
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
     #[clap(short, long)]
     pub urls: bool,
+
+    /// show the git refs for each plugin
+    ///
+    /// e.g.: main 1234abc
+    #[clap(long)]
+    pub refs: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -65,6 +71,7 @@ impl Command for Plugins {
             all: self.all,
             core: self.core,
             urls: self.urls,
+            refs: self.refs,
         }));
 
         cmd.run(config, out)

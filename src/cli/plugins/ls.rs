@@ -26,6 +26,11 @@ pub struct PluginsLs {
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
     #[clap(short, long, verbatim_doc_comment)]
     pub urls: bool,
+
+    /// Show the git refs for each plugin
+    /// e.g.: main 1234abc
+    #[clap(long, verbatim_doc_comment)]
+    pub refs: bool,
 }
 
 impl Command for PluginsLs {
@@ -50,13 +55,23 @@ impl Command for PluginsLs {
             plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::External));
         }
 
-        if self.urls {
+        if self.urls || self.refs {
             for plugin in plugins {
-                if let Some(url) = plugin.get_remote_url() {
-                    rtxprintln!(out, "{:29} {}", plugin.name, url);
-                    continue;
+                rtxprint!(out, "{:29}", plugin.name);
+                if self.urls {
+                    if let Some(url) = plugin.get_remote_url() {
+                        rtxprint!(out, " {}", url);
+                    }
                 }
-                rtxprintln!(out, "{}", plugin.name);
+                if self.refs {
+                    if let Ok(aref) = plugin.current_abbrev_ref() {
+                        rtxprint!(out, " {}", aref);
+                    }
+                    if let Ok(sha) = plugin.current_sha_short() {
+                        rtxprint!(out, " {}", sha);
+                    }
+                }
+                rtxprint!(out, "\n");
             }
         } else {
             for plugin in plugins {
@@ -104,5 +119,11 @@ mod tests {
             grep(stdout, "zephyr"),
             "zephyr                        https://github.com/nsaunders/asdf-zephyr.git"
         );
+    }
+
+    #[test]
+    fn test_plugin_refs() {
+        let stdout = assert_cli!("plugin", "list", "--refs");
+        assert!(stdout.contains("dummy"))
     }
 }

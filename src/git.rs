@@ -87,6 +87,12 @@ impl Git {
         Ok(sha)
     }
 
+    pub fn current_abbrev_ref(&self) -> Result<String> {
+        let aref = cmd!("git", "-C", &self.dir, "rev-parse", "--abbrev-ref", "HEAD").read()?;
+        debug!("current abbrev ref for {}: {}", self.dir.display(), &aref);
+        Ok(aref)
+    }
+
     pub fn get_remote_url(&self) -> Option<String> {
         let res = cmd!(
             "git",

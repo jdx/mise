@@ -868,6 +868,7 @@ Normally these are not shown]' \
 Normally these are not shown]' \
 '-u[show the git url for each plugin]' \
 '--urls[show the git url for each plugin]' \
+'--refs[show the git refs for each plugin]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
@@ -967,6 +968,8 @@ Normally these are not shown]' \
 e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
 '--urls[Show the git url for each plugin
 e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
+'--refs[Show the git refs for each plugin
+e.g.\: main 1234abc]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
