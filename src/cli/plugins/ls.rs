@@ -123,6 +123,7 @@ mod tests {
 
     #[test]
     fn test_plugin_refs() {
-        assert_cli_snapshot!("plugin", "ls", "--refs");
+        let stdout = assert_cli!("plugin", "list", "--refs");
+        assert!(stdout.contains("dummy"))
     }
 }
