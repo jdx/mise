@@ -54,6 +54,14 @@ impl Tool {
         self.plugin.get_remote_url()
     }
 
+    pub fn current_sha_short(&self) -> Result<String> {
+        self.plugin.current_sha_short()
+    }
+
+    pub fn current_abbrev_ref(&self) -> Result<String> {
+        self.plugin.current_abbrev_ref()
+    }
+
     pub fn list_installed_versions(&self) -> Result<Vec<String>> {
         Ok(match self.installs_path.exists() {
             true => file::dir_subdirs(&self.installs_path)?
