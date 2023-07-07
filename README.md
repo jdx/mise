@@ -850,10 +850,6 @@ installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/as
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
 
-#### `RTX_HIDE_UPDATE_WARNING=1`
-
-This hides the warning that is displayed when a new version of rtx is available.
-
 #### `RTX_CONFIRM=yes|no`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
