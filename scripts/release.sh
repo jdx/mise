@@ -43,17 +43,14 @@ for platform in "${platforms[@]}"; do
 	cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
 
-./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
-echo "$RTX_VERSION" | tr -d 'v' >"$RELEASE_DIR"/VERSION
-
 pushd "$RELEASE_DIR"
+echo "$RTX_VERSION" | tr -d 'v' >VERSION
 cp rtx-latest-linux-x64 rtx-latest-linux-amd64
 cp rtx-latest-macos-x64 rtx-latest-macos-amd64
 sha256sum ./rtx-latest-* >SHASUMS256.txt
 sha512sum ./rtx-latest-* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
-gpg -u 408B88DB29DDE9E0 --output install.sh.sig --sign install.sh
 popd
 
 pushd "$RELEASE_DIR/$RTX_VERSION"
@@ -62,6 +59,9 @@ sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
+
+./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
+gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 
 NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
 NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
