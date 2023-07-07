@@ -16,13 +16,12 @@ use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::tracking::Tracker;
-use crate::env::CI;
 use crate::file::display_path;
 use crate::plugins::core::{CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::tool::Tool;
-use crate::{cli, dirs, duration, env, file, hook_env};
+use crate::{dirs, env, file, hook_env};
 
 pub mod config_file;
 mod settings;
@@ -230,19 +229,6 @@ impl Config {
             .flatten()
             .collect();
         Ok(config_files)
-    }
-
-    pub fn check_for_new_version(&self) {
-        if *CI || !console::user_attended_stderr() || *env::RTX_HIDE_UPDATE_WARNING {
-            return;
-        }
-        if let Some(latest) = cli::version::check_for_new_version(duration::WEEKLY) {
-            warn!(
-                "newer rtx version {} available, currently on {}",
-                latest,
-                env!("CARGO_PKG_VERSION")
-            );
-        }
     }
 
     pub fn is_plugin_hidden(&self, plugin_name: &PluginName) -> bool {
