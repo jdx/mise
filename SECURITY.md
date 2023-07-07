@@ -49,18 +49,6 @@ Over time we should be able to move more plugins into being fully maintained by 
 `RTX_PARANOID=1` env var that, when set, will make changes to make rtx behave as securely as possible
 (e.g.: only using core plugins, only allowing plugins that use GPG verification of assets).
 
-## Privacy
-
-Currently the only "phoning home" that rtx does is with the weekly check for new versions. It does not send any
-data (except its version), but using the IP address I'm able to infer some (very) broad usage data for rtx. You
-may opt out of this behavior with `RTX_HIDE_UPDATE_WARNING=1`. You can also audit the [code](https://github.com/jdxcode/rtx/blob/main/src/cli/version.rs)
-yourself to see what it does.
-
-I would like to see some basic, but public analytics information. I think [homebrew](https://docs.brew.sh/Analytics)
-did a great job of doing this, and we'd have a similar model where the data is anonymous and publicly accessible.
-Doing so will help both me and plugin authors to know if we're building effective functionality. It's also a great way
-to get buy-in from organizations to do development with rtx (especially at large tech companies—they all _love_ numbers).
-
 ## Supported Versions
 
 The only supported version is the most recent one.
