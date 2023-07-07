@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 684] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 688] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -60,11 +60,12 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 684] = [
     ("aws-sso-cli", "https://github.com/adamcrews/asdf-aws-sso-cli.git"),
     ("aws-vault", "https://github.com/karancode/asdf-aws-vault.git"),
     ("awscli", "https://github.com/MetricMike/asdf-awscli.git"),
+    ("awscli-local", "https://github.com/paulo-ferraz-oliveira/asdf-awscli-local"),
     ("awsebcli", "https://github.com/amrox/asdf-pyapp.git"),
     ("awsls", "https://github.com/chessmango/asdf-awsls.git"),
     ("awsrm", "https://github.com/chessmango/asdf-awsrm.git"),
     ("awsweeper", "https://github.com/chessmango/asdf-awsweeper.git"),
-    ("azure-cli", "https://github.com/itspngu/asdf-azure-cli.git"),
+    ("azure-cli", "https://github.com/EcoMind/asdf-azure-cli.git"),
     ("azure-functions-core-tools", "https://github.com/daveneeley/asdf-azure-functions-core-tools.git"),
     ("babashka", "https://github.com/pitch-io/asdf-babashka.git"),
     ("balena-cli", "https://github.com/boatkit-io/asdf-balena-cli"),
@@ -92,6 +93,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 684] = [
     ("bun", "https://github.com/cometkim/asdf-bun.git"),
     ("bundler", "https://github.com/jonathanmorley/asdf-bundler.git"),
     ("caddy", "https://github.com/salasrod/asdf-caddy.git"),
+    ("calicoctl", "https://github.com/TheCubicleJockey/asdf-calicoctl.git"),
     ("camunda-modeler", "https://github.com/barmac/asdf-camunda-modeler.git"),
     ("cargo-make", "https://github.com/kachick/asdf-cargo-make.git"),
     ("carp", "https://github.com/susurri/asdf-carp.git"),
@@ -412,6 +414,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 684] = [
     ("make", "https://github.com/yacchi/asdf-make.git"),
     ("mani", "https://github.com/anweber/asdf-mani.git"),
     ("mark", "https://github.com/jfreeland/asdf-mark.git"),
+    ("markdownlint-cli2", "https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2"),
     ("marp-cli", "https://github.com/xataz/asdf-marp-cli"),
     ("mask", "https://github.com/aaaaninja/asdf-mask.git"),
     ("maven", "https://github.com/halcyon/asdf-maven.git"),
@@ -643,6 +646,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 684] = [
     ("tridentctl", "https://github.com/asdf-community/asdf-tridentctl.git"),
     ("trivy", "https://github.com/zufardhiyaulhaq/asdf-trivy.git"),
     ("tsuru", "https://github.com/virtualstaticvoid/asdf-tsuru.git"),
+    ("ttyd", "https://github.com/ivanvc/asdf-ttyd.git"),
     ("tuist", "https://github.com/cprecioso/asdf-tuist.git"),
     ("tx", "https://github.com/ORCID/asdf-transifex.git"),
     ("uaa-cli", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
