@@ -237,7 +237,7 @@ file, rtx will automatically add itself to `PATH`.
 curl https://rtx.pub/install.sh | sh
 ```
 
-If you want to verify the install hasn't been tampered with:
+If you want to verify the install script hasn't been tampered with:
 
 ```
 gpg --keyserver hkps://keys.openpgp.org --recv-keys 408B88DB29DDE9E0
