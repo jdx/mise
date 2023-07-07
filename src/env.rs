@@ -76,8 +76,6 @@ pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH"
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 pub static RTX_CONFIRM: Lazy<Confirm> = Lazy::new(|| var_confirm("RTX_CONFIRM"));
 pub static RTX_EXPERIMENTAL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_EXPERIMENTAL"));
-pub static RTX_HIDE_UPDATE_WARNING: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_HIDE_UPDATE_WARNING"));
 pub static RTX_ASDF_COMPAT: Lazy<bool> = Lazy::new(|| var_is_true("RTX_ASDF_COMPAT"));
 pub static RTX_SHORTHANDS_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("RTX_SHORTHANDS_FILE"));
