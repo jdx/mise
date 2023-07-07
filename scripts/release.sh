@@ -44,10 +44,15 @@ for platform in "${platforms[@]}"; do
 done
 
 pushd "$RELEASE_DIR"
+echo "$RTX_VERSION" | tr -d 'v' >VERSION
+./rtx/scripts/render-install.sh >install.sh
+cp "rtx-latest-linux-x64" "rtx-latest-linux-amd64"
+cp "rtx-latest-macos-x64" "rtx-latest-macos-amd64"
 sha256sum ./rtx-latest-* >SHASUMS256.txt
 sha512sum ./rtx-latest-* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
+gpg -u 408B88DB29DDE9E0 --output install.sh.sig --sign install.sh
 popd
 
 pushd "$RELEASE_DIR/$RTX_VERSION"

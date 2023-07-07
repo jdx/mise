@@ -5,18 +5,13 @@ set -euxo pipefail
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
-./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
-echo "$RTX_VERSION" | tr -d 'v' >"$RELEASE_DIR"/VERSION
-
-cp "$RELEASE_DIR/rtx-latest-linux-x64" "$RELEASE_DIR/rtx-latest-linux-amd64"
-cp "$RELEASE_DIR/rtx-latest-macos-x64" "$RELEASE_DIR/rtx-latest-macos-amd64"
-
 aws s3 cp "$RELEASE_DIR/$RTX_VERSION" "s3://rtx.pub/$RTX_VERSION/" --cache-control "$cache_week" --no-progress --recursive
 
 aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --recursive --exclude "*" --include "rtx-latest-*"
 aws s3 cp "$RELEASE_DIR" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
+aws s3 cp "$RELEASE_DIR/install.sh.sig" "s3://rtx.pub/" --cache-control "$cache_day" --no-progress
 aws s3 cp "./rtx/schema/rtx.json" "s3://rtx.pub/schema/rtx.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./rtx/schema/rtx.plugin.json" "s3://rtx.pub/schema/rtx.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 
@@ -38,6 +33,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/pur
       "/VERSION",
       "/SHASUMS",
       "/install.sh",
+      "/install.sh.sig",
       "/rtx-latest-",
       "/rpm/repodata/",
       "/deb/dists/"
