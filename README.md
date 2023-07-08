@@ -157,6 +157,7 @@ v20.0.0
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
   - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
   - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
+  - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall <TOOL@VERSION>...`](#rtx-uninstall-toolversion)
   - [`rtx upgrade [TOOL@VERSION]...`](#rtx-upgrade-toolversion)
@@ -2308,6 +2309,24 @@ Examples:
   $ rtx shell node@20
   $ node -v
   v20.0.0
+```
+### `rtx sync python --pyenv`
+
+```
+Symlinks all tool versions from an external tool into rtx
+
+For example, import all pyenv installs into rtx
+
+Usage: sync python --pyenv
+
+Options:
+      --pyenv
+          Get tool versions from pyenv
+
+Examples:
+  $ pyenv install 3.11.0
+  $ rtx sync python --pyenv
+  # rtx will have symlinked the pyenv versions into rtx's install directory
 ```
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
