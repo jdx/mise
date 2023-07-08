@@ -635,18 +635,30 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "node" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
+default: 4' -r
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l log-level -d 'Set the log output verbosity' -r
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l brew -d 'Get tool versions from Homebrew'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l debug -d 'Sets log level to debug'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l install-missing -d 'Automatically install missing tools'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l trace -d 'Sets log level to trace'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s v -l verbose -d 'Show installation output'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l log-level -d 'Set the log output verbosity' -r
@@ -658,8 +670,9 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
-complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "node" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l log-level -d 'Set the log output verbosity' -r
@@ -814,5 +827,6 @@ complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset" -f -a "ls" -d 'Show current settings'
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset" -f -a "set" -d 'Add/update a setting'
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset" -f -a "unset" -d 'Clears a setting'
-complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from python" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python" -f -a "node" -d 'Symlinks all tool versions from an external tool into rtx'
+complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
 

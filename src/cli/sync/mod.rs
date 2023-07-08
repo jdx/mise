@@ -5,6 +5,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
+mod node;
 mod python;
 
 #[derive(Debug, clap::Args)]
@@ -16,12 +17,14 @@ pub struct Sync {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Node(node::SyncNode),
     Python(python::SyncPython),
 }
 
 impl Commands {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match self {
+            Self::Node(cmd) => cmd.run(config, out),
             Self::Python(cmd) => cmd.run(config, out),
         }
     }

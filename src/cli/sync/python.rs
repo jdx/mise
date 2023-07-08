@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use itertools::sorted;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -10,7 +11,7 @@ use crate::plugins::PluginName;
 
 /// Symlinks all tool versions from an external tool into rtx
 ///
-/// For example, import all pyenv installs into rtx
+/// For example, use this to import all pyenv installs into rtx
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncPython {
@@ -20,7 +21,7 @@ pub struct SyncPython {
 }
 
 impl Command for SyncPython {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let python = config.get_or_create_tool(&PluginName::from("python"));
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -31,8 +32,10 @@ impl Command for SyncPython {
             &pyenv_versions_path,
         )?;
 
-        for v in file::dir_subdirs(&pyenv_versions_path)? {
+        let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
+        for v in sorted(subdirs) {
             python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
+            rtxprintln!(out, "Synced python@{} from pyenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -43,7 +46,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>pyenv install 3.11.0</bold>
   $ <bold>rtx sync python --pyenv</bold>
-  # rtx will have symlinked the pyenv versions into rtx's install directory
+  $ <bold>rtx use -g python@3.11.0</bold> uses pyenv-provided python
 "#
 );
 
