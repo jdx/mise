@@ -157,6 +157,7 @@ v20.0.0
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
   - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
   - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
+  - [`rtx sync node --brew`](#rtx-sync-node---brew)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall <TOOL@VERSION>...`](#rtx-uninstall-toolversion)
@@ -2310,12 +2311,30 @@ Examples:
   $ node -v
   v20.0.0
 ```
+### `rtx sync node --brew`
+
+```
+Symlinks all tool versions from an external tool into rtx
+
+For example, use this to import all Homebrew node installs into rtx
+
+Usage: sync node --brew
+
+Options:
+      --brew
+          Get tool versions from Homebrew
+
+Examples:
+  $ brew install node@18 node@20
+  $ rtx sync node --brew
+  $ rtx use -g node@18 uses Homebrew-provided node
+```
 ### `rtx sync python --pyenv`
 
 ```
 Symlinks all tool versions from an external tool into rtx
 
-For example, import all pyenv installs into rtx
+For example, use this to import all pyenv installs into rtx
 
 Usage: sync python --pyenv
 
@@ -2326,7 +2345,7 @@ Options:
 Examples:
   $ pyenv install 3.11.0
   $ rtx sync python --pyenv
-  # rtx will have symlinked the pyenv versions into rtx's install directory
+  $ rtx use -g python@3.11.0 uses pyenv-provided python
 ```
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
