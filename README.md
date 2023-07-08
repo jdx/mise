@@ -240,8 +240,10 @@ curl https://rtx.pub/install.sh | sh
 If you want to verify the install script hasn't been tampered with:
 
 ```
-gpg --keyserver hkps://keys.openpgp.org --recv-keys 408B88DB29DDE9E0
-curl https://rtx.pub/install.sh.sig | gpg --decrypt | sh
+gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x29DDE9E0
+curl https://rtx.pub/install.sh.sig | gpg --decrypt > install.sh
+# ensure the above is signed with the rtx release key
+sh ./install.sh
 ```
 
 or if you're allergic to `| sh`:
