@@ -1872,6 +1872,9 @@ Options:
 
           [short aliases: J]
 
+  -m, --missing
+          Display missing tool versions
+
 Examples:
   $ rtx ls
   ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
