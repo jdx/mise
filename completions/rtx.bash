@@ -411,6 +411,9 @@ _rtx() {
             rtx__help__settings,unset)
                 cmd="rtx__help__settings__unset"
                 ;;
+            rtx__help__sync,node)
+                cmd="rtx__help__sync__node"
+                ;;
             rtx__help__sync,python)
                 cmd="rtx__help__sync__python"
                 ;;
@@ -522,11 +525,17 @@ _rtx() {
             rtx__sync,help)
                 cmd="rtx__sync__help"
                 ;;
+            rtx__sync,node)
+                cmd="rtx__sync__node"
+                ;;
             rtx__sync,python)
                 cmd="rtx__sync__python"
                 ;;
             rtx__sync__help,help)
                 cmd="rtx__sync__help__help"
+                ;;
+            rtx__sync__help,node)
+                cmd="rtx__sync__help__node"
                 ;;
             rtx__sync__help,python)
                 cmd="rtx__sync__help__python"
@@ -2096,8 +2105,22 @@ _rtx() {
             return 0
             ;;
         rtx__help__sync)
-            opts="python"
+            opts="node python"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__sync__node)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3118,7 +3141,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help python help"
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help node python help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3144,7 +3167,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync__help)
-            opts="python help"
+            opts="node python help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3171,6 +3194,20 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtx__sync__help__node)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtx__sync__help__python)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -3178,6 +3215,32 @@ _rtx() {
                 return 0
             fi
             case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync__node)
+            opts="-j -r -v -h --brew --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
