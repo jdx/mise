@@ -13,8 +13,8 @@ use crate::config::MissingRuntimeBehavior::AutoInstall;
 
 use crate::output::Output;
 
-use crate::runtime_symlinks::rebuild_symlinks;
-use crate::shims::reshim;
+use crate::runtime_symlinks;
+use crate::shims;
 use crate::tool::Tool;
 use crate::toolset::{
     ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
@@ -79,8 +79,9 @@ impl Install {
                 }
                 self.uninstall_existing_versions(&config, &mpr, &tool_versions)?;
                 self.install_requested_versions(&config, &mpr, tool_versions)?;
-                reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
-                rebuild_symlinks(&config)?;
+                shims::reshim(&mut config, &ts)
+                    .map_err(|err| eyre!("failed to reshim: {}", err))?;
+                runtime_symlinks::rebuild(&config)?;
                 Ok(())
             })
     }

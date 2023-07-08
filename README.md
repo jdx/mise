@@ -139,6 +139,7 @@ v20.0.0
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
   - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
   - [`rtx latest [OPTIONS] <TOOL@VERSION>`](#rtx-latest-options-toolversion)
+  - [`rtx link [OPTIONS] <TOOL@VERSION> <PATH>`](#rtx-link-options-toolversion-path)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
   - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
@@ -1856,6 +1857,37 @@ Examples:
   $ rtx latest node     # get the latest stable version of node
   20.0.0
 ```
+### `rtx link [OPTIONS] <TOOL@VERSION> <PATH>`
+
+```
+Symlinks a tool version into rtx
+
+Use this for adding installs either custom compiled outside
+rtx or built with a different tool.
+
+Usage: link [OPTIONS] <TOOL@VERSION> <PATH>
+
+Arguments:
+  <TOOL@VERSION>
+          Tool name and version to create a symlink for
+
+  <PATH>
+          The local path to the tool version
+          e.g.: ~/.nvm/versions/node/v20.0.0
+
+Options:
+  -f, --force
+          Overwrite an existing tool version if it exists
+
+Examples:
+  # build node-20.0.0 with node-build and link it into rtx
+  $ node-build 20.0.0 ~/.nodes/20.0.0
+  $ rtx link node@20.0.0 ~/.nodes/20.0.0
+
+  # have rtx use the python version provided by Homebrew
+  $ brew install node@20
+  $ rtx link node@20 $(brew --prefix node@20)
+```
 ### `rtx ls [OPTIONS]`
 
 ```
@@ -1886,17 +1918,13 @@ Options:
 
 Examples:
   $ rtx ls
-  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
-  ⏵  python     3.11.0 (set by ~/.tool-versions)
-     python     3.10.0
+  node    20.0.0 ~/src/myapp/.tool-versions latest
+  python  3.11.0 ~/.tool-versions           3.10
+  python  3.10.0
 
   $ rtx ls --current
-  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
-  ⏵  python     3.11.0 (set by ~/.tool-versions)
-
-  $ rtx ls --parseable
-  node 20.0.0
-  python 3.11.0
+  node    20.0.0 ~/src/myapp/.tool-versions 20
+  python  3.11.0 ~/.tool-versions           3.11.0
 
   $ rtx ls --json
   {
