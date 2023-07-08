@@ -50,6 +50,10 @@ pub struct Ls {
     /// Display missing tool versions
     #[clap(long, short, conflicts_with = "installed")]
     missing: bool,
+
+    /// Display versions matching this prefix
+    #[clap(long)]
+    prefix: Option<String>,
 }
 
 impl Command for Ls {
@@ -66,6 +70,12 @@ impl Command for Ls {
         }
         if self.missing {
             runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv));
+        }
+        if let Some(prefix) = &self.prefix {
+            if self.plugin.is_none() {
+                panic!("--prefix requires --plugin");
+            }
+            runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
         }
         if self.json {
             self.display_json(runtimes, out)
@@ -393,5 +403,11 @@ mod tests {
     fn test_ls_missing_plugin() {
         let err = assert_cli_err!("ls", "missing-plugin");
         assert_str_eq!(err.to_string(), r#"[missing-plugin] plugin not installed"#);
+    }
+
+    #[test]
+    fn test_ls_prefix() {
+        assert_cli!("install");
+        assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3");
     }
 }
