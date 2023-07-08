@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
+use path_absolutize::Absolutize;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -37,12 +38,12 @@ impl Command for PluginsLink {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {
-                let path = PathBuf::from(&self.name).canonicalize()?;
+                let path = PathBuf::from(PathBuf::from(&self.name).absolutize()?);
                 let name = get_name_from_path(&path);
                 (name, path)
             }
         };
-        let path = path.canonicalize()?;
+        let path = path.absolutize()?;
         let symlink = dirs::PLUGINS.join(&name);
         if symlink.exists() {
             if self.force {
