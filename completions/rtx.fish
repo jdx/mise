@@ -385,6 +385,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -s c -l current -d 'Only sho
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l parseable -d 'Output in an easily parseable format'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l json -d 'Output in json format'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -s m -l missing -d 'Display missing tool versions'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.

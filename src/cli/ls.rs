@@ -46,6 +46,10 @@ pub struct Ls {
     /// Output in json format
     #[clap(long, visible_short_alias = 'J', overrides_with = "parseable")]
     json: bool,
+
+    /// Display missing tool versions
+    #[clap(long, short, conflicts_with = "installed")]
+    missing: bool,
 }
 
 impl Command for Ls {
@@ -53,12 +57,15 @@ impl Command for Ls {
         self.plugin = self.plugin.clone().or(self.plugin_arg.clone());
         self.verify_plugin(&config)?;
 
-        let mut runtimes = get_runtime_list(&mut config, &self.plugin)?;
+        let mut runtimes = self.get_runtime_list(&mut config)?;
         if self.current {
             runtimes.retain(|(_, _, source)| source.is_some());
         }
         if self.installed {
             runtimes.retain(|(p, tv, _)| p.is_version_installed(tv));
+        }
+        if self.missing {
+            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv));
         }
         if self.json {
             self.display_json(runtimes, out)
@@ -193,60 +200,57 @@ impl Ls {
         }
         Ok(())
     }
+
+    fn get_runtime_list(&self, config: &mut Config) -> Result<Vec<RuntimeRow>> {
+        let ts = ToolsetBuilder::new().build(config)?;
+        let mut versions: HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)> = ts
+            .list_installed_versions(config)?
+            .into_iter()
+            .filter(|(p, _)| match &self.plugin {
+                Some(plugin) => &p.name == plugin,
+                None => true,
+            })
+            .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
+            .collect();
+
+        let active = ts
+            .list_current_versions(config)
+            .into_iter()
+            .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
+            .collect::<HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)>>();
+
+        versions.extend(
+            active
+                .clone()
+                .into_iter()
+                .filter(|((plugin_name, _), _)| match &self.plugin {
+                    Some(plugin) => plugin_name == plugin,
+                    None => true,
+                })
+                .collect::<Vec<((PluginName, String), (Arc<Tool>, ToolVersion))>>(),
+        );
+
+        let rvs: Vec<RuntimeRow> = versions
+            .into_iter()
+            .sorted_by_cached_key(|((plugin_name, version), _)| {
+                (plugin_name.clone(), Versioning::new(version))
+            })
+            .map(|(k, (p, tv))| {
+                let source = match &active.get(&k) {
+                    Some((_, tv)) => ts.versions.get(&tv.plugin_name).map(|tv| tv.source.clone()),
+                    None => None,
+                };
+                (p, tv, source)
+            })
+            // if it isn't installed and it's not specified, don't show it
+            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
+            .collect();
+
+        Ok(rvs)
+    }
 }
 
 type RuntimeRow = (Arc<Tool>, ToolVersion, Option<ToolSource>);
-
-fn get_runtime_list(
-    config: &mut Config,
-    plugin_flag: &Option<PluginName>,
-) -> Result<Vec<RuntimeRow>> {
-    let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions: HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)> = ts
-        .list_installed_versions(config)?
-        .into_iter()
-        .filter(|(p, _)| match plugin_flag {
-            Some(plugin) => &p.name == plugin,
-            None => true,
-        })
-        .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
-        .collect();
-
-    let active = ts
-        .list_current_versions(config)
-        .into_iter()
-        .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
-        .collect::<HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)>>();
-
-    versions.extend(
-        active
-            .clone()
-            .into_iter()
-            .filter(|((plugin_name, _), _)| match plugin_flag {
-                Some(plugin) => plugin_name == plugin,
-                None => true,
-            })
-            .collect::<Vec<((PluginName, String), (Arc<Tool>, ToolVersion))>>(),
-    );
-
-    let rvs: Vec<RuntimeRow> = versions
-        .into_iter()
-        .sorted_by_cached_key(|((plugin_name, version), _)| {
-            (plugin_name.clone(), Versioning::new(version))
-        })
-        .map(|(k, (p, tv))| {
-            let source = match &active.get(&k) {
-                Some((_, tv)) => ts.versions.get(&tv.plugin_name).map(|tv| tv.source.clone()),
-                None => None,
-            };
-            (p, tv, source)
-        })
-        // if it isn't installed and it's not specified, don't show it
-        .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
-        .collect();
-
-    Ok(rvs)
-}
 
 enum VersionStatus {
     Active(String, bool),
@@ -377,6 +381,12 @@ mod tests {
         assert_cli!("install");
         assert_cli_snapshot!("ls", "-x");
         assert_cli_snapshot!("ls", "--parseable", "tiny");
+    }
+
+    #[test]
+    fn test_ls_missing() {
+        assert_cli!("install");
+        assert_cli_snapshot!("ls", "--missing");
     }
 
     #[test]
