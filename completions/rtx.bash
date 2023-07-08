@@ -2239,7 +2239,7 @@ _rtx() {
             return 0
             ;;
         rtx__latest)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
+            opts="-i -j -r -v -h --installed --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
