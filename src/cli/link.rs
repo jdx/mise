@@ -9,11 +9,9 @@ use path_absolutize::Absolutize;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::dirs;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
-use crate::shims;
-use crate::toolset::ToolsetBuilder;
-use crate::{dirs, runtime_symlinks};
 
 /// Symlinks a tool version into rtx
 ///
@@ -69,11 +67,7 @@ impl Command for Link {
         fs::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
-        let ts = ToolsetBuilder::new().build(&mut config)?;
-        shims::reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
-        runtime_symlinks::rebuild(&config)?;
-
-        Ok(())
+        config.rebuild_shims_and_runtime_symlinks()
     }
 }
 

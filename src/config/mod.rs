@@ -239,6 +239,13 @@ impl Config {
             plugin_name == "nodejs" || plugin_name == "golang"
         })
     }
+
+    pub fn rebuild_shims_and_runtime_symlinks(&mut self) -> Result<()> {
+        let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
+        crate::shims::reshim(self, &ts)?;
+        crate::runtime_symlinks::rebuild(self)?;
+        Ok(())
+    }
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {

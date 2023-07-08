@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{remove_file, File};
+use std::fs;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use clap::Command;
@@ -193,6 +194,12 @@ impl Tool {
         }
     }
 
+    pub fn create_symlink(&self, version: &str, target: &Path) -> Result<()> {
+        let link = self.installs_path.join(version);
+        fs::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(target, &link)
+    }
+
     pub fn install_version(
         &self,
         config: &Config,
@@ -218,7 +225,7 @@ impl Tool {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = remove_file(self.incomplete_file_path(tv)) {
+        if let Err(err) = fs::remove_file(self.incomplete_file_path(tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
         pr.finish();
@@ -320,7 +327,7 @@ impl Tool {
         let _ = remove_all_with_warning(tv.install_path());
         let _ = remove_all_with_warning(tv.download_path());
         let _ = remove_all_with_warning(tv.cache_path());
-        let _ = remove_file(tv.install_path()); // removes if it is a symlink
+        let _ = fs::remove_file(tv.install_path()); // removes if it is a symlink
         create_dir_all(tv.install_path())?;
         create_dir_all(tv.download_path())?;
         create_dir_all(tv.cache_path())?;
