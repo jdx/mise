@@ -116,6 +116,8 @@ pub static RTX_PYTHON_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_PYTHON_DEFAULT_PACKAGES_FILE")
         .unwrap_or_else(|| HOME.join(".default-python-packages"))
 });
+pub static PYENV_ROOT: Lazy<PathBuf> =
+    Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
 pub static RTX_NODE_CONCURRENCY: Lazy<usize> = Lazy::new(|| {

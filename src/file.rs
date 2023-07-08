@@ -133,6 +133,23 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Path) -> Result<()> {
+    if !symlink_dir.exists() {
+        return Ok(());
+    }
+    for entry in symlink_dir.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_symlink() {
+            let target = path.read_link()?;
+            if target.starts_with(target_prefix) {
+                fs::remove_file(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn is_executable(path: &Path) -> bool {
     if let Ok(metadata) = path.metadata() {
         return metadata.permissions().mode() & 0o111 != 0;

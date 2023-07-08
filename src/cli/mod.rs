@@ -42,6 +42,7 @@ mod reshim;
 mod self_update;
 mod settings;
 mod shell;
+mod sync;
 mod trust;
 mod uninstall;
 mod upgrade;
@@ -86,6 +87,7 @@ pub enum Commands {
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
+    Sync(sync::Sync),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Upgrade(upgrade::Upgrade),
@@ -130,6 +132,7 @@ impl Commands {
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
+            Self::Sync(cmd) => cmd.run(config, out),
             Self::Trust(cmd) => cmd.run(config, out),
             Self::Uninstall(cmd) => cmd.run(config, out),
             Self::Upgrade(cmd) => cmd.run(config, out),
