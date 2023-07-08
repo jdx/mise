@@ -793,6 +793,8 @@ default\: 4]: : ' \
 '--installed[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
 '(--json)--parseable[Output in an easily parseable format]' \
 '--json[Output in json format]' \
+'(-i --installed)-m[Display missing tool versions]' \
+'(-i --installed)--missing[Display missing tool versions]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
