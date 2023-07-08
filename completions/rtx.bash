@@ -120,6 +120,9 @@ _rtx() {
             rtx,shell)
                 cmd="rtx__shell"
                 ;;
+            rtx,sync)
+                cmd="rtx__sync"
+                ;;
             rtx,trust)
                 cmd="rtx__trust"
                 ;;
@@ -330,6 +333,9 @@ _rtx() {
             rtx__help,shell)
                 cmd="rtx__help__shell"
                 ;;
+            rtx__help,sync)
+                cmd="rtx__help__sync"
+                ;;
             rtx__help,trust)
                 cmd="rtx__help__trust"
                 ;;
@@ -404,6 +410,9 @@ _rtx() {
                 ;;
             rtx__help__settings,unset)
                 cmd="rtx__help__settings__unset"
+                ;;
+            rtx__help__sync,python)
+                cmd="rtx__help__sync__python"
                 ;;
             rtx__plugins,a)
                 cmd="rtx__plugins__install"
@@ -510,6 +519,18 @@ _rtx() {
             rtx__settings__help,unset)
                 cmd="rtx__settings__help__unset"
                 ;;
+            rtx__sync,help)
+                cmd="rtx__sync__help"
+                ;;
+            rtx__sync,python)
+                cmd="rtx__sync__python"
+                ;;
+            rtx__sync__help,help)
+                cmd="rtx__sync__help__help"
+                ;;
+            rtx__sync__help,python)
+                cmd="rtx__sync__help__python"
+                ;;
             *)
                 ;;
         esac
@@ -517,7 +538,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1375,7 +1396,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2063,6 +2084,34 @@ _rtx() {
         rtx__help__shell)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__sync)
+            opts="python"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__sync__python)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3045,6 +3094,100 @@ _rtx() {
         rtx__shell)
             opts="-u -j -r -v -h --unset --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync)
+            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help python help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync__help)
+            opts="python help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync__help__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync__help__python)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__sync__python)
+            opts="-j -r -v -h --pyenv --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

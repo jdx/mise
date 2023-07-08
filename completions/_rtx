@@ -1367,6 +1367,83 @@ Sets --jobs=1]' \
 '*::tool -- Tool(s) to use:' \
 && ret=0
 ;;
+(sync)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--debug[Sets log level to debug]' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--trace[Sets log level to trace]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_rtx__sync_commands" \
+"*::: :->sync" \
+&& ret=0
+
+    case $state in
+    (sync)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-sync-command-$line[1]:"
+        case $line[1] in
+            (python)
+_arguments "${_arguments_options[@]}" \
+'-j+[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--jobs=[Number of plugins and runtimes to install in parallel
+default\: 4]: : ' \
+'--log-level=[Set the log output verbosity]:LEVEL: ' \
+'--pyenv[Get tool versions from pyenv]' \
+'--debug[Sets log level to debug]' \
+'--install-missing[Automatically install missing tools]' \
+'-r[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--raw[Directly pipe stdin/stdout/stderr to user.
+Sets --jobs=1]' \
+'--trace[Sets log level to trace]' \
+'*-v[Show installation output]' \
+'*--verbose[Show installation output]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__sync__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-sync-help-command-$line[1]:"
+        case $line[1] in
+            (python)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (trust)
 _arguments "${_arguments_options[@]}" \
 '-j+[Number of plugins and runtimes to install in parallel
@@ -1821,6 +1898,26 @@ esac
 _arguments "${_arguments_options[@]}" \
 && ret=0
 ;;
+(sync)
+_arguments "${_arguments_options[@]}" \
+":: :_rtx__help__sync_commands" \
+"*::: :->sync" \
+&& ret=0
+
+    case $state in
+    (sync)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtx-help-sync-command-$line[1]:"
+        case $line[1] in
+            (python)
+_arguments "${_arguments_options[@]}" \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
 (trust)
 _arguments "${_arguments_options[@]}" \
 && ret=0
@@ -1904,6 +2001,7 @@ _rtx_commands() {
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \
+'sync:Add tool versions from external tools to rtx' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
 'upgrade:\[experimental\] Upgrades outdated tool versions' \
@@ -2270,6 +2368,7 @@ _rtx__help_commands() {
 'self-update:Updates rtx itself' \
 'settings:Manage settings' \
 'shell:Sets a tool version for the current shell session' \
+'sync:Add tool versions from external tools to rtx' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
 'upgrade:\[experimental\] Upgrades outdated tool versions' \
@@ -2320,6 +2419,19 @@ _rtx__settings__help_commands() {
 _rtx__settings__help__help_commands() {
     local commands; commands=()
     _describe -t commands 'rtx settings help help commands' commands "$@"
+}
+(( $+functions[_rtx__sync__help_commands] )) ||
+_rtx__sync__help_commands() {
+    local commands; commands=(
+'python:Symlinks all tool versions from an external tool into rtx' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx sync help commands' commands "$@"
+}
+(( $+functions[_rtx__sync__help__help_commands] )) ||
+_rtx__sync__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx sync help help commands' commands "$@"
 }
 (( $+functions[_rtx__help__hook-env_commands] )) ||
 _rtx__help__hook-env_commands() {
@@ -2540,6 +2652,21 @@ _rtx__prune_commands() {
     local commands; commands=()
     _describe -t commands 'rtx prune commands' commands "$@"
 }
+(( $+functions[_rtx__help__sync__python_commands] )) ||
+_rtx__help__sync__python_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx help sync python commands' commands "$@"
+}
+(( $+functions[_rtx__sync__help__python_commands] )) ||
+_rtx__sync__help__python_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx sync help python commands' commands "$@"
+}
+(( $+functions[_rtx__sync__python_commands] )) ||
+_rtx__sync__python_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtx sync python commands' commands "$@"
+}
 (( $+functions[_rtx__help__render-help_commands] )) ||
 _rtx__help__render-help_commands() {
     local commands; commands=()
@@ -2637,6 +2764,21 @@ _rtx__help__shell_commands() {
 _rtx__shell_commands() {
     local commands; commands=()
     _describe -t commands 'rtx shell commands' commands "$@"
+}
+(( $+functions[_rtx__help__sync_commands] )) ||
+_rtx__help__sync_commands() {
+    local commands; commands=(
+'python:Symlinks all tool versions from an external tool into rtx' \
+    )
+    _describe -t commands 'rtx help sync commands' commands "$@"
+}
+(( $+functions[_rtx__sync_commands] )) ||
+_rtx__sync_commands() {
+    local commands; commands=(
+'python:Symlinks all tool versions from an external tool into rtx' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rtx sync commands' commands "$@"
 }
 (( $+functions[_rtx__help__trust_commands] )) ||
 _rtx__help__trust_commands() {
