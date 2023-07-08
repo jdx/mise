@@ -12,7 +12,7 @@ use crate::dirs;
 use crate::file::make_symlink;
 use crate::tool::Tool;
 
-pub fn rebuild_symlinks(config: &Config) -> Result<()> {
+pub fn rebuild(config: &Config) -> Result<()> {
     for plugin in config.tools.values() {
         remove_existing_symlinks(plugin)?;
         let symlinks = list_symlinks(config, plugin)?;

@@ -10,8 +10,8 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::runtime_symlinks::rebuild_symlinks;
-use crate::shims::reshim;
+use crate::runtime_symlinks;
+use crate::shims;
 use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -69,8 +69,8 @@ impl Upgrade {
                 self.install_new_versions(config, &mut mpr, outdated)?;
 
                 let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-                reshim(config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
-                rebuild_symlinks(config)?;
+                shims::reshim(config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+                runtime_symlinks::rebuild(config)?;
 
                 Ok(())
             })

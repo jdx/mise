@@ -186,6 +186,13 @@ impl Tool {
         !self.is_version_installed(tv) || tv.version != latest
     }
 
+    pub fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
+        match tv.install_path() {
+            path if path.is_symlink() => Some(path),
+            _ => None,
+        }
+    }
+
     pub fn install_version(
         &self,
         config: &Config,

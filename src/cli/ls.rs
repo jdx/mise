@@ -92,9 +92,13 @@ type JSONOutput = IndexMap<PluginName, Vec<JSONToolVersion>>;
 #[derive(Serialize)]
 struct JSONToolVersion {
     version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     requested_version: Option<String>,
     install_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<IndexMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symlinked_to: Option<PathBuf>,
 }
 
 impl Ls {
@@ -118,7 +122,8 @@ impl Ls {
             .group_by(|(p, _, _)| p.name.to_string())
         {
             let runtimes = runtimes
-                .map(|(_, tv, source)| JSONToolVersion {
+                .map(|(p, tv, source)| JSONToolVersion {
+                    symlinked_to: p.symlink_path(&tv),
                     install_path: tv.install_path(),
                     version: tv.version,
                     requested_version: source.as_ref().map(|_| tv.request.version()),
@@ -164,7 +169,9 @@ impl Ls {
             .into_iter()
             .map(|(p, tv, source)| {
                 let plugin = p.name.to_string();
-                let version = if !p.is_version_installed(&tv) {
+                let version = if let Some(symlink_path) = p.symlink_path(&tv) {
+                    VersionStatus::Symlink(tv.version, symlink_path)
+                } else if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
                     VersionStatus::Active(tv.version.clone(), p.is_version_outdated(config, &tv))
@@ -198,15 +205,16 @@ impl Ls {
                 .max(0) as usize;
             let version = version.to_string();
             let version = pad(&version, max_version_len - plugin_extra);
-            match &request {
+            let line = match &request {
                 Some((source, requested)) => {
                     let source = pad(source, max_source_len - version_extra);
-                    rtxprintln!(out, "{} {} {} {}", plugin, version, source, requested);
+                    format!("{} {} {} {}", plugin, version, source, requested)
                 }
                 None => {
-                    rtxprintln!(out, "{} {}", plugin, version);
+                    format!("{} {}", plugin, version)
                 }
-            }
+            };
+            rtxprintln!(out, "{}", line.trim_end());
         }
         Ok(())
     }
@@ -266,6 +274,7 @@ enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
+    Symlink(String, PathBuf),
 }
 
 impl VersionStatus {
@@ -280,6 +289,7 @@ impl VersionStatus {
             }
             VersionStatus::Inactive(version) => version.to_string(),
             VersionStatus::Missing(version) => format!("{} (missing)", version),
+            VersionStatus::Symlink(version, _) => format!("{} (symlink)", version),
         }
     }
 }
@@ -310,6 +320,9 @@ impl Display for VersionStatus {
                 },
                 style("(missing)").red()
             ),
+            VersionStatus::Symlink(version, _) => {
+                write!(f, "{} {}", version, style("(symlink)").dim())
+            }
         }
     }
 }
@@ -317,17 +330,13 @@ impl Display for VersionStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx ls</bold>
-  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
-  ⏵  python     3.11.0 (set by ~/.tool-versions)
-     python     3.10.0
+  node    20.0.0 ~/src/myapp/.tool-versions latest
+  python  3.11.0 ~/.tool-versions           3.10
+  python  3.10.0
 
   $ <bold>rtx ls --current</bold>
-  ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)
-  ⏵  python     3.11.0 (set by ~/.tool-versions)
-
-  $ <bold>rtx ls --parseable</bold>
-  node 20.0.0
-  python 3.11.0
+  node    20.0.0 ~/src/myapp/.tool-versions 20
+  python  3.11.0 ~/.tool-versions           3.11.0
 
   $ <bold>rtx ls --json</bold>
   {

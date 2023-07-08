@@ -78,6 +78,9 @@ _rtx() {
             rtx,latest)
                 cmd="rtx__latest"
                 ;;
+            rtx,link)
+                cmd="rtx__link"
+                ;;
             rtx,list)
                 cmd="rtx__ls"
                 ;;
@@ -290,6 +293,9 @@ _rtx() {
                 ;;
             rtx__help,latest)
                 cmd="rtx__help__latest"
+                ;;
+            rtx__help,link)
+                cmd="rtx__help__link"
                 ;;
             rtx__help,local)
                 cmd="rtx__help__local"
@@ -511,7 +517,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1369,7 +1375,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1747,6 +1753,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__latest)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2240,6 +2260,32 @@ _rtx() {
             ;;
         rtx__latest)
             opts="-i -j -r -v -h --installed --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__link)
+            opts="-f -j -r -v -h --force --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
