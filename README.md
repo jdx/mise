@@ -138,7 +138,7 @@ v20.0.0
   - [`rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`](#rtx-exec-options-toolversion----command)
   - [`rtx implode [OPTIONS]`](#rtx-implode-options)
   - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
-  - [`rtx latest <TOOL@VERSION>`](#rtx-latest-toolversion)
+  - [`rtx latest [OPTIONS] <TOOL@VERSION>`](#rtx-latest-options-toolversion)
   - [`rtx ls [OPTIONS]`](#rtx-ls-options)
   - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
   - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
@@ -1832,16 +1832,20 @@ Examples:
   $ rtx install node         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
-### `rtx latest <TOOL@VERSION>`
+### `rtx latest [OPTIONS] <TOOL@VERSION>`
 
 ```
 Gets the latest available version for a plugin
 
-Usage: latest <TOOL@VERSION>
+Usage: latest [OPTIONS] <TOOL@VERSION>
 
 Arguments:
   <TOOL@VERSION>
           Tool to get the latest version of
+
+Options:
+  -i, --installed
+          Show latest installed instead of available version
 
 Examples:
   $ rtx latest node@20  # get the latest version of node 20
