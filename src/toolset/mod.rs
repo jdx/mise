@@ -22,8 +22,8 @@ pub use tool_version_request::ToolVersionRequest;
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
 use crate::plugins::PluginName;
-use crate::runtime_symlinks::rebuild_symlinks;
-use crate::shims::reshim;
+use crate::runtime_symlinks;
+use crate::shims;
 use crate::tool::Tool;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -180,8 +180,8 @@ impl Toolset {
                         Ok(())
                     })
                     .collect::<Result<Vec<()>>>()?;
-                reshim(config, self)?;
-                rebuild_symlinks(config)?;
+                shims::reshim(config, self)?;
+                runtime_symlinks::rebuild(config)?;
                 Ok(())
             })
     }
@@ -287,6 +287,10 @@ impl Toolset {
         self.list_current_versions(config)
             .into_iter()
             .filter_map(|(t, tv)| {
+                if t.symlink_path(&tv).is_some() {
+                    // do not consider symlinked versions to be outdated
+                    return None;
+                }
                 let latest = match tv.latest_version(config, &t) {
                     Ok(latest) => latest,
                     Err(e) => {

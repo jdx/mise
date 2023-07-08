@@ -29,6 +29,7 @@ mod hook_env;
 mod implode;
 mod install;
 mod latest;
+mod link;
 mod local;
 mod ls;
 mod ls_remote;
@@ -74,6 +75,7 @@ pub enum Commands {
     Implode(implode::Implode),
     Install(install::Install),
     Latest(latest::Latest),
+    Link(link::Link),
     Local(local::Local),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
@@ -117,6 +119,7 @@ impl Commands {
             Self::Implode(cmd) => cmd.run(config, out),
             Self::Install(cmd) => cmd.run(config, out),
             Self::Latest(cmd) => cmd.run(config, out),
+            Self::Link(cmd) => cmd.run(config, out),
             Self::Local(cmd) => cmd.run(config, out),
             Self::Ls(cmd) => cmd.run(config, out),
             Self::LsRemote(cmd) => cmd.run(config, out),

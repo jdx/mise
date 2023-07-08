@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{runtime_symlinks, shims};
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
@@ -55,6 +56,11 @@ impl Command for Uninstall {
             }
             pr.finish_with_message("uninstalled");
         }
+
+        let ts = ToolsetBuilder::new().build(&mut config)?;
+        shims::reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+        runtime_symlinks::rebuild(&config)?;
+
         Ok(())
     }
 }
