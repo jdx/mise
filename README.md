@@ -1875,6 +1875,9 @@ Options:
   -m, --missing
           Display missing tool versions
 
+      --prefix <PREFIX>
+          Display versions matching this prefix
+
 Examples:
   $ rtx ls
   ⏵  node     20.0.0 (set by ~/src/myapp/.tool-versions)

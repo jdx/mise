@@ -378,6 +378,7 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -l trace -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -d 'Only show tool versions from [PLUGIN]' -r
+complete -c rtx -n "__fish_seen_subcommand_from ls" -l prefix -d 'Display versions matching this prefix' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
