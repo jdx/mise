@@ -1,0 +1,6 @@
+---
+source: src/cli/latest.rs
+expression: output
+---
+2.0.0
+

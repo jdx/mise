@@ -730,6 +730,8 @@ default\: 4]: : ' \
 '--jobs=[Number of plugins and runtimes to install in parallel
 default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
+'-i[Show latest installed instead of available version]' \
+'--installed[Show latest installed instead of available version]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.

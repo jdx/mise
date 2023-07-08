@@ -124,7 +124,7 @@ impl ToolVersion {
 
         if v == "latest" {
             if !latest_versions {
-                if let Some(v) = tool.latest_installed_version()? {
+                if let Some(v) = tool.latest_installed_version(None)? {
                     return build(v);
                 }
             }
