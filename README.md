@@ -1509,7 +1509,7 @@ Show an alias for a plugin
 
 This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
 
-Usage: get <PLUGIN> <ALIAS>
+Usage: alias get <PLUGIN> <ALIAS>
 
 Arguments:
   <PLUGIN>
@@ -1534,7 +1534,7 @@ For user config, aliases are defined like the following in `~/.config/rtx/config
   [alias.node]
   lts = "20.0.0"
 
-Usage: ls [OPTIONS]
+Usage: alias ls [OPTIONS]
 
 Options:
   -p, --plugin <PLUGIN>
@@ -1551,7 +1551,7 @@ Add/update an alias for a plugin
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: set <PLUGIN> <ALIAS> <VALUE>
+Usage: alias set <PLUGIN> <ALIAS> <VALUE>
 
 Arguments:
   <PLUGIN>
@@ -1573,7 +1573,7 @@ Clears an alias for a plugin
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: unset <PLUGIN> <ALIAS>
+Usage: alias unset <PLUGIN> <ALIAS>
 
 Arguments:
   <PLUGIN>
@@ -1597,7 +1597,7 @@ Usage: bin-paths
 ```
 Deletes all cache files in rtx
 
-Usage: clear
+Usage: cache clear
 ```
 ### `rtx completion [SHELL]`
 
@@ -1672,7 +1672,7 @@ Because this generates the legacy files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
 direnv may not know to update environment variables when legacy file versions change.
 
-Usage: activate
+Usage: direnv activate
 
 Examples:
   $ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
@@ -2005,7 +2005,7 @@ e.g.: `rtx install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/rtx/config.toml
 
-Usage: install [OPTIONS] [NAME] [GIT_URL]
+Usage: plugins install [OPTIONS] [NAME] [GIT_URL]
 
 Arguments:
   [NAME]
@@ -2049,7 +2049,7 @@ Symlinks a plugin into rtx
 
 This is used for developing a plugin.
 
-Usage: link [OPTIONS] <NAME> [PATH]
+Usage: plugins link [OPTIONS] <NAME> [PATH]
 
 Arguments:
   <NAME>
@@ -2078,7 +2078,7 @@ List installed plugins
 
 Can also show remotely available plugins to install.
 
-Usage: ls [OPTIONS]
+Usage: plugins ls [OPTIONS]
 
 Options:
   -c, --core
@@ -2113,7 +2113,7 @@ Examples:
   $ rtx plugins ls-remote
 
 
-Usage: ls-remote [OPTIONS]
+Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
@@ -2127,7 +2127,7 @@ Options:
 ```
 Removes a plugin
 
-Usage: uninstall <PLUGIN>...
+Usage: plugins uninstall <PLUGIN>...
 
 Arguments:
   <PLUGIN>...
@@ -2143,7 +2143,7 @@ Updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
 
-Usage: update [PLUGIN]...
+Usage: plugins update [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
@@ -2226,7 +2226,7 @@ This is the contents of a single entry in ~/.config/rtx/config.toml
 Note that aliases are also stored in this file
 but managed separately with `rtx aliases get`
 
-Usage: get <KEY>
+Usage: settings get <KEY>
 
 Arguments:
   <KEY>
@@ -2246,7 +2246,7 @@ This is the contents of ~/.config/rtx/config.toml
 Note that aliases are also stored in this file
 but managed separately with `rtx aliases`
 
-Usage: ls
+Usage: settings ls
 
 Examples:
   $ rtx settings
@@ -2259,7 +2259,7 @@ Add/update a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: set <KEY> <VALUE>
+Usage: settings set <KEY> <VALUE>
 
 Arguments:
   <KEY>
@@ -2278,7 +2278,7 @@ Clears a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: unset <KEY>
+Usage: settings unset <KEY>
 
 Arguments:
   <KEY>

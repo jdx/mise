@@ -79,6 +79,8 @@ fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String>
         Some(p) => format!("{} {}", p, strip_usage(c.render_usage())),
         None => strip_usage(c.render_usage()),
     };
+    let mut c = c.override_usage(&usage);
+
     let about = strip_ansi_codes(&c.render_long_help().to_string())
         .trim()
         .to_string();
