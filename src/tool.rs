@@ -105,28 +105,32 @@ impl Tool {
         match query {
             Some(query) => {
                 let matches = self.list_versions_matching(settings, &query)?;
-                let v = match matches.contains(&query) {
-                    true => Some(query),
-                    false => matches.last().map(|v| v.to_string()),
-                };
-                Ok(v)
+                Ok(find_match_in_list(&matches, &query))
             }
             None => self.latest_stable_version(settings),
         }
     }
 
-    pub fn latest_installed_version(&self) -> Result<Option<String>> {
-        let installed_symlink = self.installs_path.join("latest");
-        if installed_symlink.exists() {
-            let target = installed_symlink.read_link()?;
-            let version = target
-                .file_name()
-                .ok_or_else(|| eyre!("Invalid symlink target"))?
-                .to_string_lossy()
-                .to_string();
-            Ok(Some(version))
-        } else {
-            Ok(None)
+    pub fn latest_installed_version(&self, query: Option<String>) -> Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let matches = self.list_installed_versions_matching(&query)?;
+                Ok(find_match_in_list(&matches, &query))
+            }
+            None => {
+                let installed_symlink = self.installs_path.join("latest");
+                if installed_symlink.exists() {
+                    let target = installed_symlink.read_link()?;
+                    let version = target
+                        .file_name()
+                        .ok_or_else(|| eyre!("Invalid symlink target"))?
+                        .to_string_lossy()
+                        .to_string();
+                    Ok(Some(version))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -371,4 +375,12 @@ impl PartialEq for Tool {
     fn eq(&self, other: &Self) -> bool {
         self.plugin_path == other.plugin_path
     }
+}
+
+fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
+    let v = match list.contains(&query.to_string()) {
+        true => Some(query.to_string()),
+        false => list.last().map(|s| s.to_string()),
+    };
+    v
 }

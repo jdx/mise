@@ -20,6 +20,10 @@ pub struct Latest {
     /// used for asdf compatibility
     #[clap(hide = true)]
     asdf_version: Option<String>,
+
+    /// Show latest installed instead of available version
+    #[clap(short, long)]
+    installed: bool,
 }
 
 impl Command for Latest {
@@ -45,7 +49,12 @@ impl Command for Latest {
             prefix = Some(config.resolve_alias(&plugin.name, &v)?);
         }
 
-        if let Some(version) = plugin.latest_version(&config.settings, prefix)? {
+        let latest_version = if self.installed {
+            plugin.latest_installed_version(prefix)?
+        } else {
+            plugin.latest_version(&config.settings, prefix)?
+        };
+        if let Some(version) = latest_version {
             rtxprintln!(out, "{}", version);
         }
         Ok(())
@@ -83,6 +92,11 @@ mod tests {
     fn test_latest_system() {
         let err = assert_cli_err!("latest", "dummy@system");
         assert_display_snapshot!(err);
+    }
+
+    #[test]
+    fn test_latest_installed() {
+        assert_cli_snapshot!("latest", "dummy");
     }
 
     #[test]
