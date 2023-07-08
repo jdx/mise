@@ -94,7 +94,7 @@ impl Toolset {
         let plural_versions = if versions.len() == 1 { "" } else { "s" };
         let warn = || {
             warn!(
-                "Tool{} not installed: {}",
+                "Tool{} not installed: {} (install with: rtx install)",
                 plural_versions, display_versions
             );
         };
