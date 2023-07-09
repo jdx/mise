@@ -4,6 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::unalias_plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes a plugin
@@ -20,6 +21,7 @@ impl Command for PluginsUninstall {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
 
         for plugin_name in &self.plugin {
+            let plugin_name = unalias_plugin(plugin_name);
             self.uninstall_one(&config, plugin_name, &mpr)?;
         }
         Ok(())
@@ -30,7 +32,7 @@ impl PluginsUninstall {
     fn uninstall_one(
         &self,
         config: &Config,
-        plugin_name: &String,
+        plugin_name: &str,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         match config.tools.get(plugin_name) {

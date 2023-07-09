@@ -4,6 +4,7 @@ use crate::cli::command::Command;
 
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::unalias_plugin;
 use crate::tool::Tool;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -24,13 +25,16 @@ impl Command for Current {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
-            Some(plugin_name) => match config.tools.get(plugin_name) {
-                Some(plugin) => self.one(&config, ts, out, plugin),
-                None => {
-                    warn!("Plugin {} is not installed", plugin_name);
-                    Ok(())
+            Some(plugin_name) => {
+                let plugin_name = unalias_plugin(plugin_name);
+                match config.tools.get(plugin_name) {
+                    Some(plugin) => self.one(&config, ts, out, plugin),
+                    None => {
+                        warn!("Plugin {} is not installed", plugin_name);
+                        Ok(())
+                    }
                 }
-            },
+            }
             None => self.all(&config, ts, out),
         }
     }

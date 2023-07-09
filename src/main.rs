@@ -39,6 +39,7 @@ mod hook_env;
 mod http;
 mod lock_file;
 mod logger;
+mod migrate;
 mod plugins;
 mod runtime_symlinks;
 mod shell;
@@ -73,6 +74,9 @@ fn run(args: &Vec<String>) -> Result<()> {
 
     // show version before loading config in case of error
     cli::version::print_version_if_requested(&env::ARGS, out);
+    if let Err(err) = migrate::run() {
+        warn!("Error migrating: {}", err);
+    }
 
     let config = Config::load()?;
     let config = shims::handle_shim(config, args, out)?;
