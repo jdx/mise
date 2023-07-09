@@ -652,6 +652,8 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l brew -d 'Get tool versions from Homebrew'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l nvm -d 'Get tool versions from nvm'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l nodenv -d 'Get tool versions from nodenv'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.

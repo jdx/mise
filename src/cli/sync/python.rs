@@ -46,7 +46,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>pyenv install 3.11.0</bold>
   $ <bold>rtx sync python --pyenv</bold>
-  $ <bold>rtx use -g python@3.11.0</bold> uses pyenv-provided python
+  $ <bold>rtx use -g python@3.11.0</bold> - uses pyenv-provided python
 "#
 );
 
