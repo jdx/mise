@@ -3,49 +3,40 @@ use std::env::{join_paths, split_paths};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::mpsc;
-use std::time::Duration;
 use std::{fs, thread};
 
 use clap::Command;
 use color_eyre::eyre::{Context, Result};
 
-use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::{
-    RTX_EXE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE,
+    RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE,
     RTX_NODE_VERBOSE_INSTALL,
 };
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::lock_file::LockFile;
+use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{cmd, dirs, env, file};
+use crate::{cmd, env, file};
 
 #[derive(Debug)]
 pub struct NodePlugin {
-    pub name: PluginName,
-    cache_path: PathBuf,
-    remote_version_cache: CacheManager<Vec<String>>,
+    core: CorePlugin,
 }
 
 impl NodePlugin {
     pub fn new(name: PluginName) -> Self {
-        let cache_path = dirs::CACHE.join(&name);
-        let fresh_duration = Some(Duration::from_secs(60 * 60 * 12)); // 12 hours
         Self {
-            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(fresh_duration)
-                .with_fresh_file(RTX_EXE.clone()),
-            name,
-            cache_path,
+            core: CorePlugin::new(name),
         }
     }
 
     fn node_build_path(&self) -> PathBuf {
-        self.cache_path.join("node-build")
+        self.core.cache_path.join("node-build")
     }
     fn node_build_bin(&self) -> PathBuf {
         self.node_build_path().join("bin/node-build")
@@ -172,11 +163,12 @@ impl NodePlugin {
 
 impl Plugin for NodePlugin {
     fn name(&self) -> &PluginName {
-        &self.name
+        &self.core.name
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
-        self.remote_version_cache
+        self.core
+            .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }

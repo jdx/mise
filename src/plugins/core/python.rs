@@ -2,43 +2,34 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
 
 use color_eyre::eyre::{eyre, Context, Result};
 
-use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::{RTX_EXE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
+use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::create_dir_all;
 use crate::git::Git;
+use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{cmd, dirs, env, file, http};
+use crate::{cmd, env, file, http};
 
 #[derive(Debug)]
 pub struct PythonPlugin {
-    pub name: PluginName,
-    cache_path: PathBuf,
-    remote_version_cache: CacheManager<Vec<String>>,
+    core: CorePlugin,
 }
 
 impl PythonPlugin {
     pub fn new(name: PluginName) -> Self {
-        let cache_path = dirs::CACHE.join(&name);
-        let fresh_duration = Some(Duration::from_secs(60 * 60 * 12)); // 12 hours
         Self {
-            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(fresh_duration)
-                .with_fresh_file(RTX_EXE.clone()),
-            name,
-            cache_path,
+            core: CorePlugin::new(name),
         }
     }
 
     fn python_build_path(&self) -> PathBuf {
-        self.cache_path.join("pyenv")
+        self.core.cache_path.join("pyenv")
     }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()
@@ -168,11 +159,12 @@ impl PythonPlugin {
 
 impl Plugin for PythonPlugin {
     fn name(&self) -> &PluginName {
-        &self.name
+        &self.core.name
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
-        self.remote_version_cache
+        self.core
+            .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
