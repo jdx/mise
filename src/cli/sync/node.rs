@@ -5,6 +5,7 @@ use itertools::sorted;
 
 use crate::cli::command::Command;
 use crate::config::Config;
+use crate::env::{NODENV_ROOT, NVM_DIR};
 use crate::file;
 use crate::output::Output;
 use crate::plugins::PluginName;
@@ -16,13 +17,41 @@ use crate::{cmd, dirs};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncNode {
+    #[clap(flatten)]
+    _type: SyncNodeType,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(required = true)]
+pub struct SyncNodeType {
     /// Get tool versions from Homebrew
-    #[clap(long, required = true)]
+    #[clap(long)]
     brew: bool,
+
+    /// Get tool versions from nvm
+    #[clap(long)]
+    nvm: bool,
+
+    /// Get tool versions from nodenv
+    #[clap(long)]
+    nodenv: bool,
 }
 
 impl Command for SyncNode {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        if self._type.brew {
+            self.run_brew(config, out)?;
+        } else if self._type.nvm {
+            self.run_nvm(config, out)?;
+        } else if self._type.nodenv {
+            self.run_nodenv(config, out)?;
+        }
+        Ok(())
+    }
+}
+
+impl SyncNode {
+    fn run_brew(self, mut config: Config, out: &mut Output) -> Result<()> {
         let tool = config.get_or_create_tool(&PluginName::from("node"));
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -42,22 +71,47 @@ impl Command for SyncNode {
 
         config.rebuild_shims_and_runtime_symlinks()
     }
+
+    fn run_nvm(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let tool = config.get_or_create_tool(&PluginName::from("node"));
+
+        let nvm_versions_path = NVM_DIR.join("versions").join("node");
+        let installed_versions_path = dirs::INSTALLS.join("node");
+
+        file::remove_symlinks_with_target_prefix(&installed_versions_path, &nvm_versions_path)?;
+
+        let subdirs = file::dir_subdirs(&nvm_versions_path)?;
+        for entry in sorted(subdirs) {
+            let v = entry.trim_start_matches('v');
+            tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
+            rtxprintln!(out, "Synced node@{} from nvm", v);
+        }
+
+        config.rebuild_shims_and_runtime_symlinks()
+    }
+
+    fn run_nodenv(self, mut config: Config, out: &mut Output) -> Result<()> {
+        let tool = config.get_or_create_tool(&PluginName::from("node"));
+
+        let nodenv_versions_path = NODENV_ROOT.join("versions");
+        let installed_versions_path = dirs::INSTALLS.join("node");
+
+        file::remove_symlinks_with_target_prefix(&installed_versions_path, &nodenv_versions_path)?;
+
+        let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
+        for v in sorted(subdirs) {
+            tool.create_symlink(&v, &nodenv_versions_path.join(&v))?;
+            rtxprintln!(out, "Synced node@{} from nodenv", v);
+        }
+
+        config.rebuild_shims_and_runtime_symlinks()
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>brew install node@18 node@20</bold>
   $ <bold>rtx sync node --brew</bold>
-  $ <bold>rtx use -g node@18</bold> uses Homebrew-provided node
+  $ <bold>rtx use -g node@18</bold> - uses Homebrew-provided node
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::assert_cli;
-
-    #[test]
-    fn test_pyenv() {
-        assert_cli!("sync", "python", "--pyenv");
-    }
-}

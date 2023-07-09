@@ -1403,6 +1403,8 @@ default\: 4]: : ' \
 default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--brew[Get tool versions from Homebrew]' \
+'--nvm[Get tool versions from nvm]' \
+'--nodenv[Get tool versions from nodenv]' \
 '--debug[Sets log level to debug]' \
 '--install-missing[Automatically install missing tools]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
