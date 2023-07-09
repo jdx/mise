@@ -1905,8 +1905,9 @@ Examples:
   $ rtx link node@20.0.0 ~/.nodes/20.0.0
 
   # have rtx use the python version provided by Homebrew
-  $ brew install node@20
-  $ rtx link node@20 $(brew --prefix node@20)
+  $ brew install node
+  $ rtx link node@brew $(brew --prefix node)
+  $ rtx use node@brew
 ```
 ### `rtx ls [OPTIONS]`
 

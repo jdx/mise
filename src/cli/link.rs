@@ -78,8 +78,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx link node@20.0.0 ~/.nodes/20.0.0</bold>
 
   # have rtx use the python version provided by Homebrew
-  $ <bold>brew install node@20</bold>
-  $ <bold>rtx link node@20 $(brew --prefix node@20)</bold>
+  $ <bold>brew install node</bold>
+  $ <bold>rtx link node@brew $(brew --prefix node)</bold>
+  $ <bold>rtx use node@brew</bold>
 "#
 );
 
