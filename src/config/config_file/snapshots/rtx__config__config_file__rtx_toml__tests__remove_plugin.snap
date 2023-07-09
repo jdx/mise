@@ -10,4 +10,5 @@ Toolset {
         ),
     ),
     latest_versions: false,
+    disable_tools: {},
 }

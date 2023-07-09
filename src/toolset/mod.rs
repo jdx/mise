@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -45,6 +45,7 @@ pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     pub source: Option<ToolSource>,
     pub latest_versions: bool,
+    pub disable_tools: BTreeSet<PluginName>,
 }
 
 impl Toolset {
@@ -55,6 +56,9 @@ impl Toolset {
         }
     }
     pub fn add_version(&mut self, tvr: ToolVersionRequest, opts: ToolVersionOptions) {
+        if self.disable_tools.contains(tvr.plugin_name()) {
+            return;
+        }
         let tvl = self
             .versions
             .entry(tvr.plugin_name().clone())
@@ -70,6 +74,7 @@ impl Toolset {
                 versions.insert(plugin, tvl);
             }
         }
+        versions.retain(|_, tvl| !self.disable_tools.contains(&tvl.plugin_name));
         self.versions = versions;
         self.source = other.source.clone();
     }
