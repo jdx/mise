@@ -35,7 +35,6 @@ type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
 pub struct Config {
     pub settings: Settings,
     pub global_config: RtxToml,
-    pub legacy_files: BTreeMap<String, PluginName>,
     pub config_files: ConfigMap,
     pub tools: ToolMap,
     pub env: BTreeMap<String, String>,
@@ -103,7 +102,6 @@ impl Config {
             project_root: get_project_root(&config_files),
             config_files,
             settings,
-            legacy_files,
             global_config,
             tools,
             should_exit_early,
@@ -311,11 +309,11 @@ fn build_tool(name: PluginName, plugin: Box<dyn Plugin>) -> Arc<Tool> {
     Arc::new(Tool::new(name, plugin))
 }
 
-fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, PluginName> {
+fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, Vec<PluginName>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
-    tools
+    let legacy = tools
         .values()
         .collect_vec()
         .into_par_iter()
@@ -339,12 +337,21 @@ fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, P
         .collect::<Vec<Vec<(String, PluginName)>>>()
         .into_iter()
         .flatten()
-        .collect()
+        .collect::<Vec<(String, PluginName)>>();
+
+    let mut legacy_filenames = BTreeMap::new();
+    for (filename, plugin) in legacy {
+        legacy_filenames
+            .entry(filename)
+            .or_insert_with(Vec::new)
+            .push(plugin);
+    }
+    legacy_filenames
 }
 
 fn load_config_filenames(
     settings: &Settings,
-    legacy_filenames: &BTreeMap<String, PluginName>,
+    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
 ) -> Vec<PathBuf> {
     let mut filenames = legacy_filenames.keys().cloned().collect_vec();
     filenames.push(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone());
@@ -386,7 +393,7 @@ fn load_all_config_files(
     settings: &Settings,
     config_filenames: &[PathBuf],
     tools: &ToolMap,
-    legacy_filenames: &BTreeMap<String, PluginName>,
+    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
     mut existing: ConfigMap,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
@@ -414,13 +421,20 @@ fn load_all_config_files(
 fn parse_config_file(
     f: &PathBuf,
     settings: &Settings,
-    legacy_filenames: &BTreeMap<String, PluginName>,
+    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
     tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
     let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
-        Some(plugin) => LegacyVersionFile::parse(settings, f.into(), tools.get(plugin).unwrap())
-            .map(|f| Box::new(f) as Box<dyn ConfigFile>),
+        Some(plugin) => {
+            let tools = tools
+                .iter()
+                .filter(|(k, _)| plugin.contains(k))
+                .map(|(_, t)| t)
+                .collect::<Vec<_>>();
+            LegacyVersionFile::parse(settings, f.into(), &tools)
+                .map(|f| Box::new(f) as Box<dyn ConfigFile>)
+        }
         None => config_file::parse(f, is_trusted),
     }
 }
