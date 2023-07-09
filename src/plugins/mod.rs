@@ -85,6 +85,14 @@ pub trait Plugin: Debug + Send + Sync {
     }
 }
 
+pub fn unalias_plugin(plugin_name: &str) -> &str {
+    match plugin_name {
+        "nodejs" => "node",
+        "golang" => "go",
+        _ => plugin_name,
+    }
+}
+
 pub enum PluginType {
     #[allow(dead_code)]
     Core,

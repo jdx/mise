@@ -17,7 +17,6 @@ type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
 pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
         Box::new(NodePlugin::new("node".to_string()).with_legacy_file_support()),
-        Box::new(NodePlugin::new("nodejs".to_string())),
         Box::new(PythonPlugin::new("python".to_string())),
     ])
 });

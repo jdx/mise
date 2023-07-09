@@ -6,7 +6,7 @@ use url::Url;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::{ExternalPlugin, Plugin, PluginName};
+use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
 use crate::tool::Tool;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -126,6 +126,7 @@ impl PluginsInstall {
 }
 
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
+    let name = unalias_plugin(name);
     Ok(match git_url {
         Some(url) => match url.contains("://") {
             true => (name.to_string(), Some(url.clone())),
@@ -145,7 +146,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             let name = last.strip_prefix("asdf-").unwrap_or(last);
             let name = name.strip_prefix("rtx-").unwrap_or(name);
             let name = name.strip_suffix(".git").unwrap_or(name);
-            return Ok(name.to_string());
+            return Ok(unalias_plugin(name).to_string());
         }
     }
     Err(eyre!("could not infer plugin name from url: {}", url))

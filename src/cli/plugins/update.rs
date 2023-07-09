@@ -4,7 +4,7 @@ use console::style;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::PluginName;
+use crate::plugins::{unalias_plugin, PluginName};
 
 /// Updates a plugin to the latest version
 ///
@@ -31,6 +31,7 @@ impl Command for Update {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
+                    let p = unalias_plugin(p);
                     let plugin = config.tools.get(p).ok_or_else(|| {
                         eyre!("plugin {} not found", style(p).cyan().for_stderr())
                     })?;
