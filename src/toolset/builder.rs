@@ -38,6 +38,7 @@ impl ToolsetBuilder {
     pub fn build(self, config: &mut Config) -> Result<Toolset> {
         let mut toolset = Toolset {
             latest_versions: self.latest_versions,
+            disable_tools: config.settings.disable_tools.clone(),
             ..Default::default()
         };
         load_config_files(config, &mut toolset);
