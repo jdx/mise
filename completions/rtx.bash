@@ -3223,7 +3223,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync__node)
-            opts="-j -r -v -h --brew --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -v -h --brew --nvm --nodenv --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
