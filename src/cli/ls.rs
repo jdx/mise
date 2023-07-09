@@ -174,7 +174,7 @@ impl Ls {
             .map(|(p, tv, source)| {
                 let plugin = p.name.to_string();
                 let version = if let Some(symlink_path) = p.symlink_path(&tv) {
-                    VersionStatus::Symlink(tv.version, symlink_path)
+                    VersionStatus::Symlink(tv.version, symlink_path, source.is_some())
                 } else if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
@@ -278,7 +278,7 @@ enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
-    Symlink(String, PathBuf),
+    Symlink(String, PathBuf, bool),
 }
 
 impl VersionStatus {
@@ -293,7 +293,7 @@ impl VersionStatus {
             }
             VersionStatus::Inactive(version) => version.to_string(),
             VersionStatus::Missing(version) => format!("{} (missing)", version),
-            VersionStatus::Symlink(version, _) => format!("{} (symlink)", version),
+            VersionStatus::Symlink(version, _, _) => format!("{} (symlink)", version),
         }
     }
 }
@@ -324,8 +324,17 @@ impl Display for VersionStatus {
                 },
                 style("(missing)").red()
             ),
-            VersionStatus::Symlink(version, _) => {
-                write!(f, "{} {}", version, style("(symlink)").dim())
+            VersionStatus::Symlink(version, _, active) => {
+                write!(
+                    f,
+                    "{} {}",
+                    if *active {
+                        style(version)
+                    } else {
+                        style(version).dim()
+                    },
+                    style("(symlink)").dim()
+                )
             }
         }
     }
