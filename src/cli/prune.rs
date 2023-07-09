@@ -1,7 +1,8 @@
-use color_eyre::eyre::Result;
-use console::style;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+use color_eyre::eyre::Result;
+use console::style;
 
 use crate::cli::command::Command;
 use crate::config::Config;

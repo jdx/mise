@@ -13,8 +13,8 @@ assert_gopath() {
 }
 
 rtx i golang@1.18.10 golang@1.19.5 && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
+assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"
 cd 18 && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/golang/1.18.10/packages"
+assert_gopath "$RTX_DATA_DIR/installs/go/1.18.10/packages"
 cd .. && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
+assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"

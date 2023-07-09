@@ -5,7 +5,7 @@ use clap::{Arg, Command, Error};
 use color_eyre::eyre::Result;
 use regex::Regex;
 
-use crate::plugins::PluginName;
+use crate::plugins::{unalias_plugin, PluginName};
 use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -17,12 +17,15 @@ pub struct ToolArg {
 impl ToolArg {
     pub fn parse(input: &str) -> Self {
         match input.split_once('@') {
-            Some((plugin, version)) => Self {
-                plugin: plugin.to_string(),
-                tvr: Some(ToolVersionRequest::new(plugin.to_string(), version)),
-            },
+            Some((plugin, version)) => {
+                let plugin = unalias_plugin(plugin).to_string();
+                Self {
+                    plugin: plugin.clone(),
+                    tvr: Some(ToolVersionRequest::new(plugin, version)),
+                }
+            }
             None => Self {
-                plugin: input.into(),
+                plugin: unalias_plugin(input).into(),
                 tvr: None,
             },
         }

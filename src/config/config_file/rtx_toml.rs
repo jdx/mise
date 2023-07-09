@@ -15,7 +15,7 @@ use crate::config::settings::SettingsBuilder;
 use crate::config::{config_file, AliasMap, MissingRuntimeBehavior};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::create_dir_all;
-use crate::plugins::PluginName;
+use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
@@ -234,8 +234,9 @@ impl RtxToml {
             Some(table) => {
                 for (plugin, v) in table.iter() {
                     let k = format!("{}.{}", key, plugin);
-                    let tvl = self.parse_tool_version_list(&k, v, &plugin.to_string())?;
-                    toolset.versions.insert(plugin.into(), tvl);
+                    let plugin_name = unalias_plugin(plugin).to_string();
+                    let tvl = self.parse_tool_version_list(&k, v, &plugin_name)?;
+                    toolset.versions.insert(plugin_name, tvl);
                 }
                 Ok(toolset)
             }

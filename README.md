@@ -97,6 +97,7 @@ v20.0.0
 - [Core Plugins](#core-plugins)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
+  - [What is the difference between "nodejs" and "node" (or "golang" and "go")?](#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
   - [What does `rtx activate` do?](#what-does-rtx-activate-do)
   - [`rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`](#rtx-activate-doesnt-work-in-profile-bash_profile-zprofile)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
@@ -625,7 +626,7 @@ in rtx and nvm. Here are some of the supported legacy version files:
 |------------| -------------------------------------------------- |
 | crystal    | `.crystal-version`                                 |
 | elixir     | `.exenv-version`                                   |
-| golang     | `.go-version`, `go.mod`                            |
+| go         | `.go-version`, `go.mod`                            |
 | java       | `.java-version`                                    |
 | node       | `.nvmrc`, `.node-version`                          |
 | python     | `.python-version`                                  |
@@ -659,7 +660,7 @@ ruby        3            # can be fuzzy version
 shellcheck  latest       # also supports "latest"
 jq          1.6
 erlang      ref:master   # compile from vcs ref
-golang      prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
+go          prefix:1.19  # uses the latest 1.19.x version—needed in case "1.19" is an exact match
 shfmt       path:./shfmt # use a custom runtime
 node        lts          # use lts version of node (not supported by all plugins)
 
@@ -770,7 +771,7 @@ information.
 
 Set to "0" to disable legacy version file parsing.
 
-#### `RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS=nodejs,python`
+#### `RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS=node,python`
 
 Disable legacy version file parsing for specific tools. Separate with `,`.
 
@@ -850,7 +851,7 @@ node = "https://github.com/my-org/rtx-node.git"
 Disables the shorthand aliases for installing plugins. You will have to specify full urls when
 installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
 
-#### `RTX_DISABLE_TOOLS=python,nodejs`
+#### `RTX_DISABLE_TOOLS=python,node`
 
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
@@ -1121,6 +1122,23 @@ You can make git ignore these files in 3 different ways:
 - Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to commit the change to the ignore file.
 - Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so there is no need to commit it.
 - Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed with `git add --force .tool-versions`.
+
+### What is the difference between "nodejs" and "node" (or "golang" and "go")?
+
+These are aliased. For example, `rtx use nodejs@14.0` is the same as `rtx install node@14.0`. This
+means it is not possible to have these be different plugins.
+
+This is for convenience so you don't need to remember which one is the "official" name. However if
+something with the aliasing is acting up, submit a ticket or just stick to using "node" and "go".
+Under the hood, when rtx reads a config file or takes CLI input it will swap out "nodejs" and
+"golang".
+
+While this change is rolling out, there is some migration code that will move installs/plugins from
+the "nodejs" and "golang" directories to the new names. If this runs for you you'll see a message
+but it should not run again unless there is some kind of problem. In this case, it's probably
+easiest to just run `rm -rf ~/.local/share/rtx/installs/{golang,nodejs} ~/.local/share/rtx/plugins/{golang,nodejs}`.
+
+Once most users have migrated over this migration code will be removed.
 
 ### What does `rtx activate` do?
 
