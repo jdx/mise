@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
@@ -19,13 +20,20 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(settings: &Settings, path: PathBuf, plugin: &Tool) -> Result<Self> {
-        let version = plugin.parse_legacy_file(path.as_path(), settings)?;
+    pub fn parse(settings: &Settings, path: PathBuf, plugins: &[&Arc<Tool>]) -> Result<Self> {
+        let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.clone()));
 
-        Ok(Self {
-            toolset: build_toolset(&path, plugin.name.as_str(), version.as_str()),
-            path,
-        })
+        for plugin in plugins {
+            let version = plugin.parse_legacy_file(&path, settings)?;
+            for version in version.split_whitespace() {
+                toolset.add_version(
+                    ToolVersionRequest::new(plugin.name.to_string(), version),
+                    Default::default(),
+                );
+            }
+        }
+
+        Ok(Self { toolset, path })
     }
 }
 
@@ -87,15 +95,4 @@ impl Display for LegacyVersionFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "LegacyVersionFile({})", self.path.display())
     }
-}
-
-fn build_toolset(path: &Path, plugin: &str, version: &str) -> Toolset {
-    let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.to_path_buf()));
-    for version in version.split_whitespace() {
-        toolset.add_version(
-            ToolVersionRequest::new(plugin.to_string(), version),
-            Default::default(),
-        );
-    }
-    toolset
 }
