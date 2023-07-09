@@ -15,7 +15,7 @@ use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::PluginName;
+use crate::plugins::{unalias_plugin, PluginName};
 use crate::tool::Tool;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
@@ -58,7 +58,11 @@ pub struct Ls {
 
 impl Command for Ls {
     fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
-        self.plugin = self.plugin.clone().or(self.plugin_arg.clone());
+        self.plugin = self
+            .plugin
+            .clone()
+            .or(self.plugin_arg.clone())
+            .map(|p| PluginName::from(unalias_plugin(&p)));
         self.verify_plugin(&config)?;
 
         let mut runtimes = self.get_runtime_list(&mut config)?;

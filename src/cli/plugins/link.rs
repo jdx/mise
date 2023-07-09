@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::dirs;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
+use crate::plugins::unalias_plugin;
 
 /// Symlinks a plugin into rtx
 ///
@@ -43,8 +44,9 @@ impl Command for PluginsLink {
                 (name, path)
             }
         };
+        let name = unalias_plugin(&name);
         let path = path.absolutize()?;
-        let symlink = dirs::PLUGINS.join(&name);
+        let symlink = dirs::PLUGINS.join(name);
         if symlink.exists() {
             if self.force {
                 remove_all(&symlink)?;
@@ -65,7 +67,7 @@ fn get_name_from_path(path: &Path) -> String {
     let name = path.file_name().unwrap().to_str().unwrap();
     let name = name.strip_prefix("asdf-").unwrap_or(name);
     let name = name.strip_prefix("rtx-").unwrap_or(name);
-    name.to_string()
+    unalias_plugin(name).to_string()
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

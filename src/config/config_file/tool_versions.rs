@@ -14,7 +14,7 @@ use tera::Context;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::file::display_path;
-use crate::plugins::PluginName;
+use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -98,7 +98,7 @@ impl ToolVersions {
                 // handle invalid trailing colons in `.tool-versions` files
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
-                let plugin = plugin.trim_end_matches(':');
+                let plugin = unalias_plugin(plugin.trim_end_matches(':'));
 
                 let tvp = ToolVersionPlugin {
                     versions: parts.map(|v| v.to_string()).collect(),
