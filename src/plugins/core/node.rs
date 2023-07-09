@@ -29,7 +29,6 @@ pub struct NodePlugin {
     pub name: PluginName,
     cache_path: PathBuf,
     remote_version_cache: CacheManager<Vec<String>>,
-    legacy_file_support: bool,
 }
 
 impl NodePlugin {
@@ -42,14 +41,6 @@ impl NodePlugin {
                 .with_fresh_file(RTX_EXE.clone()),
             name,
             cache_path,
-            legacy_file_support: false,
-        }
-    }
-
-    pub fn with_legacy_file_support(self) -> Self {
-        Self {
-            legacy_file_support: true,
-            ..self
         }
     }
 
@@ -217,11 +208,7 @@ impl Plugin for NodePlugin {
     }
 
     fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
-        if self.legacy_file_support {
-            Ok(vec![".node-version".into(), ".nvmrc".into()])
-        } else {
-            Ok(vec![])
-        }
+        Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
@@ -231,22 +218,18 @@ impl Plugin for NodePlugin {
     }
 
     fn external_commands(&self) -> Result<Vec<Command>> {
-        if self.legacy_file_support {
-            // sort of a hack to get this not to display for nodejs
-            let topic = Command::new("node")
-                .about("Commands for the node plugin")
-                .subcommands(vec![Command::new("node-build")
-                    .about("Use/manage rtx's internal node-build")
-                    .arg(
-                        clap::Arg::new("args")
-                            .num_args(1..)
-                            .allow_hyphen_values(true)
-                            .trailing_var_arg(true),
-                    )]);
-            Ok(vec![topic])
-        } else {
-            Ok(vec![])
-        }
+        // sort of a hack to get this not to display for nodejs
+        let topic = Command::new("node")
+            .about("Commands for the node plugin")
+            .subcommands(vec![Command::new("node-build")
+                .about("Use/manage rtx's internal node-build")
+                .arg(
+                    clap::Arg::new("args")
+                        .num_args(1..)
+                        .allow_hyphen_values(true)
+                        .trailing_var_arg(true),
+                )]);
+        Ok(vec![topic])
     }
 
     fn execute_external_command(
