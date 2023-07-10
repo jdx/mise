@@ -67,7 +67,7 @@ jobs:
           TEST_TRANCHE_COUNT: 4
         with:
           timeout_minutes: 30
-          max_attempts: 3
+          max_attempts: 2
           command: just test-coverage
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3

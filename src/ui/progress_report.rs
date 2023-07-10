@@ -97,7 +97,7 @@ impl ProgressReport {
     pub fn error<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => {
-                pb.set_message(format!(
+                self.set_message(format!(
                     "{} {}",
                     style("[ERROR]").red().for_stderr(),
                     message.as_ref()

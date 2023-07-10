@@ -10,7 +10,7 @@ use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
-use crate::{dirs, env};
+use crate::{cmd, dirs, env};
 
 pub fn remove_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
@@ -216,10 +216,16 @@ pub fn which(name: &str) -> Option<PathBuf> {
 }
 
 pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
+    debug!("tar -xzf {} -C {}", archive.display(), dest.display());
     let f = File::open(archive)?;
     let tar = GzDecoder::new(f);
     let mut archive = Archive::new(tar);
     archive.unpack(dest)?;
+    Ok(())
+}
+
+pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
+    cmd!("unzip", archive, "-d", dest).run()?;
     Ok(())
 }
 
