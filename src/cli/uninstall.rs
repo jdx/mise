@@ -51,7 +51,7 @@ impl Command for Uninstall {
             let mut pr = mpr.add();
             plugin.decorate_progress_bar(&mut pr, Some(&tv));
             if let Err(err) = plugin.uninstall_version(&config, &tv, &pr, false) {
-                pr.error();
+                pr.error(err.to_string());
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", &tv)));
             }
             pr.finish_with_message("uninstalled");

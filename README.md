@@ -1111,8 +1111,8 @@ You can see the core plugins with `rtx plugin ls --core`.
 * [experimental] [Python](./docs/python.md)
 * [NodeJS](./docs/node.md)
 * [Ruby (experimental)](./docs/ruby.md)
+* [Go (experimental)](./docs/go.md)
 * ~Java~ - coming soon
-* ~Go~ - coming soon
 
 ## FAQs
 

@@ -1,4 +1,4 @@
-# node in rtx
+# Node in rtx
 
 The following are instructions for using the node rtx core plugin. This is used when there isn't a 
 git plugin installed named "node".

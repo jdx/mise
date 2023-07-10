@@ -4,6 +4,9 @@ set -e
 eval "$(rtx activate bash)"
 _rtx_hook
 
+export RTX_EXPERIMENTAL=1
+export RTX_GO_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-go-packages"
+
 assert_gopath() {
   local expected="$1"
   if [[ "$GOPATH" != "$expected" ]]; then
@@ -12,9 +15,16 @@ assert_gopath() {
   fi
 }
 
-rtx i golang@1.18.10 golang@1.19.5 && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"
+cat >"$RTX_GO_DEFAULT_PACKAGES_FILE" <<EOF
+github.com/Dreamacro/clash # allows comments
+github.com/jesseduffield/lazygit
+EOF
+
+rtx i golang@1.18.10 golang@1.19 && _rtx_hook
+assert_gopath "$RTX_DATA_DIR/installs/go/1.19/packages"
 cd 18 && _rtx_hook
 assert_gopath "$RTX_DATA_DIR/installs/go/1.18.10/packages"
 cd .. && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"
+assert_gopath "$RTX_DATA_DIR/installs/go/1.19/packages"
+
+rm "$RTX_GO_DEFAULT_PACKAGES_FILE"

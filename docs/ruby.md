@@ -1,4 +1,4 @@
-# ruby in rtx
+# Ruby in rtx
 
 The following are instructions for using the ruby rtx core plugin. This is used when there isn't a 
 git plugin installed named "ruby".
@@ -16,7 +16,7 @@ The following installs the latest version of ruby-3.2.x (if some version of 3.2.
 installed) and makes it the global default:
 
 ```sh-session
-$ rtx use -g node@20
+$ rtx use -g ruby@3.2
 ```
 
 Behind the scenes, rtx uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby

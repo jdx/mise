@@ -116,7 +116,7 @@ impl Upgrade {
         match tool.install_version(config, &tv, pr, false) {
             Ok(_) => Ok(()),
             Err(err) => {
-                pr.error();
+                pr.error(err.to_string());
                 Err(err.wrap_err(format!("failed to install {}", tv)))
             }
         }
@@ -136,7 +136,7 @@ impl Upgrade {
                 Ok(())
             }
             Err(err) => {
-                pr.error();
+                pr.error(err.to_string());
                 Err(err.wrap_err(format!("failed to uninstall {}", tv)))
             }
         }
