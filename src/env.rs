@@ -127,8 +127,8 @@ pub static RTX_NODE_CONCURRENCY: Lazy<usize> = Lazy::new(|| {
         .unwrap_or(num_cpus::get() / 2)
         .max(1)
 });
-pub static RTX_NODE_VERBOSE_INSTALL: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_NODE_VERBOSE_INSTALL"));
+pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
 pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_NODE_FORCE_COMPILE"));
 pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
@@ -148,6 +148,19 @@ pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
+
+pub static RTX_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RUBY_INSTALL"));
+pub static RTX_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
+    Lazy::new(|| var("RTX_RUBY_APPLY_PATCHES").ok());
+pub static RTX_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("RTX_RUBY_VERBOSE_INSTALL"));
+pub static RTX_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
+    Lazy::new(|| shell_words::split(&var("RTX_RUBY_INSTALL_OPTS").unwrap_or_default()));
+pub static RTX_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
+    Lazy::new(|| shell_words::split(&var("RTX_RUBY_BUILD_OPTS").unwrap_or_default()));
+pub static RTX_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("RTX_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {

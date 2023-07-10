@@ -25,6 +25,7 @@ mod errors;
 mod fake_asdf;
 mod file;
 mod git;
+pub mod github;
 mod hash;
 mod hook_env;
 mod http;
@@ -37,6 +38,7 @@ mod shorthands;
 mod tera;
 #[cfg(test)]
 mod test;
+pub mod timeout;
 mod toml;
 mod tool;
 mod toolset;

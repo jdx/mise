@@ -9,6 +9,7 @@ THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 tiny = { version = "1", foo = "bar" }
 golang = { version = "latest", foo = "bar" }
 python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
+ruby = "3.1"
 
 [plugins]
 nnnn = 'https://github.com/rtx-plugins/rtx-nodejs#main'
