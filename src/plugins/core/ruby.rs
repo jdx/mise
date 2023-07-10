@@ -217,8 +217,10 @@ impl RubyPlugin {
         if let Some(token) = &*GITHUB_API_TOKEN {
             req = req.header("authorization", format!("token {}", token));
         }
-        let resp: GithubRelease = req.send()?.json()?;
-        Ok(resp.tag_name.trim_start_matches('v').to_string())
+        let resp = req.send()?;
+        http.ensure_success(&resp)?;
+        let release: GithubRelease = resp.json()?;
+        Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
     fn install_rubygems_hook(&self, tv: &ToolVersion) -> Result<()> {
@@ -301,9 +303,10 @@ impl RubyPlugin {
         let mut patches = vec![];
         for f in &self.fetch_patch_sources() {
             if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
-                let client = http::Client::new()?;
-                let resp = client.get(f).send()?.text()?;
-                patches.push(resp);
+                let http = http::Client::new()?;
+                let resp = http.get(f).send()?;
+                http.ensure_success(&resp)?;
+                patches.push(resp.text()?);
             } else {
                 patches.push(fs::read_to_string(f)?);
             }

@@ -1,11 +1,14 @@
+use std::fs::File;
+use std::os::unix::fs::symlink;
+use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{fs, io};
 
 use color_eyre::eyre::Result;
 use filetime::{set_file_times, FileTime};
-use std::os::unix::fs::symlink;
-use std::os::unix::prelude::*;
+use flate2::read::GzDecoder;
+use tar::Archive;
 
 use crate::{dirs, env};
 
@@ -212,10 +215,19 @@ pub fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
+pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
+    let f = File::open(archive)?;
+    let tar = GzDecoder::new(f);
+    let mut archive = Archive::new(tar);
+    archive.unpack(dest)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use std::ops::Deref;
+
+    use itertools::Itertools;
 
     use crate::dirs;
 

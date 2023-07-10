@@ -11,6 +11,7 @@ pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
 use crate::env::RTX_EXE;
+use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::{Plugin, PluginName};
@@ -19,6 +20,7 @@ use crate::tool::Tool;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
 
+mod go;
 mod node;
 mod python;
 mod ruby;
@@ -32,8 +34,12 @@ pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     ])
 });
 
-pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> =
-    Lazy::new(|| build_core_plugins(vec![Box::new(RubyPlugin::new("ruby".to_string()))]));
+pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
+    build_core_plugins(vec![
+        Box::new(GoPlugin::new("go".to_string())),
+        Box::new(RubyPlugin::new("ruby".to_string())),
+    ])
+});
 
 fn build_core_plugins(tools: Vec<Box<dyn Plugin>>) -> ToolMap {
     ToolMap::from_iter(tools.into_iter().map(|plugin| {

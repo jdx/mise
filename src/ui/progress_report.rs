@@ -94,9 +94,14 @@ impl ProgressReport {
             None => eprintln!("{}", message.as_ref()),
         }
     }
-    pub fn error(&self) {
+    pub fn error<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => {
+                pb.set_message(format!(
+                    "{} {}",
+                    style("[ERROR]").red().for_stderr(),
+                    message.as_ref()
+                ));
                 pb.set_style(ERROR_TEMPLATE.clone());
                 pb.finish()
             }

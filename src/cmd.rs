@@ -252,7 +252,7 @@ impl<'a> CmdLineRunner<'a> {
     fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
         match self.pr {
             Some(pr) => {
-                pr.error();
+                pr.error(format!("{} failed", self.get_program()));
                 if !self.settings.verbose && !output.trim().is_empty() {
                     pr.println(output);
                 }
