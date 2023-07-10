@@ -2,6 +2,7 @@
 source: src/cli/alias/unset.rs
 expression: output
 ---
+java                 lts                  17
 node                 lts                  18
 node                 lts-argon            4
 node                 lts-boron            6
