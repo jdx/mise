@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::sync::mpsc::channel;
+
 use std::time::Duration;
-use std::{fs, thread};
 
 use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
@@ -24,6 +24,7 @@ use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
+use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env, file};
@@ -86,18 +87,17 @@ impl ExternalPlugin {
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         let cmd = self.script_man.cmd(settings, &Script::ListAll);
-        let (tx, rx) = channel();
-        thread::spawn(move || {
-            let result = cmd.stdout_capture().stderr_capture().unchecked().run();
-            tx.send(result).unwrap();
-        });
-        let result = rx
-            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
-            .with_context(|| format!("timed out fetching remote versions for {}", self.name))?
-            .map_err(|err| {
-                let script = self.script_man.get_script_path(&Script::ListAll);
-                eyre!("Failed to run {}: {}", script.display(), err)
-            })?;
+        let result = run_with_timeout(
+            move || {
+                let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
+                Ok(result)
+            },
+            *RTX_FETCH_REMOTE_VERSIONS_TIMEOUT,
+        )
+        .map_err(|err| {
+            let script = self.script_man.get_script_path(&Script::ListAll);
+            eyre!("Failed to run {}: {}", script.display(), err)
+        })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
 

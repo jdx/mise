@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use std::thread;
 
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::eyre::{eyre, Result};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
+
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::plugins::core::CorePlugin;
@@ -62,28 +60,17 @@ impl PythonPlugin {
             self.python_build_path().display()
         );
         let git = Git::new(self.python_build_path());
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let result = git.update(None);
-            tx.send(result).unwrap();
-        });
-        rx.recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
-            .context("timed out updating python-build")??;
+        CorePlugin::run_fetch_task_with_timeout(move || git.update(None))?;
         Ok(())
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         self.install_or_update_python_build()?;
         let python_build_bin = self.python_build_bin();
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let output = cmd!(python_build_bin, "--definitions").read();
-            tx.send(output).unwrap();
-        });
-        let output = rx
-            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
-            .context("timed out fetching python versions")??;
-        Ok(output.split('\n').map(|s| s.to_string()).collect())
+        CorePlugin::run_fetch_task_with_timeout(move || {
+            let output = cmd!(python_build_bin, "--definitions").read()?;
+            Ok(output.split('\n').map(|s| s.to_string()).collect())
+        })
     }
 
     fn python_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -105,13 +92,13 @@ impl PythonPlugin {
         }
         pr.set_message("installing default packages");
         let pip = self.pip_path(tv);
-        let mut cmd = CmdLineRunner::new(settings, pip);
-        cmd.with_pr(pr)
+        CmdLineRunner::new(settings, pip)
+            .with_pr(pr)
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
-            .arg(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE);
-        cmd.execute()
+            .arg(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE)
+            .execute()
     }
 
     fn get_virtualenv(
@@ -130,10 +117,13 @@ impl PythonPlugin {
             }
             if !virtualenv.exists() || !self.check_venv_python(&virtualenv, tv)? {
                 debug!("setting up virtualenv at: {}", virtualenv.display());
-                let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv));
-                cmd.arg("-m").arg("venv").arg("--clear").arg(&virtualenv);
+                let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv))
+                    .arg("-m")
+                    .arg("venv")
+                    .arg("--clear")
+                    .arg(&virtualenv);
                 if let Some(pr) = pr {
-                    cmd.with_pr(pr);
+                    cmd = cmd.with_pr(pr);
                 }
                 cmd.execute()?;
             }
@@ -151,9 +141,9 @@ impl PythonPlugin {
     }
 
     fn test_python(&self, config: &&Config, tv: &ToolVersion) -> Result<()> {
-        let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv));
-        cmd.arg("--version");
-        cmd.execute()
+        CmdLineRunner::new(&config.settings, self.python_path(tv))
+            .arg("--version")
+            .execute()
     }
 }
 
@@ -184,27 +174,25 @@ impl Plugin for PythonPlugin {
             return Err(eyre!("Ref versions not supported for python"));
         }
         pr.set_message("running python-build");
-        let mut cmd = CmdLineRunner::new(&config.settings, self.python_build_bin());
-        cmd.with_pr(pr)
+        let mut cmd = CmdLineRunner::new(&config.settings, self.python_build_bin())
+            .with_pr(pr)
             .arg(tv.version.as_str())
             .arg(tv.install_path());
         if config.settings.verbose {
-            cmd.arg("--verbose");
+            cmd = cmd.arg("--verbose");
         }
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
             pr.set_message(format!("with patch file from: {patch_url}"));
-            cmd.arg("--patch");
             let http = http::Client::new()?;
             let patch = http.get(patch_url).send()?.text()?;
-            cmd.stdin_string(patch);
+            cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {
             let patch_file = patches_dir.join(format!("{}.patch", tv.version));
             if patch_file.exists() {
                 pr.set_message(format!("with patch file: {}", patch_file.display()));
-                cmd.arg("--patch");
                 let contents = std::fs::read_to_string(&patch_file)?;
-                cmd.stdin_string(contents);
+                cmd = cmd.arg("--patch").stdin_string(contents);
             } else {
                 pr.warn(format!("patch file not found: {}", patch_file.display()));
             }

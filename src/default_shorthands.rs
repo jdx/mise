@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 688] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -451,7 +451,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 688] = [
     ("nfpm", "https://github.com/ORCID/asdf-nfpm"),
     ("nim", "https://github.com/asdf-community/asdf-nim.git"),
     ("ninja", "https://github.com/asdf-community/asdf-ninja.git"),
-    ("nodejs", "https://github.com/asdf-vm/asdf-nodejs.git"),
     ("nomad", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("nova", "https://github.com/elementalvoid/asdf-nova.git"),
     ("nsc", "https://github.com/dex4er/asdf-nsc.git"),
@@ -507,7 +506,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 688] = [
     ("purerl", "https://github.com/GoNZooo/asdf-purerl.git"),
     ("purescript", "https://github.com/nsaunders/asdf-purescript.git"),
     ("purty", "https://github.com/nsaunders/asdf-purty.git"),
-    ("python", "https://github.com/danhper/asdf-python.git"),
     ("qdns", "https://github.com/moritz-makandra/asdf-plugin-qdns.git"),
     ("quarkus", "https://github.com/asdf-community/asdf-quarkus.git"),
     ("rabbitmq", "https://github.com/w-sanches/asdf-rabbitmq.git"),
@@ -707,11 +705,8 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 688] = [
     ("go",     "https://github.com/rtx-plugins/rtx-golang.git"),
     ("golang", "https://github.com/rtx-plugins/rtx-golang.git"),
     ("java",   "https://github.com/rtx-plugins/rtx-java.git"),
-    ("node",   "https://github.com/rtx-plugins/rtx-nodejs.git"),
-    ("nodejs", "https://github.com/rtx-plugins/rtx-nodejs.git"),
     ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
     ("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),
-    ("python", "https://github.com/rtx-plugins/rtx-python.git"),
     ("ruby",   "https://github.com/rtx-plugins/rtx-ruby.git"),
     ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
 ];

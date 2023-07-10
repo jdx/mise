@@ -1619,6 +1619,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "shell-escape",
+ "shell-words",
  "simplelog",
  "tera",
  "terminal_size",

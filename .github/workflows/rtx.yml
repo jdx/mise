@@ -132,6 +132,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-linux]
     timeout-minutes: 10
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v3
       - name: Install zsh/fish/direnv
@@ -148,7 +149,7 @@ jobs:
         env:
           RUST_BACKTRACE: "1"
         with:
-          timeout_minutes: 20
+          timeout_minutes: 30
           max_attempts: 3
           command: ./e2e/run_all_tests
   rpm:

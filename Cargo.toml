@@ -65,6 +65,7 @@ regex = "1.8.4"
 reqwest = { version = "0.11.17", default-features = false, features = [
   "blocking",
   "rustls-tls",
+  "json",
 ] }
 rmp-serde = "1.1.1"
 self_update = { version = "0.37.0", default-features = false, optional = true, features = [
@@ -74,6 +75,7 @@ serde = "1.0.164"
 serde_derive = "1.0.152"
 serde_json = "1.0.99"
 shell-escape = "0.1.4"
+shell-words = "1.1.0"
 simplelog = { version = "0.12.0" }
 tera = { version = "1.12.1", default-features = false }
 terminal_size = "0.2.1"
