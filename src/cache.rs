@@ -17,7 +17,7 @@ use serde::Serialize;
 #[derive(Debug, Clone)]
 pub struct CacheManager<T>
 where
-    T: Clone + Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned,
 {
     cache_file_path: PathBuf,
     fresh_duration: Option<Duration>,
@@ -28,7 +28,7 @@ where
 
 impl<T> CacheManager<T>
 where
-    T: Clone + Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned,
 {
     pub fn new(cache_file_path: PathBuf) -> Self {
         Self {
@@ -65,7 +65,7 @@ where
                 }
             }
             let val = (fetch)()?;
-            if let Err(err) = self.write(val.clone()) {
+            if let Err(err) = self.write(&val) {
                 warn!("failed to write cache file: {} {:#}", path.display(), err);
             }
             Ok(val)
@@ -82,7 +82,7 @@ where
         Ok(rmp_serde::from_slice(&bytes)?)
     }
 
-    pub fn write(&self, val: T) -> Result<()> {
+    pub fn write(&self, val: &T) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("writing {}", display_path(path));
         if let Some(parent) = path.parent() {

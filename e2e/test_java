@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+export RTX_EXPERIMENTAL=1
+
+rtx i java@17.0.2
+assert_contains "rtx x java@17.0.2 -- java -version 2>&1" "openjdk version \"17.0.2\""

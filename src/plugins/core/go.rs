@@ -100,7 +100,7 @@ impl GoPlugin {
         let tarball_url = format!("https://dl.google.com/go/{}", &filename);
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading tarball {}", &tarball_url));
+        pr.set_message(format!("downloading {}", &tarball_url));
         http.download_file(&tarball_url, &tarball_path)?;
 
         self.verify_tarball_checksum(&tarball_url, &tarball_path)?;
@@ -145,7 +145,6 @@ impl Plugin for GoPlugin {
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
-
     fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
@@ -162,6 +161,14 @@ impl Plugin for GoPlugin {
         self.install(tv, pr, &tarball_path)?;
         self.verify(config, tv, pr)?;
 
+        Ok(())
+    }
+
+    fn uninstall_version(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
+        let gopath = self.gopath(tv);
+        if gopath.exists() {
+            cmd!("chmod", "-R", "u+wx", gopath).run()?;
+        }
         Ok(())
     }
 

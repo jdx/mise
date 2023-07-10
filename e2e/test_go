@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+source "$(dirname "$0")/assert.sh"
+
+export RTX_EXPERIMENTAL=1
+export RTX_GO_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-go-packages"
+
+cat >"$RTX_GO_DEFAULT_PACKAGES_FILE" <<EOF
+github.com/jesseduffield/lazygit # comment
+EOF
+
+rtx i golang@1.20
+assert_contains "rtx x -- go version" "go version go1.20"
+
+rm "$RTX_GO_DEFAULT_PACKAGES_FILE"
