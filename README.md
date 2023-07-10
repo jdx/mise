@@ -104,6 +104,7 @@ v20.0.0
   - [Windows support?](#windows-support)
   - [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
   - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
+  - [Does "node@20" mean the newest available version of node?](#does-node20-mean-the-newest-available-version-of-node)
   - [How do I migrate from asdf?](#how-do-i-migrate-from-asdf)
   - [How compatible is rtx with asdf?](#how-compatible-is-rtx-with-asdf)
   - [rtx isn't working when calling from tmux or another shell initialization script](#rtx-isnt-working-when-calling-from-tmux-or-another-shell-initialization-script)
@@ -1109,7 +1110,7 @@ You can see the core plugins with `rtx plugin ls --core`.
 
 * [experimental] [Python](./docs/python.md)
 * [NodeJS](./docs/node.md)
-* ~Ruby~ - coming soon
+* [Ruby (experimental)](./docs/ruby.md)
 * ~Java~ - coming soon
 * ~Go~ - coming soon
 
@@ -1228,6 +1229,27 @@ asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands
 This is regularly updated every time that rtx has a release. This repository is stored directly into
 the codebase [here](./src/default_shorthands.rs). The bottom of that file contains modifications that
 rtx makes on top of asdf.
+
+### Does "node@20" mean the newest available version of node?
+
+It depends on the command. Normally, for most commands and inside of config files, "node@20" will
+point to the latest _installed_ version of node-20.x. You can find this version by running
+`rtx latest --installed node@20` or by seeing what the `~/.local/share/rtx/installs/node/20` symlink
+points to:
+
+```sh-session
+$ ls -l ~/.local/share/rtx/installs/node/20
+[...] /home/jdxcode/.local/share/rtx/installs/node/20 -> node-v20.0.0-linux-x64
+```
+
+There are some exceptions to this, such as the following:
+
+* `rtx install node@20`
+* `rtx latest node@20`
+* `rtx upgrade node@20`
+
+These will use the latest _available_ version of node-20.x. This generally makes sense because you
+wouldn't want to install a version that is already installed.
 
 ### How do I migrate from asdf?
 

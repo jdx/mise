@@ -9,16 +9,19 @@ custom_plugins=(
 	'("go",     "https://github.com/rtx-plugins/rtx-golang.git"),'
 	'("golang", "https://github.com/rtx-plugins/rtx-golang.git"),'
 	'("java",   "https://github.com/rtx-plugins/rtx-java.git"),'
-	'("node",   "https://github.com/rtx-plugins/rtx-nodejs.git"),'
-	'("nodejs", "https://github.com/rtx-plugins/rtx-nodejs.git"),'
 	'("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
 	'("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
-	'("python", "https://github.com/rtx-plugins/rtx-python.git"),'
 	'("ruby",   "https://github.com/rtx-plugins/rtx-ruby.git"),'
 	'("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
 )
 
-num_plugins=$(find asdf-plugins/plugins/* | wc -l | tr -d ' ')
+asdf_plugins=$(find asdf-plugins/plugins -maxdepth 1 |
+	sort |
+	grep -v '/plugins$' |
+	grep -v '/nodejs$' |
+	grep -v '/python$')
+
+num_plugins=$(echo "$asdf_plugins" | wc -l | tr -d ' ')
 num_plugins=$((num_plugins + ${#custom_plugins[@]}))
 
 cat >src/default_shorthands.rs <<EOF
@@ -50,7 +53,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 const DEFAULT_SHORTHAND_LIST: [(&str, &str); $num_plugins] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
 EOF
-for file in asdf-plugins/plugins/*; do
+for file in $asdf_plugins; do
 	plugin=$(basename "$file")
 	repository=$(cat "$file")
 	repository="${repository/#repository = /}"

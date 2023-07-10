@@ -1,19 +1,15 @@
 use std::collections::BTreeMap;
-use std::env::{join_paths, split_paths};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::sync::mpsc;
-use std::{fs, thread};
 
 use clap::Command;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::Result;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::{
-    RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE,
-    RTX_NODE_VERBOSE_INSTALL,
-};
+use crate::duration::DAILY;
+use crate::env::{RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::lock_file::LockFile;
@@ -71,39 +67,34 @@ impl NodePlugin {
         Ok(())
     }
     fn update_node_build(&self) -> Result<()> {
-        // TODO: do not update if recently updated
+        if self.node_build_recently_updated()? {
+            return Ok(());
+        }
         debug!(
             "Updating node-build in {}",
             self.node_build_path().display()
         );
         let git = Git::new(self.node_build_path());
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let result = git.update(None);
-            tx.send(result).unwrap();
-        });
-        rx.recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
-            .context("timed out updating node-build")??;
-        Ok(())
+        let node_build_path = self.node_build_path();
+        CorePlugin::run_fetch_task_with_timeout(move || {
+            git.update(None)?;
+            file::touch_dir(&node_build_path)?;
+            Ok(())
+        })
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         self.install_or_update_node_build()?;
         let node_build_bin = self.node_build_bin();
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let output = cmd!(node_build_bin, "--definitions").read();
-            tx.send(output).unwrap();
-        });
-        let output = rx
-            .recv_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
-            .context("timed out fetching node versions")??;
-        let versions = output
-            .split('\n')
-            .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-            .map(|s| s.to_string())
-            .collect();
-        Ok(versions)
+        CorePlugin::run_fetch_task_with_timeout(move || {
+            let output = cmd!(node_build_bin, "--definitions").read()?;
+            let versions = output
+                .split('\n')
+                .filter(|s| regex!(r"^[0-9].+$").is_match(s))
+                .map(|s| s.to_string())
+                .collect();
+            Ok(versions)
+        })
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -128,12 +119,13 @@ impl NodePlugin {
             }
             pr.set_message(format!("installing default package: {}", package));
             let npm = self.npm_path(tv);
-            let mut cmd = CmdLineRunner::new(settings, npm);
-            cmd.with_pr(pr).arg("install").arg("--global").arg(package);
-            let mut path = split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
-            path.insert(0, tv.install_path().join("bin"));
-            cmd.env("PATH", join_paths(path)?);
-            cmd.execute()?;
+            CmdLineRunner::new(settings, npm)
+                .with_pr(pr)
+                .arg("install")
+                .arg("--global")
+                .arg(package)
+                .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+                .execute()?;
         }
         Ok(())
     }
@@ -146,18 +138,28 @@ impl NodePlugin {
     }
 
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        let mut cmd = CmdLineRunner::new(&config.settings, self.node_path(tv));
-        cmd.with_pr(pr).arg("-v");
-        cmd.execute()
+        CmdLineRunner::new(&config.settings, self.node_path(tv))
+            .with_pr(pr)
+            .arg("-v")
+            .execute()
     }
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        let mut cmd = CmdLineRunner::new(&config.settings, self.npm_path(tv));
-        let mut path = split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
-        path.insert(0, tv.install_path().join("bin"));
-        cmd.env("PATH", join_paths(path)?);
-        cmd.with_pr(pr).arg("-v");
-        cmd.execute()
+        CmdLineRunner::new(&config.settings, self.npm_path(tv))
+            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .with_pr(pr)
+            .arg("-v")
+            .execute()
+    }
+
+    fn node_build_recently_updated(&self) -> Result<bool> {
+        let updated_at = file::modified_duration(&self.node_build_path())?;
+        Ok(updated_at < DAILY)
+    }
+
+    fn verbose_install(&self, settings: &Settings) -> bool {
+        let verbose_env = *env::RTX_NODE_VERBOSE_INSTALL;
+        verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
     }
 }
 
@@ -248,25 +250,26 @@ impl Plugin for NodePlugin {
     ) -> Result<()> {
         self.install_node_build()?;
         pr.set_message("running node-build");
-        let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin());
-        cmd.with_pr(pr).arg(tv.version.as_str());
+        let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin())
+            .with_pr(pr)
+            .arg(tv.version.as_str());
         if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
             let make_opts = String::from(" -j") + &RTX_NODE_CONCURRENCY.to_string();
-            cmd.env(
-                "MAKE_OPTS",
-                env::var("MAKE_OPTS").unwrap_or_default() + &make_opts,
-            );
-            cmd.env(
-                "NODE_MAKE_OPTS",
-                env::var("NODE_MAKE_OPTS").unwrap_or_default() + &make_opts,
-            );
-            cmd.arg("--compile");
+            cmd = cmd
+                .env(
+                    "MAKE_OPTS",
+                    env::var("MAKE_OPTS").unwrap_or_default() + &make_opts,
+                )
+                .env(
+                    "NODE_MAKE_OPTS",
+                    env::var("NODE_MAKE_OPTS").unwrap_or_default() + &make_opts,
+                )
+                .arg("--compile");
         }
-        if config.settings.verbose || *RTX_NODE_VERBOSE_INSTALL {
-            cmd.arg("--verbose");
+        if self.verbose_install(&config.settings) {
+            cmd = cmd.arg("--verbose");
         }
-        cmd.arg(tv.install_path());
-        cmd.execute()?;
+        cmd.arg(tv.install_path()).execute()?;
         self.test_node(config, tv, pr)?;
         self.install_npm_shim(tv)?;
         self.test_npm(config, tv, pr)?;

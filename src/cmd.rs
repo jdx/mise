@@ -103,12 +103,12 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    pub fn env_clear(&mut self) -> &mut Self {
+    pub fn env_clear(mut self) -> Self {
         self.cmd.env_clear();
         self
     }
 
-    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Self
+    pub fn env<K, V>(mut self, key: K, val: V) -> Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
@@ -116,7 +116,7 @@ impl<'a> CmdLineRunner<'a> {
         self.cmd.env(key, val);
         self
     }
-    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Self
+    pub fn envs<I, K, V>(mut self, vars: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -126,17 +126,26 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+    pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         self.cmd.arg(arg.as_ref());
         self
     }
 
-    pub fn with_pr(&mut self, pr: &'a ProgressReport) -> &mut Self {
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.cmd.args(args);
+        self
+    }
+
+    pub fn with_pr(mut self, pr: &'a ProgressReport) -> Self {
         self.pr = Some(pr);
         self
     }
 
-    pub fn stdin_string(&mut self, input: impl Into<String>) -> &mut Self {
+    pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
         self.cmd.stdin(Stdio::piped());
         self.stdin = Some(input.into());
         self
