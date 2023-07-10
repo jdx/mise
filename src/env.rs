@@ -162,6 +162,11 @@ pub static RTX_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
 });
 
+pub static RTX_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("RTX_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
+});
+pub static RTX_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("RTX_GO_SKIP_CHECKSUM"));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
     Yes,

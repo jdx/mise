@@ -128,7 +128,7 @@ impl Install {
             if !plugin.is_installed() {
                 let mut pr = mpr.add();
                 if let Err(err) = plugin.install(config, &mut pr, false) {
-                    pr.error();
+                    pr.error(err.to_string());
                     return Err(err)?;
                 }
             }
@@ -211,7 +211,7 @@ impl Install {
                 Ok(())
             }
             Err(err) => {
-                pr.error();
+                pr.error(err.to_string());
                 Err(err.wrap_err(format!("failed to uninstall {}", tv)))
             }
         }
@@ -227,7 +227,7 @@ impl Install {
         match tool.install_version(config, tv, &mut pr, self.force) {
             Ok(_) => Ok(()),
             Err(err) => {
-                pr.error();
+                pr.error(err.to_string());
                 Err(err.wrap_err(format!("failed to install {}", tv)))
             }
         }
