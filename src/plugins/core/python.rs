@@ -184,7 +184,9 @@ impl Plugin for PythonPlugin {
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
             pr.set_message(format!("with patch file from: {patch_url}"));
             let http = http::Client::new()?;
-            let patch = http.get(patch_url).send()?.text()?;
+            let resp = http.get(patch_url).send()?;
+            http.ensure_success(&resp)?;
+            let patch = resp.text()?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {

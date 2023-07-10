@@ -4,5 +4,6 @@
 .cache
 .config
 .asdf
+.default-go-packages
+ruby/Gemfile
 Library
-

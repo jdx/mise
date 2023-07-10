@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
-
 set -e
+
+export RTX_EXPERIMENTAL=1
 
 eval "$(direnv hook zsh)"
 eval "$(rtx activate zsh --status)"
