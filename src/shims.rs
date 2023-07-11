@@ -94,7 +94,10 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         }
         for bin in path.read_dir()? {
             let bin = bin?;
-            if !bin.file_type()?.is_file() && !bin.file_type()?.is_symlink() {
+            if !bin.file_type()?.is_file()
+                || bin.file_type()?.is_symlink()
+                || !file::is_executable(&bin.path())
+            {
                 continue;
             }
             let bin_name = bin.file_name().into_string().unwrap();
