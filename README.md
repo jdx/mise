@@ -1093,11 +1093,12 @@ time. They can be easily overridden by installing a plugin with the same name, e
 
 You can see the core plugins with `rtx plugin ls --core`.
 
-* [experimental] [Python](./docs/python.md)
+* [Python](./docs/python.md)
 * [NodeJS](./docs/node.md)
 * [Ruby (experimental)](./docs/ruby.md)
 * [Go (experimental)](./docs/go.md)
 * [Java (experimental)](./docs/java.md)
+* [Deno (experimental)](./docs/deno.md)
 
 ## FAQs
 

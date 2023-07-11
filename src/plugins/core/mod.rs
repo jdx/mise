@@ -11,6 +11,7 @@ pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
 use crate::env::RTX_EXE;
+use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
@@ -21,6 +22,7 @@ use crate::tool::Tool;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
 
+mod deno;
 mod go;
 mod java;
 mod node;
@@ -38,6 +40,7 @@ pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
+        Box::new(DenoPlugin::new("deno".to_string())),
         Box::new(GoPlugin::new("go".to_string())),
         Box::new(JavaPlugin::new("java".to_string())),
         Box::new(RubyPlugin::new("ruby".to_string())),
