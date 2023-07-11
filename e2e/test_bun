@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+export RTX_EXPERIMENTAL=1
+
+cat <<EOF >.bun-version
+0.7.0
+EOF
+rtx i bun
+assert_contains "rtx x bun -- bun -v" "0.7.0"
+rm .bun-version
