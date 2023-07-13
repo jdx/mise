@@ -2,7 +2,7 @@ use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::{is_dir_in_path, Shell};
+use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
 pub struct Fish {}
@@ -14,7 +14,7 @@ impl Shell for Fish {
         let description = "'Update rtx environment when changing directories'";
         let mut out = String::new();
 
-        if !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!("fish_add_path -g {dir}\n", dir = dir.display()));
         }
 
@@ -100,6 +100,13 @@ mod tests {
     fn test_hook_init() {
         let fish = Fish::default();
         let exe = Path::new("/some/dir/rtx");
+        assert_snapshot!(fish.activate(exe, true));
+    }
+
+    #[test]
+    fn test_hook_init_nix() {
+        let fish = Fish::default();
+        let exe = Path::new("/nix/store/rtx");
         assert_snapshot!(fish.activate(exe, true));
     }
 

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::{is_dir_in_path, Shell};
+use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
 pub struct Bash {}
@@ -12,7 +12,7 @@ impl Shell for Bash {
         let dir = exe.parent().unwrap();
         let status = if status { " --status" } else { "" };
         let mut out = String::new();
-        if !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
@@ -81,6 +81,13 @@ mod tests {
     fn test_hook_init() {
         let bash = Bash::default();
         let exe = Path::new("/some/dir/rtx");
+        assert_snapshot!(bash.activate(exe, true));
+    }
+
+    #[test]
+    fn test_hook_init_nix() {
+        let bash = Bash::default();
+        let exe = Path::new("/nix/store/rtx");
         assert_snapshot!(bash.activate(exe, true));
     }
 
