@@ -1002,8 +1002,7 @@ ln -s ~/src/rtx-my-tool ~/.local/share/rtx/plugins/my-tool
 #### `~/.local/share/rtx/installs`
 
 This is where tools are installed to when running `rtx install`. For example, `rtx install
-node@20.0.0` will install to `~/.local/share/rtx/installs/node/20.0.0` For example, `rtx
-install 0.0` will install to `~/.local/share/rtx/installs/node/20.0.0`.
+node@20.0.0` will install to `~/.local/share/rtx/installs/node/20.0.0`
 
 This will also create other symlinks to this directory for version prefixes ("20" and "20.15")
 and matching aliases ("lts", "latest").
