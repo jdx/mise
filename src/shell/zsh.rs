@@ -3,7 +3,7 @@ use std::path::Path;
 use indoc::formatdoc;
 
 use crate::shell::bash::Bash;
-use crate::shell::{is_dir_in_path, Shell};
+use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
 pub struct Zsh {}
@@ -16,7 +16,7 @@ impl Shell for Zsh {
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_zsh.go#L10-L22
-        if !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
@@ -86,6 +86,13 @@ mod tests {
     fn test_hook_init() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/rtx");
+        assert_snapshot!(zsh.activate(exe, true));
+    }
+
+    #[test]
+    fn test_hook_init_nix() {
+        let zsh = Zsh::default();
+        let exe = Path::new("/nix/store/rtx");
         assert_snapshot!(zsh.activate(exe, true));
     }
 
