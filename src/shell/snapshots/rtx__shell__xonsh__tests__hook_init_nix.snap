@@ -1,0 +1,12 @@
+---
+source: src/shell/xonsh.rs
+expression: "xonsh.activate(exe, true)"
+---
+from os               import environ
+from xonsh.built_ins  import XSH
+
+def listen_prompt(): # Hook Events
+  execx($(/nix/store/rtx hook-env --status -s xonsh))
+
+XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+

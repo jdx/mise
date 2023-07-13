@@ -2,7 +2,7 @@ use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::{is_dir_in_path, Shell};
+use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
 pub struct Xonsh {}
@@ -53,7 +53,7 @@ impl Shell for Xonsh {
             from xonsh.built_ins  import XSH
 
         "#});
-        if !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             let dir_str = dir.to_string_lossy();
             let dir_esc = xonsh_escape_sq(&dir_str);
             out.push_str(&formatdoc! {r#"
@@ -133,6 +133,13 @@ mod tests {
     fn test_hook_init() {
         let xonsh = Xonsh::default();
         let exe = Path::new("/some/dir/rtx");
+        insta::assert_snapshot!(xonsh.activate(exe, true));
+    }
+
+    #[test]
+    fn test_hook_init_nix() {
+        let xonsh = Xonsh::default();
+        let exe = Path::new("/nix/store/rtx");
         insta::assert_snapshot!(xonsh.activate(exe, true));
     }
 
