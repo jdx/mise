@@ -74,3 +74,9 @@ pub fn is_dir_in_path(dir: &Path) -> bool {
         .into_iter()
         .any(|p| p.canonicalize().unwrap_or(p) == dir)
 }
+
+pub fn is_dir_not_in_nix(dir: &Path) -> bool {
+    !dir.canonicalize()
+        .unwrap_or(dir.to_path_buf())
+        .starts_with("/nix/")
+}

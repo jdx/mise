@@ -2,7 +2,7 @@ use std::{fmt::Display, path::Path};
 
 use indoc::formatdoc;
 
-use crate::shell::{is_dir_in_path, Shell};
+use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
 pub struct Nushell {}
@@ -29,7 +29,7 @@ impl Shell for Nushell {
         let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
-        if !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!(
                 "let-env PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
                 dir.display()
@@ -124,6 +124,13 @@ mod tests {
     fn test_hook_init() {
         let nushell = Nushell::default();
         let exe = Path::new("/some/dir/rtx");
+        assert_snapshot!(nushell.activate(exe, true));
+    }
+
+    #[test]
+    fn test_hook_init_nix() {
+        let nushell = Nushell::default();
+        let exe = Path::new("/nix/store/rtx");
         assert_snapshot!(nushell.activate(exe, true));
     }
 
