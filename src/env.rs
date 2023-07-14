@@ -123,6 +123,9 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
+pub static RTX_NODE_BUILD_REPO: Lazy<String> = Lazy::new(|| {
+    var("RTX_NODE_BUILD_REPO").unwrap_or_else(|_| "https://github.com/nodenv/node-build.git".into())
+});
 pub static RTX_NODE_CONCURRENCY: Lazy<usize> = Lazy::new(|| {
     var("RTX_NODE_CONCURRENCY")
         .ok()
