@@ -166,6 +166,8 @@ pub static RTX_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
 });
 pub static RTX_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("RTX_GO_SKIP_CHECKSUM"));
+pub static RTX_GO_REPO: Lazy<String> = Lazy::new(|| "https://github.com/golang/go");
+pub static RTX_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| "https://dl.google.com/go");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
