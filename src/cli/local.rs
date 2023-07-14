@@ -141,6 +141,7 @@ pub fn local(
 
 fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<()> {
     let mut ts = cf.to_toolset().clone();
+    ts.latest_versions = true;
     ts.resolve(config);
     if !ts.list_missing_versions(config).is_empty() {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
