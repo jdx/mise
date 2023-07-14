@@ -33,7 +33,7 @@ impl GoPlugin {
                 "git",
                 "ls-remote",
                 "--tags",
-                env::RTX_GO_REPO,
+                &*env::RTX_GO_REPO,
                 "go*"
             )
             .read()?;
