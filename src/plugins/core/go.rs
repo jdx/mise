@@ -29,14 +29,8 @@ impl GoPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(
-                "git",
-                "ls-remote",
-                "--tags",
-                &*env::RTX_GO_REPO,
-                "go*"
-            )
-            .read()?;
+            let repo = &*env::RTX_GO_REPO;
+            let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
