@@ -97,7 +97,7 @@ impl GoPlugin {
     fn download(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
-        let tarball_url = format!("{}/{}", env::RTX_GO_DOWNLOAD_MIRROR, &filename);
+        let tarball_url = format!("{}/{}", &*env::RTX_GO_DOWNLOAD_MIRROR, &filename);
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &tarball_url));
