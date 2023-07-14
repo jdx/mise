@@ -149,6 +149,9 @@ pub static NVM_DIR: Lazy<PathBuf> =
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
 
+// ruby
+pub static RTX_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| "https://github.com/rbenv/ruby-build.git");
+pub static RTX_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| "https://github.com/postmodern/ruby-install.git");
 pub static RTX_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RUBY_INSTALL"));
 pub static RTX_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_RUBY_APPLY_PATCHES").ok());
