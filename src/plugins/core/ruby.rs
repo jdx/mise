@@ -74,7 +74,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(env::RTX_RUBY_BUILD_REPO)?;
+        git.clone(&env::RTX_RUBY_BUILD_REPO)?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -108,7 +108,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(env::RTX_RUBY_INSTALL_REPO)?;
+        git.clone(&env::RTX_RUBY_INSTALL_REPO)?;
 
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
