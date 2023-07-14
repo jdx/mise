@@ -15,7 +15,7 @@ use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::toolset::{ToolVersionList, Toolset};
+use crate::toolset::{ToolVersion, ToolVersionList, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env};
 
@@ -56,8 +56,10 @@ impl dyn ConfigFile {
         runtimes: &[ToolArg],
         pin: bool,
     ) -> Result<()> {
+        // TODO: this has become a complete mess and could probably be greatly simplified
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         let mut ts = self.to_toolset().to_owned();
+        ts.latest_versions = true;
         ts.resolve(config);
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
@@ -77,7 +79,11 @@ impl dyn ConfigFile {
             ts.versions.insert(plugin.clone(), tvl);
         }
         ts.resolve(config);
-        ts.install_missing(config, mpr)?;
+        let versions: Vec<ToolVersion> = plugins_to_update
+            .iter()
+            .flat_map(|(pn, _)| ts.versions.get(pn).unwrap().versions.clone())
+            .collect();
+        ts.install_versions(config, versions, &mpr, false)?;
         for (plugin, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()
