@@ -50,7 +50,7 @@ impl PythonPlugin {
         );
         create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone("https://github.com/pyenv/pyenv.git")?;
+        git.clone(&env::RTX_PYENV_REPO)?;
         Ok(())
     }
     fn update_python_build(&self) -> Result<()> {
