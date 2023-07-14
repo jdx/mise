@@ -108,6 +108,9 @@ pub static RTX_ALWAYS_KEEP_INSTALL: Lazy<bool> =
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
 // python
+pub static RTX_PYENV_REPO: Lazy<String> = Lazy::new(|| {
+    var("RTX_PYENV_REPO").unwrap_or_else(|_| "https://github.com/pyenv/pyenv.git".into())
+});
 pub static RTX_PYTHON_PATCH_URL: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_PYTHON_PATCH_URL").ok());
 pub static RTX_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
