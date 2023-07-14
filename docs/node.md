@@ -23,6 +23,7 @@ Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build)
 
 `node-build` already has a [handful of settings](https://github.com/nodenv/node-build#custom-build-configuration), in additional to that `rtx-node` has a few extra configuration variables:
 
+- `RTX_NODE_BUILD_REPO` [string]: the default is `https://github.com/nodenv/node-build.git`
 - `RTX_NODE_VERBOSE_INSTALL` [bool]: Enables verbose output for downloading and building.
 - `RTX_NODE_FORCE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries
 - `RTX_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores

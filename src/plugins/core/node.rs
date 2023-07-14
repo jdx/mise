@@ -63,7 +63,7 @@ impl NodePlugin {
         );
         create_dir_all(self.node_build_path().parent().unwrap())?;
         let git = Git::new(self.node_build_path());
-        git.clone("https://github.com/nodenv/node-build.git")?;
+        git.clone(&env::RTX_NODE_BUILD_REPO)?;
         Ok(())
     }
     fn update_node_build(&self) -> Result<()> {
