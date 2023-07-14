@@ -162,10 +162,16 @@ pub static RTX_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
 });
 
+// go
 pub static RTX_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
 });
 pub static RTX_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("RTX_GO_SKIP_CHECKSUM"));
+pub static RTX_GO_REPO: Lazy<String> =
+    Lazy::new(|| var("RTX_GO_REPO").unwrap_or_else(|_| "https://github.com/golang/go".into()));
+pub static RTX_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| {
+    var("RTX_GO_DOWNLOAD_MIRROR").unwrap_or_else(|_| "https://dl.google.com/go".into())
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {

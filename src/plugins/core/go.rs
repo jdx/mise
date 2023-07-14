@@ -29,14 +29,8 @@ impl GoPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(
-                "git",
-                "ls-remote",
-                "--tags",
-                "https://github.com/golang/go",
-                "go*"
-            )
-            .read()?;
+            let repo = &*env::RTX_GO_REPO;
+            let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
@@ -97,7 +91,7 @@ impl GoPlugin {
     fn download(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
-        let tarball_url = format!("https://dl.google.com/go/{}", &filename);
+        let tarball_url = format!("{}/{}", &*env::RTX_GO_DOWNLOAD_MIRROR, &filename);
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &tarball_url));
