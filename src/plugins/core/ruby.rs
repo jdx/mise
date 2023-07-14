@@ -399,9 +399,14 @@ fn parse_gemfile(body: &str) -> String {
         .replace_all(&v, "$1")
         .to_string();
     let v = regex!(r#"^[^0-9]"#).replace_all(&v, "").to_string();
-    regex!(r#"(.*)__ENGINE__(.*)"#)
+    let v = regex!(r#"(.*)__ENGINE__(.*)"#)
         .replace_all(&v, "$2-$1")
-        .to_string()
+        .to_string();
+    // make sure it's like "ruby-3.0.0" or "3.0.0"
+    if !regex!(r#"^(\w+-)?([0-9])(\.[0-9])*$"#).is_match(&v) {
+        return "".to_string();
+    }
+    v
 }
 
 #[cfg(test)]
@@ -435,6 +440,13 @@ mod tests {
             ruby '1.9.3', :engine_version => '1.6.7', :engine => 'jruby'
         "#}),
             "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            source "https://rubygems.org"
+            ruby File.read(File.expand_path(".ruby-version", __dir__)).strip
+        "#}),
+            ""
         );
     }
 }
