@@ -67,5 +67,5 @@ update:
 
 ```bash
 rtx cache clean
-rtx ls-remote node
+rtx ls-remote ruby
 ```
