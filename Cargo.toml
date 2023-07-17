@@ -73,7 +73,7 @@ self_update = { version = "0.37.0", default-features = false, optional = true, f
 ] }
 serde = "1.0.164"
 serde_derive = "1.0.152"
-serde_json = "1.0.99"
+serde_json = "1.0.103"
 sha2 = "0.10.7"
 shell-escape = "0.1.4"
 shell-words = "1.1.0"
