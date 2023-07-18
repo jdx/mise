@@ -360,6 +360,6 @@ mod tests {
         let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns
-        assert_str_eq!(output, r#"\g"#);
+        assert_str_eq!(output, r"\g");
     }
 }
