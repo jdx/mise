@@ -34,7 +34,7 @@ impl GoPlugin {
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
-                .filter(|s| !regex!(r#"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$"#).is_match(s))
+                .filter(|s| !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$").is_match(s))
                 .unique()
                 .sorted_by_cached_key(|s| Versioning::new(s))
                 .collect();
