@@ -310,7 +310,7 @@ fn apply_patches(
 /// returns true if new runtime versions should not be fetched
 fn prefer_stale(args: &[String]) -> bool {
     if let Some(c) = args.get(1) {
-        return vec![
+        return [
             "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
         ]
         .contains(&c.as_str());
