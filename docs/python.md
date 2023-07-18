@@ -26,6 +26,16 @@ $ python3.11 -V
 3.11.0
 ```
 
+## Configuration
+
+`python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
+additional to that `rtx-node` has a few extra configuration variables:
+
+- `RTX_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
+- `RTX_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
+- `RTX_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
+- `RTX_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
+
 ## Default Python packages
 
 rtx-python can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
