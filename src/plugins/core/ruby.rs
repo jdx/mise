@@ -403,7 +403,7 @@ fn parse_gemfile(body: &str) -> String {
         .replace_all(&v, "$2-$1")
         .to_string();
     // make sure it's like "ruby-3.0.0" or "3.0.0"
-    if !regex!(r#"^(\w+-)?([0-9])(\.[0-9])*$"#).is_match(&v) {
+    if !regex!(r"^(\w+-)?([0-9])(\.[0-9])*$").is_match(&v) {
         return "".to_string();
     }
     v

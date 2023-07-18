@@ -44,7 +44,7 @@ impl ToolArg {
             let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
             let a = tools[0].clone();
             let b = tools[1].clone();
-            if matches!(a.tvr, None) && matches!(b.tvr, None) && re.is_match(&b.plugin) {
+            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.plugin) {
                 tools[1].tvr = Some(ToolVersionRequest::new(a.plugin.clone(), &b.plugin));
                 tools[1].plugin = a.plugin;
                 tools.remove(0);
