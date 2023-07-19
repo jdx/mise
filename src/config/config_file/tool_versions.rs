@@ -4,7 +4,6 @@ use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use crate::config::AliasMap;
 use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
@@ -13,6 +12,7 @@ use tera::Context;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
+use crate::config::AliasMap;
 use crate::file::display_path;
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -33,8 +33,9 @@ pub struct ToolVersions {
     is_trusted: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ToolVersionPlugin {
+    orig_name: String,
     versions: Vec<String>,
     post: String,
 }
@@ -79,7 +80,13 @@ impl ToolVersions {
     }
 
     fn get_or_create_plugin(&mut self, plugin: &str) -> &mut ToolVersionPlugin {
-        self.plugins.entry(plugin.to_string()).or_default()
+        self.plugins
+            .entry(plugin.to_string())
+            .or_insert_with(|| ToolVersionPlugin {
+                orig_name: plugin.to_string(),
+                versions: vec![],
+                post: "".into(),
+            })
     }
 
     fn parse_plugins(input: &str) -> Result<IndexMap<PluginName, ToolVersionPlugin>> {
@@ -98,9 +105,11 @@ impl ToolVersions {
                 // handle invalid trailing colons in `.tool-versions` files
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
-                let plugin = unalias_plugin(plugin.trim_end_matches(':'));
+                let orig_plugin = plugin.trim_end_matches(':');
+                let plugin = unalias_plugin(orig_plugin);
 
                 let tvp = ToolVersionPlugin {
+                    orig_name: orig_plugin.to_string(),
                     versions: parts.map(|v| v.to_string()).collect(),
                     post: match post {
                         "" => String::from("\n"),
@@ -191,8 +200,8 @@ impl ConfigFile for ToolVersions {
             .map(|p| measure_text_width(p))
             .max()
             .unwrap_or_default();
-        for (plugin, tv) in &self.plugins {
-            let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
+        for (_, tv) in &self.plugins {
+            let plugin = pad_str(&tv.orig_name, max_plugin_len, Alignment::Left, None);
             s.push_str(&format!("{} {}{}", plugin, tv.versions.join(" "), tv.post));
         }
 
@@ -218,7 +227,6 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
-
     use indoc::indoc;
     use insta::{assert_display_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
