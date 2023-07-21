@@ -1525,6 +1525,15 @@ This is only intended to be used in interactive sessions, not scripts.
 rtx is only capable of updating PATH when the prompt is displayed to the user.
 For non-interactive use-cases, use shims instead.
 
+Typically this can be added with something like the following:
+
+    echo 'eval "$(rtx activate)"' >> ~/.zshrc
+
+However, this requires that "rtx" is in your PATH. If it is not, you need to
+specify the full path like this:
+
+    echo 'eval "$(/path/to/rtx activate)"' >> ~/.zshrc
+
 Usage: activate [OPTIONS] [SHELL_TYPE]
 
 Arguments:
