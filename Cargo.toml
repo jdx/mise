@@ -81,7 +81,7 @@ simplelog = { version = "0.12.0" }
 tar = "0.4.38"
 tera = { version = "1.12.1", default-features = false }
 terminal_size = "0.2.1"
-thiserror = "1.0.38"
+thiserror = "1.0.44"
 toml = "<0.8"
 toml_edit = "<0.20"
 url = "2.4.0"
