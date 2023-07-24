@@ -71,7 +71,7 @@ rmp-serde = "1.1.1"
 self_update = { version = "0.37.0", default-features = false, optional = true, features = [
   "rustls",
 ] }
-serde = "1.0.164"
+serde = "1.0.174"
 serde_derive = "1.0.152"
 serde_json = "1.0.103"
 sha2 = "0.10.7"
