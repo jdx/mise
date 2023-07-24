@@ -28,6 +28,7 @@ impl Command for Doctor {
         rtxprintln!(out, "{}", rtx_version());
         rtxprintln!(out, "{}", build_info());
         rtxprintln!(out, "{}", shell());
+        rtxprintln!(out, "{}", rtx_data_dir());
         rtxprintln!(out, "{}", rtx_env_vars());
         rtxprintln!(
             out,
@@ -81,6 +82,12 @@ impl Command for Doctor {
 
         Ok(())
     }
+}
+
+fn rtx_data_dir() -> String {
+    let mut s = style("rtx data directory:\n").bold().to_string();
+    s.push_str(&format!("  {}\n", env::RTX_DATA_DIR.to_string_lossy()));
+    s
 }
 
 fn rtx_env_vars() -> String {
