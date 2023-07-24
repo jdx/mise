@@ -67,7 +67,7 @@ reqwest = { version = "0.11.17", default-features = false, features = [
   "rustls-tls",
   "json",
 ] }
-rmp-serde = "1.1.1"
+rmp-serde = "1.1.2"
 self_update = { version = "0.37.0", default-features = false, optional = true, features = [
   "rustls",
 ] }
