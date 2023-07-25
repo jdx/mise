@@ -13,7 +13,7 @@ use crate::tool::Tool;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ToolVersion {
     pub request: ToolVersionRequest,
     pub plugin_name: PluginName,

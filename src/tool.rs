@@ -207,6 +207,13 @@ impl Tool {
         pr: &mut ProgressReport,
         force: bool,
     ) -> Result<()> {
+        if self.is_version_installed(tv) {
+            if force {
+                self.uninstall_version(config, tv, pr, false)?;
+            } else {
+                return Ok(());
+            }
+        }
         self.decorate_progress_bar(pr, Some(tv));
         let _lock = self.get_lock(&tv.install_path(), force)?;
         self.create_install_dirs(tv)?;
