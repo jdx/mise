@@ -1,6 +1,6 @@
 [package]
 name = "rtx-cli"
-version = "1.34.1"
+version = "1.34.2"
 edition = "2021"
 description = "Polyglot runtime manager (asdf rust clone)"
 authors = ["Jeff Dickey (@jdxcode)"]
@@ -37,7 +37,7 @@ path = "src/main.rs"
 [dependencies]
 base64 = "<0.22"
 chrono = { version = "0.4.23", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.3.4", features = ["env", "derive", "string"] }
+clap = { version = "4.3.19", features = ["env", "derive", "string"] }
 clap_complete = "4.2.3"
 color-eyre = "0.6.2"
 color-print = "0.3.4"
@@ -64,14 +64,14 @@ rayon = "1.6.1"
 regex = "1.8.4"
 reqwest = { version = "0.11.17", default-features = false, features = [
   "blocking",
-  "rustls-tls",
+  "rustls-tls-native-roots",
   "json",
 ] }
-rmp-serde = "1.1.1"
+rmp-serde = "1.1.2"
 self_update = { version = "0.37.0", default-features = false, optional = true, features = [
   "rustls",
 ] }
-serde = "1.0.164"
+serde = "1.0.174"
 serde_derive = "1.0.152"
 serde_json = "1.0.103"
 sha2 = "0.10.7"
@@ -81,7 +81,7 @@ simplelog = { version = "0.12.0" }
 tar = "0.4.38"
 tera = { version = "1.12.1", default-features = false }
 terminal_size = "0.2.1"
-thiserror = "1.0.38"
+thiserror = "1.0.44"
 toml = "<0.8"
 toml_edit = "<0.20"
 url = "2.4.0"

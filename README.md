@@ -35,7 +35,7 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.34.1
+rtx 1.34.2
 ```
 
 Hook rtx into to your shell (pick the right one for your shell):
@@ -326,7 +326,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.34.1/rtx-v1.34.1-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v1.34.2/rtx-v1.34.2-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
@@ -1497,6 +1497,15 @@ Otherwise, it will only take effect in the current session.
 This is only intended to be used in interactive sessions, not scripts.
 rtx is only capable of updating PATH when the prompt is displayed to the user.
 For non-interactive use-cases, use shims instead.
+
+Typically this can be added with something like the following:
+
+    echo 'eval "$(rtx activate)"' >> ~/.zshrc
+
+However, this requires that "rtx" is in your PATH. If it is not, you need to
+specify the full path like this:
+
+    echo 'eval "$(/path/to/rtx activate)"' >> ~/.zshrc
 
 Usage: activate [OPTIONS] [SHELL_TYPE]
 
