@@ -33,7 +33,11 @@ impl Shell for Zsh {
 
               case "$command" in
               deactivate|shell)
-                eval "$(command rtx "$command" "$@")"
+                if [ "$1" = "-h" ]; then
+                    command rtx "$command" "$@";
+                else
+                    eval "$(command rtx "$command" "$@")"
+                fi
                 ;;
               *)
                 command rtx "$command" "$@"
