@@ -34,7 +34,11 @@ impl Shell for Fish {
 
               switch "$command"
               case deactivate shell
-                source (command rtx "$command" $argv|psub)
+                if test $argv = "-h"
+                    command rtx "$command" $argv
+                else
+                    source (command rtx "$command" $argv|psub)
+                end
               case '*'
                 command rtx "$command" $argv
               end
