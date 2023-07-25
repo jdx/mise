@@ -64,7 +64,7 @@ rayon = "1.6.1"
 regex = "1.8.4"
 reqwest = { version = "0.11.17", default-features = false, features = [
   "blocking",
-  "rustls-tls",
+  "rustls-tls-native-roots",
   "json",
 ] }
 rmp-serde = "1.1.2"
