@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::cli::local::local;
-use crate::config::{Config, MissingRuntimeBehavior};
+use crate::config::Config;
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
@@ -51,8 +51,7 @@ pub struct Use {
 }
 
 impl Command for Use {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        config.settings.missing_runtime_behavior = MissingRuntimeBehavior::AutoInstall;
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let runtimes = self
             .tool
             .into_iter()

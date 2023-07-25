@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use color_eyre::eyre::Result;
 use console::style;
@@ -11,7 +12,6 @@ use dialoguer::MultiSelect;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 pub use builder::ToolsetBuilder;
 pub use tool_source::ToolSource;
@@ -113,11 +113,11 @@ impl Toolset {
                 if versions.is_empty() {
                     warn();
                 } else {
-                    self.install_missing_versions(config, versions, mpr)?;
+                    self.install_versions(config, versions, &mpr, false)?;
                 }
             }
             MissingRuntimeBehavior::AutoInstall => {
-                self.install_missing_versions(config, versions, mpr)?;
+                self.install_versions(config, versions, &mpr, false)?;
             }
         }
         Ok(())
@@ -135,85 +135,50 @@ impl Toolset {
             .collect()
     }
 
-    fn install_missing_versions(
+    pub fn install_versions(
         &mut self,
         config: &mut Config,
-        selected_versions: Vec<ToolVersion>,
-        mpr: MultiProgressReport,
+        versions: Vec<ToolVersion>,
+        mpr: &MultiProgressReport,
+        force: bool,
     ) -> Result<()> {
-        ThreadPoolBuilder::new()
-            .num_threads(config.settings.jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                let plugins = selected_versions
-                    .iter()
-                    .map(|v| v.plugin_name.clone())
-                    .unique()
-                    .collect_vec();
-                let selected_versions = selected_versions
-                    .into_iter()
-                    .map(|v| (v.plugin_name.clone(), v.request))
-                    .collect::<HashSet<_>>();
-                self.install_missing_plugins(config, plugins, &mpr)?;
-                self.versions
-                    .iter_mut()
-                    .par_bridge()
-                    .filter_map(|(p, v)| match config.tools.get(p) {
-                        Some(plugin) if plugin.is_installed() => Some((plugin, v)),
-                        _ => None,
-                    })
-                    .map(|(plugin, v)| {
-                        let versions = v
-                            .versions
-                            .iter_mut()
-                            .filter(|tv| {
-                                !plugin.is_version_installed(tv)
-                                    && selected_versions
-                                        .contains(&(tv.plugin_name.clone(), tv.request.clone()))
-                            })
-                            .collect_vec();
-                        (plugin, versions)
-                    })
-                    .filter(|(_, versions)| !versions.is_empty())
-                    .map(|(plugin, versions)| {
-                        for tv in versions {
-                            let mut pr = mpr.add();
-                            // TODO: is this necessary?
-                            // version.resolve(config, plugin.clone(), self.latest_versions)?;
-                            plugin.install_version(config, tv, &mut pr, false)?;
+        self.latest_versions = true;
+        let queue: Vec<_> = versions
+            .into_iter()
+            .group_by(|v| v.plugin_name.clone())
+            .into_iter()
+            .map(|(pn, v)| (config.get_or_create_tool(&pn), v.collect_vec()))
+            .collect();
+        let queue = Arc::new(Mutex::new(queue));
+        thread::scope(|s| {
+            (0..config.settings.jobs)
+                .map(|_| {
+                    let queue = queue.clone();
+                    let config = &*config;
+                    s.spawn(move || {
+                        let next_job = || queue.lock().unwrap().pop();
+                        while let Some((t, versions)) = next_job() {
+                            if !t.is_installed() {
+                                t.install(config, &mut mpr.add(), force)?;
+                            }
+                            for tv in versions {
+                                let tv = tv.request.resolve(config, &t, tv.opts.clone(), true)?;
+                                let mut pr = mpr.add();
+                                t.install_version(config, &tv, &mut pr, force)?;
+                            }
                         }
                         Ok(())
                     })
-                    .collect::<Result<Vec<()>>>()?;
-                shims::reshim(config, self)?;
-                runtime_symlinks::rebuild(config)?;
-                Ok(())
-            })
+                })
+                .collect_vec()
+                .into_iter()
+                .map(|t| t.join().unwrap())
+                .collect::<Result<Vec<()>>>()
+        })?;
+        self.resolve(config);
+        shims::reshim(config, self)?;
+        runtime_symlinks::rebuild(config)
     }
-    fn install_missing_plugins(
-        &mut self,
-        config: &mut Config,
-        missing_plugins: Vec<PluginName>,
-        mpr: &MultiProgressReport,
-    ) -> Result<()> {
-        for plugin in &missing_plugins {
-            config.get_or_create_tool(plugin);
-        }
-        let missing_plugins = missing_plugins
-            .into_par_iter()
-            .map(|p| config.tools.get(&p).unwrap())
-            .filter(|p| !p.is_installed())
-            .map(|p| {
-                let mut pr = mpr.add();
-                p.install(config, &mut pr, false)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        if !missing_plugins.is_empty() {
-            self.resolve(config);
-        }
-        Ok(())
-    }
-
     pub fn list_missing_versions(&self, config: &Config) -> Vec<&ToolVersion> {
         self.versions
             .iter()
