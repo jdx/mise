@@ -1,10 +1,4 @@
-use std::sync::Arc;
-
-use color_eyre::eyre::{eyre, Result};
-use console::style;
-use itertools::Itertools;
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
+use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
@@ -13,14 +7,10 @@ use crate::config::MissingRuntimeBehavior::AutoInstall;
 
 use crate::output::Output;
 
-use crate::runtime_symlinks;
-use crate::shims;
-use crate::tool::Tool;
 use crate::toolset::{
     ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::ProgressReport;
 
 /// Install a tool version
 ///
@@ -63,27 +53,16 @@ impl Command for Install {
 impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
-        let ts = ToolsetBuilder::new()
+        let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
-        ThreadPoolBuilder::new()
-            .num_threads(config.settings.jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                let tool_versions =
-                    self.get_requested_tool_versions(&mut config, &ts, runtimes, &mpr)?;
-                if tool_versions.is_empty() {
-                    warn!("no runtimes to install");
-                    warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
-                    return Ok(());
-                }
-                self.uninstall_existing_versions(&config, &mpr, &tool_versions)?;
-                self.install_requested_versions(&config, &mpr, tool_versions)?;
-                shims::reshim(&mut config, &ts)
-                    .map_err(|err| eyre!("failed to reshim: {}", err))?;
-                runtime_symlinks::rebuild(&config)?;
-                Ok(())
-            })
+        let tool_versions = self.get_requested_tool_versions(&mut config, &ts, runtimes, &mpr)?;
+        if tool_versions.is_empty() {
+            warn!("no runtimes to install");
+            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            return Ok(());
+        }
+        ts.install_versions(&mut config, tool_versions, &mpr, self.force)
     }
 
     fn get_requested_tool_versions(
@@ -92,7 +71,7 @@ impl Install {
         ts: &Toolset,
         runtimes: &[ToolArg],
         mpr: &MultiProgressReport,
-    ) -> Result<Vec<(Arc<Tool>, ToolVersion)>> {
+    ) -> Result<Vec<ToolVersion>> {
         let mut requests = vec![];
         for runtime in ToolArg::double_tool_condition(runtimes) {
             let default_opts = ToolVersionOptions::new();
@@ -133,7 +112,7 @@ impl Install {
                 }
             }
             let tv = tvr.resolve(config, &plugin, opts, ts.latest_versions)?;
-            tool_versions.push((plugin, tv));
+            tool_versions.push(tv);
         }
         Ok(tool_versions)
     }
@@ -149,88 +128,6 @@ impl Install {
         ts.install_missing(&mut config, mpr)?;
 
         Ok(())
-    }
-
-    fn uninstall_existing_versions(
-        &self,
-        config: &Config,
-        mpr: &MultiProgressReport,
-        tool_versions: &[(Arc<Tool>, ToolVersion)],
-    ) -> Result<()> {
-        let already_installed_tool_versions = tool_versions
-            .iter()
-            .filter(|(t, tv)| t.is_version_installed(tv))
-            .map(|(t, tv)| (t, tv.clone()));
-        if self.force {
-            already_installed_tool_versions
-                .par_bridge()
-                .map(|(tool, tv)| self.uninstall_version(config, tool, &tv, mpr.add()))
-                .collect::<Result<Vec<_>>>()?;
-        } else {
-            for (_, tv) in already_installed_tool_versions {
-                warn!("{} already installed", style(tv).cyan().for_stderr());
-            }
-        }
-        Ok(())
-    }
-    fn install_requested_versions(
-        &self,
-        config: &Config,
-        mpr: &MultiProgressReport,
-        tool_versions: Vec<(Arc<Tool>, ToolVersion)>,
-    ) -> Result<()> {
-        let grouped_tool_versions: Vec<(Arc<Tool>, Vec<ToolVersion>)> = tool_versions
-            .into_iter()
-            .filter(|(t, tv)| !t.is_version_installed(tv))
-            .group_by(|(t, _)| t.clone())
-            .into_iter()
-            .map(|(t, tvs)| (t, tvs.map(|(_, tv)| tv).collect()))
-            .collect();
-        grouped_tool_versions
-            .into_par_iter()
-            .map(|(tool, versions)| {
-                for tv in versions {
-                    self.install_version(config, &tool, &tv, mpr.add())?;
-                }
-                Ok(())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(())
-    }
-    fn uninstall_version(
-        &self,
-        config: &Config,
-        tool: &Tool,
-        tv: &ToolVersion,
-        mut pr: ProgressReport,
-    ) -> Result<()> {
-        tool.decorate_progress_bar(&mut pr, Some(tv));
-        match tool.uninstall_version(config, tv, &pr, false) {
-            Ok(_) => {
-                pr.finish();
-                Ok(())
-            }
-            Err(err) => {
-                pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to uninstall {}", tv)))
-            }
-        }
-    }
-    fn install_version(
-        &self,
-        config: &Config,
-        tool: &Tool,
-        tv: &ToolVersion,
-        mut pr: ProgressReport,
-    ) -> Result<()> {
-        tool.decorate_progress_bar(&mut pr, Some(tv));
-        match tool.install_version(config, tv, &mut pr, self.force) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to install {}", tv)))
-            }
-        }
     }
 }
 

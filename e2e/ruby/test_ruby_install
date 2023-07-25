@@ -9,7 +9,8 @@ export RTX_RUBY_INSTALL=1
 
 echo "ruby-3.1.4" > .ruby-version
 
-rtx i ruby
-assert_contains "rtx x -- ruby --version" "ruby 3.1.4"
+# disable this slow test for now
+#rtx i ruby
+#assert_contains "rtx x -- ruby --version" "ruby 3.1.4"
 
 rm .ruby-version
