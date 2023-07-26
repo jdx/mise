@@ -44,8 +44,10 @@ To enable this feature, provide a `$HOME/.default-gems` file that lists one gem 
 example:
 
 ```
+# supports comments
 pry
-rubocop
+bcat ~> 0.6.0 # supports version constraints
+rubocop --pre # install prerelease version
 ```
 
 ## `.ruby-version` and `Gemfile` support
