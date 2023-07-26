@@ -13,6 +13,7 @@ pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     install_missing: bool,
     latest_versions: bool,
+    tool_filter: Option<Vec<String>>,
 }
 
 impl ToolsetBuilder {
@@ -35,6 +36,11 @@ impl ToolsetBuilder {
         self
     }
 
+    pub fn with_tools(mut self, tools: &[&str]) -> Self {
+        self.tool_filter = Some(tools.iter().map(|s| s.to_string()).collect());
+        self
+    }
+
     pub fn build(self, config: &mut Config) -> Result<Toolset> {
         let mut toolset = Toolset {
             latest_versions: self.latest_versions,
@@ -44,6 +50,9 @@ impl ToolsetBuilder {
         load_config_files(config, &mut toolset);
         load_runtime_env(&mut toolset, env::vars().collect());
         load_runtime_args(&mut toolset, &self.args);
+        if let Some(tools) = self.tool_filter {
+            toolset.versions.retain(|p, _| tools.contains(p));
+        }
         toolset.resolve(config);
 
         if self.install_missing {

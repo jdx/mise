@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -30,7 +31,6 @@ use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env, file};
 
 /// This represents a plugin installed to ~/.local/share/rtx/plugins
-#[derive(Debug)]
 pub struct ExternalPlugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
@@ -245,6 +245,7 @@ impl ExternalPlugin {
             ToolVersionRequest::Version(_, _) | ToolVersionRequest::Prefix(_, _) => "version",
             ToolVersionRequest::Ref(_, _) => "ref",
             ToolVersionRequest::Path(_, _) => "path",
+            ToolVersionRequest::Sub { .. } => "sub",
             ToolVersionRequest::System(_) => {
                 panic!("should not be called for system tool")
             }
@@ -616,4 +617,28 @@ impl Plugin for ExternalPlugin {
     }
 }
 
+impl Debug for ExternalPlugin {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExternalPlugin")
+            .field("name", &self.name)
+            .field("plugin_path", &self.plugin_path)
+            .field("cache_path", &self.cache_path)
+            .field("downloads_path", &self.downloads_path)
+            .field("installs_path", &self.installs_path)
+            .field("repo_url", &self.repo_url)
+            .finish()
+    }
+}
+
 static EMPTY_HASH_MAP: Lazy<HashMap<String, String>> = Lazy::new(HashMap::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug() {
+        let plugin = ExternalPlugin::new(&PluginName::from("dummy"));
+        assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
+    }
+}
