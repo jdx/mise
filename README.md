@@ -80,6 +80,7 @@ v20.0.0
   - [`.rtx.toml`](#rtxtoml)
   - [Legacy version files](#legacy-version-files)
   - [`.tool-versions`](#tool-versions)
+  - [Scopes](#scopes)
   - [Global config: `~/.config/rtx/config.toml`](#global-config-configrtxconfigtoml)
   - [Environment variables](#environment-variables)
 - [Aliases](#aliases)
@@ -643,6 +644,19 @@ python      sub-0.1:latest # install python-3.10 if the latest is 3.11
 ```
 
 See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
+
+### Scopes
+
+Both `.rtx.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
+
+* `ref:<SHA>` - compile from a vcs (usually git) ref
+* `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
+  would only match `1.20` exactly but `prefix:1.20` will match `1.20.1` and `1.20.2` etc.
+* `path:<PATH>` - use a custom compiled version at the given path. One use-case is to re-use
+  Homebrew tools (e.g.: `path:/opt/homebrew/opt/node@20`).
+* `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - subtracts PARTIAL_VERSION from ORIG_VERSION. This can
+  be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
+  version behind the latest version: `sub-0.1:latest`.
 
 ### Global config: `~/.config/rtx/config.toml`
 
