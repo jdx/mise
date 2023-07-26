@@ -178,7 +178,7 @@ impl RubyPlugin {
             pr.set_message(format!("installing default gem: {}", package));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(settings, gem).with_pr(pr).arg("install");
-            match package.split_once('-') {
+            match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
                 None => cmd = cmd.arg(package),
