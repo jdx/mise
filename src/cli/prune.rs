@@ -26,8 +26,12 @@ pub struct Prune {
     pub plugins: Option<Vec<PluginName>>,
 
     /// Do not actually delete anything
-    #[clap(long, short_alias = 'n')]
+    #[clap(long, verbatim_doc_comment, default_value_t = true, hide = true)]
     pub dry_run: bool,
+
+    /// --no-dry-run [default: false]
+    #[clap(long, verbatim_doc_comment, default_value_t = false)]
+    no_dry_run: bool,
 }
 
 impl Command for Prune {

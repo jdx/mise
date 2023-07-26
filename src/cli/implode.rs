@@ -16,13 +16,25 @@ pub struct Implode {
     #[clap(long, verbatim_doc_comment)]
     config: bool,
 
-    /// List directories that would be removed without actually removing them
-    #[clap(long, verbatim_doc_comment)]
-    dry_run: bool,
+    /// List directories that would be removed without actually removing them [default: true]
+    #[clap(long, verbatim_doc_comment, default_value_t = true, hide = true)]
+     dry_run: bool,
+
+    /// This will remove your rtx [default: false]
+    #[clap(long, verbatim_doc_comment, default_value_t = false)]
+    no_dry_run: bool,
 }
 
 impl Command for Implode {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    fn run(mut self, _config: Config, out: &mut Output) -> Result<()> {
+        if self.no_dry_run {
+            self.dry_run = false;
+        }
+
+        if self.dry_run && !self.no_dry_run {
+            rtxprintln!(out, "Running in dry-run mode. If you know what you're doing, run with --no-dry-run");
+        }
+
         let mut files = vec![&*dirs::ROOT, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
@@ -30,12 +42,12 @@ impl Command for Implode {
         for f in files.into_iter().filter(|d| d.exists()) {
             if f.is_dir() {
                 rtxprintln!(out, "rm -rf {}", f.display());
-                if !self.dry_run {
+                if self.no_dry_run {
                     remove_all(f)?;
                 }
             } else {
                 rtxprintln!(out, "rm -f {}", f.display());
-                if !self.dry_run {
+                if self.no_dry_run {
                     std::fs::remove_file(f)?;
                 }
             }
@@ -44,6 +56,7 @@ impl Command for Implode {
         Ok(())
     }
 }
+
 
 #[cfg(test)]
 #[cfg(test)]
