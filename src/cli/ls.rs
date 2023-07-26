@@ -224,14 +224,15 @@ impl Ls {
     }
 
     fn get_runtime_list(&self, config: &mut Config) -> Result<Vec<RuntimeRow>> {
-        let ts = ToolsetBuilder::new().build(config)?;
+        let mut tsb = ToolsetBuilder::new();
+        if let Some(plugin) = &self.plugin {
+            tsb = tsb.with_tools(&[plugin]);
+            config.tools.retain(|p, _| p == plugin);
+        }
+        let ts = tsb.build(config)?;
         let mut versions: HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)> = ts
             .list_installed_versions(config)?
             .into_iter()
-            .filter(|(p, _)| match &self.plugin {
-                Some(plugin) => &p.name == plugin,
-                None => true,
-            })
             .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
             .collect();
 
@@ -241,16 +242,7 @@ impl Ls {
             .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
             .collect::<HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)>>();
 
-        versions.extend(
-            active
-                .clone()
-                .into_iter()
-                .filter(|((plugin_name, _), _)| match &self.plugin {
-                    Some(plugin) => plugin_name == plugin,
-                    None => true,
-                })
-                .collect::<Vec<((PluginName, String), (Arc<Tool>, ToolVersion))>>(),
-        );
+        versions.extend(active.clone());
 
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
