@@ -29,7 +29,7 @@ impl Shell for Bash {
 
               case "$command" in
               deactivate|shell)
-                if [ "$1" = "-h" ]; then
+                if [[ "$@" == *"-h"* ]]; then
                     command rtx "$command" "$@";
                 else
                     eval "$(command rtx "$command" "$@")"
