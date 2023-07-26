@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -33,6 +33,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("adr-tools", "https://gitlab.com/td7x/asdf/adr-tools.git"),
     ("ag", "https://github.com/koketani/asdf-ag.git"),
     ("age", "https://github.com/threkk/asdf-age"),
+    ("age-plugin-yubikey", "https://github.com/joke/asdf-age-plugin-yubikey"),
     ("agebox", "https://github.com/slok/asdf-agebox.git"),
     ("air", "https://github.com/pdemagny/asdf-air"),
     ("aks-engine", "https://github.com/robsonpeixoto/asdf-aks-engine.git"),
@@ -116,8 +117,8 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("cilium-hubble", "https://github.com/NitriKx/asdf-cilium-hubble.git"),
     ("circleci-cli", "https://github.com/ucpr/asdf-circleci-cli.git"),
     ("clojure", "https://github.com/asdf-community/asdf-clojure.git"),
+    ("cloud-sql-proxy", "https://github.com/pbr0ck3r/asdf-cloud-sql-proxy.git"),
     ("cloudflared", "https://github.com/threkk/asdf-cloudflared"),
-    ("cloudsql-proxy", "https://github.com/itspngu/asdf-cloudsql-proxy.git"),
     ("clusterawsadm", "https://github.com/kahun/asdf-clusterawsadm.git"),
     ("clusterctl", "https://github.com/pfnet-research/asdf-clusterctl.git"),
     ("cmake", "https://github.com/asdf-community/asdf-cmake.git"),
@@ -256,9 +257,10 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("go-sdk", "https://github.com/yacchi/asdf-go-sdk.git"),
     ("go-swagger", "https://github.com/jfreeland/asdf-go-swagger.git"),
     ("goconvey", "https://github.com/therounds-contrib/asdf-goconvey.git"),
+    ("gofumpt", "https://github.com/looztra/asdf-gofumpt.git"),
     ("gohugo", "https://github.com/nklmilojevic/asdf-hugo.git"),
     ("gojq", "https://github.com/jimmidyson/asdf-gojq.git"),
-    ("golang", "https://github.com/kennyp/asdf-golang.git"),
+    ("golang", "https://github.com/asdf-community/asdf-golang.git"),
     ("golangci-lint", "https://github.com/hypnoglow/asdf-golangci-lint.git"),
     ("gomigrate", "https://github.com/joschi/asdf-gomigrate.git"),
     ("gomplate", "https://github.com/sneakybeaky/asdf-gomplate.git"),
@@ -346,6 +348,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("kconf", "https://github.com/particledecay/asdf-kconf.git"),
     ("ki", "https://github.com/comdotlinux/asdf-ki"),
     ("kind", "https://github.com/johnlayton/asdf-kind.git"),
+    ("kiota", "https://github.com/asdf-community/asdf-kiota.git"),
     ("kn", "https://github.com/joke/asdf-kn.git"),
     ("ko", "https://github.com/zasdaym/asdf-ko.git"),
     ("koka", "https://github.com/susurri/asdf-koka.git"),
@@ -427,6 +430,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("meson", "https://github.com/asdf-community/asdf-meson.git"),
     ("micronaut", "https://github.com/weibemoura/asdf-micronaut.git"),
     ("mill", "https://github.com/asdf-community/asdf-mill.git"),
+    ("minify", "https://github.com/axilleas/asdf-minify"),
     ("minikube", "https://github.com/alvarobp/asdf-minikube.git"),
     ("minio", "https://github.com/aeons/asdf-minio.git"),
     ("minishift", "https://github.com/sqtran/asdf-minishift.git"),
@@ -454,6 +458,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("nomad", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("nova", "https://github.com/elementalvoid/asdf-nova.git"),
     ("nsc", "https://github.com/dex4er/asdf-nsc.git"),
+    ("oapi-codegen", "https://github.com/dylanrayboss/asdf-oapi-codegen.git"),
     ("oc", "https://github.com/sqtran/asdf-oc.git"),
     ("ocaml", "https://github.com/asdf-community/asdf-ocaml.git"),
     ("oci", "https://github.com/yasn77/asdf-oci.git"),
@@ -541,6 +546,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("scala", "https://github.com/asdf-community/asdf-scala.git"),
     ("scaleway-cli", "https://github.com/albarralnunez/asdf-plugin-scaleway-cli"),
     ("scalingo-cli", "https://github.com/brandon-welsch/asdf-scalingo-cli.git"),
+    ("scarb", "https://github.com/software-mansion/asdf-scarb.git"),
     ("sccache", "https://github.com/emersonmx/asdf-sccache.git"),
     ("scenery", "https://github.com/skyzyx/asdf-scenery.git"),
     ("schemacrawler", "https://github.com/davidecavestro/asdf-schemacrawler.git"),
@@ -647,6 +653,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     ("ttyd", "https://github.com/ivanvc/asdf-ttyd.git"),
     ("tuist", "https://github.com/cprecioso/asdf-tuist.git"),
     ("tx", "https://github.com/ORCID/asdf-transifex.git"),
+    ("typos", "https://github.com/aschiavon91/asdf-typos.git"),
     ("uaa-cli", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("unison", "https://github.com/susurri/asdf-unison.git"),
     ("upt", "https://github.com/ORCID/asdf-upt.git"),
