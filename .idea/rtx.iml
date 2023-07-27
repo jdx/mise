@@ -20,6 +20,7 @@
       <excludeFolder url="file://$MODULE_DIR$/aports" />
       <excludeFolder url="file://$MODULE_DIR$/.cargo/registry" />
       <excludeFolder url="file://$MODULE_DIR$/packaging/alpine/src" />
+      <excludeFolder url="file://$MODULE_DIR$/asdf-plugins" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />
