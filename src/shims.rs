@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use crate::fake_asdf;
 use crate::file::{create_dir_all, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
+use crate::tool::Tool;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
@@ -71,15 +73,15 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         })
         .lock();
 
-    // remove old shims
-    let _ = remove_all(&*dirs::SHIMS);
-    create_dir_all(&*dirs::SHIMS)?;
     let rtx_bin = file::which("rtx").unwrap_or(env::RTX_EXE.clone());
 
-    let paths: Vec<PathBuf> = ts
+    create_dir_all(&*dirs::SHIMS)?;
+    let existing_shims = list_executables_in_dir(&dirs::SHIMS)?;
+
+    let shims: HashSet<String> = ts
         .list_installed_versions(config)?
         .into_par_iter()
-        .flat_map(|(p, tv)| match p.list_bin_paths(config, &tv) {
+        .flat_map(|(t, tv)| match list_tool_bins(config, &t, &tv) {
             Ok(paths) => paths,
             Err(e) => {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
@@ -88,29 +90,23 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         })
         .collect();
 
-    for path in paths {
-        if !path.exists() {
-            continue;
-        }
-        for bin in path.read_dir()? {
-            let bin = bin?;
-            // skip non-files and non-symlinks or non-executable files
-            if (!bin.file_type()?.is_file() && !bin.file_type()?.is_symlink())
-                || !file::is_executable(&bin.path())
-            {
-                continue;
-            }
-            let bin_name = bin.file_name().into_string().unwrap();
-            let symlink_path = dirs::SHIMS.join(bin_name);
-            file::make_symlink(&rtx_bin, &symlink_path).map_err(|err| {
-                eyre!(
-                    "Failed to create symlink from {} to {}: {}",
-                    rtx_bin.display(),
-                    symlink_path.display(),
-                    err
-                )
-            })?;
-        }
+    let shims_to_add = shims.difference(&existing_shims);
+    let shims_to_remove = existing_shims.difference(&shims);
+
+    for shim in shims_to_add {
+        let symlink_path = dirs::SHIMS.join(shim);
+        file::make_symlink(&rtx_bin, &symlink_path).map_err(|err| {
+            eyre!(
+                "Failed to create symlink from {} to {}: {}",
+                rtx_bin.display(),
+                symlink_path.display(),
+                err
+            )
+        })?;
+    }
+    for shim in shims_to_remove {
+        let symlink_path = dirs::SHIMS.join(shim);
+        remove_all(&symlink_path)?;
     }
     for plugin in config.tools.values() {
         match plugin.plugin_path.join("shims").read_dir() {
@@ -129,6 +125,34 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
     }
 
     Ok(())
+}
+
+// lists all the paths to bins in a tv that shims will be needed for
+fn list_tool_bins(config: &Config, t: &Tool, tv: &ToolVersion) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(config, tv)?
+        .into_iter()
+        .par_bridge()
+        .filter(|path| path.exists())
+        .map(|dir| list_executables_in_dir(&dir))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
+fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
+    let mut out = HashSet::new();
+    for bin in dir.read_dir()? {
+        let bin = bin?;
+        // skip non-files and non-symlinks or non-executable files
+        if (!bin.file_type()?.is_file() && !bin.file_type()?.is_symlink())
+            || !file::is_executable(&bin.path())
+        {
+            continue;
+        }
+        out.insert(bin.file_name().into_string().unwrap());
+    }
+    Ok(out)
 }
 
 fn make_shim(target: &Path, shim: &Path) -> Result<()> {
