@@ -94,8 +94,8 @@ pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
         }
         for bin in path.read_dir()? {
             let bin = bin?;
-            if !bin.file_type()?.is_file()
-                || bin.file_type()?.is_symlink()
+            // skip non-files and non-symlinks or non-executable files
+            if (!bin.file_type()?.is_file() && !bin.file_type()?.is_symlink())
                 || !file::is_executable(&bin.path())
             {
                 continue;
