@@ -84,7 +84,7 @@ impl RtxToml {
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
-                "plugins" => self.plugins = self.parse_hashmap(k, v)?,
+                "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
@@ -205,6 +205,11 @@ impl RtxToml {
             }
             _ => parse_error!(k, v, "table")?,
         }
+    }
+
+    fn parse_plugins(&mut self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+        self.trust_check()?;
+        self.parse_hashmap(key, v)
     }
 
     fn parse_hashmap(&mut self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
