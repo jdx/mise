@@ -103,9 +103,9 @@ impl GoPlugin {
     }
 
     fn verify_tarball_checksum(&self, tarball_url: &str, tarball_path: &Path) -> Result<()> {
-        let checksum_url = format!("{}.sha256", tarball_url);
-        let checksum = http::Client::new()?.get_text(checksum_url)?;
         if !*env::RTX_GO_SKIP_CHECKSUM {
+            let checksum_url = format!("{}.sha256", tarball_url);
+            let checksum = http::Client::new()?.get_text(checksum_url)?;
             hash::ensure_checksum_sha256(tarball_path, &checksum)?;
         }
         Ok(())
