@@ -14,13 +14,17 @@ use crate::tool::Tool;
 
 pub fn rebuild(config: &Config) -> Result<()> {
     for plugin in config.tools.values() {
-        remove_existing_symlinks(plugin)?;
         let symlinks = list_symlinks(config, plugin)?;
         let installs_dir = dirs::INSTALLS.join(&plugin.name);
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
-                continue;
+                if is_runtime_symlink(&from) && from.read_link()?.as_path() != to {
+                    trace!("Removing existing symlink: {}", from.display());
+                    std::fs::remove_file(&from)?;
+                } else {
+                    continue;
+                }
             }
             make_symlink(&to, &from)?;
         }
@@ -74,22 +78,6 @@ fn installed_versions(plugin: &Tool) -> Result<Vec<String>> {
         .filter(|v| re.is_match(v))
         .collect();
     Ok(versions)
-}
-
-fn remove_existing_symlinks(plugin: &Tool) -> Result<()> {
-    let installs_dir = dirs::INSTALLS.join(&plugin.name);
-    if !installs_dir.exists() {
-        return Ok(());
-    }
-    for entry in std::fs::read_dir(installs_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if is_runtime_symlink(&path) {
-            trace!("Removing existing symlink: {}", path.display());
-            std::fs::remove_file(path)?;
-        }
-    }
-    Ok(())
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
