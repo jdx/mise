@@ -1,5 +1,9 @@
 <div align="center">
-<h1><a href="https://github.com/jdxcode/rtx">rtx</a></h1>
+<a href="https://github.com/jdxcode/rtx"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
+  <img alt="rtx logo" src="./docs/logo-light.png">
+</picture></a>
+<br/>
 <a href="https://crates.io/crates/rtx-cli"><img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge"></a>
 <a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
 <a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2320A920&style=for-the-badge"></a>
