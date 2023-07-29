@@ -1099,9 +1099,9 @@ You can see the core plugins with `rtx plugin ls --core`.
 
 * [Python](./docs/python.md)
 * [NodeJS](./docs/node.md)
-* [Ruby (experimental)](./docs/ruby.md)
-* [Go (experimental)](./docs/go.md)
-* [Java (experimental)](./docs/java.md)
+* [Ruby](./docs/ruby.md)
+* [Go](./docs/go.md)
+* [Java](./docs/java.md)
 * [Deno (experimental)](./docs/deno.md)
 * [Bun (experimental)](./docs/bun.md)
 
