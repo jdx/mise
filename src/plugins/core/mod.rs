@@ -35,8 +35,11 @@ type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
 
 pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
+        Box::new(GoPlugin::new("go".to_string())),
+        Box::new(JavaPlugin::new("java".to_string())),
         Box::new(NodePlugin::new("node".to_string())),
         Box::new(PythonPlugin::new("python".to_string())),
+        Box::new(RubyPlugin::new("ruby".to_string())),
     ])
 });
 
@@ -44,9 +47,6 @@ pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
         Box::new(BunPlugin::new("bun".to_string())),
         Box::new(DenoPlugin::new("deno".to_string())),
-        Box::new(GoPlugin::new("go".to_string())),
-        Box::new(JavaPlugin::new("java".to_string())),
-        Box::new(RubyPlugin::new("ruby".to_string())),
     ])
 });
 
