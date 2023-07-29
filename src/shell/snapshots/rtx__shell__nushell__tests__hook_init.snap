@@ -2,11 +2,11 @@
 source: src/shell/nushell.rs
 expression: "nushell.activate(exe, true)"
 ---
-let-env PATH = ($env.PATH | prepend '/some/dir')
+$env.PATH = ($env.PATH | prepend '/some/dir')
 export-env {
-  let-env RTX_SHELL = "nu"
+  $env.RTX_SHELL = "nu"
   
-  let-env config = ($env.config | upsert hooks {
+  $env.config = ($env.config | upsert hooks {
       pre_prompt: [{
       condition: {|| "RTX_SHELL" in $env }
       code: {|| rtx_hook }
@@ -43,7 +43,7 @@ def-env rtx [command?: string, --help, ...rest: string] {
 def-env "update-env" [] {
   for $var in $in {
     if $var.op == "set" {
-      let-env $var.name = $"($var.value)"
+      load-env {($var.name): $var.value}
     } else if $var.op == "hide" {
       hide-env $var.name
     }
