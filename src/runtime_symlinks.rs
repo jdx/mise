@@ -28,6 +28,9 @@ pub fn rebuild(config: &Config) -> Result<()> {
             }
             make_symlink(&to, &from)?;
         }
+        remove_missing_symlinks(plugin)?;
+        // attempt to remove the installs dir (will fail if not empty)
+        let _ = std::fs::remove_dir(&installs_dir);
     }
     Ok(())
 }
@@ -78,6 +81,22 @@ fn installed_versions(plugin: &Tool) -> Result<Vec<String>> {
         .filter(|v| re.is_match(v))
         .collect();
     Ok(versions)
+}
+
+fn remove_missing_symlinks(plugin: &Tool) -> Result<()> {
+    let installs_dir = dirs::INSTALLS.join(&plugin.name);
+    if !installs_dir.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(installs_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if is_runtime_symlink(&path) && !path.exists() {
+            trace!("Removing missing symlink: {}", path.display());
+            std::fs::remove_file(path)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
