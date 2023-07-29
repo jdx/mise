@@ -249,7 +249,7 @@ impl Plugin for JavaPlugin {
                 .1;
             Ok(version.to_string())
         } else {
-            Ok(contents.to_string())
+            Ok(contents)
         }
     }
 }

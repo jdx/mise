@@ -31,16 +31,16 @@ impl Shell for Nushell {
 
         if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!(
-                "let-env PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
+                "$env.PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
                 dir.display()
             ));
         }
 
         out.push_str(&formatdoc! {r#"
           export-env {{
-            let-env RTX_SHELL = "nu"
+            $env.RTX_SHELL = "nu"
             
-            let-env config = ($env.config | upsert hooks {{
+            $env.config = ($env.config | upsert hooks {{
                 pre_prompt: [{{
                 condition: {{|| "RTX_SHELL" in $env }}
                 code: {{|| rtx_hook }}
@@ -77,7 +77,7 @@ impl Shell for Nushell {
           def-env "update-env" [] {{
             for $var in $in {{
               if $var.op == "set" {{
-                let-env $var.name = $"($var.value)"
+                load-env {{($var.name): $var.value}}
               }} else if $var.op == "hide" {{
                 hide-env $var.name
               }}
