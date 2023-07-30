@@ -1,6 +1,6 @@
 Summary: Polyglot runtime manager
 Name: rtx
-Version: 1.35.3
+Version: 1.35.4
 Release: 1
 URL: https://github.com/jdxcode/rtx/
 Group: System
