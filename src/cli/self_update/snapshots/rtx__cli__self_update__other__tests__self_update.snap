@@ -1,5 +1,0 @@
----
-source: src/cli/self_update/other.rs
-expression: err
----
-Self-update is not supported

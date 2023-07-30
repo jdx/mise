@@ -16,7 +16,7 @@ alias lf := lint-fix
 
 # just `cargo build`
 build *args:
-    cargo build {{ args }}
+    cargo build --all-features {{ args }}
 
 # run all test types
 test *args: (test-unit args) test-e2e lint

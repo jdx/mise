@@ -3,7 +3,7 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-tar -xvJf "dist/rtx-rpm-$RTX_VERSION-linux-x64.tar.xz"
+tar -xvJf "dist/rtx-nonup-$RTX_VERSION-linux-x64.tar.xz"
 fpm -s dir -t rpm \
 	--name rtx \
 	--license MIT \
@@ -15,7 +15,7 @@ fpm -s dir -t rpm \
 	rtx/bin/rtx=/usr/bin/rtx \
 	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
-tar -xvJf "dist/rtx-rpm-$RTX_VERSION-linux-arm64.tar.xz"
+tar -xvJf "dist/rtx-nonup-$RTX_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t rpm \
 	--name rtx \
 	--license MIT \

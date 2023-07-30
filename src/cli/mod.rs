@@ -39,6 +39,7 @@ mod prune;
 #[cfg(debug_assertions)]
 mod render_help;
 mod reshim;
+#[cfg(feature = "self_update")]
 mod self_update;
 mod settings;
 mod shell;
@@ -84,6 +85,7 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
+    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
@@ -129,6 +131,7 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
+            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
