@@ -225,7 +225,7 @@ See [plugins](#plugins) below.
     rtx use node@latest      Use latest node in current directory
     rtx use -g node@system   Use system node as global default
 
-    rtx x node@20 -- node app.js  Run `node app.js` with the PATH pointing to node-20.x
+    rtx x node@20 -- node app.js  Run `node app.js` node-20.x on PATH
 
 ## Installation
 
