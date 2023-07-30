@@ -64,13 +64,10 @@ rayon = "1.6.1"
 regex = "1.8.4"
 reqwest = { version = "0.11.17", default-features = false, features = [
   "blocking",
-  "rustls-tls-native-roots",
   "json",
 ] }
 rmp-serde = "1.1.2"
-self_update = { version = "0.37.0", default-features = false, optional = true, features = [
-  "rustls",
-] }
+self_update = { version = "0.37.0", default-features = false, optional = true }
 serde = "1.0.174"
 serde_derive = "1.0.152"
 serde_json = "1.0.103"
@@ -99,10 +96,12 @@ insta = "1.31.0"
 pretty_assertions = "1.3.0"
 
 [features]
-alpine = []
+alpine = ["rustls-native-roots"]
 brew = []
 deb = []
 rpm = []
+rustls = ["reqwest/rustls-tls", "self_update/rustls"]
+rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
 
 [package.metadata.release]
 allow-branch = ["main"]
