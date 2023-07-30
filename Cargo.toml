@@ -96,10 +96,12 @@ insta = "1.31.0"
 pretty_assertions = "1.3.0"
 
 [features]
+default = ["native-tls"]
 alpine = ["rustls-native-roots"]
-brew = []
-deb = []
-rpm = []
+brew = ["native-tls"]
+deb = ["native-tls"]
+rpm = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
 
