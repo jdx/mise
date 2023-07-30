@@ -24,11 +24,6 @@ for target in "${targets[@]}"; do
 	cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
 done
 
-# these are already packaged into the deb/rpm
-rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-brew-"*.gz
-rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-deb-"*
-rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-rpm-"*
-
 platforms=(
 	linux-x64
 	linux-arm64
@@ -73,4 +68,4 @@ git add . && git commit -m "rtx ${RTX_VERSION#v}"
 popd
 
 # we don't want to include these in the github release, only S3
-rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-brew"*
+rm -rf "$RELEASE_DIR/$RTX_VERSION/rtx-nonup"*
