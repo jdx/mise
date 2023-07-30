@@ -252,8 +252,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx use -g node@20</bold>            Use node-20.x as default
   $ <bold>rtx use node@latest</bold>           Use latest node in current directory
   $ <bold>rtx use -g node@system</bold>        Use system node everywhere unless overridden
-  $ <bold>rtx x node@20 -- node app.js</bold>  Run `node app.js` with PATH pointing to
-                                  node-20.x
+  $ <bold>rtx x node@20 -- node app.js</bold>  Run `node app.js` with node-20.x on PATH
 "#
 );
 
