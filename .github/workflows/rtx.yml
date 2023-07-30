@@ -93,7 +93,12 @@ jobs:
           shared-key: "build-linux-${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cross
-      - run: scripts/build-linux.sh ${{matrix.target}}
+      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
+        env:
+          CROSS: "1"
+      - run: scripts/build-tarball.sh rtx-nonup --release --features openssl/vendored --target ${{matrix.target}}
+        env:
+          CROSS: "1"
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
@@ -120,7 +125,8 @@ jobs:
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-      - run: scripts/build-macos.sh ${{matrix.target}}
+      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh rtx-nonup --release --features openssl/vendored --target ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}
