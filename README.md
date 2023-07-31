@@ -1158,18 +1158,17 @@ and it should only run on `cd`, however there are plenty of
 situations where it needs to run without the directory changing, for example if `.tool-versions` or
 `.rtx.toml` was just edited in the current shell.
 
-Note my emphasis on the word *displayed*. This means if you attempt to use `rtx activate` in a
+Because it runs on prompt display, if you attempt to use `rtx activate` in a
 non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
-never modify PATH. For this type of setup, you can either call `rtx hook-env` manually every time
-you wish to update PATH, or use [shims](#shims) instead (preferred).
-
+never modify PATH because it never displays a prompt. For this type of setup, you can either call
+`rtx hook-env` manually every time you wish to update PATH, or use [shims](#shims) instead (preferred).
 Or if you only need to use rtx for certain commands, just prefix the commands with
 [`rtx x --`](#rtx-exec-options-toolversion----command).
 For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
-blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
-outputs, however it is likely nothing if you're in a shell that has already been activated.
+adding latency to your shell prompt every time you run a command. You can run `rtx hook-env` yourself
+to see what it outputs, however it is likely nothing if you're in a shell that has already been activated.
 
 `rtx activate` also creates a shell function (in most shells) called `rtx`.
 This is a trick that makes it possible for `rtx shell`
