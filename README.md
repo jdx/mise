@@ -1146,8 +1146,8 @@ specified, just before the next prompt is displayed the shell runs: `eval "$(rtx
 which will execute something like this in the current shell session:
 
 ```sh
-export JAVA_HOME=~/.local/share/installs/java/18`
-export PATH=~/.local/share/installs/java/18/bin:$PATH
+export JAVA_HOME=$HOME/.local/share/installs/java/18`
+export PATH=$HOME/.local/share/installs/java/18/bin:$PATH
 ```
 
 In reality updating `PATH` is a bit more complex than that because it also needs to remove java-17,
