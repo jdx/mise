@@ -235,6 +235,7 @@ impl Tool {
         if let Err(err) = fs::remove_file(self.incomplete_file_path(tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
+        pr.set_message("");
         pr.finish();
 
         Ok(())
