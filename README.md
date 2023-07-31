@@ -184,7 +184,7 @@ _New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginn
 rtx is a tool for managing programming language and tool versions. For example, use this to install
 a particular version of node.js and ruby for a project. Using `rtx activate`, you can have your
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
-directory. Other projects on your machine can use a different set of versions.
+directory[^cd]. Other projects on your machine can use a different set of versions.
 
 rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/asdf-vm/asdf-plugins)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
@@ -198,7 +198,7 @@ with asdf `.tool-versions` files. It can also use idiomatic version files like `
 
 rtx hooks into your shell (with `rtx activate zsh`) and sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
-directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
+directory[^cd] containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
 appropriate tool versions in `PATH`.
 
 After activating, every time your prompt displays it will call `rtx hook-env` to fetch new
@@ -213,6 +213,9 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
 You should note that rtx does not directly install these tools.
 Instead, it leverages plugins to install runtimes.
 See [plugins](#plugins) below.
+
+[^cd]: Note that rtx does not modify "cd". It actually runs every time the prompt is _displayed_.
+See the [FAQ](#what-does-rtx-activate-do).
 
 ### Common commands
 
