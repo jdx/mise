@@ -1,7 +1,7 @@
 <div align="center">
 <a href="https://github.com/jdxcode/rtx"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
-  <img alt="rtx logo" src="./docs/logo-light.png">
+  <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png">
+  <img alt="rtx logo" width="617" src="./docs/logo-light@2x.png">
 </picture></a>
 <br/>
 <a href="https://crates.io/crates/rtx-cli"><img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge"></a>
