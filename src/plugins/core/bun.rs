@@ -50,6 +50,7 @@ impl BunPlugin {
     }
 
     fn test_bun(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("bun -v");
         CmdLineRunner::new(&config.settings, self.bun_bin(tv))
             .with_pr(pr)
             .arg("-v")
@@ -89,7 +90,6 @@ impl BunPlugin {
     }
 
     fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("verifying");
         self.test_bun(config, tv, pr)
     }
 }

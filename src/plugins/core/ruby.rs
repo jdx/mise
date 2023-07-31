@@ -190,6 +190,7 @@ impl RubyPlugin {
     }
 
     fn test_ruby(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("ruby -v");
         CmdLineRunner::new(&config.settings, self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -197,6 +198,7 @@ impl RubyPlugin {
     }
 
     fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("gem -v");
         CmdLineRunner::new(&config.settings, self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
