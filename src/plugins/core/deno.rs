@@ -53,6 +53,7 @@ impl DenoPlugin {
     }
 
     fn test_deno(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("deno -V");
         CmdLineRunner::new(&config.settings, self.deno_bin(tv))
             .with_pr(pr)
             .arg("-V")
@@ -89,7 +90,6 @@ impl DenoPlugin {
     }
 
     fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("verifying");
         self.test_deno(config, tv, pr)
     }
 }
