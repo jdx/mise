@@ -36,65 +36,65 @@ path = "src/main.rs"
 
 [dependencies]
 base64 = "<0.22"
-chrono = { version = "0.4.23", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.3.19", features = ["env", "derive", "string"] }
-clap_complete = "4.2.3"
-color-eyre = "0.6.2"
-color-print = "0.3.4"
-console = "0.15.7"
-ctrlc = "3.4.0"
-dialoguer = { version = "0.10.2", features = [] }
-dirs-next = "2.0.0"
-dotenvy = "0.15.6"
-duct = "0.13.5"
-filetime = "0.2.19"
-flate2 = "1.0.26"
-fslock = "0.2.1"
-humantime = "2.1.0"
-indenter = "0.3.3"
-indexmap = { version = "2.0.0", features = ["serde"] }
-indicatif = { version = "0.17.5", features = ["default", "improved_unicode"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+clap = { version = "4.3", features = ["env", "derive", "string"] }
+clap_complete = "4.2"
+color-eyre = "0.6"
+color-print = "0.3"
+console = "0.15"
+ctrlc = "3.4"
+dialoguer = { version = "0.10", features = [] }
+dirs-next = "2.0"
+dotenvy = "0.15"
+duct = "0.13"
+filetime = "0.2"
+flate2 = "1.0"
+fslock = "0.2"
+humantime = "2.1"
+indenter = "0.3"
+indexmap = { version = "2.0", features = ["serde"] }
+indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "<3"
-itertools = "0.11.0"
-log = "0.4.19"
-num_cpus = "1.14.0"
-once_cell = "1.18.0"
+itertools = "0.11"
+log = "0.4"
+num_cpus = "1.14"
+once_cell = "1.18"
 openssl = { version = "0.10", optional = true }
-path-absolutize = "3.1.0"
-rayon = "1.6.1"
-regex = "1.8.4"
+path-absolutize = "3.1"
+rayon = "1.6"
+regex = "1.8"
 reqwest = { version = "0.11.17", default-features = false, features = [
   "blocking",
   "json",
 ] }
 rmp-serde = "1.1.2"
 self_update = { version = "0.37.0", default-features = false, optional = true }
-serde = "1.0.174"
-serde_derive = "1.0.152"
-serde_json = "1.0.103"
-sha2 = "0.10.7"
-shell-escape = "0.1.4"
-shell-words = "1.1.0"
-simplelog = { version = "0.12.0" }
-tar = "0.4.38"
-tera = { version = "1.12.1", default-features = false }
-terminal_size = "0.2.1"
-thiserror = "1.0.44"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+sha2 = "0.10"
+shell-escape = "0.1"
+shell-words = "1.1"
+simplelog = { version = "0.12" }
+tar = "0.4"
+tera = { version = "1.12", default-features = false }
+terminal_size = "0.2"
+thiserror = "1.0"
 toml = "<0.8"
 toml_edit = "<0.20"
-url = "2.4.0"
-versions = "5.0.0"
+url = "2.4"
+versions = "5.0"
 
 [target.'cfg(unix)'.dependencies]
-exec = "0.3.1"
+exec = "0.3"
 
 [build-dependencies]
-built = { version = "0.6.1", features = ["chrono", "git2"] }
+built = { version = "0.6", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 ctor = "<0.3"
-insta = "1.31.0"
-pretty_assertions = "1.3.0"
+insta = "1.31"
+pretty_assertions = "1.4"
 
 [features]
 default = ["native-tls"]
