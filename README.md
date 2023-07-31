@@ -1137,15 +1137,31 @@ Once most users have migrated over this migration code will be removed.
 
 ### What does `rtx activate` do?
 
-It registers a shell hook to run `rtx hook-env` every time the shell prompt is *displayed*.
-You may think that is excessive and it should only run on `cd`, however there are many
-situations where it needs to run without the directory changing, for example if the `.rtx.toml`
-was modified.
+It registers a shell hook to run `rtx hook-env` every time the shell prompt is displayed.
+`rtx hook-env` checks the current env vars (most importantly `PATH` but there are others like
+`GOROOT` or `JAVA_HOME` for some tools) and adds/removes/updates the ones that have changed.
+
+For example, if you `cd` into a different directory that has `java 18` instead of `java 17`
+specified, just before the next prompt is displayed the shell runs: `eval "$(rtx hook-env)"`
+which will execute something like this in the current shell session:
+
+```sh
+export JAVA_HOME=~/.local/share/installs/java/18`
+export PATH=~/.local/share/installs/java/18/bin:$PATH
+```
+
+In reality updating `PATH` is a bit more complex than that because it also needs to remove java-17,
+but you get the idea.
+
+You may think that is excessive to run `rtx hook-env` every time the prompt is displayed
+and it should only run on `cd`, however there are plenty of 
+situations where it needs to run without the directory changing, for example if `.tool-versions` or
+`.rtx.toml` was just edited in the current shell.
 
 Note my emphasis on the word *displayed*. This means if you attempt to use `rtx activate` in a
 non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
 never modify PATH. For this type of setup, you can either call `rtx hook-env` manually every time
-you wish to update PATH, or use [shims](#shims) instead.
+you wish to update PATH, or use [shims](#shims) instead (preferred).
 
 Or if you only need to use rtx for certain commands, just prefix the commands with
 [`rtx x --`](#rtx-exec-options-toolversion----command).
@@ -1155,7 +1171,8 @@ For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
 outputs, however it is likely nothing if you're in a shell that has already been activated.
 
-`rtx activate` also creates a shell function (in most shells) called `rtx`. This is a trick that makes it possible for `rtx shell`
+`rtx activate` also creates a shell function (in most shells) called `rtx`.
+This is a trick that makes it possible for `rtx shell`
 and `rtx deactivate` to work without wrapping them in `eval "$(rtx shell)"`.
 
 ### `rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
