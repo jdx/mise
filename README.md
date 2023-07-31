@@ -343,8 +343,9 @@ chmod +x /usr/local/bin/rtx
 For installation on Ubuntu/Debian:
 
 ```
-wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 sudo apt update
 sudo apt install -y rtx
 ```
@@ -354,7 +355,7 @@ sudo apt install -y rtx
 > If you're on arm64 you'll need to run the following:
 >
 > ```
-> echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
 #### dnf
