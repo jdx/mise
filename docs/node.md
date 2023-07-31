@@ -29,7 +29,7 @@ Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build)
 - `RTX_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores
 - `RTX_NODE_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-npm-packages`
 - `NODEJS_ORG_MIRROR` [string]: (Legacy) overrides the default mirror used for downloading the 
-  distibutions, alternative to the `NODE_BUILD_MIRROR_URL` node-build env var
+  distributions, alternative to the `NODE_BUILD_MIRROR_URL` node-build env var
 
 ## Default node packages
 
