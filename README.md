@@ -1154,7 +1154,7 @@ In reality updating `PATH` is a bit more complex than that because it also needs
 but you get the idea.
 
 You may think that is excessive to run `rtx hook-env` every time the prompt is displayed
-and it should only run on `cd`, however there are plenty of 
+and it should only run on `cd`, however there are plenty of
 situations where it needs to run without the directory changing, for example if `.tool-versions` or
 `.rtx.toml` was just edited in the current shell.
 

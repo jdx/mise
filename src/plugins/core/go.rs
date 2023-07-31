@@ -82,6 +82,7 @@ impl GoPlugin {
     }
 
     fn test_go(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("go version");
         CmdLineRunner::new(&config.settings, self.go_bin(tv))
             .with_pr(pr)
             .arg("version")
@@ -122,7 +123,6 @@ impl GoPlugin {
     }
 
     fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("verifying");
         self.test_go(config, tv, pr)?;
         self.install_default_packages(&config.settings, tv, pr)
     }

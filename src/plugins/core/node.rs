@@ -138,6 +138,7 @@ impl NodePlugin {
     }
 
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("node -v");
         CmdLineRunner::new(&config.settings, self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -145,6 +146,7 @@ impl NodePlugin {
     }
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("npm -v");
         CmdLineRunner::new(&config.settings, self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
