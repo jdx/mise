@@ -229,15 +229,6 @@ impl Config {
         Ok(config_files)
     }
 
-    pub fn is_plugin_hidden(&self, plugin_name: &PluginName) -> bool {
-        self.tools.get(plugin_name).map_or(false, |tool| {
-            if matches!(tool.plugin.get_type(), PluginType::External) {
-                return false;
-            }
-            plugin_name == "nodejs" || plugin_name == "golang"
-        })
-    }
-
     pub fn rebuild_shims_and_runtime_symlinks(&mut self) -> Result<()> {
         let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
         crate::shims::reshim(self, &ts)?;

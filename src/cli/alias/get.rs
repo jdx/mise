@@ -31,7 +31,7 @@ impl Command for AliasGet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
- $ <bold>rtx alias get node lts/hydrogen</bold>
+ $ <bold>rtx alias get node lts-hydrogen</bold>
  20.0.0
 "#
 );
