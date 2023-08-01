@@ -118,7 +118,6 @@ fn render_plugins(config: &Config) -> String {
         .tools
         .values()
         .filter(|p| p.is_installed())
-        .filter(|p| !config.is_plugin_hidden(&p.name))
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0) + 2;
     for p in plugins {
