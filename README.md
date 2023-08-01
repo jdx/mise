@@ -863,8 +863,8 @@ Enables experimental features.
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for node@20.x
-so you can use set it with `node lts/hydrogen` in `.tool-versions`/`.rtx.toml`.
+versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for node@20.x
+so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.rtx.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
 
@@ -879,9 +879,9 @@ versions:
 ```bash
 #!/usr/bin/env bash
 
-echo "lts/hydrogen 18"
-echo "lts/gallium 16"
-echo "lts/fermium 14"
+echo "lts-hydrogen 18"
+echo "lts-gallium 16"
+echo "lts-fermium 14"
 ```
 
 > **Note:**
@@ -1582,7 +1582,7 @@ Arguments:
           The alias to show
 
 Examples:
- $ rtx alias get node lts/hydrogen
+ $ rtx alias get node lts-hydrogen
  20.0.0
 ```
 ### `rtx alias ls [OPTIONS]`
@@ -1605,7 +1605,7 @@ Options:
 
 Examples:
   $ rtx aliases
-  node    lts/hydrogen   20.0.0
+  node    lts-hydrogen   20.0.0
 ```
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
@@ -1627,7 +1627,7 @@ Arguments:
           The value to set the alias to
 
 Examples:
-  $ rtx alias set node lts/hydrogen 18.0.0
+  $ rtx alias set node lts-hydrogen 18.0.0
 ```
 ### `rtx alias unset <PLUGIN> <ALIAS>`
 
@@ -1646,7 +1646,7 @@ Arguments:
           The alias to remove
 
 Examples:
-  $ rtx alias unset node lts/hydrogen
+  $ rtx alias unset node lts-hydrogen
 ```
 ### `rtx bin-paths`
 
