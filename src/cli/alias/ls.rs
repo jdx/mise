@@ -28,11 +28,13 @@ impl Command for AliasLs {
                 if plugin_name != plugin {
                     continue;
                 }
-            } else if config.is_plugin_hidden(plugin_name) {
-                continue;
             }
 
             for (from, to) in aliases.iter() {
+                if plugin_name == "node" && from.starts_with("lts/") {
+                    // hide the nvm-style aliases so only asdf-style ones display
+                    continue;
+                }
                 rtxprintln!(out, "{:20} {:20} {}", plugin_name, from, to);
             }
         }
@@ -43,7 +45,7 @@ impl Command for AliasLs {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx aliases</bold>
-  node    lts/hydrogen   20.0.0
+  node    lts-hydrogen   20.0.0
 "#
 );
 
