@@ -24,6 +24,8 @@ $ rtx use -g go@1.20
 - `RTX_GO_SKIP_CHECKSUM` [bool]: skips checksum verification of downloaded go tarballs, defaults to false
 - `RTX_GO_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-go-packages`
 - `RTX_GO_DOWNLOAD_MIRROR` [string]: location to download go from, defaults to `https://dl.google.com/go`
+- `RTX_GO_SET_GOROOT` [bool]: set `$GOROOT` to the rtx go installs go root dir, defaults to true
+- `RTX_GO_SET_GOPATH` [bool]: set `$GOPATH` to the rtx go installs packages dir, defaults to true
 
 ## Default packages
 
