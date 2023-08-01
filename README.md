@@ -42,9 +42,10 @@ $ rtx --version
 rtx 1.35.7
 ```
 
-Hook rtx into to your shell (pick the right one for your shell):
+Hook rtx into your shell (pick the right one for your shell):
 
 ```sh-session
+# note this assumes rtx is located at ~/bin/rtx
 echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
