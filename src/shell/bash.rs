@@ -42,7 +42,7 @@ impl Shell for Bash {
               eval "$(rtx hook-env{status} -s bash)";
               return $previous_exit_status;
             }};
-            if ! [[ "${{PROMPT_COMMAND:-}}" =~ _rtx_hook ]]; then
+            if [[ ";${{PROMPT_COMMAND:-}};" != *";_rtx_hook;"* ]]; then
               PROMPT_COMMAND="_rtx_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
             "#});
