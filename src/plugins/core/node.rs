@@ -210,7 +210,10 @@ impl Plugin for NodePlugin {
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
         let body = fs::read_to_string(path)?;
         // trim "v" prefix
-        Ok(body.trim().strip_prefix('v').unwrap_or(&body).to_string())
+        let body = body.trim().strip_prefix('v').unwrap_or(&body);
+        // replace lts/* with lts
+        let body = body.replace("lts/*", "lts");
+        Ok(body.to_string())
     }
 
     fn external_commands(&self) -> Result<Vec<Command>> {
