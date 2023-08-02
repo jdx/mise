@@ -70,12 +70,18 @@ impl GoPlugin {
             } else {
                 format!("{}@latest", package)
             };
+            let mut env = HashMap::new();
+            if *env::RTX_GO_SET_GOROOT != Some(false) {
+                env.insert("GOROOT", self.goroot(tv));
+            }
+            if *env::RTX_GO_SET_GOPATH != Some(false) {
+                env.insert("GOPATH", self.gopath(tv));
+            }
             CmdLineRunner::new(settings, self.go_bin(tv))
                 .with_pr(pr)
                 .arg("install")
                 .arg(package)
-                .env("GOROOT", self.goroot(tv))
-                .env("GOPATH", self.gopath(tv))
+                .envs(env)
                 .execute()?;
         }
         Ok(())
@@ -167,21 +173,23 @@ impl Plugin for GoPlugin {
     }
 
     fn list_bin_paths(&self, _config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        Ok(vec![
-            self.goroot(tv).join("bin"),
-            self.gopath(tv).join("bin"),
-        ])
+        // goroot/bin must always be included, irrespective of RTX_GO_SET_GOROOT
+        let mut paths = vec![self.goroot(tv).join("bin")];
+        if *env::RTX_GO_SET_GOPATH != Some(false) {
+            paths.push(self.gopath(tv).join("bin"));
+        }
+        Ok(paths)
     }
 
     fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
         let mut map = HashMap::new();
-        if env::PRISTINE_ENV.get("GOROOT").is_none() {
+        if env::PRISTINE_ENV.get("GOROOT").is_none() && *env::RTX_GO_SET_GOROOT != Some(false) {
             map.insert(
                 "GOROOT".to_string(),
                 self.goroot(tv).to_string_lossy().to_string(),
             );
         };
-        if env::PRISTINE_ENV.get("GOPATH").is_none() {
+        if env::PRISTINE_ENV.get("GOPATH").is_none() && *env::RTX_GO_SET_GOPATH != Some(false) {
             map.insert(
                 "GOPATH".to_string(),
                 self.gopath(tv).to_string_lossy().to_string(),
