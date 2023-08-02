@@ -1,4 +1,10 @@
 { pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
+let
+  libssl = with pkgs; symlinkJoin {
+    name = "libssl-merged";
+    paths = [ openssl.out openssl.dev ];
+  };
+in
 rustPlatform.buildRustPackage {
   pname = "rtx";
   version = "1.35.8";
@@ -9,6 +15,7 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
+  nativeBuildInputs = with pkgs; [ pkg-config ];
   buildInputs = with pkgs; [
     coreutils
     bash
@@ -40,6 +47,7 @@ rustPlatform.buildRustPackage {
   # Need this to ensure openssl-src's build uses an available version of `perl`
   # https://github.com/alexcrichton/openssl-src-rs/issues/45
   OPENSSL_SRC_PERL = "${perl}/bin/perl";
+  OPENSSL_DIR = "${libssl}";
 
   meta = with lib; {
     description = "Polyglot runtime manager (asdf rust clone)";
