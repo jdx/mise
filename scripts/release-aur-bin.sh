@@ -41,7 +41,7 @@ package() {
     install -Dm644 rtx/man/man1/rtx.1 "\$pkgdir/usr/share/man/man1/rtx.1"
     install -Dm644 rtx.bash "\$pkgdir/usr/share/bash-completion/completions/rtx"
     install -Dm644 rtx.fish "\$pkgdir/usr/share/fish/completions/rtx.fish"
-    install -Dm644 _rtx "\$pkgdir/usr/share/zsh/site-functions/_zsh"
+    install -Dm644 _rtx "\$pkgdir/usr/share/zsh/site-functions/_rtx"
 }
 
 check() {
