@@ -53,9 +53,8 @@ pub static RTX_JOBS: Lazy<usize> = Lazy::new(|| {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4)
 });
-pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
-    var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
-});
+pub static RTX_TIMEOUT: Lazy<Duration> =
+    Lazy::new(|| var_duration("RTX_TIMEOUT").unwrap_or(Duration::from_secs(30)));
 
 /// duration that remote version cache is kept for
 /// for "fast" commands (represented by PREFER_STALE), these are always

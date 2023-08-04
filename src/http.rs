@@ -13,6 +13,7 @@ impl Client {
         let reqwest = reqwest::blocking::ClientBuilder::new()
             .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
             .gzip(true)
+            .timeout(*crate::env::RTX_TIMEOUT)
             .build()?;
         Ok(Self { reqwest })
     }

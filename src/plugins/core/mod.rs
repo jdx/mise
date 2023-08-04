@@ -86,6 +86,6 @@ impl CorePlugin {
         F: FnOnce() -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        run_with_timeout(f, *env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+        run_with_timeout(f, *env::RTX_TIMEOUT)
     }
 }
