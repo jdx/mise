@@ -27,7 +27,7 @@ impl Command for Update {
             Some(plugins) => plugins
                 .into_iter()
                 .map(|p| {
-                    let (p, ref_) = match p.split_once('@') {
+                    let (p, ref_) = match p.split_once('#') {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
@@ -55,9 +55,9 @@ impl Command for Update {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx plugins update</bold>              # update all plugins
+  $ <bold>rtx plugins update</bold>            # update all plugins
   $ <bold>rtx plugins update node</bold>       # update only node
-  $ <bold>rtx plugins update node@beta</bold>  # specify a ref
+  $ <bold>rtx plugins update node#beta</bold>  # specify a ref
 "#
 );
 
