@@ -2214,9 +2214,9 @@ Arguments:
           Plugin(s) to update
 
 Examples:
-  $ rtx plugins update              # update all plugins
+  $ rtx plugins update            # update all plugins
   $ rtx plugins update node       # update only node
-  $ rtx plugins update node@beta  # specify a ref
+  $ rtx plugins update node#beta  # specify a ref
 ```
 ### `rtx prune [OPTIONS] [PLUGINS]...`
 
