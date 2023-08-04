@@ -19,22 +19,8 @@ impl Git {
         self.dir.join(".git").is_dir()
     }
 
-    pub fn remote_default_branch(&self) -> Result<String> {
-        let branch = cmd!(
-            "git",
-            "-C",
-            &self.dir,
-            "symbolic-ref",
-            "refs/remotes/origin/HEAD"
-        )
-        .read()?;
-
-        let branch = branch.rsplit_once('/').unwrap().1;
-        Ok(branch.to_string())
-    }
-
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
-        let gitref = gitref.map_or_else(|| self.remote_default_branch(), Ok)?;
+        let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
         self.run_git_command(&[
             "fetch",
@@ -75,6 +61,11 @@ impl Git {
         Ok(())
     }
 
+    pub fn current_branch(&self) -> Result<String> {
+        let branch = cmd!("git", "-C", &self.dir, "branch", "--show-current").read()?;
+        debug!("current branch for {}: {}", self.dir.display(), &branch);
+        Ok(branch)
+    }
     pub fn current_sha(&self) -> Result<String> {
         let sha = cmd!("git", "-C", &self.dir, "rev-parse", "HEAD").read()?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
