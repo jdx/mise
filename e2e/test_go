@@ -6,7 +6,7 @@ export RTX_EXPERIMENTAL=1
 export RTX_GO_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-go-packages"
 
 cat >"$RTX_GO_DEFAULT_PACKAGES_FILE" <<EOF
-github.com/jesseduffield/lazygit # comment
+github.com/jdxcode/go-example # comment
 EOF
 
 rtx i golang@1.20
