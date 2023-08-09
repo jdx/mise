@@ -116,7 +116,7 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() || !self.check_venv_python(&virtualenv, tv)? {
-                debug!("setting up virtualenv at: {}", virtualenv.display());
+                info!("setting up virtualenv at: {}", virtualenv.display());
                 let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv))
                     .arg("-m")
                     .arg("venv")
