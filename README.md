@@ -1,5 +1,9 @@
 <div align="center">
-<h1><a href="https://github.com/jdxcode/rtx">rtx</a></h1>
+<a href="https://github.com/jdxcode/rtx"><picture>
+  <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png">
+  <img alt="rtx logo" width="617" src="./docs/logo-light@2x.png">
+</picture></a>
+<br/>
 <a href="https://crates.io/crates/rtx-cli"><img alt="Crates.io" src="https://img.shields.io/crates/v/rtx-cli?style=for-the-badge"></a>
 <a href="https://github.com/jdxcode/rtx/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdxcode/rtx?color=%2320A920&style=for-the-badge"></a>
 <a href="https://github.com/jdxcode/rtx/actions/workflows/rtx.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdxcode/rtx/rtx.yml?color=%2320A920&style=for-the-badge"></a>
@@ -35,12 +39,13 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.35.1
+rtx 1.35.8
 ```
 
-Hook rtx into to your shell (pick the right one for your shell):
+Hook rtx into your shell (pick the right one for your shell):
 
 ```sh-session
+# note this assumes rtx is located at ~/bin/rtx
 echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
@@ -180,7 +185,7 @@ _New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginn
 rtx is a tool for managing programming language and tool versions. For example, use this to install
 a particular version of node.js and ruby for a project. Using `rtx activate`, you can have your
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
-directory. Other projects on your machine can use a different set of versions.
+directory[^cd]. Other projects on your machine can use a different set of versions.
 
 rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/asdf-vm/asdf-plugins)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
@@ -194,7 +199,7 @@ with asdf `.tool-versions` files. It can also use idiomatic version files like `
 
 rtx hooks into your shell (with `rtx activate zsh`) and sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
-directory containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
+directory[^cd] containing a `.tool-versions`/`.rtx.toml` file, rtx will automatically set the
 appropriate tool versions in `PATH`.
 
 After activating, every time your prompt displays it will call `rtx hook-env` to fetch new
@@ -210,6 +215,9 @@ You should note that rtx does not directly install these tools.
 Instead, it leverages plugins to install runtimes.
 See [plugins](#plugins) below.
 
+[^cd]: Note that rtx does not modify "cd". It actually runs every time the prompt is _displayed_.
+See the [FAQ](#what-does-rtx-activate-do).
+
 ### Common commands
 
     rtx install node@20.0.0  Install a specific version number
@@ -221,7 +229,7 @@ See [plugins](#plugins) below.
     rtx use node@latest      Use latest node in current directory
     rtx use -g node@system   Use system node as global default
 
-    rtx x node@20 -- node app.js  Run `node app.js` with the PATH pointing to node-20.x
+    rtx x node@20 -- node app.js  Run `node app.js` node-20.x on PATH
 
 ## Installation
 
@@ -327,7 +335,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.35.1/rtx-v1.35.1-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v1.35.8/rtx-v1.35.8-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
@@ -336,8 +344,9 @@ chmod +x /usr/local/bin/rtx
 For installation on Ubuntu/Debian:
 
 ```
-wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /usr/share/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 sudo apt update
 sudo apt install -y rtx
 ```
@@ -347,7 +356,7 @@ sudo apt install -y rtx
 > If you're on arm64 you'll need to run the following:
 >
 > ```
-> echo "deb [signed-by=/usr/share/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
 #### dnf
@@ -854,8 +863,8 @@ Enables experimental features.
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts/hydrogen` as the version for node@20.x
-so you can use set it with `node lts/hydrogen` in `.tool-versions`/`.rtx.toml`.
+versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for node@20.x
+so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.rtx.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
 
@@ -870,9 +879,9 @@ versions:
 ```bash
 #!/usr/bin/env bash
 
-echo "lts/hydrogen 18"
-echo "lts/gallium 16"
-echo "lts/fermium 14"
+echo "lts-hydrogen 18"
+echo "lts-gallium 16"
+echo "lts-fermium 14"
 ```
 
 > **Note:**
@@ -1095,9 +1104,9 @@ You can see the core plugins with `rtx plugin ls --core`.
 
 * [Python](./docs/python.md)
 * [NodeJS](./docs/node.md)
-* [Ruby (experimental)](./docs/ruby.md)
-* [Go (experimental)](./docs/go.md)
-* [Java (experimental)](./docs/java.md)
+* [Ruby](./docs/ruby.md)
+* [Go](./docs/go.md)
+* [Java](./docs/java.md)
 * [Deno (experimental)](./docs/deno.md)
 * [Bun (experimental)](./docs/bun.md)
 
@@ -1130,25 +1139,41 @@ Once most users have migrated over this migration code will be removed.
 
 ### What does `rtx activate` do?
 
-It registers a shell hook to run `rtx hook-env` every time the shell prompt is *displayed*.
-You may think that is excessive and it should only run on `cd`, however there are many
-situations where it needs to run without the directory changing, for example if the `.rtx.toml`
-was modified.
+It registers a shell hook to run `rtx hook-env` every time the shell prompt is displayed.
+`rtx hook-env` checks the current env vars (most importantly `PATH` but there are others like
+`GOROOT` or `JAVA_HOME` for some tools) and adds/removes/updates the ones that have changed.
 
-Note my emphasis on the word *displayed*. This means if you attempt to use `rtx activate` in a
+For example, if you `cd` into a different directory that has `java 18` instead of `java 17`
+specified, just before the next prompt is displayed the shell runs: `eval "$(rtx hook-env)"`
+which will execute something like this in the current shell session:
+
+```sh
+export JAVA_HOME=$HOME/.local/share/installs/java/18
+export PATH=$HOME/.local/share/installs/java/18/bin:$PATH
+```
+
+In reality updating `PATH` is a bit more complex than that because it also needs to remove java-17,
+but you get the idea.
+
+You may think that is excessive to run `rtx hook-env` every time the prompt is displayed
+and it should only run on `cd`, however there are plenty of
+situations where it needs to run without the directory changing, for example if `.tool-versions` or
+`.rtx.toml` was just edited in the current shell.
+
+Because it runs on prompt display, if you attempt to use `rtx activate` in a
 non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
-never modify PATH. For this type of setup, you can either call `rtx hook-env` manually every time
-you wish to update PATH, or use [shims](#shims) instead.
-
+never modify PATH because it never displays a prompt. For this type of setup, you can either call
+`rtx hook-env` manually every time you wish to update PATH, or use [shims](#shims) instead (preferred).
 Or if you only need to use rtx for certain commands, just prefix the commands with
 [`rtx x --`](#rtx-exec-options-toolversion----command).
 For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
-blocking your shell every time you run a command. You can run `rtx hook-env` yourself to see what it
-outputs, however it is likely nothing if you're in a shell that has already been activated.
+adding latency to your shell prompt every time you run a command. You can run `rtx hook-env` yourself
+to see what it outputs, however it is likely nothing if you're in a shell that has already been activated.
 
-`rtx activate` also creates a shell function (in most shells) called `rtx`. This is a trick that makes it possible for `rtx shell`
+`rtx activate` also creates a shell function (in most shells) called `rtx`.
+This is a trick that makes it possible for `rtx shell`
 and `rtx deactivate` to work without wrapping them in `eval "$(rtx shell)"`.
 
 ### `rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
@@ -1557,7 +1582,7 @@ Arguments:
           The alias to show
 
 Examples:
- $ rtx alias get node lts/hydrogen
+ $ rtx alias get node lts-hydrogen
  20.0.0
 ```
 ### `rtx alias ls [OPTIONS]`
@@ -1580,7 +1605,7 @@ Options:
 
 Examples:
   $ rtx aliases
-  node    lts/hydrogen   20.0.0
+  node    lts-hydrogen   20.0.0
 ```
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
@@ -1602,7 +1627,7 @@ Arguments:
           The value to set the alias to
 
 Examples:
-  $ rtx alias set node lts/hydrogen 18.0.0
+  $ rtx alias set node lts-hydrogen 18.0.0
 ```
 ### `rtx alias unset <PLUGIN> <ALIAS>`
 
@@ -1621,7 +1646,7 @@ Arguments:
           The alias to remove
 
 Examples:
-  $ rtx alias unset node lts/hydrogen
+  $ rtx alias unset node lts-hydrogen
 ```
 ### `rtx bin-paths`
 
@@ -2189,9 +2214,9 @@ Arguments:
           Plugin(s) to update
 
 Examples:
-  $ rtx plugins update              # update all plugins
+  $ rtx plugins update            # update all plugins
   $ rtx plugins update node       # update only node
-  $ rtx plugins update node@beta  # specify a ref
+  $ rtx plugins update node#beta  # specify a ref
 ```
 ### `rtx prune [OPTIONS] [PLUGINS]...`
 

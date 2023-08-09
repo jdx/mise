@@ -6,6 +6,7 @@ use std::process::exit;
 
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
+use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::cli::command::Command;
@@ -61,7 +62,7 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
             }
         }
         let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
-        err_no_version_set(bin_name, tvs)?;
+        err_no_version_set(config, ts, bin_name, tvs)?;
     }
     Err(eyre!("{} is not a valid shim", bin_name))
 }
@@ -180,14 +181,38 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-fn err_no_version_set(bin_name: &str, tvs: Vec<ToolVersion>) -> Result<()> {
+fn err_no_version_set(
+    config: &Config,
+    ts: Toolset,
+    bin_name: &str,
+    tvs: Vec<ToolVersion>,
+) -> Result<()> {
     if tvs.is_empty() {
         return Ok(());
     }
-    let mut msg = format!("No version is set for shim: {}\n", bin_name);
-    msg.push_str("Set a global default version with one of the following:\n");
-    for tv in tvs {
-        msg.push_str(&format!("rtx use -g {}@{}\n", tv.plugin_name, tv.version));
+    let missing_plugins = tvs.iter().map(|tv| &tv.plugin_name).collect::<HashSet<_>>();
+    let mut missing_tools = ts
+        .list_missing_versions(config)
+        .into_iter()
+        .filter(|t| missing_plugins.contains(&t.plugin_name))
+        .collect_vec();
+    if missing_tools.is_empty() {
+        let mut msg = format!("No version is set for shim: {}\n", bin_name);
+        msg.push_str("Set a global default version with one of the following:\n");
+        for tv in tvs {
+            msg.push_str(&format!("rtx use -g {}@{}\n", tv.plugin_name, tv.version));
+        }
+        Err(eyre!(msg.trim().to_string()))
+    } else {
+        let mut msg = format!(
+            "Tool{} not installed for shim: {}\n",
+            if missing_tools.len() > 1 { "s" } else { "" },
+            bin_name
+        );
+        for t in missing_tools.drain(..) {
+            msg.push_str(&format!("Missing tool version: {}\n", t));
+        }
+        msg.push_str("Install all missing tools with: rtx install\n");
+        Err(eyre!(msg.trim().to_string()))
     }
-    Err(eyre!(msg.trim().to_string()))
 }

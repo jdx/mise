@@ -186,6 +186,10 @@ pub static RTX_GO_REPO: Lazy<String> =
 pub static RTX_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| {
     var("RTX_GO_DOWNLOAD_MIRROR").unwrap_or_else(|_| "https://dl.google.com/go".into())
 });
+pub static RTX_GO_SET_GOROOT: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("RTX_GO_SET_GOROOT"));
+pub static RTX_GO_SET_GOPATH: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("RTX_GO_SET_GOPATH"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {

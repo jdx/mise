@@ -140,7 +140,8 @@ impl PythonPlugin {
         Ok(symlink_target == target)
     }
 
-    fn test_python(&self, config: &&Config, tv: &ToolVersion) -> Result<()> {
+    fn test_python(&self, config: &&Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("python --version");
         CmdLineRunner::new(&config.settings, self.python_path(tv))
             .arg("--version")
             .execute()
@@ -200,7 +201,7 @@ impl Plugin for PythonPlugin {
             }
         }
         cmd.execute()?;
-        self.test_python(&config, tv)?;
+        self.test_python(&config, tv, pr)?;
         self.get_virtualenv(config, tv, Some(pr))?;
         self.install_default_packages(&config.settings, tv, pr)?;
         Ok(())

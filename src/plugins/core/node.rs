@@ -138,6 +138,7 @@ impl NodePlugin {
     }
 
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("node -v");
         CmdLineRunner::new(&config.settings, self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -145,6 +146,7 @@ impl NodePlugin {
     }
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("npm -v");
         CmdLineRunner::new(&config.settings, self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
@@ -208,7 +210,10 @@ impl Plugin for NodePlugin {
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
         let body = fs::read_to_string(path)?;
         // trim "v" prefix
-        Ok(body.trim().strip_prefix('v').unwrap_or(&body).to_string())
+        let body = body.trim().strip_prefix('v').unwrap_or(&body);
+        // replace lts/* with lts
+        let body = body.replace("lts/*", "lts");
+        Ok(body.to_string())
     }
 
     fn external_commands(&self) -> Result<Vec<Command>> {

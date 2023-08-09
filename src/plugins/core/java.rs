@@ -161,7 +161,7 @@ impl JavaPlugin {
     }
 
     fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("verifying");
+        pr.set_message("java -version");
         self.test_java(config, tv, pr)
     }
 
@@ -249,7 +249,7 @@ impl Plugin for JavaPlugin {
                 .1;
             Ok(version.to_string())
         } else {
-            Ok(contents.to_string())
+            Ok(contents)
         }
     }
 }
