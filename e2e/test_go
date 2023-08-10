@@ -9,7 +9,7 @@ cat >"$RTX_GO_DEFAULT_PACKAGES_FILE" <<EOF
 github.com/jdxcode/go-example # comment
 EOF
 
-rtx i golang@1.20
+rtx use golang@prefix:1.20
 assert_contains "rtx x -- go version" "go version go1.20"
 
 rm "$RTX_GO_DEFAULT_PACKAGES_FILE"

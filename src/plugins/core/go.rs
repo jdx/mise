@@ -11,7 +11,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::ToolVersion;
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, hash, http};
 
@@ -155,8 +155,6 @@ impl Plugin for GoPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
-
         let tarball_path = self.download(tv, pr)?;
         self.install(tv, pr, &tarball_path)?;
         self.verify(config, tv, pr)?;
