@@ -43,18 +43,11 @@ impl Command for HookEnv {
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
 
-        let result = self.get_patches(&config, &ts);
-        match result {
-            Ok(patches) => {
-                let output = hook_env::build_env_commands(&*shell, &patches);
-                out.stdout.write(output);
-                if self.status {
-                    self.display_status(&config, &ts, out);
-                }
-            }
-            Err(error) => {
-                eprintln!("Error: {}", error);
-            }
+        let patches = self.get_patches(&config, &ts)?;
+        let output = hook_env::build_env_commands(&*shell, &patches);
+        out.stdout.write(output);
+        if self.status {
+            self.display_status(&config, &ts, out);
         }
 
         Ok(())
@@ -78,31 +71,30 @@ impl HookEnv {
         Ok(patches)
     }
 
-    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
-        let result = self.get_patches(config, ts);
-        match result {
-            Ok(patches) => {
-                // output load and unload env like direnv
-                for patch in patches.iter() {
-                    match patch {
-                        EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                            if !k.starts_with("__RTX") && k != "PATH" {
-                                info!("load env {}={}", k, v);
-                            }
-                        }
-                        EnvDiffOperation::Remove(k) => {
-                            if !k.starts_with("__RTX") && k != "PATH" {
-                                info!("unload env {}", k);
-                            }
-                        }
-                    }
-                }
-            }
+    fn display_env_load_unload_status(&self, config: &Config, ts: &Toolset) {
+        let patches = match self.get_patches(config, ts) {
+            Ok(patches) => patches,
             Err(error) => {
-                // Handle the error
                 eprintln!("Error: {}", error);
+                return;
+            }
+        };
+
+        for patch in patches {
+            match patch {
+                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) if !k.starts_with("__RTX") && k != "PATH" => {
+                    info!("load env {}={}", k, v);
+                },
+                EnvDiffOperation::Remove(k) if !k.starts_with("__RTX") && k != "PATH" => {
+                    info!("unload env {}", k);
+                }
+                _ => {}
             }
         }
+    }
+
+    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
+        self.display_env_load_unload_status(config, ts);
 
         let installed_versions = ts
             .list_current_installed_versions(config)
