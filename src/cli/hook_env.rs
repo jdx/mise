@@ -54,6 +54,21 @@ impl Command for HookEnv {
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&config)?);
 
+        // output load and unload env like direnv
+        for patch in patches.iter() {
+            match patch {
+                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                    if !k.starts_with("__RTX") && k != "PATH" {
+                        info!("load env {}={}", k, v);
+                    }
+                }
+                EnvDiffOperation::Remove(k) => {
+                    if !k.starts_with("__RTX") && k != "PATH" {
+                        info!("unload env {}", k);
+                    }
+                }
+            }
+        }
         let output = hook_env::build_env_commands(&*shell, &patches);
         out.stdout.write(output);
         if self.status {
