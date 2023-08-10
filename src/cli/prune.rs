@@ -11,6 +11,7 @@ use crate::plugins::PluginName;
 use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::prompt;
 
 /// Delete unused versions of tools
 ///
@@ -60,12 +61,14 @@ impl Prune {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (p, tv) in to_delete {
             let mut pr = mpr.add();
-            p.decorate_progress_bar(&mut pr, Some(&tv));
             if self.dry_run {
                 pr.set_prefix(format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
             }
-            p.uninstall_version(config, &tv, &pr, self.dry_run)?;
-            pr.finish();
+            if prompt::confirm(&format!("remove {} ?", &tv))? {
+                p.decorate_progress_bar(&mut pr, Some(&tv));
+                p.uninstall_version(config, &tv, &pr, self.dry_run)?;
+                pr.finish();
+            }
         }
         Ok(())
     }
