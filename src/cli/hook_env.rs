@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::direnv::DirenvDiff;
 use crate::env::__RTX_DIFF;
-use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
@@ -42,37 +42,19 @@ impl Command for HookEnv {
             .build(&mut config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
-        let env = ts.env(&config);
-        let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
-        let mut patches = diff.to_patches();
 
-        let mut paths = config.path_dirs.clone();
-        paths.extend(ts.list_paths(&config)); // load the active runtime paths
-        diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
-
-        patches.extend(self.build_path_operations(&paths, &__RTX_DIFF.path)?);
-        patches.push(self.build_diff_operation(&diff)?);
-        patches.push(self.build_watch_operation(&config)?);
-
-        // output load and unload env like direnv
-        for patch in patches.iter() {
-            match patch {
-                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                    if !k.starts_with("__RTX") && k != "PATH" {
-                        info!("load env {}={}", k, v);
-                    }
-                }
-                EnvDiffOperation::Remove(k) => {
-                    if !k.starts_with("__RTX") && k != "PATH" {
-                        info!("unload env {}", k);
-                    }
+        let result = self.get_patches(&config, &ts);
+        match result {
+            Ok(patches) => {
+                let output = hook_env::build_env_commands(&*shell, &patches);
+                out.stdout.write(output);
+                if self.status {
+                    self.display_status(&config, &ts, out);
                 }
             }
-        }
-        let output = hook_env::build_env_commands(&*shell, &patches);
-        out.stdout.write(output);
-        if self.status {
-            self.display_status(&config, &ts, out);
+            Err(error) => {
+                eprintln!("Error: {}", error);
+            }
         }
 
         Ok(())
@@ -80,7 +62,48 @@ impl Command for HookEnv {
 }
 
 impl HookEnv {
+    fn get_patches(&self, config: &Config, ts: &Toolset) -> Result<EnvDiffPatches> {
+        let env = ts.env(config);
+        let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
+        let mut patches = diff.to_patches();
+
+        let mut paths = config.path_dirs.clone();
+        paths.extend(ts.list_paths(config)); // load the active runtime paths
+        diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
+
+        patches.extend(self.build_path_operations(&paths, &__RTX_DIFF.path)?);
+        patches.push(self.build_diff_operation(&diff)?);
+        patches.push(self.build_watch_operation(config)?);
+
+        Ok(patches)
+    }
+
     fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
+        let result = self.get_patches(config, ts);
+        match result {
+            Ok(patches) => {
+                // output load and unload env like direnv
+                for patch in patches.iter() {
+                    match patch {
+                        EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                            if !k.starts_with("__RTX") && k != "PATH" {
+                                info!("load env {}={}", k, v);
+                            }
+                        }
+                        EnvDiffOperation::Remove(k) => {
+                            if !k.starts_with("__RTX") && k != "PATH" {
+                                info!("unload env {}", k);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                // Handle the error
+                eprintln!("Error: {}", error);
+            }
+        }
+
         let installed_versions = ts
             .list_current_installed_versions(config)
             .into_iter()
