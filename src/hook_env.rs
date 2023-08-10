@@ -158,15 +158,9 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
     for patch in patches.iter() {
         match patch {
             EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                if !k.starts_with("__RTX") && k != "PATH" {
-                    info!("load env {}={}", k, v);
-                }
                 output.push_str(&shell.set_env(k, v));
             }
             EnvDiffOperation::Remove(k) => {
-                if !k.starts_with("__RTX") && k != "PATH" {
-                    info!("unload env {}", k);
-                }
                 output.push_str(&shell.unset_env(k));
             }
         }
