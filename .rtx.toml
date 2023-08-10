@@ -7,7 +7,7 @@ THIS_PROJECT = "{{config_root}}-{{env.PWD}}"
 [tools]
 #node = 'lts'
 tiny = { version = "1", foo = "bar" }
-golang = { version = "latest", foo = "bar" }
+golang = { version = "prefix:1.20", foo = "bar" }
 python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 ruby = "3.1"
 
