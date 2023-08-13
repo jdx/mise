@@ -77,10 +77,6 @@ impl PythonPlugin {
         tv.install_path().join("bin/python")
     }
 
-    fn pip_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/pip")
-    }
-
     fn install_default_packages(
         &self,
         settings: &Settings,
@@ -91,9 +87,10 @@ impl PythonPlugin {
             return Ok(());
         }
         pr.set_message("installing default packages");
-        let pip = self.pip_path(tv);
-        CmdLineRunner::new(settings, pip)
+        CmdLineRunner::new(settings, self.python_path(tv))
             .with_pr(pr)
+            .arg("-m")
+            .arg("pip")
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
