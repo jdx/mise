@@ -294,6 +294,12 @@ Alternatively, use the custom tap (which is updated immediately after a release)
 brew install jdxcode/tap/rtx
 ```
 
+#### MacPorts
+
+```
+sudo port install rtx
+```
+
 #### Cargo
 
 Build from source with Cargo:
