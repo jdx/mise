@@ -92,7 +92,6 @@ v20.0.0
 - [Plugins](#plugins)
   - [Plugin Options](#plugin-options)
 - [Versioning](#versioning)
-  - [Calver Breaking Changes](#calver-breaking-changes)
 - [Directories](#directories)
   - [`~/.config/rtx`](#configrtx)
   - [`~/.cache/rtx`](#cachertx)
@@ -780,7 +779,7 @@ Disable legacy version file parsing for specific tools. Separate with `,`.
 #### `RTX_USE_TOML=0`
 
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
-configuration. This will be default behavior once we hit the [Calver](#versioning) release.
+configuration.
 
 For now this is not used by `rtx use` which will only use `.rtx.toml` unless `--path` is specified.
 
@@ -922,12 +921,7 @@ Currently this only supports simple strings, but we can make it compatible with 
 
 ## Versioning
 
-rtx is currently a new project and is under very rapid development. Slight behavior changes may
-occur between releases.
-Features marked as "experimental" may change significantly or be removed entirely.
-
-Starting August 6, 2023\*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on
-its behavior for the long term.
+rtx uses [Calver](https://calver.org/) versioning (`2023.6.1`).
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
 
@@ -939,22 +933,6 @@ test out new functionality immediately without waiting for a major release.
 The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release—not compatibility
 or how many new features were added.
 Each release will be small and incremental.
-
-_\*This plan is tentative and the details may change, but the rough idea of making many changes now so we can have stability later is the goal._
-
-### Calver Breaking Changes
-
-When we switch to Calver, we'll immediately make some notable design changes to rtx. This will
-be the first and last time that such a change is made and I actually want to make sure we make
-as many as we can—because we'll be stuck with these decisions.
-
-Here are a list of the changes that will be made:
-
-- `rtx local` will default to creating `.rtx.toml` instead of `.tool-versions`. (If the config
-  already exists the format will be preserved.)
-- `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path
-  can be changed with `RTX_CONFIG_FILE`.
-- (more to be added)
 
 ## Directories
 

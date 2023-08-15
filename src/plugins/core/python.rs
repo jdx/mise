@@ -44,10 +44,8 @@ impl PythonPlugin {
         if self.python_build_path().exists() {
             return Ok(());
         }
-        debug!(
-            "Installing python-build to {}",
-            self.python_build_path().display()
-        );
+        let python_build_path = self.python_build_path();
+        debug!("Installing python-build to {}", python_build_path.display());
         create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
         git.clone(&env::RTX_PYENV_REPO)?;

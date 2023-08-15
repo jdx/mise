@@ -138,7 +138,6 @@ pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
 pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_NODE_FORCE_COMPILE"));
 pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
-        // post-calver we can probably remove these checks
         let p = HOME.join(".default-nodejs-packages");
         if p.exists() {
             return p;
@@ -313,13 +312,16 @@ fn apply_patches(
 
 /// returns true if new runtime versions should not be fetched
 fn prefer_stale(args: &[String]) -> bool {
-    if let Some(c) = args.get(1) {
-        return [
-            "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
-        ]
-        .contains(&c.as_str());
-    }
-    false
+    let binding = String::new();
+    let c = args
+        .iter()
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .unwrap_or(&binding);
+    return [
+        "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
+    ]
+    .contains(&c.as_str());
 }
 
 fn log_level() -> LevelFilter {
