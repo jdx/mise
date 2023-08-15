@@ -5,8 +5,6 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use std::time::Duration;
-
 use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
@@ -15,6 +13,7 @@ use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
+use crate::duration::DAILY;
 use crate::env::{PREFER_STALE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
@@ -53,11 +52,7 @@ impl ExternalPlugin {
         let cache_path = dirs::CACHE.join(name);
         let toml_path = plugin_path.join("rtx.plugin.toml");
         let toml = RtxPluginToml::from_file(&toml_path).unwrap();
-        let fresh_duration = if *PREFER_STALE {
-            None
-        } else {
-            Some(Duration::from_secs(60 * 60 * 24))
-        };
+        let fresh_duration = if *PREFER_STALE { None } else { Some(DAILY) };
         Self {
             name: name.into(),
             script_man: build_script_man(name, &plugin_path),
