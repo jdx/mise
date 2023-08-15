@@ -43,6 +43,10 @@ impl ToolVersion {
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<Self> {
+        if !tool.is_installed() {
+            let tv = Self::new(tool, request.clone(), opts.clone(), request.version());
+            return Ok(tv);
+        }
         let tv = match request.clone() {
             ToolVersionRequest::Version(_, v) => {
                 Self::resolve_version(config, tool, request, latest_versions, &v, opts)?
@@ -128,10 +132,10 @@ impl ToolVersion {
         }
 
         let build = |v| Ok(Self::new(tool, request.clone(), opts.clone(), v));
-
         if !tool.is_installed() {
             return build(v);
         }
+
         let existing = build(v.clone())?;
         if tool.is_version_installed(&existing) {
             // if the version is already installed, no need to fetch all the remote versions
@@ -160,10 +164,6 @@ impl ToolVersion {
         let matches = tool.list_versions_matching(&config.settings, &v)?;
         if matches.contains(&v) {
             return build(v);
-        }
-        // TODO: remove for calver release
-        if let Some((v, sub)) = v.split_once("!-") {
-            return Self::resolve_sub(config, tool, request.clone(), latest_versions, sub, v, opts);
         }
         Self::resolve_prefix(config, tool, request, &v, opts)
     }

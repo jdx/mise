@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::file::{display_path, modified_duration};
 use color_eyre::eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -13,6 +12,8 @@ use flate2::Compression;
 use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+use crate::file::{display_path, modified_duration};
 
 #[derive(Debug, Clone)]
 pub struct CacheManager<T>

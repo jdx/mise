@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use log::LevelFilter;
 
-use crate::env;
 use crate::env::*;
+use crate::{duration, env};
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -37,7 +37,7 @@ impl Default for Settings {
             always_keep_install: *RTX_ALWAYS_KEEP_INSTALL,
             legacy_version_file: *RTX_LEGACY_VERSION_FILE != Some(false),
             legacy_version_file_disable_tools: RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS.clone(),
-            plugin_autoupdate_last_check_duration: Duration::from_secs(60 * 60 * 24 * 7),
+            plugin_autoupdate_last_check_duration: duration::WEEKLY,
             trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
             verbose: *RTX_VERBOSE,
             asdf_compat: *RTX_ASDF_COMPAT,

@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use color_eyre::eyre::Result;
 use once_cell::sync::Lazy;
@@ -10,7 +9,8 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
-use crate::env::RTX_EXE;
+use crate::duration::DAILY;
+use crate::env::PREFER_STALE;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::go::GoPlugin;
@@ -69,11 +69,10 @@ pub struct CorePlugin {
 impl CorePlugin {
     pub fn new(name: PluginName) -> Self {
         let cache_path = dirs::CACHE.join(&name);
-        let fresh_duration = Some(Duration::from_secs(60 * 60 * 12)); // 12 hours
+        let fresh_duration = if *PREFER_STALE { None } else { Some(DAILY) };
         Self {
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(fresh_duration)
-                .with_fresh_file(RTX_EXE.clone()),
+                .with_fresh_duration(fresh_duration),
             name,
             cache_path,
         }

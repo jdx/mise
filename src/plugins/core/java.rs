@@ -14,7 +14,7 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::RTX_EXE;
+use crate::env::PREFER_STALE;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
@@ -31,6 +31,7 @@ pub struct JavaPlugin {
 impl JavaPlugin {
     pub fn new(name: PluginName) -> Self {
         let core = CorePlugin::new(name);
+        let fresh_duration = if *PREFER_STALE { None } else { Some(DAILY) };
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
@@ -39,13 +40,11 @@ impl JavaPlugin {
             java_metadata_ea_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(Some(DAILY))
-            .with_fresh_file(RTX_EXE.clone()),
+            .with_fresh_duration(fresh_duration),
             java_metadata_ga_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(Some(DAILY))
-            .with_fresh_file(RTX_EXE.clone()),
+            .with_fresh_duration(fresh_duration),
             core,
         }
     }
