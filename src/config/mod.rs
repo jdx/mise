@@ -357,6 +357,22 @@ fn load_config_filenames(
 
     let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
 
+    for cf in global_config_files() {
+        config_files.push(cf);
+    }
+
+    config_files.into_iter().unique().collect()
+}
+
+fn get_global_rtx_toml() -> PathBuf {
+    match env::RTX_CONFIG_FILE.clone() {
+        Some(global) => global,
+        None => dirs::CONFIG.join("config.toml"),
+    }
+}
+
+pub fn global_config_files() -> Vec<PathBuf> {
+    let mut config_files = vec![];
     if env::RTX_CONFIG_FILE.is_none() && !*env::RTX_USE_TOML {
         // only add ~/.tool-versions if RTX_CONFIG_FILE is not set
         // because that's how the user overrides the default
@@ -369,15 +385,7 @@ fn load_config_filenames(
     if global_config.is_file() {
         config_files.push(global_config);
     }
-
-    config_files.into_iter().unique().collect()
-}
-
-fn get_global_rtx_toml() -> PathBuf {
-    match env::RTX_CONFIG_FILE.clone() {
-        Some(global) => global,
-        None => dirs::CONFIG.join("config.toml"),
-    }
+    config_files
 }
 
 fn load_all_config_files(
