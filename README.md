@@ -1950,6 +1950,9 @@ Options:
   -c, --current
           Only show tool versions currently specified in a .tool-versions/.rtx.toml
 
+  -g, --global
+          Only show tool versions currently specified in a the global .tool-versions/.rtx.toml
+
   -i, --installed
           Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed
 

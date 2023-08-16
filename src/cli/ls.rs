@@ -34,6 +34,10 @@ pub struct Ls {
     #[clap(long, short)]
     current: bool,
 
+    /// Only show tool versions currently specified in a the global .tool-versions/.rtx.toml
+    #[clap(long, short)]
+    global: bool,
+
     /// Only show tool versions that are installed
     /// Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed
     #[clap(long, short)]
@@ -66,7 +70,9 @@ impl Command for Ls {
         self.verify_plugin(&config)?;
 
         let mut runtimes = self.get_runtime_list(&mut config)?;
-        if self.current {
+        if self.current || self.global {
+            // TODO: global is a little weird: it will show global versions as the active ones even if
+            // they're overridden locally
             runtimes.retain(|(_, _, source)| source.is_some());
         }
         if self.installed {
@@ -224,7 +230,8 @@ impl Ls {
     }
 
     fn get_runtime_list(&self, config: &mut Config) -> Result<Vec<RuntimeRow>> {
-        let mut tsb = ToolsetBuilder::new();
+        let mut tsb = ToolsetBuilder::new().with_global_only(self.global);
+
         if let Some(plugin) = &self.plugin {
             tsb = tsb.with_tools(&[plugin]);
             config.tools.retain(|p, _| p == plugin);
