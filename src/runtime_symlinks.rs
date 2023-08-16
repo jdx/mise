@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
-use versions::Version;
+use versions::Versioning;
 
 use crate::config::Config;
 use crate::dirs;
@@ -39,17 +39,12 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions(plugin)? {
-        let version = Version::new(&v).unwrap();
-        if version.chunks.0.len() > 1 {
-            let chunks = &version.chunks.0[0..=version.chunks.0.len() - 2];
-            for (i, _) in chunks.iter().enumerate() {
-                let partial = version.chunks.0[0..=i]
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join(".");
-                symlinks.insert(partial, rel_path(&v));
-            }
+        let versions = Versioning::new(&v).expect("invalid version");
+        let mut partial = vec![];
+        while versions.nth(partial.len() + 1).is_some() {
+            let version = versions.nth(partial.len()).unwrap();
+            partial.push(version.to_string());
+            symlinks.insert(partial.join("."), rel_path(&v));
         }
         symlinks.insert("latest".into(), rel_path(&v));
         for (from, to) in config
@@ -68,7 +63,7 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
     }
     symlinks = symlinks
         .into_iter()
-        .sorted_by_cached_key(|(k, _)| Version::new(k).unwrap_or_default())
+        .sorted_by_cached_key(|(k, _)| Versioning::new(k).unwrap_or_default())
         .collect();
     Ok(symlinks)
 }
