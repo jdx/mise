@@ -817,6 +817,8 @@ default\: 4]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '-c[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
 '--current[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
+'-g[Only show tool versions currently specified in a the global .tool-versions/.rtx.toml]' \
+'--global[Only show tool versions currently specified in a the global .tool-versions/.rtx.toml]' \
 '-i[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
 '--installed[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
 '(--json)--parseable[Output in an easily parseable format]' \

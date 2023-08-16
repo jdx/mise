@@ -397,6 +397,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of p
 default: 4' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s c -l current -d 'Only show tool versions currently specified in a .tool-versions/.rtx.toml'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.rtx.toml'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l parseable -d 'Output in an easily parseable format'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l json -d 'Output in json format'

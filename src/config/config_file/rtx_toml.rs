@@ -12,7 +12,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
-use crate::config::{config_file, AliasMap, MissingRuntimeBehavior};
+use crate::config::{config_file, global_config_files, AliasMap, MissingRuntimeBehavior};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::create_dir_all;
 use crate::plugins::{unalias_plugin, PluginName};
@@ -768,6 +768,10 @@ impl ConfigFile for RtxToml {
             Some(env_file) => vec![self.path.clone(), env_file.clone()],
             None => vec![self.path.clone()],
         }
+    }
+
+    fn is_global(&self) -> bool {
+        global_config_files().iter().any(|p| p == &self.path)
     }
 }
 
