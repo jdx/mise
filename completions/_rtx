@@ -26,6 +26,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -60,6 +62,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -83,6 +87,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -111,6 +117,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -135,6 +143,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -155,6 +165,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -178,6 +190,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -240,6 +254,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -261,6 +277,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -281,6 +299,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -309,6 +329,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -359,6 +381,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -380,6 +404,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -401,6 +427,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -421,6 +449,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -449,6 +479,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -469,6 +501,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -489,6 +523,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -545,6 +581,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -568,6 +606,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -591,6 +631,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -616,6 +658,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -644,6 +688,8 @@ this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -671,6 +717,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -693,6 +741,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -717,6 +767,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -738,6 +790,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -762,6 +816,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -794,6 +850,8 @@ e.g.\: \`rtx local --pin node@20\` will save \`node 20.0.0\` to .tool-versions]'
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -831,6 +889,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -852,6 +912,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -875,6 +937,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -907,6 +971,8 @@ Normally these are not shown]' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -945,6 +1011,8 @@ i.e.\: they don'\''t need the full git repo url]' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -970,6 +1038,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1008,6 +1078,8 @@ e.g.\: main 1234abc]' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1031,6 +1103,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1051,6 +1125,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1074,6 +1150,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1144,6 +1222,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1165,6 +1245,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1187,6 +1269,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1207,6 +1291,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1235,6 +1321,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1256,6 +1344,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1276,6 +1366,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1298,6 +1390,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1361,6 +1455,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1382,6 +1478,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1413,6 +1511,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1434,6 +1534,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1487,6 +1589,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1508,6 +1612,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1529,6 +1635,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1562,6 +1670,8 @@ this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1585,6 +1695,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1605,6 +1717,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1639,6 +1753,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
@@ -1660,6 +1776,8 @@ default\: 4]: : ' \
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \

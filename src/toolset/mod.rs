@@ -149,6 +149,11 @@ impl Toolset {
             .into_iter()
             .map(|(pn, v)| (config.get_or_create_tool(&pn), v.collect_vec()))
             .collect();
+        for (t, _) in &queue {
+            if !t.is_installed() {
+                t.ensure_installed(config, Some(mpr), false)?;
+            }
+        }
         let queue = Arc::new(Mutex::new(queue));
         thread::scope(|s| {
             (0..config.settings.jobs)
@@ -158,9 +163,6 @@ impl Toolset {
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
-                            if !t.is_installed() {
-                                t.install(config, &mut mpr.add(), force)?;
-                            }
                             for tv in versions {
                                 let tv = tv.request.resolve(config, &t, tv.opts.clone(), true)?;
                                 let mut pr = mpr.add();

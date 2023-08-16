@@ -1,17 +1,21 @@
-use clap::Command;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+use clap::Command;
 use color_eyre::eyre::Result;
+use console::style;
 
 pub use external_plugin::ExternalPlugin;
 pub use rtx_plugin_toml::RtxPluginToml;
 pub use script_manager::{Script, ScriptManager};
 
 use crate::config::{Config, Settings};
+use crate::file::display_path;
+use crate::lock_file::LockFile;
 use crate::toolset::ToolVersion;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 
 pub mod core;
 mod external_plugin;
@@ -42,7 +46,12 @@ pub trait Plugin: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
-    fn install(&self, _config: &Config, _pr: &mut ProgressReport) -> Result<()> {
+    fn ensure_installed(
+        &self,
+        _config: &mut Config,
+        _mpr: Option<&MultiProgressReport>,
+        _force: bool,
+    ) -> Result<()> {
         Ok(())
     }
     fn update(&self, _git_ref: Option<String>) -> Result<()> {
@@ -82,6 +91,34 @@ pub trait Plugin: Debug + Send + Sync {
     }
     fn exec_env(&self, _config: &Config, _tv: &ToolVersion) -> Result<HashMap<String, String>> {
         Ok(HashMap::new())
+    }
+
+    fn get_lock(&self, path: &Path, force: bool) -> Result<Option<fslock::LockFile>> {
+        let lock = if force {
+            None
+        } else {
+            let lock = LockFile::new(path)
+                .with_callback(|l| {
+                    debug!("waiting for lock on {}", display_path(l));
+                })
+                .lock()?;
+            Some(lock)
+        };
+        Ok(lock)
+    }
+
+    fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
+        pr.set_style(PROG_TEMPLATE.clone());
+        let tool = match tv {
+            Some(tv) => tv.to_string(),
+            None => self.name().to_string(),
+        };
+        pr.set_prefix(format!(
+            "{} {} ",
+            style("rtx").dim().for_stderr(),
+            style(tool).cyan().for_stderr(),
+        ));
+        pr.enable_steady_tick();
     }
 }
 
