@@ -3,7 +3,6 @@ use color_eyre::eyre::Result;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::config::MissingRuntimeBehavior::AutoInstall;
 
 use crate::output::Output;
 
@@ -38,9 +37,7 @@ pub struct Install {
 }
 
 impl Command for Install {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        config.settings.missing_runtime_behavior = AutoInstall;
-
+    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
@@ -104,13 +101,7 @@ impl Install {
         let mut tool_versions = vec![];
         for (plugin_name, tvr, opts) in requests {
             let plugin = config.get_or_create_tool(&plugin_name);
-            if !plugin.is_installed() {
-                let mut pr = mpr.add();
-                if let Err(err) = plugin.install(config, &mut pr, false) {
-                    pr.error(err.to_string());
-                    return Err(err)?;
-                }
-            }
+            plugin.ensure_installed(config, Some(mpr), false)?;
             let tv = tvr.resolve(config, &plugin, opts, ts.latest_versions)?;
             tool_versions.push(tv);
         }
@@ -121,12 +112,17 @@ impl Install {
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
-        if ts.list_missing_versions(&config).is_empty() {
-            warn!("no runtimes to install");
+        let versions = ts
+            .list_missing_versions(&config)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if versions.is_empty() {
+            info!("all runtimes are installed");
+            return Ok(());
         }
         let mpr = MultiProgressReport::new(config.show_progress_bars());
-        ts.install_missing(&mut config, mpr)?;
-
+        ts.install_versions(&mut config, versions, &mpr, self.force)?;
         Ok(())
     }
 }

@@ -547,7 +547,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -h -V --debug --install-missing --jobs --log-level --raw --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help help"
+            opts="-j -r -y -v -h -V --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -573,7 +573,7 @@ _rtx() {
             return 0
             ;;
         rtx__activate)
-            opts="-s -q -j -r -v -h --shell --status --quiet --debug --install-missing --jobs --log-level --raw --trace --verbose --help bash fish nu xonsh zsh"
+            opts="-s -q -j -r -y -v -h --shell --status --quiet --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help bash fish nu xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -607,7 +607,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias)
-            opts="-p -j -r -v -h --plugin --debug --install-missing --jobs --log-level --raw --trace --verbose --help get ls set unset help"
+            opts="-p -j -r -y -v -h --plugin --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -641,7 +641,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__get)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN> <ALIAS>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN> <ALIAS>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -751,7 +751,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__ls)
-            opts="-p -j -r -v -h --plugin --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-p -j -r -y -v -h --plugin --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -785,7 +785,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__set)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN> <ALIAS> <VALUE>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN> <ALIAS> <VALUE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -811,7 +811,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__unset)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN> <ALIAS>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN> <ALIAS>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -837,7 +837,7 @@ _rtx() {
             return 0
             ;;
         rtx__asdf)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [ARGS]..."
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [ARGS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -863,7 +863,7 @@ _rtx() {
             return 0
             ;;
         rtx__bin__paths)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -889,7 +889,7 @@ _rtx() {
             return 0
             ;;
         rtx__cache)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help clear help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help clear help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -915,7 +915,7 @@ _rtx() {
             return 0
             ;;
         rtx__cache__clear)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -983,7 +983,7 @@ _rtx() {
             return 0
             ;;
         rtx__completion)
-            opts="-s -j -r -v -h --shell --debug --install-missing --jobs --log-level --raw --trace --verbose --help bash elvish fish powershell zsh"
+            opts="-s -j -r -y -v -h --shell --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1017,7 +1017,7 @@ _rtx() {
             return 0
             ;;
         rtx__current)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [PLUGIN]"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1043,7 +1043,7 @@ _rtx() {
             return 0
             ;;
         rtx__deactivate)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1069,7 +1069,7 @@ _rtx() {
             return 0
             ;;
         rtx__direnv)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help envrc exec activate help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help envrc exec activate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1095,7 +1095,7 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__activate)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1121,7 +1121,7 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__envrc)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1147,7 +1147,7 @@ _rtx() {
             return 0
             ;;
         rtx__direnv__exec)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1243,7 +1243,7 @@ _rtx() {
             return 0
             ;;
         rtx__doctor)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1269,7 +1269,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -j -r -v -h --shell --json --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-s -j -r -y -v -h --shell --json --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1303,7 +1303,7 @@ _rtx() {
             return 0
             ;;
         rtx__env__vars)
-            opts="-j -r -v -h --file --remove --debug --install-missing --jobs --log-level --raw --trace --verbose --help [ENV_VARS]..."
+            opts="-j -r -y -v -h --file --remove --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [ENV_VARS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1337,7 +1337,7 @@ _rtx() {
             return 0
             ;;
         rtx__exec)
-            opts="-c -j -r -v -h --command --cd --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]... [COMMAND]..."
+            opts="-c -j -r -y -v -h --command --cd --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1375,7 +1375,7 @@ _rtx() {
             return 0
             ;;
         rtx__global)
-            opts="-j -r -v -h --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-j -r -y -v -h --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2245,7 +2245,7 @@ _rtx() {
             return 0
             ;;
         rtx__hook__env)
-            opts="-s -j -r -v -h --shell --status --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-s -j -r -y -v -h --shell --status --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2279,7 +2279,7 @@ _rtx() {
             return 0
             ;;
         rtx__implode)
-            opts="-j -r -v -h --config --dry-run --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --config --dry-run --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2305,7 +2305,7 @@ _rtx() {
             return 0
             ;;
         rtx__install)
-            opts="-f -v -j -r -h --force --verbose --debug --install-missing --jobs --log-level --raw --trace --help [TOOL@VERSION]..."
+            opts="-f -v -j -r -y -h --force --verbose --debug --install-missing --jobs --log-level --raw --yes --trace --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2331,7 +2331,7 @@ _rtx() {
             return 0
             ;;
         rtx__latest)
-            opts="-i -j -r -v -h --installed --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
+            opts="-i -j -r -y -v -h --installed --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2357,7 +2357,7 @@ _rtx() {
             return 0
             ;;
         rtx__link)
-            opts="-f -j -r -v -h --force --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> <PATH>"
+            opts="-f -j -r -y -v -h --force --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <TOOL@VERSION> <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2383,7 +2383,7 @@ _rtx() {
             return 0
             ;;
         rtx__local)
-            opts="-p -j -r -v -h --parent --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-p -j -r -y -v -h --parent --pin --fuzzy --remove --path --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2413,7 +2413,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls)
-            opts="-p -c -g -i -m -j -r -v -h --plugin --current --global --installed --parseable --json --missing --prefix --debug --install-missing --jobs --log-level --raw --trace --verbose --help [PLUGIN_ARG]"
+            opts="-p -c -g -i -m -j -r -y -v -h --plugin --current --global --installed --parseable --json --missing --prefix --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [PLUGIN_ARG]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2451,7 +2451,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls__remote)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [PREFIX]"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <TOOL@VERSION> [PREFIX]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2477,7 +2477,7 @@ _rtx() {
             return 0
             ;;
         rtx__outdated)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2503,7 +2503,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins)
-            opts="-a -c -u -j -r -v -h --all --core --urls --refs --debug --install-missing --jobs --log-level --raw --trace --verbose --help install link ls ls-remote uninstall update help"
+            opts="-a -c -u -j -r -y -v -h --all --core --urls --refs --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help install link ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2641,7 +2641,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -a -v -j -r -h --force --all --verbose --debug --install-missing --jobs --log-level --raw --trace --help [NAME] [GIT_URL] [REST]..."
+            opts="-f -a -v -j -r -y -h --force --all --verbose --debug --install-missing --jobs --log-level --raw --yes --trace --help [NAME] [GIT_URL] [REST]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2667,7 +2667,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__link)
-            opts="-f -j -r -v -h --force --debug --install-missing --jobs --log-level --raw --trace --verbose --help <NAME> [PATH]"
+            opts="-f -j -r -y -v -h --force --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <NAME> [PATH]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2693,7 +2693,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls)
-            opts="-a -c -u -j -r -v -h --all --core --urls --refs --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-a -c -u -j -r -y -v -h --all --core --urls --refs --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2719,7 +2719,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls__remote)
-            opts="-u -j -r -v -h --urls --only-names --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-u -j -r -y -v -h --urls --only-names --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2745,7 +2745,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__uninstall)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <PLUGIN>..."
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2771,7 +2771,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__update)
-            opts="-a -j -r -v -h --all --debug --install-missing --jobs --log-level --raw --trace --verbose --help [PLUGIN]..."
+            opts="-a -j -r -y -v -h --all --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2797,7 +2797,7 @@ _rtx() {
             return 0
             ;;
         rtx__prune)
-            opts="-j -r -v -h --dry-run --debug --install-missing --jobs --log-level --raw --trace --verbose --help [PLUGINS]..."
+            opts="-j -r -y -v -h --dry-run --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [PLUGINS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2823,7 +2823,7 @@ _rtx() {
             return 0
             ;;
         rtx__render__help)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2849,7 +2849,7 @@ _rtx() {
             return 0
             ;;
         rtx__reshim)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [PLUGIN] [VERSION]"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [PLUGIN] [VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2875,7 +2875,7 @@ _rtx() {
             return 0
             ;;
         rtx__self__update)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2901,7 +2901,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help get ls set unset help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2927,7 +2927,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__get)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <KEY>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <KEY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3037,7 +3037,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__ls)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3063,7 +3063,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__set)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <KEY> <VALUE>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <KEY> <VALUE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3089,7 +3089,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__unset)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <KEY>"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <KEY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3115,7 +3115,7 @@ _rtx() {
             return 0
             ;;
         rtx__shell)
-            opts="-u -j -r -v -h --unset --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-u -j -r -y -v -h --unset --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3141,7 +3141,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help node python help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help node python help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3223,7 +3223,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync__node)
-            opts="-j -r -v -h --brew --nvm --nodenv --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --brew --nvm --nodenv --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3249,7 +3249,7 @@ _rtx() {
             return 0
             ;;
         rtx__sync__python)
-            opts="-j -r -v -h --pyenv --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --pyenv --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3275,7 +3275,7 @@ _rtx() {
             return 0
             ;;
         rtx__trust)
-            opts="-j -r -v -h --untrust --debug --install-missing --jobs --log-level --raw --trace --verbose --help [CONFIG_FILE]"
+            opts="-j -r -y -v -h --untrust --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [CONFIG_FILE]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3301,7 +3301,7 @@ _rtx() {
             return 0
             ;;
         rtx__uninstall)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION>..."
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <TOOL@VERSION>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3327,7 +3327,7 @@ _rtx() {
             return 0
             ;;
         rtx__upgrade)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3353,7 +3353,7 @@ _rtx() {
             return 0
             ;;
         rtx__use)
-            opts="-g -p -j -r -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --trace --verbose --help [TOOL@VERSION]..."
+            opts="-g -p -j -r -y -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3391,7 +3391,7 @@ _rtx() {
             return 0
             ;;
         rtx__version)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3417,7 +3417,7 @@ _rtx() {
             return 0
             ;;
         rtx__where)
-            opts="-j -r -v -h --debug --install-missing --jobs --log-level --raw --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
+            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <TOOL@VERSION> [ASDF_VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3443,7 +3443,7 @@ _rtx() {
             return 0
             ;;
         rtx__which)
-            opts="-t -j -r -v -h --plugin --version --tool --debug --install-missing --jobs --log-level --raw --trace --verbose --help <BIN_NAME>"
+            opts="-t -j -r -y -v -h --plugin --version --tool --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <BIN_NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

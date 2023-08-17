@@ -94,6 +94,7 @@ pub static RTX_DISABLE_TOOLS: Lazy<BTreeSet<String>> = Lazy::new(|| {
         .unwrap_or_default()
 });
 pub static RTX_RAW: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RAW"));
+pub static RTX_YES: Lazy<bool> = Lazy::new(|| var_is_true("RTX_YES"));
 pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<BTreeSet<PathBuf>> = Lazy::new(|| {
     var("RTX_TRUSTED_CONFIG_PATHS")
         .map(|v| split_paths(&v).collect())
