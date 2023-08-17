@@ -13,10 +13,10 @@ use versions::Versioning;
 
 use crate::config::{Config, Settings};
 use crate::file::{create_dir_all, display_path, remove_all_with_warning};
-use crate::lock_file::LockFile;
-use crate::plugins::{ExternalPlugin, Plugin, PluginType};
+use crate::plugins::{ExternalPlugin, Plugin};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
 
@@ -269,13 +269,13 @@ impl Tool {
         Ok(())
     }
 
-    pub fn install(&self, config: &Config, pr: &mut ProgressReport, force: bool) -> Result<()> {
-        if matches!(self.plugin.get_type(), PluginType::Core) {
-            return Ok(());
-        }
-        self.decorate_progress_bar(pr, None);
-        let _lock = self.get_lock(&self.plugin_path, force)?;
-        self.plugin.install(config, pr)
+    pub fn ensure_installed(
+        &self,
+        config: &mut Config,
+        mpr: Option<&MultiProgressReport>,
+        force: bool,
+    ) -> Result<()> {
+        self.plugin.ensure_installed(config, mpr, force)
     }
     pub fn update(&self, git_ref: Option<String>) -> Result<()> {
         self.plugin.update(git_ref)
@@ -355,17 +355,7 @@ impl Tool {
     }
 
     fn get_lock(&self, path: &Path, force: bool) -> Result<Option<fslock::LockFile>> {
-        let lock = if force {
-            None
-        } else {
-            let lock = LockFile::new(path)
-                .with_callback(|l| {
-                    debug!("waiting for lock on {}", display_path(l));
-                })
-                .lock()?;
-            Some(lock)
-        };
-        Ok(lock)
+        self.plugin.get_lock(path, force)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
@@ -419,8 +409,9 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::plugins::PluginName;
+
+    use super::*;
 
     #[test]
     fn test_debug() {

@@ -1,6 +1,4 @@
 use color_eyre::eyre::{eyre, Result};
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::cli::command::Command;
@@ -53,18 +51,18 @@ impl Command for PluginsInstall {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         if self.all {
-            return self.install_all_missing_plugins(&mut config, mpr);
+            return self.install_all_missing_plugins(config, mpr);
         }
         let (name, git_url) = get_name_and_url(&self.name.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
-            self.install_one(&config, &name, git_url, &mpr)?;
+            self.install_one(&mut config, &name, git_url, &mpr)?;
         } else {
             let mut plugins: Vec<PluginName> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
             };
             plugins.extend(self.rest.clone());
-            self.install_many(&mut config, &plugins, mpr)?;
+            self.install_many(config, &plugins, mpr)?;
         }
 
         Ok(())
@@ -74,11 +72,11 @@ impl Command for PluginsInstall {
 impl PluginsInstall {
     fn install_all_missing_plugins(
         &self,
-        config: &mut Config,
+        mut config: Config,
         mpr: MultiProgressReport,
     ) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
-        let missing_plugins = ts.list_missing_plugins(config);
+        let ts = ToolsetBuilder::new().build(&mut config)?;
+        let missing_plugins = ts.list_missing_plugins(&mut config);
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
@@ -88,25 +86,30 @@ impl PluginsInstall {
 
     fn install_many(
         &self,
-        config: &mut Config,
+        mut config: Config,
         plugins: &[PluginName],
         mpr: MultiProgressReport,
     ) -> Result<()> {
-        ThreadPoolBuilder::new()
-            .num_threads(config.settings.jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                plugins
-                    .into_par_iter()
-                    .map(|plugin| self.install_one(config, plugin, None, &mpr))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(())
-            })
+        for plugin in plugins {
+            self.install_one(&mut config, plugin, None, &mpr)?;
+        }
+        Ok(())
+        // TODO: run in parallel
+        // ThreadPoolBuilder::new()
+        //     .num_threads(config.settings.jobs)
+        //     .build()?
+        //     .install(|| -> Result<()> {
+        //         plugins
+        //             .into_par_iter()
+        //             .map(|plugin| self.install_one(&mut config, plugin, None, &mpr))
+        //             .collect::<Result<Vec<_>>>()?;
+        //         Ok(())
+        //     })
     }
 
     fn install_one(
         &self,
-        config: &Config,
+        config: &mut Config,
         name: &String,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
@@ -116,10 +119,8 @@ impl PluginsInstall {
         if !self.force && plugin.is_installed() {
             mpr.warn(format!("plugin {} already installed", name));
         } else {
-            let mut pr = mpr.add();
             let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
-            tool.decorate_progress_bar(&mut pr, None);
-            tool.install(config, &mut pr, self.force)?;
+            tool.ensure_installed(config, Some(mpr), true)?;
         }
         Ok(())
     }
