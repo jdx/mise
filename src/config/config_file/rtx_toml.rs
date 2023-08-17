@@ -429,6 +429,7 @@ impl RtxToml {
                         }
                         "log_level" => settings.log_level = Some(self.parse_log_level(&k, v)?),
                         "raw" => settings.raw = Some(self.parse_bool(&k, v)?),
+                        "yes" => settings.yes = Some(self.parse_bool(&k, v)?),
                         _ => Err(eyre!("Unknown config setting: {}", k))?,
                     };
                 }

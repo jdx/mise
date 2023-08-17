@@ -26,7 +26,9 @@ use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
+use crate::ui::prompt;
 use crate::{dirs, env, file};
 
 /// This represents a plugin installed to ~/.local/share/rtx/plugins
@@ -78,6 +80,51 @@ impl ExternalPlugin {
             repo_url: None,
             toml,
         }
+    }
+
+    fn get_repo_url(&self, config: &Config) -> Result<String> {
+        self.repo_url
+            .clone()
+            .or_else(|| config.get_repo_url(&self.name))
+            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
+    }
+
+    fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+        let repository = self.get_repo_url(config)?;
+        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
+        debug!("install {} {:?}", self.name, repository);
+
+        if self.is_installed() {
+            self.uninstall(pr)?;
+        }
+
+        let git = Git::new(self.plugin_path.to_path_buf());
+        pr.set_message(format!("cloning {repo_url}"));
+        git.clone(&repo_url)?;
+        if let Some(ref_) = &repo_ref {
+            pr.set_message(format!("checking out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+
+        pr.set_message("loading plugin remote versions");
+        if self.has_list_all_script() {
+            self.list_remote_versions(&config.settings)?;
+        }
+        if self.has_list_alias_script() {
+            pr.set_message("getting plugin aliases");
+            self.get_aliases(&config.settings)?;
+        }
+        if self.has_list_legacy_filenames_script() {
+            pr.set_message("getting plugin legacy filenames");
+            self.legacy_filenames(&config.settings)?;
+        }
+
+        let sha = git.current_sha_short()?;
+        pr.finish_with_message(format!(
+            "{repo_url}#{}",
+            style(&sha).bright().yellow().for_stderr(),
+        ));
+        Ok(())
     }
 
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
@@ -351,46 +398,34 @@ impl Plugin for ExternalPlugin {
         self.plugin_path.exists()
     }
 
-    fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
-        let repository = self
-            .repo_url
-            .clone()
-            .or_else(|| config.get_repo_url(&self.name))
-            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
-        debug!("install {} {:?}", self.name, repository);
-
-        if self.is_installed() {
-            self.uninstall(pr)?;
+    fn ensure_installed(
+        &self,
+        config: &mut Config,
+        mpr: Option<&MultiProgressReport>,
+        force: bool,
+    ) -> Result<()> {
+        if !force {
+            if self.is_installed() {
+                return Ok(());
+            }
+            if !config.settings.yes && self.repo_url.is_none() {
+                let url = self.get_repo_url(config)?;
+                eprintln!(
+                    "⚠️  {name} is a community-developed plugin: {url}",
+                    name = style(&self.name).cyan(),
+                    url = style(url.trim_end_matches(".git")).yellow(),
+                );
+                if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
+                    Err(PluginNotInstalled(self.name.clone()))?
+                }
+            }
         }
-
-        let git = Git::new(self.plugin_path.to_path_buf());
-        pr.set_message(format!("cloning {repo_url}"));
-        git.clone(&repo_url)?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("checking out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
-
-        pr.set_message("loading plugin remote versions");
-        if self.has_list_all_script() {
-            self.list_remote_versions(&config.settings)?;
-        }
-        if self.has_list_alias_script() {
-            pr.set_message("getting plugin aliases");
-            self.get_aliases(&config.settings)?;
-        }
-        if self.has_list_legacy_filenames_script() {
-            pr.set_message("getting plugin legacy filenames");
-            self.legacy_filenames(&config.settings)?;
-        }
-
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
+        let _mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = mpr.unwrap_or(&_mpr);
+        let mut pr = mpr.add();
+        self.decorate_progress_bar(&mut pr, None);
+        let _lock = self.get_lock(&self.plugin_path, force)?;
+        self.install(config, &mut pr)
     }
 
     fn update(&self, gitref: Option<String>) -> Result<()> {

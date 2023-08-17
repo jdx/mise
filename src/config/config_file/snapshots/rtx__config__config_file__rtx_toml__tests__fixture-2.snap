@@ -27,4 +27,5 @@ SettingsBuilder {
     },
     log_level: None,
     raw: None,
+    yes: None,
 }

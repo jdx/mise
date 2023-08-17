@@ -4,7 +4,7 @@
 .SH NAME
 rtx \- Polyglot runtime manager (asdf rust clone)
 .SH SYNOPSIS
-\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-log\-level\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBrtx\fR [\fB\-\-install\-missing\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-log\-level\fR] [\fB\-r\fR|\fB\-\-raw\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
 .PP
@@ -29,6 +29,9 @@ Set the log output verbosity
 \fB\-r\fR, \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr to user.
 Sets \-\-jobs=1
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to all prompts
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show installation output

@@ -1,15 +1,14 @@
-use color_eyre::eyre::Result;
 use std::sync::Arc;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use color_eyre::eyre::Result;
+
+use crate::cli::args::tool::ToolArg;
+use crate::cli::args::tool::ToolArgParser;
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
 use crate::tool::Tool;
 use crate::toolset::ToolVersionRequest;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::prompt;
 
 /// List runtime versions available for install
 ///
@@ -19,7 +18,7 @@ use crate::ui::prompt;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     plugin: ToolArg,
 
     /// The version prefix to use when querying the latest version
@@ -58,25 +57,8 @@ impl LsRemote {
     fn get_plugin(&self, config: &mut Config) -> Result<Arc<Tool>> {
         let plugin_name = self.plugin.plugin.clone();
         let tool = config.get_or_create_tool(&plugin_name);
-        self.ensure_remote_plugin_is_installed(&tool, config)?;
+        tool.ensure_installed(config, None, false)?;
         Ok(tool)
-    }
-
-    fn ensure_remote_plugin_is_installed(&self, tool: &Tool, config: &mut Config) -> Result<()> {
-        if tool.is_installed() {
-            return Ok(());
-        }
-        if prompt::confirm(&format!(
-            "Plugin {} is not installed, would you like to install it?",
-            tool.name
-        ))? {
-            let mpr = MultiProgressReport::new(config.show_progress_bars());
-            let mut pr = mpr.add();
-            tool.install(config, &mut pr, false)?;
-            return Ok(());
-        }
-
-        Err(PluginNotInstalled(tool.name.clone()))?
     }
 }
 

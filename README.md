@@ -708,6 +708,7 @@ verbose = false     # set to true to see full installation output, see `RTX_VERB
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
+yes = false         # set to true to automatically answer yes to all prompts
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
@@ -857,7 +858,7 @@ installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/as
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
 
-#### `RTX_CONFIRM=yes|no`
+#### `RTX_YES=yes`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
 

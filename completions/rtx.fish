@@ -5,6 +5,7 @@ complete -c rtx -n "__fish_use_subcommand" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_use_subcommand" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_use_subcommand" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_use_subcommand" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_use_subcommand" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_use_subcommand" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_use_subcommand" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -58,6 +59,7 @@ complete -c rtx -n "__fish_seen_subcommand_from activate" -l debug -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from activate" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -69,6 +71,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subco
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
@@ -86,6 +89,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -97,6 +101,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -107,6 +112,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -117,6 +123,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -134,6 +141,7 @@ complete -c rtx -n "__fish_seen_subcommand_from asdf" -l debug -d 'Sets log leve
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from asdf" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s h -l help -d 'Print help'
@@ -144,6 +152,7 @@ complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l debug -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s h -l help -d 'Print help'
@@ -154,6 +163,7 @@ complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subco
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -166,6 +176,7 @@ complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s h -l help -d 'Print help'
@@ -179,6 +190,7 @@ complete -c rtx -n "__fish_seen_subcommand_from completion" -l debug -d 'Sets lo
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from completion" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -189,6 +201,7 @@ complete -c rtx -n "__fish_seen_subcommand_from current" -l debug -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from current" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from current" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from current" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -199,6 +212,7 @@ complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l debug -d 'Sets lo
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -209,6 +223,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subc
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -225,6 +240,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s h -l help -d 'Print help'
@@ -235,6 +251,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s h -l help -d 'Print help'
@@ -245,6 +262,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -261,6 +279,7 @@ complete -c rtx -n "__fish_seen_subcommand_from doctor" -l debug -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from doctor" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -273,6 +292,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env" -l debug -d 'Sets log level
 complete -c rtx -n "__fish_seen_subcommand_from env" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from env" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -285,6 +305,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l debug -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -297,6 +318,7 @@ complete -c rtx -n "__fish_seen_subcommand_from exec" -l debug -d 'Sets log leve
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from exec" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -314,6 +336,7 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -l debug -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from global" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from global" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -326,6 +349,7 @@ complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l debug -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print help'
@@ -338,6 +362,7 @@ complete -c rtx -n "__fish_seen_subcommand_from implode" -l debug -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from implode" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -350,6 +375,7 @@ complete -c rtx -n "__fish_seen_subcommand_from install" -l debug -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from install" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from install" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from install" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
@@ -360,6 +386,7 @@ complete -c rtx -n "__fish_seen_subcommand_from latest" -l debug -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from latest" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from latest" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -371,6 +398,7 @@ complete -c rtx -n "__fish_seen_subcommand_from link" -l debug -d 'Sets log leve
 complete -c rtx -n "__fish_seen_subcommand_from link" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from link" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from link" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from link" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from link" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from link" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -388,6 +416,7 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from local" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from local" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -406,6 +435,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -l debug -d 'Sets log level 
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -416,6 +446,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l debug -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -426,6 +457,7 @@ complete -c rtx -n "__fish_seen_subcommand_from outdated" -l debug -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from outdated" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -441,6 +473,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_sub
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -463,6 +496,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
@@ -473,6 +507,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -491,6 +526,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -503,6 +539,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -513,6 +550,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -524,6 +562,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -542,6 +581,7 @@ complete -c rtx -n "__fish_seen_subcommand_from prune" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from prune" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -552,6 +592,7 @@ complete -c rtx -n "__fish_seen_subcommand_from reshim" -l debug -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from reshim" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -562,6 +603,7 @@ complete -c rtx -n "__fish_seen_subcommand_from self-update" -l debug -d 'Sets l
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from self-update" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -572,6 +614,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_su
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
@@ -587,6 +630,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -597,6 +641,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -607,6 +652,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -617,6 +663,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -633,6 +680,7 @@ complete -c rtx -n "__fish_seen_subcommand_from shell" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from shell" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -643,6 +691,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
@@ -659,6 +708,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -670,6 +720,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -684,6 +735,7 @@ complete -c rtx -n "__fish_seen_subcommand_from trust" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from trust" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -694,6 +746,7 @@ complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l debug -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -704,6 +757,7 @@ complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l debug -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s h -l help -d 'Print help'
@@ -722,6 +776,7 @@ complete -c rtx -n "__fish_seen_subcommand_from use" -l debug -d 'Sets log level
 complete -c rtx -n "__fish_seen_subcommand_from use" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from use" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from use" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from use" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from use" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from use" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -732,6 +787,7 @@ complete -c rtx -n "__fish_seen_subcommand_from version" -l debug -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from version" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from version" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from version" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from version" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from version" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from version" -s h -l help -d 'Print help'
@@ -742,6 +798,7 @@ complete -c rtx -n "__fish_seen_subcommand_from where" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from where" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from where" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from where" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -756,6 +813,7 @@ complete -c rtx -n "__fish_seen_subcommand_from which" -l debug -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from which" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from which" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from which" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from which" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from which" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from which" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -766,6 +824,7 @@ complete -c rtx -n "__fish_seen_subcommand_from render-help" -l debug -d 'Sets l
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -l install-missing -d 'Automatically install missing tools'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1'
+complete -c rtx -n "__fish_seen_subcommand_from render-help" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -s h -l help -d 'Print help'
