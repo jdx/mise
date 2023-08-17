@@ -84,13 +84,14 @@ where
     }
 
     pub fn write(&self, val: &T) -> Result<()> {
-        let path = &self.cache_file_path;
-        trace!("writing {}", display_path(path));
-        if let Some(parent) = path.parent() {
+        trace!("writing {}", display_path(&self.cache_file_path));
+        if let Some(parent) = self.cache_file_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut zlib = ZlibEncoder::new(File::create(path)?, Compression::fast());
+        let partial_path = self.cache_file_path.with_extension("part");
+        let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+        fs::rename(&partial_path, &self.cache_file_path)?;
 
         Ok(())
     }
