@@ -58,7 +58,7 @@ mod tests {
         raw = false
         trusted_config_paths = []
         verbose = true
-        yes = false
+        yes = true
         "###);
 
         reset_config();
