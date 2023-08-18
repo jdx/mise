@@ -122,9 +122,10 @@ pub fn local(
         let tools = plugins.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
             out,
-            "{} {}",
-            style(display_path(path)).dim(),
-            style(tools).bright().strikethrough()
+            "{} {} {}",
+            style("rtx").dim(),
+            display_path(path),
+            style(tools).cyan().strikethrough()
         );
     }
 
@@ -139,9 +140,10 @@ pub fn local(
         let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
             out,
-            "{} {}",
-            style(display_path(path)).dim(),
-            style(tools).bright()
+            "{} {} {}",
+            style("rtx").dim(),
+            display_path(path),
+            style(tools).cyan()
         );
     } else {
         install_missing_runtimes(&mut config, cf.as_ref())?;

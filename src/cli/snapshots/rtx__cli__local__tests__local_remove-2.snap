@@ -2,5 +2,5 @@
 source: src/cli/local.rs
 expression: output
 ---
-~/cwd/.test-tool-versions tiny@2
+rtx ~/cwd/.test-tool-versions tiny@2
 
