@@ -1,5 +1,5 @@
 complete -c rtx -n "__fish_use_subcommand" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_use_subcommand" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_use_subcommand" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_use_subcommand" -l install-missing -d 'Automatically install missing tools'
@@ -51,7 +51,7 @@ complete -c rtx -n "__fish_use_subcommand" -f -a "render-help" -d 'internal comm
 complete -c rtx -n "__fish_use_subcommand" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s q -l quiet -d 'noop'
@@ -65,7 +65,7 @@ complete -c rtx -n "__fish_seen_subcommand_from activate" -s v -l verbose -d 'Sh
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s p -l plugin -d 'filter aliases by plugin' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
@@ -83,7 +83,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subco
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "unset" -d 'Clears an alias for a plugin'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -l install-missing -d 'Automatically install missing tools'
@@ -95,7 +95,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s p -l plugin -d 'Show aliases for <PLUGIN>' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
@@ -106,7 +106,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -l install-missing -d 'Automatically install missing tools'
@@ -117,7 +117,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from set" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from unset" -l install-missing -d 'Automatically install missing tools'
@@ -135,7 +135,7 @@ complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "unset" -d 'Clears an alias for a plugin'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -l install-missing -d 'Automatically install missing tools'
@@ -146,7 +146,7 @@ complete -c rtx -n "__fish_seen_subcommand_from asdf" -l trace -d 'Sets log leve
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from asdf" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l install-missing -d 'Automatically install missing tools'
@@ -157,7 +157,7 @@ complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -l trace -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from bin-paths" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
@@ -170,7 +170,7 @@ complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subco
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -f -a "clear" -d 'Deletes all cache files in rtx'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -l install-missing -d 'Automatically install missing tools'
@@ -184,7 +184,7 @@ complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s s -l shell -d 'Shell type to generate completions for' -r -f -a "{bash	,elvish	,fish	,powershell	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l install-missing -d 'Automatically install missing tools'
@@ -195,7 +195,7 @@ complete -c rtx -n "__fish_seen_subcommand_from completion" -l trace -d 'Sets lo
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from current" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from current" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from current" -l install-missing -d 'Automatically install missing tools'
@@ -206,7 +206,7 @@ complete -c rtx -n "__fish_seen_subcommand_from current" -l trace -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from current" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from current" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l install-missing -d 'Automatically install missing tools'
@@ -217,7 +217,7 @@ complete -c rtx -n "__fish_seen_subcommand_from deactivate" -l trace -d 'Sets lo
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from deactivate" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
@@ -234,7 +234,7 @@ for direnv to consume.'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -f -a "activate" -d 'Output direnv function to use rtx inside direnv'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -l install-missing -d 'Automatically install missing tools'
@@ -245,7 +245,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from envrc" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -l install-missing -d 'Automatically install missing tools'
@@ -256,7 +256,7 @@ complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcomma
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from exec" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from activate" -l install-missing -d 'Automatically install missing tools'
@@ -273,7 +273,7 @@ for direnv to consume.'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -f -a "activate" -d 'Output direnv function to use rtx inside direnv'
 complete -c rtx -n "__fish_seen_subcommand_from direnv; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from envrc; and not __fish_seen_subcommand_from exec; and not __fish_seen_subcommand_from activate; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l install-missing -d 'Automatically install missing tools'
@@ -285,7 +285,7 @@ complete -c rtx -n "__fish_seen_subcommand_from doctor" -s v -l verbose -d 'Show
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell type to generate environment variables for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -l json -d 'Output in JSON format'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l debug -d 'Sets log level to debug'
@@ -299,7 +299,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env" -s h -l help -d 'Print help
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l file -d 'The TOML file to update' -r
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l remove -d 'Remove the environment variable from config file' -r
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l install-missing -d 'Automatically install missing tools'
@@ -312,7 +312,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s h -l help -d 'Print
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s c -l command -d 'Command string to execute' -r -f -a "(__fish_complete_command)"
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l cd -d 'Change to this directory before executing the command' -r -f -a "(__fish_complete_directories)"
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l install-missing -d 'Automatically install missing tools'
@@ -324,7 +324,7 @@ complete -c rtx -n "__fish_seen_subcommand_from exec" -s v -l verbose -d 'Show i
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from global" -l remove -d 'Remove the plugin(s) from ~/.tool-versions' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from global" -l pin -d 'Save exact version to `~/.tool-versions`
 e.g.: `rtx global --pin node@20` will save `node 20.0.0` to ~/.tool-versions'
@@ -342,7 +342,7 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l debug -d 'Sets log level to debug'
@@ -354,7 +354,7 @@ complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l trace -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l config -d 'Also remove config directory'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l dry-run -d 'List directories that would be removed without actually removing them'
@@ -367,7 +367,7 @@ complete -c rtx -n "__fish_seen_subcommand_from implode" -l trace -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from install" -s f -l force -d 'Force reinstall even if already installed'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s v -l verbose -d 'Show installation output'
@@ -379,7 +379,7 @@ complete -c rtx -n "__fish_seen_subcommand_from install" -s y -l yes -d 'Answer 
 complete -c rtx -n "__fish_seen_subcommand_from install" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from latest" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s i -l installed -d 'Show latest installed instead of available version'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -l debug -d 'Sets log level to debug'
@@ -391,7 +391,7 @@ complete -c rtx -n "__fish_seen_subcommand_from latest" -l trace -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from latest" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from link" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from link" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from link" -s f -l force -d 'Overwrite an existing tool version if it exists'
 complete -c rtx -n "__fish_seen_subcommand_from link" -l debug -d 'Sets log level to debug'
@@ -404,7 +404,7 @@ complete -c rtx -n "__fish_seen_subcommand_from link" -s v -l verbose -d 'Show i
 complete -c rtx -n "__fish_seen_subcommand_from link" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from local" -l remove -d 'Remove the plugin(s) from .tool-versions' -r
 complete -c rtx -n "__fish_seen_subcommand_from local" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from local" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from local" -s p -l parent -d 'Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the tool in the current directory ("$PWD/.tool-versions")'
@@ -423,7 +423,7 @@ complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print he
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -d 'Only show tool versions from [PLUGIN]' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l prefix -d 'Display versions matching this prefix' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s c -l current -d 'Only show tool versions currently specified in a .tool-versions/.rtx.toml'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.rtx.toml'
@@ -440,7 +440,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -l trace -d 'Sets log level 
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l install-missing -d 'Automatically install missing tools'
@@ -451,7 +451,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -l trace -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from ls-remote" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -l install-missing -d 'Automatically install missing tools'
@@ -462,7 +462,7 @@ complete -c rtx -n "__fish_seen_subcommand_from outdated" -l trace -d 'Sets log 
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from outdated" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s a -l all -d 'list all available remote plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s c -l core -d 'The built-in plugins only
@@ -485,7 +485,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_sub
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -f -a "update" -d 'Updates a plugin to the latest version'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s f -l force -d 'Reinstall even if plugin exists'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s a -l all -d 'Install all missing plugins
@@ -500,7 +500,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s f -l force -d 'Overwrite existing plugin'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -l debug -d 'Sets log level to debug'
@@ -512,7 +512,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from link" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s a -l all -d 'List all available remote plugins
 Same as `rtx plugins ls-remote`'
@@ -531,7 +531,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -l only-names -d 'Only show the name of each plugin by default it will show a "*" next to installed plugins'
@@ -544,7 +544,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls-remote" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l install-missing -d 'Automatically install missing tools'
@@ -555,7 +555,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -s a -l all -d 'Update all plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from update" -l debug -d 'Sets log level to debug'
@@ -574,7 +574,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -f -a "update" -d 'Updates a plugin to the latest version'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l dry-run -d 'Do not actually delete anything'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l debug -d 'Sets log level to debug'
@@ -586,7 +586,7 @@ complete -c rtx -n "__fish_seen_subcommand_from prune" -l trace -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -l install-missing -d 'Automatically install missing tools'
@@ -597,7 +597,7 @@ complete -c rtx -n "__fish_seen_subcommand_from reshim" -l trace -d 'Sets log le
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from reshim" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -l install-missing -d 'Automatically install missing tools'
@@ -608,7 +608,7 @@ complete -c rtx -n "__fish_seen_subcommand_from self-update" -l trace -d 'Sets l
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from self-update" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
@@ -624,7 +624,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_su
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "unset" -d 'Clears a setting'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -l install-missing -d 'Automatically install missing tools'
@@ -635,7 +635,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -l install-missing -d 'Automatically install missing tools'
@@ -646,7 +646,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from ls" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -l install-missing -d 'Automatically install missing tools'
@@ -657,7 +657,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from set" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from unset" -l install-missing -d 'Automatically install missing tools'
@@ -673,7 +673,7 @@ complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "unset" -d 'Clears a setting'
 complete -c rtx -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s u -l unset -d 'Removes a previously set version'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -l debug -d 'Sets log level to debug'
@@ -685,7 +685,7 @@ complete -c rtx -n "__fish_seen_subcommand_from shell" -l trace -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from shell" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -l install-missing -d 'Automatically install missing tools'
@@ -699,7 +699,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcom
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l brew -d 'Get tool versions from Homebrew'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -l nvm -d 'Get tool versions from nvm'
@@ -713,7 +713,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from node" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l pyenv -d 'Get tool versions from pyenv'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from python" -l debug -d 'Sets log level to debug'
@@ -728,7 +728,7 @@ complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
 complete -c rtx -n "__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l untrust -d 'No longer trust this config'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -l debug -d 'Sets log level to debug'
@@ -740,7 +740,7 @@ complete -c rtx -n "__fish_seen_subcommand_from trust" -l trace -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from trust" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l install-missing -d 'Automatically install missing tools'
@@ -751,7 +751,7 @@ complete -c rtx -n "__fish_seen_subcommand_from uninstall" -l trace -d 'Sets log
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l install-missing -d 'Automatically install missing tools'
@@ -764,7 +764,7 @@ complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s h -l help -d 'Print 
 complete -c rtx -n "__fish_seen_subcommand_from use" -l remove -d 'Remove the tool(s) from config file' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -s p -l path -d 'Specify a path to a config file or directory' -r -F
 complete -c rtx -n "__fish_seen_subcommand_from use" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -l pin -d 'Save exact version to config file
 e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions'
@@ -781,7 +781,7 @@ complete -c rtx -n "__fish_seen_subcommand_from use" -l trace -d 'Sets log level
 complete -c rtx -n "__fish_seen_subcommand_from use" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from use" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from version" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from version" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from version" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from version" -l install-missing -d 'Automatically install missing tools'
@@ -792,7 +792,7 @@ complete -c rtx -n "__fish_seen_subcommand_from version" -l trace -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from version" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from version" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from where" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from where" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from where" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from where" -l install-missing -d 'Automatically install missing tools'
@@ -805,7 +805,7 @@ complete -c rtx -n "__fish_seen_subcommand_from where" -s h -l help -d 'Print he
 complete -c rtx -n "__fish_seen_subcommand_from which" -s t -l tool -d 'Use a specific tool@version
 e.g.: `rtx which npm --tool=node@20`' -r
 complete -c rtx -n "__fish_seen_subcommand_from which" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from which" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from which" -l plugin -d 'Show the plugin name instead of the path'
 complete -c rtx -n "__fish_seen_subcommand_from which" -l version -d 'Show the version instead of the path'
@@ -818,7 +818,7 @@ complete -c rtx -n "__fish_seen_subcommand_from which" -l trace -d 'Sets log lev
 complete -c rtx -n "__fish_seen_subcommand_from which" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from which" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
-default: 4' -r
+[default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from render-help" -l install-missing -d 'Automatically install missing tools'
