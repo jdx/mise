@@ -415,7 +415,8 @@ impl Plugin for ExternalPlugin {
                     name = style(&self.name).cyan(),
                     url = style(url.trim_end_matches(".git")).yellow(),
                 );
-                if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
+                let in_ci = env::var("CI").unwrap_or("false".to_string()) == "true";
+                if !in_ci && !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
                     Err(PluginNotInstalled(self.name.clone()))?
                 }
             }
