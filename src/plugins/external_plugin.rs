@@ -13,8 +13,7 @@ use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
-use crate::duration::DAILY;
-use crate::env::{PREFER_STALE, RTX_FETCH_REMOTE_VERSIONS_TIMEOUT};
+use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::remove_all;
@@ -54,7 +53,6 @@ impl ExternalPlugin {
         let cache_path = dirs::CACHE.join(name);
         let toml_path = plugin_path.join("rtx.plugin.toml");
         let toml = RtxPluginToml::from_file(&toml_path).unwrap();
-        let fresh_duration = if *PREFER_STALE { None } else { Some(DAILY) };
         Self {
             name: name.into(),
             script_man: build_script_man(name, &plugin_path),
@@ -62,11 +60,11 @@ impl ExternalPlugin {
             installs_path: dirs::INSTALLS.join(name),
             cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(fresh_duration)
+                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-all")),
             latest_stable_cache: CacheManager::new(cache_path.join("latest_stable.msgpack.z"))
-                .with_fresh_duration(fresh_duration)
+                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/latest-stable")),
             alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))

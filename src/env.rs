@@ -3,6 +3,7 @@ pub use std::env::*;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::duration::HOURLY;
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
@@ -59,13 +60,25 @@ pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
 
+/// duration that remote version cache is kept for
+/// for "fast" commands (represented by PREFER_STALE), these are always
+/// cached. For "slow" commands like `rtx ls-remote` or `rtx install`:
+/// - if RTX_FETCH_REMOTE_VERSIONS_CACHE is set, use that
+/// - if RTX_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
+pub static RTX_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|| {
+    if *PREFER_STALE {
+        None
+    } else {
+        Some(var_duration("RTX_FETCH_REMOTE_VERSIONS_CACHE").unwrap_or(HOURLY))
+    }
+});
+
 /// true if inside a script like bin/exec-env or bin/install
 /// used to prevent infinite loops
 pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
 pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS));
-
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
     Lazy::new(|| get_pristine_env(&__RTX_DIFF, vars().collect()));

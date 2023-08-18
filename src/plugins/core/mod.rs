@@ -9,8 +9,6 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
-use crate::duration::DAILY;
-use crate::env::PREFER_STALE;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::go::GoPlugin;
@@ -69,10 +67,9 @@ pub struct CorePlugin {
 impl CorePlugin {
     pub fn new(name: PluginName) -> Self {
         let cache_path = dirs::CACHE.join(&name);
-        let fresh_duration = if *PREFER_STALE { None } else { Some(DAILY) };
         Self {
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(fresh_duration),
+                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             name,
             cache_path,
         }
