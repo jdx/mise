@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::{dirs, env};
+use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
 ///
@@ -69,7 +69,7 @@ impl Command for Use {
             config,
             out,
             &path,
-            Some(runtimes),
+            runtimes,
             self.remove,
             self.pin,
             self.fuzzy,
@@ -90,11 +90,16 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     }
     let rtx_toml = p.join(&*RTX_DEFAULT_CONFIG_FILENAME);
     let tool_versions = p.join(&*RTX_DEFAULT_TOOL_VERSIONS_FILENAME);
-    if tool_versions.exists() && !rtx_toml.exists() {
-        tool_versions
-    } else {
-        rtx_toml
+    if rtx_toml.exists() {
+        return rtx_toml;
+    } else if tool_versions.exists() {
+        return tool_versions;
     }
+    let filenames = vec![RTX_DEFAULT_CONFIG_FILENAME.as_str()];
+    if let Some(p) = file::find_up(p, &filenames) {
+        return p;
+    }
+    tool_versions
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

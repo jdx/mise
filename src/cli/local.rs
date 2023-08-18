@@ -1,12 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, ContextCompat, Result};
+use console::style;
+use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::file::display_path;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -25,8 +28,8 @@ pub struct Local {
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/.rtx.toml will be displayed
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
-    tool: Option<Vec<ToolArg>>,
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    tool: Vec<ToolArg>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
     /// by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
@@ -96,7 +99,7 @@ pub fn local(
     mut config: Config,
     out: &mut Output,
     path: &Path,
-    runtime: Option<Vec<ToolArg>>,
+    runtime: Vec<ToolArg>,
     remove: Option<Vec<PluginName>>,
     pin: bool,
     fuzzy: bool,
@@ -116,21 +119,35 @@ pub fn local(
         for plugin in plugins {
             cf.remove_plugin(plugin);
         }
+        let tools = plugins.iter().map(|r| r.to_string()).join(" ");
+        rtxprintln!(
+            out,
+            "{} {}",
+            style(display_path(path)).dim(),
+            style(tools).bright().strikethrough()
+        );
     }
 
-    if let Some(runtimes) = &runtime {
-        let runtimes = ToolArg::double_tool_condition(&runtimes.clone());
+    if !runtime.is_empty() {
+        let runtimes = ToolArg::double_tool_condition(&runtime.clone());
         if cf.display_runtime(out, &runtimes)? {
             install_missing_runtimes(&mut config, cf.as_ref())?;
             return Ok(());
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
         cf.add_runtimes(&mut config, &runtimes, pin)?;
+        let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
+        rtxprintln!(
+            out,
+            "{} {}",
+            style(display_path(path)).dim(),
+            style(tools).bright()
+        );
     } else {
         install_missing_runtimes(&mut config, cf.as_ref())?;
     }
 
-    if runtime.is_some() || remove.is_some() {
+    if !runtime.is_empty() || remove.is_some() {
         cf.save()?;
     } else {
         rtxprint!(out, "{}", cf.dump());
