@@ -39,7 +39,7 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 1.35.8
+rtx 2023.8.2
 ```
 
 Hook rtx into your shell (pick the right one for your shell):
@@ -92,7 +92,6 @@ v20.0.0
 - [Plugins](#plugins)
   - [Plugin Options](#plugin-options)
 - [Versioning](#versioning)
-  - [Calver Breaking Changes](#calver-breaking-changes)
 - [Directories](#directories)
   - [`~/.config/rtx`](#configrtx)
   - [`~/.cache/rtx`](#cachertx)
@@ -294,6 +293,12 @@ Alternatively, use the custom tap (which is updated immediately after a release)
 brew install jdxcode/tap/rtx
 ```
 
+#### MacPorts
+
+```
+sudo port install rtx
+```
+
 #### Cargo
 
 Build from source with Cargo:
@@ -335,7 +340,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdxcode/rtx/releases).
 
 ```
-curl https://github.com/jdxcode/rtx/releases/download/v1.35.8/rtx-v1.35.8-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdxcode/rtx/releases/download/v2023.8.2/rtx-v2023.8.2-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
@@ -703,6 +708,7 @@ verbose = false     # set to true to see full installation output, see `RTX_VERB
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
+yes = false         # set to true to automatically answer yes to all prompts
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
@@ -774,7 +780,7 @@ Disable legacy version file parsing for specific tools. Separate with `,`.
 #### `RTX_USE_TOML=0`
 
 Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
-configuration. This will be default behavior once we hit the [Calver](#versioning) release.
+configuration.
 
 For now this is not used by `rtx use` which will only use `.rtx.toml` unless `--path` is specified.
 
@@ -852,7 +858,7 @@ installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/as
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
 
-#### `RTX_CONFIRM=yes|no`
+#### `RTX_YES=yes`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
 
@@ -916,12 +922,7 @@ Currently this only supports simple strings, but we can make it compatible with 
 
 ## Versioning
 
-rtx is currently a new project and is under very rapid development. Slight behavior changes may
-occur between releases.
-Features marked as "experimental" may change significantly or be removed entirely.
-
-Starting August 6, 2023\*, rtx will move to [Calver](https://calver.org/) versioning (`2023.6.1`). After the move to Calver, rtx's design will become mostly permanent and you will be able to rely on
-its behavior for the long term.
+rtx uses [Calver](https://calver.org/) versioning (`2023.6.1`).
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
 
@@ -933,22 +934,6 @@ test out new functionality immediately without waiting for a major release.
 The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release—not compatibility
 or how many new features were added.
 Each release will be small and incremental.
-
-_\*This plan is tentative and the details may change, but the rough idea of making many changes now so we can have stability later is the goal._
-
-### Calver Breaking Changes
-
-When we switch to Calver, we'll immediately make some notable design changes to rtx. This will
-be the first and last time that such a change is made and I actually want to make sure we make
-as many as we can—because we'll be stuck with these decisions.
-
-Here are a list of the changes that will be made:
-
-- `rtx local` will default to creating `.rtx.toml` instead of `.tool-versions`. (If the config
-  already exists the format will be preserved.)
-- `rtx global` will modify `~/.config/rtx/config.toml` instead of `~/.tool-versions`. This path
-  can be changed with `RTX_CONFIG_FILE`.
-- (more to be added)
 
 ## Directories
 
@@ -1965,6 +1950,9 @@ Options:
 
   -c, --current
           Only show tool versions currently specified in a .tool-versions/.rtx.toml
+
+  -g, --global
+          Only show tool versions currently specified in a the global .tool-versions/.rtx.toml
 
   -i, --installed
           Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed

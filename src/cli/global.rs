@@ -27,7 +27,7 @@ pub struct Global {
     /// If this is a single tool with no version, the current value of the global
     /// .tool-versions will be displayed
     #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
-    tool: Option<Vec<ToolArg>>,
+    tool: Vec<ToolArg>,
 
     /// Save exact version to `~/.tool-versions`
     /// e.g.: `rtx global --pin node@20` will save `node 20.0.0` to ~/.tool-versions

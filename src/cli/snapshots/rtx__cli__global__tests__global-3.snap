@@ -2,4 +2,5 @@
 source: src/cli/global.rs
 expression: output
 ---
+rtx ~/.test-tool-versions tiny
 

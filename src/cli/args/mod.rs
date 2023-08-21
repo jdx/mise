@@ -5,3 +5,4 @@ pub mod log_level;
 pub mod raw;
 pub mod tool;
 pub mod verbose;
+pub mod yes;

@@ -181,6 +181,7 @@ impl Cli {
                 .arg(args::jobs::Jobs::arg())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::raw::Raw::arg())
+                .arg(args::yes::Yes::arg())
                 .arg(args::log_level::Trace::arg())
                 .arg(args::verbose::Verbose::arg()),
         )
@@ -207,6 +208,9 @@ impl Cli {
         }
         if let Some(raw) = matches.get_one::<bool>("raw") {
             config.settings.raw = *raw;
+        }
+        if let Some(true) = matches.get_one::<bool>("yes") {
+            config.settings.yes = true;
         }
         if let Some(true) = matches.get_one::<bool>("install-missing") {
             config.settings.missing_runtime_behavior = AutoInstall;

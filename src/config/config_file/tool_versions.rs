@@ -12,7 +12,7 @@ use tera::Context;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
-use crate::config::AliasMap;
+use crate::config::{global_config_files, AliasMap};
 use crate::file::display_path;
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -222,6 +222,10 @@ impl ConfigFile for ToolVersions {
 
     fn watch_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+
+    fn is_global(&self) -> bool {
+        global_config_files().iter().any(|p| p == &self.path)
     }
 }
 
