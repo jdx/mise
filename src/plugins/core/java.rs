@@ -114,6 +114,15 @@ impl JavaPlugin {
         let filename = m.url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
+        if tarball_path.exists() {
+            pr.set_message(format!(
+                "file {} exists, skipping download",
+                tarball_path.to_string_lossy()
+            ));
+            hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
+            return Ok(tarball_path);
+        }
+
         pr.set_message(format!("downloading {}", &m.url));
         http.download_file(&m.url, &tarball_path)?;
 

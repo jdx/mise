@@ -333,7 +333,7 @@ impl Tool {
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
-        let _ = remove_all_with_warning(tv.download_path());
+        // let _ = remove_all_with_warning(tv.download_path());
         let _ = remove_all_with_warning(tv.cache_path());
         let _ = fs::remove_file(tv.install_path()); // removes if it is a symlink
         create_dir_all(tv.install_path())?;

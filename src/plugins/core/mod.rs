@@ -7,8 +7,6 @@ use std::time::Duration;
 use color_eyre::eyre::Result;
 use once_cell::sync::Lazy;
 
-pub use python::PythonPlugin;
-
 use crate::cache::CacheManager;
 use crate::env::RTX_EXE;
 use crate::plugins::core::bun::BunPlugin;
@@ -16,6 +14,7 @@ use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
+use crate::plugins::core::python::PythonPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::timeout::run_with_timeout;

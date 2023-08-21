@@ -66,7 +66,15 @@ impl BunPlugin {
             arch()
         );
         let filename = url.split('/').last().unwrap();
-        let tarball_path = tv.download_path().join(filename);
+        let tarball_path: PathBuf = tv.download_path().join(filename);
+
+        if tarball_path.exists() {
+            pr.set_message(format!(
+                "file {} exists, skipping download",
+                tarball_path.to_string_lossy()
+            ));
+            return Ok(tarball_path);
+        }
 
         pr.set_message(format!("downloading {}", &url));
         http.download_file(&url, &tarball_path)?;
