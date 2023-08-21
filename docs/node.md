@@ -22,7 +22,7 @@ Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build)
 
 ## Requirements
 
-rtx use node-build to install nodejs runtimes, you need to ensure [dependencies](https://github.com/nodenv/node-build/wiki#suggested-build-environment) installed before installing python.
+rtx uses [node-build](https://github.com/nodenv/node-build) to install nodejs runtimes, you need to ensure the [dependencies](https://github.com/nodenv/node-build/wiki#suggested-build-environment) are installed before installing python.
 
 
 ## Configuration
