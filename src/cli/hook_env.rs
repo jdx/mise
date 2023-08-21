@@ -75,7 +75,7 @@ impl HookEnv {
         let patches = match self.get_patches(config, ts) {
             Ok(patches) => patches,
             Err(error) => {
-                eprintln!("Error: {}", error);
+                warn!("Warn: {}", error);
                 return;
             }
         };
