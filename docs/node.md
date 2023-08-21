@@ -19,6 +19,12 @@ $ rtx use -g node@20
 
 Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build) to install pre-compiled binaries and compile from source if necessary. You can check its [README](https://github.com/nodenv/node-build/blob/master/README.md) for additional settings and some troubleshooting.
 
+
+## Requirements
+
+rtx uses [node-build](https://github.com/nodenv/node-build) to install node runtimes, you need to ensure the [dependencies](https://github.com/nodenv/node-build/wiki#suggested-build-environment) are installed before installing node.
+
+
 ## Configuration
 
 `node-build` already has a [handful of settings](https://github.com/nodenv/node-build#custom-build-configuration), in additional to that `rtx-node` has a few extra configuration variables:
