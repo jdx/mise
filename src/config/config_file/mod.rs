@@ -47,6 +47,10 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn settings(&self) -> SettingsBuilder;
     fn aliases(&self) -> AliasMap;
     fn watch_files(&self) -> Vec<PathBuf>;
+
+    fn is_global(&self) -> bool {
+        false
+    }
 }
 
 impl dyn ConfigFile {

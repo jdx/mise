@@ -30,7 +30,10 @@ pub fn execute(
     args: &ArgMatches,
     external_commands: Vec<Command>,
 ) -> Result<()> {
-    if let Some(_cmd) = external_commands.iter().find(|c| c.get_name() == plugin) {
+    if let Some(mut cmd) = external_commands
+        .into_iter()
+        .find(|c| c.get_name() == plugin)
+    {
         if let Some((subcommand, matches)) = args.subcommand() {
             let plugin = config.tools.get(&plugin.to_string()).unwrap();
             let args: Vec<String> = matches
@@ -39,6 +42,8 @@ pub fn execute(
                 .map(|s| s.to_string_lossy().to_string())
                 .collect();
             plugin.execute_external_command(config, subcommand, args)?;
+        } else {
+            cmd.print_help().unwrap();
         }
     }
 

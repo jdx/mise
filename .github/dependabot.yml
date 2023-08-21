@@ -2,9 +2,14 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule:
+    schedule: &schedule
       interval: "weekly"
+    groups: &groups
+      dependencies:
+        dependency-type: "production"
+      dev-dependencies:
+        dependency-type: "development"
   - package-ecosystem: "cargo"
     directory: "/"
-    schedule:
-      interval: "weekly"
+    schedule: *schedule
+    groups: *groups

@@ -15,6 +15,7 @@ setup_env() {
   export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
   export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
   export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
+  export RTX_YES="yes"
   unset GOPATH
 }
 

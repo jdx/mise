@@ -17,10 +17,14 @@ impl Client {
     }
 
     pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        let url = url.into_url().unwrap();
+        debug!("GET {}", url);
         self.reqwest.get(url)
     }
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
+        let url = url.into_url().unwrap();
+        debug!("GET.txt {}", url);
         let resp = self.get(url).send()?;
         self.ensure_success(&resp)?;
         let text = resp.text()?;
