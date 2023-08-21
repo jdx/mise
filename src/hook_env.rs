@@ -157,10 +157,22 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
 
     for patch in patches.iter() {
         match patch {
-            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+            EnvDiffOperation::Change(k, v) => {
+                // if !k.starts_with("__RTX") && k != "PATH" {
+                //     info!("~{}={}", k, v);
+                // }
+                output.push_str(&shell.set_env(k, v));
+            }
+            EnvDiffOperation::Add(k, v) => {
+                // if !k.starts_with("__RTX") && k != "PATH" {
+                //     info!("+{}={}", k, v);
+                // }
                 output.push_str(&shell.set_env(k, v));
             }
             EnvDiffOperation::Remove(k) => {
+                // if !k.starts_with("__RTX") && k != "PATH" {
+                //     info!("-{}", k);
+                // }
                 output.push_str(&shell.unset_env(k));
             }
         }

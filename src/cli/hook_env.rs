@@ -47,7 +47,7 @@ impl Command for HookEnv {
         let output = hook_env::build_env_commands(&*shell, &patches);
         out.stdout.write(output);
         if self.status {
-            self.display_status(&config, &ts, out);
+            self.display_status(&config, &ts, &patches, out);
         }
 
         Ok(())
@@ -71,31 +71,31 @@ impl HookEnv {
         Ok(patches)
     }
 
-    fn display_env_load_unload_status(&self, config: &Config, ts: &Toolset) {
-        let patches = match self.get_patches(config, ts) {
-            Ok(patches) => patches,
-            Err(error) => {
-                warn!("Warn: {}", error);
-                return;
-            }
-        };
-
-        for patch in patches {
+    fn display_env_load_unload_status(&self, patches: &EnvDiffPatches) {
+        for patch in patches.iter() {
             match patch {
-                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) if !k.starts_with("__RTX") && k != "PATH" => {
-                    info!("load env {}={}", k, v);
-                },
+                EnvDiffOperation::Change(k, v) if !k.starts_with("__RTX") && k != "PATH" => {
+                    info!("~{}={}", k, v);
+                }
+                EnvDiffOperation::Add(k, v) if !k.starts_with("__RTX") && k != "PATH" => {
+                    info!("+{}={}", k, v);
+                }
                 EnvDiffOperation::Remove(k) if !k.starts_with("__RTX") && k != "PATH" => {
-                    info!("unload env {}", k);
+                    info!("-{}", k);
                 }
                 _ => {}
             }
         }
     }
 
-    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
-        self.display_env_load_unload_status(config, ts);
-
+    fn display_status(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        patches: &EnvDiffPatches,
+        out: &mut Output,
+    ) {
+        self.display_env_load_unload_status(patches);
         let installed_versions = ts
             .list_current_installed_versions(config)
             .into_iter()
