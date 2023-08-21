@@ -44,10 +44,8 @@ impl PythonPlugin {
         if self.python_build_path().exists() {
             return Ok(());
         }
-        debug!(
-            "Installing python-build to {}",
-            self.python_build_path().display()
-        );
+        let python_build_path = self.python_build_path();
+        debug!("Installing python-build to {}", python_build_path.display());
         create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
         git.clone(&env::RTX_PYENV_REPO)?;
@@ -77,10 +75,6 @@ impl PythonPlugin {
         tv.install_path().join("bin/python")
     }
 
-    fn pip_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/pip")
-    }
-
     fn install_default_packages(
         &self,
         settings: &Settings,
@@ -91,9 +85,10 @@ impl PythonPlugin {
             return Ok(());
         }
         pr.set_message("installing default packages");
-        let pip = self.pip_path(tv);
-        CmdLineRunner::new(settings, pip)
+        CmdLineRunner::new(settings, self.python_path(tv))
             .with_pr(pr)
+            .arg("-m")
+            .arg("pip")
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
@@ -116,7 +111,7 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() || !self.check_venv_python(&virtualenv, tv)? {
-                debug!("setting up virtualenv at: {}", virtualenv.display());
+                info!("setting up virtualenv at: {}", virtualenv.display());
                 let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv))
                     .arg("-m")
                     .arg("venv")

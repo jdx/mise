@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::file::{display_path, modified_duration};
 use color_eyre::eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -13,6 +12,8 @@ use flate2::Compression;
 use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+use crate::file::{display_path, modified_duration};
 
 #[derive(Debug, Clone)]
 pub struct CacheManager<T>
@@ -83,13 +84,14 @@ where
     }
 
     pub fn write(&self, val: &T) -> Result<()> {
-        let path = &self.cache_file_path;
-        trace!("writing {}", display_path(path));
-        if let Some(parent) = path.parent() {
+        trace!("writing {}", display_path(&self.cache_file_path));
+        if let Some(parent) = self.cache_file_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut zlib = ZlibEncoder::new(File::create(path)?, Compression::fast());
+        let partial_path = self.cache_file_path.with_extension("part");
+        let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+        fs::rename(&partial_path, &self.cache_file_path)?;
 
         Ok(())
     }

@@ -11,7 +11,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::ToolVersion;
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, hash, http};
 
@@ -164,8 +164,6 @@ impl Plugin for GoPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
-
         let tarball_path = self.download(tv, pr)?;
         self.install(tv, pr, &tarball_path)?;
         self.verify(config, tv, pr)?;
@@ -192,17 +190,19 @@ impl Plugin for GoPlugin {
 
     fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
         let mut map = HashMap::new();
-        if env::PRISTINE_ENV.get("GOROOT").is_none() && *env::RTX_GO_SET_GOROOT != Some(false) {
-            map.insert(
-                "GOROOT".to_string(),
-                self.goroot(tv).to_string_lossy().to_string(),
-            );
+        match (*env::RTX_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
+            (Some(false), _) | (None, Some(_)) => {}
+            (Some(true), _) | (None, None) => {
+                let goroot = self.goroot(tv).to_string_lossy().to_string();
+                map.insert("GOROOT".to_string(), goroot);
+            }
         };
-        if env::PRISTINE_ENV.get("GOPATH").is_none() && *env::RTX_GO_SET_GOPATH != Some(false) {
-            map.insert(
-                "GOPATH".to_string(),
-                self.gopath(tv).to_string_lossy().to_string(),
-            );
+        match (*env::RTX_GO_SET_GOPATH, env::PRISTINE_ENV.get("GOPATH")) {
+            (Some(false), _) | (None, Some(_)) => {}
+            (Some(true), _) | (None, None) => {
+                let gopath = self.gopath(tv).to_string_lossy().to_string();
+                map.insert("GOPATH".to_string(), gopath);
+            }
         };
         Ok(map)
     }

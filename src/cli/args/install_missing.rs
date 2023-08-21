@@ -8,6 +8,7 @@ impl InstallMissing {
             .long("install-missing")
             .help("Automatically install missing tools")
             .action(ArgAction::SetTrue)
+            .hide(true)
             .global(true)
     }
 }

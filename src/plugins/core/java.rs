@@ -13,13 +13,11 @@ use crate::cache::CacheManager;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::duration::DAILY;
-use crate::env::RTX_EXE;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{file, hash, http};
+use crate::{env, file, hash, http};
 
 #[derive(Debug)]
 pub struct JavaPlugin {
@@ -39,13 +37,11 @@ impl JavaPlugin {
             java_metadata_ea_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(Some(DAILY))
-            .with_fresh_file(RTX_EXE.clone()),
+            .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             java_metadata_ga_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(Some(DAILY))
-            .with_fresh_file(RTX_EXE.clone()),
+            .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             core,
         }
     }

@@ -30,18 +30,16 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
 });
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
-    format!(
-        "{} {}-{} ({} {})",
-        if cfg!(debug_assertions) {
-            format!("{}-DEBUG", *RAW_VERSION)
-        } else {
-            RAW_VERSION.clone()
-        },
-        *OS,
-        *ARCH,
-        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
-        BUILD_TIME.format("%Y-%m-%d"),
-    )
+    let mut version = RAW_VERSION.clone();
+    if cfg!(debug_assertions) {
+        version.push_str("-DEBUG");
+    };
+    let build_time = BUILD_TIME.format("%Y-%m-%d");
+    let extra = match &built_info::GIT_COMMIT_HASH_SHORT {
+        Some(sha) => format!("({} {})", sha, build_time),
+        _ => format!("({})", build_time),
+    };
+    format!("{} {}-{} {}", version, *OS, *ARCH, extra)
 });
 
 pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
