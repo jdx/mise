@@ -42,6 +42,7 @@ mod lock_file;
 mod logger;
 mod migrate;
 mod plugins;
+mod rand;
 mod runtime_symlinks;
 mod shell;
 mod shims;
