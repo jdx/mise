@@ -79,7 +79,7 @@ jobs:
   build-linux:
     name: build-${{matrix.target}}
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -111,7 +111,7 @@ jobs:
   build-macos:
     name: build-${{matrix.target}}
     runs-on: macos-12
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
