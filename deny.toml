@@ -74,7 +74,7 @@ notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-  #"RUSTSEC-0000-0000",
+  "RUSTSEC-2023-0052", # webpki
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
@@ -101,7 +101,7 @@ unlicensed = "deny"
 # List of explicitly allowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
-allow = ["MIT", "Apache-2.0", "Unicode-DFS-2016", "BSD-3-Clause"]
+allow = ["MIT", "ISC", "Apache-2.0", "Unicode-DFS-2016", "BSD-3-Clause", "OpenSSL"]
 # List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
@@ -129,11 +129,11 @@ default = "deny"
 confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
-# exceptions = [
-#   # Each entry is the crate and version constraint, and its specific allow
-#   # list
-#   { allow = ["MPL-2.0"], name = "webpki-roots", version = "*" },
-# ]
+exceptions = [
+  # Each entry is the crate and version constraint, and its specific allow
+  # list
+  { allow = ["MPL-2.0"], name = "webpki-roots", version = "*" },
+]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
