@@ -41,15 +41,17 @@ impl Shell for Nushell {
             $env.RTX_SHELL = "nu"
             
             $env.config = ($env.config | upsert hooks {{
-                pre_prompt: [{{
+                pre_prompt: ($env.config.hooks.pre_prompt ++
+                [{{
                 condition: {{|| "RTX_SHELL" in $env }}
                 code: {{|| rtx_hook }}
-                }}]
+                }}])
                 env_change: {{
-                    PWD: [{{
+                    PWD: ($env.config.hooks.env_change.PWD ++
+                    [{{
                     condition: {{|| "RTX_SHELL" in $env }}
                     code: {{|| rtx_hook }}
-                    }}]
+                    }}])
                 }}
             }})
           }}
