@@ -31,6 +31,7 @@ mod hook_env;
 mod http;
 mod lock_file;
 mod plugins;
+mod rand;
 mod runtime_symlinks;
 mod shell;
 mod shims;
