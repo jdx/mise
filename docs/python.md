@@ -28,7 +28,7 @@ $ python3.11 -V
 
 ## Requirements
 
-rtx use pyenv(python-build as a plugin) to install python runtimes, you need to ensure [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) installed before installing python.
+rtx uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to install python runtimes, you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python.
 
 
 ## Configuration
