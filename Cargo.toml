@@ -34,6 +34,9 @@ path = "src/main.rs"
 #name = "config_bench"
 #harness = false
 
+[profile.release]
+lto = true
+
 [dependencies]
 base64 = "<0.22"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
