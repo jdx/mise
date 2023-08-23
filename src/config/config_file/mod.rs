@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::fs;
+
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
@@ -175,7 +175,7 @@ pub fn trust(path: &Path) -> Result<()> {
     let hashed_path = trust_path(path.to_path_buf())?;
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        fs::write(hashed_path, "")?;
+        file::write(hashed_path, "")?;
     }
     Ok(())
 }
@@ -183,7 +183,7 @@ pub fn trust(path: &Path) -> Result<()> {
 pub fn untrust(path: &Path) -> Result<()> {
     let hashed_path = trust_path(path.to_path_buf())?;
     if hashed_path.exists() {
-        fs::remove_file(hashed_path)?;
+        file::remove_file(hashed_path)?;
     }
     Ok(())
 }

@@ -1,7 +1,8 @@
+use color_eyre::eyre::ErrReport;
 use std::env::{join_paths, split_paths};
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::{fs, io};
 
 use indoc::formatdoc;
 use once_cell::sync::OnceCell;
@@ -15,7 +16,7 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
         let asdf_bin = path.join("asdf");
         if !asdf_bin.exists() {
             file::create_dir_all(&path)?;
-            fs::write(
+            file::write(
                 &asdf_bin,
                 // rtx="${{RTX_EXE:-rtx}}"
                 formatdoc! {r#"
@@ -28,7 +29,7 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
             perms.set_mode(0o755);
             fs::set_permissions(&asdf_bin, perms)?;
         }
-        Ok::<PathBuf, io::Error>(path)
+        Ok::<PathBuf, ErrReport>(path)
     })?;
 
     Ok(path.clone())

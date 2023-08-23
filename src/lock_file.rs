@@ -1,6 +1,7 @@
 use crate::dirs;
 use crate::file::create_dir_all;
 use crate::hash::hash_to_str;
+use color_eyre::eyre::Result;
 use std::path::{Path, PathBuf};
 
 pub type OnLockedFn = Box<dyn Fn(&Path)>;
@@ -27,7 +28,7 @@ impl LockFile {
         self
     }
 
-    pub fn lock(self) -> Result<fslock::LockFile, std::io::Error> {
+    pub fn lock(self) -> Result<fslock::LockFile> {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }

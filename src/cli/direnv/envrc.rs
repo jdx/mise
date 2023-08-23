@@ -60,11 +60,10 @@ impl Command for Envrc {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
 
     use insta::assert_display_snapshot;
 
-    use crate::assert_cli;
+    use crate::{assert_cli, file};
 
     use super::*;
 
@@ -72,7 +71,7 @@ mod tests {
     fn test_direnv_envrc() {
         assert_cli!("install");
         let stdout = assert_cli!("direnv", "envrc");
-        let envrc = fs::read_to_string(stdout.trim()).unwrap();
+        let envrc = file::read_to_string(stdout.trim()).unwrap();
         let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
         let envrc = envrc
             .lines()

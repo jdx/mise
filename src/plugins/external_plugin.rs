@@ -233,7 +233,7 @@ impl ExternalPlugin {
     fn write_legacy_cache(&self, legacy_file: &Path, legacy_version: &str) -> Result<()> {
         let fp = self.legacy_cache_file_path(legacy_file);
         file::create_dir_all(fp.parent().unwrap())?;
-        fs::write(fp, legacy_version)?;
+        file::write(fp, legacy_version)?;
         Ok(())
     }
 
