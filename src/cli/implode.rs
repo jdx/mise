@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::file::remove_all;
 use crate::output::Output;
 use crate::ui::prompt;
-use crate::{dirs, env};
+use crate::{dirs, env, file};
 
 /// Removes rtx CLI and all related data
 ///
@@ -39,7 +39,7 @@ impl Command for Implode {
                     return Ok(());
                 }
             } else if !self.dry_run && prompt::confirm(&format!("remove {} ?", f.display()))? {
-                std::fs::remove_file(f)?;
+                file::remove_file(f)?;
             }
         }
 

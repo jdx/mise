@@ -1,11 +1,10 @@
-use std::fs;
 use std::path::Path;
 
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
 use toml_edit::{Document, Item, Value};
 
-use crate::parse_error;
+use crate::{file, parse_error};
 
 #[derive(Debug, Default, Clone)]
 pub struct RtxPluginTomlScriptConfig {
@@ -28,7 +27,7 @@ impl RtxPluginToml {
         }
         trace!("parsing: {}", path.display());
         let mut rf = Self::init();
-        let body = fs::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         Ok(rf)
     }

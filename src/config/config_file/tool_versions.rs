@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::fs;
-use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -13,6 +11,7 @@ use tera::Context;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{global_config_files, AliasMap};
+use crate::file;
 use crate::file::display_path;
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -55,7 +54,7 @@ impl ToolVersions {
 
     pub fn from_file(path: &Path, is_trusted: bool) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
-        Self::parse_str(&read_to_string(path)?, path.to_path_buf(), is_trusted)
+        Self::parse_str(&file::read_to_string(path)?, path.to_path_buf(), is_trusted)
     }
 
     pub fn parse_str(s: &str, path: PathBuf, is_trusted: bool) -> Result<Self> {
@@ -188,7 +187,7 @@ impl ConfigFile for ToolVersions {
 
     fn save(&self) -> Result<()> {
         let s = self.dump();
-        Ok(fs::write(&self.path, s)?)
+        file::write(&self.path, s)
     }
 
     fn dump(&self) -> String {

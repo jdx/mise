@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::env::temp_dir;
-use std::fs;
+
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -45,7 +45,7 @@ impl RubyPlugin {
         self.ruby_install_path().join("bin/ruby-install")
     }
 
-    fn lock_build_tool(&self) -> Result<fslock::LockFile, std::io::Error> {
+    fn lock_build_tool(&self) -> Result<fslock::LockFile> {
         let build_tool_path = if *env::RTX_RUBY_INSTALL {
             self.ruby_build_bin()
         } else {
@@ -169,7 +169,7 @@ impl RubyPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let body = fs::read_to_string(&*env::RTX_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::RTX_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -229,7 +229,7 @@ impl RubyPlugin {
         let d = self.rubygems_plugins_path(tv);
         let f = d.join("rubygems_plugin.rb");
         file::create_dir_all(d)?;
-        fs::write(f, include_str!("assets/rubygems_plugin.rb"))?;
+        file::write(f, include_str!("assets/rubygems_plugin.rb"))?;
         Ok(())
     }
 
@@ -310,7 +310,7 @@ impl RubyPlugin {
                 http.ensure_success(&resp)?;
                 patches.push(resp.text()?);
             } else {
-                patches.push(fs::read_to_string(f)?);
+                patches.push(file::read_to_string(f)?);
             }
         }
         Ok(patches.join("\n"))
@@ -335,10 +335,10 @@ impl Plugin for RubyPlugin {
 
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
         let v = match path.file_name() {
-            Some(name) if name == "Gemfile" => parse_gemfile(&fs::read_to_string(path)?),
+            Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
                 // .ruby-version
-                let body = fs::read_to_string(path)?;
+                let body = file::read_to_string(path)?;
                 body.trim()
                     .trim_start_matches("ruby-")
                     .trim_start_matches('v')

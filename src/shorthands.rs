@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs;
+
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
@@ -7,7 +7,7 @@ use toml::Table;
 
 use crate::config::Settings;
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
-use crate::dirs;
+use crate::{dirs, file};
 
 pub type Shorthands = HashMap<String, String>;
 
@@ -37,7 +37,7 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
     if f.starts_with("~") {
         f = dirs::HOME.join(f.strip_prefix("~")?);
     }
-    let raw = fs::read_to_string(&f)?;
+    let raw = file::read_to_string(&f)?;
     let toml = raw.parse::<Table>()?;
 
     let mut shorthands = HashMap::new();

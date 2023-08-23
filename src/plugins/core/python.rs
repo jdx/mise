@@ -189,7 +189,7 @@ impl Plugin for PythonPlugin {
             let patch_file = patches_dir.join(format!("{}.patch", tv.version));
             if patch_file.exists() {
                 pr.set_message(format!("with patch file: {}", patch_file.display()));
-                let contents = std::fs::read_to_string(&patch_file)?;
+                let contents = file::read_to_string(&patch_file)?;
                 cmd = cmd.arg("--patch").stdin_string(contents);
             } else {
                 pr.warn(format!("patch file not found: {}", patch_file.display()));

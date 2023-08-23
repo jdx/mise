@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::fs;
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -21,7 +21,7 @@ use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
 use crate::ui::prompt;
-use crate::{dirs, env, parse_error};
+use crate::{dirs, env, file, parse_error};
 
 #[derive(Debug, Default)]
 pub struct RtxToml {
@@ -58,19 +58,9 @@ impl RtxToml {
     pub fn from_file(path: &Path, is_trusted: bool) -> Result<Self> {
         trace!("parsing: {}", path.display());
         let mut rf = Self::init(path, is_trusted);
-        let body = fs::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         Ok(rf)
-    }
-
-    pub fn migrate(path: &Path, is_trusted: bool) -> Result<RtxToml> {
-        // attempt to read as new .rtx.toml syntax
-        let mut raw = String::from("[settings]\n");
-        raw.push_str(&fs::read_to_string(path)?);
-        let mut toml = RtxToml::init(path, is_trusted);
-        toml.parse(&raw)?;
-        toml.save()?;
-        Ok(toml)
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
@@ -745,7 +735,7 @@ impl ConfigFile for RtxToml {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        Ok(fs::write(&self.path, contents)?)
+        file::write(&self.path, contents)
     }
 
     fn dump(&self) -> String {
