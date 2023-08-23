@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 use clap::ValueHint;
@@ -9,9 +8,9 @@ use path_absolutize::Absolutize;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::dirs;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
+use crate::{dirs, file};
 
 /// Symlinks a tool version into rtx
 ///
@@ -64,7 +63,7 @@ impl Command for Link {
                 ));
             }
         }
-        fs::create_dir_all(target.parent().unwrap())?;
+        file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
         config.rebuild_shims_and_runtime_symlinks()

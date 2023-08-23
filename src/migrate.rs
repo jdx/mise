@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 use color_eyre::eyre::Result;
@@ -24,7 +23,7 @@ fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
             let to_file = to.join(&f);
             if !to_file.exists() {
                 debug!("moving {} to {}", from_file.display(), to_file.display());
-                fs::rename(from_file, to_file)?;
+                file::rename(from_file, to_file)?;
             }
         }
         file::remove_all(from)?;

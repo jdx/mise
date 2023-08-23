@@ -17,7 +17,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolVersion, ToolVersionList, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{dirs, env};
+use crate::{dirs, env, file};
 
 pub mod legacy_version;
 pub mod rtx_toml;
@@ -174,7 +174,7 @@ pub fn is_trusted(settings: &Settings, path: &Path) -> bool {
 pub fn trust(path: &Path) -> Result<()> {
     let hashed_path = trust_path(path.to_path_buf())?;
     if !hashed_path.exists() {
-        fs::create_dir_all(hashed_path.parent().unwrap())?;
+        file::create_dir_all(hashed_path.parent().unwrap())?;
         fs::write(hashed_path, "")?;
     }
     Ok(())

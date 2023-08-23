@@ -6,7 +6,7 @@ use std::{fs, io};
 use indoc::formatdoc;
 use once_cell::sync::OnceCell;
 
-use crate::env;
+use crate::{env, file};
 
 pub fn setup() -> color_eyre::Result<PathBuf> {
     static SETUP: OnceCell<PathBuf> = OnceCell::new();
@@ -14,7 +14,7 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
         let path = env::RTX_DATA_DIR.join(".fake-asdf");
         let asdf_bin = path.join("asdf");
         if !asdf_bin.exists() {
-            fs::create_dir_all(&path)?;
+            file::create_dir_all(&path)?;
             fs::write(
                 &asdf_bin,
                 // rtx="${{RTX_EXE:-rtx}}"

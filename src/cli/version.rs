@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::env::CI;
 use crate::file::modified_duration;
 use crate::output::Output;
-use crate::{dirs, duration};
+use crate::{dirs, duration, file};
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Show rtx version", alias = "v")]
@@ -98,7 +98,7 @@ fn get_latest_version(duration: Duration) -> Option<String> {
             }
         }
     }
-    let _ = fs::create_dir_all(&*dirs::CACHE);
+    let _ = file::create_dir_all(&*dirs::CACHE);
     let version = get_latest_version_call();
     let _ = fs::write(version_file_path, version.clone().unwrap_or_default());
     version
