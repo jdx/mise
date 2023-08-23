@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
@@ -8,10 +7,10 @@ use path_absolutize::Absolutize;
 
 use crate::cli::command::Command;
 use crate::config::Config;
-use crate::dirs;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
 use crate::plugins::unalias_plugin;
+use crate::{dirs, file};
 
 /// Symlinks a plugin into rtx
 ///
@@ -57,7 +56,7 @@ impl Command for PluginsLink {
                 ));
             }
         }
-        fs::create_dir_all(&*dirs::PLUGINS)?;
+        file::create_dir_all(&*dirs::PLUGINS)?;
         make_symlink(&path, &symlink)?;
         Ok(())
     }

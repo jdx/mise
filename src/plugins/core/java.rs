@@ -151,7 +151,7 @@ impl JavaPlugin {
             let entry = entry?;
             let dest = tv.install_path().join(entry.file_name());
             trace!("moving {:?} to {:?}", entry.path(), &dest);
-            fs::rename(entry.path(), dest)?;
+            file::rename(entry.path(), dest)?;
         }
         Ok(())
     }

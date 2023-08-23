@@ -35,11 +35,17 @@ pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
     })
 }
 
+pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("mv {} {}", from.display(), to.display());
+    fs::rename(from, to)
+}
+
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     let path = path.as_ref();
     trace!("mkdir -p {}", path.display());
-    fs::create_dir_all(path)?;
-    Ok(())
+    fs::create_dir_all(path)
 }
 
 pub fn basename(path: &Path) -> Option<String> {
