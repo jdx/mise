@@ -88,7 +88,7 @@ where
     pub fn write(&self, val: &T) -> Result<()> {
         trace!("writing {}", display_path(&self.cache_file_path));
         if let Some(parent) = self.cache_file_path.parent() {
-            fs::create_dir_all(parent)?;
+            file::create_dir_all(parent)?;
         }
         let partial_path = self
             .cache_file_path

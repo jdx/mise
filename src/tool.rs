@@ -12,7 +12,7 @@ use regex::Regex;
 use versions::Versioning;
 
 use crate::config::{Config, Settings};
-use crate::file::{create_dir_all, display_path, remove_all_with_warning};
+use crate::file::{display_path, remove_all_with_warning};
 use crate::plugins::{ExternalPlugin, Plugin};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
@@ -196,7 +196,7 @@ impl Tool {
 
     pub fn create_symlink(&self, version: &str, target: &Path) -> Result<()> {
         let link = self.installs_path.join(version);
-        fs::create_dir_all(link.parent().unwrap())?;
+        file::create_dir_all(link.parent().unwrap())?;
         file::make_symlink(target, &link)
     }
 
@@ -336,9 +336,9 @@ impl Tool {
         let _ = remove_all_with_warning(tv.download_path());
         let _ = remove_all_with_warning(tv.cache_path());
         let _ = fs::remove_file(tv.install_path()); // removes if it is a symlink
-        create_dir_all(tv.install_path())?;
-        create_dir_all(tv.download_path())?;
-        create_dir_all(tv.cache_path())?;
+        file::create_dir_all(tv.install_path())?;
+        file::create_dir_all(tv.download_path())?;
+        file::create_dir_all(tv.cache_path())?;
         File::create(self.incomplete_file_path(tv))?;
         Ok(())
     }
