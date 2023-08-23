@@ -265,17 +265,11 @@ fn load_rtxrc() -> Result<RtxToml> {
         }
         true => match RtxToml::from_file(&settings_path, is_trusted) {
             Ok(cf) => Ok(cf),
-            Err(err) => match RtxToml::migrate(&settings_path, is_trusted) {
-                Ok(cf) => Ok(cf),
-                Err(e) => {
-                    trace!("Error migrating config.toml: {:#}", e);
-                    Err(eyre!(
-                        "Error parsing {}: {:#}",
-                        &settings_path.display(),
-                        err
-                    ))
-                }
-            },
+            Err(err) => Err(eyre!(
+                "Error parsing {}: {:#}",
+                &settings_path.display(),
+                err
+            )),
         },
     }
 }

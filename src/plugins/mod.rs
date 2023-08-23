@@ -11,6 +11,7 @@ pub use rtx_plugin_toml::RtxPluginToml;
 pub use script_manager::{Script, ScriptManager};
 
 use crate::config::{Config, Settings};
+use crate::file;
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::ToolVersion;
@@ -67,7 +68,7 @@ pub trait Plugin: Debug + Send + Sync {
         Ok(vec![])
     }
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
-        let contents = std::fs::read_to_string(path)?;
+        let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
     fn external_commands(&self) -> Result<Vec<Command>> {

@@ -40,8 +40,8 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
-    use crate::{dirs, env};
-    use std::fs;
+    use crate::{dirs, env, file};
+
     use std::sync::Arc;
 
     use super::*;
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn test_tool_version_list_failure() {
         env::set_var("RTX_FAILURE", "1");
-        fs::remove_dir_all(dirs::CACHE.join("dummy")).unwrap();
+        file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let mut config = Config::default();
         let plugin_name = "dummy".to_string();
         let plugin = ExternalPlugin::new(&plugin_name);

@@ -92,17 +92,16 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
 
     use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
+    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs, file};
 
     #[test]
     fn test_global() {
         let cf_path = dirs::HOME.join(".test-tool-versions");
-        let orig = fs::read_to_string(&cf_path).ok();
-        let _ = fs::remove_file(&cf_path);
+        let orig = file::read_to_string(&cf_path).ok();
+        let _ = file::remove_file(&cf_path);
 
         assert_cli!("install", "tiny@2");
         assert_cli_snapshot!("global", "--pin", "tiny@2");
@@ -131,7 +130,7 @@ mod tests {
         assert_cli_snapshot!("global", "--path");
 
         if let Some(orig) = orig {
-            fs::write(cf_path, orig).unwrap();
+            file::write(cf_path, orig).unwrap();
         }
     }
 }

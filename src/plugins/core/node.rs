@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fs;
+
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -46,7 +46,7 @@ impl NodePlugin {
         }
     }
 
-    fn lock_node_build(&self) -> Result<fslock::LockFile, std::io::Error> {
+    fn lock_node_build(&self) -> Result<fslock::LockFile> {
         LockFile::new(&self.node_build_path())
             .with_callback(|l| {
                 trace!("install_or_update_node_build {}", l.display());
@@ -111,7 +111,7 @@ impl NodePlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let body = fs::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -131,8 +131,8 @@ impl NodePlugin {
     }
 
     fn install_npm_shim(&self, tv: &ToolVersion) -> Result<()> {
-        fs::remove_file(self.npm_path(tv)).ok();
-        fs::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
+        file::remove_file(self.npm_path(tv)).ok();
+        file::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
         file::make_executable(&self.npm_path(tv))?;
         Ok(())
     }
@@ -208,7 +208,7 @@ impl Plugin for NodePlugin {
     }
 
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
-        let body = fs::read_to_string(path)?;
+        let body = file::read_to_string(path)?;
         // trim "v" prefix
         let body = body.trim().strip_prefix('v').unwrap_or(&body);
         // replace lts/* with lts

@@ -1,4 +1,3 @@
-use std::fs;
 use std::string::ToString;
 use std::time::Duration;
 
@@ -93,14 +92,14 @@ fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < duration {
-            if let Ok(version) = fs::read_to_string(&version_file_path) {
+            if let Ok(version) = file::read_to_string(&version_file_path) {
                 return Some(version);
             }
         }
     }
     let _ = file::create_dir_all(&*dirs::CACHE);
     let version = get_latest_version_call();
-    let _ = fs::write(version_file_path, version.clone().unwrap_or_default());
+    let _ = file::write(version_file_path, version.clone().unwrap_or_default());
     version
 }
 

@@ -8,9 +8,9 @@ use regex::Regex;
 use versions::Versioning;
 
 use crate::config::Config;
-use crate::dirs;
 use crate::file::make_symlink;
 use crate::tool::Tool;
+use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
     for plugin in config.tools.values() {
@@ -21,7 +21,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
             if from.exists() {
                 if is_runtime_symlink(&from) && from.read_link()?.as_path() != to {
                     trace!("Removing existing symlink: {}", from.display());
-                    std::fs::remove_file(&from)?;
+                    file::remove_file(&from)?;
                 } else {
                     continue;
                 }
@@ -30,7 +30,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
         }
         remove_missing_symlinks(plugin)?;
         // attempt to remove the installs dir (will fail if not empty)
-        let _ = std::fs::remove_dir(&installs_dir);
+        let _ = file::remove_dir(&installs_dir);
     }
     Ok(())
 }
@@ -88,7 +88,7 @@ fn remove_missing_symlinks(plugin: &Tool) -> Result<()> {
         let path = entry.path();
         if is_runtime_symlink(&path) && !path.exists() {
             trace!("Removing missing symlink: {}", path.display());
-            std::fs::remove_file(path)?;
+            file::remove_file(path)?;
         }
     }
     Ok(())

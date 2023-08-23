@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::fs;
+
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -105,7 +105,7 @@ where
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
         if path.exists() {
-            fs::remove_file(path)?;
+            file::remove_file(path)?;
         }
         Ok(())
     }
