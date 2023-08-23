@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
-use std::fs;
+
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -232,7 +232,7 @@ impl Tool {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = fs::remove_file(self.incomplete_file_path(tv)) {
+        if let Err(err) = file::remove_file(self.incomplete_file_path(tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
         pr.set_message("");
@@ -335,7 +335,7 @@ impl Tool {
         let _ = remove_all_with_warning(tv.install_path());
         let _ = remove_all_with_warning(tv.download_path());
         let _ = remove_all_with_warning(tv.cache_path());
-        let _ = fs::remove_file(tv.install_path()); // removes if it is a symlink
+        let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;

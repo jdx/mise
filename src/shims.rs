@@ -158,9 +158,9 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
 
 fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     if shim.exists() {
-        fs::remove_file(shim)?;
+        file::remove_file(shim)?;
     }
-    fs::write(
+    file::write(
         shim,
         formatdoc! {r#"
         #!/bin/sh

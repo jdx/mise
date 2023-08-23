@@ -234,7 +234,7 @@ impl Plugin for JavaPlugin {
     }
 
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
-        let contents = fs::read_to_string(path)?;
+        let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
                 .lines()

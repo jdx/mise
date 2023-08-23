@@ -2,11 +2,11 @@ use clap::builder::StyledStr;
 use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
 use indoc::formatdoc;
-use std::fs;
 
 use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
+use crate::file;
 use crate::output::Output;
 
 /// internal command to generate markdown from help
@@ -16,7 +16,7 @@ pub struct RenderHelp {}
 
 impl Command for RenderHelp {
     fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
-        let readme = fs::read_to_string("README.md")?;
+        let readme = file::read_to_string("README.md")?;
         let mut current_readme = readme.split("<!-- RTX:COMMANDS -->");
 
         let mut doc = String::new();
@@ -25,7 +25,7 @@ impl Command for RenderHelp {
         doc.push_str(render_commands().as_str());
         doc.push_str(current_readme.next().unwrap());
         doc = remove_trailing_spaces(&doc) + "\n";
-        fs::write("README.md", &doc)?;
+        file::write("README.md", &doc)?;
         Ok(())
     }
 }
@@ -104,13 +104,13 @@ fn remove_trailing_spaces(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
+    use crate::{assert_cli, file};
     use indoc::indoc;
     use std::fs;
 
     #[test]
     fn test_render_help() {
-        fs::write(
+        file::write(
             "README.md",
             indoc! {r#"
             <!-- RTX:COMMANDS -->
@@ -121,6 +121,6 @@ mod tests {
         assert_cli!("render-help");
         let readme = fs::read_to_string("README.md").unwrap();
         assert!(readme.contains("## Commands"));
-        fs::remove_file("README.md").unwrap();
+        file::remove_file("README.md").unwrap();
     }
 }

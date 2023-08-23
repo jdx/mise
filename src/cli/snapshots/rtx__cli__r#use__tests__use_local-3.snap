@@ -1,7 +1,6 @@
 ---
 source: src/cli/use.rs
-expression: "fs::read_to_string(&cf_path).unwrap()"
+expression: "file::read_to_string(&cf_path).unwrap()"
 ---
 [tools]
 tiny = "2"
-

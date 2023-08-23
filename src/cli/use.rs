@@ -117,23 +117,22 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
-    use std::fs;
 
-    use crate::{assert_cli, dirs};
+    use crate::{assert_cli, dirs, file};
 
     #[test]
     fn test_use_local() {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
-        fs::write(&cf_path, "").unwrap();
+        file::write(&cf_path, "").unwrap();
 
         assert_cli!("use", "tiny@2");
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         assert_cli!("use", "--pin", "tiny");
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         assert_cli!("use", "--fuzzy", "tiny@2");
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         assert_cli!(
             "use",
@@ -142,29 +141,29 @@ mod tests {
             "--path",
             &cf_path.to_string_lossy().to_string()
         );
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
-        let _ = fs::remove_file(&cf_path);
+        let _ = file::remove_file(&cf_path);
     }
 
     #[test]
     fn test_use_local_tool_versions() {
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
-        fs::write(&cf_path, "").unwrap();
+        file::write(&cf_path, "").unwrap();
 
         assert_cli!("use", "tiny@3");
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
     }
 
     #[test]
     fn test_use_global() {
         let cf_path = dirs::CONFIG.join("config.toml");
-        let orig = fs::read_to_string(&cf_path).unwrap();
-        let _ = fs::remove_file(&cf_path);
+        let orig = file::read_to_string(&cf_path).unwrap();
+        let _ = file::remove_file(&cf_path);
 
         assert_cli!("use", "-g", "tiny@2");
-        assert_snapshot!(fs::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
-        fs::write(&cf_path, orig).unwrap();
+        file::write(&cf_path, orig).unwrap();
     }
 }

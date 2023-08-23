@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs;
+
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -58,7 +58,7 @@ impl GoPlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        let body = fs::read_to_string(&*env::RTX_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::RTX_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {

@@ -1,10 +1,9 @@
 use std::env::{join_paths, set_current_dir};
-use std::fs;
 use std::path::PathBuf;
 
 use indoc::indoc;
 
-use crate::env;
+use crate::{env, file};
 
 #[ctor::ctor]
 fn init() {
@@ -31,7 +30,7 @@ fn init() {
 }
 
 pub fn reset_config() {
-    fs::write(
+    file::write(
         env::HOME.join(".test-tool-versions"),
         indoc! {r#"
             tiny  2
@@ -39,14 +38,14 @@ pub fn reset_config() {
             "#},
     )
     .unwrap();
-    fs::write(
+    file::write(
         env::PWD.join(".test-tool-versions"),
         indoc! {r#"
             tiny 3
             "#},
     )
     .unwrap();
-    fs::write(
+    file::write(
         env::HOME.join("config/config.toml"),
         indoc! {r#"
             [settings]
