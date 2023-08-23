@@ -13,6 +13,7 @@ use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::file;
 use crate::file::{display_path, modified_duration};
 use crate::rand::random_string;
 
@@ -87,14 +88,14 @@ where
     pub fn write(&self, val: &T) -> Result<()> {
         trace!("writing {}", display_path(&self.cache_file_path));
         if let Some(parent) = self.cache_file_path.parent() {
-            fs::create_dir_all(parent)?;
+            file::create_dir_all(parent)?;
         }
         let partial_path = self
             .cache_file_path
             .with_extension(format!("part-{}", random_string(8)));
         let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
-        fs::rename(&partial_path, &self.cache_file_path)?;
+        file::rename(&partial_path, &self.cache_file_path)?;
 
         Ok(())
     }
