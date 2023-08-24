@@ -64,7 +64,7 @@ fn render_commands() -> String {
     doc
 }
 
-fn render_command(parent: Option<&str>, c: &mut clap::Command) -> Option<String> {
+fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
     let mut c = c.clone().disable_help_flag(true);
     if c.is_hide_set() {
         return None;

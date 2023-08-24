@@ -58,7 +58,7 @@ impl Command for Uninstall {
         }
 
         let ts = ToolsetBuilder::new().build(&mut config)?;
-        shims::reshim(&mut config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+        shims::reshim(&config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
         runtime_symlinks::rebuild(&config)?;
 
         Ok(())

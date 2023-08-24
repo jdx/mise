@@ -67,7 +67,7 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
     Err(eyre!("{} is not a valid shim", bin_name))
 }
 
-pub fn reshim(config: &mut Config, ts: &Toolset) -> Result<()> {
+pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
