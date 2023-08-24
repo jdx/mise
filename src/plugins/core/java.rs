@@ -171,7 +171,12 @@ impl JavaPlugin {
     fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
         if regex!(r"^\d").is_match(&tv.version) {
             // undo openjdk shorthand
-            format!("openjdk-{}", tv.version)
+            if tv.version.ends_with(".0.0") {
+                // undo rtx's full "*.0.0" version
+                format!("openjdk-{}", &tv.version[..tv.version.len() - 4])
+            } else {
+                format!("openjdk-{}", tv.version)
+            }
         } else {
             tv.version.clone()
         }
