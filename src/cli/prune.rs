@@ -52,12 +52,12 @@ impl Command for Prune {
             }
         }
 
-        self.delete(&mut config, to_delete.into_values().collect())
+        self.delete(&config, to_delete.into_values().collect())
     }
 }
 
 impl Prune {
-    fn delete(&self, config: &mut Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
+    fn delete(&self, config: &Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (p, tv) in to_delete {
             let mut pr = mpr.add();

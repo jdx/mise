@@ -87,7 +87,7 @@ impl ExternalPlugin {
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
     }
 
-    fn install(&self, config: &Config, pr: &mut ProgressReport) -> Result<()> {
+    fn install(&self, config: &Config, pr: &ProgressReport) -> Result<()> {
         let repository = self.get_repo_url(config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("install {} {:?}", self.name, repository);
@@ -423,7 +423,7 @@ impl Plugin for ExternalPlugin {
         let mut pr = mpr.add();
         self.decorate_progress_bar(&mut pr, None);
         let _lock = self.get_lock(&self.plugin_path, force)?;
-        self.install(config, &mut pr)
+        self.install(config, &pr)
     }
 
     fn update(&self, gitref: Option<String>) -> Result<()> {
