@@ -151,7 +151,7 @@ impl JavaPlugin {
             let entry = entry?;
             let dest = tv.install_path().join(entry.file_name());
             trace!("moving {:?} to {:?}", entry.path(), &dest);
-            fs::rename(entry.path(), dest)?;
+            file::rename(entry.path(), dest)?;
         }
         Ok(())
     }
@@ -239,7 +239,7 @@ impl Plugin for JavaPlugin {
     }
 
     fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
-        let contents = fs::read_to_string(path)?;
+        let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
                 .lines()

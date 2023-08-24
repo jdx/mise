@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -76,10 +75,10 @@ impl BunPlugin {
 
     fn install(&self, tv: &ToolVersion, pr: &ProgressReport, tarball_path: &Path) -> Result<()> {
         pr.set_message(format!("installing {}", tarball_path.display()));
-        fs::remove_dir_all(tv.install_path())?;
+        file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
-        fs::rename(
+        file::rename(
             tv.download_path()
                 .join(format!("bun-{}-{}", os(), arch()))
                 .join("bun"),

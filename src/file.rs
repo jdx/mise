@@ -1,45 +1,76 @@
+use std::fs;
 use std::fs::File;
 use std::os::unix::fs::symlink;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{fs, io};
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
 use crate::{cmd, dirs, env};
 
-pub fn remove_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
         Ok(x) if x.is_symlink() || x.is_file() => {
-            trace!("rm {}", path.display());
-            fs::remove_file(path)?;
+            remove_file(path)?;
         }
         Ok(x) if x.is_dir() => {
             trace!("rm -rf {}", path.display());
-            fs::remove_dir_all(path)?;
+            fs::remove_dir_all(path)
+                .with_context(|| format!("failed rm -rf: {}", path.display()))?;
         }
         _ => {}
     };
     Ok(())
 }
 
-pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> io::Result<()> {
+pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rm {}", path.display());
+    fs::remove_file(path).with_context(|| format!("failed rm: {}", path.display()))
+}
+
+pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rmdir {}", path.display());
+    fs::remove_dir(path).with_context(|| format!("failed rmdir: {}", path.display()))
+}
+
+pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     remove_all(&path).map_err(|e| {
         warn!("failed to remove {}: {}", path.as_ref().display(), e);
         e
     })
 }
 
-pub fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("mv {} {}", from.display(), to.display());
+    fs::rename(from, to)
+        .with_context(|| format!("failed rename: {} -> {}", from.display(), to.display()))
+}
+
+pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write {}", path.display());
+    fs::write(path, contents).with_context(|| format!("failed write: {}", path.display()))
+}
+
+pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display());
+    fs::read_to_string(path).with_context(|| format!("failed read_to_string: {}", path.display()))
+}
+
+pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("mkdir -p {}", path.display());
-    fs::create_dir_all(path)?;
-    Ok(())
+    fs::create_dir_all(path).with_context(|| format!("failed create_dir_all: {}", path.display()))
 }
 
 pub fn basename(path: &Path) -> Option<String> {
@@ -64,10 +95,10 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     }
 }
 
-pub fn touch_dir(dir: &Path) -> io::Result<()> {
+pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();
-    set_file_times(dir, now, now)
+    set_file_times(dir, now, now).with_context(|| format!("failed to touch dir: {}", dir.display()))
 }
 
 pub fn modified_duration(path: &Path) -> Result<Duration> {

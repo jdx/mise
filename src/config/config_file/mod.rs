@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::fs;
+
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
@@ -17,7 +17,7 @@ use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::toolset::{ToolVersion, ToolVersionList, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{dirs, env};
+use crate::{dirs, env, file};
 
 pub mod legacy_version;
 pub mod rtx_toml;
@@ -168,32 +168,35 @@ pub fn is_trusted(settings: &Settings, path: &Path) -> bool {
     {
         return true;
     }
-    trust_path(path.to_path_buf()).unwrap().exists()
+    match path.canonicalize() {
+        Ok(path) => trust_path(&path).exists(),
+        Err(_) => false,
+    }
 }
 
 pub fn trust(path: &Path) -> Result<()> {
-    let hashed_path = trust_path(path.to_path_buf())?;
+    let path = path.canonicalize()?;
+    let hashed_path = trust_path(&path);
     if !hashed_path.exists() {
-        fs::create_dir_all(hashed_path.parent().unwrap())?;
-        fs::write(hashed_path, "")?;
+        file::create_dir_all(hashed_path.parent().unwrap())?;
+        file::make_symlink(&path, &hashed_path)?;
     }
     Ok(())
 }
 
 pub fn untrust(path: &Path) -> Result<()> {
-    let hashed_path = trust_path(path.to_path_buf())?;
+    let path = path.canonicalize()?;
+    let hashed_path = trust_path(&path);
     if hashed_path.exists() {
-        fs::remove_file(hashed_path)?;
+        file::remove_file(hashed_path)?;
     }
     Ok(())
 }
 
-fn trust_path(mut path: PathBuf) -> Result<PathBuf> {
-    if path.exists() {
-        path = path.canonicalize()?;
-    }
-    let trust_path = dirs::CACHE.join("trusted-configs").join(hash_to_str(&path));
-    Ok(trust_path)
+fn trust_path(path: &Path) -> PathBuf {
+    dirs::CONFIG
+        .join("trusted-configs")
+        .join(hash_to_str(&path))
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
