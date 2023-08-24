@@ -34,7 +34,7 @@ impl Command for Reshim {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
 
-        shims::reshim(&mut config, &ts)
+        shims::reshim(&config, &ts)
     }
 }
 
