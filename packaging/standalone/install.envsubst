@@ -138,19 +138,22 @@ after_finish_help() {
 	case "${SHELL:-}" in
 	*/zsh)
 		info "rtx: run the following to activate rtx in your shell:"
-		info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> ~/.zshrc\n"
+		info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> ~/.zshrc"
+		info ""
 		info "rtx: this must be run in order to use rtx in the terminal"
 		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
 		;;
 	*/bash)
 		info "rtx: run the following to activate rtx in your shell:"
-		info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc\n"
+		info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc"
+		info ""
 		info "rtx: this must be run in order to use rtx in the terminal"
 		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
 		;;
 	*/fish)
 		info "rtx: run the following to activate rtx in your shell:"
-		info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish\n"
+		info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish"
+		info ""
 		info "rtx: this must be run in order to use rtx in the terminal"
 		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
 		;;
