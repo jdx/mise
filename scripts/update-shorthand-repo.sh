@@ -6,20 +6,20 @@ git clone --depth 1 https://github.com/asdf-vm/asdf-plugins
 rm -f src/default_shorthands.rs
 
 custom_plugins=(
-	'("go",     "https://github.com/rtx-plugins/rtx-golang.git"),'
-	'("golang", "https://github.com/rtx-plugins/rtx-golang.git"),'
-	'("java",   "https://github.com/rtx-plugins/rtx-java.git"),'
 	'("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
 	'("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
-	'("ruby",   "https://github.com/rtx-plugins/rtx-ruby.git"),'
 	'("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
 )
 
 asdf_plugins=$(find asdf-plugins/plugins -maxdepth 1 |
 	sort |
-	grep -v '/plugins$' |
+	grep -v '/go$' |
+	grep -v '/golang$' |
+	grep -v '/java$' |
 	grep -v '/nodejs$' |
-	grep -v '/python$')
+	grep -v '/plugins$' |
+	grep -v '/python$' |
+	grep -v '/ruby$')
 
 num_plugins=$(echo "$asdf_plugins" | wc -l | tr -d ' ')
 num_plugins=$((num_plugins + ${#custom_plugins[@]}))
