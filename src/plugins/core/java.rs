@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
-use std::fs;
+use std::fs::{self, create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, Context, Result};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
@@ -74,6 +74,7 @@ impl JavaPlugin {
             })
         })
     }
+
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let versions = self
             .fetch_java_metadata("ga")?
@@ -94,13 +95,13 @@ impl JavaPlugin {
     }
 
     fn java_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/java")
+        java_home_path(tv).join("bin/java")
     }
 
     fn test_java(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         CmdLineRunner::new(&config.settings, self.java_bin(tv))
             .with_pr(pr)
-            .env("JAVA_HOME", tv.install_path())
+            .env("JAVA_HOME", java_home_path(tv))
             .arg("-version")
             .execute()
     }
@@ -133,18 +134,14 @@ impl JavaPlugin {
         }
         self.move_to_install_path(tv, m)
     }
-    fn move_to_install_path(&self, tv: &ToolVersion, m: &JavaMetadata) -> Result<()> {
-        let basedir = tv
+
+    fn move_to_install_path(&self, tv: &ToolVersion, _m: &JavaMetadata) -> Result<()> {
+        let source_dir = tv
             .download_path()
             .read_dir()?
             .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
             .unwrap()?
             .path();
-        let source_dir = match m.vendor.as_str() {
-            "zulu" | "liberica" => basedir,
-            _ if os() == "macosx" => basedir.join("Contents").join("Home"),
-            _ => basedir,
-        };
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path())?;
         for entry in fs::read_dir(source_dir)? {
@@ -153,6 +150,38 @@ impl JavaPlugin {
             trace!("moving {:?} to {:?}", entry.path(), &dest);
             file::rename(entry.path(), dest)?;
         }
+        Ok(())
+    }
+
+    fn install_macos_integration(&self, tv: &ToolVersion) -> Result<()> {
+        let macos_jvm_integration = Path::new("/Library/Java/JavaVirtualMachines");
+        create_dir_all(macos_jvm_integration.join(tv.version.clone())).with_context(|| {
+            eyre!(
+                "Unable to enable Java macOS integration for {}. Try using command with sudo.",
+                tv.version
+            )
+        })?;
+        file::make_symlink(
+            tv.install_path().join("Contents").as_path(),
+            macos_jvm_integration
+                .join(tv.version.clone())
+                .join("Contents")
+                .as_path(),
+        )?;
+        Ok(())
+    }
+
+    fn uninstall_macos_integration(&self, tv: &ToolVersion) -> Result<()> {
+        let macos_jvm_integration =
+            Path::new("/Library/Java/JavaVirtualMachines").join(tv.version.clone());
+        macos_jvm_integration.exists().then(|| {
+            remove_dir_all(macos_jvm_integration).with_context(|| {
+                eyre!(
+                    "Unable to remove Java macOS integration for {}. Try using command with sudo.",
+                    tv.version
+                )
+            })
+        });
         Ok(())
     }
 
@@ -220,8 +249,20 @@ impl Plugin for JavaPlugin {
 
         let metadata = self.tv_to_metadata(tv)?;
         let tarball_path = self.download(tv, pr, metadata)?;
+
         self.install(tv, pr, &tarball_path, metadata)?;
+        if *env::RTX_JAVA_MACOS_INTEGRATION == Some(true) && supports_macos_integration(tv) {
+            self.install_macos_integration(tv)?;
+        }
         self.verify(config, tv, pr)?;
+
+        Ok(())
+    }
+
+    fn uninstall_version(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
+        if supports_macos_integration(tv) {
+            self.uninstall_macos_integration(tv)?;
+        }
 
         Ok(())
     }
@@ -229,7 +270,7 @@ impl Plugin for JavaPlugin {
     fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
         let map = HashMap::from([(
             "JAVA_HOME".into(),
-            tv.install_path().to_string_lossy().into(),
+            java_home_path(tv).to_string_lossy().into(),
         )]);
         Ok(map)
     }
@@ -252,6 +293,28 @@ impl Plugin for JavaPlugin {
         } else {
             Ok(contents)
         }
+    }
+}
+
+fn supports_macos_integration(tv: &ToolVersion) -> bool {
+    let is_enabled = *env::RTX_JAVA_MACOS_INTEGRATION == Some(true);
+    let is_unsupported = ["liberica-"].iter().any(|&s| tv.version.starts_with(s));
+
+    if os() == "macosx" && is_enabled && !is_unsupported {
+        return true;
+    }
+    false
+}
+
+fn java_home_path(tv: &ToolVersion) -> PathBuf {
+    if os() == "macosx" {
+        if tv.install_path().join("Contents/Home").exists() {
+            tv.install_path().join("Contents/Home")
+        } else {
+            tv.install_path()
+        }
+    } else {
+        tv.install_path()
     }
 }
 
