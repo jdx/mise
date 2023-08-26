@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 683] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -260,7 +260,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
     ("gofumpt", "https://github.com/looztra/asdf-gofumpt.git"),
     ("gohugo", "https://github.com/nklmilojevic/asdf-hugo.git"),
     ("gojq", "https://github.com/jimmidyson/asdf-gojq.git"),
-    ("golang", "https://github.com/asdf-community/asdf-golang.git"),
     ("golangci-lint", "https://github.com/hypnoglow/asdf-golangci-lint.git"),
     ("gomigrate", "https://github.com/joschi/asdf-gomigrate.git"),
     ("gomplate", "https://github.com/sneakybeaky/asdf-gomplate.git"),
@@ -317,7 +316,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
     ("io", "https://github.com/mracos/asdf-io.git"),
     ("istioctl", "https://github.com/virtualstaticvoid/asdf-istioctl.git"),
     ("janet", "https://github.com/Jakski/asdf-janet.git"),
-    ("java", "https://github.com/halcyon/asdf-java.git"),
     ("jb", "https://github.com/beardix/asdf-jb.git"),
     ("jbang", "https://github.com/joschi/asdf-jbang.git"),
     ("jib", "https://github.com/joschi/asdf-jib.git"),
@@ -536,7 +534,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
     ("rlwrap", "https://github.com/asdf-community/asdf-rlwrap.git"),
     ("rome", "https://github.com/kichiemon/asdf-rome.git"),
     ("rstash", "https://github.com/carlduevel/asdf-rstash.git"),
-    ("ruby", "https://github.com/asdf-vm/asdf-ruby.git"),
     ("rust", "https://github.com/code-lever/asdf-rust.git"),
     ("rust-analyzer", "https://github.com/Xyven1/asdf-rust-analyzer"),
     ("rye", "https://github.com/Azuki-bar/asdf-rye"),
@@ -709,11 +706,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 690] = [
     ("zoxide", "https://github.com/nyrst/asdf-zoxide"),
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
     // rtx custom shorthands
-    ("go",     "https://github.com/rtx-plugins/rtx-golang.git"),
-    ("golang", "https://github.com/rtx-plugins/rtx-golang.git"),
-    ("java",   "https://github.com/rtx-plugins/rtx-java.git"),
     ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
     ("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),
-    ("ruby",   "https://github.com/rtx-plugins/rtx-ruby.git"),
     ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
 ];
