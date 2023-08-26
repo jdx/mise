@@ -3479,5 +3479,5 @@ _rtx() {
     esac
 }
 
-complete -F _rtx -o bashdefault -o default rtx
+complete -F _rtx -o nosort -o bashdefault -o default rtx
 
