@@ -379,7 +379,7 @@ impl Plugin for ExternalPlugin {
 
     fn get_remote_url(&self) -> Option<String> {
         let git = Git::new(self.plugin_path.to_path_buf());
-        git.get_remote_url()
+        git.get_remote_url().or_else(|| self.repo_url.clone())
     }
 
     fn current_sha_short(&self) -> Result<String> {
