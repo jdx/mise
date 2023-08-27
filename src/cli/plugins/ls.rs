@@ -1,10 +1,13 @@
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
-use crate::cli::plugins::ls_remote::PluginsLsRemote;
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::PluginType;
+use crate::plugins::{ExternalPlugin, PluginType};
+use crate::tool::Tool;
 
 /// List installed plugins
 ///
@@ -35,43 +38,42 @@ pub struct PluginsLs {
 
 impl Command for PluginsLs {
     fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let mut tools = config.tools.values().cloned().collect::<BTreeSet<_>>();
+
         if self.all {
-            return PluginsLsRemote {
-                urls: self.urls,
-                only_names: false,
+            for (plugin, url) in config.get_shorthands() {
+                let mut ep = ExternalPlugin::new(plugin);
+                ep.repo_url = Some(url.to_string());
+                let tool = Tool::new(plugin.clone(), Box::from(ep));
+                tools.insert(Arc::new(tool));
             }
-            .run(config, out);
-        }
-
-        let mut plugins = config.tools.values().collect::<Vec<_>>();
-
-        if self.core {
-            plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
+        } else if self.core {
+            tools.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
         } else {
-            plugins.retain(|p| matches!(p.plugin.get_type(), PluginType::External));
+            tools.retain(|p| matches!(p.plugin.get_type(), PluginType::External));
         }
 
         if self.urls || self.refs {
-            for plugin in plugins {
-                rtxprint!(out, "{:29}", plugin.name);
+            for tool in tools {
+                rtxprint!(out, "{:29}", tool.name);
                 if self.urls {
-                    if let Some(url) = plugin.get_remote_url() {
+                    if let Some(url) = tool.get_remote_url() {
                         rtxprint!(out, " {}", url);
                     }
                 }
                 if self.refs {
-                    if let Ok(aref) = plugin.current_abbrev_ref() {
+                    if let Ok(aref) = tool.current_abbrev_ref() {
                         rtxprint!(out, " {}", aref);
                     }
-                    if let Ok(sha) = plugin.current_sha_short() {
+                    if let Ok(sha) = tool.current_sha_short() {
                         rtxprint!(out, " {}", sha);
                     }
                 }
                 rtxprint!(out, "\n");
             }
         } else {
-            for plugin in plugins {
-                rtxprintln!(out, "{}", plugin.name);
+            for tool in tools {
+                rtxprintln!(out, "{}", tool.name);
             }
         }
         Ok(())
