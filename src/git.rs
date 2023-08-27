@@ -85,6 +85,9 @@ impl Git {
     }
 
     pub fn get_remote_url(&self) -> Option<String> {
+        if !self.dir.exists() {
+            return None;
+        }
         let res = cmd!(
             "git",
             "-C",
