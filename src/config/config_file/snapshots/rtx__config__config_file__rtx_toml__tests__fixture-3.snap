@@ -3,5 +3,5 @@ source: src/config/config_file/rtx_toml.rs
 expression: cf.plugins()
 ---
 {
-    "node": "https://github.com/jdxcode/rtx-node",
+    "node": "https://github.com/jdx/rtx-node",
 }

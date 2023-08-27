@@ -22,7 +22,7 @@ Codename: stable
 Version: 1.0
 Architectures: amd64 arm64
 Components: main
-Description: https://github.com/jdxcode/rtx
+Description: https://github.com/jdx/rtx
 Date: $(date -Ru)
 EOF
 do_hash "MD5Sum" "md5sum"

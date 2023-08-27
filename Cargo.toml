@@ -3,10 +3,10 @@ name = "rtx-cli"
 version = "2023.8.8"
 edition = "2021"
 description = "Polyglot runtime manager (asdf rust clone)"
-authors = ["Jeff Dickey (@jdxcode)"]
-homepage = "https://github.com/jdxcode/rtx"
-documentation = "https://github.com/jdxcode/rtx"
-repository = "https://github.com/jdxcode/rtx"
+authors = ["Jeff Dickey (@jdx)"]
+homepage = "https://github.com/jdx/rtx"
+documentation = "https://github.com/jdx/rtx"
+repository = "https://github.com/jdx/rtx"
 readme = "README.md"
 license = "MIT"
 keywords = ["rtx"]
@@ -114,7 +114,7 @@ sign-commit = true
 pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
   { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
-  { file = "README.md", search = "https://github.com/jdxcode/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdxcode/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
+  { file = "README.md", search = "https://github.com/jdx/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdx/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
   { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
   { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
 ]

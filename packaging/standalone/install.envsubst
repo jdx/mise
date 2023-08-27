@@ -117,7 +117,7 @@ install_rtx() {
 	xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 	install_path="${RTX_INSTALL_PATH:-$xdg_data_home/rtx/bin/rtx}"
 	install_dir="$(dirname "$install_path")"
-	tarball_url="https://github.com/jdxcode/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
+	tarball_url="https://github.com/jdx/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
 
 	cache_file=$(download_file "$tarball_url")
 	debug "rtx-setup: tarball=$cache_file"

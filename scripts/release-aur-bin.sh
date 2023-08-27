@@ -3,7 +3,7 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-TAR_GZ_URI="https://github.com/jdxcode/rtx/releases/download/${RTX_VERSION}/rtx-${RTX_VERSION}-linux-x64.tar.gz"
+TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/${RTX_VERSION}/rtx-${RTX_VERSION}-linux-x64.tar.gz"
 
 SHA512=$(curl -L "$TAR_GZ_URI" | sha512sum | awk '{print $1}')
 
@@ -20,7 +20,7 @@ pkgver=${RTX_VERSION#v*}
 pkgrel=1
 pkgdesc='Polyglot runtime manager'
 arch=('x86_64')
-url='https://github.com/jdxcode/rtx'
+url='https://github.com/jdx/rtx'
 license=('MIT')
 provides=('rtx')
 conflicts=('rtx')
@@ -54,7 +54,7 @@ pkgbase = rtx-bin
 	pkgdesc = Polyglot runtime manager
 	pkgver = ${RTX_VERSION#v*}
 	pkgrel = 1
-	url = https://github.com/jdxcode/rtx
+	url = https://github.com/jdx/rtx
 	arch = x86_64
 	license = MIT
 	provides = rtx

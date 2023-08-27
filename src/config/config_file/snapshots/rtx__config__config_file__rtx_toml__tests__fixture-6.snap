@@ -16,7 +16,7 @@ python = [
 ]
 
 [plugins]
-node = 'https://github.com/jdxcode/rtx-node'
+node = 'https://github.com/jdx/rtx-node'
 
 [settings]
 verbose = true

@@ -61,7 +61,7 @@ impl Command for PluginsLsRemote {
 const LONG_ABOUT: &str = r#"
 List all available remote plugins
 
-The full list is here: https://github.com/jdxcode/rtx/blob/main/src/default_shorthands.rs
+The full list is here: https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs
 
 Examples:
   $ rtx plugins ls-remote
