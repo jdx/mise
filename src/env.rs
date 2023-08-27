@@ -343,6 +343,15 @@ fn log_level() -> LevelFilter {
         if arg == "--" {
             break;
         }
+        if arg == "--debug" {
+            set_var("RTX_LOG_LEVEL", "debug");
+            set_var("RTX_DEBUG", "1");
+        }
+        if arg == "--trace" {
+            set_var("RTX_LOG_LEVEL", "trace");
+            set_var("RTX_DEBUG", "1");
+            set_var("RTX_TRACE", "1");
+        }
         if let Some(("--log-level", level)) = arg.split_once('=') {
             set_var("RTX_LOG_LEVEL", level);
         }
@@ -350,12 +359,6 @@ fn log_level() -> LevelFilter {
             if let Some(level) = ARGS.get(i + 1) {
                 set_var("RTX_LOG_LEVEL", level);
             }
-        }
-        if arg == "--debug" {
-            set_var("RTX_DEBUG", "1");
-        }
-        if arg == "--trace" {
-            set_var("RTX_TRACE", "1");
         }
     }
     let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
