@@ -45,11 +45,8 @@ pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_MISSING_RUNTIME_BEHAVIOR: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_MISSING_RUNTIME_BEHAVIOR").ok());
-pub static RTX_QUIET: Lazy<bool> = Lazy::new(|| var_is_true("RTX_QUIET"));
-pub static RTX_DEBUG: Lazy<bool> = Lazy::new(|| var_is_true("RTX_DEBUG"));
-pub static RTX_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_TRACE"));
 pub static RTX_VERBOSE: Lazy<bool> =
-    Lazy::new(|| *RTX_DEBUG || *RTX_TRACE || var_is_true("RTX_VERBOSE"));
+    Lazy::new(|| *RTX_LOG_LEVEL > LevelFilter::Info || var_is_true("RTX_VERBOSE"));
 pub static RTX_JOBS: Lazy<usize> = Lazy::new(|| {
     var("RTX_JOBS")
         .ok()
@@ -339,6 +336,15 @@ fn prefer_stale(args: &[String]) -> bool {
 }
 
 fn log_level() -> LevelFilter {
+    if var_is_true("RTX_QUIET") {
+        set_var("RTX_LOG_LEVEL", "warn");
+    }
+    if var_is_true("RTX_DEBUG") {
+        set_var("RTX_LOG_LEVEL", "debug");
+    }
+    if var_is_true("RTX_TRACE") {
+        set_var("RTX_LOG_LEVEL", "trace");
+    }
     for (i, arg) in ARGS.iter().enumerate() {
         if arg == "--" {
             break;
@@ -352,27 +358,29 @@ fn log_level() -> LevelFilter {
             }
         }
         if arg == "--debug" {
-            set_var("RTX_DEBUG", "1");
+            set_var("RTX_LOG_LEVEL", "debug");
         }
         if arg == "--trace" {
+            set_var("RTX_LOG_LEVEL", "trace");
+        }
+    }
+    let log_level = var("RTX_LOG_LEVEL")
+        .unwrap_or_default()
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::Info);
+    // set RTX_DEBUG/RTX_TRACE for plugins to use
+    match log_level {
+        LevelFilter::Trace => {
             set_var("RTX_TRACE", "1");
+            set_var("RTX_DEBUG", "1");
         }
-    }
-    let log_level = var("RTX_LOG_LEVEL").unwrap_or_default();
-    match log_level.parse::<LevelFilter>() {
-        Ok(level) => level,
-        _ => {
-            if *RTX_TRACE {
-                LevelFilter::Trace
-            } else if *RTX_DEBUG {
-                LevelFilter::Debug
-            } else if *RTX_QUIET {
-                LevelFilter::Warn
-            } else {
-                LevelFilter::Info
-            }
+        LevelFilter::Debug => {
+            set_var("RTX_DEBUG", "1");
         }
+        _ => {}
     }
+
+    log_level
 }
 
 fn log_file_level() -> LevelFilter {
