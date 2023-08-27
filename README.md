@@ -1083,7 +1083,7 @@ Alternatively, you may be able to get tighter integration with a direnv extensio
 ## Core Plugins
 
 rtx comes with some plugins built into the CLI written in Rust. These are new and will improve over
-time. They can be easily overridden by installing a plugin with the same name, e.g.: `rtx plugin install python`.
+time. They can be easily overridden by installing a plugin with the same name, e.g.: `rtx plugin install python https://github.com/asdf-community/asdf-python`.
 
 You can see the core plugins with `rtx plugin ls --core`.
 
