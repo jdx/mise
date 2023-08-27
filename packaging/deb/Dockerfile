@@ -1,5 +1,5 @@
 FROM ubuntu:22.04
-LABEL maintainer="jdxcode"
+LABEL maintainer="jdx"
 
 RUN apt-get update \
     && apt-get install -y \

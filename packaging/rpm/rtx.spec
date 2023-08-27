@@ -2,10 +2,10 @@ Summary: Polyglot runtime manager
 Name: rtx
 Version: 2023.8.8
 Release: 1
-URL: https://github.com/jdxcode/rtx/
+URL: https://github.com/jdx/rtx/
 Group: System
 License: MIT
-Packager: @jdxcode
+Packager: @jdx
 BuildRoot: /root/rtx
 
 %description
