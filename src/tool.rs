@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
@@ -406,6 +407,20 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     };
     v
 }
+
+impl PartialOrd for Tool {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.name.cmp(&other.name))
+    }
+}
+
+impl Ord for Tool {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl Eq for Tool {}
 
 #[cfg(test)]
 mod tests {
