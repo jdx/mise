@@ -8,7 +8,7 @@ or [rtx-java](https://github.com/rtx-plugins/rtx-java)
 then use `rtx plugins install java GIT_URL`.
 
 The code for this is inside the rtx repository at
-[`./src/plugins/core/java.rs`](https://github.com/jdxcode/rtx/blob/main/src/plugins/core/java.rs).
+[`./src/plugins/core/java.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/java.rs).
 
 ## Usage
 

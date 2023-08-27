@@ -3,7 +3,7 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-SHA512=$(curl -L "https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
+SHA512=$(curl -L "https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
 	git clone ssh://aur@aur.archlinux.org/rtx.git aur
@@ -18,13 +18,13 @@ pkgver=${RTX_VERSION#v*}
 pkgrel=1
 pkgdesc='Polyglot runtime manager'
 arch=('x86_64')
-url='https://github.com/jdxcode/rtx'
+url='https://github.com/jdx/rtx'
 license=('MIT')
 makedepends=('cargo')
 provides=('rtx')
 conflicts=('rtx-bin')
 options=('!lto')
-source=("\$pkgname-\$pkgver.tar.gz::https://github.com/jdxcode/\$pkgname/archive/v\$pkgver.tar.gz")
+source=("\$pkgname-\$pkgver.tar.gz::https://github.com/jdx/\$pkgname/archive/v\$pkgver.tar.gz")
 sha512sums=('$SHA512')
 
 prepare() {
@@ -59,13 +59,13 @@ pkgbase = rtx
 	pkgdesc = Polyglot runtime manager
 	pkgver = ${RTX_VERSION#v*}
 	pkgrel = 1
-	url = https://github.com/jdxcode/rtx
+	url = https://github.com/jdx/rtx
 	arch = x86_64
 	license = MIT
 	makedepends = cargo
 	provides = rtx
 	conflicts = rtx
-	source = rtx-${RTX_VERSION#v*}.tar.gz::https://github.com/jdxcode/rtx/archive/$RTX_VERSION.tar.gz
+	source = rtx-${RTX_VERSION#v*}.tar.gz::https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz
 	sha512sums = $SHA512
 
 pkgname = rtx
