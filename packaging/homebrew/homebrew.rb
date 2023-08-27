@@ -1,6 +1,6 @@
 class Rtx < Formula
   desc "Multi-language runtime manager"
-  homepage "https://github.com/jdxcode/rtx"
+  homepage "https://github.com/jdx/rtx"
   license "MIT"
   version "$RTX_VERSION"
 

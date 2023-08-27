@@ -8,7 +8,7 @@ or [rtx-golang](https://github.com/rtx-plugins/rtx-golang)
 then use `rtx plugins install go GIT_URL`.
 
 The code for this is inside the rtx repository at
-[`./src/plugins/core/go.rs`](https://github.com/jdxcode/rtx/blob/main/src/plugins/core/go.rs).
+[`./src/plugins/core/go.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/go.rs).
 
 ## Usage
 

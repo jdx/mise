@@ -51,7 +51,7 @@ rustPlatform.buildRustPackage {
 
   meta = with lib; {
     description = "Polyglot runtime manager (asdf rust clone)";
-    homepage = "https://github.com/jdxcode/rtx";
+    homepage = "https://github.com/jdx/rtx";
     license = licenses.mit;
   };
 }

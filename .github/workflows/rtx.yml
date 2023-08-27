@@ -229,7 +229,7 @@ jobs:
           path: rtx
       - uses: actions/checkout@v3
         with:
-          repository: jdxcode/homebrew-tap
+          repository: jdx/homebrew-tap
           path: homebrew-tap
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
       - name: Install fd-find
