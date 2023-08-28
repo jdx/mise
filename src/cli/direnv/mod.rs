@@ -11,7 +11,7 @@ mod exec;
 
 /// Output direnv function to use rtx inside direnv
 ///
-/// See https://github.com/jdxcode/rtx#direnv for more information
+/// See https://github.com/jdx/rtx#direnv for more information
 ///
 /// Because this generates the legacy files based on currently installed plugins,
 /// you should run this command after installing new plugins. Otherwise

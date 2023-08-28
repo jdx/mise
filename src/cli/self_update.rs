@@ -25,7 +25,7 @@ impl Command for SelfUpdate {
             env::var("RTX_SELF_UPDATE_VERSION").unwrap_or(cargo_crate_version!().to_string());
         let mut update = Update::configure();
         update
-            .repo_owner("jdxcode")
+            .repo_owner("jdx")
             .repo_name("rtx")
             .bin_name("rtx")
             .show_download_progress(true)

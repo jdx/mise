@@ -171,7 +171,7 @@ impl Cli {
             clap::Command::new("rtx")
                 .version(version::VERSION.to_string())
                 .about(env!("CARGO_PKG_DESCRIPTION"))
-                .author("Jeff Dickey <@jdxcode>")
+                .author("Jeff Dickey <@jdx>")
                 .long_about(LONG_ABOUT)
                 .arg_required_else_help(true)
                 .subcommand_required(true)
@@ -237,7 +237,7 @@ impl Default for Cli {
 }
 
 const LONG_ABOUT: &str = indoc! {"
-rtx is a tool for managing runtime versions. https://github.com/jdxcode/rtx
+rtx is a tool for managing runtime versions. https://github.com/jdx/rtx
 
 It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
 that works for any language. It's also great for managing linters/tools like

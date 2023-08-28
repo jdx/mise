@@ -7,7 +7,7 @@ Please open a ticket or send me an email if you have thoughts on how rtx can be 
 
 ## Core CLI Security
 
-Development of the "core CLI" is done on jdxcode/rtx which only a single developer (me, @jdxcode) has access to.
+Development of the "core CLI" is done on jdx/rtx which only a single developer (me, @jdx) has access to.
 Other contributors may only submit contributions via public Pull Requests. Reducing the number
 of developers with access down to 1 minimizes the chance of keys being leaked.
 
@@ -33,10 +33,10 @@ Plugins are by far the biggest source of potential problems and where the most w
 
 There are 3 types of plugins:
 
-* [core](https://github.com/jdxcode/rtx/issues/236) - plugins that are hardcoded into the CLI. 
+* [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI. 
   These are official plugins for the most common languages written in Rust.
 * community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
-only have @jdxcode as the sole contributor, however this may change in the future for particular plugins with
+only have @jdx as the sole contributor, however this may change in the future for particular plugins with
 dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
 * external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
 secure than installing any random tool from the internet.
@@ -60,7 +60,7 @@ Send an email to security@<RTX_DOMAIN_IN_README>.pub
 If you want, you may encrypt the message with GPG:
 
 <details>
-  <summary>@jdxcode's public key</summary>
+  <summary>@jdx's public key</summary>
   
   ```
 -----BEGIN PGP PUBLIC KEY BLOCK-----

@@ -51,7 +51,7 @@ for platform in "${platforms[@]}"; do
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdxcode/rtx"
+    "url": "https://github.com/jdx/rtx"
   },
   "files": [
     "bin",
@@ -135,7 +135,7 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
   "version": "$RTX_VERSION",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdxcode/rtx"
+    "url": "https://github.com/jdx/rtx"
   },
   "files": [
     "installArchSpecificPackage.js",

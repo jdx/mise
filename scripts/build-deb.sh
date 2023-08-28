@@ -10,8 +10,8 @@ fpm -s dir -t deb \
 	--version "${RTX_VERSION#v*}" \
 	--architecture amd64 \
 	--description "Polyglot runtime manager" \
-	--url "https://github.com/jdxcode/rtx" \
-	--maintainer "Jeff Dickey @jdxcode" \
+	--url "https://github.com/jdx/rtx" \
+	--maintainer "Jeff Dickey @jdx" \
 	rtx/bin/rtx=/usr/bin/rtx \
 	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
@@ -22,8 +22,8 @@ fpm -s dir -t deb \
 	--version "${RTX_VERSION#v*}" \
 	--architecture arm64 \
 	--description "Polyglot runtime manager" \
-	--url "https://github.com/jdxcode/rtx" \
-	--maintainer "Jeff Dickey @jdxcode" \
+	--url "https://github.com/jdx/rtx" \
+	--maintainer "Jeff Dickey @jdx" \
 	rtx/bin/rtx=/usr/bin/rtx \
 	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 

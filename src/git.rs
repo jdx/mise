@@ -85,6 +85,9 @@ impl Git {
     }
 
     pub fn get_remote_url(&self) -> Option<String> {
+        if !self.dir.exists() {
+            return None;
+        }
         let res = cmd!(
             "git",
             "-C",
@@ -159,7 +162,7 @@ fn get_git_version() -> Result<String> {
 //     fn test_clone_and_update() {
 //         let dir = tempdir().unwrap().into_path();
 //         let git = Git::new(dir);
-//         git.clone("https://github.com/jdxcode/rtx-tiny")
+//         git.clone("https://github.com/rtx-plugins/rtx-tiny")
 //             .unwrap();
 //         let prev_rev = "c85ab2bea15e8b785592ce1a75db341e38ac4d33".to_string();
 //         let latest = git.current_sha().unwrap();

@@ -7,7 +7,7 @@ let
 in
 rustPlatform.buildRustPackage {
   pname = "rtx";
-  version = "2023.8.8";
+  version = "2023.8.9";
 
   src = lib.cleanSource ./.;
 
@@ -51,7 +51,7 @@ rustPlatform.buildRustPackage {
 
   meta = with lib; {
     description = "Polyglot runtime manager (asdf rust clone)";
-    homepage = "https://github.com/jdxcode/rtx";
+    homepage = "https://github.com/jdx/rtx";
     license = licenses.mit;
   };
 }
