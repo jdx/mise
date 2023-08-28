@@ -33,4 +33,6 @@ sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20
 sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
 ```
 
-> Note: Not all distributions of Java SDK support this integration (e.g liberica).
+The distribution from  Azul Systems does support the integration but the symlink target location will differ from the example above (e.g `~/.local/share/rtx/installs/java/zulu-11.64.190/zulu-11.jdk/Contents`).
+
+> Note: Not all distributions of the Java SDK support this integration (e.g liberica).
