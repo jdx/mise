@@ -22,23 +22,15 @@ rtx use -g java@17         # alternate shorthands for openjdk-only
 
 See available versions with `rtx ls-remote java`.
 
-## Configuration
-
-- `RTX_JAVA_MACOS_INTEGRATION` [bool]: enables macOS JAVA_HOME integration, defaults to false
-
 ## macOS JAVA_HOME Integration
 
 Some applications in macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.
 
-The environment variable `RTX_JAVA_MACOS_INTEGRATION` enables the integration during the installation. On removal
-the integration will be cleaned up regardless of the value of the environment variable.
-
-Since the integration relies on symlinks within `/Library/Java/JavaVirtualMachines`, administrative privileges are
-required when using this feature.
+To integrate an installed Java runtime with macOS run the following commands for the proper version (e.g. openjdk-20).
 
 ```sh
-sudo RTX_JAVA_MACOS_INTEGRATION=true rtx install java@openjdk-20
+sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20
+ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
 ```
 
-> Note: Not all distributions of Java SDK support this integration (e.g liberica). The integration will be simply
-> ignored in such cases even if the environment variable is set to true.
+> Note: Not all distributions of Java SDK support this integration (e.g liberica).

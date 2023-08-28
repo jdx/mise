@@ -204,10 +204,6 @@ pub static RTX_GO_SET_GOROOT: Lazy<Option<bool>> =
 pub static RTX_GO_SET_GOPATH: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_GO_SET_GOPATH"));
 
-// java
-pub static RTX_JAVA_MACOS_INTEGRATION: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_JAVA_MACOS_INTEGRATION"));
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confirm {
     Yes,
