@@ -157,11 +157,12 @@ impl JavaPlugin {
             file::rename(entry.path(), dest)?;
         }
 
+        // move Contents dir to install path for macOS, if it exists
         if os() == "macosx" && contents_dir.exists() {
             file::create_dir_all(tv.install_path().join("Contents"))?;
             for entry in fs::read_dir(contents_dir)? {
                 let entry = entry?;
-                // if entry.path().to_string_lossy().contains("/Home") {
+                // skip Home dir, so we can symlink it later
                 if entry.file_name() == "Home" {
                     continue;
                 }
