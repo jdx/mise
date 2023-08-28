@@ -15,9 +15,9 @@ The code for this is inside the rtx repository at
 The following installs the latest version of java-openjdk-17.x (if some version of openjdk-17.x is 
 not already installed) and makes it the global default:
 
-```sh
-rtx use -g java@openjdk-17
-rtx use -g java@17         # alternate shorthands for openjdk-only
+```sh-session
+$ rtx use -g java@openjdk-17
+$ rtx use -g java@17         # alternate shorthands for openjdk-only
 ```
 
 See available versions with `rtx ls-remote java`.
@@ -28,9 +28,9 @@ Some applications in macOS rely on `/usr/libexec/java_home` to find installed Ja
 
 To integrate an installed Java runtime with macOS run the following commands for the proper version (e.g. openjdk-20).
 
-```sh
-sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20
-sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
+```sh-session
+$ sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20
+$ sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
 ```
 
 The distribution from  Azul Systems does support the integration but the symlink target location will differ from the example above (e.g `~/.local/share/rtx/installs/java/zulu-11.64.190/zulu-11.jdk/Contents`).
