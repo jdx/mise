@@ -30,7 +30,7 @@ To integrate an installed Java runtime with macOS run the following commands for
 
 ```sh
 sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20
-ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
+sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20/Contents
 ```
 
 > Note: Not all distributions of Java SDK support this integration (e.g liberica).
