@@ -4,6 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
@@ -175,12 +176,15 @@ impl JavaPlugin {
                 &tv.install_path().join("Contents").join("Home"),
             )?;
             info!(
-                "To enable macOS integration, run the following commands:\n\
-              sudo mkdir /Library/Java/JavaVirtualMachines/{}.jdk;\n\
-              sudo ln -s {}/Contents /Library/Java/JavaVirtualMachines/{}.jdk/Contents;\n",
-                tv.version,
-                tv.install_path().display(),
-                tv.version
+                "{}",
+                formatdoc! {r#"
+                To enable macOS integration, run the following commands:
+                sudo mkdir /Library/Java/JavaVirtualMachines/{version}.jdk
+                sudo ln -s {path}/Contents /Library/Java/JavaVirtualMachines/{version}.jdk/Contents
+                "#,
+                    version = tv.version,
+                    path = tv.install_path().display(),
+                }
             );
         }
 
