@@ -175,9 +175,9 @@ impl JavaPlugin {
                 &tv.install_path().join("Contents").join("Home"),
             )?;
             info!(
-                "To enable macOS integration, run the following commands: \
-              sudo mkdir /Library/Java/JavaVirtualMachines/{}; \
-              sudo ln -s {}/Contents /Library/Java/JavaVirtualMachines/{}/Contents;\n",
+                "To enable macOS integration, run the following commands:\n\
+              sudo mkdir /Library/Java/JavaVirtualMachines/{}.jdk;\n\
+              sudo ln -s {}/Contents /Library/Java/JavaVirtualMachines/{}.jdk/Contents;\n",
                 tv.version,
                 tv.install_path().display(),
                 tv.version
