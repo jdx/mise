@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
-use std::fs;
+use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
@@ -74,6 +75,7 @@ impl JavaPlugin {
             })
         })
     }
+
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let versions = self
             .fetch_java_metadata("ga")?
@@ -133,6 +135,7 @@ impl JavaPlugin {
         }
         self.move_to_install_path(tv, m)
     }
+
     fn move_to_install_path(&self, tv: &ToolVersion, m: &JavaMetadata) -> Result<()> {
         let basedir = tv
             .download_path()
@@ -140,6 +143,7 @@ impl JavaPlugin {
             .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
             .unwrap()?
             .path();
+        let contents_dir = basedir.join("Contents").clone();
         let source_dir = match m.vendor.as_str() {
             "zulu" | "liberica" => basedir,
             _ if os() == "macosx" => basedir.join("Contents").join("Home"),
@@ -153,6 +157,37 @@ impl JavaPlugin {
             trace!("moving {:?} to {:?}", entry.path(), &dest);
             file::rename(entry.path(), dest)?;
         }
+
+        // move Contents dir to install path for macOS, if it exists
+        if os() == "macosx" && contents_dir.exists() {
+            file::create_dir_all(tv.install_path().join("Contents"))?;
+            for entry in fs::read_dir(contents_dir)? {
+                let entry = entry?;
+                // skip Home dir, so we can symlink it later
+                if entry.file_name() == "Home" {
+                    continue;
+                }
+                let dest = tv.install_path().join("Contents").join(entry.file_name());
+                trace!("moving {:?} to {:?}", entry.path(), &dest);
+                file::rename(entry.path(), dest)?;
+            }
+            file::make_symlink(
+                tv.install_path().as_path(),
+                &tv.install_path().join("Contents").join("Home"),
+            )?;
+            info!(
+                "{}",
+                formatdoc! {r#"
+                To enable macOS integration, run the following commands:
+                sudo mkdir /Library/Java/JavaVirtualMachines/{version}.jdk
+                sudo ln -s {path}/Contents /Library/Java/JavaVirtualMachines/{version}.jdk/Contents
+                "#,
+                    version = tv.version,
+                    path = tv.install_path().display(),
+                }
+            );
+        }
+
         Ok(())
     }
 
