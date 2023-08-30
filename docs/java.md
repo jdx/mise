@@ -21,3 +21,18 @@ $ rtx use -g java@17         # alternate shorthands for openjdk-only
 ```
 
 See available versions with `rtx ls-remote java`.
+
+## macOS JAVA_HOME Integration
+
+Some applications in macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.
+
+To integrate an installed Java runtime with macOS run the following commands for the proper version (e.g. openjdk-20).
+
+```sh-session
+$ sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20.jdk
+$ sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20.jdk/Contents
+```
+
+The distribution from  Azul Systems does support the integration but the symlink target location will differ from the example above (e.g `~/.local/share/rtx/installs/java/zulu-11.64.190/zulu-11.jdk/Contents`).
+
+> Note: Not all distributions of the Java SDK support this integration (e.g liberica).
