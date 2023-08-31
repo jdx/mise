@@ -99,7 +99,7 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if let Some(p) = file::find_up(p, &filenames) {
         return p;
     }
-    tool_versions
+    rtx_toml
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
