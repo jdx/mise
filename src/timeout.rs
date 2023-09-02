@@ -11,7 +11,8 @@ where
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = f();
-        tx.send(result).unwrap();
+        // If sending fails, the timeout has already been reached.
+        let _ = tx.send(result);
     });
     rx.recv_timeout(timeout).context("timed out")?
 }
