@@ -81,7 +81,7 @@ shell-escape = "0.1"
 shell-words = "1.1"
 simplelog = { version = "0.12" }
 tar = "0.4"
-tera = { version = "1.12", default-features = false }
+tera = { version = "1.19", default-features = false }
 terminal_size = "0.2"
 thiserror = "1.0"
 toml = "<0.8"
