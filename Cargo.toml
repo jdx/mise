@@ -40,7 +40,7 @@ lto = true
 [dependencies]
 base64 = "<0.22"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.3", features = ["env", "derive", "string"] }
+clap = { version = "4.4", features = ["env", "derive", "string"] }
 clap_complete = "4.2"
 color-eyre = "0.6"
 color-print = "0.3"
