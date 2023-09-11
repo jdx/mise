@@ -167,7 +167,7 @@ jobs:
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v3
-      - uses: crazy-max/ghaction-import-gpg@v5
+      - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_KEY }}
       - uses: actions/download-artifact@v3
@@ -192,7 +192,7 @@ jobs:
     needs: [build-linux]
     steps:
       - uses: actions/checkout@v3
-      - uses: crazy-max/ghaction-import-gpg@v5
+      - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_KEY }}
       - uses: actions/download-artifact@v3
@@ -253,7 +253,7 @@ jobs:
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
           known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
-      - uses: crazy-max/ghaction-import-gpg@v5
+      - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_KEY }}
           git_user_signingkey: true
