@@ -4,6 +4,7 @@ use std::process::exit;
 use color_eyre::eyre::Result;
 use console::{pad_str, style, Alignment};
 use indenter::indented;
+use indoc::formatdoc;
 
 use crate::build_time::built_info;
 use crate::cli::command::Command;
@@ -62,9 +63,11 @@ impl Command for Doctor {
         }
 
         if !config.is_activated() {
-            let cmd = style("rtx activate").yellow().for_stderr();
-            checks.push(format!(
-                "rtx is not activated, run `{cmd}` for setup instructions"
+            let cmd = style("rtx help activate").yellow().for_stderr();
+            let url = style("https://rtx.pub").underlined().for_stderr();
+            checks.push(formatdoc!(
+                r#"rtx is not activated, run {cmd} or
+                   read documentation at {url} for activation instructions"#
             ));
         }
 
