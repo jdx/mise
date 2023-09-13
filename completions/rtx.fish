@@ -49,7 +49,7 @@ complete -c rtx -n "__fish_use_subcommand" -f -a "where" -d 'Display the install
 complete -c rtx -n "__fish_use_subcommand" -f -a "which" -d 'Shows the path that a bin name points to'
 complete -c rtx -n "__fish_use_subcommand" -f -a "render-help" -d 'internal command to generate markdown from help'
 complete -c rtx -n "__fish_use_subcommand" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from activate" -s s -l shell -d 'Shell type to generate the script for' -r -f -a "{bash	'',fish	'',nu	'',xonsh	'',zsh	''}"
 complete -c rtx -n "__fish_seen_subcommand_from activate" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from activate" -l log-level -d 'Set the log output verbosity' -r
@@ -182,7 +182,7 @@ complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcomman
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from clear" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -f -a "clear" -d 'Deletes all cache files in rtx'
 complete -c rtx -n "__fish_seen_subcommand_from cache; and __fish_seen_subcommand_from help; and not __fish_seen_subcommand_from clear; and not __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtx -n "__fish_seen_subcommand_from completion" -s s -l shell -d 'Shell type to generate completions for' -r -f -a "{bash	,elvish	,fish	,powershell	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from completion" -s s -l shell -d 'Shell type to generate completions for' -r -f -a "{bash	'',elvish	'',fish	'',powershell	'',zsh	''}"
 complete -c rtx -n "__fish_seen_subcommand_from completion" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from completion" -l log-level -d 'Set the log output verbosity' -r
@@ -283,7 +283,7 @@ complete -c rtx -n "__fish_seen_subcommand_from doctor" -s y -l yes -d 'Answer y
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from doctor" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell type to generate environment variables for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell type to generate environment variables for' -r -f -a "{bash	'',fish	'',nu	'',xonsh	'',zsh	''}"
 complete -c rtx -n "__fish_seen_subcommand_from env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -l log-level -d 'Set the log output verbosity' -r
@@ -340,7 +340,7 @@ complete -c rtx -n "__fish_seen_subcommand_from global" -s y -l yes -d 'Answer y
 complete -c rtx -n "__fish_seen_subcommand_from global" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from global" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	,fish	,nu	,xonsh	,zsh	}"
+complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s s -l shell -d 'Shell type to generate script for' -r -f -a "{bash	'',fish	'',nu	'',xonsh	'',zsh	''}"
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from hook-env" -l log-level -d 'Set the log output verbosity' -r
