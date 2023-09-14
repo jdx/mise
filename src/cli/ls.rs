@@ -126,25 +126,23 @@ impl Ls {
     }
 
     fn display_json(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
+        if let Some(plugin) = &self.plugin {
+            // only runtimes for 1 plugin
+            let runtimes: Vec<JSONToolVersion> = runtimes
+                .into_iter()
+                .filter(|(p, _, _)| plugin.eq(&p.name))
+                .map(|row| row.into())
+                .collect();
+            out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
+            return Ok(());
+        }
+
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
             .group_by(|(p, _, _)| p.name.to_string())
         {
-            let runtimes = runtimes
-                .map(|(p, tv, source)| JSONToolVersion {
-                    symlinked_to: p.symlink_path(&tv),
-                    install_path: tv.install_path(),
-                    version: tv.version,
-                    requested_version: source.as_ref().map(|_| tv.request.version()),
-                    source: source.map(|source| source.as_json()),
-                })
-                .collect();
-            if self.plugin.is_some() {
-                // only display 1 plugin
-                out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
-                return Ok(());
-            }
+            let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
         out.stdout.writeln(serde_json::to_string_pretty(&plugins)?);
@@ -272,6 +270,19 @@ impl Ls {
 }
 
 type RuntimeRow = (Arc<Tool>, ToolVersion, Option<ToolSource>);
+
+impl From<RuntimeRow> for JSONToolVersion {
+    fn from(row: RuntimeRow) -> Self {
+        let (p, tv, source) = row;
+        JSONToolVersion {
+            symlinked_to: p.symlink_path(&tv),
+            install_path: tv.install_path(),
+            version: tv.version,
+            requested_version: source.as_ref().map(|_| tv.request.version()),
+            source: source.map(|source| source.as_json()),
+        }
+    }
+}
 
 enum VersionStatus {
     Active(String, bool),
