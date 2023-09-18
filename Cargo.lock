@@ -1056,17 +1056,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "io-lifetimes"
-version = "1.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eae7b9aee968036d54dce06cebaefd919e4472e753296daccd6d344e3e2df0c2"
-dependencies = [
- "hermit-abi",
- "libc",
- "windows-sys 0.48.0",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1146,12 +1135,6 @@ name = "linked-hash-map"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
-
-[[package]]
-name = "linux-raw-sys"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
 
 [[package]]
 name = "linux-raw-sys"
@@ -1764,20 +1747,6 @@ checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
 
 [[package]]
 name = "rustix"
-version = "0.37.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d69718bf81c6127a49dc64e44a742e8bb9213c0ff8869a22c308f84c1d4ab06"
-dependencies = [
- "bitflags 1.3.2",
- "errno 0.3.3",
- "io-lifetimes",
- "libc",
- "linux-raw-sys 0.3.8",
- "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "rustix"
 version = "0.38.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7db8590df6dfcd144d22afd1b83b36c21a18d7cbc1dc4bb5295a8712e9eb662"
@@ -1785,7 +1754,7 @@ dependencies = [
  "bitflags 2.4.0",
  "errno 0.3.3",
  "libc",
- "linux-raw-sys 0.4.7",
+ "linux-raw-sys",
  "windows-sys 0.48.0",
 ]
 
@@ -2128,7 +2097,7 @@ dependencies = [
  "cfg-if",
  "fastrand 2.0.0",
  "redox_syscall 0.3.5",
- "rustix 0.38.13",
+ "rustix",
  "windows-sys 0.48.0",
 ]
 
@@ -2159,11 +2128,11 @@ dependencies = [
 
 [[package]]
 name = "terminal_size"
-version = "0.2.6"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e6bf6f19e9f8ed8d4048dc22981458ebcf406d67e94cd422e5ecd73d63b3237"
+checksum = "21bebf2b7c9e0a515f6e0f8c51dc0f8e4696391e6f1ff30379559f8365fb0df7"
 dependencies = [
- "rustix 0.37.23",
+ "rustix",
  "windows-sys 0.48.0",
 ]
 
