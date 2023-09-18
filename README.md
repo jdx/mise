@@ -1021,7 +1021,7 @@ As well as these functions:
 
 - `exec(command: &str) -> String` – execute a command and return the output
 
-Templates are parsed with [tera](https://tera.netlify.app/docs)—which is quite powerful. For
+Templates are parsed with [tera](https://keats.github.io/tera/docs/)—which is quite powerful. For
 example, this snippet will get the directory name of the project:
 
 ```toml
