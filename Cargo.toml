@@ -72,7 +72,7 @@ reqwest = { version = "0.11.17", default-features = false, features = [
   "json",
 ] }
 rmp-serde = "1.1.2"
-self_update = { version = "0.37.0", default-features = false, optional = true }
+self_update = { version = "0.38.0", default-features = false, optional = true }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
