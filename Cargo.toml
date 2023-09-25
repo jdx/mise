@@ -85,7 +85,7 @@ tera = { version = "1.19", default-features = false }
 terminal_size = "0.3"
 thiserror = "1.0"
 toml = "<0.8"
-toml_edit = "<0.20"
+toml_edit = "<0.21"
 url = "2.4"
 versions = "5.0"
 
