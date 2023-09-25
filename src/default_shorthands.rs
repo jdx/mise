@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 694] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 695] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -534,6 +534,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 694] = [
     ("redskyctl", "https://github.com/sudermanjr/asdf-redskyctl.git"),
     ("reg", "https://github.com/looztra/asdf-reg.git"),
     ("regctl", "https://github.com/ORCID/asdf-regctl.git"),
+    ("regsync", "https://github.com/rsrchboy/asdf-regsync.git"),
     ("restic", "https://github.com/xataz/asdf-restic"),
     ("revive", "https://github.com/bjw-s/asdf-revive.git"),
     ("richgo", "https://github.com/paxosglobal/asdf-richgo.git"),
