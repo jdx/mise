@@ -12,6 +12,7 @@ impl Client {
     pub fn new() -> Result<Self> {
         let reqwest = reqwest::blocking::ClientBuilder::new()
             .user_agent(format!("rtx/{}", env!("CARGO_PKG_VERSION")))
+            .gzip(true)
             .build()?;
         Ok(Self { reqwest })
     }
