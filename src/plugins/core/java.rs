@@ -362,20 +362,19 @@ static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
 
 fn download_java_metadata(release_type: &str) -> Result<Vec<JavaMetadata>> {
     let http = http::Client::new()?;
-    let resp = http
-        .get("https://joschi.github.io/java-metadata/metadata/all.json")
-        .send()?;
+    let url = format!(
+        "https://java.rtx.pub/metadata/{}/{}/{}.json",
+        release_type,
+        os(),
+        arch()
+    );
+    let resp = http.get(url).send()?;
     http.ensure_success(&resp)?;
 
     let metadata = resp
         .json::<Vec<JavaMetadata>>()?
         .into_iter()
-        .filter(|m| {
-            m.architecture == arch()
-                && m.os == os()
-                && JAVA_FILE_TYPES.contains(&m.file_type)
-                && m.release_type == release_type
-        })
+        .filter(|m| JAVA_FILE_TYPES.contains(&m.file_type))
         .collect();
     Ok(metadata)
 }
