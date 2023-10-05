@@ -88,14 +88,14 @@ mod tests {
         let filename = ".test.rtx.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "FOO=bar");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
 
         // Using a custom file
         let filename = ".test-custom.rtx.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "--file", filename, "FOO=bar");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
     }
 
@@ -106,7 +106,7 @@ mod tests {
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "BAZ=quux");
         assert_cli!("env-vars", "--remove", "BAZ");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
 
         // Using a custom file
@@ -114,7 +114,7 @@ mod tests {
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "--file", filename, "BAZ=quux");
         assert_cli!("env-vars", "--file", filename, "--remove", "BAZ");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
     }
 }
