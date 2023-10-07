@@ -88,6 +88,7 @@ impl JavaPlugin {
                 let version = Versioning::new(v);
                 (is_shorthand, vendor, is_jdk, features, version)
             })
+            .sorted_by(|a, b| alphanumeric_sort::compare_path(a.0, b.0))
             .map(|(v, _)| v.clone())
             .unique()
             .collect();
