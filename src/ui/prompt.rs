@@ -13,5 +13,8 @@ pub fn confirm(message: &str) -> io::Result<bool> {
     if !console::user_attended_stderr() {
         return Ok(false);
     }
-    Confirm::new().with_prompt(message).interact()
+    match Confirm::new().with_prompt(message).interact() {
+        Ok(choice) => Ok(choice),
+        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+    }
 }
