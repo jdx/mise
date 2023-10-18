@@ -52,6 +52,7 @@ impl Shell for Bash {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
+            PROMPT_COMMAND="${{PROMPT_COMMAND//_rtx_hook;/}}"
             PROMPT_COMMAND="${{PROMPT_COMMAND//_rtx_hook/}}"
             unset _rtx_hook
             unset rtx
