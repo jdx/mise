@@ -602,6 +602,24 @@ _Note: `env_file` goes at the top of the file, above `[env]`._
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
+#### `[plugins]` - Specify Custom Plugin Repo URLs
+
+Use `[plugins]` to add/modify plugin shortnames. Note that this will only modify
+*new* plugin installations. Existing plugins can use any URL.
+
+```toml
+[plugins]
+elixir = "https://github.com/my-org/rtx-elixir.git"
+node = "https://github.com/my-org/rtx-node.git#DEADBEEF" # supports specific gitref
+```
+
+If you simply want to install a plugin from a specific URL once, it's better to use
+`rtx plugin install plugin <GIT_URL>`. Add this section to `.rtx.toml` if you want
+to share the plugin location/revision with other developers in your project.
+
+This is similar to [`RTX_SHORTHANDS`](https://github.com/jdx/rtx#rtx_shorthands_fileconfigrtxshorthandstoml)
+but doesn't require a separate file.
+
 ### Legacy version files
 
 rtx supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
