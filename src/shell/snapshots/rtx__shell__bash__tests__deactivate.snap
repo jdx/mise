@@ -2,6 +2,7 @@
 source: src/shell/bash.rs
 expression: replace_path(&deactivate)
 ---
+PROMPT_COMMAND="${PROMPT_COMMAND//_rtx_hook;/}"
 PROMPT_COMMAND="${PROMPT_COMMAND//_rtx_hook/}"
 unset _rtx_hook
 unset rtx
