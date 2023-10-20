@@ -17,7 +17,7 @@ use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
 
-/// [experimental] Upgrades outdated tool versions
+/// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Upgrade {
@@ -30,11 +30,6 @@ pub struct Upgrade {
 
 impl Command for Upgrade {
     fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        if !config.settings.experimental {
-            return Err(color_eyre::eyre::eyre!(
-                "This command is experimental. Enable it with `rtx settings set experimental true`"
-            ));
-        }
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;

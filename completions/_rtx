@@ -2144,7 +2144,7 @@ _rtx_commands() {
 'ls:List installed and/or currently selected tool versions' \
 'list:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
-'outdated:\[experimental\] Shows outdated tool versions' \
+'outdated:Shows outdated tool versions' \
 'plugins:Manage plugins' \
 'p:Manage plugins' \
 'prune:Delete unused versions of tools' \
@@ -2155,7 +2155,7 @@ _rtx_commands() {
 'sync:Add tool versions from external tools to rtx' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
-'upgrade:\[experimental\] Upgrades outdated tool versions' \
+'upgrade:Upgrades outdated tool versions' \
 'use:Change the active version of a tool locally or globally.' \
 'u:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
@@ -2512,7 +2512,7 @@ _rtx__help_commands() {
 'local:Sets/gets tool version in local .tool-versions or .rtx.toml' \
 'ls:List installed and/or currently selected tool versions' \
 'ls-remote:List runtime versions available for install' \
-'outdated:\[experimental\] Shows outdated tool versions' \
+'outdated:Shows outdated tool versions' \
 'plugins:Manage plugins' \
 'prune:Delete unused versions of tools' \
 'reshim:rebuilds the shim farm' \
@@ -2522,7 +2522,7 @@ _rtx__help_commands() {
 'sync:Add tool versions from external tools to rtx' \
 'trust:Marks a config file as trusted' \
 'uninstall:Removes runtime versions' \
-'upgrade:\[experimental\] Upgrades outdated tool versions' \
+'upgrade:Upgrades outdated tool versions' \
 'use:Change the active version of a tool locally or globally.' \
 'version:Show rtx version' \
 'where:Display the installation path for a runtime' \
