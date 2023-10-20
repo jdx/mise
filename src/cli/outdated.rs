@@ -11,7 +11,7 @@ use crate::output::Output;
 use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 
-/// [experimental] Shows outdated tool versions
+/// Shows outdated tool versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Outdated {
@@ -24,11 +24,6 @@ pub struct Outdated {
 
 impl Command for Outdated {
     fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        if !config.settings.experimental {
-            return Err(color_eyre::eyre::eyre!(
-                "This command is experimental. Enable it with `rtx settings set experimental true`"
-            ));
-        }
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;

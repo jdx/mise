@@ -2045,7 +2045,7 @@ Examples:
 ### `rtx outdated [TOOL@VERSION]...`
 
 ```
-[experimental] Shows outdated tool versions
+Shows outdated tool versions
 
 Usage: outdated [TOOL@VERSION]...
 
@@ -2469,7 +2469,7 @@ Examples:
 ### `rtx upgrade [TOOL@VERSION]...`
 
 ```
-[experimental] Upgrades outdated tool versions
+Upgrades outdated tool versions
 
 Usage: upgrade [TOOL@VERSION]...
 
