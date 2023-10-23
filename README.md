@@ -36,19 +36,30 @@ Note that calling `which node` gives us a real path to node, not a shim.
 Install rtx on macOS (other methods [here](#installation)):
 
 ```sh-session
-$ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
-$ chmod +x ~/bin/rtx
+$ curl https://rtx.pub/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+$ chmod +x /usr/local/bin/rtx
 $ rtx --version
 rtx 2023.10.3
 ```
 
 Hook rtx into your shell (pick the right one for your shell):
 
+### Bash
+
 ```sh-session
-# note this assumes rtx is located at ~/bin/rtx
-echo 'eval "$(~/bin/rtx activate bash)"' >> ~/.bashrc
-echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
-echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
+echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
+```
+
+### Zsh
+
+```sh-session
+echo 'eval "$(rtx activate zsh)"' >> ~/.zshrc
+```
+
+### Fish
+
+```sh-session
+echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 > **Warning**
@@ -73,21 +84,69 @@ v20.0.0
 - [Features](#features)
 - [30 Second Demo](#30-second-demo)
 - [Quickstart](#quickstart)
+  - [Bash](#bash)
+  - [Zsh](#zsh)
+  - [Fish](#fish)
+- [Table of Contents](#table-of-contents)
 - [About](#about)
   - [How it works](#how-it-works)
   - [Common commands](#common-commands)
 - [Installation](#installation)
   - [Download binary](#download-binary)
+    - [Standalone](#standalone)
+    - [Homebrew](#homebrew)
+    - [MacPorts](#macports)
+    - [Cargo](#cargo)
+    - [npm](#npm)
+    - [GitHub Releases](#github-releases)
+    - [apt](#apt)
+    - [dnf](#dnf)
+    - [yum](#yum)
+    - [apk](#apk)
+    - [aur](#aur)
+    - [nix](#nix)
   - [Register shell hook](#register-shell-hook)
+    - [Bash](#bash-1)
+    - [Fish](#fish-1)
+    - [Nushell](#nushell)
+    - [Xonsh](#xonsh)
+    - [Something else?](#something-else)
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
   - [`.rtx.toml`](#rtxtoml)
+    - [`[env]` - Arbitrary Environment Variables](#env---arbitrary-environment-variables)
+    - [`[plugins]` - Specify Custom Plugin Repo URLs](#plugins---specify-custom-plugin-repo-urls)
   - [Legacy version files](#legacy-version-files)
   - [`.tool-versions`](#tool-versions)
   - [Scopes](#scopes)
   - [Global config: `~/.config/rtx/config.toml`](#global-config-configrtxconfigtoml)
   - [Environment variables](#environment-variables)
+    - [`RTX_DATA_DIR`](#rtx_data_dir)
+    - [`RTX_CACHE_DIR`](#rtx_cache_dir)
+    - [`RTX_CONFIG_FILE`](#rtx_config_file)
+    - [`RTX_DEFAULT_TOOL_VERSIONS_FILENAME`](#rtx_default_tool_versions_filename)
+    - [`RTX_DEFAULT_CONFIG_FILENAME`](#rtx_default_config_filename)
+    - [\[experimental\] `RTX_ENV`](#experimental-rtx_env)
+    - [`RTX_${PLUGIN}_VERSION`](#rtx_plugin_version)
+    - [`RTX_LEGACY_VERSION_FILE=1`](#rtx_legacy_version_file1)
+    - [`RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS=node,python`](#rtx_legacy_version_file_disable_toolsnodepython)
+    - [`RTX_USE_TOML=0`](#rtx_use_toml0)
+    - [`RTX_TRUSTED_CONFIG_PATHS`](#rtx_trusted_config_paths)
+    - [`RTX_LOG_LEVEL=trace|debug|info|warn|error`](#rtx_log_leveltracedebuginfowarnerror)
+    - [`RTX_LOG_FILE=~/rtx.log`](#rtx_log_filertxlog)
+    - [`RTX_LOG_FILE_LEVEL=trace|debug|info|warn|error`](#rtx_log_file_leveltracedebuginfowarnerror)
+    - [`RTX_ALWAYS_KEEP_DOWNLOAD=1`](#rtx_always_keep_download1)
+    - [`RTX_ALWAYS_KEEP_INSTALL=1`](#rtx_always_keep_install1)
+    - [`RTX_VERBOSE=1`](#rtx_verbose1)
+    - [`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1)
+    - [`RTX_JOBS=1`](#rtx_jobs1)
+    - [`RTX_RAW=1`](#rtx_raw1)
+    - [`RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`](#rtx_shorthands_fileconfigrtxshorthandstoml)
+    - [`RTX_DISABLE_DEFAULT_SHORTHANDS=1`](#rtx_disable_default_shorthands1)
+    - [`RTX_DISABLE_TOOLS=python,node`](#rtx_disable_toolspythonnode)
+    - [`RTX_YES=yes`](#rtx_yesyes)
+    - [`RTX_EXPERIMENTAL=1`](#rtx_experimental1)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
   - [Plugin Options](#plugin-options)
@@ -96,8 +155,12 @@ v20.0.0
   - [`~/.config/rtx`](#configrtx)
   - [`~/.cache/rtx`](#cachertx)
   - [`~/.local/share/rtx`](#localsharertx)
+    - [`~/.local/share/rtx/downloads`](#localsharertxdownloads)
+    - [`~/.local/share/rtx/plugins`](#localsharertxplugins)
+    - [`~/.local/share/rtx/installs`](#localsharertxinstalls)
+    - [`~/.local/share/rtx/shims`](#localsharertxshims)
 - [Templates](#templates)
-- [&#91;experimental&#93; Config Environments](#experimental-config-environments)
+- [\[experimental\] Config Environments](#experimental-config-environments)
 - [IDE Integration](#ide-integration)
 - [Core Plugins](#core-plugins)
 - [FAQs](#faqs)
