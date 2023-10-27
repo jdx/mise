@@ -3,7 +3,7 @@ source: src/cli/alias/set.rs
 expression: output
 ---
 java                 lts                  21
-node                 lts                  18
+node                 lts                  20
 node                 lts-argon            4
 node                 lts-boron            6
 node                 lts-carbon           8
