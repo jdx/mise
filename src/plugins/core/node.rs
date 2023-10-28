@@ -187,6 +187,7 @@ impl Plugin for NodePlugin {
             ("lts/fermium", "14"),
             ("lts/gallium", "16"),
             ("lts/hydrogen", "18"),
+            ("lts/iron", "20"),
             ("lts-argon", "4"),
             ("lts-boron", "6"),
             ("lts-carbon", "8"),
@@ -195,7 +196,8 @@ impl Plugin for NodePlugin {
             ("lts-fermium", "14"),
             ("lts-gallium", "16"),
             ("lts-hydrogen", "18"),
-            ("lts", "18"),
+            ("lts-iron", "20"),
+            ("lts", "20"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
