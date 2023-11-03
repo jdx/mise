@@ -7,10 +7,10 @@ export RTX_EXPERIMENTAL=1
 export RTX_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
 export RTX_RUBY_INSTALL=1
 
-echo "ruby-3.1.4" > .ruby-version
+echo "ruby-3.2.1" > .ruby-version
 
 # disable this slow test for now
 #rtx i ruby
-#assert_contains "rtx x -- ruby --version" "ruby 3.1.4"
+#assert_contains "rtx x -- ruby --version" "ruby 3.2.1"
 
 rm .ruby-version
