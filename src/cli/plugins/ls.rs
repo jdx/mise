@@ -42,7 +42,7 @@ impl Command for PluginsLs {
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {
-                let mut ep = ExternalPlugin::new(plugin);
+                let mut ep = ExternalPlugin::new(plugin.clone());
                 ep.repo_url = Some(url.to_string());
                 let tool = Tool::new(plugin.clone(), Box::from(ep));
                 tools.insert(Arc::new(tool));

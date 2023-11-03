@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/assert.sh"
+
+rtx install tiny
+assert_contains "rtx ls --installed" "tiny"
+
+rtx plugin uninstall tiny
+assert_contains "rtx ls --installed" "tiny"
+
+rtx plugin install tiny
+assert_contains "rtx ls --installed" "tiny"
+
+rtx plugin uninstall tiny --purge
+assert_not_contains "rtx ls --installed" "tiny"
