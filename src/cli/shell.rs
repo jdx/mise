@@ -13,7 +13,7 @@ use crate::toolset::{ToolSource, ToolsetBuilder};
 ///
 /// Only works in a session where rtx is already activated.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, alias = "s", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Tool(s) to use
     #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]

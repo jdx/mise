@@ -32,9 +32,21 @@ impl Shell for Fish {
               set command $argv[1]
               set -e argv[1]
 
+              if contains -- --help $argv
+                command rtx "$command" $argv
+                return $status
+              end
+
               switch "$command"
-              case deactivate shell
-                source (command rtx "$command" $argv|psub)
+              case deactivate s shell
+                # if help is requested, don't eval
+                if contains -- -h $argv
+                  command rtx "$command" $argv
+                else if contains -- --help $argv
+                  command rtx "$command" $argv
+                else
+                  source (command rtx "$command" $argv |psub)
+                end
               case '*'
                 command rtx "$command" $argv
               end
