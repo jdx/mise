@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::new(&PluginName::from("tiny"));
+        let plugin = ExternalPlugin::new(PluginName::from("tiny"));
         let tool = Tool::new(String::from("tiny"), Box::new(plugin));
         let symlinks = list_symlinks(&config, &tool).unwrap();
         assert_debug_snapshot!(symlinks);

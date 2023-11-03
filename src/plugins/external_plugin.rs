@@ -48,16 +48,15 @@ pub struct ExternalPlugin {
 }
 
 impl ExternalPlugin {
-    pub fn new(name: &PluginName) -> Self {
-        let plugin_path = dirs::PLUGINS.join(name);
-        let cache_path = dirs::CACHE.join(name);
+    pub fn new(name: PluginName) -> Self {
+        let plugin_path = dirs::PLUGINS.join(&name);
+        let cache_path = dirs::CACHE.join(&name);
         let toml_path = plugin_path.join("rtx.plugin.toml");
         let toml = RtxPluginToml::from_file(&toml_path).unwrap();
         Self {
-            name: name.into(),
-            script_man: build_script_man(name, &plugin_path),
-            downloads_path: dirs::DOWNLOADS.join(name),
-            installs_path: dirs::INSTALLS.join(name),
+            script_man: build_script_man(&name, &plugin_path),
+            downloads_path: dirs::DOWNLOADS.join(&name),
+            installs_path: dirs::INSTALLS.join(&name),
             cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE)
@@ -77,6 +76,7 @@ impl ExternalPlugin {
             cache_path,
             repo_url: None,
             toml,
+            name,
         }
     }
 
@@ -468,8 +468,6 @@ impl Plugin for ExternalPlugin {
             })
         };
 
-        rmdir(&self.downloads_path)?;
-        rmdir(&self.installs_path)?;
         rmdir(&self.plugin_path)?;
 
         Ok(())
@@ -666,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(&PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }

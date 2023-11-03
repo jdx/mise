@@ -55,14 +55,14 @@ impl Command for PluginsInstall {
         }
         let (name, git_url) = get_name_and_url(&self.name.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
-            self.install_one(&mut config, &name, git_url, &mpr)?;
+            self.install_one(&mut config, name, git_url, &mpr)?;
         } else {
             let mut plugins: Vec<PluginName> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
             };
             plugins.extend(self.rest.clone());
-            self.install_many(config, &plugins, mpr)?;
+            self.install_many(config, plugins, mpr)?;
         }
 
         Ok(())
@@ -80,14 +80,14 @@ impl PluginsInstall {
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
-        self.install_many(config, &missing_plugins, mpr)?;
+        self.install_many(config, missing_plugins, mpr)?;
         Ok(())
     }
 
     fn install_many(
         &self,
         mut config: Config,
-        plugins: &[PluginName],
+        plugins: Vec<PluginName>,
         mpr: MultiProgressReport,
     ) -> Result<()> {
         for plugin in plugins {
@@ -110,14 +110,15 @@ impl PluginsInstall {
     fn install_one(
         &self,
         config: &mut Config,
-        name: &String,
+        name: PluginName,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = ExternalPlugin::new(name);
+        let mut plugin = ExternalPlugin::new(name.clone());
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
-            mpr.warn(format!("plugin {} already installed", name));
+            mpr.warn(format!("Plugin {} already installed", name));
+            mpr.warn("Use --force to install anyway".to_string());
         } else {
             let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
             tool.ensure_installed(config, Some(mpr), true)?;

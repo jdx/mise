@@ -14,6 +14,10 @@ pub struct PluginsUninstall {
     /// Plugin(s) to remove
     #[clap(required = true, verbatim_doc_comment)]
     pub plugin: Vec<String>,
+
+    /// Also remove the plugin's installs, downloads, and cache
+    #[clap(long, short, verbatim_doc_comment)]
+    pub purge: bool,
 }
 
 impl Command for PluginsUninstall {
@@ -40,6 +44,9 @@ impl PluginsUninstall {
                 let mut pr = mpr.add();
                 plugin.decorate_progress_bar(&mut pr, None);
                 plugin.uninstall(&pr)?;
+                if self.purge {
+                    plugin.purge(&pr)?;
+                }
                 pr.finish_with_message("uninstalled");
             }
             _ => mpr.suspend(|| {

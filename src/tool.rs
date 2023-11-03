@@ -6,14 +6,14 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use clap::Command;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, Context, Result};
 use console::style;
 use itertools::Itertools;
 use regex::Regex;
 use versions::Versioning;
 
 use crate::config::{Config, Settings};
-use crate::file::{display_path, remove_all_with_warning};
+use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::plugins::{ExternalPlugin, Plugin};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
@@ -24,15 +24,19 @@ use crate::{dirs, file};
 pub struct Tool {
     pub name: String,
     pub plugin: Box<dyn Plugin>,
-    pub installs_path: PathBuf,
     pub plugin_path: PathBuf,
+    pub installs_path: PathBuf,
+    pub cache_path: PathBuf,
+    pub downloads_path: PathBuf,
 }
 
 impl Tool {
     pub fn new(name: String, plugin: Box<dyn Plugin>) -> Self {
         Self {
-            installs_path: dirs::INSTALLS.join(&name),
             plugin_path: dirs::PLUGINS.join(&name),
+            installs_path: dirs::INSTALLS.join(&name),
+            cache_path: dirs::CACHE.join(&name),
+            downloads_path: dirs::DOWNLOADS.join(&name),
             name,
             plugin,
         }
@@ -40,10 +44,10 @@ impl Tool {
 
     pub fn list() -> Result<Vec<Self>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .iter()
+            .into_iter()
             .map(|name| {
-                let plugin = ExternalPlugin::new(name);
-                Self::new(name.to_string(), Box::new(plugin))
+                let plugin = ExternalPlugin::new(name.clone());
+                Self::new(name, Box::new(plugin))
             })
             .collect())
     }
@@ -284,6 +288,12 @@ impl Tool {
     pub fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
         self.plugin.uninstall(pr)
     }
+    pub fn purge(&self, pr: &ProgressReport) -> Result<()> {
+        rmdir(&self.installs_path, pr)?;
+        rmdir(&self.cache_path, pr)?;
+        rmdir(&self.downloads_path, pr)?;
+        Ok(())
+    }
 
     pub fn external_commands(&self) -> Result<Vec<Command>> {
         self.plugin.external_commands()
@@ -384,6 +394,19 @@ impl Tool {
     }
 }
 
+fn rmdir(dir: &Path, pr: &ProgressReport) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    pr.set_message(format!("removing {}", &dir.to_string_lossy()));
+    remove_all(dir).wrap_err_with(|| {
+        format!(
+            "Failed to remove directory {}",
+            style(&dir.to_string_lossy()).cyan().for_stderr()
+        )
+    })
+}
+
 impl PartialEq for Tool {
     fn eq(&self, other: &Self) -> bool {
         self.plugin_path == other.plugin_path
@@ -430,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(&PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
         let tool = Tool::new("dummy".to_string(), Box::new(plugin));
         let debug = format!("{:?}", tool);
         assert!(debug.contains("Tool"));

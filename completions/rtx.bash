@@ -2745,7 +2745,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__uninstall)
-            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN>..."
+            opts="-p -j -r -y -v -h --purge --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help <PLUGIN>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
