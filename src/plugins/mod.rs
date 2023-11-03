@@ -7,7 +7,6 @@ use color_eyre::eyre::Result;
 use console::style;
 
 pub use external_plugin::ExternalPlugin;
-pub use rtx_plugin_toml::RtxPluginToml;
 pub use script_manager::{Script, ScriptManager};
 
 use crate::config::{Config, Settings};
@@ -151,7 +150,7 @@ mod tests {
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
-        let plugin = ExternalPlugin::new(&PluginName::from("tiny"));
+        let plugin = ExternalPlugin::new(PluginName::from("tiny"));
         let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
         let version = tool
             .latest_version(&settings, Some("1.0.0".into()))
@@ -165,7 +164,7 @@ mod tests {
     #[test]
     fn test_latest_stable() {
         let settings = Settings::default();
-        let plugin = ExternalPlugin::new(&PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
         let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
         let version = tool.latest_version(&settings, None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");

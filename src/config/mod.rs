@@ -164,7 +164,7 @@ impl Config {
         self.tools
             .entry(plugin_name.clone())
             .or_insert_with(|| {
-                let plugin = ExternalPlugin::new(plugin_name);
+                let plugin = ExternalPlugin::new(plugin_name.clone());
                 build_tool(plugin_name.clone(), Box::new(plugin))
             })
             .clone()

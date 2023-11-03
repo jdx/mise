@@ -154,7 +154,7 @@ v20.0.0
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
-  - [`rtx plugins uninstall <PLUGIN>...`](#rtx-plugins-uninstall-plugin)
+  - [`rtx plugins uninstall [OPTIONS] <PLUGIN>...`](#rtx-plugins-uninstall-options-plugin)
   - [`rtx plugins update [PLUGIN]...`](#rtx-plugins-update-plugin)
   - [`rtx prune [OPTIONS] [PLUGINS]...`](#rtx-prune-options-plugins)
   - [`rtx reshim`](#rtx-reshim)
@@ -2192,16 +2192,20 @@ Options:
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
-### `rtx plugins uninstall <PLUGIN>...`
+### `rtx plugins uninstall [OPTIONS] <PLUGIN>...`
 
 ```
 Removes a plugin
 
-Usage: plugins uninstall <PLUGIN>...
+Usage: plugins uninstall [OPTIONS] <PLUGIN>...
 
 Arguments:
   <PLUGIN>...
           Plugin(s) to remove
+
+Options:
+  -p, --purge
+          Also remove the plugin's installs, downloads, and cache
 
 Examples:
   $ rtx uninstall node
