@@ -10,13 +10,13 @@ export RTX_RUBY_VERBOSE_INSTALL=1
 cat >Gemfile <<EOF
 # frozen_string_literal: true
 
-ruby "3.0.5"
+ruby "3.2.2"
 
 source "https://rubygems.org"
 git_source(:github) { |repo| "https://github.com/#{repo}.git" }
 EOF
 
 rtx i ruby
-assert_contains "rtx x -- ruby --version" "ruby 3.0.5"
+assert_contains "rtx x -- ruby --version" "ruby 3.2.2"
 
 rm Gemfile
