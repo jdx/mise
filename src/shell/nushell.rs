@@ -66,7 +66,7 @@ impl Shell for Nushell {
             if ($command == null) {{
               ^"{exe}"
             }} else if ($command == "activate") {{
-              let-env RTX_SHELL = "nu"
+              $env.RTX_SHELL = "nu"
             }} else if ($command in $commands) {{
               ^"{exe}" $command $rest
               | parse vars
