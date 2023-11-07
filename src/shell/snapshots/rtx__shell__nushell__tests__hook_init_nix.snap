@@ -25,13 +25,13 @@ def "parse vars" [] {
   $in | lines | parse "{op},{name},{value}"
 }
   
-def-env rtx [command?: string, --help, ...rest: string] {
+def --wrapped rtx [command?: string, --help, ...rest: string] {
   let commands = ["shell", "deactivate"]
   
   if ($command == null) {
     ^"/nix/store/rtx"
   } else if ($command == "activate") {
-    let-env RTX_SHELL = "nu"
+    $env.RTX_SHELL = "nu"
   } else if ($command in $commands) {
     ^"/nix/store/rtx" $command $rest
     | parse vars
