@@ -32,13 +32,15 @@ impl Shell for Zsh {
               shift
 
               case "$command" in
-              deactivate|shell)
-                eval "$(command rtx "$command" "$@")"
-                ;;
-              *)
-                command rtx "$command" "$@"
+              deactivate|s|shell)
+                # if argv doesn't contains -h,--help
+                if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
+                  eval "$(command rtx "$command" "$@")"
+                  return $?
+                fi
                 ;;
               esac
+              command rtx "$command" "$@"
             }}
 
             _rtx_hook() {{
