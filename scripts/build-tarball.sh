@@ -75,4 +75,9 @@ cd dist
 tar -cJf "$BASENAME.tar.xz" rtx
 tar -czf "$BASENAME.tar.gz" rtx
 
+if [ -f ~/.zipsign/rtx.priv ]; then
+	zipsign sign tar "$BASENAME.tar.gz" ~/.zipsign/rtx.priv
+	zipsign verify tar "$BASENAME.tar.gz" ../zipsign.pub
+fi
+
 ls -oh "$BASENAME.tar.xz"

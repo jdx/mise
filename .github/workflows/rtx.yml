@@ -94,6 +94,9 @@ jobs:
           shared-key: "build-linux-${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cross
+      - run: scripts/setup-zipsign.sh
+        env:
+          ZIPSIGN: ${{ secrets.ZIPSIGN }}
       - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
         env:
           CROSS: "1"
@@ -126,6 +129,9 @@ jobs:
         with:
           key: "${{matrix.target}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - run: scripts/setup-zipsign.sh
+        env:
+          ZIPSIGN: ${{ secrets.ZIPSIGN }}
       - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
       - run: scripts/build-tarball.sh rtx-nonup --release --features openssl/vendored --target ${{matrix.target}}
       - uses: actions/upload-artifact@v3
