@@ -1063,7 +1063,7 @@ environments like `development` and `production`. To enable, set
 
 rtx will also look for "local" files like `.rtx.local.toml` and `.rtx.{RTX_ENV}.local.toml` in
 the current directory. These are intended to not be committed to version control.
-(Add `rtx.*.local.toml` to your `.gitignore` file.)
+(Add `.rtx.local.toml` and `.rtx.*.local.toml` to your `.gitignore` file.)
 
 The priority of these files goes in this order (bottom overrides top):
 
