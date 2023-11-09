@@ -1,7 +1,7 @@
 use color_eyre::Result;
 use console::style;
 
-use self_update::backends::github::Update;
+use self_update::backends::github::{ReleaseList, Update};
 use self_update::cargo_crate_version;
 
 use crate::cli::command::Command;
@@ -23,15 +23,27 @@ impl Command for SelfUpdate {
     fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let current_version =
             env::var("RTX_SELF_UPDATE_VERSION").unwrap_or(cargo_crate_version!().to_string());
+        let target = format!("{}-{}", *OS, *ARCH);
+        let mut releases = ReleaseList::configure();
+        releases.repo_owner("jdx").repo_name("rtx");
+        if let Some(token) = &*env::GITHUB_API_TOKEN {
+            releases.auth_token(token);
+        }
+        let releases = releases.build()?.fetch()?;
+        let latest = &releases[0].version;
+
         let mut update = Update::configure();
         update
             .repo_owner("jdx")
             .repo_name("rtx")
             .bin_name("rtx")
+            // TODO: enable if working locally
+            //.verifying_keys([*include_bytes!("../../zipsign.pub")])
             .show_download_progress(true)
             .current_version(&current_version)
-            .target(&format!("{}-{}", *OS, *ARCH))
-            .identifier("rtx-v");
+            .target(&target)
+            .bin_path_in_archive("rtx/bin/rtx")
+            .identifier(&format!("rtx-v{latest}-{target}.tar.gz"));
         if let Some(token) = &*env::GITHUB_API_TOKEN {
             update.auth_token(token);
         }
