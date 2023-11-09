@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use std::path::Path;
 
 use crate::cli::command::Command;
 use crate::config::Config;
@@ -23,7 +24,7 @@ pub struct Implode {
 }
 
 impl Command for Implode {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut files = vec![&*dirs::ROOT, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
@@ -33,17 +34,29 @@ impl Command for Implode {
                 rtxprintln!(out, "rm -rf {}", f.display());
             }
 
-            if f.is_dir() {
-                if !self.dry_run && prompt::confirm(&format!("remove {} ?", f.display()))? {
+            if self.confirm_remove(&config, f)? {
+                if f.is_dir() {
                     remove_all(f)?;
-                    return Ok(());
+                } else {
+                    file::remove_file(f)?;
                 }
-            } else if !self.dry_run && prompt::confirm(&format!("remove {} ?", f.display()))? {
-                file::remove_file(f)?;
             }
         }
 
         Ok(())
+    }
+}
+
+impl Implode {
+    fn confirm_remove(&self, config: &Config, f: &Path) -> Result<bool> {
+        if self.dry_run {
+            Ok(false)
+        } else if config.settings.yes {
+            Ok(true)
+        } else {
+            let r = prompt::confirm(&format!("remove {} ?", f.display()))?;
+            Ok(r)
+        }
     }
 }
 

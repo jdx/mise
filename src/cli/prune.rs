@@ -64,7 +64,7 @@ impl Prune {
             if self.dry_run {
                 pr.set_prefix(format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
             }
-            if prompt::confirm(&format!("remove {} ?", &tv))? {
+            if config.settings.yes || prompt::confirm(&format!("remove {} ?", &tv))? {
                 p.decorate_progress_bar(&mut pr, Some(&tv));
                 p.uninstall_version(config, &tv, &pr, self.dry_run)?;
                 pr.finish();
