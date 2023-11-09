@@ -11,7 +11,15 @@ readme = "README.md"
 license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
-include = ["src/**/*.rs", "src/plugins/core/assets/**", "/build.rs", "/LICENSE", "/README.md", "/Cargo.lock"]
+include = [
+  "src/**/*.rs",
+  "src/plugins/core/assets/**",
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/zipsign.pub",
+]
 rust-version = "1.65.0"
 build = "build.rs"
 
@@ -73,7 +81,11 @@ reqwest = { version = "0.11.17", default-features = false, features = [
   "gzip",
 ] }
 rmp-serde = "1.1.2"
-self_update = { version = "0.38.0", default-features = false, optional = true }
+self_update = { version = "<1", default-features = false, optional = true, features = [
+  "archive-tar",
+  "compression-flate2",
+  "signatures",
+] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
