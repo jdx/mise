@@ -2,7 +2,8 @@ use color_eyre::Result;
 use console::style;
 
 use self_update::backends::github::{ReleaseList, Update};
-use self_update::cargo_crate_version;
+use self_update::update::Release;
+use self_update::{cargo_crate_version, Status};
 
 use crate::cli::command::Command;
 use crate::cli::version::{ARCH, OS};
@@ -20,34 +21,10 @@ use crate::output::Output;
 pub struct SelfUpdate {}
 
 impl Command for SelfUpdate {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let current_version =
-            env::var("RTX_SELF_UPDATE_VERSION").unwrap_or(cargo_crate_version!().to_string());
-        let target = format!("{}-{}", *OS, *ARCH);
-        let mut releases = ReleaseList::configure();
-        releases.repo_owner("jdx").repo_name("rtx");
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
-            releases.auth_token(token);
-        }
-        let releases = releases.build()?.fetch()?;
-        let latest = &releases[0].version;
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let latest = &self.fetch_releases()?[0].version;
+        let status = self.do_update(&config, latest)?;
 
-        let mut update = Update::configure();
-        update
-            .repo_owner("jdx")
-            .repo_name("rtx")
-            .bin_name("rtx")
-            // TODO: enable if working locally
-            //.verifying_keys([*include_bytes!("../../zipsign.pub")])
-            .show_download_progress(true)
-            .current_version(&current_version)
-            .target(&target)
-            .bin_path_in_archive("rtx/bin/rtx")
-            .identifier(&format!("rtx-v{latest}-{target}.tar.gz"));
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
-            update.auth_token(token);
-        }
-        let status = update.build()?.update()?;
         if status.updated() {
             let version = style(status.version()).bright().yellow();
             rtxprintln!(out, "Updated rtx to {version}");
@@ -56,5 +33,44 @@ impl Command for SelfUpdate {
         }
 
         Ok(())
+    }
+}
+
+impl SelfUpdate {
+    fn fetch_releases(&self) -> Result<Vec<Release>> {
+        let mut releases = ReleaseList::configure();
+        if let Some(token) = &*env::GITHUB_API_TOKEN {
+            releases.auth_token(token);
+        }
+        let releases = releases
+            .repo_owner("jdx")
+            .repo_name("rtx")
+            .build()?
+            .fetch()?;
+        Ok(releases)
+    }
+
+    fn do_update(&self, config: &Config, latest: &str) -> Result<Status> {
+        let current_version =
+            env::var("RTX_SELF_UPDATE_VERSION").unwrap_or(cargo_crate_version!().to_string());
+        let target = format!("{}-{}", *OS, *ARCH);
+        let mut update = Update::configure();
+        if let Some(token) = &*env::GITHUB_API_TOKEN {
+            update.auth_token(token);
+        }
+        let status = update
+            .repo_owner("jdx")
+            .repo_name("rtx")
+            .bin_name("rtx")
+            .verifying_keys([*include_bytes!("../../zipsign.pub")])
+            .show_download_progress(true)
+            .current_version(&current_version)
+            .target(&target)
+            .bin_path_in_archive("rtx/bin/rtx")
+            .identifier(&format!("rtx-v{latest}-{target}.tar.gz"))
+            .no_confirm(config.settings.yes)
+            .build()?
+            .update()?;
+        Ok(status)
     }
 }
