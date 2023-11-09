@@ -167,7 +167,7 @@ v20.0.0
   - [`rtx sync node <--brew|--nvm|--nodenv>`](#rtx-sync-node---brew--nvm--nodenv)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
-  - [`rtx uninstall <TOOL@VERSION>...`](#rtx-uninstall-toolversion)
+  - [`rtx uninstall [OPTIONS] <TOOL@VERSION>...`](#rtx-uninstall-options-toolversion)
   - [`rtx upgrade [TOOL@VERSION]...`](#rtx-upgrade-toolversion)
   - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
@@ -2455,20 +2455,28 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   $ rtx trust
 ```
-### `rtx uninstall <TOOL@VERSION>...`
+### `rtx uninstall [OPTIONS] <TOOL@VERSION>...`
 
 ```
 Removes runtime versions
 
-Usage: uninstall <TOOL@VERSION>...
+Usage: uninstall [OPTIONS] <TOOL@VERSION>...
 
 Arguments:
   <TOOL@VERSION>...
           Tool(s) to remove
 
+Options:
+  -a, --all
+          Delete all installed versions
+
+  -n, --dry-run
+          Do not actually delete anything
+
 Examples:
   $ rtx uninstall node@18.0.0 # will uninstall specific version
   $ rtx uninstall node        # will uninstall current node version
+  $ rtx uninstall --all node@18.0.0 # will uninstall all node versions
 ```
 ### `rtx upgrade [TOOL@VERSION]...`
 
