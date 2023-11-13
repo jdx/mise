@@ -115,8 +115,8 @@ impl Shell for Xonsh {
             from xonsh.built_ins  import XSH
 
             envx = XSH.env
-            envx.pop[   '{k}',None]
-            environ.pop['{k}',None]
+            envx.pop(   '{k}',None)
+            environ.pop('{k}',None)
         "#,
             k = shell_escape::unix::escape(k.into()) // todo: drop illegal chars, not escape?
         )
