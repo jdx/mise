@@ -6,6 +6,6 @@ from os               import environ
 from xonsh.built_ins  import XSH
 
 envx = XSH.env
-envx.pop[   'FOO',None]
-environ.pop['FOO',None]
+envx.pop(   'FOO',None)
+environ.pop('FOO',None)
 
