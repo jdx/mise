@@ -91,7 +91,7 @@ impl Tool {
 
     pub fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        self.fuzzy_match_filter(versions, query)
     }
 
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
@@ -100,7 +100,7 @@ impl Tool {
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
         let versions = self.list_remote_versions(settings)?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        self.fuzzy_match_filter(versions, query)
     }
 
     pub fn latest_version(
@@ -369,17 +369,16 @@ impl Tool {
         self.plugin.get_lock(path, force)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Result<Vec<String>> {
         let mut query = query;
         if query == "latest" {
             query = "[0-9].*";
         }
-        let query_regex =
-            Regex::new(&format!("^{}([-.].+)?$", query)).expect("error parsing regex");
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
         let version_regex = regex!(
             r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
         );
-        versions
+        let versions = versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -390,7 +389,8 @@ impl Tool {
                 }
                 query_regex.is_match(v)
             })
-            .collect()
+            .collect();
+        Ok(versions)
     }
 }
 
