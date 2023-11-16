@@ -2,6 +2,7 @@ use std::fs::create_dir_all;
 use std::path::PathBuf;
 
 use color_eyre::eyre::{eyre, Result};
+use duct::Expression;
 
 use crate::cmd;
 use crate::file::touch_dir;
@@ -16,7 +17,7 @@ macro_rules! git_cmd {
             let safe = format!("safe.directory={}", $dir.display());
             cmd!("git", "-C", $dir, "-c", safe $(, $arg)*)
         }
-    };
+    }
 }
 
 impl Git {
@@ -31,23 +32,39 @@ impl Git {
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
-        self.run_git_command(&[
+        let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
+        {
+            Ok(res) => {
+                if res.status.success() {
+                    Ok(())
+                } else {
+                    Err(eyre!(
+                        "git failed: {cmd:?} {}",
+                        String::from_utf8(res.stdout).unwrap()
+                    ))
+                }
+            }
+            Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
+        };
+        exec(git_cmd!(
+            &self.dir,
             "fetch",
             "--prune",
             "--update-head-ok",
             "origin",
-            format!("{}:{}", gitref, gitref).as_str(),
-        ])?;
+            &format!("{}:{}", gitref, gitref),
+        ))?;
         let prev_rev = self.current_sha()?;
-        self.run_git_command(&[
+        exec(git_cmd!(
+            &self.dir,
             "-c",
             "advice.detachedHead=false",
             "-c",
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            gitref.as_str(),
-        ])?;
+            &gitref
+        ))?;
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
 
@@ -118,32 +135,6 @@ impl Git {
         match url.split_once('#') {
             Some((url, _ref)) => (url.to_string(), Some(_ref.to_string())),
             None => (url.to_string(), None),
-        }
-    }
-
-    pub fn run_git_command(&self, args: &[&str]) -> Result<()> {
-        let dir = self.dir.to_string_lossy();
-        let safe = format!("safe.directory={}", dir);
-        let mut cmd_args = vec!["-C", &dir, "-c", &safe];
-        cmd_args.extend(args.iter().cloned());
-        match cmd::cmd("git", &cmd_args)
-            .stderr_to_stdout()
-            .stdout_capture()
-            .unchecked()
-            .run()
-        {
-            Ok(res) => {
-                if res.status.success() {
-                    Ok(())
-                } else {
-                    Err(eyre!(
-                        "git failed: {:?} {}",
-                        cmd_args,
-                        String::from_utf8(res.stdout).unwrap()
-                    ))
-                }
-            }
-            Err(err) => Err(eyre!("git failed: {:?} {:#}", cmd_args, err)),
         }
     }
 }
