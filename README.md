@@ -422,6 +422,12 @@ systems.
 echo 'eval "$(rtx activate bash)"' >> ~/.bashrc
 ```
 
+#### Zsh
+
+```
+echo 'eval "$(rtx activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
+```
+
 #### Fish
 
 ```
