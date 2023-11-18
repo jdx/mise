@@ -233,16 +233,17 @@ See the [FAQ](#what-does-rtx-activate-do).
 ## Installation
 
 Installing rtx consists of two steps.
+
 1. Download the binary.
    This depends on the device and operating system you are running rtx in.
 1. Register a shell hook.
    This depends on the shell you are using.
    Read more about this step in the [FAQ](#what-does-rtx-activate-do).
 
-### Download binary
+### 1. Download binary
 
-#### Standalone
-
+<details>
+  <summary>Standalone</summary>
 Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your rc
 file, rtx will automatically add itself to `PATH`.
 
@@ -281,7 +282,9 @@ Supported platforms:
 If you need something else, compile it with [cargo](#cargo).
 [Windows isn't currently supported.](https://github.com/jdx/rtx/discussions/66)
 
-#### Homebrew
+</details>
+<details>
+  <summary>Homebrew</summary>
 
 ```
 brew install rtx
@@ -293,13 +296,17 @@ Alternatively, use the custom tap (which is updated immediately after a release)
 brew install jdx/tap/rtx
 ```
 
-#### MacPorts
+</details>
+<details>
+  <summary>MacPorts</summary>
 
 ```
 sudo port install rtx
 ```
 
-#### Cargo
+</details>
+<details>
+  <summary>Cargo</summary>
 
 Build from source with Cargo:
 
@@ -320,7 +327,9 @@ Build from the latest commit in main:
 cargo install rtx-cli --git https://github.com/jdx/rtx --branch main
 ```
 
-#### npm
+</details>
+<details>
+  <summary>npm</summary>
 
 rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
@@ -335,7 +344,9 @@ Use npx if you just want to test it out for a single command without fully insta
 npx rtx-cli exec python@3.11 -- python some_script.py
 ```
 
-#### GitHub Releases
+</details>
+<details>
+  <summary>GitHub Releases</summary>
 
 Download the latest release from [GitHub](https://github.com/jdx/rtx/releases).
 
@@ -344,7 +355,9 @@ curl https://github.com/jdx/rtx/releases/download/v2023.11.4/rtx-v2023.11.4-linu
 chmod +x /usr/local/bin/rtx
 ```
 
-#### apt
+</details>
+<details>
+  <summary>apt</summary>
 
 For installation on Ubuntu/Debian:
 
@@ -364,7 +377,9 @@ sudo apt install -y rtx
 > echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
-#### dnf
+</details>
+<details>
+  <summary>dnf</summary>
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
@@ -374,7 +389,9 @@ dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 dnf install -y rtx
 ```
 
-#### yum
+</details>
+<details>
+  <summary>yum</summary>
 
 ```
 yum install -y yum-utils
@@ -382,7 +399,9 @@ yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
 yum install -y rtx
 ```
 
-#### apk
+</details>
+<details>
+  <summary>apk</summary>
 
 For Alpine Linux:
 
@@ -392,7 +411,9 @@ apk add rtx
 
 _rtx lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/rtx/APKBUILD)._
 
-#### aur
+</details>
+<details>
+  <summary>aur</summary>
 
 For Arch Linux:
 
@@ -402,7 +423,9 @@ cd rtx
 makepkg -si
 ```
 
-#### nix
+</details>
+<details>
+  <summary>nix</summary>
 
 For the Nix package manager, at release 23.05 or later:
 
@@ -413,6 +436,8 @@ nix-env -iA rtx
 You can also import the package directly using
 `rtx-flake.packages.${system}.rtx`. It supports all default Nix
 systems.
+
+</details>
 
 ### Register shell hook
 
