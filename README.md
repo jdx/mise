@@ -240,7 +240,7 @@ Installing rtx consists of two steps.
    This depends on the shell you are using.
    Read more about this step in the [FAQ](#what-does-rtx-activate-do).
 
-### 1. Download binary
+### Download binary
 
 <details>
   <summary>Standalone</summary>
