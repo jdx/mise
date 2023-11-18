@@ -40,6 +40,9 @@ impl Tracker {
         let mut output = vec![];
         for path in read_dir(&self.tracking_dir)? {
             let path = path?.path();
+            if !path.is_symlink() {
+                continue;
+            }
             let path = fs::read_link(path)?;
             if path.exists() {
                 output.push(path);
