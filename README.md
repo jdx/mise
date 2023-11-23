@@ -51,6 +51,8 @@ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
+Note: If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
+
 > **Warning**
 >
 > If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
@@ -497,6 +499,10 @@ in this project.
 [See here](https://github.com/jdx/rtx/tree/main/src/shell) for how
 the others are implemented. If your shell isn't currently supported
 I'd be happy to help you get yours integrated.
+
+## Migrate from asdf
+
+If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
 
 ## Uninstalling
 
