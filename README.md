@@ -500,7 +500,7 @@ in this project.
 the others are implemented. If your shell isn't currently supported
 I'd be happy to help you get yours integrated.
 
-## Migrate from asdf
+### Migrate from asdf
 
 If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
 
