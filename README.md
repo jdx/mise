@@ -51,8 +51,6 @@ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-Note: If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
-
 > **Warning**
 >
 > If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
@@ -65,6 +63,8 @@ $ rtx use --global node@20
 $ node -v
 v20.0.0
 ```
+
+**Note:** If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
 
 ## Table of Contents
 
