@@ -3,8 +3,6 @@
 The following are instructions for using the python rtx core plugin. The core plugin will be used so long as no plugin is manually
 installed named "python" using `rtx plugins install python [GIT_URL]`.
 
-If you want to use [asdf-python](https://github.com/asdf-community/asdf-python) or [rtx-python](https://github.com/rtx-plugins/rtx-python) then use `rtx plugins install python GIT_URL`.
-
 The code for this is inside of the rtx repository at [`./src/plugins/core/python.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/python.rs).
 
 ## Usage
