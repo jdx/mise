@@ -14,7 +14,7 @@
 
 ## Features
 
-- **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
+- **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement. [See below for migration instructions](#how-do-i-migrate-from-asdf)
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
 - **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx
@@ -497,6 +497,10 @@ in this project.
 [See here](https://github.com/jdx/rtx/tree/main/src/shell) for how
 the others are implemented. If your shell isn't currently supported
 I'd be happy to help you get yours integrated.
+
+### Migrate from asdf
+
+If you're moving from asdf to rtx, please review [How do I migrate from asdf?](#how-do-i-migrate-from-asdf) for guidance.
 
 ## Uninstalling
 
