@@ -1,7 +1,7 @@
 # Python in rtx
 
-The following are instructions for using the python rtx core plugin. This is used when
-the "experimental" setting is "true" and there isn't a git plugin installed named "python"
+The following are instructions for using the python rtx core plugin. The core plugin will be used so long as no plugin is manually
+installed named "python" using `rtx plugins install python [GIT_URL]`.
 
 If you want to use [asdf-python](https://github.com/asdf-community/asdf-python) or [rtx-python](https://github.com/rtx-plugins/rtx-python) then use `rtx plugins install python GIT_URL`.
 
