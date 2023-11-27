@@ -39,7 +39,7 @@ Install rtx on macOS (other methods [here](#installation)):
 $ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
-rtx 2023.11.5
+rtx 2023.11.6
 ```
 
 Hook rtx into your shell (pick the right one for your shell):
@@ -79,6 +79,7 @@ v20.0.0
 - [Installation](#installation)
   - [Download binary](#download-binary)
   - [Register shell hook](#register-shell-hook)
+  - [Migrate from asdf](#migrate-from-asdf)
 - [Uninstalling](#uninstalling)
 - [Shebang](#shebang)
 - [Configuration](#configuration)
@@ -351,7 +352,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdx/rtx/releases).
 
 ```
-curl https://github.com/jdx/rtx/releases/download/v2023.11.5/rtx-v2023.11.5-linux-x64 > /usr/local/bin/rtx
+curl https://github.com/jdx/rtx/releases/download/v2023.11.6/rtx-v2023.11.6-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
 
