@@ -376,7 +376,7 @@ impl Tool {
         }
         let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
         let version_regex = regex!(
-            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master)"
+            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|SNAPSHOT|master)"
         );
         let versions = versions
             .into_iter()
