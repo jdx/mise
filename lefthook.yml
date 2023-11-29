@@ -1,7 +1,10 @@
 pre-commit:
-  parallel: true
+  follow: true
   commands:
     pre-commit:
       run: just -v pre-commit
     lint:
       run: just -v lint
+skip_output:
+  - meta
+  - summary
