@@ -44,7 +44,7 @@ fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {
             .set_time_level(LevelFilter::Off)
             .set_thread_level(trace_level)
             .set_location_level(trace_level)
-            .set_target_level(LevelFilter::Error)
+            .set_target_level(trace_level)
             .build(),
         TerminalMode::Stderr,
         ColorChoice::Auto,
