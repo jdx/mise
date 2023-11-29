@@ -460,6 +460,13 @@ echo 'eval "$(rtx activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
+> **Note:**
+>
+> For homebrew and possibly other installs rtx is automatically activated so
+> this is not necessary.
+>
+> See [`RTX_FISH_AUTO_ACTIVATE=1`](#rtx_fish_auto_activate1) for more information.
+
 #### Nushell
 
 ```nushell
@@ -919,6 +926,14 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 #### `RTX_EXPERIMENTAL=1`
 
 Enables experimental features.
+
+#### `RTX_FISH_AUTO_ACTIVATE=1`
+
+Configures the vendor_conf.d script for fish shell to automatically activate.
+This file is automatically used in homebrew and potentially other installs to
+automatically activate rtx without configuring.
+
+Defaults to enabled, set to "0" to disable.
 
 ## Aliases
 
