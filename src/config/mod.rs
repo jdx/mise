@@ -267,7 +267,7 @@ fn load_rtxrc() -> Result<RtxToml> {
             Ok(cf) => Ok(cf),
             Err(err) => Err(eyre!(
                 "Error parsing {}: {:#}",
-                &settings_path.display(),
+                display_path(&settings_path),
                 err
             )),
         },
@@ -401,7 +401,7 @@ fn load_all_config_files(
             // need to parse this config file
             None => match parse_config_file(&f, settings, legacy_filenames, tools) {
                 Ok(cf) => Ok((f, cf)),
-                Err(err) => Err(eyre!("error reading config: {}\n{:#}", f.display(), err)),
+                Err(err) => Err(eyre!("error reading config: {}\n{err:#}", display_path(&f))),
             },
         })
         .collect::<Vec<Result<_>>>()
