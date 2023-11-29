@@ -70,8 +70,8 @@ mkdir -p dist/rtx/share/fish/vendor_conf.d
 cp "target/$RUST_TRIPLE/release/rtx" dist/rtx/bin/rtx
 cp README.md dist/rtx/README.md
 cp LICENSE dist/rtx/LICENSE
-cp {,dist/}man/man1/rtx.1
-cp {,dist/}share/fish/vendor_conf.d/rtx.fish
+cp {,dist/rtx/}man/man1/rtx.1
+cp {,dist/rtx/}share/fish/vendor_conf.d/rtx.fish
 
 cd dist
 tar -cJf "$BASENAME.tar.xz" rtx
