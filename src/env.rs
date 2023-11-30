@@ -115,7 +115,14 @@ pub static RTX_ALWAYS_KEEP_DOWNLOAD: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_DOWNLOAD"));
 pub static RTX_ALWAYS_KEEP_INSTALL: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_INSTALL"));
-
+pub static RTX_ALL_FORCE_COMPILE: Lazy<bool> =
+    Lazy::new(|| match var_option_bool("RTX_ALL_FORCE_COMPILE") {
+        Some(v) => v,
+        None => matches!(
+            linux_distro().unwrap_or_default().as_str(),
+            "alpine" | "nixos"
+        ),
+    });
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
@@ -146,7 +153,8 @@ pub static RTX_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
 });
 pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
-pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> = Lazy::new(|| var_is_true("RTX_NODE_FORCE_COMPILE"));
+pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> =
+    Lazy::new(|| *RTX_ALL_FORCE_COMPILE || var_is_true("RTX_NODE_FORCE_COMPILE"));
 pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
         let p = HOME.join(".default-nodejs-packages");
@@ -388,6 +396,13 @@ fn log_file_level() -> LevelFilter {
     match log_level.parse::<LevelFilter>() {
         Ok(level) => level,
         _ => *RTX_LOG_LEVEL,
+    }
+}
+
+fn linux_distro() -> Option<String> {
+    match sys_info::linux_os_release() {
+        Ok(release) => release.id,
+        _ => None,
     }
 }
 
