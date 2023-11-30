@@ -12,27 +12,18 @@ license = "MIT"
 keywords = ["rtx"]
 categories = ["command-line-utilities"]
 include = [
-  "src/**/*.rs",
-  "src/plugins/core/assets/**",
-  "/Cargo.lock",
-  "/LICENSE",
-  "/README.md",
-  "/build.rs",
-  "/zipsign.pub",
+    "src/**/*.rs",
+    "src/plugins/core/assets/**",
+    "/Cargo.lock",
+    "/LICENSE",
+    "/README.md",
+    "/build.rs",
+    "/zipsign.pub",
 ]
 rust-version = "1.65.0"
 build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[workspace]
-members = ["xtask"]
-
-[lib]
-name = "rtx"
-path = "src/lib.rs"
-test = false
-doctest = false
 
 [[bin]]
 name = "rtx"
@@ -48,11 +39,12 @@ lto = true
 [dependencies]
 base64 = "<0.22"
 chrono = { version = "0.4", default-features = false, features = [
-  "std",
-  "clock",
+    "std",
+    "clock",
 ] }
 clap = { version = "4.4", features = ["env", "derive", "string"] }
 clap_complete = "4.2"
+clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
 console = "0.15"
@@ -61,6 +53,7 @@ dialoguer = { version = "0.11", features = [] }
 dirs-next = "2.0"
 dotenvy = "0.15"
 duct = "0.13"
+eyre = "0.6"
 filetime = "0.2"
 flate2 = "1.0"
 fslock = "0.2"
@@ -79,15 +72,15 @@ rand = "0.8"
 rayon = "1.8"
 regex = "1.9"
 reqwest = { version = "0.11.17", default-features = false, features = [
-  "blocking",
-  "json",
-  "gzip",
+    "blocking",
+    "json",
+    "gzip",
 ] }
 rmp-serde = "1.1.2"
 self_update = { version = "<1", default-features = false, optional = true, features = [
-  "archive-tar",
-  "compression-flate2",
-  "signatures",
+    "archive-tar",
+    "compression-flate2",
+    "signatures",
 ] }
 serde = "1.0"
 serde_derive = "1.0"
@@ -130,10 +123,10 @@ sign-tag = true
 sign-commit = true
 pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
-  { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
-  { file = "README.md", search = "https://github.com/jdx/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdx/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
-  { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
-  { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
+    { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
+    { file = "README.md", search = "https://github.com/jdx/rtx/releases/download/v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?/rtx-v[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?", replace = "https://github.com/jdx/rtx/releases/download/v{{version}}/rtx-v{{version}}", exactly = 1 },
+    { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
+    { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
 ]
 
 [package.metadata.binstall]
