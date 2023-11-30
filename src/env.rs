@@ -138,12 +138,11 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
 pub static RTX_NODE_BUILD_REPO: Lazy<String> = Lazy::new(|| {
     var("RTX_NODE_BUILD_REPO").unwrap_or_else(|_| "https://github.com/nodenv/node-build.git".into())
 });
-pub static RTX_NODE_CONCURRENCY: Lazy<usize> = Lazy::new(|| {
+pub static RTX_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
     var("RTX_NODE_CONCURRENCY")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(num_cpus::get() / 2)
-        .max(1)
+        .map(|v| v.max(1))
 });
 pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
