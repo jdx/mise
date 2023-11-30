@@ -165,7 +165,7 @@ impl RubyPlugin {
 
     fn install_default_gems(
         &self,
-        settings: &Settings,
+        config: &Config,
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
@@ -177,7 +177,10 @@ impl RubyPlugin {
             }
             pr.set_message(format!("installing default gem: {}", package));
             let gem = self.gem_path(tv);
-            let mut cmd = CmdLineRunner::new(settings, gem).with_pr(pr).arg("install");
+            let mut cmd = CmdLineRunner::new(&config.settings, gem)
+                .with_pr(pr)
+                .arg("install")
+                .envs(&config.env);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -194,6 +197,7 @@ impl RubyPlugin {
         CmdLineRunner::new(&config.settings, self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
+            .envs(&config.env)
             .execute()
     }
 
@@ -202,6 +206,7 @@ impl RubyPlugin {
         CmdLineRunner::new(&config.settings, self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
+            .envs(&config.env)
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .execute()
     }
@@ -239,19 +244,19 @@ impl RubyPlugin {
 
     fn install_cmd<'a>(
         &'a self,
-        settings: &'a Settings,
+        config: &'a Config,
         tv: &ToolVersion,
         pr: &'a ProgressReport,
     ) -> Result<CmdLineRunner> {
         let cmd = if *env::RTX_RUBY_INSTALL {
-            CmdLineRunner::new(settings, self.ruby_install_bin())
+            CmdLineRunner::new(&config.settings, self.ruby_install_bin())
                 .args(self.install_args_ruby_install(tv)?)
         } else {
-            CmdLineRunner::new(settings, self.ruby_build_bin())
-                .args(self.install_args_ruby_build(settings, tv)?)
+            CmdLineRunner::new(&config.settings, self.ruby_build_bin())
+                .args(self.install_args_ruby_build(&config.settings, tv)?)
                 .stdin_string(self.fetch_patches()?)
         };
-        Ok(cmd.with_pr(pr))
+        Ok(cmd.with_pr(pr).envs(&config.env))
     }
     fn install_args_ruby_build(
         &self,
@@ -358,12 +363,12 @@ impl Plugin for RubyPlugin {
         assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
 
         pr.set_message("running ruby-build");
-        self.install_cmd(&config.settings, tv, pr)?.execute()?;
+        self.install_cmd(config, tv, pr)?.execute()?;
 
         self.test_ruby(config, tv, pr)?;
         self.install_rubygems_hook(tv)?;
         self.test_gem(config, tv, pr)?;
-        self.install_default_gems(&config.settings, tv, pr)?;
+        self.install_default_gems(config, tv, pr)?;
         Ok(())
     }
 
