@@ -38,6 +38,7 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub tools: ToolMap,
     pub env: BTreeMap<String, String>,
+    pub env_sources: HashMap<String, PathBuf>,
     pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
@@ -93,8 +94,10 @@ impl Config {
         }
         config_track.join().unwrap();
 
+        let (env, env_sources) = load_env(&config_files);
         let config = Self {
-            env: load_env(&config_files),
+            env,
+            env_sources,
             path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
@@ -432,16 +435,20 @@ fn parse_config_file(
     }
 }
 
-fn load_env(config_files: &ConfigMap) -> BTreeMap<String, String> {
+fn load_env(config_files: &ConfigMap) -> (BTreeMap<String, String>, HashMap<String, PathBuf>) {
     let mut env = BTreeMap::new();
-    for cf in config_files.values().rev() {
+    let mut env_sources = HashMap::new();
+    for (source, cf) in config_files.iter().rev() {
         env.extend(cf.env());
+        for k in cf.env().keys() {
+            env_sources.insert(k.clone(), source.clone());
+        }
         for k in cf.env_remove() {
             // remove values set to "false"
             env.remove(&k);
         }
     }
-    env
+    (env, env_sources)
 }
 
 fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
