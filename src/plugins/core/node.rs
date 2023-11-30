@@ -265,17 +265,11 @@ impl Plugin for NodePlugin {
             .envs(&config.env)
             .arg(tv.version.as_str());
         if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
-            let make_opts = String::from(" -j") + &RTX_NODE_CONCURRENCY.to_string();
-            cmd = cmd
-                .env(
-                    "MAKE_OPTS",
-                    env::var("MAKE_OPTS").unwrap_or_default() + &make_opts,
-                )
-                .env(
-                    "NODE_MAKE_OPTS",
-                    env::var("NODE_MAKE_OPTS").unwrap_or_default() + &make_opts,
-                )
-                .arg("--compile");
+            if let Some(concurrency) = *RTX_NODE_CONCURRENCY {
+                let make_opts = env::var("MAKE_OPTS").unwrap_or_default();
+                cmd = cmd.env("MAKE_OPTS", format!("{} -j{}", make_opts, concurrency));
+            }
+            cmd = cmd.arg("--compile");
         }
         if self.verbose_install(&config.settings) {
             cmd = cmd.arg("--verbose");
