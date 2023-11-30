@@ -945,6 +945,16 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 
 Enables experimental features.
 
+#### `RTX_ALL_FORCE_COMPILE=1`
+
+Default: false unless running NixOS or Alpine (let me know if others should be added)
+
+Do not use precompiled binaries for all languages. Useful if running on a Linux distrobution
+like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
+
+Note that this needs to be setup for each language. File a ticket if you notice a language that is not
+working with this config.
+
 #### `RTX_FISH_AUTO_ACTIVATE=1`
 
 Configures the vendor_conf.d script for fish shell to automatically activate.

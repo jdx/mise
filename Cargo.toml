@@ -47,7 +47,10 @@ lto = true
 
 [dependencies]
 base64 = "<0.22"
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
 clap = { version = "4.4", features = ["env", "derive", "string"] }
 clap_complete = "4.2"
 color-eyre = "0.6"
@@ -93,6 +96,7 @@ sha2 = "0.10"
 shell-escape = "0.1"
 shell-words = "1.1"
 simplelog = { version = "0.12" }
+sys-info = "0.9"
 tar = "0.4"
 tera = { version = "1.19", default-features = false }
 terminal_size = "0.3"
