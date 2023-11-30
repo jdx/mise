@@ -39,6 +39,7 @@ fn render_commands() -> String {
     let mut doc = formatdoc!(
         r#"
             <!-- RTX:COMMANDS -->
+
             ## Commands
 
     "#
@@ -91,6 +92,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
         ```
         {about}
         ```
+
         ",
     ))
 }
