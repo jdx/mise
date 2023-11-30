@@ -81,6 +81,11 @@ impl HookEnv {
             let status = installed_versions.into_iter().rev().join(" ");
             rtxstatusln!(out, "{}", truncate_str(&status, w - 4, "..."));
         }
+        let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
+        if !env_diff.is_empty() {
+            let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
+            rtxstatusln!(out, "{env_diff}");
+        }
     }
 
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
@@ -151,6 +156,14 @@ impl HookEnv {
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
         ))
+    }
+}
+
+fn patch_to_status(patch: EnvDiffOperation) -> String {
+    match patch {
+        EnvDiffOperation::Add(k, _) => format!("+{}", k),
+        EnvDiffOperation::Change(k, _) => format!("~{}", k),
+        EnvDiffOperation::Remove(k) => format!("-{}", k),
     }
 }
 
