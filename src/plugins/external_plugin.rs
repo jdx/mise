@@ -294,6 +294,10 @@ impl ExternalPlugin {
             ToolVersionRequest::Ref(_, v) => v, // should not have "ref:" prefix
             _ => &tv.version,
         };
+        // add env vars from .rtx.toml files
+        for (key, value) in &config.env {
+            sm = sm.with_env(key, value.clone());
+        }
         sm = sm
             .with_env(
                 "RTX_INSTALL_PATH",
