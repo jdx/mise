@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use console::style;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
@@ -46,10 +46,7 @@ impl Command for Uninstall {
                     })
                     .collect::<Vec<_>>();
                 if tvs.is_empty() {
-                    warn!(
-                        "no versions found for {}",
-                        style(&tool.name).cyan().for_stderr()
-                    );
+                    warn!("no versions found for {}", style(&tool).cyan().for_stderr());
                 }
                 tool_versions.extend(tvs);
             }
@@ -64,8 +61,13 @@ impl Command for Uninstall {
                         }
                         None => {
                             let ts = ToolsetBuilder::new().build(&mut config)?;
-                            let tvl = ts.versions.get(&a.plugin).expect("no versions found");
-                            tvl.versions.clone()
+                            match ts.versions.get(&a.plugin) {
+                                Some(tvl) => tvl.versions.clone(),
+                                None => bail!(
+                                    "no versions found for {}",
+                                    style(&tool).cyan().for_stderr()
+                                ),
+                            }
                         }
                     };
                     Ok(tvs

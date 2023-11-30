@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -420,6 +420,12 @@ impl Debug for Tool {
             .field("installs_path", &self.installs_path)
             .field("plugin", &self.plugin)
             .finish()
+    }
+}
+
+impl Display for Tool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.name)
     }
 }
 
