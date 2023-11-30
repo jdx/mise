@@ -30,7 +30,8 @@ pub static RTX_CONFIG_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx")));
 pub static RTX_DATA_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx")));
-pub static RTX_TMP_DIR: Lazy<PathBuf> = Lazy::new(|| temp_dir().join("rtx"));
+pub static RTX_TMP_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("RTX_TMP_DIR").unwrap_or_else(|| temp_dir().join("rtx")));
 
 pub static RTX_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
