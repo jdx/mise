@@ -48,6 +48,8 @@ pub fn reset_config() {
     file::write(
         env::HOME.join("config/config.toml"),
         indoc! {r#"
+            [env]
+            TEST_ENV_VAR = 'test-123'
             [settings]
             experimental = true
             verbose = true
