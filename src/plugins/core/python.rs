@@ -77,7 +77,7 @@ impl PythonPlugin {
 
     fn install_default_packages(
         &self,
-        settings: &Settings,
+        config: &Config,
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
@@ -85,7 +85,7 @@ impl PythonPlugin {
             return Ok(());
         }
         pr.set_message("installing default packages");
-        CmdLineRunner::new(settings, self.python_path(tv))
+        CmdLineRunner::new(&config.settings, self.python_path(tv))
             .with_pr(pr)
             .arg("-m")
             .arg("pip")
@@ -93,6 +93,7 @@ impl PythonPlugin {
             .arg("--upgrade")
             .arg("-r")
             .arg(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE)
+            .envs(&config.env)
             .execute()
     }
 
@@ -116,7 +117,8 @@ impl PythonPlugin {
                     .arg("-m")
                     .arg("venv")
                     .arg("--clear")
-                    .arg(&virtualenv);
+                    .arg(&virtualenv)
+                    .envs(&config.env);
                 if let Some(pr) = pr {
                     cmd = cmd.with_pr(pr);
                 }
@@ -135,10 +137,11 @@ impl PythonPlugin {
         Ok(symlink_target == target)
     }
 
-    fn test_python(&self, config: &&Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("python --version");
         CmdLineRunner::new(&config.settings, self.python_path(tv))
             .arg("--version")
+            .envs(&config.env)
             .execute()
     }
 }
@@ -173,7 +176,8 @@ impl Plugin for PythonPlugin {
         let mut cmd = CmdLineRunner::new(&config.settings, self.python_build_bin())
             .with_pr(pr)
             .arg(tv.version.as_str())
-            .arg(tv.install_path());
+            .arg(tv.install_path())
+            .envs(&config.env);
         if config.settings.verbose {
             cmd = cmd.arg("--verbose");
         }
@@ -196,9 +200,9 @@ impl Plugin for PythonPlugin {
             }
         }
         cmd.execute()?;
-        self.test_python(&config, tv, pr)?;
+        self.test_python(config, tv, pr)?;
         self.get_virtualenv(config, tv, Some(pr))?;
-        self.install_default_packages(&config.settings, tv, pr)?;
+        self.install_default_packages(config, tv, pr)?;
         Ok(())
     }
 
