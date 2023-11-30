@@ -6,6 +6,7 @@ use crate::config::config_file::{self, ConfigFile};
 use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
+use crate::file::display_path;
 use crate::output::Output;
 
 use super::args::env_var::{EnvVarArg, EnvVarArgParser};
@@ -31,12 +32,20 @@ pub struct EnvVars {
 
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
-    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment, required_unless_present = "remove")]
-    env_vars: Vec<EnvVarArg>,
+    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment)]
+    env_vars: Option<Vec<EnvVarArg>>,
 }
 
 impl Command for EnvVars {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        if self.remove.is_none() && self.env_vars.is_none() {
+            for (key, value) in &config.env {
+                let source = config.env_sources.get(key).unwrap();
+                rtxprintln!(out, "{key}={value} {}", display_path(source));
+            }
+            return Ok(());
+        }
+
         let filename = self
             .file
             .unwrap_or_else(|| RTX_DEFAULT_CONFIG_FILENAME.to_string());
@@ -49,8 +58,10 @@ impl Command for EnvVars {
             }
         }
 
-        for ev in self.env_vars {
-            rtx_toml.update_env(&ev.key, ev.value);
+        if let Some(env_vars) = self.env_vars {
+            for ev in env_vars {
+                rtx_toml.update_env(&ev.key, ev.value);
+            }
         }
         rtx_toml.save()
     }
@@ -74,12 +85,17 @@ mod tests {
 
     use insta::assert_snapshot;
 
-    use crate::{assert_cli, dirs, file};
+    use crate::{assert_cli, assert_cli_snapshot, dirs, file};
 
     fn remove_config_file(filename: &str) -> PathBuf {
         let cf_path = dirs::CURRENT.join(filename);
         let _ = file::remove_file(&cf_path);
         cf_path
+    }
+
+    #[test]
+    fn test_show_env_vars() {
+        assert_cli_snapshot!("env-vars");
     }
 
     #[test]
