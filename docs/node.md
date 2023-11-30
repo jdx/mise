@@ -1,6 +1,6 @@
 # Node in rtx
 
-The following are instructions for using the node rtx core plugin. This is used when there isn't a 
+The following are instructions for using the node rtx core plugin. This is used when there isn't a
 git plugin installed named "node".
 
 If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) or
@@ -19,11 +19,9 @@ $ rtx use -g node@20
 
 Behind the scenes, rtx uses [`node-build`](https://github.com/nodenv/node-build) to install pre-compiled binaries and compile from source if necessary. You can check its [README](https://github.com/nodenv/node-build/blob/master/README.md) for additional settings and some troubleshooting.
 
-
 ## Requirements
 
 rtx uses [node-build](https://github.com/nodenv/node-build) to install node runtimes, you need to ensure the [dependencies](https://github.com/nodenv/node-build/wiki#suggested-build-environment) are installed before installing node.
-
 
 ## Configuration
 
@@ -31,10 +29,10 @@ rtx uses [node-build](https://github.com/nodenv/node-build) to install node runt
 
 - `RTX_NODE_BUILD_REPO` [string]: the default is `https://github.com/nodenv/node-build.git`
 - `RTX_NODE_VERBOSE_INSTALL` [bool]: Enables verbose output for downloading and building.
-- `RTX_NODE_FORCE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries
+- `RTX_NODE_FORCE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries. Can also be set across all languages with [`RTX_NODE_FORCE_COMPILE`](https://github.com/jdx/rtx#rtx_node_force_compile1)
 - `RTX_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores
 - `RTX_NODE_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-npm-packages`
-- `NODEJS_ORG_MIRROR` [string]: (Legacy) overrides the default mirror used for downloading the 
+- `NODEJS_ORG_MIRROR` [string]: (Legacy) overrides the default mirror used for downloading the
   distributions, alternative to the `NODE_BUILD_MIRROR_URL` node-build env var
 
 ## Default node packages
@@ -52,7 +50,6 @@ You can specify a non-default location of this file by setting a `RTX_NODE_DEFAU
 ## `.nvmrc` and `.node-version` support
 
 rtx uses a `.tool-versions` or `.rtx.toml` file for auto-switching between software versions. To ease migration, you can have also have it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `.tool-versions`/`.rtx.toml`.
-
 
 ## Running the wrapped node-build command
 
@@ -79,8 +76,8 @@ _Note that this command only lists the current `node-build` definitions. You mig
 
 ### Manually updating node-build definitions
 
-Every new node version needs to have a definition file in the `node-build` repository. 
-`rtx-node` already tries to update `node-build` on every new version installation, but if you 
+Every new node version needs to have a definition file in the `node-build` repository.
+`rtx-node` already tries to update `node-build` on every new version installation, but if you
 want to update `node-build` manually for some reason you can clear the cache and list the versions:
 
 ```bash
@@ -90,6 +87,6 @@ rtx ls-remote node
 
 ## "nodejs" -> "node" Alias
 
-You cannot install/use a plugin named "nodejs". If you attempt this, rtx will just renamed it to 
+You cannot install/use a plugin named "nodejs". If you attempt this, rtx will just renamed it to
 "node". See the [FAQ](https://github.com/jdx/rtx#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
 for an explanation.
