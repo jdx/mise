@@ -215,8 +215,9 @@ You should note that rtx does not directly install these tools.
 Instead, it leverages plugins to install runtimes.
 See [plugins](#plugins) below.
 
-[^cd]: Note that rtx does not modify "cd". It actually runs every time the prompt is _displayed_.
-See the [FAQ](#what-does-rtx-activate-do).
+[^cd]:
+    Note that rtx does not modify "cd". It actually runs every time the prompt is _displayed_.
+    See the [FAQ](#what-does-rtx-activate-do).
 
 ### Common commands
 
@@ -648,7 +649,7 @@ NODE_ENV = false # unset a previously set NODE_ENV
 #### `[plugins]` - Specify Custom Plugin Repo URLs
 
 Use `[plugins]` to add/modify plugin shortnames. Note that this will only modify
-*new* plugin installations. Existing plugins can use any URL.
+_new_ plugin installations. Existing plugins can use any URL.
 
 ```toml
 [plugins]
@@ -672,17 +673,17 @@ other developers to use a specific tool like rtx/asdf.
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in rtx and nvm. Here are some of the supported legacy version files:
 
-| Plugin     | "Legacy" (Idiomatic) Files                         |
-|------------|----------------------------------------------------|
-| crystal    | `.crystal-version`                                 |
-| elixir     | `.exenv-version`                                   |
-| go         | `.go-version`, `go.mod`                            |
-| java       | `.java-version`, `.sdkmanrc`                       |
-| node       | `.nvmrc`, `.node-version`                          |
-| python     | `.python-version`                                  |
-| ruby       | `.ruby-version`, `Gemfile`                         |
-| terraform  | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn       | `.yarnrc`                                          |
+| Plugin    | "Legacy" (Idiomatic) Files                         |
+| --------- | -------------------------------------------------- |
+| crystal   | `.crystal-version`                                 |
+| elixir    | `.exenv-version`                                   |
+| go        | `.go-version`, `go.mod`                            |
+| java      | `.java-version`, `.sdkmanrc`                       |
+| node      | `.nvmrc`, `.node-version`                          |
+| python    | `.python-version`                                  |
+| ruby      | `.ruby-version`, `Gemfile`                         |
+| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
+| yarn      | `.yarnrc`                                          |
 
 In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
@@ -724,12 +725,12 @@ See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions)
 
 Both `.rtx.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
 
-* `ref:<SHA>` - compile from a vcs (usually git) ref
-* `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
+- `ref:<SHA>` - compile from a vcs (usually git) ref
+- `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
   would only match `1.20` exactly but `prefix:1.20` will match `1.20.1` and `1.20.2` etc.
-* `path:<PATH>` - use a custom compiled version at the given path. One use-case is to re-use
+- `path:<PATH>` - use a custom compiled version at the given path. One use-case is to re-use
   Homebrew tools (e.g.: `path:/opt/homebrew/opt/node@20`).
-* `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - subtracts PARTIAL_VERSION from ORIG_VERSION. This can
+- `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - subtracts PARTIAL_VERSION from ORIG_VERSION. This can
   be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
   version behind the latest version: `sub-0.1:latest`.
 
@@ -901,6 +902,11 @@ Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
+
+Shorthands make it so when a user runs something like `rtx install elixir` rtx will
+automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
+default, it uses the shorthands in
+[`src/default_shorthands.rs`](./src/default_shorthands.rs).
 
 The file should be in this toml format:
 
@@ -1118,10 +1124,10 @@ the current directory. These are intended to not be committed to version control
 
 The priority of these files goes in this order (bottom overrides top):
 
-* `.rtx.toml`
-* `.rtx.local.toml`
-* `.rtx.{RTX_ENV}.toml`
-* `.rtx.{RTX_ENV}.local.toml`
+- `.rtx.toml`
+- `.rtx.local.toml`
+- `.rtx.{RTX_ENV}.toml`
+- `.rtx.{RTX_ENV}.local.toml`
 
 Use `rtx doctor` to see which files are being used.
 
@@ -1156,13 +1162,13 @@ time. They can be easily overridden by installing a plugin with the same name, e
 
 You can see the core plugins with `rtx plugin ls --core`.
 
-* [Python](./docs/python.md)
-* [NodeJS](./docs/node.md)
-* [Ruby](./docs/ruby.md)
-* [Go](./docs/go.md)
-* [Java](./docs/java.md)
-* [Deno (experimental)](./docs/deno.md)
-* [Bun (experimental)](./docs/bun.md)
+- [Python](./docs/python.md)
+- [NodeJS](./docs/node.md)
+- [Ruby](./docs/ruby.md)
+- [Go](./docs/go.md)
+- [Java](./docs/java.md)
+- [Deno (experimental)](./docs/deno.md)
+- [Bun (experimental)](./docs/bun.md)
 
 ## FAQs
 
@@ -1310,9 +1316,9 @@ $ ls -l ~/.local/share/rtx/installs/node/20
 
 There are some exceptions to this, such as the following:
 
-* `rtx install node@20`
-* `rtx latest node@20`
-* `rtx upgrade node@20`
+- `rtx install node@20`
+- `rtx latest node@20`
+- `rtx upgrade node@20`
 
 These will use the latest _available_ version of node-20.x. This generally makes sense because you
 wouldn't want to install a version that is already installed.
@@ -1367,9 +1373,9 @@ For more information, see [What does `rtx activate` do?](#what-does-rtx-activate
 rtx uses [console.rs](https://docs.rs/console/latest/console/fn.colors_enabled.html) which
 honors the [clicolors spec](https://bixense.com/clicolors/):
 
-* `CLICOLOR != 0`: ANSI colors are supported and should be used when the program isn’t piped.
-* `CLICOLOR == 0`: Don’t output ANSI color escape codes.
-* `CLICOLOR_FORCE != 0`: ANSI colors should be enabled no matter what.
+- `CLICOLOR != 0`: ANSI colors are supported and should be used when the program isn’t piped.
+- `CLICOLOR == 0`: Don’t output ANSI color escape codes.
+- `CLICOLOR_FORCE != 0`: ANSI colors should be enabled no matter what.
 
 ### Is rtx secure?
 
