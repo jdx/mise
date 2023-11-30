@@ -1777,6 +1777,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "clap_mangen",
  "color-eyre",
  "color-print",
  "console",
@@ -1787,6 +1788,7 @@ dependencies = [
  "dotenvy",
  "duct",
  "exec",
+ "eyre",
  "filetime",
  "flate2",
  "fslock",
@@ -3027,15 +3029,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4686009f71ff3e5c4dbcf1a282d0a44db3f021ba69350cd42086b3e5f1c6985"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "xtask"
-version = "0.1.0"
-dependencies = [
- "clap_mangen",
- "color-eyre",
- "rtx-cli",
 ]
 
 [[package]]

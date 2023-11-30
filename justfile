@@ -107,8 +107,8 @@ render-completions: build
     NO_COLOR=1 rtx completion fish > completions/rtx.fish
 
 # regenerate manpages
-render-mangen:
-    NO_COLOR=1 cargo xtask mangen
+render-mangen: build
+    NO_COLOR=1 rtx render-mangen
 
 # called by lefthook precommit hook
 pre-commit: render-help render-completions render-mangen
