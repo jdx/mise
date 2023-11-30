@@ -107,7 +107,7 @@ impl NodePlugin {
 
     fn install_default_packages(
         &self,
-        settings: &Settings,
+        config: &Config,
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
@@ -119,11 +119,12 @@ impl NodePlugin {
             }
             pr.set_message(format!("installing default package: {}", package));
             let npm = self.npm_path(tv);
-            CmdLineRunner::new(settings, npm)
+            CmdLineRunner::new(&config.settings, npm)
                 .with_pr(pr)
                 .arg("install")
                 .arg("--global")
                 .arg(package)
+                .envs(&config.env)
                 .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
@@ -142,6 +143,7 @@ impl NodePlugin {
         CmdLineRunner::new(&config.settings, self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
+            .envs(&config.env)
             .execute()
     }
 
@@ -151,6 +153,7 @@ impl NodePlugin {
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
+            .envs(&config.env)
             .execute()
     }
 
@@ -259,6 +262,7 @@ impl Plugin for NodePlugin {
         pr.set_message("running node-build");
         let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin())
             .with_pr(pr)
+            .envs(&config.env)
             .arg(tv.version.as_str());
         if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
             let make_opts = String::from(" -j") + &RTX_NODE_CONCURRENCY.to_string();
@@ -280,7 +284,7 @@ impl Plugin for NodePlugin {
         self.test_node(config, tv, pr)?;
         self.install_npm_shim(tv)?;
         self.test_npm(config, tv, pr)?;
-        self.install_default_packages(&config.settings, tv, pr)?;
+        self.install_default_packages(config, tv, pr)?;
         Ok(())
     }
 }
