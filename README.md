@@ -792,18 +792,30 @@ rtx can also be configured via environment variables. The following options are 
 
 #### `RTX_DATA_DIR`
 
-This is the directory where rtx stores plugins and tool installs. The default location is `~/.local/share/rtx`.
+Default: `~/.local/share/rtx` or `$XDG_DATA_HOME/rtx`
+
+This is the directory where rtx stores plugins and tool installs. These are not supposed to be shared
+across machines.
 
 #### `RTX_CACHE_DIR`
 
-This is the directory where rtx stores internal cache. The default location is `~/.cache/rtx` on
-Linux and
-`~/Library/Caches/rtx` on macOS.
+Default (Linux): `~/.cache/rtx` or `$XDG_CACHE_HOME/rtx`
+Default (macOS): `~/Library/Caches/rtx` or `$XDG_CACHE_HOME/rtx`
+
+This is the directory where rtx stores internal cache. This is not supposed to be shared
+across machines. It may be deleted at any time rtx is not running.
+
+#### `RTX_TMP_DIR`
+
+Default: [`std::env::temp_dir()`](https://doc.rust-lang.org/std/env/fn.temp_dir.html) implementation in rust
+
+This is used for temporary storage such as when installing tools.
 
 #### `RTX_CONFIG_FILE`
 
-This is the path to the config file. The default is `~/.config/rtx/config.toml`.
-(Or `$XDG_CONFIG_HOME/config.toml` if that is set)
+Default: `$RTX_CONFIG_DIR/config.toml` (Usually ~/.config/rtx/config.toml)
+
+This is the path to the config file.
 
 #### `RTX_DEFAULT_TOOL_VERSIONS_FILENAME`
 
@@ -1583,6 +1595,7 @@ every time rtx is initialized. Ideally, we can keep this
 behavior.
 
 <!-- RTX:COMMANDS -->
+
 ## Commands
 
 ### `rtx activate [OPTIONS] [SHELL_TYPE]`
@@ -1625,6 +1638,7 @@ Examples:
   $ rtx activate fish | source
   $ execx($(rtx activate xonsh))
 ```
+
 ### `rtx alias get <PLUGIN> <ALIAS>`
 
 ```
@@ -1645,6 +1659,7 @@ Examples:
  $ rtx alias get node lts-hydrogen
  20.0.0
 ```
+
 ### `rtx alias ls [OPTIONS]`
 
 ```
@@ -1667,6 +1682,7 @@ Examples:
   $ rtx aliases
   node    lts-hydrogen   20.0.0
 ```
+
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
 ```
@@ -1689,6 +1705,7 @@ Arguments:
 Examples:
   $ rtx alias set node lts-hydrogen 18.0.0
 ```
+
 ### `rtx alias unset <PLUGIN> <ALIAS>`
 
 ```
@@ -1708,6 +1725,7 @@ Arguments:
 Examples:
   $ rtx alias unset node lts-hydrogen
 ```
+
 ### `rtx bin-paths`
 
 ```
@@ -1715,6 +1733,7 @@ List all the active runtime bin paths
 
 Usage: bin-paths
 ```
+
 ### `rtx cache clear`
 
 ```
@@ -1722,6 +1741,7 @@ Deletes all cache files in rtx
 
 Usage: cache clear
 ```
+
 ### `rtx completion [SHELL]`
 
 ```
@@ -1740,6 +1760,7 @@ Examples:
   $ rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx
   $ rtx completion fish > ~/.config/fish/completions/rtx.fish
 ```
+
 ### `rtx current [PLUGIN]`
 
 ```
@@ -1769,6 +1790,7 @@ Examples:
   $ rtx current python
   3.11.0 3.10.0
 ```
+
 ### `rtx deactivate`
 
 ```
@@ -1784,6 +1806,7 @@ Examples:
   $ rtx deactivate fish
   $ execx($(rtx deactivate xonsh))
 ```
+
 ### `rtx direnv activate`
 
 ```
@@ -1802,6 +1825,7 @@ Examples:
   $ echo 'use rtx' > .envrc
   $ direnv allow
 ```
+
 ### `rtx doctor`
 
 ```
@@ -1813,6 +1837,7 @@ Examples:
   $ rtx doctor
   [WARN] plugin node is not installed
 ```
+
 ### `rtx env [OPTIONS] [TOOL@VERSION]...`
 
 ```
@@ -1844,6 +1869,7 @@ Examples:
   $ rtx env -s fish | source
   $ execx($(rtx env -s xonsh))
 ```
+
 ### `rtx env-vars [OPTIONS] [ENV_VARS]...`
 
 ```
@@ -1870,6 +1896,7 @@ Options:
 
           Can be used multiple times.
 ```
+
 ### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
 ```
@@ -1911,6 +1938,7 @@ Examples:
   # Run a command in a different directory:
   $ rtx x -C /path/to/project node@20 -- node ./app.js
 ```
+
 ### `rtx implode [OPTIONS]`
 
 ```
@@ -1927,6 +1955,7 @@ Options:
       --dry-run
           List directories that would be removed without actually removing them
 ```
+
 ### `rtx install [OPTIONS] [TOOL@VERSION]...`
 
 ```
@@ -1958,6 +1987,7 @@ Examples:
   $ rtx install node         # install version specified in .tool-versions or .rtx.toml
   $ rtx install                # installs everything specified in .tool-versions or .rtx.toml
 ```
+
 ### `rtx latest [OPTIONS] <TOOL@VERSION>`
 
 ```
@@ -1980,6 +2010,7 @@ Examples:
   $ rtx latest node     # get the latest stable version of node
   20.0.0
 ```
+
 ### `rtx link [OPTIONS] <TOOL@VERSION> <PATH>`
 
 ```
@@ -2012,6 +2043,7 @@ Examples:
   $ rtx link node@brew $(brew --prefix node)
   $ rtx use node@brew
 ```
+
 ### `rtx ls [OPTIONS]`
 
 ```
@@ -2068,6 +2100,7 @@ Examples:
     "python": [...]
   }
 ```
+
 ### `rtx ls-remote <TOOL@VERSION> [PREFIX]`
 
 ```
@@ -2099,6 +2132,7 @@ Examples:
   20.0.0
   20.1.0
 ```
+
 ### `rtx outdated [TOOL@VERSION]...`
 
 ```
@@ -2122,6 +2156,7 @@ Examples:
   Plugin  Requested  Current  Latest
   node    20         20.0.0   20.1.0
 ```
+
 ### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
 
 ```
@@ -2169,6 +2204,7 @@ Examples:
   # install the node plugin using a specific ref
   $ rtx plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0
 ```
+
 ### `rtx plugins link [OPTIONS] <NAME> [PATH]`
 
 ```
@@ -2198,6 +2234,7 @@ Examples:
   # infer plugin name as "node"
   $ rtx plugins link ./rtx-node
 ```
+
 ### `rtx plugins ls [OPTIONS]`
 
 ```
@@ -2229,6 +2266,7 @@ Examples:
   node                        https://github.com/asdf-vm/asdf-node.git
   ruby                          https://github.com/asdf-vm/asdf-ruby.git
 ```
+
 ### `rtx plugins ls-remote [OPTIONS]`
 
 ```
@@ -2249,6 +2287,7 @@ Options:
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
+
 ### `rtx plugins uninstall [OPTIONS] <PLUGIN>...`
 
 ```
@@ -2267,6 +2306,7 @@ Options:
 Examples:
   $ rtx uninstall node
 ```
+
 ### `rtx plugins update [PLUGIN]...`
 
 ```
@@ -2285,6 +2325,7 @@ Examples:
   $ rtx plugins update node       # update only node
   $ rtx plugins update node#beta  # specify a ref
 ```
+
 ### `rtx prune [OPTIONS] [PLUGINS]...`
 
 ```
@@ -2310,6 +2351,7 @@ Examples:
   rm -rf ~/.local/share/rtx/versions/node/20.0.0
   rm -rf ~/.local/share/rtx/versions/node/20.0.1
 ```
+
 ### `rtx reshim`
 
 ```
@@ -2336,6 +2378,7 @@ Examples:
   $ ~/.local/share/rtx/shims/node -v
   v20.0.0
 ```
+
 ### `rtx self-update`
 
 ```
@@ -2347,6 +2390,7 @@ Supports: standalone, brew, deb, rpm
 
 Usage: self-update
 ```
+
 ### `rtx settings get <KEY>`
 
 ```
@@ -2367,6 +2411,7 @@ Examples:
   $ rtx settings get legacy_version_file
   true
 ```
+
 ### `rtx settings ls`
 
 ```
@@ -2383,6 +2428,7 @@ Examples:
   $ rtx settings
   legacy_version_file = false
 ```
+
 ### `rtx settings set <KEY> <VALUE>`
 
 ```
@@ -2402,6 +2448,7 @@ Arguments:
 Examples:
   $ rtx settings set legacy_version_file true
 ```
+
 ### `rtx settings unset <KEY>`
 
 ```
@@ -2418,6 +2465,7 @@ Arguments:
 Examples:
   $ rtx settings unset legacy_version_file
 ```
+
 ### `rtx shell [OPTIONS] [TOOL@VERSION]...`
 
 ```
@@ -2440,6 +2488,7 @@ Examples:
   $ node -v
   v20.0.0
 ```
+
 ### `rtx sync node <--brew|--nvm|--nodenv>`
 
 ```
@@ -2464,6 +2513,7 @@ Examples:
   $ rtx sync node --brew
   $ rtx use -g node@18 - uses Homebrew-provided node
 ```
+
 ### `rtx sync python --pyenv`
 
 ```
@@ -2482,6 +2532,7 @@ Examples:
   $ rtx sync python --pyenv
   $ rtx use -g python@3.11.0 - uses pyenv-provided python
 ```
+
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
 ```
@@ -2512,6 +2563,7 @@ Examples:
   # trusts .rtx.toml in the current or parent directory
   $ rtx trust
 ```
+
 ### `rtx uninstall [OPTIONS] <TOOL@VERSION>...`
 
 ```
@@ -2535,6 +2587,7 @@ Examples:
   $ rtx uninstall node        # will uninstall current node version
   $ rtx uninstall --all node@18.0.0 # will uninstall all node versions
 ```
+
 ### `rtx upgrade [TOOL@VERSION]...`
 
 ```
@@ -2548,6 +2601,7 @@ Arguments:
           e.g.: node@20 python@3.10
           If not specified, all current tools will be upgraded
 ```
+
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
 
 ```
@@ -2594,6 +2648,7 @@ Examples:
   # will write the precise version (e.g.: 20.0.0)
   $ rtx use -g --pin node@20
 ```
+
 ### `rtx version`
 
 ```
@@ -2601,6 +2656,7 @@ Show rtx version
 
 Usage: version
 ```
+
 ### `rtx where <TOOL@VERSION>`
 
 ```
@@ -2629,6 +2685,7 @@ Examples:
   $ rtx where node
   /home/jdx/.local/share/rtx/installs/node/20.0.0
 ```
+
 ### `rtx which [OPTIONS] <BIN_NAME>`
 
 ```
@@ -2659,4 +2716,5 @@ Examples:
   $ rtx which node --version
   20.0.0
 ```
+
 <!-- RTX:COMMANDS -->
