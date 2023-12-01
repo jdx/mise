@@ -76,7 +76,7 @@ impl Shell for Nushell {
             }}
           }}
             
-          def-env "update-env" [] {{
+          def --env "update-env" [] {{
             for $var in $in {{
               if $var.op == "set" {{
                 load-env {{($var.name): $var.value}}
@@ -86,7 +86,7 @@ impl Shell for Nushell {
             }}
           }}
             
-          def-env rtx_hook [] {{
+          def --env rtx_hook [] {{
             ^"{exe}" hook-env{status} -s nu
               | parse vars
               | update-env
