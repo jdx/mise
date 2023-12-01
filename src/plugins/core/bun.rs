@@ -9,7 +9,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::github::GithubRelease;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{env, file, http};
@@ -20,8 +20,8 @@ pub struct BunPlugin {
 }
 
 impl BunPlugin {
-    pub fn new(name: PluginName) -> Self {
-        let core = CorePlugin::new(name);
+    pub fn new() -> Self {
+        let core = CorePlugin::new("bun");
         Self { core }
     }
 
@@ -32,7 +32,7 @@ impl BunPlugin {
             req = req.header("authorization", format!("token {}", token));
         }
         let resp = req.send()?;
-        http.ensure_success(&resp)?;
+        resp.error_for_status_ref()?;
         let releases: Vec<GithubRelease> = resp.json()?;
         let versions = releases
             .into_iter()
@@ -94,8 +94,8 @@ impl BunPlugin {
 }
 
 impl Plugin for BunPlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "bun"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {

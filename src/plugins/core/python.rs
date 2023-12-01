@@ -9,7 +9,7 @@ use crate::config::{Config, Settings};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, http};
@@ -20,9 +20,9 @@ pub struct PythonPlugin {
 }
 
 impl PythonPlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(name),
+            core: CorePlugin::new("python"),
         }
     }
 
@@ -147,8 +147,8 @@ impl PythonPlugin {
 }
 
 impl Plugin for PythonPlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "python"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
@@ -185,7 +185,7 @@ impl Plugin for PythonPlugin {
             pr.set_message(format!("with patch file from: {patch_url}"));
             let http = http::Client::new()?;
             let resp = http.get(patch_url).send()?;
-            http.ensure_success(&resp)?;
+            resp.error_for_status_ref()?;
             let patch = resp.text()?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }

@@ -10,7 +10,7 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, hash, http};
@@ -21,9 +21,9 @@ pub struct GoPlugin {
 }
 
 impl GoPlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(name),
+            core: CorePlugin::new("go"),
         }
     }
 
@@ -135,8 +135,8 @@ impl GoPlugin {
 }
 
 impl Plugin for GoPlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "go"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
