@@ -3,7 +3,6 @@ use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
 use indoc::formatdoc;
 
-use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::file;
@@ -14,8 +13,8 @@ use crate::output::Output;
 #[clap(hide = true)]
 pub struct RenderHelp {}
 
-impl Command for RenderHelp {
-    fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
+impl RenderHelp {
+    pub fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
         let readme = file::read_to_string("README.md")?;
         let mut current_readme = readme.split("<!-- RTX:COMMANDS -->");
 

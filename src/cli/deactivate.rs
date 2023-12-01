@@ -2,7 +2,6 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use indoc::formatdoc;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::hook_env;
 use crate::output::Output;
@@ -15,8 +14,8 @@ use crate::shell::get_shell;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Deactivate {}
 
-impl Command for Deactivate {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Deactivate {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }

@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
@@ -19,8 +18,8 @@ pub struct AliasSet {
     pub value: String,
 }
 
-impl Command for AliasSet {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl AliasSet {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         config
             .global_config
             .set_alias(&self.plugin, &self.alias, &self.value);

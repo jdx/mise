@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::{ExternalPlugin, PluginType};
@@ -36,8 +35,8 @@ pub struct PluginsLs {
     pub refs: bool,
 }
 
-impl Command for PluginsLs {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl PluginsLs {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut tools = config.tools.values().cloned().collect::<BTreeSet<_>>();
 
         if self.all {

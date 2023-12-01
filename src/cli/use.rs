@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::cli::local::local;
 use crate::config::Config;
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -50,8 +49,8 @@ pub struct Use {
     path: Option<PathBuf>,
 }
 
-impl Command for Use {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Use {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let runtimes = self
             .tool
             .into_iter()

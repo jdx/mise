@@ -7,7 +7,6 @@ use once_cell::sync::Lazy;
 use versions::Versioning;
 
 use crate::build_time::{built_info, BUILD_TIME};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env::CI;
 use crate::file::modified_duration;
@@ -43,8 +42,8 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
 
 pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
 
-impl Command for Version {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+impl Version {
+    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         show_version(out);
         Ok(())
     }

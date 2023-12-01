@@ -8,7 +8,6 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::runtime_symlinks;
@@ -29,8 +28,8 @@ pub struct Upgrade {
     pub tool: Vec<ToolArg>,
 }
 
-impl Command for Upgrade {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Upgrade {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;
@@ -50,12 +49,7 @@ impl Command for Upgrade {
 
         Ok(())
     }
-}
 
-type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
-type GroupedToolVersions = Vec<(Arc<Tool>, Vec<(ToolVersion, String)>)>;
-
-impl Upgrade {
     fn upgrade(&self, config: &mut Config, outdated: OutputVec) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         ThreadPoolBuilder::new()
@@ -138,3 +132,6 @@ impl Upgrade {
         }
     }
 }
+
+type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
+type GroupedToolVersions = Vec<(Arc<Tool>, Vec<(ToolVersion, String)>)>;

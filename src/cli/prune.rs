@@ -4,7 +4,6 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 use console::style;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::PluginName;
@@ -31,8 +30,8 @@ pub struct Prune {
     pub dry_run: bool,
 }
 
-impl Command for Prune {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Prune {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         let mut to_delete = ts
             .list_installed_versions(&config)?
@@ -54,9 +53,7 @@ impl Command for Prune {
 
         self.delete(&config, to_delete.into_values().collect())
     }
-}
 
-impl Prune {
     fn delete(&self, config: &Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (p, tv) in to_delete {

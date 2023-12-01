@@ -3,7 +3,6 @@ use std::io::Cursor;
 use clap_complete::generate;
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
@@ -21,8 +20,8 @@ pub struct Completion {
     shell_type: Option<clap_complete::Shell>,
 }
 
-impl Command for Completion {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+impl Completion {
+    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let shell = match self.shell.or(self.shell_type) {
             Some(shell) => shell,
             None => panic!("no shell provided"),

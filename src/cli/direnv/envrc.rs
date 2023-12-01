@@ -4,7 +4,6 @@ use std::ops::Deref;
 
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::hash::hash_to_str;
@@ -18,8 +17,8 @@ use crate::{dirs, env};
 #[clap(verbatim_doc_comment, hide = true)]
 pub struct Envrc {}
 
-impl Command for Envrc {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Envrc {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }

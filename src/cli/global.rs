@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::cli::local::local;
 use crate::config::Config;
 use crate::output::Output;
@@ -49,8 +48,8 @@ pub struct Global {
     path: bool,
 }
 
-impl Command for Global {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Global {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         local(
             config,
             out,

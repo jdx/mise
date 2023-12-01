@@ -5,7 +5,6 @@ use color_eyre::eyre::Result;
 use console::{pad_str, style, Alignment};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::tool::Tool;
@@ -22,8 +21,8 @@ pub struct Outdated {
     pub tool: Vec<ToolArg>,
 }
 
-impl Command for Outdated {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Outdated {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;
@@ -43,11 +42,7 @@ impl Command for Outdated {
 
         Ok(())
     }
-}
 
-type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
-
-impl Outdated {
     fn display(&self, outdated: OutputVec, out: &mut Output) {
         // TODO: make a generic table printer in src/ui/table
         let plugins = outdated
@@ -116,6 +111,8 @@ impl Outdated {
         }
     }
 }
+
+type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

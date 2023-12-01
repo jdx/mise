@@ -11,7 +11,6 @@ use itertools::Itertools;
 use serde_derive::Serialize;
 use versions::Versioning;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
@@ -60,8 +59,8 @@ pub struct Ls {
     prefix: Option<String>,
 }
 
-impl Command for Ls {
-    fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Ls {
+    pub fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
         self.plugin = self
             .plugin
             .clone()
@@ -95,23 +94,7 @@ impl Command for Ls {
             self.display_user(&config, runtimes, out)
         }
     }
-}
 
-type JSONOutput = IndexMap<PluginName, Vec<JSONToolVersion>>;
-
-#[derive(Serialize)]
-struct JSONToolVersion {
-    version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    requested_version: Option<String>,
-    install_path: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<IndexMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    symlinked_to: Option<PathBuf>,
-}
-
-impl Ls {
     fn verify_plugin(&self, config: &Config) -> Result<()> {
         match &self.plugin {
             Some(plugin_name) => {
@@ -267,6 +250,20 @@ impl Ls {
 
         Ok(rvs)
     }
+}
+
+type JSONOutput = IndexMap<PluginName, Vec<JSONToolVersion>>;
+
+#[derive(Serialize)]
+struct JSONToolVersion {
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_version: Option<String>,
+    install_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<IndexMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symlinked_to: Option<PathBuf>,
 }
 
 type RuntimeRow = (Arc<Tool>, ToolVersion, Option<ToolSource>);

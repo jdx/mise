@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 use console::style;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::unalias_plugin;
@@ -20,8 +19,8 @@ pub struct PluginsUninstall {
     pub purge: bool,
 }
 
-impl Command for PluginsUninstall {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+impl PluginsUninstall {
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
 
         for plugin_name in &self.plugin {
@@ -30,9 +29,7 @@ impl Command for PluginsUninstall {
         }
         Ok(())
     }
-}
 
-impl PluginsUninstall {
     fn uninstall_one(
         &self,
         config: &Config,

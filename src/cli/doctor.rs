@@ -7,7 +7,6 @@ use indenter::indented;
 use indoc::formatdoc;
 
 use crate::build_time::built_info;
-use crate::cli::command::Command;
 use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::git::Git;
@@ -23,8 +22,8 @@ use crate::{duration, env};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {}
 
-impl Command for Doctor {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Doctor {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         rtxprintln!(out, "{}", rtx_version());
         rtxprintln!(out, "{}", build_info());

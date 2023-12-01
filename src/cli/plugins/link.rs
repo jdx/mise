@@ -5,7 +5,6 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use path_absolutize::Absolutize;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
@@ -33,8 +32,8 @@ pub struct PluginsLink {
     force: bool,
 }
 
-impl Command for PluginsLink {
-    fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
+impl PluginsLink {
+    pub fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {

@@ -1,7 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::{unalias_plugin, PluginName};
@@ -21,8 +20,8 @@ pub struct Update {
     all: bool,
 }
 
-impl Command for Update {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Update {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()

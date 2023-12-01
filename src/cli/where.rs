@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
 use crate::output::Output;
@@ -28,8 +27,8 @@ pub struct Where {
     asdf_version: Option<String>,
 }
 
-impl Command for Where {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Where {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),

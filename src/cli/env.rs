@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
@@ -27,8 +26,8 @@ pub struct Env {
     json: bool,
 }
 
-impl Command for Env {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Env {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.tool)
@@ -39,9 +38,7 @@ impl Command for Env {
             self.output_shell(config, out, ts)
         }
     }
-}
 
-impl Env {
     fn output_json(&self, config: Config, out: &mut Output, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(&config);
         rtxprintln!(out, "{}", serde_json::to_string_pretty(&env)?);

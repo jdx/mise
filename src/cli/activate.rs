@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_EXE;
@@ -46,8 +45,8 @@ pub struct Activate {
     quiet: bool,
 }
 
-impl Command for Activate {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+impl Activate {
+    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 

@@ -1,7 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::{Toolset, ToolsetBuilder};
@@ -28,8 +27,8 @@ pub struct Which {
     pub tool: Option<ToolArg>,
 }
 
-impl Command for Which {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Which {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = self.get_toolset(&mut config)?;
 
         match ts.which(&config, &self.bin_name) {
@@ -47,9 +46,6 @@ impl Command for Which {
             None => Err(eyre!("{} not found", self.bin_name)),
         }
     }
-}
-
-impl Which {
     fn get_toolset(&self, config: &mut Config) -> Result<Toolset> {
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
