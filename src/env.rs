@@ -3,11 +3,12 @@ pub use std::env::*;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::duration::HOURLY;
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
+use url::Url;
 
+use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 
@@ -142,19 +143,59 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
+pub static RTX_NODE_BUILD: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_NODE_BUILD") {
+    Some(v) => v,
+    _ => !*RTX_EXPERIMENTAL,
+});
 pub static RTX_NODE_BUILD_REPO: Lazy<String> = Lazy::new(|| {
     var("RTX_NODE_BUILD_REPO").unwrap_or_else(|_| "https://github.com/nodenv/node-build.git".into())
+});
+pub static RTX_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
+    var_url("RTX_NODE_MIRROR_URL")
+        .or_else(|| var_url("NODE_BUILD_MIRROR_URL"))
+        .unwrap_or_else(|| Url::parse("https://nodejs.org/dist/").unwrap())
 });
 pub static RTX_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
     var("RTX_NODE_CONCURRENCY")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .map(|v| v.max(1))
+        .or_else(|| {
+            if *RTX_NODE_NINJA {
+                None
+            } else {
+                Some(num_cpus::get_physical())
+            }
+        })
 });
 pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
+pub static RTX_NODE_MAKE: Lazy<String> =
+    Lazy::new(|| var("RTX_NODE_MAKE").unwrap_or_else(|_| "make".into()));
+pub static RTX_NODE_NINJA: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_NODE_NINJA") {
+    Some(v) => v,
+    None => is_ninja_on_path(),
+});
+pub static RTX_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_NODE_VERIFY"));
 pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> =
     Lazy::new(|| *RTX_ALL_FORCE_COMPILE || var_is_true("RTX_NODE_FORCE_COMPILE"));
+pub static RTX_NODE_CFLAGS: Lazy<Option<String>> =
+    Lazy::new(|| var("RTX_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
+pub static RTX_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("RTX_NODE_CONFIGURE_OPTS")
+        .or_else(|_| var("NODE_CONFIGURE_OPTS"))
+        .ok()
+});
+pub static RTX_NODE_MAKE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("RTX_NODE_MAKE_OPTS")
+        .or_else(|_| var("NODE_MAKE_OPTS"))
+        .ok()
+});
+pub static RTX_NODE_MAKE_INSTALL_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("RTX_NODE_MAKE_INSTALL_OPTS")
+        .or_else(|_| var("NODE_MAKE_INSTALL_OPTS"))
+        .ok()
+});
 pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
         let p = HOME.join(".default-nodejs-packages");
@@ -261,6 +302,10 @@ fn var_option_bool(key: &str) -> Option<bool> {
 
 fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
+}
+
+fn var_url(key: &str) -> Option<Url> {
+    var(key).ok().map(|v| Url::parse(&v).unwrap())
 }
 
 fn var_confirm(key: &str) -> Confirm {
@@ -404,6 +449,10 @@ fn linux_distro() -> Option<String> {
         Ok(release) => release.id,
         _ => None,
     }
+}
+
+fn is_ninja_on_path() -> bool {
+    which::which("ninja").is_ok()
 }
 
 #[cfg(test)]

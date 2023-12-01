@@ -15,7 +15,7 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{env, file, hash, http};
@@ -23,13 +23,14 @@ use crate::{env, file, hash, http};
 #[derive(Debug)]
 pub struct JavaPlugin {
     core: CorePlugin,
+    http: http::Client,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
 }
 
 impl JavaPlugin {
-    pub fn new(name: PluginName) -> Self {
-        let core = CorePlugin::new(name);
+    pub fn new() -> Self {
+        let core = CorePlugin::new("java");
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
@@ -44,6 +45,7 @@ impl JavaPlugin {
             )
             .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             core,
+            http: http::Client::new_with_timeout(*env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap(),
         }
     }
 
@@ -55,24 +57,22 @@ impl JavaPlugin {
         };
         let release_type = release_type.to_string();
         cache.get_or_try_init(|| {
-            CorePlugin::run_fetch_task_with_timeout(move || {
-                let mut metadata = HashMap::new();
+            let mut metadata = HashMap::new();
 
-                for m in download_java_metadata(&release_type)?.into_iter() {
-                    // add openjdk short versions like "java@17.0.0" which default to openjdk
-                    if m.vendor == "openjdk" {
-                        if m.version.contains('.') {
-                            metadata.insert(m.version.to_string(), m.clone());
-                        } else {
-                            // rtx expects full versions like ".0.0"
-                            metadata.insert(format!("{}.0.0", m.version), m.clone());
-                        }
+            for m in self.download_java_metadata(&release_type)?.into_iter() {
+                // add openjdk short versions like "java@17.0.0" which default to openjdk
+                if m.vendor == "openjdk" {
+                    if m.version.contains('.') {
+                        metadata.insert(m.version.to_string(), m.clone());
+                    } else {
+                        // rtx expects full versions like ".0.0"
+                        metadata.insert(format!("{}.0.0", m.version), m.clone());
                     }
-                    metadata.insert(m.to_string(), m);
                 }
+                metadata.insert(m.to_string(), m);
+            }
 
-                Ok(metadata)
-            })
+            Ok(metadata)
         })
     }
 
@@ -226,11 +226,28 @@ impl JavaPlugin {
             .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
         Ok(m)
     }
+
+    fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
+        let url = format!(
+            "https://java.rtx.pub/metadata/{}/{}/{}.json",
+            release_type,
+            os(),
+            arch()
+        );
+
+        let metadata = self
+            .http
+            .json::<Vec<JavaMetadata>, _>(url)?
+            .into_iter()
+            .filter(|m| JAVA_FILE_TYPES.contains(&m.file_type))
+            .collect();
+        Ok(metadata)
+    }
 }
 
 impl Plugin for JavaPlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "java"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
@@ -359,22 +376,3 @@ static JAVA_FEATURES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["musl", "javafx", "lite", "large_heap"].map(|s| s.to_string())));
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["tar.gz", "zip"].map(|s| s.to_string())));
-
-fn download_java_metadata(release_type: &str) -> Result<Vec<JavaMetadata>> {
-    let http = http::Client::new()?;
-    let url = format!(
-        "https://java.rtx.pub/metadata/{}/{}/{}.json",
-        release_type,
-        os(),
-        arch()
-    );
-    let resp = http.get(url).send()?;
-    http.ensure_success(&resp)?;
-
-    let metadata = resp
-        .json::<Vec<JavaMetadata>>()?
-        .into_iter()
-        .filter(|m| JAVA_FILE_TYPES.contains(&m.file_type))
-        .collect();
-    Ok(metadata)
-}

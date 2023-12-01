@@ -3,6 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
+export RTX_NODE_BUILD=1
 export RTX_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-npm-packages"
 
 rtx plugin uninstall node
@@ -26,3 +27,11 @@ rtx plugin uninstall nodejs
 
 # disable nodejs plugin
 RTX_DISABLE_TOOLS=node assert_not_contains "rtx plugins --core" "node"
+
+export RTX_NODE_BUILD=0
+rtx uninstall node
+rtx i node
+assert "rtx x -- node --version" "v20.0.0"
+# rtx uninstall node
+# RTX_NODE_FORCE_COMPILE=1 rtx i node
+# assert "rtx x -- node --version" "v20.0.0"

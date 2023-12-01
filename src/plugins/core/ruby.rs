@@ -13,7 +13,7 @@ use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, http};
@@ -24,9 +24,9 @@ pub struct RubyPlugin {
 }
 
 impl RubyPlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(name),
+            core: CorePlugin::new("ruby"),
         }
     }
 
@@ -225,7 +225,7 @@ impl RubyPlugin {
             req = req.header("authorization", format!("token {}", token));
         }
         let resp = req.send()?;
-        http.ensure_success(&resp)?;
+        resp.error_for_status_ref()?;
         let release: GithubRelease = resp.json()?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
@@ -312,7 +312,7 @@ impl RubyPlugin {
             if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
                 let http = http::Client::new()?;
                 let resp = http.get(f).send()?;
-                http.ensure_success(&resp)?;
+                resp.error_for_status_ref()?;
                 patches.push(resp.text()?);
             } else {
                 patches.push(file::read_to_string(f)?);
@@ -323,8 +323,8 @@ impl RubyPlugin {
 }
 
 impl Plugin for RubyPlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "ruby"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {

@@ -1,100 +1,178 @@
 use std::collections::BTreeMap;
 
 use std::path::{Path, PathBuf};
-use std::process::exit;
 
-use clap::Command;
 use color_eyre::eyre::Result;
+use serde_derive::Deserialize;
+use tempfile::tempdir_in;
+use url::Url;
 
+use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::duration::DAILY;
-use crate::env::{RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE};
-use crate::file::create_dir_all;
-use crate::git::Git;
-use crate::lock_file::LockFile;
+use crate::env::{
+    RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CFLAGS, RTX_NODE_CONCURRENCY,
+    RTX_NODE_CONFIGURE_OPTS, RTX_NODE_FORCE_COMPILE, RTX_NODE_MAKE, RTX_NODE_MAKE_INSTALL_OPTS,
+    RTX_NODE_MAKE_OPTS, RTX_NODE_MIRROR_URL, RTX_NODE_NINJA, RTX_NODE_VERIFY, RTX_TMP_DIR,
+};
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, PluginName};
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::plugins::Plugin;
+use crate::toolset::ToolVersion;
 use crate::ui::progress_report::ProgressReport;
-use crate::{cmd, env, file};
+use crate::{env, file, hash, http};
 
 #[derive(Debug)]
 pub struct NodePlugin {
     core: CorePlugin,
+    http: http::Client,
 }
 
 impl NodePlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(name),
+            core: CorePlugin::new("node"),
+            http: http::Client::new_with_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap(),
         }
-    }
-
-    fn node_build_path(&self) -> PathBuf {
-        self.core.cache_path.join("node-build")
-    }
-    fn node_build_bin(&self) -> PathBuf {
-        self.node_build_path().join("bin/node-build")
-    }
-    fn install_or_update_node_build(&self) -> Result<()> {
-        let _lock = self.lock_node_build();
-        if self.node_build_path().exists() {
-            self.update_node_build()
-        } else {
-            self.install_node_build()
-        }
-    }
-
-    fn lock_node_build(&self) -> Result<fslock::LockFile> {
-        LockFile::new(&self.node_build_path())
-            .with_callback(|l| {
-                trace!("install_or_update_node_build {}", l.display());
-            })
-            .lock()
-    }
-    fn install_node_build(&self) -> Result<()> {
-        if self.node_build_path().exists() {
-            return Ok(());
-        }
-        debug!(
-            "Installing node-build to {}",
-            self.node_build_path().display()
-        );
-        create_dir_all(self.node_build_path().parent().unwrap())?;
-        let git = Git::new(self.node_build_path());
-        git.clone(&env::RTX_NODE_BUILD_REPO)?;
-        Ok(())
-    }
-    fn update_node_build(&self) -> Result<()> {
-        if self.node_build_recently_updated()? {
-            return Ok(());
-        }
-        debug!(
-            "Updating node-build in {}",
-            self.node_build_path().display()
-        );
-        let git = Git::new(self.node_build_path());
-        let node_build_path = self.node_build_path();
-        CorePlugin::run_fetch_task_with_timeout(move || {
-            git.update(None)?;
-            file::touch_dir(&node_build_path)?;
-            Ok(())
-        })
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        self.install_or_update_node_build()?;
-        let node_build_bin = self.node_build_bin();
-        CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(node_build_bin, "--definitions").read()?;
-            let versions = output
-                .split('\n')
-                .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-                .map(|s| s.to_string())
-                .collect();
-            Ok(versions)
-        })
+        let versions = self
+            .http
+            .json::<Vec<NodeVersion>, _>(RTX_NODE_MIRROR_URL.join("index.json")?)?
+            .into_iter()
+            .map(|v| {
+                if regex!(r"^v\d+\.").is_match(&v.version) {
+                    v.version.strip_prefix('v').unwrap().to_string()
+                } else {
+                    v.version
+                }
+            })
+            .rev()
+            .collect();
+        Ok(versions)
+    }
+
+    fn install_precompiled(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        let slug = slug(&tv.version, os(), arch());
+        let tarball_name = binary_tarball_name(&tv.version);
+        let tmp_tarball = tv.download_path().join(&tarball_name);
+        let url = self.binary_tarball_url(&tv.version)?;
+        self.fetch_tarball(pr, url, &tmp_tarball, &tv.version)?;
+        pr.set_message(format!("extracting {tarball_name}"));
+        let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
+        file::untar(&tmp_tarball, tmp_extract_path.path())?;
+        file::remove_all(tv.install_path())?;
+        file::rename(tmp_extract_path.path().join(slug), tv.install_path())?;
+        Ok(())
+    }
+
+    fn install_compiled(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+    ) -> Result<()> {
+        let tarball_name = source_tarball_name(&tv.version);
+        let tmp_tarball = tv.download_path().join(&tarball_name);
+        let url = self.source_tarball_url(&tv.version)?;
+        self.fetch_tarball(pr, url, &tmp_tarball, &tv.version)?;
+        pr.set_message(format!("extracting {tarball_name}"));
+        let build_dir = RTX_TMP_DIR.join(format!("node-v{}", tv.version));
+        file::remove_all(&build_dir)?;
+        file::untar(&tmp_tarball, &RTX_TMP_DIR)?;
+        self.exec_configure(config, pr, &build_dir, &tv.install_path())?;
+        self.exec_make(config, pr, &build_dir)?;
+        self.exec_make_install(config, pr, &build_dir)?;
+        Ok(())
+    }
+
+    fn fetch_tarball(
+        &self,
+        pr: &ProgressReport,
+        url: Url,
+        local: &Path,
+        version: &str,
+    ) -> Result<()> {
+        let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
+        if local.exists() {
+            pr.set_message(format!("using previously downloaded {tarball_name}"));
+        } else {
+            pr.set_message(format!("downloading {tarball_name}"));
+            self.http.download_file(url, local)?;
+        }
+        if *RTX_NODE_VERIFY {
+            pr.set_message(format!("verifying {tarball_name}"));
+            self.verify(local, version)?;
+        }
+        Ok(())
+    }
+
+    fn sh<'a>(
+        &'a self,
+        settings: &'a Settings,
+        pr: &'a ProgressReport,
+        dir: &Path,
+    ) -> CmdLineRunner {
+        let mut cmd = CmdLineRunner::new(settings, "sh")
+            .with_pr(pr)
+            .current_dir(dir)
+            .arg("-c");
+        if let Some(cflags) = &*RTX_NODE_CFLAGS {
+            cmd = cmd.env("CFLAGS", cflags);
+        }
+        cmd
+    }
+
+    fn exec_configure(
+        &self,
+        config: &Config,
+        pr: &ProgressReport,
+        build_dir: &Path,
+        out: &Path,
+    ) -> Result<()> {
+        self.sh(&config.settings, pr, build_dir)
+            .arg(format!(
+                "./configure --prefix={} {} {}",
+                out.display(),
+                if *RTX_NODE_NINJA { "--ninja" } else { "" },
+                RTX_NODE_CONFIGURE_OPTS.clone().unwrap_or_default()
+            ))
+            .execute()
+    }
+    fn exec_make(&self, config: &Config, pr: &ProgressReport, build_dir: &Path) -> Result<()> {
+        self.sh(&config.settings, pr, build_dir)
+            .arg(format!(
+                "{} {} {}",
+                &*RTX_NODE_MAKE,
+                RTX_NODE_CONCURRENCY
+                    .map(|c| format!("-j{}", c))
+                    .unwrap_or_default(),
+                RTX_NODE_MAKE_OPTS.clone().unwrap_or_default()
+            ))
+            .execute()
+    }
+    fn exec_make_install(
+        &self,
+        config: &Config,
+        pr: &ProgressReport,
+        build_dir: &Path,
+    ) -> Result<()> {
+        self.sh(&config.settings, pr, build_dir)
+            .arg(format!(
+                "{} install {}",
+                &*RTX_NODE_MAKE,
+                RTX_NODE_MAKE_INSTALL_OPTS.clone().unwrap_or_default()
+            ))
+            .execute()
+    }
+
+    fn verify(&self, tarball: &Path, version: &str) -> Result<()> {
+        let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
+        // TODO: verify gpg signature
+        let shasums = self.http.get_text(self.shasums_url(version)?)?;
+        let shasums = hash::parse_shasums(&shasums);
+        let shasum = shasums.get(&tarball_name).unwrap();
+        hash::ensure_checksum_sha256(tarball, shasum)
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -157,20 +235,24 @@ impl NodePlugin {
             .execute()
     }
 
-    fn node_build_recently_updated(&self) -> Result<bool> {
-        let updated_at = file::modified_duration(&self.node_build_path())?;
-        Ok(updated_at < DAILY)
+    fn source_tarball_url(&self, v: &str) -> Result<Url> {
+        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/{}", source_tarball_name(v)))?;
+        Ok(url)
     }
-
-    fn verbose_install(&self, settings: &Settings) -> bool {
-        let verbose_env = *env::RTX_NODE_VERBOSE_INSTALL;
-        verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
+    fn binary_tarball_url(&self, v: &str) -> Result<Url> {
+        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/{}", binary_tarball_name(v)))?;
+        Ok(url)
+    }
+    fn shasums_url(&self, v: &str) -> Result<Url> {
+        // let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
+        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
+        Ok(url)
     }
 }
 
 impl Plugin for NodePlugin {
-    fn name(&self) -> &PluginName {
-        &self.core.name
+    fn name(&self) -> &str {
+        "node"
     }
 
     fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
@@ -221,64 +303,70 @@ impl Plugin for NodePlugin {
         Ok(body.to_string())
     }
 
-    fn external_commands(&self) -> Result<Vec<Command>> {
-        // sort of a hack to get this not to display for nodejs
-        let topic = Command::new("node")
-            .about("Commands for the node plugin")
-            .subcommands(vec![Command::new("node-build")
-                .about("Use/manage rtx's internal node-build")
-                .arg(
-                    clap::Arg::new("args")
-                        .num_args(1..)
-                        .allow_hyphen_values(true)
-                        .trailing_var_arg(true),
-                )]);
-        Ok(vec![topic])
-    }
-
-    fn execute_external_command(
-        &self,
-        _config: &Config,
-        command: &str,
-        args: Vec<String>,
-    ) -> Result<()> {
-        match command {
-            "node-build" => {
-                self.install_or_update_node_build()?;
-                cmd::cmd(self.node_build_bin(), args).run()?;
-            }
-            _ => unreachable!(),
-        }
-        exit(0);
-    }
-
     fn install_version(
         &self,
         config: &Config,
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        self.install_node_build()?;
         pr.set_message("running node-build");
-        let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin())
-            .with_pr(pr)
-            .envs(&config.env)
-            .arg(tv.version.as_str());
-        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
-            if let Some(concurrency) = *RTX_NODE_CONCURRENCY {
-                let make_opts = env::var("MAKE_OPTS").unwrap_or_default();
-                cmd = cmd.env("MAKE_OPTS", format!("{} -j{}", make_opts, concurrency));
+        if *RTX_NODE_FORCE_COMPILE {
+            self.install_compiled(config, tv, pr)?;
+        } else {
+            match self.install_precompiled(tv, pr) {
+                Err(e) if matches!(http::error_code(&e), Some(404)) => {
+                    debug!("precompiled node not found");
+                    self.install_compiled(config, tv, pr)?;
+                }
+                Err(e) => return Err(e),
+                Ok(()) => {}
             }
-            cmd = cmd.arg("--compile");
         }
-        if self.verbose_install(&config.settings) {
-            cmd = cmd.arg("--verbose");
-        }
-        cmd.arg(tv.install_path()).execute()?;
         self.test_node(config, tv, pr)?;
         self.install_npm_shim(tv)?;
         self.test_npm(config, tv, pr)?;
         self.install_default_packages(config, tv, pr)?;
         Ok(())
     }
+}
+
+fn os() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "windows") {
+        "win"
+    } else {
+        built_info::CFG_OS
+    }
+}
+
+fn arch() -> &'static str {
+    if cfg!(target_arch = "x86") {
+        "x86"
+    } else if cfg!(target_arch = "x86_64") {
+        "x64"
+    } else if cfg!(target_arch = "arm") {
+        "armv7l"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        built_info::CFG_TARGET_ARCH
+    }
+}
+
+fn slug(v: &str, os: &str, arch: &str) -> String {
+    format!("node-v{v}-{os}-{arch}")
+}
+fn source_tarball_name(v: &str) -> String {
+    format!("node-v{v}.tar.gz")
+}
+fn binary_tarball_name(v: &str) -> String {
+    format!("{}.tar.gz", slug(v, os(), arch()))
+}
+
+#[derive(Debug, Deserialize)]
+struct NodeVersion {
+    version: String,
 }
