@@ -26,7 +26,7 @@ mod script_manager;
 pub type PluginName = String;
 
 pub trait Plugin: Debug + Send + Sync {
-    fn name(&self) -> &PluginName;
+    fn name(&self) -> &str;
     fn get_type(&self) -> PluginType {
         PluginType::Core
     }

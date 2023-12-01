@@ -1,14 +1,18 @@
 use color_eyre::Result;
 use std::ffi::{OsStr, OsString};
+use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
 use std::thread;
 
 use crate::config::Settings;
 use crate::errors::Error::ScriptFailed;
+use crate::file::display_path;
 use crate::ui::progress_report::ProgressReport;
 use duct::{Expression, IntoExecutablePath};
+use eyre::Context;
 
 /// Create a command with any number of of positional arguments, which may be
 /// different types (anything that implements
@@ -103,6 +107,11 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
+        self.cmd.current_dir(dir);
+        self
+    }
+
     pub fn env_clear(mut self) -> Self {
         self.cmd.env_clear();
         self
@@ -152,11 +161,14 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn execute(mut self) -> Result<()> {
-        debug!("$ {} {}", self.get_program(), self.get_args().join(" "));
+        debug!("$ {}", self);
         if self.settings.raw {
             return self.execute_raw();
         }
-        let mut cp = self.cmd.spawn()?;
+        let mut cp = self
+            .cmd
+            .spawn()
+            .with_context(|| format!("failed to execute command: {self}"))?;
         let stdout = BufReader::new(cp.stdout.take().unwrap());
         let stderr = BufReader::new(cp.stderr.take().unwrap());
         let (tx, rx) = channel();
@@ -261,12 +273,11 @@ impl<'a> CmdLineRunner<'a> {
                 eprintln!("{}", output);
             }
         }
-        let program = self.cmd.get_program().to_string_lossy().to_string();
-        Err(ScriptFailed(program, Some(status)))?
+        Err(ScriptFailed(self.get_program(), Some(status)))?
     }
 
     fn get_program(&self) -> String {
-        self.cmd.get_program().to_string_lossy().to_string()
+        display_path(&PathBuf::from(self.cmd.get_program()))
     }
 
     fn get_args(&self) -> Vec<String> {
@@ -274,6 +285,13 @@ impl<'a> CmdLineRunner<'a> {
             .get_args()
             .map(|s| s.to_string_lossy().to_string())
             .collect::<Vec<_>>()
+    }
+}
+
+impl Display for CmdLineRunner<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let args = self.get_args().join(" ");
+        write!(f, "{} {args}", self.get_program())
     }
 }
 

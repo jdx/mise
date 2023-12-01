@@ -1,9 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use color_eyre::eyre::{bail, Result};
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 pub fn hash_to_str<T: Hash>(t: &T) -> String {
@@ -32,6 +34,17 @@ pub fn ensure_checksum_sha256(path: &Path, checksum: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+pub fn parse_shasums(text: &str) -> HashMap<String, String> {
+    text.par_lines()
+        .map(|l| {
+            let mut parts = l.split_whitespace();
+            let hash = parts.next().unwrap();
+            let name = parts.next().unwrap();
+            (name.into(), hash.into())
+        })
+        .collect()
 }
 
 #[cfg(test)]
