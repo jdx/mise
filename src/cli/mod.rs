@@ -3,7 +3,6 @@ use color_eyre::Result;
 use indoc::indoc;
 use log::LevelFilter;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::AutoInstall;
 use crate::output::Output;
@@ -14,7 +13,6 @@ pub mod args;
 mod asdf;
 mod bin_paths;
 mod cache;
-pub mod command;
 mod completion;
 mod current;
 mod deactivate;

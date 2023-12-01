@@ -1,6 +1,5 @@
 use color_eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{self, ConfigFile};
 use crate::config::Config;
@@ -36,8 +35,8 @@ pub struct EnvVars {
     env_vars: Option<Vec<EnvVarArg>>,
 }
 
-impl Command for EnvVars {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl EnvVars {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         if self.remove.is_none() && self.env_vars.is_none() {
             for (key, value) in &config.env {
                 let source = config.env_sources.get(key).unwrap();

@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::PluginName;
@@ -21,8 +20,8 @@ pub struct AliasLs {
     pub plugin: Option<PluginName>,
 }
 
-impl Command for AliasLs {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl AliasLs {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         for (plugin_name, aliases) in config.get_all_aliases() {
             if let Some(plugin) = &self.plugin {
                 if plugin_name != plugin {

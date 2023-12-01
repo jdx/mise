@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env;
 use crate::output::Output;
@@ -31,8 +30,8 @@ impl Commands {
     }
 }
 
-impl Command for Cache {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Cache {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match self.command {
             Some(cmd) => cmd.run(config, out),
             None => {

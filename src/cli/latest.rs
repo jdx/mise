@@ -2,7 +2,6 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolVersionRequest;
@@ -26,8 +25,8 @@ pub struct Latest {
     installed: bool,
 }
 
-impl Command for Latest {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Latest {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolVersionRequest::Version(_, version)) => Some(version),

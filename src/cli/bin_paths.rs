@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
@@ -10,8 +9,8 @@ use crate::toolset::ToolsetBuilder;
 #[clap(verbatim_doc_comment)]
 pub struct BinPaths {}
 
-impl Command for BinPaths {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl BinPaths {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .build(&mut config)?;

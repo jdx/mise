@@ -4,7 +4,6 @@ use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::cli::args::tool::ToolArgParser;
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::tool::Tool;
@@ -27,8 +26,8 @@ pub struct LsRemote {
     prefix: Option<String>,
 }
 
-impl Command for LsRemote {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl LsRemote {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let plugin = self.get_plugin(&mut config)?;
 
         let prefix = match &self.plugin.tvr {

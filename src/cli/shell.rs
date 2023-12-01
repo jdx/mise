@@ -3,7 +3,6 @@ use console::style;
 use indoc::formatdoc;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shell::get_shell;
@@ -24,8 +23,8 @@ pub struct Shell {
     unset: bool,
 }
 
-impl Command for Shell {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Shell {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .with_args(&self.tool)

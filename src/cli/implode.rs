@@ -2,7 +2,6 @@ use std::path::Path;
 
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::file::remove_all;
 use crate::output::Output;
@@ -24,8 +23,8 @@ pub struct Implode {
     dry_run: bool,
 }
 
-impl Command for Implode {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Implode {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut files = vec![&*dirs::ROOT, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
@@ -46,9 +45,7 @@ impl Command for Implode {
 
         Ok(())
     }
-}
 
-impl Implode {
     fn confirm_remove(&self, config: &Config, f: &Path) -> Result<bool> {
         if self.dry_run {
             Ok(false)

@@ -4,7 +4,6 @@ use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use itertools::Itertools;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -23,8 +22,8 @@ pub struct PluginsLsRemote {
     pub only_names: bool,
 }
 
-impl Command for PluginsLsRemote {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl PluginsLsRemote {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let installed_plugins = config
             .tools
             .values()

@@ -4,7 +4,6 @@ use self_update::backends::github::{ReleaseList, Update};
 use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};
 
-use crate::cli::command::Command;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Config;
 use crate::env;
@@ -19,8 +18,8 @@ use crate::output::Output;
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {}
 
-impl Command for SelfUpdate {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl SelfUpdate {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let latest = &self.fetch_releases()?[0].version;
         let status = self.do_update(&config, latest)?;
 
@@ -33,9 +32,7 @@ impl Command for SelfUpdate {
 
         Ok(())
     }
-}
 
-impl SelfUpdate {
     fn fetch_releases(&self) -> Result<Vec<Release>> {
         let mut releases = ReleaseList::configure();
         if let Some(token) = &*env::GITHUB_API_TOKEN {

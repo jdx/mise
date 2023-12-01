@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::unalias_plugin;
@@ -20,8 +19,8 @@ pub struct Current {
     plugin: Option<String>,
 }
 
-impl Command for Current {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl Current {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
         match &self.plugin {
             Some(plugin_name) => {
@@ -37,9 +36,7 @@ impl Command for Current {
             None => self.all(&config, ts, out),
         }
     }
-}
 
-impl Current {
     fn one(&self, config: &Config, ts: Toolset, out: &mut Output, tool: &Tool) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.name);

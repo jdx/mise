@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 use indoc::indoc;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -16,8 +15,8 @@ use crate::output::Output;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct DirenvActivate {}
 
-impl Command for DirenvActivate {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+impl DirenvActivate {
+    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         rtxprintln!(
             out,
             //       source_env "$(rtx direnv envrc "$@")"
