@@ -1,10 +1,11 @@
-use crate::cli::{version, Cli};
-use eyre::Result;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use eyre::Result;
+
 use crate::cli::command::Command;
+use crate::cli::{version, Cli};
 use crate::config::Config;
 use crate::output::Output;
 

@@ -76,9 +76,11 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test::replace_path;
     use insta::assert_snapshot;
+
+    use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_hook_init() {

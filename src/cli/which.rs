@@ -24,7 +24,7 @@ pub struct Which {
 
     /// Use a specific tool@version
     /// e.g.: `rtx which npm --tool=node@20`
-    #[clap(short, long, value_name = "TOOL@VERSION", value_parser=ToolArgParser, verbatim_doc_comment)]
+    #[clap(short, long, value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     pub tool: Option<ToolArg>,
 }
 

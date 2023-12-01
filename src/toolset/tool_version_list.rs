@@ -40,13 +40,13 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
-    use crate::{dirs, env, file};
-
     use std::sync::Arc;
 
-    use super::*;
     use crate::plugins::ExternalPlugin;
     use crate::tool::Tool;
+    use crate::{dirs, env, file};
+
+    use super::*;
 
     #[test]
     fn test_tool_version_list() {

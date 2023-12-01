@@ -23,7 +23,7 @@ pub struct Use {
     /// Tool(s) to add to config file
     /// e.g.: node@20
     /// If no version is specified, it will default to @latest
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment, required_unless_present = "remove")]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment, required_unless_present = "remove")]
     tool: Vec<ToolArg>,
 
     /// Save exact version to config file

@@ -5,7 +5,6 @@ use color_eyre::eyre::{eyre, Result};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::plugins::core::CorePlugin;

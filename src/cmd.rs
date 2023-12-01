@@ -1,4 +1,3 @@
-use color_eyre::Result;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
@@ -7,12 +6,14 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
 use std::thread;
 
+use color_eyre::Result;
+use duct::{Expression, IntoExecutablePath};
+use eyre::Context;
+
 use crate::config::Settings;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::ui::progress_report::ProgressReport;
-use duct::{Expression, IntoExecutablePath};
-use eyre::Context;
 
 /// Create a command with any number of of positional arguments, which may be
 /// different types (anything that implements
@@ -92,6 +93,7 @@ pub struct CmdLineRunner<'a> {
     pr: Option<&'a ProgressReport>,
     stdin: Option<String>,
 }
+
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(settings: &'a Settings, program: P) -> Self {
         let mut cmd = Command::new(program);

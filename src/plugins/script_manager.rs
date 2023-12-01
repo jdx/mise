@@ -1,4 +1,3 @@
-use crate::fake_asdf::get_path_with_fake_asdf;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
@@ -15,6 +14,7 @@ use crate::cmd::{cmd, CmdLineRunner};
 use crate::config::Settings;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
+use crate::fake_asdf::get_path_with_fake_asdf;
 use crate::file::{basename, display_path};
 use crate::ui::progress_report::ProgressReport;
 use crate::{dirs, env};
