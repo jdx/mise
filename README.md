@@ -945,7 +945,7 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 
 Enables experimental features.
 
-#### `RTX_ALL_FORCE_COMPILE=1`
+#### `RTX_ALL_COMPILE=1`
 
 Default: false unless running NixOS or Alpine (let me know if others should be added)
 

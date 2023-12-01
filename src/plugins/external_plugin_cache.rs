@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-use color_eyre::eyre::{eyre, Result};
+use eyre::WrapErr;
+use eyre::{eyre, Result};
 
 use crate::cache::CacheManager;
 use crate::config::Config;
@@ -97,5 +98,5 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<Strin
     ctx.insert("opts", &tv.opts);
     get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
         .render_str(tmpl, &ctx)
-        .map_err(|err| eyre!("failed to parse template: {} {}", tmpl, err))
+        .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
 }

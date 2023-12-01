@@ -1,5 +1,6 @@
-use color_eyre::eyre::{eyre, Result};
 use duct::Expression;
+use eyre::Result;
+use eyre::WrapErr;
 use serde_derive::Deserialize;
 
 use crate::cli::command::Command;
@@ -37,7 +38,7 @@ impl Command for DirenvExec {
 
         let json = cmd!("direnv", "watch", "json", ".tool-versions")
             .read()
-            .map_err(|err| eyre!("error running direnv watch: {}", err))?;
+            .wrap_err("error running direnv watch")?;
         let w: DirenvWatches = serde_json::from_str(&json)?;
         cmd = cmd.env("DIRENV_WATCHES", w.watches);
 

@@ -116,14 +116,13 @@ pub static RTX_ALWAYS_KEEP_DOWNLOAD: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_DOWNLOAD"));
 pub static RTX_ALWAYS_KEEP_INSTALL: Lazy<bool> =
     Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_INSTALL"));
-pub static RTX_ALL_FORCE_COMPILE: Lazy<bool> =
-    Lazy::new(|| match var_option_bool("RTX_ALL_FORCE_COMPILE") {
-        Some(v) => v,
-        None => matches!(
-            linux_distro().unwrap_or_default().as_str(),
-            "alpine" | "nixos"
-        ),
-    });
+pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_ALL_COMPILE") {
+    Some(v) => v,
+    None => matches!(
+        linux_distro().unwrap_or_default().as_str(),
+        "alpine" | "nixos"
+    ),
+});
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
@@ -177,8 +176,9 @@ pub static RTX_NODE_NINJA: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_
     None => is_ninja_on_path(),
 });
 pub static RTX_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_NODE_VERIFY"));
-pub static RTX_NODE_FORCE_COMPILE: Lazy<bool> =
-    Lazy::new(|| *RTX_ALL_FORCE_COMPILE || var_is_true("RTX_NODE_FORCE_COMPILE"));
+pub static RTX_NODE_COMPILE: Lazy<bool> = Lazy::new(|| {
+    *RTX_ALL_COMPILE || var_is_true("RTX_NODE_COMPILE") || var_is_true("RTX_NODE_FORCE_COMPILE")
+});
 pub static RTX_NODE_CFLAGS: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
 pub static RTX_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
