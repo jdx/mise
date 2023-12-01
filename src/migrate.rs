@@ -12,6 +12,7 @@ pub fn run() {
         task(s, || rename_plugin("nodejs", "node"));
         task(s, || rename_plugin("golang", "go"));
         task(s, migrate_trusted_configs);
+        task(s, migrate_tracked_configs);
         task(s, || remove_deprecated_plugin("node", "rtx-nodejs"));
         task(s, || remove_deprecated_plugin("python", "rtx-golang"));
         task(s, || remove_deprecated_plugin("python", "rtx-java"));
@@ -50,6 +51,12 @@ fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
 fn rename_plugin(from: &str, to: &str) -> Result<()> {
     move_subdirs(&INSTALLS.join(from), &INSTALLS.join(to))?;
     move_subdirs(&PLUGINS.join(from), &PLUGINS.join(to))?;
+    Ok(())
+}
+fn migrate_tracked_configs() -> Result<()> {
+    let from = ROOT.join("tracked_config_files");
+    let to = ROOT.join("tracked-config-files");
+    move_dirs(&from, &to)?;
     Ok(())
 }
 fn migrate_trusted_configs() -> Result<()> {
