@@ -3,9 +3,7 @@ use color_eyre::eyre::Result;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
 use crate::config::Config;
-
 use crate::output::Output;
-
 use crate::toolset::{
     ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
@@ -24,7 +22,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed

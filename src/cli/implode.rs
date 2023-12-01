@@ -1,5 +1,6 @@
-use color_eyre::eyre::Result;
 use std::path::Path;
+
+use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
 use crate::config::Config;

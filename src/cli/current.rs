@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 
 use crate::cli::command::Command;
-
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::unalias_plugin;

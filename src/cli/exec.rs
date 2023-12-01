@@ -30,7 +30,7 @@ use crate::toolset::ToolsetBuilder;
 pub struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     pub tool: Vec<ToolArg>,
 
     /// Command string to execute (same as --command)

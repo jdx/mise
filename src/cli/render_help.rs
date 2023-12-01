@@ -106,9 +106,11 @@ fn remove_trailing_spaces(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, file};
-    use indoc::indoc;
     use std::fs;
+
+    use indoc::indoc;
+
+    use crate::{assert_cli, file};
 
     #[test]
     fn test_render_help() {

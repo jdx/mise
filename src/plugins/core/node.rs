@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
@@ -358,9 +357,11 @@ fn arch() -> &'static str {
 fn slug(v: &str, os: &str, arch: &str) -> String {
     format!("node-v{v}-{os}-{arch}")
 }
+
 fn source_tarball_name(v: &str) -> String {
     format!("node-v{v}.tar.gz")
 }
+
 fn binary_tarball_name(v: &str) -> String {
     format!("{}.tar.gz", slug(v, os(), arch()))
 }

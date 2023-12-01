@@ -60,7 +60,6 @@ impl Command for Envrc {
 
 #[cfg(test)]
 mod tests {
-
     use insta::assert_display_snapshot;
 
     use crate::{assert_cli, file};

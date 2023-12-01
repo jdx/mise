@@ -26,7 +26,7 @@ pub struct Global {
     /// e.g.: node@20
     /// If this is a single tool with no version, the current value of the global
     /// .tool-versions will be displayed
-    #[clap(value_name="TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Save exact version to `~/.tool-versions`
@@ -92,7 +92,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use pretty_assertions::assert_str_eq;
 
     use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs, file};

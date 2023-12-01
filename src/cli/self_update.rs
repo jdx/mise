@@ -1,6 +1,5 @@
 use color_eyre::Result;
 use console::style;
-
 use self_update::backends::github::{ReleaseList, Update};
 use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};

@@ -28,6 +28,7 @@ pub static DEFAULT_LOG_LEVEL: Lazy<String> =
     Lazy::new(|| env::RTX_LOG_LEVEL.to_string().to_lowercase());
 
 pub struct Debug;
+
 impl Debug {
     pub fn arg() -> clap::Arg {
         Arg::new("debug")
@@ -40,6 +41,7 @@ impl Debug {
 }
 
 pub struct Trace;
+
 impl Trace {
     pub fn arg() -> clap::Arg {
         Arg::new("trace")

@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::RwLock;
+
+use color_eyre::eyre::{eyre, Result};
+
 use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::hash::hash_to_str;
@@ -5,10 +11,6 @@ use crate::plugins::ExternalPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::{dirs, env};
-use color_eyre::eyre::{eyre, Result};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {

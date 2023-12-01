@@ -276,8 +276,9 @@ impl Display for MissingRuntimeBehavior {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::config::settings::MissingRuntimeBehavior::{AutoInstall, Ignore, Prompt, Warn};
+
+    use super::*;
 
     #[test]
     fn test_settings_merge() {

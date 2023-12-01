@@ -1,9 +1,9 @@
-use color_eyre::eyre::ErrReport;
 use std::env::{join_paths, split_paths};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
+use color_eyre::eyre::ErrReport;
 use indoc::formatdoc;
 use once_cell::sync::OnceCell;
 

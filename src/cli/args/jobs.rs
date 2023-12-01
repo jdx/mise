@@ -1,6 +1,7 @@
+use std::num::ParseIntError;
+
 use clap::builder::ValueParser;
 use clap::Arg;
-use std::num::ParseIntError;
 
 #[derive(Clone)]
 pub struct Jobs(pub usize);
