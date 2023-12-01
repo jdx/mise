@@ -9,11 +9,13 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
+use crate::env::RTX_NODE_BUILD;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
+use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::timeout::run_with_timeout;
@@ -26,6 +28,7 @@ mod deno;
 mod go;
 mod java;
 mod node;
+mod node_build;
 mod python;
 mod ruby;
 
@@ -33,18 +36,22 @@ type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
 
 pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
-        Box::new(GoPlugin::new("go".to_string())),
-        Box::new(JavaPlugin::new("java".to_string())),
-        Box::new(NodePlugin::new("node".to_string())),
-        Box::new(PythonPlugin::new("python".to_string())),
-        Box::new(RubyPlugin::new("ruby".to_string())),
+        Box::new(GoPlugin::new()),
+        Box::new(JavaPlugin::new()),
+        if *RTX_NODE_BUILD {
+            Box::new(NodeBuildPlugin::new())
+        } else {
+            Box::new(NodePlugin::new())
+        },
+        Box::new(PythonPlugin::new()),
+        Box::new(RubyPlugin::new()),
     ])
 });
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
-        Box::new(BunPlugin::new("bun".to_string())),
-        Box::new(DenoPlugin::new("deno".to_string())),
+        Box::new(BunPlugin::new()),
+        Box::new(DenoPlugin::new()),
     ])
 });
 
@@ -59,18 +66,16 @@ fn build_core_plugins(tools: Vec<Box<dyn Plugin>>) -> ToolMap {
 
 #[derive(Debug)]
 pub struct CorePlugin {
-    pub name: PluginName,
     pub cache_path: PathBuf,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl CorePlugin {
-    pub fn new(name: PluginName) -> Self {
-        let cache_path = dirs::CACHE.join(&name);
+    pub fn new(name: &'static str) -> Self {
+        let cache_path = dirs::CACHE.join(name);
         Self {
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
-            name,
             cache_path,
         }
     }
@@ -83,8 +88,8 @@ impl CorePlugin {
 
     pub fn run_fetch_task_with_timeout<F, T>(f: F) -> Result<T>
     where
-        F: FnOnce() -> Result<T> + Send + 'static,
-        T: Send + 'static,
+        F: FnOnce() -> Result<T> + Send,
+        T: Send,
     {
         run_with_timeout(f, *env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
     }

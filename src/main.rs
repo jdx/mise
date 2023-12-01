@@ -99,7 +99,9 @@ fn handle_ctrlc() {
 fn display_friendly_err(err: Report) {
     let dim = |s| style(s).dim().for_stderr();
     let dim_red = |s| style(s).dim().red().for_stderr();
-    eprintln!("{} {}", dim_red("rtx"), err);
+    for err in err.chain() {
+        eprintln!("{} {}", dim_red("rtx"), err);
+    }
     eprintln!(
         "{} {}",
         dim_red("rtx"),

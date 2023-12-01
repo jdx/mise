@@ -345,7 +345,7 @@ impl Hash for ExternalPlugin {
 }
 
 impl Plugin for ExternalPlugin {
-    fn name(&self) -> &PluginName {
+    fn name(&self) -> &str {
         &self.name
     }
 
