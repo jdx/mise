@@ -309,7 +309,6 @@ impl Plugin for NodePlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        pr.set_message("running node-build");
         if *RTX_NODE_FORCE_COMPILE {
             self.install_compiled(config, tv, pr)?;
         } else {

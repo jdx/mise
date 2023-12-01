@@ -3,8 +3,10 @@ pre-commit:
   commands:
     pre-commit:
       run: just -v pre-commit
+      interactive: true
     lint:
       run: just -v lint
+      interactive: true
 skip_output:
   - meta
   - summary
