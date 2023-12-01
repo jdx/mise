@@ -32,5 +32,5 @@ git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
 
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
 git push -f jdxcode
-glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
+glab mr create --draft --fill --yes -H jdxcode/aports -R alpine/aports
 #git show
