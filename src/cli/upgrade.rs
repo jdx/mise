@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use color_eyre::eyre::{eyre, Result};
+use eyre::Result;
+use eyre::WrapErr;
 use itertools::Itertools;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
@@ -64,7 +65,7 @@ impl Upgrade {
                 self.install_new_versions(config, &mpr, outdated)?;
 
                 let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-                shims::reshim(config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+                shims::reshim(config, &ts).wrap_err("failed to reshim")?;
                 runtime_symlinks::rebuild(config)?;
 
                 Ok(())
@@ -112,7 +113,7 @@ impl Upgrade {
             Ok(_) => Ok(()),
             Err(err) => {
                 pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to install {}", tv)))
+                Err(err.wrap_err(format!("failed to install {tv}")))
             }
         }
     }
@@ -132,7 +133,7 @@ impl Upgrade {
             }
             Err(err) => {
                 pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to uninstall {}", tv)))
+                Err(err.wrap_err(format!("failed to uninstall {tv}")))
             }
         }
     }

@@ -33,5 +33,5 @@ rtx uninstall node
 rtx i node
 assert "rtx x -- node --version" "v20.0.0"
 # rtx uninstall node
-# RTX_NODE_FORCE_COMPILE=1 rtx i node
+# RTX_NODE_COMPILE=1 rtx i node
 # assert "rtx x -- node --version" "v20.0.0"

@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
+use console::style;
+use eyre::WrapErr;
 use log::LevelFilter;
 use tera::Context;
 use toml_edit::{table, value, Array, Document, Item, Value};
@@ -13,7 +15,7 @@ use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
 use crate::config::{config_file, global_config_files, AliasMap, MissingRuntimeBehavior};
 use crate::errors::Error::UntrustedConfig;
-use crate::file::create_dir_all;
+use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
@@ -334,13 +336,14 @@ impl RtxToml {
                     if k == "version" || k == "path" || k == "prefix" || k == "ref" {
                         continue;
                     }
-                    match v.as_str() {
-                        Some(s) => {
-                            let s = self.parse_template(key, s)?;
-                            opts.insert(k.into(), s);
-                        }
-                        _ => parse_error!(format!("{}.{}", key, k), v, "string")?,
-                    }
+                    let s = if let Some(s) = v.as_str() {
+                        self.parse_template(key, s)?
+                    } else if let Some(b) = v.as_bool() {
+                        b.to_string()
+                    } else {
+                        parse_error!(key, v, "string or bool")?
+                    };
+                    opts.insert(k.into(), s);
                 }
             }
             _ => match v {
@@ -631,7 +634,7 @@ impl RtxToml {
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .map_err(|err| eyre!("failed to parse template: {k}='{}': {}", input, err))?;
+            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
         Ok(output)
     }
 
@@ -643,8 +646,9 @@ impl RtxToml {
         }
         if cmd != "hook-env" {
             let ans = prompt::confirm(&format!(
-                "Config file {} is not trusted. Would you like to trust it?",
-                self.path.display()
+                "{} {} is not trusted. Trust it?",
+                style("rtx").yellow().for_stderr(),
+                display_path(&self.path)
             ))?;
             if ans {
                 config_file::trust(self.path.as_path())?;

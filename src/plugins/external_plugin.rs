@@ -16,7 +16,7 @@ use crate::config::{Config, Settings};
 use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::remove_all;
+use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
@@ -134,9 +134,9 @@ impl ExternalPlugin {
             },
             *RTX_FETCH_REMOTE_VERSIONS_TIMEOUT,
         )
-        .map_err(|err| {
+        .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);
-            eyre!("Failed to run {}: {}", script.display(), err)
+            eyre!("Failed to run {}", display_path(&script))
         })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
@@ -355,11 +355,10 @@ impl Plugin for ExternalPlugin {
     fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions(settings))
-            .map_err(|err| {
+            .wrap_err_with(|| {
                 eyre!(
-                    "Failed listing remote versions for plugin {}: {}",
+                    "Failed listing remote versions for plugin {}",
                     style(&self.name).cyan().for_stderr(),
-                    err
                 )
             })
             .cloned()
@@ -371,11 +370,10 @@ impl Plugin for ExternalPlugin {
         }
         self.latest_stable_cache
             .get_or_try_init(|| self.fetch_latest_stable(settings))
-            .map_err(|err| {
+            .wrap_err_with(|| {
                 eyre!(
-                    "Failed fetching latest stable version for plugin {}: {}",
+                    "Failed fetching latest stable version for plugin {}",
                     style(&self.name).cyan().for_stderr(),
-                    err
                 )
             })
             .cloned()
@@ -487,11 +485,10 @@ impl Plugin for ExternalPlugin {
         let aliases = self
             .alias_cache
             .get_or_try_init(|| self.fetch_aliases(settings))
-            .map_err(|err| {
+            .wrap_err_with(|| {
                 eyre!(
-                    "Failed fetching aliases for plugin {}: {}",
+                    "Failed fetching aliases for plugin {}",
                     style(&self.name).cyan().for_stderr(),
-                    err
                 )
             })?
             .iter()
@@ -509,11 +506,10 @@ impl Plugin for ExternalPlugin {
         }
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames(settings))
-            .map_err(|err| {
+            .wrap_err_with(|| {
                 eyre!(
-                    "Failed fetching legacy filenames for plugin {}: {}",
+                    "Failed fetching legacy filenames for plugin {}",
                     style(&self.name).cyan().for_stderr(),
-                    err
                 )
             })
             .cloned()

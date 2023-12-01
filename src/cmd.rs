@@ -170,7 +170,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .cmd
             .spawn()
-            .with_context(|| format!("failed to execute command: {self}"))?;
+            .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let stdout = BufReader::new(cp.stdout.take().unwrap());
         let stderr = BufReader::new(cp.stderr.take().unwrap());
         let (tx, rx) = channel();
