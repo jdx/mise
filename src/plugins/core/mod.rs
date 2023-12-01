@@ -38,10 +38,10 @@ pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
         Box::new(GoPlugin::new()),
         Box::new(JavaPlugin::new()),
-        if *RTX_NODE_BUILD {
-            Box::new(NodeBuildPlugin::new())
-        } else {
+        if *RTX_NODE_BUILD == Some(false) {
             Box::new(NodePlugin::new())
+        } else {
+            Box::new(NodeBuildPlugin::new())
         },
         Box::new(PythonPlugin::new()),
         Box::new(RubyPlugin::new()),
@@ -52,6 +52,11 @@ pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
     build_core_plugins(vec![
         Box::new(BunPlugin::new()),
         Box::new(DenoPlugin::new()),
+        if *RTX_NODE_BUILD == Some(true) {
+            Box::new(NodeBuildPlugin::new())
+        } else {
+            Box::new(NodePlugin::new())
+        },
     ])
 });
 
