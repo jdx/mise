@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -30,8 +29,8 @@ impl Commands {
     }
 }
 
-impl Command for Sync {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Sync {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         self.command.run(config, out)
     }
 }

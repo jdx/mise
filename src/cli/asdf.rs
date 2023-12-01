@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::command::Command;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
@@ -16,8 +15,8 @@ pub struct Asdf {
     args: Vec<String>,
 }
 
-impl Command for Asdf {
-    fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
+impl Asdf {
+    pub fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
         let mut args = vec![String::from("rtx")];
         args.append(&mut self.args);
 

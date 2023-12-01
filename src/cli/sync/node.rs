@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use itertools::sorted;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
 use crate::file;
@@ -37,8 +36,8 @@ pub struct SyncNodeType {
     nodenv: bool,
 }
 
-impl Command for SyncNode {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl SyncNode {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         if self._type.brew {
             self.run_brew(config, out)?;
         } else if self._type.nvm {
@@ -48,9 +47,7 @@ impl Command for SyncNode {
         }
         Ok(())
     }
-}
 
-impl SyncNode {
     fn run_brew(self, mut config: Config, out: &mut Output) -> Result<()> {
         let tool = config.get_or_create_tool(&PluginName::from("node"));
 

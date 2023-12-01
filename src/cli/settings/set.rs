@@ -1,6 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 
-use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
@@ -17,8 +16,8 @@ pub struct SettingsSet {
     pub value: String,
 }
 
-impl Command for SettingsSet {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl SettingsSet {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let value: toml_edit::Value = match self.key.as_str() {
             "experimental" => parse_bool(&self.value)?,
             "missing_runtime_behavior" => self.value.into(),

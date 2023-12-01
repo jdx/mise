@@ -8,7 +8,6 @@ use console::truncate_str;
 use itertools::Itertools;
 use terminal_size::{terminal_size, Width};
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::direnv::DirenvDiff;
@@ -32,8 +31,8 @@ pub struct HookEnv {
     status: bool,
 }
 
-impl Command for HookEnv {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl HookEnv {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }
@@ -62,9 +61,7 @@ impl Command for HookEnv {
 
         Ok(())
     }
-}
 
-impl HookEnv {
     fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
         let installed_versions = ts
             .list_current_installed_versions(config)

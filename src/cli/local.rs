@@ -5,7 +5,6 @@ use console::style;
 use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -56,8 +55,8 @@ pub struct Local {
     path: bool,
 }
 
-impl Command for Local {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Local {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let path = if self.parent {
             get_parent_path()?
         } else {

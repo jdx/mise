@@ -3,7 +3,6 @@ use eyre::Result;
 use eyre::WrapErr;
 use serde_derive::Deserialize;
 
-use crate::cli::command::Command;
 use crate::cmd;
 use crate::config::Config;
 use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
@@ -22,8 +21,8 @@ struct DirenvWatches {
     watches: String,
 }
 
-impl Command for DirenvExec {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl DirenvExec {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         if config.settings.missing_runtime_behavior == Prompt {
             config.settings.missing_runtime_behavior = Warn;
         }

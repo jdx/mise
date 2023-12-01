@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::{
@@ -34,8 +33,8 @@ pub struct Install {
     verbose: u8,
 }
 
-impl Command for Install {
-    fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+impl Install {
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
@@ -43,9 +42,6 @@ impl Command for Install {
 
         Ok(())
     }
-}
-
-impl Install {
     fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         let mut ts = ToolsetBuilder::new()

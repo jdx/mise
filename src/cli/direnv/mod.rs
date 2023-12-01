@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -40,8 +39,8 @@ impl Commands {
     }
 }
 
-impl Command for Direnv {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl Direnv {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));

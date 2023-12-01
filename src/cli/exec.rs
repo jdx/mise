@@ -7,7 +7,6 @@ use color_eyre::eyre::{eyre, Result};
 use duct::IntoExecutablePath;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
@@ -46,8 +45,8 @@ pub struct Exec {
     pub cd: Option<PathBuf>,
 }
 
-impl Command for Exec {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Exec {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_install_missing()
@@ -61,9 +60,7 @@ impl Command for Exec {
 
         self.exec(program, args, env)
     }
-}
 
-impl Exec {
     #[cfg(not(test))]
     fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where

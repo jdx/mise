@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use clap::ValueHint;
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::cli::local;
 use crate::config::{config_file, Config};
 use crate::output::Output;
@@ -29,8 +28,8 @@ pub struct Trust {
     pub untrust: bool,
 }
 
-impl Command for Trust {
-    fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+impl Trust {
+    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let path = match &self.config_file {
             Some(filename) => PathBuf::from(filename),
             None => local::get_parent_path()?,

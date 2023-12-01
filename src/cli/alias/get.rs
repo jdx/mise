@@ -1,6 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -17,8 +16,8 @@ pub struct AliasGet {
     pub alias: String,
 }
 
-impl Command for AliasGet {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl AliasGet {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match config.get_all_aliases().get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
                 Some(alias) => Ok(rtxprintln!(out, "{}", alias)),

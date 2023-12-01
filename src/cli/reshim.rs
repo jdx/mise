@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::shims;
@@ -30,8 +29,8 @@ pub struct Reshim {
     pub version: Option<String>,
 }
 
-impl Command for Reshim {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Reshim {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&mut config)?;
 
         shims::reshim(&config, &ts)

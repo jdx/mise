@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::output::Output;
@@ -15,8 +14,8 @@ pub struct SettingsUnset {
     pub key: String,
 }
 
-impl Command for SettingsUnset {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl SettingsUnset {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         config.global_config.remove_setting(&self.key);
         config.global_config.save()
     }

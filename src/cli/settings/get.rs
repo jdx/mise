@@ -1,6 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -17,8 +16,8 @@ pub struct SettingsGet {
     pub key: String,
 }
 
-impl Command for SettingsGet {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl SettingsGet {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         match config.settings.to_index_map().get(&self.key) {
             Some(value) => Ok(rtxprintln!(out, "{}", value)),
             None => Err(eyre!("Unknown setting: {}", self.key)),

@@ -2,7 +2,6 @@ use console::style;
 use eyre::{Result, WrapErr};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
@@ -26,8 +25,8 @@ pub struct Uninstall {
     dry_run: bool,
 }
 
-impl Command for Uninstall {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Uninstall {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = ToolArg::double_tool_condition(&self.tool);
 
         let mut tool_versions = vec![];

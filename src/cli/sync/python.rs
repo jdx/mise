@@ -1,7 +1,6 @@
 use color_eyre::eyre::Result;
 use itertools::sorted;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::dirs;
 use crate::env::PYENV_ROOT;
@@ -20,8 +19,8 @@ pub struct SyncPython {
     pyenv: bool,
 }
 
-impl Command for SyncPython {
-    fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+impl SyncPython {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let python = config.get_or_create_tool(&PluginName::from("python"));
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");

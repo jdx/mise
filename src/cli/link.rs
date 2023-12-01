@@ -6,7 +6,6 @@ use console::style;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
 use crate::output::Output;
@@ -33,8 +32,8 @@ pub struct Link {
     force: bool,
 }
 
-impl Command for Link {
-    fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+impl Link {
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => {

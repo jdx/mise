@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::cli::command::Command;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -14,8 +13,8 @@ use crate::output::Output;
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {}
 
-impl Command for SettingsLs {
-    fn run(self, config: Config, out: &mut Output) -> Result<()> {
+impl SettingsLs {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         for (key, value) in config.settings.to_index_map() {
             rtxprintln!(out, "{} = {}", key, value);
         }

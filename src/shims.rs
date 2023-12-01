@@ -10,7 +10,6 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::cli::command::Command;
 use crate::cli::exec::Exec;
 use crate::config::Config;
 use crate::env;
