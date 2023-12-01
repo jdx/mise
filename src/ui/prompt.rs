@@ -1,10 +1,15 @@
 use std::io;
+use std::sync::Mutex;
 
 use dialoguer::Confirm;
 
 use crate::env;
 
+static MUTEX: Mutex<()> = Mutex::new(());
+
 pub fn confirm(message: &str) -> io::Result<bool> {
+    let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
+
     match *env::RTX_CONFIRM {
         env::Confirm::Yes => return Ok(true),
         env::Confirm::No => return Ok(false),

@@ -19,9 +19,9 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
             remove_file(path)?;
         }
         Ok(x) if x.is_dir() => {
-            trace!("rm -rf {}", path.display());
+            trace!("rm -rf {}", display_path(path));
             fs::remove_dir_all(path)
-                .with_context(|| format!("failed rm -rf: {}", path.display()))?;
+                .wrap_err_with(|| format!("failed rm -rf: {}", display_path(path)))?;
         }
         _ => {}
     };
@@ -30,14 +30,14 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
 
 pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    trace!("rm {}", path.display());
-    fs::remove_file(path).with_context(|| format!("failed rm: {}", path.display()))
+    trace!("rm {}", display_path(path));
+    fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    trace!("rmdir {}", path.display());
-    fs::remove_dir(path).with_context(|| format!("failed rmdir: {}", path.display()))
+    trace!("rmdir {}", display_path(path));
+    fs::remove_dir(path).wrap_err_with(|| format!("failed rmdir: {}", display_path(path)))
 }
 
 pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -51,26 +51,33 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
     trace!("mv {} {}", from.display(), to.display());
-    fs::rename(from, to)
-        .with_context(|| format!("failed rename: {} -> {}", from.display(), to.display()))
+    fs::rename(from, to).wrap_err_with(|| {
+        format!(
+            "failed rename: {} -> {}",
+            display_path(from),
+            display_path(to)
+        )
+    })
 }
 
 pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
-    trace!("write {}", path.display());
-    fs::write(path, contents).with_context(|| format!("failed write: {}", path.display()))
+    trace!("write {}", display_path(path));
+    fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
 
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
-    trace!("cat {}", path.display());
-    fs::read_to_string(path).with_context(|| format!("failed read_to_string: {}", path.display()))
+    trace!("cat {}", display_path(path));
+    fs::read_to_string(path)
+        .wrap_err_with(|| format!("failed read_to_string: {}", display_path(path)))
 }
 
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    trace!("mkdir -p {}", path.display());
-    fs::create_dir_all(path).with_context(|| format!("failed create_dir_all: {}", path.display()))
+    trace!("mkdir -p {}", display_path(path));
+    fs::create_dir_all(path)
+        .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))
 }
 
 pub fn basename(path: &Path) -> Option<String> {
@@ -98,7 +105,8 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
 pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();
-    set_file_times(dir, now, now).with_context(|| format!("failed to touch dir: {}", dir.display()))
+    set_file_times(dir, now, now)
+        .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
 }
 
 pub fn modified_duration(path: &Path) -> Result<Duration> {

@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use color_eyre::eyre::{eyre, Result};
+use eyre::Context;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -266,14 +267,8 @@ fn load_rtxrc() -> Result<RtxToml> {
             trace!("settings does not exist {:?}", settings_path);
             Ok(RtxToml::init(&settings_path, is_trusted))
         }
-        true => match RtxToml::from_file(&settings_path, is_trusted) {
-            Ok(cf) => Ok(cf),
-            Err(err) => Err(eyre!(
-                "Error parsing {}: {:#}",
-                display_path(&settings_path),
-                err
-            )),
-        },
+        true => RtxToml::from_file(&settings_path, is_trusted)
+            .wrap_err_with(|| format!("Error parsing {}", display_path(&settings_path))),
     }
 }
 
@@ -402,10 +397,11 @@ fn load_all_config_files(
             // already parsed so just return it
             Some(cf) => Ok((f, cf)),
             // need to parse this config file
-            None => match parse_config_file(&f, settings, legacy_filenames, tools) {
-                Ok(cf) => Ok((f, cf)),
-                Err(err) => Err(eyre!("error reading config: {}\n{err:#}", display_path(&f))),
-            },
+            None => {
+                let cf = parse_config_file(&f, settings, legacy_filenames, tools)
+                    .wrap_err_with(|| format!("error parsing config file: {}", display_path(&f)))?;
+                Ok((f, cf))
+            }
         })
         .collect::<Vec<Result<_>>>()
         .into_iter()

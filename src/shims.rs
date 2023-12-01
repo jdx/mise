@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use color_eyre::eyre::{eyre, Result};
+use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -14,7 +15,7 @@ use crate::cli::exec::Exec;
 use crate::config::Config;
 use crate::env;
 use crate::fake_asdf;
-use crate::file::{create_dir_all, remove_all};
+use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
 use crate::tool::Tool;
@@ -96,12 +97,11 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
-        file::make_symlink(&rtx_bin, &symlink_path).map_err(|err| {
+        file::make_symlink(&rtx_bin, &symlink_path).wrap_err_with(|| {
             eyre!(
-                "Failed to create symlink from {} to {}: {}",
-                rtx_bin.display(),
-                symlink_path.display(),
-                err
+                "Failed to create symlink from {} to {}",
+                display_path(&rtx_bin),
+                display_path(&symlink_path)
             )
         })?;
     }

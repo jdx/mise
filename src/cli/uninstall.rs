@@ -1,5 +1,5 @@
-use color_eyre::eyre::{bail, eyre, Result};
 use console::style;
+use eyre::{Result, WrapErr};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::command::Command;
@@ -92,13 +92,13 @@ impl Command for Uninstall {
             plugin.decorate_progress_bar(&mut pr, Some(&tv));
             if let Err(err) = plugin.uninstall_version(&config, &tv, &pr, self.dry_run) {
                 pr.error(err.to_string());
-                return Err(eyre!(err).wrap_err(format!("failed to uninstall {}", &tv)));
+                return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             pr.finish_with_message("uninstalled");
         }
 
         let ts = ToolsetBuilder::new().build(&mut config)?;
-        shims::reshim(&config, &ts).map_err(|err| eyre!("failed to reshim: {}", err))?;
+        shims::reshim(&config, &ts).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(&config)?;
 
         Ok(())

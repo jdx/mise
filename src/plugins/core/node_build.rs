@@ -8,9 +8,7 @@ use color_eyre::eyre::Result;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::{
-    RTX_NODE_CONCURRENCY, RTX_NODE_FORCE_COMPILE, RTX_NODE_MAKE_OPTS, RTX_NODE_MIRROR_URL,
-};
+use crate::env::{RTX_NODE_COMPILE, RTX_NODE_CONCURRENCY, RTX_NODE_MAKE_OPTS, RTX_NODE_MIRROR_URL};
 use crate::file::create_dir_all;
 use crate::git::Git;
 use crate::lock_file::LockFile;
@@ -266,7 +264,7 @@ impl Plugin for NodeBuildPlugin {
             .env("NODE_BUILD_MIRROR_URL", RTX_NODE_MIRROR_URL.to_string())
             .envs(&config.env)
             .arg(tv.version.as_str());
-        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_FORCE_COMPILE {
+        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_COMPILE {
             let mut make_opts = RTX_NODE_MAKE_OPTS.clone().unwrap_or_default();
             if let Some(concurrency) = *RTX_NODE_CONCURRENCY {
                 make_opts = format!("{} -j{}", make_opts, concurrency);

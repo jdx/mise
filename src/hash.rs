@@ -4,9 +4,11 @@ use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 
-use color_eyre::eyre::{bail, Result};
+use eyre::Result;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
+
+use crate::file::display_path;
 
 pub fn hash_to_str<T: Hash>(t: &T) -> String {
     let mut s = DefaultHasher::new();
@@ -20,19 +22,16 @@ pub fn file_hash_sha256(path: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher)?;
     let hash = hasher.finalize();
-    Ok(format!("{:x}", hash))
+    Ok(format!("{hash:x}"))
 }
 
 pub fn ensure_checksum_sha256(path: &Path, checksum: &str) -> Result<()> {
     let actual = file_hash_sha256(path)?;
-    if actual != checksum {
-        bail!(
-            "Checksum mismatch for file {:?}:\nExpected: {}\nActual: {}",
-            path,
-            checksum,
-            actual
-        );
-    }
+    ensure!(
+        actual == checksum,
+        "Checksum mismatch for file {}:\nExpected: {checksum}\nActual:   {actual}",
+        display_path(path),
+    );
     Ok(())
 }
 
