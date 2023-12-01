@@ -53,12 +53,14 @@ fn rename_plugin(from: &str, to: &str) -> Result<()> {
     move_subdirs(&PLUGINS.join(from), &PLUGINS.join(to))?;
     Ok(())
 }
+
 fn migrate_tracked_configs() -> Result<()> {
     let from = ROOT.join("tracked_config_files");
     let to = ROOT.join("tracked-config-files");
     move_dirs(&from, &to)?;
     Ok(())
 }
+
 fn migrate_trusted_configs() -> Result<()> {
     let cache_trusted_configs = CACHE.join("trusted-configs");
     let config_trusted_configs = CONFIG.join("trusted-configs");

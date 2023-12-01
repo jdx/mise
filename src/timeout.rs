@@ -1,7 +1,8 @@
-use color_eyre::eyre::{Context, Result};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+use color_eyre::eyre::{Context, Result};
 
 pub fn run_with_timeout<F, T>(f: F, timeout: Duration) -> Result<T>
 where

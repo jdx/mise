@@ -1,15 +1,15 @@
+use std::collections::HashMap;
+use std::env::{join_paths, split_paths};
+use std::fmt::{Display, Formatter};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
 use base64::prelude::*;
 use color_eyre::eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::env::{join_paths, split_paths};
-use std::fmt::{Display, Formatter};
-use std::io::Write;
-
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DirenvDiff {
@@ -111,8 +111,9 @@ impl Display for DirenvDiff {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use insta::assert_display_snapshot;
+
+    use super::*;
 
     #[test]
     fn test_parse() {

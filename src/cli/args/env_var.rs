@@ -1,8 +1,9 @@
+use std::ffi::OsStr;
+
 use clap::{
     error::{ContextKind, ContextValue, ErrorKind},
     Arg, Command, Error,
 };
-use std::ffi::OsStr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EnvVarArg {

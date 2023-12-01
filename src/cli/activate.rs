@@ -3,7 +3,6 @@ use color_eyre::eyre::Result;
 use crate::cli::command::Command;
 use crate::config::Config;
 use crate::dirs;
-
 use crate::env::RTX_EXE;
 use crate::file::touch_dir;
 use crate::output::Output;

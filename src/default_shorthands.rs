@@ -15,8 +15,9 @@
 // !GENERATED FILE!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+
+use once_cell::sync::Lazy;
 
 pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     Lazy::new(|| HashMap::from(DEFAULT_SHORTHAND_LIST));
@@ -739,5 +740,5 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 714] = [
     // rtx custom shorthands
     ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
     ("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),
-    ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
+    ("tiny", "https://github.com/rtx-plugins/rtx-tiny.git"),
 ];

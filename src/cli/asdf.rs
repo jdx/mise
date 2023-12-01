@@ -72,7 +72,6 @@ fn list_versions(mut config: Config, out: &mut Output, args: &Vec<String>) -> Re
 
 #[cfg(test)]
 mod tests {
-
     use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]

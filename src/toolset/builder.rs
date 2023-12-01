@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
+
 use color_eyre::eyre::Result;
 use itertools::Itertools;
-use std::collections::BTreeMap;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
