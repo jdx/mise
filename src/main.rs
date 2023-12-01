@@ -77,9 +77,7 @@ fn run(args: &Vec<String>) -> Result<()> {
 
     // show version before loading config in case of error
     cli::version::print_version_if_requested(&env::ARGS, out);
-    if let Err(err) = migrate::run() {
-        warn!("Error migrating: {}", err);
-    }
+    migrate::run();
 
     let config = Config::load()?;
     let config = shims::handle_shim(config, args, out)?;
