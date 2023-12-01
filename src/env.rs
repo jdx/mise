@@ -142,10 +142,7 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
-pub static RTX_NODE_BUILD: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_NODE_BUILD") {
-    Some(v) => v,
-    _ => !*RTX_EXPERIMENTAL,
-});
+pub static RTX_NODE_BUILD: Lazy<Option<bool>> = Lazy::new(|| var_option_bool("RTX_NODE_BUILD"));
 pub static RTX_NODE_BUILD_REPO: Lazy<String> = Lazy::new(|| {
     var("RTX_NODE_BUILD_REPO").unwrap_or_else(|_| "https://github.com/nodenv/node-build.git".into())
 });
