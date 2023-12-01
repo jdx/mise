@@ -9,11 +9,7 @@ use url::Url;
 use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::{
-    RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_CFLAGS, RTX_NODE_CONCURRENCY,
-    RTX_NODE_CONFIGURE_OPTS, RTX_NODE_FORCE_COMPILE, RTX_NODE_MAKE, RTX_NODE_MAKE_INSTALL_OPTS,
-    RTX_NODE_MAKE_OPTS, RTX_NODE_MIRROR_URL, RTX_NODE_NINJA, RTX_NODE_VERIFY, RTX_TMP_DIR,
-};
+use crate::env::{RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_MIRROR_URL};
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersion;
@@ -51,44 +47,60 @@ impl NodePlugin {
         Ok(versions)
     }
 
-    fn install_precompiled(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        let slug = slug(&tv.version, os(), arch());
-        let tarball_name = binary_tarball_name(&tv.version);
-        let tmp_tarball = tv.download_path().join(&tarball_name);
-        let url = self.binary_tarball_url(&tv.version)?;
-        self.fetch_tarball(pr, url, &tmp_tarball, &tv.version)?;
+    fn install_precompiled(
+        &self,
+        config: &Config,
+        pr: &ProgressReport,
+        opts: &BuildOpts,
+    ) -> Result<()> {
+        match self.fetch_tarball(
+            pr,
+            &opts.binary_tarball_url,
+            &opts.binary_tarball_path,
+            &opts.version,
+        ) {
+            Err(e) if matches!(http::error_code(&e), Some(404)) => {
+                debug!("precompiled node not found");
+                self.install_compiled(config, pr, opts)
+            }
+            e => e,
+        }?;
+        let tarball_name = &opts.binary_tarball_name;
         pr.set_message(format!("extracting {tarball_name}"));
-        let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
-        file::untar(&tmp_tarball, tmp_extract_path.path())?;
-        file::remove_all(tv.install_path())?;
-        file::rename(tmp_extract_path.path().join(slug), tv.install_path())?;
+        let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
+        file::untar(&opts.binary_tarball_path, tmp_extract_path.path())?;
+        file::remove_all(&opts.install_path)?;
+        let slug = format!("node-v{}-{}-{}", &opts.version, os(), arch());
+        file::rename(tmp_extract_path.path().join(slug), &opts.install_path)?;
         Ok(())
     }
 
     fn install_compiled(
         &self,
         config: &Config,
-        tv: &ToolVersion,
         pr: &ProgressReport,
+        opts: &BuildOpts,
     ) -> Result<()> {
-        let tarball_name = source_tarball_name(&tv.version);
-        let tmp_tarball = tv.download_path().join(&tarball_name);
-        let url = self.source_tarball_url(&tv.version)?;
-        self.fetch_tarball(pr, url, &tmp_tarball, &tv.version)?;
+        let tarball_name = &opts.source_tarball_name;
+        self.fetch_tarball(
+            pr,
+            &opts.source_tarball_url,
+            &opts.source_tarball_path,
+            &opts.version,
+        )?;
         pr.set_message(format!("extracting {tarball_name}"));
-        let build_dir = RTX_TMP_DIR.join(format!("node-v{}", tv.version));
-        file::remove_all(&build_dir)?;
-        file::untar(&tmp_tarball, &RTX_TMP_DIR)?;
-        self.exec_configure(config, pr, &build_dir, &tv.install_path())?;
-        self.exec_make(config, pr, &build_dir)?;
-        self.exec_make_install(config, pr, &build_dir)?;
+        file::remove_all(&opts.build_dir)?;
+        file::untar(&opts.source_tarball_path, opts.build_dir.parent().unwrap())?;
+        self.exec_configure(config, pr, opts)?;
+        self.exec_make(config, pr, opts)?;
+        self.exec_make_install(config, pr, opts)?;
         Ok(())
     }
 
     fn fetch_tarball(
         &self,
         pr: &ProgressReport,
-        url: Url,
+        url: &Url,
         local: &Path,
         version: &str,
     ) -> Result<()> {
@@ -97,9 +109,9 @@ impl NodePlugin {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
             pr.set_message(format!("downloading {tarball_name}"));
-            self.http.download_file(url, local)?;
+            self.http.download_file(url.clone(), local)?;
         }
-        if *RTX_NODE_VERIFY {
+        if *env::RTX_NODE_VERIFY {
             pr.set_message(format!("verifying {tarball_name}"));
             self.verify(local, version)?;
         }
@@ -110,58 +122,36 @@ impl NodePlugin {
         &'a self,
         settings: &'a Settings,
         pr: &'a ProgressReport,
-        dir: &Path,
+        opts: &BuildOpts,
     ) -> CmdLineRunner {
         let mut cmd = CmdLineRunner::new(settings, "sh")
             .with_pr(pr)
-            .current_dir(dir)
+            .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &*RTX_NODE_CFLAGS {
+        if let Some(cflags) = &opts.cflags {
             cmd = cmd.env("CFLAGS", cflags);
         }
         cmd
     }
 
-    fn exec_configure(
-        &self,
-        config: &Config,
-        pr: &ProgressReport,
-        build_dir: &Path,
-        out: &Path,
-    ) -> Result<()> {
-        self.sh(&config.settings, pr, build_dir)
-            .arg(format!(
-                "./configure --prefix={} {} {}",
-                out.display(),
-                if *RTX_NODE_NINJA { "--ninja" } else { "" },
-                RTX_NODE_CONFIGURE_OPTS.clone().unwrap_or_default()
-            ))
+    fn exec_configure(&self, config: &Config, pr: &ProgressReport, opts: &BuildOpts) -> Result<()> {
+        self.sh(&config.settings, pr, opts)
+            .arg(&opts.configure_cmd)
             .execute()
     }
-    fn exec_make(&self, config: &Config, pr: &ProgressReport, build_dir: &Path) -> Result<()> {
-        self.sh(&config.settings, pr, build_dir)
-            .arg(format!(
-                "{} {} {}",
-                &*RTX_NODE_MAKE,
-                RTX_NODE_CONCURRENCY
-                    .map(|c| format!("-j{}", c))
-                    .unwrap_or_default(),
-                RTX_NODE_MAKE_OPTS.clone().unwrap_or_default()
-            ))
+    fn exec_make(&self, config: &Config, pr: &ProgressReport, opts: &BuildOpts) -> Result<()> {
+        self.sh(&config.settings, pr, opts)
+            .arg(&opts.make_cmd)
             .execute()
     }
     fn exec_make_install(
         &self,
         config: &Config,
         pr: &ProgressReport,
-        build_dir: &Path,
+        opts: &BuildOpts,
     ) -> Result<()> {
-        self.sh(&config.settings, pr, build_dir)
-            .arg(format!(
-                "{} install {}",
-                &*RTX_NODE_MAKE,
-                RTX_NODE_MAKE_INSTALL_OPTS.clone().unwrap_or_default()
-            ))
+        self.sh(&config.settings, pr, opts)
+            .arg(&opts.make_install_cmd)
             .execute()
     }
 
@@ -234,14 +224,6 @@ impl NodePlugin {
             .execute()
     }
 
-    fn source_tarball_url(&self, v: &str) -> Result<Url> {
-        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/{}", source_tarball_name(v)))?;
-        Ok(url)
-    }
-    fn binary_tarball_url(&self, v: &str) -> Result<Url> {
-        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/{}", binary_tarball_name(v)))?;
-        Ok(url)
-    }
     fn shasums_url(&self, v: &str) -> Result<Url> {
         // let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
         let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
@@ -308,17 +290,12 @@ impl Plugin for NodePlugin {
         tv: &ToolVersion,
         pr: &ProgressReport,
     ) -> Result<()> {
-        if *RTX_NODE_FORCE_COMPILE {
-            self.install_compiled(config, tv, pr)?;
+        let opts = BuildOpts::new(tv)?;
+        debug!("node build opts: {:#?}", opts);
+        if opts.compile {
+            self.install_compiled(config, pr, &opts)?;
         } else {
-            match self.install_precompiled(tv, pr) {
-                Err(e) if matches!(http::error_code(&e), Some(404)) => {
-                    debug!("precompiled node not found");
-                    self.install_compiled(config, tv, pr)?;
-                }
-                Err(e) => return Err(e),
-                Ok(()) => {}
-            }
+            self.install_precompiled(config, pr, &opts)?;
         }
         self.test_node(config, tv, pr)?;
         self.install_npm_shim(tv)?;
@@ -326,6 +303,93 @@ impl Plugin for NodePlugin {
         self.install_default_packages(config, tv, pr)?;
         Ok(())
     }
+}
+
+#[derive(Debug)]
+struct BuildOpts {
+    version: String,
+    compile: bool,
+    install_path: PathBuf,
+    build_dir: PathBuf,
+    cflags: Option<String>,
+    configure_cmd: String,
+    make_cmd: String,
+    make_install_cmd: String,
+    source_tarball_name: String,
+    source_tarball_path: PathBuf,
+    source_tarball_url: Url,
+    binary_tarball_name: String,
+    binary_tarball_path: PathBuf,
+    binary_tarball_url: Url,
+}
+
+impl BuildOpts {
+    fn new(tv: &ToolVersion) -> Result<Self> {
+        let v = &tv.version;
+        let install_path = tv.install_path();
+        let source_tarball_name = format!("node-v{v}.tar.gz");
+        let binary_tarball_name = format!("node-v{v}-{}-{}.tar.gz", os(), arch());
+
+        Ok(Self {
+            version: v.clone(),
+            build_dir: env::RTX_TMP_DIR.join(format!("node-v{v}")),
+            compile: *env::RTX_NODE_COMPILE || tv.opts.get("compile").is_some_and(|v| v == "true"),
+            cflags: env::RTX_NODE_CFLAGS
+                .clone()
+                .or_else(|| tv.opts.get("cflags").cloned()),
+            configure_cmd: configure_cmd(tv, &install_path),
+            make_cmd: make_cmd(tv),
+            make_install_cmd: make_install_cmd(tv),
+            source_tarball_path: tv.download_path().join(&source_tarball_name),
+            source_tarball_url: env::RTX_NODE_MIRROR_URL
+                .join(&format!("v{v}/{source_tarball_name}"))?,
+            source_tarball_name,
+            binary_tarball_path: tv.download_path().join(&binary_tarball_name),
+            binary_tarball_url: env::RTX_NODE_MIRROR_URL
+                .join(&format!("v{v}/{binary_tarball_name}"))?,
+            binary_tarball_name,
+            install_path,
+        })
+    }
+}
+
+fn configure_cmd(tv: &ToolVersion, install_path: &Path) -> String {
+    let configure_opts = env::RTX_NODE_CONFIGURE_OPTS
+        .clone()
+        .or_else(|| tv.opts.get("configure_opts").cloned());
+    let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
+    if *env::RTX_NODE_NINJA {
+        configure_cmd.push_str(" --ninja");
+    }
+    if let Some(opts) = configure_opts {
+        configure_cmd.push_str(&format!(" {}", opts));
+    }
+    configure_cmd
+}
+
+fn make_cmd(tv: &ToolVersion) -> String {
+    let mut make_cmd = env::RTX_NODE_MAKE.to_string();
+    if let Some(concurrency) = *env::RTX_NODE_CONCURRENCY {
+        make_cmd.push_str(&format!(" -j{concurrency}"));
+    }
+    let make_opts = env::RTX_NODE_MAKE_OPTS
+        .clone()
+        .or_else(|| tv.opts.get("make_opts").cloned());
+    if let Some(opts) = make_opts {
+        make_cmd.push_str(&format!(" {opts}"));
+    }
+    make_cmd
+}
+
+fn make_install_cmd(tv: &ToolVersion) -> String {
+    let mut make_install_cmd = format!("{} install", &*env::RTX_NODE_MAKE);
+    let make_install_opts = env::RTX_NODE_MAKE_INSTALL_OPTS
+        .clone()
+        .or_else(|| tv.opts.get("make_install_opts").cloned());
+    if let Some(opts) = make_install_opts {
+        make_install_cmd.push_str(&format!(" {opts}"));
+    }
+    make_install_cmd
 }
 
 fn os() -> &'static str {
@@ -352,18 +416,6 @@ fn arch() -> &'static str {
     } else {
         built_info::CFG_TARGET_ARCH
     }
-}
-
-fn slug(v: &str, os: &str, arch: &str) -> String {
-    format!("node-v{v}-{os}-{arch}")
-}
-
-fn source_tarball_name(v: &str) -> String {
-    format!("node-v{v}.tar.gz")
-}
-
-fn binary_tarball_name(v: &str) -> String {
-    format!("{}.tar.gz", slug(v, os(), arch()))
 }
 
 #[derive(Debug, Deserialize)]

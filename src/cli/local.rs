@@ -91,7 +91,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
         filenames.push(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
     file::find_up(&dirs::CURRENT, &filenames)
-        .with_context(|| eyre!("no {} file found", filenames.join(" or "),))
+        .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
 }
 
 #[allow(clippy::too_many_arguments)]

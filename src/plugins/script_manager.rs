@@ -161,7 +161,7 @@ impl ScriptManager {
             cmd = cmd.stderr_null();
         }
         cmd.read()
-            .with_context(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
+            .wrap_err_with(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
     pub fn run_by_line(
