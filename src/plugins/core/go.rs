@@ -8,9 +8,10 @@ use versions::Versioning;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, hash, http};
 
@@ -148,15 +149,10 @@ impl Plugin for GoPlugin {
         Ok(vec![".go-version".into()])
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        let tarball_path = self.download(tv, pr)?;
-        self.install(tv, pr, &tarball_path)?;
-        self.verify(config, tv, pr)?;
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
+        self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
+        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
@@ -169,7 +165,12 @@ impl Plugin for GoPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(&self, _config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         // goroot/bin must always be included, irrespective of RTX_GO_SET_GOROOT
         let mut paths = vec![self.goroot(tv).join("bin")];
         if *env::RTX_GO_SET_GOPATH != Some(false) {
@@ -178,7 +179,12 @@ impl Plugin for GoPlugin {
         Ok(paths)
     }
 
-    fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         let mut map = HashMap::new();
         match (*env::RTX_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
             (Some(false), _) | (None, Some(_)) => {}

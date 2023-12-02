@@ -14,9 +14,10 @@ use crate::cache::CacheManager;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{env, file, hash, http};
 
@@ -262,23 +263,26 @@ impl Plugin for JavaPlugin {
         Ok(aliases)
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        assert!(matches!(
+            &ctx.tv.request,
+            ToolVersionRequest::Version { .. }
+        ));
 
-        let metadata = self.tv_to_metadata(tv)?;
-        let tarball_path = self.download(tv, pr, metadata)?;
-        self.install(tv, pr, &tarball_path, metadata)?;
-        self.verify(config, tv, pr)?;
+        let metadata = self.tv_to_metadata(&ctx.tv)?;
+        let tarball_path = self.download(&ctx.tv, &ctx.pr, metadata)?;
+        self.install(&ctx.tv, &ctx.pr, &tarball_path, metadata)?;
+        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
 
-    fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         let map = HashMap::from([(
             "JAVA_HOME".into(),
             tv.install_path().to_string_lossy().into(),

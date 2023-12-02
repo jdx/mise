@@ -11,6 +11,7 @@ use crate::duration::DAILY;
 use crate::env::{RTX_NODE_COMPILE, RTX_NODE_CONCURRENCY, RTX_NODE_MAKE_OPTS, RTX_NODE_MIRROR_URL};
 use crate::file::create_dir_all;
 use crate::git::Git;
+use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
@@ -251,20 +252,15 @@ impl Plugin for NodeBuildPlugin {
         exit(0);
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
         self.install_node_build()?;
-        pr.set_message("running node-build");
-        let mut cmd = CmdLineRunner::new(&config.settings, self.node_build_bin())
-            .with_pr(pr)
+        ctx.pr.set_message("running node-build");
+        let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.node_build_bin())
+            .with_pr(&ctx.pr)
             .env("NODE_BUILD_MIRROR_URL", RTX_NODE_MIRROR_URL.to_string())
-            .envs(&config.env)
-            .arg(tv.version.as_str());
-        if matches!(&tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_COMPILE {
+            .envs(&ctx.config.env)
+            .arg(ctx.tv.version.as_str());
+        if matches!(&ctx.tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_COMPILE {
             let mut make_opts = RTX_NODE_MAKE_OPTS.clone().unwrap_or_default();
             if let Some(concurrency) = *RTX_NODE_CONCURRENCY {
                 make_opts = format!("{} -j{}", make_opts, concurrency);
@@ -284,14 +280,14 @@ impl Plugin for NodeBuildPlugin {
             }
             cmd = cmd.arg("--compile");
         }
-        if self.verbose_install(&config.settings) {
+        if self.verbose_install(&ctx.config.settings) {
             cmd = cmd.arg("--verbose");
         }
-        cmd.arg(tv.install_path()).execute()?;
-        self.test_node(config, tv, pr)?;
-        self.install_npm_shim(tv)?;
-        self.test_npm(config, tv, pr)?;
-        self.install_default_packages(config, tv, pr)?;
+        cmd.arg(&ctx.tv.install_path()).execute()?;
+        self.test_node(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_npm_shim(&ctx.tv)?;
+        self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 }

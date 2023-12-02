@@ -10,6 +10,7 @@ use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::{RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_MIRROR_URL};
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersion;
@@ -47,26 +48,21 @@ impl NodePlugin {
         Ok(versions)
     }
 
-    fn install_precompiled(
-        &self,
-        config: &Config,
-        pr: &ProgressReport,
-        opts: &BuildOpts,
-    ) -> Result<()> {
+    fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
         match self.fetch_tarball(
-            pr,
+            &ctx.pr,
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
             &opts.version,
         ) {
             Err(e) if matches!(http::error_code(&e), Some(404)) => {
                 debug!("precompiled node not found");
-                self.install_compiled(config, pr, opts)
+                self.install_compiled(ctx, opts)
             }
             e => e,
         }?;
         let tarball_name = &opts.binary_tarball_name;
-        pr.set_message(format!("extracting {tarball_name}"));
+        ctx.pr.set_message(format!("extracting {tarball_name}"));
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::untar(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
@@ -75,25 +71,20 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn install_compiled(
-        &self,
-        config: &Config,
-        pr: &ProgressReport,
-        opts: &BuildOpts,
-    ) -> Result<()> {
+    fn install_compiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
-            pr,
+            &ctx.pr,
             &opts.source_tarball_url,
             &opts.source_tarball_path,
             &opts.version,
         )?;
-        pr.set_message(format!("extracting {tarball_name}"));
+        ctx.pr.set_message(format!("extracting {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
         file::untar(&opts.source_tarball_path, opts.build_dir.parent().unwrap())?;
-        self.exec_configure(config, pr, opts)?;
-        self.exec_make(config, pr, opts)?;
-        self.exec_make_install(config, pr, opts)?;
+        self.exec_configure(ctx, opts)?;
+        self.exec_make(ctx, opts)?;
+        self.exec_make_install(ctx, opts)?;
         Ok(())
     }
 
@@ -118,41 +109,26 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn sh<'a>(
-        &'a self,
-        settings: &'a Settings,
-        pr: &'a ProgressReport,
-        opts: &BuildOpts,
-    ) -> CmdLineRunner {
-        let mut cmd = CmdLineRunner::new(settings, "sh")
-            .with_pr(pr)
-            .current_dir(&opts.build_dir)
-            .arg("-c");
+    fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> CmdLineRunner {
+        let mut cmd = CmdLineRunner::new(&ctx.config.settings, "sh");
+        for p in &opts.path {
+            cmd.prepend_path_env(p.clone());
+        }
+        cmd = cmd.with_pr(&ctx.pr).current_dir(&opts.build_dir).arg("-c");
         if let Some(cflags) = &*env::RTX_NODE_CFLAGS {
             cmd = cmd.env("CFLAGS", cflags);
         }
         cmd
     }
 
-    fn exec_configure(&self, config: &Config, pr: &ProgressReport, opts: &BuildOpts) -> Result<()> {
-        self.sh(&config.settings, pr, opts)
-            .arg(&opts.configure_cmd)
-            .execute()
+    fn exec_configure(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+        self.sh(ctx, opts).arg(&opts.configure_cmd).execute()
     }
-    fn exec_make(&self, config: &Config, pr: &ProgressReport, opts: &BuildOpts) -> Result<()> {
-        self.sh(&config.settings, pr, opts)
-            .arg(&opts.make_cmd)
-            .execute()
+    fn exec_make(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+        self.sh(ctx, opts).arg(&opts.make_cmd).execute()
     }
-    fn exec_make_install(
-        &self,
-        config: &Config,
-        pr: &ProgressReport,
-        opts: &BuildOpts,
-    ) -> Result<()> {
-        self.sh(&config.settings, pr, opts)
-            .arg(&opts.make_install_cmd)
-            .execute()
+    fn exec_make_install(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+        self.sh(ctx, opts).arg(&opts.make_install_cmd).execute()
     }
 
     fn verify(&self, tarball: &Path, version: &str) -> Result<()> {
@@ -284,23 +260,18 @@ impl Plugin for NodePlugin {
         Ok(body.to_string())
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        let opts = BuildOpts::new(tv)?;
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        let opts = BuildOpts::new(ctx)?;
         debug!("node build opts: {:#?}", opts);
         if *env::RTX_NODE_COMPILE {
-            self.install_compiled(config, pr, &opts)?;
+            self.install_compiled(ctx, &opts)?;
         } else {
-            self.install_precompiled(config, pr, &opts)?;
+            self.install_precompiled(ctx, &opts)?;
         }
-        self.test_node(config, tv, pr)?;
-        self.install_npm_shim(tv)?;
-        self.test_npm(config, tv, pr)?;
-        self.install_default_packages(config, tv, pr)?;
+        self.test_node(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_npm_shim(&ctx.tv)?;
+        self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 }
@@ -308,6 +279,7 @@ impl Plugin for NodePlugin {
 #[derive(Debug)]
 struct BuildOpts {
     version: String,
+    path: Vec<PathBuf>,
     install_path: PathBuf,
     build_dir: PathBuf,
     configure_cmd: String,
@@ -322,23 +294,24 @@ struct BuildOpts {
 }
 
 impl BuildOpts {
-    fn new(tv: &ToolVersion) -> Result<Self> {
-        let v = &tv.version;
-        let install_path = tv.install_path();
+    fn new(ctx: &InstallContext) -> Result<Self> {
+        let v = &ctx.tv.version;
+        let install_path = ctx.tv.install_path();
         let source_tarball_name = format!("node-v{v}.tar.gz");
         let binary_tarball_name = format!("node-v{v}-{}-{}.tar.gz", os(), arch());
 
         Ok(Self {
             version: v.clone(),
+            path: ctx.ts.list_paths(ctx.config),
             build_dir: env::RTX_TMP_DIR.join(format!("node-v{v}")),
             configure_cmd: configure_cmd(&install_path),
             make_cmd: make_cmd(),
             make_install_cmd: make_install_cmd(),
-            source_tarball_path: tv.download_path().join(&source_tarball_name),
+            source_tarball_path: ctx.tv.download_path().join(&source_tarball_name),
             source_tarball_url: env::RTX_NODE_MIRROR_URL
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
-            binary_tarball_path: tv.download_path().join(&binary_tarball_name),
+            binary_tarball_path: ctx.tv.download_path().join(&binary_tarball_name),
             binary_tarball_url: env::RTX_NODE_MIRROR_URL
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
             binary_tarball_name,

@@ -40,6 +40,7 @@ pub mod github;
 mod hash;
 mod hook_env;
 mod http;
+mod install_context;
 mod lock_file;
 mod logger;
 mod migrate;
