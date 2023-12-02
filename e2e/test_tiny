@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
 rtx cache clean
@@ -12,7 +13,7 @@ RTX_TINY_LIST_ALL_FAIL=1 RTX_TINY_VERSION=latest rtx env >/dev/null
 # check bin/list-legacy-files
 assert "rtx current tiny" "3.1.0"
 rtx local --remove tiny
-echo "2.0" > .tiny-version
+echo "2.0" >.tiny-version
 assert "rtx current tiny" "2.0.1"
 rm .tiny-version
 rtx local tiny@latest
