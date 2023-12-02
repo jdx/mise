@@ -3,6 +3,7 @@ name = "poetry-test"
 version = "0.1.0"
 description = ""
 authors = ["rtx"]
+packages = [{include = "poetry_demo"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
