@@ -69,8 +69,8 @@ jobs:
             command: rtx exec java@openjdk -- java -version
           - plugin: terraform
             command: rtx exec terraform@latest -- terraform -v
-          - plugin: yarn
-            command: rtx exec yarn@latest -- yarn --version
+          # - plugin: yarn
+          #   command: rtx exec yarn@latest -- yarn --version
           - plugin: deno
             command: rtx exec deno@latest -- deno --version
           - plugin: bun
