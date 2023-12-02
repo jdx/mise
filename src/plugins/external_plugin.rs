@@ -241,22 +241,23 @@ impl ExternalPlugin {
     fn fetch_bin_paths(
         &self,
         config: &Config,
-        ts: &Toolset,
+        _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let mut sm = self.script_man_for_tv(config, tv);
-            for (t, tv) in ts.list_current_installed_versions(config) {
-                if t.name == self.name {
-                    continue;
-                }
-                for p in t.list_bin_paths(config, ts, &tv)? {
-                    sm.prepend_path(p);
-                }
-            }
+            let sm = self.script_man_for_tv(config, tv);
+            // TODO: find a way to enable this without deadlocking
+            // for (t, tv) in ts.list_current_installed_versions(config) {
+            //     if t.name == self.name {
+            //         continue;
+            //     }
+            //     for p in t.list_bin_paths(config, ts, &tv)? {
+            //         sm.prepend_path(p);
+            //     }
+            // }
             let output = sm.cmd(&config.settings, &Script::ListBinPaths).read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
         } else {
