@@ -9,9 +9,10 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::github::GithubRelease;
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{env, file, http};
 
@@ -109,22 +110,25 @@ impl Plugin for DenoPlugin {
         Ok(vec![".deno-version".into()])
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        assert!(matches!(
+            &ctx.tv.request,
+            ToolVersionRequest::Version { .. }
+        ));
 
-        let tarball_path = self.download(tv, pr)?;
-        self.install(tv, pr, &tarball_path)?;
-        self.verify(config, tv, pr)?;
+        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
+        self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
+        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
 
-    fn list_bin_paths(&self, _config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         let bin_paths = vec![
             tv.install_path().join("bin"),
             tv.install_path().join(".deno/bin"),
@@ -132,7 +136,12 @@ impl Plugin for DenoPlugin {
         Ok(bin_paths)
     }
 
-    fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         let map = HashMap::from([(
             "DENO_INSTALL_ROOT".into(),
             tv.install_path().join(".deno").to_string_lossy().into(),

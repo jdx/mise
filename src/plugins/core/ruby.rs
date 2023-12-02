@@ -10,10 +10,11 @@ use crate::duration::DAILY;
 use crate::env::GITHUB_API_TOKEN;
 use crate::git::Git;
 use crate::github::GithubRelease;
+use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, http};
 
@@ -352,26 +353,29 @@ impl Plugin for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
         self.update_build_tool()?;
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
+        assert!(matches!(
+            &ctx.tv.request,
+            ToolVersionRequest::Version { .. }
+        ));
 
-        pr.set_message("running ruby-build");
-        self.install_cmd(config, tv, pr)?.execute()?;
+        ctx.pr.set_message("running ruby-build");
+        self.install_cmd(ctx.config, &ctx.tv, &ctx.pr)?.execute()?;
 
-        self.test_ruby(config, tv, pr)?;
-        self.install_rubygems_hook(tv)?;
-        self.test_gem(config, tv, pr)?;
-        self.install_default_gems(config, tv, pr)?;
+        self.test_ruby(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_rubygems_hook(&ctx.tv)?;
+        self.test_gem(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_default_gems(ctx.config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 
-    fn exec_env(&self, _config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         // TODO: is there a way to avoid needing to set RUBYLIB?
         // is there a directory I can put rubygems_plugin.rb in that will be automatically loaded?
         let rubygems_plugin_path = self.rubygems_plugins_path(tv);

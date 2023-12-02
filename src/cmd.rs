@@ -11,6 +11,7 @@ use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
 
 use crate::config::Settings;
+use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::ui::progress_report::ProgressReport;
@@ -135,6 +136,23 @@ impl<'a> CmdLineRunner<'a> {
     {
         self.cmd.envs(vars);
         self
+    }
+
+    pub fn prepend_path_env(&mut self, path: PathBuf) -> &mut Self {
+        let k: OsString = "PATH".into();
+        let mut paths = env::split_paths(self.get_env(&k).unwrap()).collect::<Vec<_>>();
+        paths.insert(0, path);
+        self.cmd.env("PATH", env::join_paths(paths).unwrap());
+        self
+    }
+
+    fn get_env(&self, key: &OsString) -> Option<&OsStr> {
+        for (k, v) in self.cmd.get_envs() {
+            if k != key {
+                return v;
+            }
+        }
+        None
     }
 
     pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
