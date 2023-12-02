@@ -19,12 +19,13 @@ use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::hash::hash_to_str;
+use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
 use crate::ui::prompt;
@@ -237,15 +238,26 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn fetch_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn fetch_bin_paths(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let output = self
-                .script_man_for_tv(config, tv)
-                .cmd(&config.settings, &Script::ListBinPaths)
-                .read()?;
+            let mut sm = self.script_man_for_tv(config, tv);
+            for (t, tv) in ts.list_current_installed_versions(config) {
+                if t.name == self.name {
+                    continue;
+                }
+                for p in t.list_bin_paths(config, ts, &tv)? {
+                    sm.prepend_path(p);
+                }
+            }
+            let output = sm.cmd(&config.settings, &Script::ListBinPaths).read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
         } else {
             vec!["bin".into()]
@@ -256,9 +268,18 @@ impl ExternalPlugin {
             .collect();
         Ok(bin_paths)
     }
-    fn fetch_exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
-        let script = self.script_man_for_tv(config, tv).get_script_path(&ExecEnv);
-        let ed = EnvDiff::from_bash_script(&script, &self.script_man_for_tv(config, tv).env)?;
+    fn fetch_exec_env(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
+        let mut sm = self.script_man_for_tv(config, tv);
+        for p in ts.list_paths(config) {
+            sm.prepend_path(p);
+        }
+        let script = sm.get_script_path(&ExecEnv);
+        let ed = EnvDiff::from_bash_script(&script, &sm.env)?;
         let env = ed
             .to_patches()
             .into_iter()
@@ -595,22 +616,20 @@ impl Plugin for ExternalPlugin {
         exit(result.status.code().unwrap_or(1));
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        let run_script = |script| {
-            self.script_man_for_tv(config, tv)
-                .run_by_line(&config.settings, script, pr)
-        };
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        let mut sm = self.script_man_for_tv(ctx.config, &ctx.tv);
 
-        if self.script_man_for_tv(config, tv).script_exists(&Download) {
-            pr.set_message("downloading");
+        for p in ctx.ts.list_paths(ctx.config) {
+            sm.prepend_path(p);
+        }
+
+        let run_script = |script| sm.run_by_line(&ctx.config.settings, script, &ctx.pr);
+
+        if sm.script_exists(&Download) {
+            ctx.pr.set_message("downloading");
             run_script(&Download)?;
         }
-        pr.set_message("installing");
+        ctx.pr.set_message("installing");
         run_script(&Install)?;
 
         Ok(())
@@ -624,12 +643,22 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         self.cache
-            .list_bin_paths(config, self, tv, || self.fetch_bin_paths(config, tv))
+            .list_bin_paths(config, self, tv, || self.fetch_bin_paths(config, ts, tv))
     }
 
-    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         if matches!(tv.request, ToolVersionRequest::System(_)) {
             return Ok(EMPTY_HASH_MAP.clone());
         }
@@ -639,7 +668,7 @@ impl Plugin for ExternalPlugin {
             return Ok(EMPTY_HASH_MAP.clone());
         }
         self.cache
-            .exec_env(config, self, tv, || self.fetch_exec_env(config, tv))
+            .exec_env(config, self, tv, || self.fetch_exec_env(config, ts, tv))
     }
 }
 

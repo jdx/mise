@@ -5,7 +5,9 @@ env_path = ["/root", "./cwd"]
 FOO = "bar"
 
 [tools]
+python = "3.12.0"
 tiny = "latest"
+poetry = {version="1.7.1", pyproject="pyproject.toml"}
 #golang = {version="1.19.5", foo="bar"}
 
 [plugins]

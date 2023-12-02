@@ -114,6 +114,14 @@ impl ScriptManager {
         self
     }
 
+    pub fn prepend_path(&mut self, path: PathBuf) {
+        let k: OsString = "PATH".into();
+        let mut paths = env::split_paths(&self.env[&k]).collect::<Vec<_>>();
+        paths.insert(0, path);
+        self.env
+            .insert("PATH".into(), env::join_paths(paths).unwrap());
+    }
+
     pub fn get_script_path(&self, script: &Script) -> PathBuf {
         match script {
             Script::RunExternalCommand(path, _) => path.clone(),

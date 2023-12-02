@@ -6,8 +6,9 @@ use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::github::GithubRelease;
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
@@ -48,10 +49,10 @@ impl BunPlugin {
         tv.install_path().join("bin/bun")
     }
 
-    fn test_bun(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("bun -v");
-        CmdLineRunner::new(&config.settings, self.bun_bin(tv))
-            .with_pr(pr)
+    fn test_bun(&self, ctx: &InstallContext) -> Result<()> {
+        ctx.pr.set_message("bun -v");
+        CmdLineRunner::new(&ctx.config.settings, self.bun_bin(&ctx.tv))
+            .with_pr(&ctx.pr)
             .arg("-v")
             .execute()
     }
@@ -73,23 +74,25 @@ impl BunPlugin {
         Ok(tarball_path)
     }
 
-    fn install(&self, tv: &ToolVersion, pr: &ProgressReport, tarball_path: &Path) -> Result<()> {
-        pr.set_message(format!("installing {}", tarball_path.display()));
-        file::remove_all(tv.install_path())?;
-        file::create_dir_all(tv.install_path().join("bin"))?;
-        file::unzip(tarball_path, &tv.download_path())?;
+    fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
+        ctx.pr
+            .set_message(format!("installing {}", tarball_path.display()));
+        file::remove_all(ctx.tv.install_path())?;
+        file::create_dir_all(ctx.tv.install_path().join("bin"))?;
+        file::unzip(tarball_path, &ctx.tv.download_path())?;
         file::rename(
-            tv.download_path()
+            ctx.tv
+                .download_path()
                 .join(format!("bun-{}-{}", os(), arch()))
                 .join("bun"),
-            self.bun_bin(tv),
+            self.bun_bin(&ctx.tv),
         )?;
-        file::make_executable(&self.bun_bin(tv))?;
+        file::make_executable(&self.bun_bin(&ctx.tv))?;
         Ok(())
     }
 
-    fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        self.test_bun(config, tv, pr)
+    fn verify(&self, ctx: &InstallContext) -> Result<()> {
+        self.test_bun(ctx)
     }
 }
 
@@ -109,17 +112,15 @@ impl Plugin for BunPlugin {
         Ok(vec![".bun-version".into()])
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        assert!(matches!(&tv.request, ToolVersionRequest::Version { .. }));
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+        assert!(matches!(
+            &ctx.tv.request,
+            ToolVersionRequest::Version { .. }
+        ));
 
-        let tarball_path = self.download(tv, pr)?;
-        self.install(tv, pr, &tarball_path)?;
-        self.verify(config, tv, pr)?;
+        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
+        self.install(ctx, &tarball_path)?;
+        self.verify(ctx)?;
 
         Ok(())
     }

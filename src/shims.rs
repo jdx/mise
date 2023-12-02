@@ -45,7 +45,7 @@ fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
     if shim.exists() {
         let ts = ToolsetBuilder::new().build(config)?;
         if let Some((p, tv)) = ts.which(config, bin_name) {
-            if let Some(bin) = p.which(config, &tv, bin_name)? {
+            if let Some(bin) = p.which(config, &ts, &tv, bin_name)? {
                 return Ok(bin);
             }
         }
@@ -91,7 +91,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     let shims: HashSet<String> = ts
         .list_installed_versions(config)?
         .into_par_iter()
-        .flat_map(|(t, tv)| match list_tool_bins(config, &t, &tv) {
+        .flat_map(|(t, tv)| match list_tool_bins(config, ts, &t, &tv) {
             Ok(paths) => paths,
             Err(e) => {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
@@ -137,8 +137,13 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(config: &Config, t: &Tool, tv: &ToolVersion) -> Result<Vec<String>> {
-    Ok(t.list_bin_paths(config, tv)?
+fn list_tool_bins(
+    config: &Config,
+    ts: &Toolset,
+    t: &Tool,
+    tv: &ToolVersion,
+) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(config, ts, tv)?
         .into_iter()
         .par_bridge()
         .filter(|path| path.exists())

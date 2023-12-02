@@ -8,3 +8,5 @@
 ruby/Gemfile
 ruby/.ruby-version
 Library
+/pyproject.toml
+/poetry.lock

@@ -11,5 +11,6 @@ assert() {
 	fi
 }
 
+rtx plugins install poetry && rtx i
 eval "$(rtx activate bash)" && _rtx_hook
 rtx doctor
