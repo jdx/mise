@@ -114,7 +114,7 @@ impl Settings {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct SettingsBuilder {
     pub experimental: Option<bool>,
     pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
@@ -252,6 +252,67 @@ impl SettingsBuilder {
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.to_index_map().fmt(f)
+    }
+}
+
+impl Debug for SettingsBuilder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("SettingsBuilder");
+        if let Some(experimental) = self.experimental {
+            d.field("experimental", &experimental);
+        }
+        if let Some(missing_runtime_behavior) = &self.missing_runtime_behavior {
+            d.field("missing_runtime_behavior", &missing_runtime_behavior);
+        }
+        if let Some(always_keep_download) = self.always_keep_download {
+            d.field("always_keep_download", &always_keep_download);
+        }
+        if let Some(always_keep_install) = self.always_keep_install {
+            d.field("always_keep_install", &always_keep_install);
+        }
+        if let Some(legacy_version_file) = self.legacy_version_file {
+            d.field("legacy_version_file", &legacy_version_file);
+        }
+        if !self.legacy_version_file_disable_tools.is_empty() {
+            d.field(
+                "legacy_version_file_disable_tools",
+                &self.legacy_version_file_disable_tools,
+            );
+        }
+        if let Some(c) = self.plugin_autoupdate_last_check_duration {
+            d.field("plugin_autoupdate_last_check_duration", &c);
+        }
+        if !self.trusted_config_paths.is_empty() {
+            d.field("trusted_config_paths", &self.trusted_config_paths);
+        }
+        if let Some(verbose) = self.verbose {
+            d.field("verbose", &verbose);
+        }
+        if let Some(asdf_compat) = self.asdf_compat {
+            d.field("asdf_compat", &asdf_compat);
+        }
+        if let Some(jobs) = self.jobs {
+            d.field("jobs", &jobs);
+        }
+        if let Some(shorthands_file) = &self.shorthands_file {
+            d.field("shorthands_file", &shorthands_file);
+        }
+        if let Some(dds) = self.disable_default_shorthands {
+            d.field("disable_default_shorthands", &dds);
+        }
+        if !self.disable_tools.is_empty() {
+            d.field("disable_tools", &self.disable_tools);
+        }
+        if let Some(log_level) = self.log_level {
+            d.field("log_level", &log_level);
+        }
+        if let Some(raw) = self.raw {
+            d.field("raw", &raw);
+        }
+        if let Some(yes) = self.yes {
+            d.field("yes", &yes);
+        }
+        d.finish()
     }
 }
 
