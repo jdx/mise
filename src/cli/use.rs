@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::local::local;
-use crate::config::Config;
+use crate::config::{config_file, Config, MissingRuntimeBehavior};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::output::Output;
 use crate::plugins::PluginName;
+use crate::toolset::ToolsetBuilder;
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -50,30 +51,49 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let runtimes = self
-            .tool
-            .into_iter()
-            .map(|r| match &r.tvr {
-                Some(_) => r,
-                None => ToolArg::parse(&format!("{}@latest", r.plugin)),
-            })
-            .collect();
+    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&mut config)?;
+        ts.versions
+            .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
+        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        config.settings.missing_runtime_behavior = MissingRuntimeBehavior::AutoInstall;
+        ts.install_missing(&mut config, mpr)?;
+
         let path = match (self.global, self.path) {
             (true, _) => global_file(),
             (false, Some(p)) => config_file_from_dir(&p),
             (false, None) => config_file_from_dir(&dirs::CURRENT),
         };
-        local(
-            config,
-            out,
-            &path,
-            runtimes,
-            self.remove,
-            self.pin,
-            self.fuzzy,
-            false,
-        )
+        let is_trusted = config_file::is_trusted(&config.settings, &path);
+        let mut cf = match path.exists() {
+            true => config_file::parse(&path, is_trusted)?,
+            false => config_file::init(&path, is_trusted),
+        };
+
+        let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
+
+        for (plugin_name, tvl) in ts.versions {
+            let versions: Vec<String> = tvl
+                .versions
+                .into_iter()
+                .map(|tv| {
+                    if pin {
+                        tv.version
+                    } else {
+                        tv.request.version()
+                    }
+                })
+                .collect();
+            cf.replace_versions(&plugin_name, &versions);
+        }
+
+        for plugin_name in self.remove.unwrap_or_default() {
+            cf.remove_plugin(&plugin_name);
+        }
+        cf.save()?;
+        Ok(())
     }
 }
 
@@ -133,13 +153,8 @@ mod tests {
         assert_cli!("use", "--fuzzy", "tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
-        assert_cli!(
-            "use",
-            "--rm",
-            "tiny",
-            "--path",
-            &cf_path.to_string_lossy().to_string()
-        );
+        let p = cf_path.to_string_lossy().to_string();
+        assert_cli!("use", "--rm", "tiny", "--path", &p);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         let _ = file::remove_file(&cf_path);

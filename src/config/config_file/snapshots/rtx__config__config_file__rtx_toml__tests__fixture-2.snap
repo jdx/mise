@@ -3,29 +3,12 @@ source: src/config/config_file/rtx_toml.rs
 expression: cf.settings()
 ---
 SettingsBuilder {
-    experimental: None,
-    missing_runtime_behavior: Some(
-        Warn,
-    ),
-    always_keep_download: None,
-    always_keep_install: None,
-    legacy_version_file: None,
+    missing_runtime_behavior: Warn,
     legacy_version_file_disable_tools: {
         "disabled_tool_from_legacy_file",
     },
-    plugin_autoupdate_last_check_duration: None,
-    trusted_config_paths: {},
-    verbose: Some(
-        true,
-    ),
-    asdf_compat: None,
-    jobs: None,
-    shorthands_file: None,
-    disable_default_shorthands: None,
+    verbose: true,
     disable_tools: {
         "disabled_tool",
     },
-    log_level: None,
-    raw: None,
-    yes: None,
 }

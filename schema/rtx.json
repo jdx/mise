@@ -196,6 +196,10 @@
         "verbose": {
           "description": "display installation output",
           "type": "boolean"
+        },
+        "yes": {
+          "description": "assume yes for all prompts",
+          "type": "boolean"
         }
       }
     }

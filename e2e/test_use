@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+rtx rm --all tiny
+rtx i tiny@1.0.0
+rtx use tiny@1
+assert "rtx current tiny" "1.0.0"

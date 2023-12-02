@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ use crate::toolset::{
 use crate::ui::prompt;
 use crate::{dirs, env, file, parse_error};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct RtxToml {
     context: Context,
     path: PathBuf,
@@ -766,6 +766,35 @@ impl ConfigFile for RtxToml {
 
     fn is_global(&self) -> bool {
         global_config_files().iter().any(|p| p == &self.path)
+    }
+}
+
+impl Debug for RtxToml {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("RtxToml");
+        d.field("path", &self.path)
+            .field("toolset", &self.toolset.to_string())
+            .field("is_trusted", &self.is_trusted)
+            .field("settings", &self.settings);
+        if let Some(env_file) = &self.env_file {
+            d.field("env_file", env_file);
+        }
+        if !self.env.is_empty() {
+            d.field("env", &self.env);
+        }
+        if !self.env_remove.is_empty() {
+            d.field("env_remove", &self.env_remove);
+        }
+        if !self.path_dirs.is_empty() {
+            d.field("path_dirs", &self.path_dirs);
+        }
+        if !self.alias.is_empty() {
+            d.field("alias", &self.alias);
+        }
+        if !self.plugins.is_empty() {
+            d.field("plugins", &self.plugins);
+        }
+        d.finish()
     }
 }
 
