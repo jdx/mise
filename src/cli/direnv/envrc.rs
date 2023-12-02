@@ -41,12 +41,16 @@ impl Envrc {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
         for (k, v) in ts.env(&config) {
-            writeln!(
-                file,
-                "export {}={}",
-                shell_escape::unix::escape(k.into()),
-                shell_escape::unix::escape(v.into()),
-            )?;
+            if k == "PATH" {
+                writeln!(file, "PATH_add {}", v)?;
+            } else {
+                writeln!(
+                    file,
+                    "export {}={}",
+                    shell_escape::unix::escape(k.into()),
+                    shell_escape::unix::escape(v.into()),
+                )?;
+            }
         }
         for path in ts.list_paths(&config).into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;

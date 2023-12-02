@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::env::join_paths;
+use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
@@ -41,11 +41,15 @@ impl HookEnv {
             .build(&mut config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
-        let env = ts.env(&config);
+        let mut env = ts.env(&config);
+        let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
         let mut paths = config.path_dirs.clone();
+        if let Some(p) = env_path {
+            paths.extend(split_paths(&p).collect_vec());
+        }
         paths.extend(ts.list_paths(&config)); // load the active runtime paths
         diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
 
