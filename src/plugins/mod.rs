@@ -12,8 +12,9 @@ pub use script_manager::{Script, ScriptManager};
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
+use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 
@@ -81,15 +82,24 @@ pub trait Plugin: Debug + Send + Sync {
     ) -> Result<()> {
         unimplemented!()
     }
-    fn install_version(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport)
-        -> Result<()>;
+    fn install_version(&self, ctx: &InstallContext) -> Result<()>;
     fn uninstall_version(&self, _config: &Config, _tv: &ToolVersion) -> Result<()> {
         Ok(())
     }
-    fn list_bin_paths(&self, _config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         Ok(vec![tv.install_path().join("bin")])
     }
-    fn exec_env(&self, _config: &Config, _tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        _tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         Ok(HashMap::new())
     }
 

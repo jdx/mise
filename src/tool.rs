@@ -13,9 +13,10 @@ use versions::Versioning;
 
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::install_context::InstallContext;
 use crate::plugins::{ExternalPlugin, Plugin};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
 use crate::{dirs, file};
@@ -204,43 +205,37 @@ impl Tool {
         file::make_symlink(target, &link)
     }
 
-    pub fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &mut ProgressReport,
-        force: bool,
-    ) -> Result<()> {
-        if self.is_version_installed(tv) {
-            if force {
-                self.uninstall_version(config, tv, pr, false)?;
+    pub fn install_version(&self, mut ctx: InstallContext) -> Result<()> {
+        if self.is_version_installed(&ctx.tv) {
+            if ctx.force {
+                self.uninstall_version(ctx.config, &ctx.tv, &ctx.pr, false)?;
             } else {
                 return Ok(());
             }
         }
-        self.decorate_progress_bar(pr, Some(tv));
-        let _lock = self.get_lock(&tv.install_path(), force)?;
-        self.create_install_dirs(tv)?;
+        self.decorate_progress_bar(&mut ctx.pr, Some(&ctx.tv));
+        let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
+        self.create_install_dirs(&ctx.tv)?;
 
-        if let Err(e) = self.plugin.install_version(config, tv, pr) {
-            self.cleanup_install_dirs_on_error(&config.settings, tv);
+        if let Err(e) = self.plugin.install_version(&ctx) {
+            self.cleanup_install_dirs_on_error(&ctx.config.settings, &ctx.tv);
             return Err(e);
         }
-        self.cleanup_install_dirs(&config.settings, tv);
+        self.cleanup_install_dirs(&ctx.config.settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
-        touch_dirs.extend(config.config_files.keys().cloned());
+        touch_dirs.extend(ctx.config.config_files.keys().cloned());
         for path in touch_dirs {
             let err = file::touch_dir(&path);
             if let Err(err) = err {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(tv)) {
+        if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
-        pr.set_message("");
-        pr.finish();
+        ctx.pr.set_message("");
+        ctx.pr.finish();
 
         Ok(())
     }
@@ -308,26 +303,37 @@ impl Tool {
     pub fn parse_legacy_file(&self, path: &Path, settings: &Settings) -> Result<String> {
         self.plugin.parse_legacy_file(path, settings)
     }
-    pub fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    pub fn list_bin_paths(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolVersionRequest::System(_) => Ok(vec![]),
-            _ => self.plugin.list_bin_paths(config, tv),
+            _ => self.plugin.list_bin_paths(config, ts, tv),
         }
     }
-    pub fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    pub fn exec_env(
+        &self,
+        config: &Config,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         match tv.request {
             ToolVersionRequest::System(_) => Ok(HashMap::new()),
-            _ => self.plugin.exec_env(config, tv),
+            _ => self.plugin.exec_env(config, ts, tv),
         }
     }
 
     pub fn which(
         &self,
         config: &Config,
+        ts: &Toolset,
         tv: &ToolVersion,
         bin_name: &str,
     ) -> Result<Option<PathBuf>> {
-        let bin_paths = self.plugin.list_bin_paths(config, tv)?;
+        let bin_paths = self.plugin.list_bin_paths(config, ts, tv)?;
         for bin_path in bin_paths {
             let bin_path = bin_path.join(bin_name);
             if bin_path.exists() {

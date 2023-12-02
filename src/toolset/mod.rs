@@ -21,6 +21,7 @@ pub use tool_version_request::ToolVersionRequest;
 
 use crate::config::{Config, MissingRuntimeBehavior};
 use crate::env;
+use crate::install_context::InstallContext;
 use crate::plugins::PluginName;
 use crate::runtime_symlinks;
 use crate::shims;
@@ -160,13 +161,19 @@ impl Toolset {
                 .map(|_| {
                     let queue = queue.clone();
                     let config = &*config;
+                    let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
                             for tv in versions {
-                                let tv = tv.request.resolve(config, &t, tv.opts.clone(), true)?;
-                                let mut pr = mpr.add();
-                                t.install_version(config, &tv, &mut pr, force)?;
+                                let ctx = InstallContext {
+                                    config,
+                                    ts,
+                                    tv: tv.request.resolve(config, &t, tv.opts.clone(), true)?,
+                                    pr: mpr.add(),
+                                    force,
+                                };
+                                t.install_version(ctx)?;
                             }
                         }
                         Ok(())
@@ -288,7 +295,7 @@ impl Toolset {
         let mut entries: BTreeMap<String, String> = self
             .list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|(p, tv)| match p.exec_env(config, &tv) {
+            .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
@@ -314,7 +321,7 @@ impl Toolset {
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
         self.list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|(p, tv)| match p.list_bin_paths(config, &tv) {
+            .flat_map(|(p, tv)| match p.list_bin_paths(config, self, &tv) {
                 Ok(paths) => paths,
                 Err(e) => {
                     warn!("Error listing bin paths for {}: {:#}", tv, e);
@@ -327,7 +334,7 @@ impl Toolset {
         self.list_current_installed_versions(config)
             .into_par_iter()
             .find_first(|(p, tv)| {
-                if let Ok(x) = p.which(config, tv, bin_name) {
+                if let Ok(x) = p.which(config, self, tv, bin_name) {
                     x.is_some()
                 } else {
                     false
@@ -339,7 +346,7 @@ impl Toolset {
         Ok(self
             .list_installed_versions(config)?
             .into_par_iter()
-            .filter(|(p, tv)| match p.which(config, tv, bin_name) {
+            .filter(|(p, tv)| match p.which(config, self, tv, bin_name) {
                 Ok(x) => x.is_some(),
                 Err(e) => {
                     warn!("Error running which: {:#}", e);

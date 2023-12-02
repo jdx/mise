@@ -16,12 +16,12 @@ assert_contains "rtx node node-build --version" "node-build "
 # test asdf-nodejs
 rtx plugin i nodejs https://github.com/asdf-vm/asdf-nodejs.git
 rtx use nodejs@20.1.0
+rtx ls
 assert "rtx x -- node --version" "v20.1.0"
 assert_contains "rtx node nodebuild --version" "node-build "
 rtx use --rm node
 
 # RTX_LEGACY_VERSION_FILE env var
-rtx ls
 RTX_LEGACY_VERSION_FILE=1 assert_contains "rtx current node" "20.0.0"
 RTX_LEGACY_VERSION_FILE=0 assert_not_contains "rtx current node" "20.0.0"
 rtx plugin uninstall nodejs

@@ -7,9 +7,10 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::create_dir_all;
 use crate::git::Git;
+use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{cmd, env, file, http};
 
@@ -161,27 +162,23 @@ impl Plugin for PythonPlugin {
         Ok(vec![".python-version".to_string()])
     }
 
-    fn install_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
+    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
         self.install_python_build()?;
-        if matches!(tv.request, ToolVersionRequest::Ref(..)) {
+        if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
-        pr.set_message("running python-build");
-        let mut cmd = CmdLineRunner::new(&config.settings, self.python_build_bin())
-            .with_pr(pr)
-            .arg(tv.version.as_str())
-            .arg(tv.install_path())
-            .envs(&config.env);
-        if config.settings.verbose {
+        ctx.pr.set_message("running python-build");
+        let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.python_build_bin())
+            .with_pr(&ctx.pr)
+            .arg(ctx.tv.version.as_str())
+            .arg(&ctx.tv.install_path())
+            .envs(&ctx.config.env);
+        if ctx.config.settings.verbose {
             cmd = cmd.arg("--verbose");
         }
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
-            pr.set_message(format!("with patch file from: {patch_url}"));
+            ctx.pr
+                .set_message(format!("with patch file from: {patch_url}"));
             let http = http::Client::new()?;
             let resp = http.get(patch_url).send()?;
             resp.error_for_status_ref()?;
@@ -189,23 +186,30 @@ impl Plugin for PythonPlugin {
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {
-            let patch_file = patches_dir.join(format!("{}.patch", tv.version));
+            let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
             if patch_file.exists() {
-                pr.set_message(format!("with patch file: {}", patch_file.display()));
+                ctx.pr
+                    .set_message(format!("with patch file: {}", patch_file.display()));
                 let contents = file::read_to_string(&patch_file)?;
                 cmd = cmd.arg("--patch").stdin_string(contents);
             } else {
-                pr.warn(format!("patch file not found: {}", patch_file.display()));
+                ctx.pr
+                    .warn(format!("patch file not found: {}", patch_file.display()));
             }
         }
         cmd.execute()?;
-        self.test_python(config, tv, pr)?;
-        self.get_virtualenv(config, tv, Some(pr))?;
-        self.install_default_packages(config, tv, pr)?;
+        self.test_python(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.get_virtualenv(ctx.config, &ctx.tv, Some(&ctx.pr))?;
+        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 
-    fn list_bin_paths(&self, config: &Config, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         if let Some(virtualenv) = self.get_virtualenv(config, tv, None)? {
             Ok(vec![virtualenv.join("bin"), tv.install_path().join("bin")])
         } else {
@@ -213,7 +217,12 @@ impl Plugin for PythonPlugin {
         }
     }
 
-    fn exec_env(&self, config: &Config, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn exec_env(
+        &self,
+        config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<HashMap<String, String>> {
         if let Some(virtualenv) = self.get_virtualenv(config, tv, None)? {
             let hm = HashMap::from([(
                 "VIRTUAL_ENV".to_string(),

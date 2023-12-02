@@ -38,7 +38,7 @@ impl Which {
                 } else if self.plugin {
                     rtxprintln!(out, "{}", p.name);
                 } else {
-                    let path = p.which(&config, &tv, &self.bin_name)?;
+                    let path = p.which(&config, &ts, &tv, &self.bin_name)?;
                     rtxprintln!(out, "{}", path.unwrap().display());
                 }
                 Ok(())
