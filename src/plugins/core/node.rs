@@ -128,7 +128,7 @@ impl NodePlugin {
             .with_pr(pr)
             .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &opts.cflags {
+        if let Some(cflags) = &*env::RTX_NODE_CFLAGS {
             cmd = cmd.env("CFLAGS", cflags);
         }
         cmd
@@ -292,7 +292,7 @@ impl Plugin for NodePlugin {
     ) -> Result<()> {
         let opts = BuildOpts::new(tv)?;
         debug!("node build opts: {:#?}", opts);
-        if opts.compile {
+        if *env::RTX_NODE_COMPILE {
             self.install_compiled(config, pr, &opts)?;
         } else {
             self.install_precompiled(config, pr, &opts)?;
@@ -308,10 +308,8 @@ impl Plugin for NodePlugin {
 #[derive(Debug)]
 struct BuildOpts {
     version: String,
-    compile: bool,
     install_path: PathBuf,
     build_dir: PathBuf,
-    cflags: Option<String>,
     configure_cmd: String,
     make_cmd: String,
     make_install_cmd: String,
@@ -333,13 +331,9 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             build_dir: env::RTX_TMP_DIR.join(format!("node-v{v}")),
-            compile: *env::RTX_NODE_COMPILE || tv.opts.get("compile").is_some_and(|v| v == "true"),
-            cflags: env::RTX_NODE_CFLAGS
-                .clone()
-                .or_else(|| tv.opts.get("cflags").cloned()),
-            configure_cmd: configure_cmd(tv, &install_path),
-            make_cmd: make_cmd(tv),
-            make_install_cmd: make_install_cmd(tv),
+            configure_cmd: configure_cmd(&install_path),
+            make_cmd: make_cmd(),
+            make_install_cmd: make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
             source_tarball_url: env::RTX_NODE_MIRROR_URL
                 .join(&format!("v{v}/{source_tarball_name}"))?,
@@ -353,40 +347,31 @@ impl BuildOpts {
     }
 }
 
-fn configure_cmd(tv: &ToolVersion, install_path: &Path) -> String {
-    let configure_opts = env::RTX_NODE_CONFIGURE_OPTS
-        .clone()
-        .or_else(|| tv.opts.get("configure_opts").cloned());
+fn configure_cmd(install_path: &Path) -> String {
     let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
     if *env::RTX_NODE_NINJA {
         configure_cmd.push_str(" --ninja");
     }
-    if let Some(opts) = configure_opts {
+    if let Some(opts) = &*env::RTX_NODE_CONFIGURE_OPTS {
         configure_cmd.push_str(&format!(" {}", opts));
     }
     configure_cmd
 }
 
-fn make_cmd(tv: &ToolVersion) -> String {
+fn make_cmd() -> String {
     let mut make_cmd = env::RTX_NODE_MAKE.to_string();
     if let Some(concurrency) = *env::RTX_NODE_CONCURRENCY {
         make_cmd.push_str(&format!(" -j{concurrency}"));
     }
-    let make_opts = env::RTX_NODE_MAKE_OPTS
-        .clone()
-        .or_else(|| tv.opts.get("make_opts").cloned());
-    if let Some(opts) = make_opts {
+    if let Some(opts) = &*env::RTX_NODE_MAKE_OPTS {
         make_cmd.push_str(&format!(" {opts}"));
     }
     make_cmd
 }
 
-fn make_install_cmd(tv: &ToolVersion) -> String {
+fn make_install_cmd() -> String {
     let mut make_install_cmd = format!("{} install", &*env::RTX_NODE_MAKE);
-    let make_install_opts = env::RTX_NODE_MAKE_INSTALL_OPTS
-        .clone()
-        .or_else(|| tv.opts.get("make_install_opts").cloned());
-    if let Some(opts) = make_install_opts {
+    if let Some(opts) = &*env::RTX_NODE_MAKE_INSTALL_OPTS {
         make_install_cmd.push_str(&format!(" {opts}"));
     }
     make_install_cmd
