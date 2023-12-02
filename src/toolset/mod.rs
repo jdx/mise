@@ -287,12 +287,15 @@ impl Toolset {
     }
     pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
         let mut env = self.env(config);
-        let path_env = self.path_env(config);
+        let mut path_env = self.path_env(config);
+        if let Some(path) = env.get("PATH") {
+            path_env = format!("{}:{}", path, path_env);
+        }
         env.insert("PATH".to_string(), path_env);
         env
     }
     pub fn env(&self, config: &Config) -> BTreeMap<String, String> {
-        let mut entries: BTreeMap<String, String> = self
+        let entries = self
             .list_current_installed_versions(config)
             .into_par_iter()
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
@@ -302,12 +305,21 @@ impl Toolset {
                     Vec::new()
                 }
             })
-            .collect::<Vec<(String, String)>>()
+            .collect::<Vec<(String, String)>>();
+        let add_paths = entries
+            .iter()
+            .filter(|(k, _)| k == "RTX_ADD_PATH")
+            .map(|(_, v)| v)
+            .join(":");
+        let mut entries: BTreeMap<String, String> = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
             .filter(|(k, _)| !k.starts_with("RTX_TOOL_OPTS__"))
             .rev()
             .collect();
+        if !add_paths.is_empty() {
+            entries.insert("PATH".to_string(), add_paths);
+        }
         entries.extend(config.env.clone());
         entries
     }
