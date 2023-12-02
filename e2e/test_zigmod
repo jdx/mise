@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
 eval "$(rtx activate bash)" && eval "$(rtx hook-env)"
