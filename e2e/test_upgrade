@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+rtx use tiny@3
+rtx uninstall --all tiny
+rtx install tiny
+assert_contains "rtx ls --installed tiny" "3.1.0"
+
+mv "$RTX_DATA_DIR/installs/tiny/"{3.1.0,3.0.0}
+assert_contains "rtx ls --installed tiny" "3.0.0"
+assert_not_contains "rtx ls --installed tiny" "3.1.0"
+
+rtx upgrade tiny
+assert_contains "rtx ls --installed tiny" "3.1.0"
+assert_not_contains "rtx ls --installed tiny" "3.0.0"
+
+rtx use tiny@latest
