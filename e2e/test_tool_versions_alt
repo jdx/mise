@@ -10,17 +10,17 @@ git checkout .alternate-tool-versions
 rtx i shfmt
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
-  exit 1
+	exit 1
 fi
 
 assert() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
+	actual="$($1)"
+	actual="${actual%$'\n'}"
+	expected="${2%$'\n'}"
+	if [[ "$actual" != "$expected" ]]; then
+		echo "assertion failed, expected '$expected', got '$actual'"
+		exit 1
+	fi
 }
 
 assert "rtx local" "shfmt 3.5.0"
@@ -30,7 +30,7 @@ assert "rtx local -p" "shfmt 3.6.0"
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
-  exit 1
+	exit 1
 fi
 
 rtx local -p shfmt@3.5.0

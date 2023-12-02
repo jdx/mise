@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317
 
 set -e
 
@@ -59,7 +60,7 @@ exit 0 # disable for now for faster releases
 rtx exec node -- node -v
 rtx exec python -- python -V
 rtx exec direnv -- direnv --version
-rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
 rtx exec elixir erlang -- elixir --version
 rtx exec golang -- go version
 rtx exec java -- java -version
