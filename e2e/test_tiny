@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 rtx cache clean
-rm -rf .rtx/installs/tiny
+rm -rf "$RTX_DATA_DIR/installs/tiny"
 RTX_CONFIRM=y rtx ls # auto-trust
 
 # this will fail when calling bin/list-all, but it won't stop it from executing
@@ -20,9 +20,9 @@ assert "rtx current tiny" "3.1.0"
 
 # test outdated/upgrade
 rtx settings set experimental true
-rm -rf .rtx/installs/tiny
+rm -rf "$RTX_DATA_DIR/installs/tiny"
 rtx use tiny@3
-mv .rtx/installs/tiny/{3.1.0,3.0.0}
+mv "$RTX_DATA_DIR/installs/tiny/"{3.1.0,3.0.0}
 assert "rtx current tiny" "3.0.0"
 assert "rtx outdated tiny" "Tool    Requested  Current  Latest
 tiny    3          3.0.0    3.1.0"
