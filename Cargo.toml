@@ -20,7 +20,7 @@ include = [
     "/build.rs",
     "/zipsign.pub",
 ]
-rust-version = "1.65.0"
+rust-version = "1.70.0"
 build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -141,3 +141,9 @@ pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-macos-x64{ arc
 pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-arm64{ archive-suffix }"
 [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
 pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-x64{ archive-suffix }"
+
+[package.metadata.cargo-machete]
+ignored = [
+  "built",
+  "openssl",
+]
