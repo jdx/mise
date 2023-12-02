@@ -10,9 +10,9 @@ setup_env() {
   export PATH="$ROOT/target/debug:$PATH"
   export RTX_USE_TOML="0"
   export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
-  export RTX_DATA_DIR="$ROOT/e2e/.rtx"
-  export RTX_CACHE_DIR="$ROOT/e2e/.rtx/cache"
-  export RTX_CONFIG_DIR="$ROOT/e2e/.rtx/config"
+  export RTX_DATA_DIR="$HOME/.rtx/e2e"
+  export RTX_CACHE_DIR="$HOME/.rtx/e2e/cache"
+  export RTX_CONFIG_DIR="$HOME/.rtx/e2e/config"
   export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
   export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
   export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
