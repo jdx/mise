@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 
 assert() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
+	actual="$($1)"
+	actual="${actual%$'\n'}"
+	expected="${2%$'\n'}"
+	if [[ "$actual" != "$expected" ]]; then
+		echo "assertion failed, expected '$expected', got '$actual'"
+		exit 1
+	fi
 }
 assert_raises() {
-  if ! $1; then
-    echo "assertion failed: $1"
-    exit 1
-  fi
+	if ! $1; then
+		echo "assertion failed: $1"
+		exit 1
+	fi
 }
 
 export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
@@ -52,7 +52,7 @@ tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb6627394
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
-  exit 1
+	exit 1
 fi
 
 assert_raises "rtx uninstall shfmt@3.6.0"
@@ -76,7 +76,7 @@ tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb6627394
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
-  exit 1
+	exit 1
 fi
 
 rtx local --rm shfmt
@@ -93,7 +93,6 @@ tiny = \"latest\"
 [plugins]
 tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4\"
 "
-
 
 export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
 
@@ -115,7 +114,7 @@ shfmt      3.5.0 # test comment
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
-  exit 1
+	exit 1
 fi
 
 rtx local shfmt@3.6.0
@@ -127,5 +126,5 @@ shfmt      3.6.0 # test comment
 
 rtx exec -- shfmt --version >&2
 if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
-  exit 1
+	exit 1
 fi

@@ -78,20 +78,22 @@ clean:
     rm -rf *.profraw
     rm -rf coverage
 
+scripts := "scripts/*.sh e2e/{test_,run_}* e2e/*.sh"
+
 # clippy, cargo fmt --check, and just --fmt
 lint:
     cargo clippy -- -Dwarnings
     cargo fmt --all -- --check
-    shellcheck scripts/*.sh
-    shfmt -d scripts/*.sh
+    shellcheck -x {{ scripts }}
+    shfmt -d {{ scripts }}
     just --unstable --fmt --check
 
 # runs linters but makes fixes when possible
 lint-fix:
     cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
     cargo fmt --all
-    shellcheck scripts/*.sh
-    shfmt -w scripts/*.sh
+    shellcheck -x {{ scripts }}
+    shfmt -w {{ scripts }}
     just --unstable --fmt
 
 # regenerate README.md
