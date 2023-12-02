@@ -3,9 +3,6 @@ use std::sync::Arc;
 
 use eyre::Result;
 use eyre::WrapErr;
-use itertools::Itertools;
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
@@ -52,64 +49,33 @@ impl Upgrade {
 
     fn upgrade(&self, config: &mut Config, outdated: OutputVec) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
-        ThreadPoolBuilder::new()
-            .num_threads(config.settings.jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                self.install_new_versions(config, &mpr, outdated)?;
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
-                let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-                shims::reshim(config, &ts).wrap_err("failed to reshim")?;
-                runtime_symlinks::rebuild(config)?;
-
-                Ok(())
+        let new_versions = outdated
+            .iter()
+            .map(|(_, tv, latest)| {
+                let mut tv = tv.clone();
+                tv.version = latest.clone();
+                tv
             })
-    }
-
-    fn install_new_versions(
-        &self,
-        config: &Config,
-        mpr: &MultiProgressReport,
-        outdated: OutputVec,
-    ) -> Result<()> {
-        let grouped_tool_versions: GroupedToolVersions = outdated
-            .into_iter()
-            .group_by(|(t, _, _)| t.clone())
-            .into_iter()
-            .map(|(t, tvs)| (t, tvs.map(|(_, tv, latest)| (tv, latest)).collect()))
             .collect();
-        grouped_tool_versions
-            .into_par_iter()
-            .map(|(tool, versions)| {
-                for (tv, latest) in versions {
-                    let mut pr = mpr.add();
-                    self.install_new_version(config, &tool, &tv, latest, &mut pr)?;
-                    self.uninstall_old_version(config, &tool, &tv, &mut pr)?;
-                }
-                Ok(())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(())
-    }
 
-    fn install_new_version(
-        &self,
-        config: &Config,
-        tool: &Tool,
-        tv: &ToolVersion,
-        latest: String,
-        pr: &mut ProgressReport,
-    ) -> Result<()> {
-        let mut tv = tv.clone();
-        tv.version = latest;
-        tool.decorate_progress_bar(pr, Some(&tv));
-        match tool.install_version(config, &tv, pr, false) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to install {tv}")))
-            }
+        let to_remove = outdated
+            .into_iter()
+            .filter(|(tool, tv, _)| tool.is_version_installed(tv))
+            .map(|(tool, tv, _)| (tool, tv))
+            .collect::<Vec<_>>();
+
+        ts.install_versions(config, new_versions, &mpr, false)?;
+        for (tool, tv) in to_remove {
+            let mut pr = mpr.add();
+            self.uninstall_old_version(config, &tool, &tv, &mut pr)?;
         }
+
+        let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+        shims::reshim(config, &ts).wrap_err("failed to reshim")?;
+        runtime_symlinks::rebuild(config)?;
+        Ok(())
     }
 
     fn uninstall_old_version(
@@ -134,4 +100,3 @@ impl Upgrade {
 }
 
 type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
-type GroupedToolVersions = Vec<(Arc<Tool>, Vec<(ToolVersion, String)>)>;
