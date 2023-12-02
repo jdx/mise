@@ -11,7 +11,7 @@ where
 {
     let (tx, rx) = mpsc::channel();
     thread::scope(|s| {
-        s.spawn(|| {
+        s.spawn(move || {
             let result = f();
             // If sending fails, the timeout has already been reached.
             let _ = tx.send(result);

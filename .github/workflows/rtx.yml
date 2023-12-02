@@ -24,17 +24,19 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
-      - uses: taiki-e/install-action@nextest
       - name: Run cargo nextest
         run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
-      - uses: taiki-e/install-action@just
       - run: just lint
-      - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
 
   coverage:
     name: coverage-${{matrix.tranche}}
