@@ -77,7 +77,16 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     let rtx_bin = file::which("rtx").unwrap_or(env::RTX_EXE.clone());
 
     create_dir_all(&*dirs::SHIMS)?;
-    let existing_shims = list_executables_in_dir(&dirs::SHIMS)?;
+
+    let existing_shims = list_executables_in_dir(&dirs::SHIMS)?
+        .into_par_iter()
+        .filter(|bin| {
+            dirs::SHIMS
+                .join(bin)
+                .read_link()
+                .is_ok_and(|p| p == rtx_bin)
+        })
+        .collect::<HashSet<_>>();
 
     let shims: HashSet<String> = ts
         .list_installed_versions(config)?
