@@ -27,7 +27,7 @@ required system dependencies.
 - `RTX_NODE_BUILD` [bool]: See [Moving away from node-build](#moving-away-from-node-build) below.
 - `RTX_NODE_BUILD_REPO` [string]: the default is `https://github.com/nodenv/node-build.git`
 - `RTX_NODE_VERIFY` [bool]: Verify the downloaded assets using GPG. Defaults to `true`.
-- `RTX_NODE_NINJA` [bool]: Use ninja instead of make to compile nodel. Defaults to `true` if installed.
+- `RTX_NODE_NINJA` [bool]: Use ninja instead of make to compile node. Defaults to `true` if installed.
 - `RTX_NODE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries. Can also be set across all languages with [`RTX_NODE__COMPILE`](https://github.com/jdx/rtx#rtx_node_compile1)
 - `RTX_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores
 - `RTX_NODE_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-npm-packages`
@@ -36,21 +36,6 @@ required system dependencies.
 - `RTX_NODE_CONFIGURE_OPTS` [string]: Additional `./configure` options.
 - `RTX_NODE_MAKE_OPTS` [string]: Additional `make` options.
 - `RTX_NODE_MAKE_INSTALL_OPTS` [string]: Additional `make install` options.
-
-## Tool Options
-
-The following are example options that can be set in `.rtx.toml` files.
-Note env vars take precedence over these.
-
-```toml
-[tool.node]
-version = "20"
-compile = true # do not use pre-compiled binaries
-cflags = "-O3 -march=native" # additional CFLAGS options
-configure_opts = "--debug" # command line options to pass to ./configure
-make_opts = "-j 4"         # command line options to pass to make
-make_install_opts = "-j 4" # command line options to pass to make install
-```
 
 ## Default node packages
 
