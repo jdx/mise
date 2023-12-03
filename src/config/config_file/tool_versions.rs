@@ -75,6 +75,7 @@ impl ToolVersions {
 
         cf.plugins = Self::parse_plugins(&s)?;
         cf.populate_toolset();
+        trace!("{cf}");
         Ok(cf)
     }
 

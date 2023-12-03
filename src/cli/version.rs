@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use versions::Versioning;
 
 use crate::build_time::{built_info, BUILD_TIME};
+use crate::cli::self_update::SelfUpdate;
 use crate::config::Config;
 use crate::env::CI;
 use crate::file::modified_duration;
@@ -70,7 +71,7 @@ fn show_latest() {
     }
     if let Some(latest) = check_for_new_version(duration::DAILY) {
         warn!("rtx version {} available", latest);
-        if cfg!(feature = "self_update") {
+        if SelfUpdate::is_available() {
             let cmd = style("rtx self-update").bright().yellow().for_stderr();
             warn!("To update, run {}", cmd);
         }

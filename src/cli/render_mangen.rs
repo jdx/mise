@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::cli::{version, Cli};
 use crate::config::Config;
 use crate::output::Output;
@@ -16,6 +17,7 @@ pub struct RenderMangen {}
 impl RenderMangen {
     pub fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
         let cli = Cli::command()
+            .subcommand(SelfUpdate::command())
             .version(&*version::RAW_VERSION)
             .disable_colored_help(true);
 
