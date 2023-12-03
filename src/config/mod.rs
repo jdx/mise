@@ -96,6 +96,11 @@ impl Config {
         config_track.join().unwrap();
 
         let (env, env_sources) = load_env(&config_files);
+
+        if !settings.experimental && env::RTX_ENV.is_some() {
+            warn!("RTX_ENV is set but RTX_EXPERIMENTAL is not. Ignoring RTX_ENV.");
+        }
+
         let config = Self {
             env,
             env_sources,
@@ -217,13 +222,11 @@ impl Config {
         let config_files = tracker
             .list_all()?
             .into_par_iter()
-            .map(|path| {
-                match config_file::parse(&path, config_file::is_trusted(&self.settings, &path)) {
-                    Ok(cf) => Some((path, cf)),
-                    Err(err) => {
-                        error!("Error loading config file: {:#}", err);
-                        None
-                    }
+            .map(|path| match config_file::parse(&self.settings, &path) {
+                Ok(cf) => Some((path, cf)),
+                Err(err) => {
+                    error!("Error loading config file: {:#}", err);
+                    None
                 }
             })
             .collect::<Vec<_>>()
@@ -416,7 +419,6 @@ fn parse_config_file(
     legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
     tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
-    let is_trusted = config_file::is_trusted(settings, f);
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
             let tools = tools
@@ -427,7 +429,7 @@ fn parse_config_file(
             LegacyVersionFile::parse(settings, f.into(), &tools)
                 .map(|f| Box::new(f) as Box<dyn ConfigFile>)
         }
-        None => config_file::parse(f, is_trusted),
+        None => config_file::parse(settings, f),
     }
 }
 

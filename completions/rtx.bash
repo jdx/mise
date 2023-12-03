@@ -3399,13 +3399,21 @@ _rtx() {
             return 0
             ;;
         rtx__use)
-            opts="-g -p -j -r -y -v -h --pin --fuzzy --remove --global --path --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
+            opts="-g -e -p -j -r -y -v -h --pin --fuzzy --remove --global --env --path --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --remove)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --env)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -e)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
