@@ -130,8 +130,8 @@ impl Plugin for DenoPlugin {
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
         let bin_paths = vec![
-            tv.install_path().join("bin"),
-            tv.install_path().join(".deno/bin"),
+            tv.install_short_path().join("bin"),
+            tv.install_short_path().join(".deno/bin"),
         ];
         Ok(bin_paths)
     }

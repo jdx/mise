@@ -80,6 +80,18 @@ impl ToolVersion {
         };
         dirs::INSTALLS.join(&self.plugin_name).join(pathname)
     }
+    pub fn install_short_path(&self) -> PathBuf {
+        let pathname = match &self.request {
+            ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
+            _ => self.tv_short_pathname(),
+        };
+        let sp = dirs::INSTALLS.join(&self.plugin_name).join(pathname);
+        if sp.exists() {
+            sp
+        } else {
+            self.install_path()
+        }
+    }
     pub fn cache_path(&self) -> PathBuf {
         dirs::CACHE.join(&self.plugin_name).join(self.tv_pathname())
     }
@@ -102,6 +114,12 @@ impl ToolVersion {
             ToolVersionRequest::Ref(_, r) => format!("ref-{}", r),
             ToolVersionRequest::Path(_, p) => format!("path-{}", hash_to_str(p)),
             ToolVersionRequest::System(_) => "system".to_string(),
+        }
+    }
+    fn tv_short_pathname(&self) -> String {
+        match &self.request {
+            ToolVersionRequest::Version(_, v) => v.to_string(),
+            _ => self.tv_pathname(),
         }
     }
 
