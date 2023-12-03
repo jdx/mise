@@ -1,6 +1,6 @@
 ---
 source: src/cli/use.rs
-expression: "fs::read_to_string(&cf_path).unwrap()"
+expression: output
 ---
-tiny 3
+rtx ~/cwd/.test-tool-versions tiny@3
 
