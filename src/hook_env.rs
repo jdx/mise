@@ -123,8 +123,8 @@ pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
 
 pub fn get_watch_files(watch_files: &[PathBuf]) -> BTreeSet<PathBuf> {
     let mut watches = BTreeSet::new();
-    if dirs::ROOT.exists() {
-        watches.insert(dirs::ROOT.clone());
+    if dirs::DATA.exists() {
+        watches.insert(dirs::DATA.clone());
     }
     for cf in watch_files {
         watches.insert(cf.clone());

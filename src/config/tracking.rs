@@ -18,7 +18,7 @@ pub struct Tracker {
 impl Tracker {
     pub fn new() -> Self {
         Self {
-            tracking_dir: dirs::ROOT.join("tracked-config-files"),
+            tracking_dir: dirs::DATA.join("tracked-config-files"),
             ..Default::default()
         }
     }
