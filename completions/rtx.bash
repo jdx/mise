@@ -553,7 +553,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -y -v -h -V --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help render-mangen help"
+            opts="-j -r -y -v -h -V --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-help render-mangen self-update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1411,7 +1411,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which render-help render-mangen help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-help render-mangen self-update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2921,7 +2921,7 @@ _rtx() {
             return 0
             ;;
         rtx__self__update)
-            opts="-j -r -y -v -h --debug --install-missing --jobs --log-level --raw --yes --trace --verbose --help"
+            opts="-f -y -j -r -v -h --force --no-plugins --yes --debug --install-missing --jobs --log-level --raw --trace --verbose --help [VERSION]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

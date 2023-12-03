@@ -63,9 +63,7 @@ test-coverage:
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         rtx trust
-        RTX_SELF_UPDATE_VERSION=1.0.0 rtx self-update <<EOF
-        y
-    EOF
+        rtx self-update -fy
     fi
     cargo llvm-cov report --lcov --output-path lcov.info
 

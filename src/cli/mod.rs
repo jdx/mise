@@ -1,3 +1,4 @@
+use crate::cli::self_update::SelfUpdate;
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 use log::LevelFilter;
@@ -38,7 +39,6 @@ mod render_help;
 #[cfg(feature = "clap_mangen")]
 mod render_mangen;
 mod reshim;
-#[cfg(feature = "self_update")]
 mod self_update;
 mod settings;
 mod shell;
@@ -84,8 +84,6 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
-    #[cfg(feature = "self_update")]
-    SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Sync(sync::Sync),
@@ -133,8 +131,6 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run(config, out),
             Self::Prune(cmd) => cmd.run(config, out),
             Self::Reshim(cmd) => cmd.run(config, out),
-            #[cfg(feature = "self_update")]
-            Self::SelfUpdate(cmd) => cmd.run(config, out),
             Self::Settings(cmd) => cmd.run(config, out),
             Self::Shell(cmd) => cmd.run(config, out),
             Self::Sync(cmd) => cmd.run(config, out),
@@ -164,7 +160,10 @@ impl Cli {
     }
 
     pub fn new_with_external_commands(config: &Config) -> Self {
-        let external_commands = external::commands(config);
+        let mut external_commands = external::commands(config);
+        if SelfUpdate::is_available() {
+            external_commands.push(SelfUpdate::command());
+        }
         Self {
             command: Self::command().subcommands(external_commands.clone()),
             external_commands,
@@ -228,6 +227,9 @@ impl Cli {
             config.settings.verbose = true;
         }
         if let Some((command, sub_m)) = matches.subcommand() {
+            if command == "self-update" {
+                return SelfUpdate::from_arg_matches(sub_m)?.run(config, out);
+            }
             external::execute(&config, command, sub_m, self.external_commands)?;
         }
         let cmd = Commands::from_arg_matches(&matches)?;
