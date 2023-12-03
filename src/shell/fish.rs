@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use indoc::formatdoc;
-
 use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]

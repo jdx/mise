@@ -230,7 +230,6 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use indoc::indoc;
     use insta::{assert_display_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 

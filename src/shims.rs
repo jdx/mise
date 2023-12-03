@@ -6,7 +6,6 @@ use std::process::exit;
 
 use color_eyre::eyre::{eyre, Result};
 use eyre::WrapErr;
-use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
