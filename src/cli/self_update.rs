@@ -99,10 +99,11 @@ impl SelfUpdate {
     }
 
     pub fn is_available() -> bool {
-        !env::RTX_EXE
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("etc").join(".disable-self-update").exists())
+        !std::fs::canonicalize(&*env::RTX_EXE)
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("lib").join(".disable-self-update").exists())
             .unwrap_or_default()
     }
 
