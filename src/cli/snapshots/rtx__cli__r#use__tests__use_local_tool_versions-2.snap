@@ -2,6 +2,5 @@
 source: src/cli/use.rs
 expression: "file::read_to_string(&cf_path).unwrap()"
 ---
-[tools]
-tiny = "2.1.0"
+tiny 3
 
