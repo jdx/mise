@@ -3,6 +3,7 @@ use std::io::Cursor;
 use clap_complete::generate;
 use color_eyre::eyre::Result;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
@@ -28,7 +29,8 @@ impl Completion {
         };
 
         let mut c = Cursor::new(Vec::new());
-        generate(shell, &mut Cli::command(), "rtx", &mut c);
+        let mut cmd = Cli::command().subcommand(SelfUpdate::command());
+        generate(shell, &mut cmd, "rtx", &mut c);
         rtxprintln!(out, "{}", String::from_utf8(c.into_inner()).unwrap());
 
         Ok(())

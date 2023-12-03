@@ -1,7 +1,9 @@
 use clap::builder::StyledStr;
 use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
+use itertools::Itertools;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::file;
@@ -30,6 +32,7 @@ impl RenderHelp {
 
 fn render_commands() -> String {
     let mut cli = Cli::command()
+        .subcommand(SelfUpdate::command())
         .term_width(80)
         .max_term_width(80)
         .disable_help_subcommand(true)
@@ -42,7 +45,10 @@ fn render_commands() -> String {
 
     "#
     );
-    for command in cli.get_subcommands_mut() {
+    for command in cli
+        .get_subcommands_mut()
+        .sorted_by_cached_key(|c| c.get_name().to_string())
+    {
         match command.has_subcommands() {
             true => {
                 let name = command.get_name().to_string();

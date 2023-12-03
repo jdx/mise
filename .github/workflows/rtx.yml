@@ -99,10 +99,7 @@ jobs:
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
-      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
-        env:
-          CROSS: "1"
-      - run: scripts/build-tarball.sh rtx-nonup --release --features openssl/vendored --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored --target ${{matrix.target}}
         env:
           CROSS: "1"
       - uses: actions/upload-artifact@v3
@@ -134,8 +131,7 @@ jobs:
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
-      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored,self_update --target ${{matrix.target}}
-      - run: scripts/build-tarball.sh rtx-nonup --release --features openssl/vendored --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored --target ${{matrix.target}}
       - uses: actions/upload-artifact@v3
         with:
           name: tarball-${{matrix.target}}

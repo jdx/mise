@@ -61,6 +61,7 @@ impl RtxToml {
         let mut rf = Self::init(path, is_trusted);
         let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
+        trace!("{rf}");
         Ok(rf)
     }
 
