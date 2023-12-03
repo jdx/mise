@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
+use console::style;
+use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::config::{config_file, Config, MissingRuntimeBehavior};
+use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::file::display_path;
 use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::toolset::ToolsetBuilder;
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -51,15 +53,13 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
+            .with_install_missing()
             .build(&mut config)?;
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
-        config.settings.missing_runtime_behavior = MissingRuntimeBehavior::AutoInstall;
-        ts.install_missing(&mut config, mpr)?;
 
         let path = match (self.global, self.path) {
             (true, _) => global_file(),
@@ -93,6 +93,14 @@ impl Use {
             cf.remove_plugin(&plugin_name);
         }
         cf.save()?;
+        let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
+        rtxprintln!(
+            out,
+            "{} {} {}",
+            style("rtx").dim(),
+            display_path(&path),
+            style(tools).cyan()
+        );
         Ok(())
     }
 }
@@ -137,24 +145,24 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use insta::assert_snapshot;
 
-    use crate::{assert_cli, dirs, file};
+    use crate::{assert_cli_snapshot, dirs, file};
 
     #[test]
     fn test_use_local() {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli!("use", "tiny@2");
+        assert_cli_snapshot!("use", "tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
-        assert_cli!("use", "--pin", "tiny");
+        assert_cli_snapshot!("use", "--pin", "tiny");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
-        assert_cli!("use", "--fuzzy", "tiny@2");
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli!("use", "--rm", "tiny", "--path", &p);
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         let _ = file::remove_file(&cf_path);
@@ -165,7 +173,7 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli!("use", "tiny@3");
+        assert_cli_snapshot!("use", "tiny@3");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
     }
 
@@ -175,7 +183,7 @@ mod tests {
         let orig = file::read_to_string(&cf_path).unwrap();
         let _ = file::remove_file(&cf_path);
 
-        assert_cli!("use", "-g", "tiny@2");
+        assert_cli_snapshot!("use", "-g", "tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap());
 
         file::write(&cf_path, orig).unwrap();

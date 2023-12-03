@@ -1,6 +1,6 @@
 ---
 source: src/cli/use.rs
-expression: "file::read_to_string(&cf_path).unwrap()"
+expression: output
 ---
-[tools]
-tiny = "2"
+rtx ~/cwd/.test.rtx.toml tiny
+
