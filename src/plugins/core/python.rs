@@ -5,7 +5,7 @@ use color_eyre::eyre::{eyre, Result};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::create_dir_all;
+use crate::file::{create_dir_all, display_path};
 use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -111,12 +111,11 @@ impl PythonPlugin {
                     virtualenv = project_root.join(virtualenv);
                 }
             }
-            if !virtualenv.exists() || !self.check_venv_python(&virtualenv, tv)? {
+            if !virtualenv.exists() {
                 info!("setting up virtualenv at: {}", virtualenv.display());
                 let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv))
                     .arg("-m")
                     .arg("venv")
-                    .arg("--clear")
                     .arg(&virtualenv)
                     .envs(&config.env);
                 if let Some(pr) = pr {
@@ -124,17 +123,25 @@ impl PythonPlugin {
                 }
                 cmd.execute()?;
             }
+            self.check_venv_python(&virtualenv, tv)?;
             Ok(Some(virtualenv))
         } else {
             Ok(None)
         }
     }
 
-    fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> Result<bool> {
+    fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> Result<()> {
         let symlink = virtualenv.join("bin/python");
         let target = tv.install_path().join("bin/python");
         let symlink_target = symlink.read_link().unwrap_or_default();
-        Ok(symlink_target == target)
+        ensure!(
+            symlink_target == target,
+            "expected venv {} to point to {}.\nTry deleting the venv at {}.",
+            display_path(&symlink),
+            display_path(&target),
+            display_path(virtualenv)
+        );
+        Ok(())
     }
 
     fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
@@ -199,22 +206,11 @@ impl Plugin for PythonPlugin {
         }
         cmd.execute()?;
         self.test_python(ctx.config, &ctx.tv, &ctx.pr)?;
-        self.get_virtualenv(ctx.config, &ctx.tv, Some(&ctx.pr))?;
+        if let Err(e) = self.get_virtualenv(ctx.config, &ctx.tv, Some(&ctx.pr)) {
+            warn!("failed to get virtualenv: {e}");
+        }
         self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
         Ok(())
-    }
-
-    fn list_bin_paths(
-        &self,
-        config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
-        if let Some(virtualenv) = self.get_virtualenv(config, tv, None)? {
-            Ok(vec![virtualenv.join("bin"), tv.install_path().join("bin")])
-        } else {
-            Ok(vec![tv.install_path().join("bin")])
-        }
     }
 
     fn exec_env(
@@ -223,14 +219,23 @@ impl Plugin for PythonPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<HashMap<String, String>> {
-        if let Some(virtualenv) = self.get_virtualenv(config, tv, None)? {
-            let hm = HashMap::from([(
-                "VIRTUAL_ENV".to_string(),
-                virtualenv.to_string_lossy().to_string(),
-            )]);
-            Ok(hm)
-        } else {
-            Ok(HashMap::new())
-        }
+        let hm = match self.get_virtualenv(config, tv, None) {
+            Err(e) => {
+                warn!("failed to get virtualenv: {e}");
+                HashMap::new()
+            }
+            Ok(Some(virtualenv)) => HashMap::from([
+                (
+                    "VIRTUAL_ENV".to_string(),
+                    virtualenv.to_string_lossy().to_string(),
+                ),
+                (
+                    "RTX_ADD_PATH".to_string(),
+                    virtualenv.join("bin").to_string_lossy().to_string(),
+                ),
+            ]),
+            Ok(None) => HashMap::new(),
+        };
+        Ok(hm)
     }
 }
