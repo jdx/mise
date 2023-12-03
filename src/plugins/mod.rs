@@ -92,7 +92,7 @@ pub trait Plugin: Debug + Send + Sync {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        Ok(vec![tv.install_path().join("bin")])
+        Ok(vec![tv.install_short_path().join("bin")])
     }
     fn exec_env(
         &self,

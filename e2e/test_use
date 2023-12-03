@@ -7,3 +7,5 @@ rtx rm --all tiny
 rtx i tiny@1.0.0
 rtx use tiny@1
 assert "rtx current tiny" "1.0.0"
+rtx use tiny@3
+assert "rtx current tiny" "3.1.0"
