@@ -3,7 +3,10 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-tar -xvJf "dist/rtx-nonup-$RTX_VERSION-linux-x64.tar.xz"
+mkdir -p rtx/lib
+touch rtx/lib/.disable-self-update
+
+tar -xvJf "dist/rtx-$RTX_VERSION-linux-x64.tar.xz"
 fpm -s dir -t deb \
 	--name rtx \
 	--license MIT \
@@ -13,9 +16,10 @@ fpm -s dir -t deb \
 	--url "https://github.com/jdx/rtx" \
 	--maintainer "Jeff Dickey @jdx" \
 	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/lib/.disable-self-update=/usr/lib/rtx/.disable-self-update \
 	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
-tar -xvJf "dist/rtx-nonup-$RTX_VERSION-linux-arm64.tar.xz"
+tar -xvJf "dist/rtx-$RTX_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t deb \
 	--name rtx \
 	--license MIT \
@@ -25,6 +29,7 @@ fpm -s dir -t deb \
 	--url "https://github.com/jdx/rtx" \
 	--maintainer "Jeff Dickey @jdx" \
 	rtx/bin/rtx=/usr/bin/rtx \
+	rtx/lib/.disable-self-update=/usr/lib/rtx/.disable-self-update \
 	rtx/man/man1/rtx.1=/usr/share/man/man1/rtx.1
 
 mkdir -p dist/deb/pool/main

@@ -159,7 +159,7 @@ v20.0.0
   - [`rtx plugins update [PLUGIN]...`](#rtx-plugins-update-plugin)
   - [`rtx prune [OPTIONS] [PLUGINS]...`](#rtx-prune-options-plugins)
   - [`rtx reshim`](#rtx-reshim)
-  - [`rtx self-update`](#rtx-self-update)
+  - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
   - [`rtx settings get <KEY>`](#rtx-settings-get-key)
   - [`rtx settings ls`](#rtx-settings-ls)
   - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
@@ -2389,16 +2389,29 @@ Examples:
   v20.0.0
 ```
 
-### `rtx self-update`
+### `rtx self-update [OPTIONS] [VERSION]`
 
 ```
 Updates rtx itself
 
-Uses whatever package manager was used to install rtx or just downloads
-a binary from GitHub Releases if rtx was installed manually.
-Supports: standalone, brew, deb, rpm
+Uses the GitHub Releases API to find the latest release and binary
+By default, this will also update any installed plugins
 
-Usage: self-update
+Usage: self-update [OPTIONS] [VERSION]
+
+Arguments:
+  [VERSION]
+          Update to a specific version
+
+Options:
+  -f, --force
+          Update even if already up to date
+
+      --no-plugins
+          Disable auto-updating plugins
+
+  -y, --yes
+          Skip confirmation prompt
 ```
 
 ### `rtx settings get <KEY>`
