@@ -10,7 +10,6 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
-use crate::config::MissingRuntimeBehavior::Ignore;
 use crate::env;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
@@ -52,11 +51,7 @@ impl Exec {
             .with_install_missing()
             .build(&mut config)?;
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let mut env = ts.env_with_path(&config);
-        if config.settings.missing_runtime_behavior != Ignore {
-            // prevent rtx from auto-installing inside a shim
-            env.insert("RTX_MISSING_RUNTIME_BEHAVIOR".into(), "warn".into());
-        }
+        let env = ts.env_with_path(&config);
 
         self.exec(program, args, env)
     }

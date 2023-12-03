@@ -96,18 +96,33 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(());
         }
-        let display_versions = display_versions(&versions);
-        let plural_versions = if versions.len() == 1 { "" } else { "s" };
+        let argument_versions = versions
+            .iter()
+            .filter(|tv| matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
+            .cloned()
+            .collect_vec();
         let warn = || {
-            warn!(
-                "Tool{} not installed: {} (install with: rtx install)",
-                plural_versions, display_versions
-            );
+            let versions = versions
+                .iter()
+                .filter(|tv| !matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
+                .cloned()
+                .collect_vec();
+            if !versions.is_empty() {
+                let display_versions = display_versions(&versions);
+                let plural_versions = if versions.len() == 1 { "" } else { "s" };
+                warn!(
+                    "Tool{} not installed: {} (install with: rtx install)",
+                    plural_versions, display_versions
+                );
+            }
         };
         match config.settings.missing_runtime_behavior {
-            MissingRuntimeBehavior::Ignore => {}
+            MissingRuntimeBehavior::Ignore => {
+                self.install_versions(config, argument_versions, &mpr, false)?;
+            }
             MissingRuntimeBehavior::Warn => {
                 warn();
+                self.install_versions(config, argument_versions, &mpr, false)?;
             }
             MissingRuntimeBehavior::Prompt => {
                 let versions = prompt_for_versions(&versions)?;
@@ -143,6 +158,9 @@ impl Toolset {
         mpr: &MultiProgressReport,
         force: bool,
     ) -> Result<()> {
+        if versions.is_empty() {
+            return Ok(());
+        }
         self.latest_versions = true;
         let queue: Vec<_> = versions
             .into_iter()
