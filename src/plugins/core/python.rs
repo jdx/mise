@@ -132,7 +132,7 @@ impl PythonPlugin {
 
     fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> Result<()> {
         let symlink = virtualenv.join("bin/python");
-        let target = tv.install_path().join("bin/python");
+        let target = self.python_path(tv);
         let symlink_target = symlink.read_link().unwrap_or_default();
         ensure!(
             symlink_target == target,
