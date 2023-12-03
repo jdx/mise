@@ -1,8 +1,6 @@
 use std::env::{join_paths, set_current_dir};
 use std::path::PathBuf;
 
-use indoc::indoc;
-
 use crate::{env, file};
 
 #[ctor::ctor]

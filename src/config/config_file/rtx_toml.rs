@@ -800,7 +800,6 @@ impl Debug for RtxToml {
 
 #[cfg(test)]
 mod tests {
-    use indoc::formatdoc;
     use insta::{assert_debug_snapshot, assert_display_snapshot, assert_snapshot};
 
     use crate::dirs;

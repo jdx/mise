@@ -1,6 +1,5 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
-use indoc::indoc;
 use log::LevelFilter;
 
 use crate::config::Config;

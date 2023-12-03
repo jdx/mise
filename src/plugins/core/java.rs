@@ -4,7 +4,6 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
-use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};

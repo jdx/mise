@@ -3,6 +3,8 @@ extern crate core;
 extern crate log;
 #[macro_use]
 extern crate eyre;
+#[macro_use]
+extern crate indoc;
 
 use std::process::exit;
 
