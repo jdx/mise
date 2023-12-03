@@ -80,7 +80,7 @@ mod tests {
     fn test_env() {
         let stdout = assert_cli!("env", "-s", "bash");
         assert!(stdout.contains(
-            dirs::ROOT
+            dirs::DATA
                 .join("installs/tiny/3.1.0/bin")
                 .to_string_lossy()
                 .as_ref()
@@ -93,7 +93,7 @@ mod tests {
         let stdout = assert_cli!("env", "tiny@3.0", "-s", "bash");
 
         assert!(stdout.contains(
-            dirs::ROOT
+            dirs::DATA
                 .join("installs/tiny/3.0.1/bin")
                 .to_string_lossy()
                 .as_ref()
@@ -106,7 +106,7 @@ mod tests {
         assert_cli!("install", "tiny@my/alias");
         let stdout = assert_cli!("env", "tiny@my/alias", "-s", "bash");
         assert!(stdout.contains(
-            dirs::ROOT
+            dirs::DATA
                 .join("installs/tiny/3.0.1")
                 .to_string_lossy()
                 .as_ref()

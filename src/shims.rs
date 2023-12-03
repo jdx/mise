@@ -181,7 +181,7 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         export PATH="{fake_asdf_dir}:$PATH"
         rtx x -- {target} "$@"
         "#,
-        data_dir = dirs::ROOT.display(),
+        data_dir = dirs::DATA.display(),
         fake_asdf_dir = fake_asdf::setup()?.display(),
         target = target.display()},
     )?;

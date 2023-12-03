@@ -51,7 +51,7 @@ impl Activate {
             .expect("no shell provided, use `--shell=zsh`");
 
         // touch ROOT to allow hook-env to run
-        let _ = touch_dir(&dirs::ROOT);
+        let _ = touch_dir(&dirs::DATA);
 
         let output = shell.activate(&RTX_EXE, self.status);
         out.stdout.write(output);

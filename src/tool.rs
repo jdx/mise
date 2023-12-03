@@ -223,7 +223,7 @@ impl Tool {
         }
         self.cleanup_install_dirs(&ctx.config.settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
-        let mut touch_dirs = vec![dirs::ROOT.to_path_buf()];
+        let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
         touch_dirs.extend(ctx.config.config_files.keys().cloned());
         for path in touch_dirs {
             let err = file::touch_dir(&path);
