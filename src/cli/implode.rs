@@ -25,7 +25,7 @@ pub struct Implode {
 
 impl Implode {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let mut files = vec![&*dirs::ROOT, &*dirs::CACHE, &*env::RTX_EXE];
+        let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
         }
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn test_implode() {
         let stdout = assert_cli!("implode", "--config", "--dry-run");
-        assert!(stdout.contains(format!("rm -rf {}", dirs::ROOT.display()).as_str()));
+        assert!(stdout.contains(format!("rm -rf {}", dirs::DATA.display()).as_str()));
         assert!(stdout.contains(format!("rm -rf {}", dirs::CACHE.display()).as_str()));
         assert!(stdout.contains(format!("rm -rf {}", dirs::CONFIG.display()).as_str()));
     }
