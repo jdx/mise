@@ -5,6 +5,7 @@ use console::style;
 use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -29,12 +30,17 @@ pub struct Use {
     tool: Vec<ToolArg>,
 
     /// Save exact version to config file
-    /// e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions
-    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    /// e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
+    #[clap(
+        long,
+        env = "RTX_ASDF_COMPAT",
+        verbatim_doc_comment,
+        overrides_with = "fuzzy"
+    )]
     pin: bool,
 
     /// Save fuzzy version to config file
-    /// e.g.: `rtx use --fuzzy node@20` will save `node 20` to ~/.tool-versions
+    /// e.g.: `rtx use --fuzzy node@20` will save 20 as the version
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
@@ -44,11 +50,16 @@ pub struct Use {
     remove: Option<Vec<PluginName>>,
 
     /// Use the global config file (~/.config/rtx/config.toml) instead of the local one
-    #[clap(short, long, overrides_with = "path")]
+    #[clap(short, long, overrides_with_all = &["path", "env"])]
     global: bool,
 
+    /// [experimental] Modify an environment-specific config file like .rtx.<env>.toml
+    #[clap(long, short, overrides_with_all = &["global", "path"])]
+    env: Option<String>,
+
     /// Specify a path to a config file or directory
-    #[clap(short, long, overrides_with = "global", value_hint = clap::ValueHint::FilePath)]
+    /// If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
+    #[clap(short, long, overrides_with_all = &["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 }
 
@@ -61,17 +72,7 @@ impl Use {
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
 
-        let path = match (self.global, self.path) {
-            (true, _) => global_file(),
-            (false, Some(p)) => config_file_from_dir(&p),
-            (false, None) => config_file_from_dir(&dirs::CURRENT),
-        };
-        let is_trusted = config_file::is_trusted(&config.settings, &path);
-        let mut cf = match path.exists() {
-            true => config_file::parse(&path, is_trusted)?,
-            false => config_file::init(&path, is_trusted),
-        };
-
+        let mut cf = self.get_config_file(&config)?;
         let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
 
         for (plugin_name, tvl) in ts.versions {
@@ -98,10 +99,23 @@ impl Use {
             out,
             "{} {} {}",
             style("rtx").dim(),
-            display_path(&path),
+            display_path(cf.get_path()),
             style(tools).cyan()
         );
         Ok(())
+    }
+
+    fn get_config_file(&self, config: &Config) -> Result<Box<dyn ConfigFile>> {
+        let path = if self.global {
+            global_file()
+        } else if let Some(env) = &self.env {
+            config_file_from_dir(&dirs::CURRENT.join(format!(".rtx.{}.toml", env)))
+        } else if let Some(p) = &self.path {
+            config_file_from_dir(p)
+        } else {
+            config_file_from_dir(&dirs::CURRENT)
+        };
+        config_file::parse_or_init(&config.settings, &path)
     }
 }
 
@@ -138,6 +152,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   # set the current version of node to 20.x in ~/.config/rtx/config.toml
   # will write the precise version (e.g.: 20.0.0)
   $ <bold>rtx use -g --pin node@20</bold>
+
+  # sets .rtx.local.toml (which is intended not to be committed to a project)
+  $ <bold>rtx use --env local node@20</bold>
+
+  # sets .rtx.staging.toml (which is used if RTX_ENV=staging)
+  $ <bold>rtx use --env staging node@20</bold>
 "#
 );
 

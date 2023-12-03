@@ -104,11 +104,7 @@ pub fn local(
     fuzzy: bool,
     show_path: bool,
 ) -> Result<()> {
-    let is_trusted = config_file::is_trusted(&config.settings, path);
-    let mut cf = match path.exists() {
-        true => config_file::parse(path, is_trusted)?,
-        false => config_file::init(path, is_trusted),
-    };
+    let mut cf = config_file::parse_or_init(&config.settings, path)?;
     if show_path {
         rtxprintln!(out, "{}", path.display());
         return Ok(());

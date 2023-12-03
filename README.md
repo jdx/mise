@@ -2633,11 +2633,13 @@ Arguments:
 Options:
       --pin
           Save exact version to config file
-          e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+          e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
+
+          [env: RTX_ASDF_COMPAT=]
 
       --fuzzy
           Save fuzzy version to config file
-          e.g.: `rtx use --fuzzy node@20` will save `node 20` to ~/.tool-versions
+          e.g.: `rtx use --fuzzy node@20` will save 20 as the version
           this is the default behavior unless RTX_ASDF_COMPAT=1
 
       --remove <TOOL>
@@ -2646,8 +2648,11 @@ Options:
   -g, --global
           Use the global config file (~/.config/rtx/config.toml) instead of the local one
 
+  -e, --env <ENV>
+          [experimental] Modify an environment-specific config file like .rtx.<env>.toml
+
   -p, --path <PATH>
-          Specify a path to a config file or directory
+          Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
 
 Examples:
   # set the current version of node to 20.x in .rtx.toml of current directory
@@ -2657,6 +2662,12 @@ Examples:
   # set the current version of node to 20.x in ~/.config/rtx/config.toml
   # will write the precise version (e.g.: 20.0.0)
   $ rtx use -g --pin node@20
+
+  # sets .rtx.local.toml (which is intended not to be committed to a project)
+  $ rtx use --env local node@20
+
+  # sets .rtx.staging.toml (which is used if RTX_ENV=staging)
+  $ rtx use --env staging node@20
 ```
 
 ### `rtx version`
