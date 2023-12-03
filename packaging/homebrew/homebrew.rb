@@ -28,9 +28,10 @@ class Rtx < Formula
 
   def install
     bin.install "bin/rtx"
-    lib.write ".disable-self-update"
     man1.install "man/man1/rtx.1"
     generate_completions_from_executable(bin/"rtx", "completion")
+    lib.mkpath
+    touch lib/".disable-self-update"
   end
 
   test do
