@@ -4,7 +4,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use color_eyre::eyre::ErrReport;
-use indoc::formatdoc;
 use once_cell::sync::OnceCell;
 
 use crate::{env, file};

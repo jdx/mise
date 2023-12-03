@@ -1,7 +1,6 @@
 use clap::builder::StyledStr;
 use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
-use indoc::formatdoc;
 
 use crate::cli::Cli;
 use crate::config::Config;
@@ -106,8 +105,6 @@ fn remove_trailing_spaces(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
-
-    use indoc::indoc;
 
     use crate::{assert_cli, file};
 

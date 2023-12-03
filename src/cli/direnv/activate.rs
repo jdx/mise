@@ -1,5 +1,4 @@
 use color_eyre::eyre::Result;
-use indoc::indoc;
 
 use crate::config::Config;
 use crate::output::Output;

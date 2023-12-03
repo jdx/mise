@@ -4,7 +4,6 @@ use std::process::exit;
 use color_eyre::eyre::Result;
 use console::{pad_str, style, Alignment};
 use indenter::indented;
-use indoc::formatdoc;
 
 use crate::build_time::built_info;
 use crate::cli::version::VERSION;

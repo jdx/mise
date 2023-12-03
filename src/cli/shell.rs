@@ -1,6 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
-use indoc::formatdoc;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
