@@ -39,7 +39,8 @@ pub static RTX_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
 });
 pub static RTX_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into()));
-pub static RTX_ENV: Lazy<Option<String>> = Lazy::new(|| var("RTX_ENV").ok());
+pub static RTX_ENV: Lazy<Option<String>> =
+    Lazy::new(|| var("RTX_ENV").or_else(|_| var("RTX_ENVIRONMENT")).ok());
 pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
 pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
 pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| current_exe().unwrap_or_else(|_| "rtx".into()));

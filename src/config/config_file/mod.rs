@@ -140,7 +140,8 @@ impl dyn ConfigFile {
     }
 }
 
-pub fn init(path: &Path, is_trusted: bool) -> Box<dyn ConfigFile> {
+fn init(settings: &Settings, path: &Path) -> Box<dyn ConfigFile> {
+    let is_trusted = is_trusted(settings, path);
     match detect_config_file_type(path) {
         Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path, is_trusted)),
         Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path, is_trusted)),
@@ -148,7 +149,16 @@ pub fn init(path: &Path, is_trusted: bool) -> Box<dyn ConfigFile> {
     }
 }
 
-pub fn parse(path: &Path, is_trusted: bool) -> Result<Box<dyn ConfigFile>> {
+pub fn parse_or_init(settings: &Settings, path: &Path) -> Result<Box<dyn ConfigFile>> {
+    let cf = match path.exists() {
+        true => parse(settings, path)?,
+        false => init(settings, path),
+    };
+    Ok(cf)
+}
+
+pub fn parse(settings: &Settings, path: &Path) -> Result<Box<dyn ConfigFile>> {
+    let is_trusted = is_trusted(settings, path);
     match detect_config_file_type(path) {
         Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path, is_trusted)?)),
         Some(ConfigFileType::ToolVersions) => {
