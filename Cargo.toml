@@ -1,6 +1,6 @@
 [package]
 name = "rtx-cli"
-version = "2023.12.3"
+version = "2023.12.4"
 edition = "2021"
 description = "Polyglot runtime manager (asdf rust clone)"
 authors = ["Jeff Dickey (@jdx)"]
