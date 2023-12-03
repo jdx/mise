@@ -766,14 +766,15 @@ complete -c rtx -n "__fish_seen_subcommand_from upgrade" -l trace -d 'Sets log l
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from upgrade" -s h -l help -d 'Print help'
 complete -c rtx -n "__fish_seen_subcommand_from use" -l remove -d 'Remove the tool(s) from config file' -r
-complete -c rtx -n "__fish_seen_subcommand_from use" -s p -l path -d 'Specify a path to a config file or directory' -r -F
+complete -c rtx -n "__fish_seen_subcommand_from use" -s e -l env -d '[experimental] Modify an environment-specific config file like .rtx.<env>.toml' -r
+complete -c rtx -n "__fish_seen_subcommand_from use" -s p -l path -d 'Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions' -r -F
 complete -c rtx -n "__fish_seen_subcommand_from use" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -l log-level -d 'Set the log output verbosity' -r
 complete -c rtx -n "__fish_seen_subcommand_from use" -l pin -d 'Save exact version to config file
-e.g.: `rtx use --pin node@20` will save `node 20.0.0` to ~/.tool-versions'
+e.g.: `rtx use --pin node@20` will save 20.0.0 as the version'
 complete -c rtx -n "__fish_seen_subcommand_from use" -l fuzzy -d 'Save fuzzy version to config file
-e.g.: `rtx use --fuzzy node@20` will save `node 20` to ~/.tool-versions
+e.g.: `rtx use --fuzzy node@20` will save 20 as the version
 this is the default behavior unless RTX_ASDF_COMPAT=1'
 complete -c rtx -n "__fish_seen_subcommand_from use" -s g -l global -d 'Use the global config file (~/.config/rtx/config.toml) instead of the local one'
 complete -c rtx -n "__fish_seen_subcommand_from use" -l debug -d 'Sets log level to debug'
