@@ -16,7 +16,6 @@ node = 'https://github.com/jdx/rtx-node'
 
 [settings]
 verbose = true
-missing_runtime_behavior = 'warn'
 disable_tools = ['disabled_tool']
 legacy_version_file_disable_tools = ['disabled_tool_from_legacy_file']
 

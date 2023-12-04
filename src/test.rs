@@ -51,7 +51,6 @@ pub fn reset_config() {
             [settings]
             experimental = true
             verbose = true
-            missing_runtime_behavior= 'autoinstall'
             always_keep_download= true
             always_keep_install= true
             legacy_version_file= true

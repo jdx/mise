@@ -9,7 +9,7 @@ use itertools::Itertools;
 use terminal_size::{terminal_size, Width};
 
 use crate::config::Config;
-use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
+
 use crate::direnv::DirenvDiff;
 use crate::env::__RTX_DIFF;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -33,9 +33,6 @@ pub struct HookEnv {
 
 impl HookEnv {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        if config.settings.missing_runtime_behavior == Prompt {
-            config.settings.missing_runtime_behavior = Warn;
-        }
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .build(&mut config)?;
