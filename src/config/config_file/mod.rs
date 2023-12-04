@@ -9,7 +9,7 @@ use tool_versions::ToolVersions;
 use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsBuilder;
-use crate::config::{AliasMap, Config, Settings};
+use crate::config::{global_config_files, AliasMap, Config, Settings};
 use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 use crate::output::Output;
@@ -32,23 +32,35 @@ pub enum ConfigFileType {
 pub trait ConfigFile: Debug + Display + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
-    fn plugins(&self) -> HashMap<PluginName, String>;
-    fn env(&self) -> HashMap<String, String>;
-    fn env_remove(&self) -> Vec<String> {
-        vec![]
+    fn plugins(&self) -> HashMap<PluginName, String> {
+        Default::default()
     }
-    fn path_dirs(&self) -> Vec<PathBuf>;
-    fn remove_plugin(&mut self, plugin_name: &PluginName);
+    fn env(&self) -> HashMap<String, String> {
+        Default::default()
+    }
+    fn env_remove(&self) -> Vec<String> {
+        Default::default()
+    }
+    fn path_dirs(&self) -> Vec<PathBuf> {
+        Default::default()
+    }
+    fn remove_plugin(&mut self, _plugin_name: &PluginName);
     fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;
-    fn settings(&self) -> SettingsBuilder;
-    fn aliases(&self) -> AliasMap;
-    fn watch_files(&self) -> Vec<PathBuf>;
+    fn settings(&self) -> SettingsBuilder {
+        Default::default()
+    }
+    fn aliases(&self) -> AliasMap {
+        Default::default()
+    }
+    fn watch_files(&self) -> Vec<PathBuf> {
+        vec![self.get_path().to_path_buf()]
+    }
 
     fn is_global(&self) -> bool {
-        false
+        global_config_files().iter().any(|p| p == self.get_path())
     }
 }
 

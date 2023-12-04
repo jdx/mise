@@ -12,7 +12,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
-use crate::config::{config_file, global_config_files, AliasMap, MissingRuntimeBehavior};
+use crate::config::{config_file, AliasMap, MissingRuntimeBehavior};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
@@ -81,10 +81,6 @@ impl RtxToml {
         }
         self.doc = doc;
         Ok(())
-    }
-
-    pub fn settings(&self) -> SettingsBuilder {
-        self.settings.clone()
     }
 
     fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
@@ -431,7 +427,7 @@ impl RtxToml {
         Ok(settings)
     }
 
-    pub(crate) fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
+    pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
         self.alias
             .entry(plugin.into())
             .or_default()
@@ -757,10 +753,6 @@ impl ConfigFile for RtxToml {
             Some(env_file) => vec![self.path.clone(), env_file.clone()],
             None => vec![self.path.clone()],
         }
-    }
-
-    fn is_global(&self) -> bool {
-        global_config_files().iter().any(|p| p == &self.path)
     }
 }
 
