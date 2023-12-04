@@ -20,7 +20,6 @@ impl SettingsSet {
     pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
         let value: toml_edit::Value = match self.key.as_str() {
             "experimental" => parse_bool(&self.value)?,
-            "missing_runtime_behavior" => self.value.into(),
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
@@ -70,7 +69,6 @@ pub mod tests {
     #[test]
     fn test_settings_set() {
         reset_config();
-        assert_cli!("settings", "set", "missing_runtime_behavior", "warn");
         assert_cli!("settings", "set", "legacy_version_file", "false");
         assert_cli!("settings", "set", "always_keep_download", "true");
         assert_cli!(

@@ -99,17 +99,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "missing_runtime_behavior": {
-          "description": "what to do when a runtime is missing",
-          "type": "string",
-          "enum": [
-            "ignore",
-            "prompt",
-            "autoinstall",
-            "warn",
-            "error"
-          ]
-        },
         "legacy_version_file": {
           "description": "should rtx parse legacy version files (e.g. .node-version)",
           "type": "boolean"
