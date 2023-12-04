@@ -60,7 +60,6 @@ if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
 fi
 
 assert_raises "rtx uninstall shfmt@3.6.0"
-assert_raises "rtx local shfmt --install-missing"
 
 rtx local shfmt@3.6.0
 assert "rtx local" "#:schema ../../schema/rtx.json
@@ -106,7 +105,7 @@ export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
 
 assert_raises "rtx uninstall shfmt@3.6.0"
 
-rtx local --install-missing
+rtx local
 assert "rtx local" "#python 3.11.1 3.10.9 # foo
 shellcheck sub-0.1:0.10.0
 shfmt      3.6.0 # test comment
