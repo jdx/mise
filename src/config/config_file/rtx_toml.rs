@@ -7,7 +7,6 @@ use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
 use console::style;
 use eyre::WrapErr;
-use log::LevelFilter;
 use tera::Context;
 use toml_edit::{table, value, Array, Document, Item, Value};
 
@@ -420,7 +419,6 @@ impl RtxToml {
                             settings.disable_tools =
                                 self.parse_string_array(&k, v)?.into_iter().collect()
                         }
-                        "log_level" => settings.log_level = Some(self.parse_log_level(&k, v)?),
                         "raw" => settings.raw = Some(self.parse_bool(&k, v)?),
                         "yes" => settings.yes = Some(self.parse_bool(&k, v)?),
                         _ => Err(eyre!("Unknown config setting: {}", k))?,
@@ -553,11 +551,6 @@ impl RtxToml {
                 "expected {k} to be one of: 'warn', 'ignore', 'prompt', 'autoinstall'. Got: {v}"
             )),
         }
-    }
-
-    fn parse_log_level(&mut self, k: &str, v: &Item) -> Result<LevelFilter> {
-        let level = self.parse_string(k, v)?.parse()?;
-        Ok(level)
     }
 
     pub fn update_setting<V: Into<Value>>(&mut self, key: &str, value: V) {
