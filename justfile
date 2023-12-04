@@ -17,6 +17,9 @@ alias lf := lint-fix
 build *args:
     cargo build --all-features {{ args }}
 
+watch:
+    watchexec -w src -- just build
+
 # run all test types
 test *args: (test-unit args) test-e2e lint
 
