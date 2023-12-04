@@ -21,15 +21,15 @@ _rtx() {
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
@@ -56,15 +56,15 @@ _arguments "${_arguments_options[@]}" \
 '-q[noop]' \
 '--quiet[noop]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::shell_type -- Shell type to generate the script for:(bash fish nu xonsh zsh)' \
@@ -80,15 +80,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_rtx__alias_commands" \
@@ -109,15 +109,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- The plugin to show the alias for:' \
@@ -134,15 +134,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -155,15 +155,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- The plugin to set the alias for:' \
@@ -179,15 +179,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- The plugin to remove the alias from:' \
@@ -242,15 +242,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::args -- all arguments:' \
@@ -264,15 +264,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -285,15 +285,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_rtx__cache_commands" \
@@ -314,15 +314,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -365,15 +365,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::shell -- Shell type to generate completions for:(bash elvish fish powershell zsh)' \
@@ -387,15 +387,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::plugin -- Plugin to show versions of e.g.\: ruby, node:' \
@@ -409,15 +409,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -430,15 +430,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_rtx__direnv_commands" \
@@ -459,15 +459,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -480,15 +480,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -501,15 +501,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -558,15 +558,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -582,15 +582,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--json[Output in JSON format]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to use:' \
@@ -606,15 +606,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::env_vars -- Environment variable(s) to set
@@ -632,15 +632,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to start e.g.\: node@20 python@3.10:' \
@@ -661,15 +661,15 @@ e.g.\: \`rtx global --fuzzy node@20\` will save \`node 20\` to ~/.tool-versions
 this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the global config file]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to add to .tool-versions
@@ -689,15 +689,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -712,15 +712,15 @@ _arguments "${_arguments_options[@]}" \
 '--config[Also remove config directory]' \
 '--dry-run[List directories that would be removed without actually removing them]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -737,13 +737,13 @@ _arguments "${_arguments_options[@]}" \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '-y[Answer yes to all prompts]' \
 '--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to install e.g.\: node@20:' \
@@ -759,15 +759,15 @@ _arguments "${_arguments_options[@]}" \
 '-i[Show latest installed instead of available version]' \
 '--installed[Show latest installed instead of available version]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':tool -- Tool to get the latest version of:' \
@@ -784,15 +784,15 @@ _arguments "${_arguments_options[@]}" \
 '-f[Overwrite an existing tool version if it exists]' \
 '--force[Overwrite an existing tool version if it exists]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':tool -- Tool name and version to create a symlink for:' \
@@ -817,15 +817,15 @@ e.g.\: \`rtx local --pin node@20\` will save \`node 20.0.0\` to .tool-versions]'
 '--fuzzy[Save fuzzy version to \`.tool-versions\` e.g.\: \`rtx local --fuzzy node@20\` will save \`node 20\` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '--path[Get the path of the config file]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to add to .tool-versions/.rtx.toml
@@ -855,15 +855,15 @@ _arguments "${_arguments_options[@]}" \
 '(-i --installed)-m[Display missing tool versions]' \
 '(-i --installed)--missing[Display missing tool versions]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::plugin_arg:' \
@@ -877,15 +877,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':plugin -- Plugin to get versions for:' \
@@ -901,15 +901,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to show outdated versions for
@@ -934,15 +934,15 @@ Normally these are not shown]' \
 '--urls[show the git url for each plugin]' \
 '--refs[show the git refs for each plugin]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_rtx__plugins_commands" \
@@ -973,13 +973,13 @@ i.e.\: they don'\''t need the full git repo url]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '-y[Answer yes to all prompts]' \
 '--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::name -- The name of the plugin to install
@@ -999,15 +999,15 @@ _arguments "${_arguments_options[@]}" \
 '-f[Overwrite existing plugin]' \
 '--force[Overwrite existing plugin]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':name -- The name of the plugin
@@ -1038,15 +1038,15 @@ e.g.\: https\://github.com/asdf-vm/asdf-node.git]' \
 '--refs[Show the git refs for each plugin
 e.g.\: main 1234abc]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -1062,15 +1062,15 @@ _arguments "${_arguments_options[@]}" \
 '--urls[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
 '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -1085,15 +1085,15 @@ _arguments "${_arguments_options[@]}" \
 '-p[Also remove the plugin'\''s installs, downloads, and cache]' \
 '--purge[Also remove the plugin'\''s installs, downloads, and cache]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::plugin -- Plugin(s) to remove:' \
@@ -1109,15 +1109,15 @@ _arguments "${_arguments_options[@]}" \
 '()-a[Update all plugins]' \
 '()--all[Update all plugins]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::plugin -- Plugin(s) to update:' \
@@ -1180,15 +1180,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--dry-run[Do not actually delete anything]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::plugins -- Prune only versions from these plugins:' \
@@ -1202,15 +1202,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::plugin:' \
@@ -1225,15 +1225,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_rtx__settings_commands" \
@@ -1254,15 +1254,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to show:' \
@@ -1276,15 +1276,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -1297,15 +1297,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to set:' \
@@ -1320,15 +1320,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':key -- The setting to remove:' \
@@ -1384,15 +1384,15 @@ _arguments "${_arguments_options[@]}" \
 '-u[Removes a previously set version]' \
 '--unset[Removes a previously set version]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to use:' \
@@ -1406,15 +1406,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_rtx__sync_commands" \
@@ -1438,15 +1438,15 @@ _arguments "${_arguments_options[@]}" \
 '--nvm[Get tool versions from nvm]' \
 '--nodenv[Get tool versions from nodenv]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -1460,15 +1460,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--pyenv[Get tool versions from pyenv]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -1514,15 +1514,15 @@ _arguments "${_arguments_options[@]}" \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--untrust[No longer trust this config]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '::config_file -- The config file to trust:_files' \
@@ -1540,15 +1540,15 @@ _arguments "${_arguments_options[@]}" \
 '-n[Do not actually delete anything]' \
 '--dry-run[Do not actually delete anything]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to remove:' \
@@ -1562,15 +1562,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::tool -- Tool(s) to upgrade
@@ -1598,15 +1598,15 @@ this is the default behavior unless RTX_ASDF_COMPAT=1]' \
 '-g[Use the global config file (~/.config/rtx/config.toml) instead of the local one]' \
 '--global[Use the global config file (~/.config/rtx/config.toml) instead of the local one]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::tool -- Tool(s) to add to config file
@@ -1622,15 +1622,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1643,15 +1643,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':tool -- Tool(s) to look up
@@ -1678,15 +1678,15 @@ e.g.\: \`rtx which npm --tool=node@20\`]:TOOL@VERSION: ' \
 '(--version)--plugin[Show the plugin name instead of the path]' \
 '(--plugin)--version[Show the version instead of the path]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':bin_name -- The bin name to look up:' \
@@ -1700,15 +1700,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1721,15 +1721,15 @@ _arguments "${_arguments_options[@]}" \
 \[default\: 4\]]: : ' \
 '--log-level=[Set the log output verbosity]:LEVEL: ' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'-y[Answer yes to all prompts]' \
-'--yes[Answer yes to all prompts]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
+'-y[Answer yes to all prompts]' \
+'--yes[Answer yes to all prompts]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1747,11 +1747,11 @@ _arguments "${_arguments_options[@]}" \
 '-y[Skip confirmation prompt]' \
 '--yes[Skip confirmation prompt]' \
 '--debug[Sets log level to debug]' \
+'--trace[Sets log level to trace]' \
 '-r[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
 '--raw[Directly pipe stdin/stdout/stderr to user.
 Sets --jobs=1]' \
-'--trace[Sets log level to trace]' \
 '*-v[Show installation output]' \
 '*--verbose[Show installation output]' \
 '-h[Print help (see more with '\''--help'\'')]' \

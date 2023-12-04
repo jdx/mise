@@ -3,8 +3,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use log::LevelFilter;
-
 use crate::env::*;
 use crate::{duration, env};
 
@@ -24,7 +22,6 @@ pub struct Settings {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: bool,
     pub disable_tools: BTreeSet<String>,
-    pub log_level: LevelFilter,
     pub raw: bool,
     pub yes: bool,
 }
@@ -46,7 +43,6 @@ impl Default for Settings {
             shorthands_file: RTX_SHORTHANDS_FILE.clone(),
             disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
             disable_tools: RTX_DISABLE_TOOLS.clone(),
-            log_level: *RTX_LOG_LEVEL,
             raw: *RTX_RAW,
             yes: *RTX_YES,
         }
@@ -107,7 +103,6 @@ impl Settings {
             "disable_tools".into(),
             format!("{:?}", self.disable_tools.iter().collect::<Vec<_>>()),
         );
-        map.insert("log_level".into(), self.log_level.to_string());
         map.insert("raw".into(), self.raw.to_string());
         map.insert("yes".into(), self.yes.to_string());
         map
@@ -130,7 +125,6 @@ pub struct SettingsBuilder {
     pub shorthands_file: Option<PathBuf>,
     pub disable_default_shorthands: Option<bool>,
     pub disable_tools: BTreeSet<String>,
-    pub log_level: Option<LevelFilter>,
     pub raw: Option<bool>,
     pub yes: Option<bool>,
 }
@@ -181,9 +175,6 @@ impl SettingsBuilder {
             self.disable_default_shorthands = other.disable_default_shorthands;
         }
         self.disable_tools.extend(other.disable_tools);
-        if other.log_level.is_some() {
-            self.log_level = other.log_level;
-        }
         if other.raw.is_some() {
             self.raw = other.raw;
         }
@@ -236,7 +227,6 @@ impl SettingsBuilder {
             .disable_default_shorthands
             .unwrap_or(settings.disable_default_shorthands);
         settings.disable_tools.extend(self.disable_tools.clone());
-        settings.log_level = self.log_level.unwrap_or(settings.log_level);
         settings.raw = self.raw.unwrap_or(settings.raw);
         settings.yes = self.yes.unwrap_or(settings.yes);
 
@@ -302,9 +292,6 @@ impl Debug for SettingsBuilder {
         }
         if !self.disable_tools.is_empty() {
             d.field("disable_tools", &self.disable_tools);
-        }
-        if let Some(log_level) = self.log_level {
-            d.field("log_level", &log_level);
         }
         if let Some(raw) = self.raw {
             d.field("raw", &raw);

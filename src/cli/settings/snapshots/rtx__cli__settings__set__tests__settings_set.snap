@@ -11,7 +11,6 @@ experimental = true
 jobs = 2
 legacy_version_file = false
 legacy_version_file_disable_tools = []
-log_level = INFO
 missing_runtime_behavior = autoinstall
 plugin_autoupdate_last_check_duration = 1
 raw = false
