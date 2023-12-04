@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -48,14 +48,6 @@ pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_MISSING_RUNTIME_BEHAVIOR: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_MISSING_RUNTIME_BEHAVIOR").ok());
-pub static RTX_VERBOSE: Lazy<bool> =
-    Lazy::new(|| *RTX_LOG_LEVEL > LevelFilter::Info || var_is_true("RTX_VERBOSE"));
-pub static RTX_JOBS: Lazy<usize> = Lazy::new(|| {
-    var("RTX_JOBS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4)
-});
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
@@ -88,35 +80,7 @@ pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH"
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 pub static RTX_CONFIRM: Lazy<Confirm> = Lazy::new(|| var_confirm("RTX_CONFIRM"));
-pub static RTX_EXPERIMENTAL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_EXPERIMENTAL"));
-pub static RTX_ASDF_COMPAT: Lazy<bool> = Lazy::new(|| var_is_true("RTX_ASDF_COMPAT"));
-pub static RTX_SHORTHANDS_FILE: Lazy<Option<PathBuf>> =
-    Lazy::new(|| var_path("RTX_SHORTHANDS_FILE"));
-pub static RTX_DISABLE_DEFAULT_SHORTHANDS: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_DISABLE_DEFAULT_SHORTHANDS"));
-pub static RTX_LEGACY_VERSION_FILE: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_LEGACY_VERSION_FILE"));
-pub static RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS: Lazy<BTreeSet<String>> = Lazy::new(|| {
-    var("RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS")
-        .map(|v| v.split(',').map(|s| s.to_string()).collect())
-        .unwrap_or_default()
-});
-pub static RTX_DISABLE_TOOLS: Lazy<BTreeSet<String>> = Lazy::new(|| {
-    var("RTX_DISABLE_TOOLS")
-        .map(|v| v.split(',').map(|s| s.to_string()).collect())
-        .unwrap_or_default()
-});
-pub static RTX_RAW: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RAW"));
 pub static RTX_YES: Lazy<bool> = Lazy::new(|| *CI || var_is_true("RTX_YES"));
-pub static RTX_TRUSTED_CONFIG_PATHS: Lazy<BTreeSet<PathBuf>> = Lazy::new(|| {
-    var("RTX_TRUSTED_CONFIG_PATHS")
-        .map(|v| split_paths(&v).collect())
-        .unwrap_or_default()
-});
-pub static RTX_ALWAYS_KEEP_DOWNLOAD: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_DOWNLOAD"));
-pub static RTX_ALWAYS_KEEP_INSTALL: Lazy<bool> =
-    Lazy::new(|| var_is_true("RTX_ALWAYS_KEEP_INSTALL"));
 pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_ALL_COMPILE") {
     Some(v) => v,
     None => matches!(

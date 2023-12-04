@@ -1,55 +1,69 @@
+use confique::env::parse::{list_by_colon, list_by_comma};
+use confique::{Builder, Config, Partial};
+use log::LevelFilter;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::env::*;
 use crate::{duration, env};
 
-#[derive(Debug, Clone)]
+#[derive(Config, Debug, Clone)]
 pub struct Settings {
+    #[config(env = "RTX_EXPERIMENTAL", default = false)]
     pub experimental: bool,
+    #[config(env = "RTX_MISSING_RUNTIME_BEHAVIOR")]
     pub missing_runtime_behavior: MissingRuntimeBehavior,
+    #[config(env = "RTX_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
+    #[config(env = "RTX_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
+    #[config(env = "RTX_LEGACY_VERSION_FILE", default = true)]
     pub legacy_version_file: bool,
+    #[config(env = "RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
+    #[config(env = "RTX_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION")]
     pub plugin_autoupdate_last_check_duration: Duration,
+    #[config(env = "RTX_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
     pub trusted_config_paths: BTreeSet<PathBuf>,
+    #[config(env = "RTX_VERBOSE", default = false)]
     pub verbose: bool,
+    #[config(env = "RTX_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
+    #[config(env = "RTX_JOBS", default = 4)]
     pub jobs: usize,
+    #[config(env = "RTX_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
+    #[config(env = "RTX_DISABLE_DEFAULT_SHORTHANDS", default = false)]
     pub disable_default_shorthands: bool,
+    #[config(env = "RTX_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub disable_tools: BTreeSet<String>,
+    #[config(env = "RTX_RAW", default = false)]
     pub raw: bool,
     pub yes: bool,
 }
 
+pub type SettingsPartial = <Settings as Config>::Partial;
+
 impl Default for Settings {
     fn default() -> Self {
-        Self {
-            experimental: *RTX_EXPERIMENTAL,
-            missing_runtime_behavior: MissingRuntimeBehavior::Warn,
-            always_keep_download: *RTX_ALWAYS_KEEP_DOWNLOAD,
-            always_keep_install: *RTX_ALWAYS_KEEP_INSTALL,
-            legacy_version_file: *RTX_LEGACY_VERSION_FILE != Some(false),
-            legacy_version_file_disable_tools: RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS.clone(),
-            plugin_autoupdate_last_check_duration: duration::WEEKLY,
-            trusted_config_paths: RTX_TRUSTED_CONFIG_PATHS.clone(),
-            verbose: *RTX_VERBOSE,
-            asdf_compat: *RTX_ASDF_COMPAT,
-            jobs: *RTX_JOBS,
-            shorthands_file: RTX_SHORTHANDS_FILE.clone(),
-            disable_default_shorthands: *RTX_DISABLE_DEFAULT_SHORTHANDS,
-            disable_tools: RTX_DISABLE_TOOLS.clone(),
-            raw: *RTX_RAW,
-            yes: *RTX_YES,
-        }
+        Settings::default_builder().load().unwrap()
     }
 }
-
 impl Settings {
+    pub fn default_builder() -> Builder<Self> {
+        let mut partial = SettingsPartial::empty();
+        partial.missing_runtime_behavior = Some(MissingRuntimeBehavior::Warn);
+        partial.plugin_autoupdate_last_check_duration = Some(duration::WEEKLY);
+        partial.yes = Some(*env::RTX_YES);
+        if *env::RTX_LOG_LEVEL < LevelFilter::Info {
+            partial.verbose = Some(true);
+        }
+
+        Settings::builder().preloaded(partial).env()
+    }
+
     pub fn to_index_map(&self) -> BTreeMap<String, String> {
         let mut map = BTreeMap::new();
         map.insert("experimental".to_string(), self.experimental.to_string());
@@ -297,7 +311,8 @@ impl Debug for SettingsBuilder {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MissingRuntimeBehavior {
     AutoInstall,
     Prompt,
