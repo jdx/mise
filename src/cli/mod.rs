@@ -1,7 +1,6 @@
 use crate::cli::self_update::SelfUpdate;
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
-use log::LevelFilter;
 
 use crate::config::Config;
 use crate::output::Output;
@@ -179,13 +178,13 @@ impl Cli {
                 .arg_required_else_help(true)
                 .subcommand_required(true)
                 .after_long_help(AFTER_LONG_HELP)
-                .arg(args::log_level::Debug::arg())
                 .arg(args::jobs::Jobs::arg())
+                .arg(args::log_level::Debug::arg())
                 .arg(args::log_level::LogLevel::arg())
-                .arg(args::raw::Raw::arg())
-                .arg(args::yes::Yes::arg())
                 .arg(args::log_level::Trace::arg())
-                .arg(args::verbose::Verbose::arg()),
+                .arg(args::raw::Raw::arg())
+                .arg(args::verbose::Verbose::arg())
+                .arg(args::yes::Yes::arg()),
         )
     }
 
@@ -196,15 +195,6 @@ impl Cli {
             return version::Version {}.run(config, out);
         }
         let matches = self.command.get_matches_from(args);
-        if let Some(log_level) = matches.get_one::<LevelFilter>("log-level") {
-            config.settings.log_level = *log_level;
-        }
-        if let Some(true) = matches.get_one::<bool>("debug") {
-            config.settings.log_level = LevelFilter::Debug;
-        }
-        if let Some(true) = matches.get_one::<bool>("trace") {
-            config.settings.log_level = LevelFilter::Trace;
-        }
         if let Some(jobs) = matches.get_one::<usize>("jobs") {
             config.settings.jobs = *jobs;
         }

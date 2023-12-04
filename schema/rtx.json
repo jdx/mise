@@ -182,17 +182,6 @@
           "description": "enable experimental features",
           "type": "boolean"
         },
-        "log_level": {
-          "description": "log level",
-          "type": "string",
-          "enum": [
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ]
-        },
         "verbose": {
           "description": "display installation output",
           "type": "boolean"
