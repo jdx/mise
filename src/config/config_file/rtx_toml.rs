@@ -542,6 +542,7 @@ impl RtxToml {
         v: &Item,
     ) -> Result<MissingRuntimeBehavior> {
         let v = self.parse_string("missing_runtime_behavior", v)?;
+        warn!("The 'missing_runtime_behavior' setting is deprecated. Use '--yes' instead.");
         match v.to_lowercase().as_str() {
             "warn" => Ok(MissingRuntimeBehavior::Warn),
             "ignore" => Ok(MissingRuntimeBehavior::Ignore),

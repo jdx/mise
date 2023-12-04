@@ -5,7 +5,6 @@ use std::ops::Deref;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::config::MissingRuntimeBehavior::{Prompt, Warn};
 use crate::hash::hash_to_str;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
@@ -19,9 +18,6 @@ pub struct Envrc {}
 
 impl Envrc {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        if config.settings.missing_runtime_behavior == Prompt {
-            config.settings.missing_runtime_behavior = Warn;
-        }
         let ts = ToolsetBuilder::new()
             .with_install_missing()
             .build(&mut config)?;

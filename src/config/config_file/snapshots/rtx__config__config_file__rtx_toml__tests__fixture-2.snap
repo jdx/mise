@@ -3,7 +3,6 @@ source: src/config/config_file/rtx_toml.rs
 expression: cf.settings()
 ---
 SettingsBuilder {
-    missing_runtime_behavior: Warn,
     legacy_version_file_disable_tools: {
         "disabled_tool_from_legacy_file",
     },

@@ -130,12 +130,6 @@ pub struct SettingsBuilder {
 }
 
 impl SettingsBuilder {
-    // pub fn new(missing_runtime_behavior: Option<MissingRuntimeBehavior>) -> Self {
-    //     Self {
-    //         missing_runtime_behavior: missing_runtime_behavior,
-    //     }
-    // }
-
     pub fn merge(&mut self, other: Self) -> &mut Self {
         if other.experimental.is_some() {
             self.experimental = other.experimental;
@@ -324,7 +318,6 @@ impl Display for MissingRuntimeBehavior {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::settings::MissingRuntimeBehavior::{AutoInstall, Ignore, Prompt, Warn};
 
     use super::*;
 
@@ -332,19 +325,11 @@ mod tests {
     fn test_settings_merge() {
         let mut s1 = SettingsBuilder::default();
         let s2 = SettingsBuilder {
-            missing_runtime_behavior: Some(AutoInstall),
+            asdf_compat: Some(true),
             ..SettingsBuilder::default()
         };
         s1.merge(s2);
 
-        assert_eq!(s1.missing_runtime_behavior, Some(AutoInstall));
-    }
-
-    #[test]
-    fn test_missing_runtime_behavior_display() {
-        assert_eq!(AutoInstall.to_string(), "autoinstall");
-        assert_eq!(Prompt.to_string(), "prompt");
-        assert_eq!(Warn.to_string(), "warn");
-        assert_eq!(Ignore.to_string(), "ignore");
+        assert_eq!(s1.asdf_compat, Some(true));
     }
 }
