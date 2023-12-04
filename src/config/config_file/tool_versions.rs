@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
@@ -9,8 +8,7 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::settings::SettingsBuilder;
-use crate::config::{global_config_files, AliasMap};
+
 use crate::file;
 use crate::file::display_path;
 use crate::plugins::{unalias_plugin, PluginName};
@@ -163,18 +161,6 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn plugins(&self) -> HashMap<PluginName, String> {
-        Default::default()
-    }
-
-    fn env(&self) -> HashMap<PluginName, String> {
-        HashMap::new()
-    }
-
-    fn path_dirs(&self) -> Vec<PathBuf> {
-        vec![]
-    }
-
     fn remove_plugin(&mut self, plugin: &PluginName) {
         self.plugins.remove(plugin);
     }
@@ -210,22 +196,6 @@ impl ConfigFile for ToolVersions {
 
     fn to_toolset(&self) -> &Toolset {
         &self.toolset
-    }
-
-    fn settings(&self) -> SettingsBuilder {
-        SettingsBuilder::default()
-    }
-
-    fn aliases(&self) -> AliasMap {
-        AliasMap::default()
-    }
-
-    fn watch_files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
-
-    fn is_global(&self) -> bool {
-        global_config_files().iter().any(|p| p == &self.path)
     }
 }
 

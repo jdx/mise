@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::default::Default;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
@@ -7,8 +6,8 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::settings::SettingsBuilder;
-use crate::config::{AliasMap, Settings};
+
+use crate::config::Settings;
 use crate::plugins::PluginName;
 use crate::tool::Tool;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
@@ -46,18 +45,6 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn plugins(&self) -> HashMap<PluginName, String> {
-        Default::default()
-    }
-
-    fn env(&self) -> HashMap<String, String> {
-        HashMap::new()
-    }
-
-    fn path_dirs(&self) -> Vec<PathBuf> {
-        vec![]
-    }
-
     fn remove_plugin(&mut self, _plugin_name: &PluginName) {
         unimplemented!()
     }
@@ -76,18 +63,6 @@ impl ConfigFile for LegacyVersionFile {
 
     fn to_toolset(&self) -> &Toolset {
         &self.toolset
-    }
-
-    fn settings(&self) -> SettingsBuilder {
-        SettingsBuilder::default()
-    }
-
-    fn aliases(&self) -> AliasMap {
-        AliasMap::default()
-    }
-
-    fn watch_files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
     }
 }
 
