@@ -47,6 +47,7 @@ clap_complete = "4.2"
 clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
+confique = { version = "0.2.4", default-features = false }
 console = "0.15"
 ctrlc = "3.4"
 dialoguer = { version = "0.11", features = [] }
