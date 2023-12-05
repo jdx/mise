@@ -105,6 +105,9 @@ _rtx() {
             rtx,prune)
                 cmd="rtx__prune"
                 ;;
+            rtx,render-completion)
+                cmd="rtx__render__completion"
+                ;;
             rtx,render-help)
                 cmd="rtx__render__help"
                 ;;
@@ -320,6 +323,9 @@ _rtx() {
                 ;;
             rtx__help,prune)
                 cmd="rtx__help__prune"
+                ;;
+            rtx__help,render-completion)
+                cmd="rtx__help__render__completion"
                 ;;
             rtx__help,render-help)
                 cmd="rtx__help__render__help"
@@ -553,7 +559,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-j -r -v -y -h -V --jobs --debug --log-level --trace --raw --verbose --yes --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-help render-mangen self-update help"
+            opts="-j -r -v -y -h -V --jobs --debug --log-level --trace --raw --verbose --yes --help --version activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-completion render-help render-mangen self-update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -568,7 +574,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -602,7 +608,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -636,7 +642,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -662,7 +668,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -780,7 +786,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -806,7 +812,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -832,7 +838,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -858,7 +864,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -884,7 +890,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -910,7 +916,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -936,7 +942,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -989,18 +995,18 @@ _rtx() {
             return 0
             ;;
         rtx__completion)
-            opts="-s -j -r -v -y -h --shell --jobs --debug --log-level --trace --raw --verbose --yes --help bash elvish fish powershell zsh"
+            opts="-s -j -r -v -y -h --shell --jobs --debug --log-level --trace --raw --verbose --yes --help bash fish zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash fish zsh" -- "${cur}"))
                     return 0
                     ;;
                 --jobs)
@@ -1012,7 +1018,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1038,7 +1044,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1064,7 +1070,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1090,7 +1096,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1116,7 +1122,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1142,7 +1148,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1168,7 +1174,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1264,7 +1270,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1298,7 +1304,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1332,7 +1338,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1370,7 +1376,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1400,7 +1406,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1411,7 +1417,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-help render-mangen self-update help"
+            opts="activate alias asdf bin-paths cache completion current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim settings shell sync trust uninstall upgrade use version where which render-completion render-help render-mangen self-update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1984,6 +1990,20 @@ _rtx() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtx__help__render__completion)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtx__help__render__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -2288,7 +2308,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2314,7 +2334,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2340,7 +2360,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2366,7 +2386,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2392,7 +2412,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2422,7 +2442,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2460,7 +2480,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2486,7 +2506,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2512,7 +2532,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2538,7 +2558,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2676,7 +2696,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2702,7 +2722,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2728,7 +2748,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2754,7 +2774,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2780,7 +2800,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2806,7 +2826,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2832,7 +2852,41 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__render__completion)
+            opts="-s -j -r -v -y -h --shell --jobs --debug --log-level --trace --raw --verbose --yes --help bash elvish fish powershell zsh"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --shell)
+                    COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2858,7 +2912,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2884,7 +2938,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2910,7 +2964,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2936,7 +2990,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2962,7 +3016,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -2988,7 +3042,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3098,7 +3152,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3124,7 +3178,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3150,7 +3204,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3176,7 +3230,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3202,7 +3256,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3284,7 +3338,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3310,7 +3364,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3336,7 +3390,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3362,7 +3416,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3388,7 +3442,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3434,7 +3488,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3460,7 +3514,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3486,7 +3540,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)
@@ -3520,7 +3574,7 @@ _rtx() {
                     return 0
                     ;;
                 --log-level)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
                     ;;
                 *)

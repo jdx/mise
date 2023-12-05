@@ -1763,7 +1763,7 @@ Arguments:
   [SHELL]
           Shell type to generate completions for
 
-          [possible values: bash, elvish, fish, powershell, zsh]
+          [possible values: bash, fish, zsh]
 
 Examples:
   $ rtx completion bash > /etc/bash_completion.d/rtx

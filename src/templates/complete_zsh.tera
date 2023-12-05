@@ -1,0 +1,103 @@
+{%- macro escape_help(s) -%}
+{{s|replace(from="[", to="\[")|replace(from="]",to="\]")}}
+{%- endmacro -%}
+
+{%- macro arg(arg) -%}
+{%- if arg.long and arg.has_value %}'{{ self::option(arg=arg) -}}'
+{%- elif arg.long %}'{{ self::flag(arg=arg) -}}'
+{%- else %}'{{ self::positional(arg=arg) -}}'
+{%- endif -%}
+{%- endmacro arg -%}
+
+{% macro option(arg) -%}
+{% if arg.short -%}
+(-{{ arg.short }} --{{ arg.long }})'{-{{ arg.short }},--{{ arg.long }}}'
+{%- else -%}
+--{{ arg.long }}
+{%- endif -%}
+=[{{self::escape_help(s=arg.help)}}]
+{%- if arg.choices | length == 0 -%}
+:: :
+{%- else -%}
+: :({%- for choice in arg.choices -%}
+{%- if choice.Single %}{{ choice.Single }} {% else -%}{{ choice |json_encode}} {%- endif -%}
+{%- endfor -%})
+{%- endif -%}
+{% endmacro option -%}
+
+{% macro flag(arg) -%}
+{% if arg.short -%}
+(-{{ arg.short }} --{{ arg.long }})'{-{{ arg.short }},--{{ arg.long }}}'
+{%- else -%}
+--{{ arg.long }}
+{%- endif -%}
+[{{self::escape_help(s=arg.help)}}]
+{%- endmacro flag -%}
+
+{% macro positional(arg) -%}
+:{{arg.id}}: :
+{%- endmacro positional -%}
+
+#compdef rtx
+_rtx() {
+  typeset -A opt_args
+  local context state line curcontext=$curcontext
+  local ret=1
+
+  _arguments -s -S \
+    '(-h --help)'{-h,--help}'[Print help (see more with '--help')]' \
+    {% for arg in visible_args -%}
+    {% if not arg.hide -%}
+      {{ self::arg(arg=arg) }} \
+    {% endif -%}
+    {% endfor -%}
+    '1: :_rtx_cmds' \
+    '*::arg:->args' && ret=0
+
+  case "$state" in
+    (args)
+      curcontext="${curcontext%:*:*}:rtx-cmd-$words[1]:"
+      case $words[1] in
+        {%- for cmd in commands %}
+        ({% for a in cmd.visible_aliases %}{{a}}|{% endfor %}{{cmd.name}})
+          __rtx_cmd_{{cmd.name|replace(from="-", to="_")}}_arguments && ret=0
+        ;;
+        {%- endfor %}
+      esac
+    ;;
+  esac
+
+  return ret
+}
+
+{%- for cmd in commands %}
+__rtx_cmd_{{cmd.name|replace(from="-", to="_")}}_arguments() {
+  _arguments{% if cmd.visible_args | length > 0 %} \{% endif %}
+{% for arg in cmd.visible_args -%}
+{% if not arg.hide %}    {{ self::arg(arg=arg) }}{% if not loop.last %} \{% endif %}
+{% endif -%}
+{% endfor -%}
+}{%- endfor %}
+
+(( $+functions[_rtx_cmds] )) ||
+_rtx_cmds() {
+  local commands; commands=(
+    {%- for cmd in commands %}
+    '{{cmd.name}}:{{cmd.about}}'
+    {%- for a in cmd.visible_aliases %}
+    '{{a}}:{{cmd.about}}'
+    {%- endfor %}
+    {%- endfor %}
+  )
+  _describe -t commands 'command' commands "$@"
+}
+
+_rtx "$@"
+
+# Local Variables:
+# mode: Shell-Script
+# sh-indentation: 2
+# indent-tabs-mode: nil
+# sh-basic-offset: 2
+# End:
+# vim: ft=zsh sw=2 ts=2 et

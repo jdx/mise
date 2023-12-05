@@ -55,11 +55,12 @@ test-coverage:
 
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
-    cargo test
+    cargo test --all-features
     cargo build --all-features
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         rtx trust
+        just pre-commit
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         rtx trust
@@ -102,9 +103,9 @@ render-help: build
 
 # regenerate shell completion files
 render-completions: build
-    NO_COLOR=1 rtx completion bash > completions/rtx.bash
-    NO_COLOR=1 rtx completion zsh > completions/_rtx
-    NO_COLOR=1 rtx completion fish > completions/rtx.fish
+    NO_COLOR=1 rtx render-completion bash > completions/rtx.bash
+    NO_COLOR=1 rtx render-completion zsh > completions/_rtx
+    NO_COLOR=1 rtx render-completion fish > completions/rtx.fish
 
 # regenerate manpages
 render-mangen: build

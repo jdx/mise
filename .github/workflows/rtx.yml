@@ -58,6 +58,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - run: npm i -g markdown-magic
       - name: Install just
         uses: taiki-e/install-action@just
       - name: Run tests with coverage
