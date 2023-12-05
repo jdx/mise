@@ -21,7 +21,7 @@ pub struct PluginsInstall {
     /// e.g.: node, ruby
     /// Can specify multiple plugins: `rtx plugins install node ruby python`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
-    name: Option<String>,
+    new_plugin: Option<PluginName>,
 
     /// The git url of the plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
@@ -35,7 +35,7 @@ pub struct PluginsInstall {
     /// Install all missing plugins
     /// This will only install plugins that have matching shorthands.
     /// i.e.: they don't need the full git repo url
-    #[clap(short, long, conflicts_with_all = ["name", "force"], verbatim_doc_comment)]
+    #[clap(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
     all: bool,
 
     /// Show installation output
@@ -52,7 +52,7 @@ impl PluginsInstall {
         if self.all {
             return self.install_all_missing_plugins(config, mpr);
         }
-        let (name, git_url) = get_name_and_url(&self.name.clone().unwrap(), &self.git_url)?;
+        let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
             self.install_one(&mut config, name, git_url, &mpr)?;
         } else {

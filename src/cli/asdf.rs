@@ -1,3 +1,4 @@
+use clap::ValueHint::CommandWithArguments;
 use color_eyre::eyre::Result;
 use itertools::Itertools;
 
@@ -11,7 +12,7 @@ use crate::toolset::ToolsetBuilder;
 #[clap(hide = true, verbatim_doc_comment)]
 pub struct Asdf {
     /// all arguments
-    #[clap(allow_hyphen_values = true)]
+    #[clap(allow_hyphen_values = true, value_hint = CommandWithArguments, trailing_var_arg = true)]
     args: Vec<String>,
 }
 

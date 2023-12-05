@@ -763,20 +763,12 @@ _rtx() {
             return 0
             ;;
         rtx__alias__ls)
-            opts="-p -j -r -v -y -h --plugin --jobs --debug --log-level --trace --raw --verbose --yes --help"
+            opts="-j -r -v -y -h --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --plugin)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1281,7 +1273,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -j -r -v -y -h --shell --json --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]..."
+            opts="-s -J -j -r -v -y -h --shell --json --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1349,7 +1341,7 @@ _rtx() {
             return 0
             ;;
         rtx__exec)
-            opts="-c -j -r -v -y -h --command --cd --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]... [COMMAND]..."
+            opts="-c -C -j -r -v -y -h --command --cd --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1364,6 +1356,10 @@ _rtx() {
                     return 0
                     ;;
                 --cd)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2319,7 +2315,7 @@ _rtx() {
             return 0
             ;;
         rtx__implode)
-            opts="-j -r -v -y -h --config --dry-run --jobs --debug --log-level --trace --raw --verbose --yes --help"
+            opts="-n -j -r -v -y -h --config --dry-run --jobs --debug --log-level --trace --raw --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2453,7 +2449,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls)
-            opts="-p -c -g -i -m -j -r -v -y -h --plugin --current --global --installed --parseable --json --missing --prefix --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGIN_ARG]"
+            opts="-p -c -g -i -J -m -j -r -v -y -h --plugin --current --global --installed --parseable --json --missing --prefix --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2543,7 +2539,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins)
-            opts="-a -c -u -j -r -v -y -h --all --core --urls --refs --jobs --debug --log-level --trace --raw --verbose --yes --help install link ls ls-remote uninstall update help"
+            opts="-a -c -u -j -r -v -y -h --all --core --user --urls --refs --jobs --debug --log-level --trace --raw --verbose --yes --help install link ls ls-remote uninstall update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2681,7 +2677,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__install)
-            opts="-f -a -v -j -r -y -h --force --all --verbose --jobs --debug --log-level --trace --raw --yes --help [NAME] [GIT_URL] [REST]..."
+            opts="-f -a -v -j -r -y -h --force --all --verbose --jobs --debug --log-level --trace --raw --yes --help [NEW_PLUGIN] [GIT_URL] [REST]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2733,7 +2729,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__ls)
-            opts="-a -c -u -j -r -v -y -h --all --core --urls --refs --jobs --debug --log-level --trace --raw --verbose --yes --help"
+            opts="-a -c -u -j -r -v -y -h --all --core --user --urls --refs --jobs --debug --log-level --trace --raw --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2785,7 +2781,7 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__uninstall)
-            opts="-p -j -r -v -y -h --purge --jobs --debug --log-level --trace --raw --verbose --yes --help <PLUGIN>..."
+            opts="-p -a -j -r -v -y -h --purge --all --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2837,7 +2833,7 @@ _rtx() {
             return 0
             ;;
         rtx__prune)
-            opts="-j -r -v -y -h --dry-run --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGINS]..."
+            opts="-n -j -r -v -y -h --dry-run --jobs --debug --log-level --trace --raw --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
