@@ -57,7 +57,7 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install zsh/fish/direnv
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
       - run: npm i -g markdown-magic
       - name: Install just
         uses: taiki-e/install-action@just

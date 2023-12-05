@@ -91,7 +91,6 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s p -l plugin -d 'Show aliases for <PLUGIN>' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from alias; and __fish_seen_subcommand_from ls" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
@@ -270,7 +269,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env" -s s -l shell -d 'Shell typ
 complete -c rtx -n "__fish_seen_subcommand_from env" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from env" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
-complete -c rtx -n "__fish_seen_subcommand_from env" -l json -d 'Output in JSON format'
+complete -c rtx -n "__fish_seen_subcommand_from env" -s J -l json -d 'Output in JSON format'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from env" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
@@ -278,7 +277,7 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from env" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l file -d 'The TOML file to update' -r
+complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l file -d 'The TOML file to update' -r -F
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -l remove -d 'Remove the environment variable from config file' -r
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
@@ -291,7 +290,7 @@ complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s v -l verbose -d 'Sh
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from env-vars" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s c -l command -d 'Command string to execute' -r -f -a "(__fish_complete_command)"
-complete -c rtx -n "__fish_seen_subcommand_from exec" -l cd -d 'Change to this directory before executing the command' -r -f -a "(__fish_complete_directories)"
+complete -c rtx -n "__fish_seen_subcommand_from exec" -s C -l cd -d 'Change to this directory before executing the command' -r -f -a "(__fish_complete_directories)"
 complete -c rtx -n "__fish_seen_subcommand_from exec" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from exec" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
@@ -335,7 +334,7 @@ complete -c rtx -n "__fish_seen_subcommand_from implode" -s j -l jobs -d 'Number
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l config -d 'Also remove config directory'
-complete -c rtx -n "__fish_seen_subcommand_from implode" -l dry-run -d 'List directories that would be removed without actually removing them'
+complete -c rtx -n "__fish_seen_subcommand_from implode" -s n -l dry-run -d 'List directories that would be removed without actually removing them'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from implode" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
@@ -393,7 +392,7 @@ Sets --jobs=1'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s v -l verbose -d 'Show installation output'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s y -l yes -d 'Answer yes to all prompts'
 complete -c rtx -n "__fish_seen_subcommand_from local" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -d 'Only show tool versions from [PLUGIN]' -r
+complete -c rtx -n "__fish_seen_subcommand_from ls" -s p -l plugin -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l prefix -d 'Display versions matching this prefix' -r
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
@@ -402,7 +401,7 @@ complete -c rtx -n "__fish_seen_subcommand_from ls" -s c -l current -d 'Only sho
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.rtx.toml'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l parseable -d 'Output in an easily parseable format'
-complete -c rtx -n "__fish_seen_subcommand_from ls" -l json -d 'Output in json format'
+complete -c rtx -n "__fish_seen_subcommand_from ls" -s J -l json -d 'Output in json format'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -s m -l missing -d 'Display missing tool versions'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from ls" -l trace -d 'Sets log level to trace'
@@ -437,6 +436,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_sub
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s a -l all -d 'list all available remote plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s c -l core -d 'The built-in plugins only
 Normally these are not shown'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l user -d 'List installed plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -s u -l urls -d 'show the git url for each plugin'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l refs -d 'show the git refs for each plugin'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from install; and not __fish_seen_subcommand_from link; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from ls-remote; and not __fish_seen_subcommand_from uninstall; and not __fish_seen_subcommand_from update; and not __fish_seen_subcommand_from help" -l debug -d 'Sets log level to debug'
@@ -485,6 +485,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 Same as `rtx plugins ls-remote`'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s c -l core -d 'The built-in plugins only
 Normally these are not shown'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l user -d 'List installed plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -s u -l urls -d 'Show the git url for each plugin
 e.g.: https://github.com/asdf-vm/asdf-node.git'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from ls" -l refs -d 'Show the git refs for each plugin
@@ -512,6 +513,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s p -l purge -d 'Also remove the plugin\'s installs, downloads, and cache'
+complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s a -l all -d 'Remove all plugins'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcommand_from uninstall" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.
@@ -540,7 +542,7 @@ complete -c rtx -n "__fish_seen_subcommand_from plugins; and __fish_seen_subcomm
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s j -l jobs -d 'Number of plugins and runtimes to install in parallel
 [default: 4]' -r
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l log-level -d 'Set the log output verbosity' -r -f -a "{error	'',warn	'',info	'',debug	'',trace	''}"
-complete -c rtx -n "__fish_seen_subcommand_from prune" -l dry-run -d 'Do not actually delete anything'
+complete -c rtx -n "__fish_seen_subcommand_from prune" -s n -l dry-run -d 'Do not actually delete anything'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l debug -d 'Sets log level to debug'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -l trace -d 'Sets log level to trace'
 complete -c rtx -n "__fish_seen_subcommand_from prune" -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.

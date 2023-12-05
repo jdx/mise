@@ -112,7 +112,7 @@ render-mangen: build
     NO_COLOR=1 rtx render-mangen
 
 # called by lefthook precommit hook
-pre-commit: render-help render-completions render-mangen
+pre-commit: render-help render-completions render-mangen lint
     git add README.md
     git add completions
     git add man

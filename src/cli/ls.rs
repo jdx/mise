@@ -23,11 +23,11 @@ use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
     /// Only show tool versions from [PLUGIN]
-    #[clap(long, short)]
+    #[clap(conflicts_with = "plugin_flag")]
     plugin: Option<PluginName>,
 
-    #[clap(hide = true)]
-    plugin_arg: Option<PluginName>,
+    #[clap(long = "plugin", short, hide = true)]
+    plugin_flag: Option<PluginName>,
 
     /// Only show tool versions currently specified in a .tool-versions/.rtx.toml
     #[clap(long, short)]
@@ -43,11 +43,11 @@ pub struct Ls {
     installed: bool,
 
     /// Output in an easily parseable format
-    #[clap(long, hide = true, visible_short_alias = 'x', conflicts_with = "json")]
+    #[clap(long, hide = true, conflicts_with = "json")]
     parseable: bool,
 
     /// Output in json format
-    #[clap(long, visible_short_alias = 'J', overrides_with = "parseable")]
+    #[clap(long, short = 'J', overrides_with = "parseable")]
     json: bool,
 
     /// Display missing tool versions
@@ -55,7 +55,7 @@ pub struct Ls {
     missing: bool,
 
     /// Display versions matching this prefix
-    #[clap(long)]
+    #[clap(long, requires = "plugin")]
     prefix: Option<String>,
 }
 
@@ -64,7 +64,7 @@ impl Ls {
         self.plugin = self
             .plugin
             .clone()
-            .or(self.plugin_arg.clone())
+            .or(self.plugin_flag.clone())
             .map(|p| PluginName::from(unalias_plugin(&p)));
         self.verify_plugin(&config)?;
 
@@ -81,9 +81,6 @@ impl Ls {
             runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv));
         }
         if let Some(prefix) = &self.prefix {
-            if self.plugin.is_none() {
-                panic!("--prefix requires --plugin");
-            }
             runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
         }
         if self.json {
@@ -418,7 +415,7 @@ mod tests {
     fn test_ls_parseable() {
         let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
-        assert_cli_snapshot!("ls", "-x");
+        assert_cli_snapshot!("ls", "--parseable");
         assert_cli_snapshot!("ls", "--parseable", "tiny");
     }
 

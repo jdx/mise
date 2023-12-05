@@ -20,7 +20,7 @@ pub struct EnvVars {
     /// The TOML file to update
     ///
     /// Defaults to RTX_DEFAULT_CONFIG_FILENAME environment variable, or ".rtx.toml".
-    #[clap(long, verbatim_doc_comment, required = false)]
+    #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
     file: Option<String>,
 
     /// Remove the environment variable from config file

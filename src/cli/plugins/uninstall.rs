@@ -11,20 +11,29 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsUninstall {
     /// Plugin(s) to remove
-    #[clap(required = true, verbatim_doc_comment)]
-    pub plugin: Vec<String>,
+    #[clap(verbatim_doc_comment)]
+    plugin: Vec<String>,
 
     /// Also remove the plugin's installs, downloads, and cache
     #[clap(long, short, verbatim_doc_comment)]
-    pub purge: bool,
+    purge: bool,
+
+    /// Remove all plugins
+    #[clap(long, short, verbatim_doc_comment, conflicts_with = "plugin")]
+    all: bool,
 }
 
 impl PluginsUninstall {
     pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
 
-        for plugin_name in &self.plugin {
-            let plugin_name = unalias_plugin(plugin_name);
+        let plugins = match self.all {
+            true => config.tools.keys().cloned().collect(),
+            false => self.plugin.clone(),
+        };
+
+        for plugin_name in plugins {
+            let plugin_name = unalias_plugin(&plugin_name);
             self.uninstall_one(&config, plugin_name, &mpr)?;
         }
         Ok(())
