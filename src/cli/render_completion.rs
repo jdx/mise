@@ -26,15 +26,17 @@ impl RenderCompletion {
     pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
-        let mut c = Cursor::new(Vec::new());
         let mut cmd = crate::cli::Cli::command().subcommand(SelfUpdate::command());
 
-        if let clap_complete::Shell::Zsh = shell {
-            rtxprintln!(out, "{}", zsh_complete(&cmd)?);
-        } else {
-            generate(shell, &mut cmd, "rtx", &mut c);
-            rtxprintln!(out, "{}", String::from_utf8(c.into_inner()).unwrap());
-        }
+        let script = match shell {
+            clap_complete::Shell::Zsh => zsh_complete(&cmd)?,
+            _ => {
+                let mut c = Cursor::new(Vec::new());
+                generate(shell, &mut cmd, "rtx", &mut c);
+                String::from_utf8(c.into_inner()).unwrap()
+            }
+        };
+        rtxprintln!(out, "{}", script.trim());
 
         Ok(())
     }
