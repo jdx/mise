@@ -16,7 +16,7 @@ use crate::plugins::PluginName;
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasLs {
     /// Show aliases for <PLUGIN>
-    #[clap(short, long)]
+    #[clap()]
     pub plugin: Option<PluginName>,
 }
 
@@ -34,7 +34,11 @@ impl AliasLs {
                     // hide the nvm-style aliases so only asdf-style ones display
                     continue;
                 }
-                rtxprintln!(out, "{:20} {:20} {}", plugin_name, from, to);
+                if self.plugin.is_some() {
+                    rtxprintln!(out, "{:20} {}", from, to);
+                } else {
+                    rtxprintln!(out, "{:20} {:20} {}", plugin_name, from, to);
+                }
             }
         }
         Ok(())
