@@ -3,7 +3,6 @@ use eyre::Result;
 use eyre::WrapErr;
 use serde_derive::Deserialize;
 
-use crate::cmd;
 use crate::config::Config;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;

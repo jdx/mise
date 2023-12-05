@@ -23,10 +23,12 @@ mod output;
 #[macro_use]
 mod regex;
 
+#[macro_use]
+mod cmd;
+
 pub mod build_time;
 mod cache;
 mod cli;
-mod cmd;
 mod config;
 mod default_shorthands;
 mod direnv;
