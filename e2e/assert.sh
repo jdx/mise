@@ -33,3 +33,12 @@ assert_fail() {
 		exit 1
 	fi
 }
+
+assert_matches() {
+	local actual
+	actual="$(bash -c "$1")"
+	if [[ ! "$actual" =~ $2 ]]; then
+		echo "Expected '$2' to match '$actual'"
+		exit 1
+	fi
+}
