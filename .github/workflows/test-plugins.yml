@@ -40,7 +40,6 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-linux]
     env:
-      RTX_MISSING_RUNTIME_BEHAVIOR: autoinstall
       GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false

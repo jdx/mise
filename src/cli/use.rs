@@ -67,8 +67,9 @@ impl Use {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .with_install_missing()
             .build(&mut config)?;
+        ts.install_arg_versions(&mut config)?;
+
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
 

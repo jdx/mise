@@ -7,12 +7,10 @@ use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
-    install_missing: bool,
     latest_versions: bool,
     global_only: bool,
     tool_filter: Option<Vec<String>>,
@@ -25,11 +23,6 @@ impl ToolsetBuilder {
 
     pub fn with_args(mut self, args: &[ToolArg]) -> Self {
         self.args = args.to_vec();
-        self
-    }
-
-    pub fn with_install_missing(mut self) -> Self {
-        self.install_missing = true;
         self
     }
 
@@ -61,11 +54,6 @@ impl ToolsetBuilder {
             toolset.versions.retain(|p, _| tools.contains(p));
         }
         toolset.resolve(config);
-
-        if self.install_missing {
-            let mpr = MultiProgressReport::new(config.show_progress_bars());
-            toolset.install_missing(config, mpr)?;
-        }
 
         debug!("{}", toolset);
         Ok(toolset)

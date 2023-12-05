@@ -24,13 +24,15 @@ pub struct Shell {
 
 impl Shell {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
-            .with_args(&self.tool)
-            .build(&mut config)?;
         if !config.is_activated() {
             err_inactive()?;
         }
+
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&mut config)?;
+        ts.install_arg_versions(&mut config)?;
+
         let shell = get_shell(None).expect("no shell detected");
 
         for (p, tv) in ts.list_current_installed_versions(&config) {

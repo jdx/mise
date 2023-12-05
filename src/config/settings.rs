@@ -13,8 +13,6 @@ use crate::{duration, env};
 pub struct Settings {
     #[config(env = "RTX_EXPERIMENTAL", default = false)]
     pub experimental: bool,
-    #[config(env = "RTX_MISSING_RUNTIME_BEHAVIOR")]
-    pub missing_runtime_behavior: MissingRuntimeBehavior,
     #[config(env = "RTX_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
     #[config(env = "RTX_ALWAYS_KEEP_INSTALL", default = false)]
@@ -54,7 +52,6 @@ impl Default for Settings {
 impl Settings {
     pub fn default_builder() -> Builder<Self> {
         let mut partial = SettingsPartial::empty();
-        partial.missing_runtime_behavior = Some(MissingRuntimeBehavior::Warn);
         partial.plugin_autoupdate_last_check_duration = Some(duration::WEEKLY);
         partial.yes = Some(*env::RTX_YES);
         if *env::RTX_LOG_LEVEL < LevelFilter::Info {
@@ -67,10 +64,6 @@ impl Settings {
     pub fn to_index_map(&self) -> BTreeMap<String, String> {
         let mut map = BTreeMap::new();
         map.insert("experimental".to_string(), self.experimental.to_string());
-        map.insert(
-            "missing_runtime_behavior".to_string(),
-            self.missing_runtime_behavior.to_string(),
-        );
         map.insert(
             "always_keep_download".to_string(),
             self.always_keep_download.to_string(),
@@ -126,7 +119,6 @@ impl Settings {
 #[derive(Default, Clone)]
 pub struct SettingsBuilder {
     pub experimental: Option<bool>,
-    pub missing_runtime_behavior: Option<MissingRuntimeBehavior>,
     pub always_keep_download: Option<bool>,
     pub always_keep_install: Option<bool>,
     pub legacy_version_file: Option<bool>,
@@ -147,9 +139,6 @@ impl SettingsBuilder {
     pub fn merge(&mut self, other: Self) -> &mut Self {
         if other.experimental.is_some() {
             self.experimental = other.experimental;
-        }
-        if other.missing_runtime_behavior.is_some() {
-            self.missing_runtime_behavior = other.missing_runtime_behavior;
         }
         if other.always_keep_download.is_some() {
             self.always_keep_download = other.always_keep_download;
@@ -195,20 +184,6 @@ impl SettingsBuilder {
     pub fn build(&self) -> Settings {
         let mut settings = Settings::default();
         settings.experimental = self.experimental.unwrap_or(settings.experimental);
-        settings.missing_runtime_behavior = match env::RTX_MISSING_RUNTIME_BEHAVIOR
-            .to_owned()
-            .unwrap_or_default()
-            .as_ref()
-        {
-            "autoinstall" => MissingRuntimeBehavior::AutoInstall,
-            "warn" => MissingRuntimeBehavior::Warn,
-            "ignore" => MissingRuntimeBehavior::Ignore,
-            "prompt" => MissingRuntimeBehavior::Prompt,
-            _ => self
-                .missing_runtime_behavior
-                .clone()
-                .unwrap_or(settings.missing_runtime_behavior),
-        };
         settings.always_keep_download = self
             .always_keep_download
             .unwrap_or(settings.always_keep_download);
@@ -258,9 +233,6 @@ impl Debug for SettingsBuilder {
         let mut d = f.debug_struct("SettingsBuilder");
         if let Some(experimental) = self.experimental {
             d.field("experimental", &experimental);
-        }
-        if let Some(missing_runtime_behavior) = &self.missing_runtime_behavior {
-            d.field("missing_runtime_behavior", &missing_runtime_behavior);
         }
         if let Some(always_keep_download) = self.always_keep_download {
             d.field("always_keep_download", &always_keep_download);

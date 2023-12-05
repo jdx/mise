@@ -22,7 +22,6 @@ fn init() {
     env::set_var("RTX_CACHE_DIR", env::HOME.join("data/cache"));
     env::set_var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
     env::set_var("RTX_DEFAULT_CONFIG_FILENAME", ".test.rtx.toml");
-    env::set_var("RTX_MISSING_RUNTIME_BEHAVIOR", "autoinstall");
     //env::set_var("TERM", "dumb");
     reset_config();
 }
