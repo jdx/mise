@@ -5,13 +5,11 @@ use console::style;
 use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::output::Output;
 use crate::plugins::PluginName;
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env, file};
 
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
@@ -127,7 +125,6 @@ pub fn local(
     if !runtime.is_empty() {
         let runtimes = ToolArg::double_tool_condition(&runtime.clone());
         if cf.display_runtime(out, &runtimes)? {
-            install_missing_runtimes(&mut config, cf.as_ref())?;
             return Ok(());
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
@@ -140,26 +137,12 @@ pub fn local(
             display_path(path),
             style(tools).cyan()
         );
-    } else {
-        install_missing_runtimes(&mut config, cf.as_ref())?;
     }
 
     if !runtime.is_empty() || remove.is_some() {
         cf.save()?;
     } else {
         rtxprint!(out, "{}", cf.dump());
-    }
-
-    Ok(())
-}
-
-fn install_missing_runtimes(config: &mut Config, cf: &dyn ConfigFile) -> Result<()> {
-    let mut ts = cf.to_toolset().clone();
-    ts.latest_versions = true;
-    ts.resolve(config);
-    if !ts.list_missing_versions(config).is_empty() {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
-        ts.install_missing(config, mpr)?;
     }
 
     Ok(())

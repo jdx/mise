@@ -28,10 +28,11 @@ pub struct Env {
 
 impl Env {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
+        let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;
+        ts.install_arg_versions(&mut config)?;
+
         if self.json {
             self.output_json(config, out, ts)
         } else {

@@ -11,9 +11,7 @@ pub struct BinPaths {}
 
 impl BinPaths {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
-            .build(&mut config)?;
+        let ts = ToolsetBuilder::new().build(&mut config)?;
         for p in ts.list_paths(&config) {
             rtxprintln!(out, "{}", p.display());
         }
@@ -23,10 +21,11 @@ impl BinPaths {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli_snapshot;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_bin_paths() {
+        assert_cli!("i");
         assert_cli_snapshot!("bin-paths");
     }
 }
