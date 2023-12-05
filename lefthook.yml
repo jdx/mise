@@ -3,7 +3,6 @@ pre-commit:
   commands:
     pre-commit:
       run: just -v pre-commit
-      interactive: true
 skip_output:
   - meta
   - summary

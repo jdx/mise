@@ -9,7 +9,6 @@ setup_env() {
 	export ROOT
 	export PATH="$ROOT/target/debug:$PATH"
 	export RTX_USE_TOML="0"
-	export RTX_MISSING_RUNTIME_BEHAVIOR="autoinstall"
 	export RTX_DATA_DIR="$HOME/.rtx/e2e"
 	export RTX_CACHE_DIR="$HOME/.rtx/e2e/cache"
 	export RTX_CONFIG_DIR="$HOME/.rtx/e2e/config"
@@ -31,8 +30,8 @@ setup_config_files() {
 run_test() {
 	echo "Running $TEST"
 	rm -f "$RTX_CONFIG_FILE"
-	rtx trust "$ROOT/e2e/.e2e.rtx.toml" >/dev/null
 	cd "$(dirname "$TEST")"
+	rtx i
 
 	"./$(basename "$TEST")"
 }

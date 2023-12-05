@@ -46,10 +46,11 @@ pub struct Exec {
 
 impl Exec {
     pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
+        let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .with_install_missing()
             .build(&mut config)?;
+        ts.install_arg_versions(&mut config)?;
+
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
         let env = ts.env_with_path(&config);
 
