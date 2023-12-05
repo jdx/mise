@@ -865,4 +865,3 @@ complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls; and not __fish_seen_subcommand_from set; and not __fish_seen_subcommand_from unset" -f -a "unset" -d 'Clears a setting'
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python" -f -a "node" -d 'Symlinks all tool versions from an external tool into rtx'
 complete -c rtx -n "__fish_seen_subcommand_from help; and __fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from node; and not __fish_seen_subcommand_from python" -f -a "python" -d 'Symlinks all tool versions from an external tool into rtx'
-
