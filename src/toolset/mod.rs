@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::env::join_paths;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -20,6 +19,7 @@ pub use tool_version_request::ToolVersionRequest;
 use crate::config::Config;
 use crate::env;
 use crate::install_context::InstallContext;
+use crate::path_env::PathEnv;
 use crate::plugins::PluginName;
 use crate::runtime_symlinks;
 use crate::shims;
@@ -261,12 +261,18 @@ impl Toolset {
             .collect()
     }
     pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
-        let mut env = self.env(config);
-        let mut path_env = self.path_env(config);
-        if let Some(path) = env.get("PATH") {
-            path_env = format!("{}:{}", path, path_env);
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in config.path_dirs.clone() {
+            path_env.add(p);
         }
-        env.insert("PATH".to_string(), path_env);
+        for p in self.list_paths(config) {
+            path_env.add(p);
+        }
+        let mut env = self.env(config);
+        if let Some(path) = env.get("PATH") {
+            path_env.add(PathBuf::from(path));
+        }
+        env.insert("PATH".to_string(), path_env.to_string());
         env
     }
     pub fn env(&self, config: &Config) -> BTreeMap<String, String> {
@@ -297,13 +303,6 @@ impl Toolset {
         }
         entries.extend(config.env.clone());
         entries
-    }
-    pub fn path_env(&self, config: &Config) -> String {
-        let installs = self.list_paths(config);
-        join_paths([config.path_dirs.clone(), installs, env::PATH.clone()].concat())
-            .unwrap()
-            .to_string_lossy()
-            .into()
     }
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
         self.list_current_installed_versions(config)

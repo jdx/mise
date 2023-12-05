@@ -46,6 +46,7 @@ mod install_context;
 mod lock_file;
 mod logger;
 mod migrate;
+mod path_env;
 mod plugins;
 mod rand;
 mod runtime_symlinks;
