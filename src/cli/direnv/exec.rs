@@ -22,9 +22,8 @@ struct DirenvWatches {
 
 impl DirenvExec {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
-            .build(&mut config)?;
+        let ts = ToolsetBuilder::new().build(&mut config)?;
+
         let mut cmd = env_cmd();
 
         for (k, v) in ts.env_with_path(&config) {

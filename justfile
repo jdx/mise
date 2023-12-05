@@ -2,7 +2,6 @@ set shell := ["bash", "-uc"]
 
 export RTX_DATA_DIR := "/tmp/rtx"
 export PATH := env_var_or_default("CARGO_TARGET_DIR", justfile_directory() / "target") / "debug:" + env_var("PATH")
-export RTX_MISSING_RUNTIME_BEHAVIOR := "autoinstall"
 export RUST_TEST_THREADS := "1"
 
 # defaults to `just test`

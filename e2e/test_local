@@ -16,8 +16,6 @@ assert_raises() {
 	fi
 }
 
-export RTX_MISSING_RUNTIME_BEHAVIOR=autoinstall
-
 assert_raises "rtx uninstall shfmt@3.6.0"
 
 assert "rtx local" "#:schema ../../schema/rtx.json
