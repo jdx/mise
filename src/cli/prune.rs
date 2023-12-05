@@ -23,10 +23,10 @@ use crate::ui::prompt;
 pub struct Prune {
     /// Prune only versions from these plugins
     #[clap()]
-    pub plugins: Option<Vec<PluginName>>,
+    pub plugin: Option<Vec<PluginName>>,
 
     /// Do not actually delete anything
-    #[clap(long, short_alias = 'n')]
+    #[clap(long, short = 'n')]
     pub dry_run: bool,
 }
 
@@ -39,7 +39,7 @@ impl Prune {
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
             .collect::<BTreeMap<String, (Arc<Tool>, ToolVersion)>>();
 
-        if let Some(plugins) = &self.plugins {
+        if let Some(plugins) = &self.plugin {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
         }
 

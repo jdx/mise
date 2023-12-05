@@ -21,8 +21,15 @@ pub struct PluginsLs {
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[clap(short, long, verbatim_doc_comment)]
+    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all")]
     pub core: bool,
+
+    /// List installed plugins
+    ///
+    /// This is the default behavior but can be used with --core
+    /// to show core and user plugins
+    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
+    pub user: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
@@ -46,6 +53,7 @@ impl PluginsLs {
                 let tool = Tool::new(plugin.clone(), Box::from(ep));
                 tools.insert(Arc::new(tool));
             }
+        } else if self.user && self.core {
         } else if self.core {
             tools.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
         } else {

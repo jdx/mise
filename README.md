@@ -131,7 +131,7 @@ v20.0.0
 - [Commands](#commands)
   - [`rtx activate [OPTIONS] [SHELL_TYPE]`](#rtx-activate-options-shell_type)
   - [`rtx alias get <PLUGIN> <ALIAS>`](#rtx-alias-get-plugin-alias)
-  - [`rtx alias ls [OPTIONS]`](#rtx-alias-ls-options)
+  - [`rtx alias ls [PLUGIN]`](#rtx-alias-ls-plugin)
   - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
@@ -148,16 +148,16 @@ v20.0.0
   - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
   - [`rtx latest [OPTIONS] <TOOL@VERSION>`](#rtx-latest-options-toolversion)
   - [`rtx link [OPTIONS] <TOOL@VERSION> <PATH>`](#rtx-link-options-toolversion-path)
-  - [`rtx ls [OPTIONS]`](#rtx-ls-options)
+  - [`rtx ls [OPTIONS] [PLUGIN]`](#rtx-ls-options-plugin)
   - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
   - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
-  - [`rtx plugins install [OPTIONS] [NAME] [GIT_URL]`](#rtx-plugins-install-options-name-git_url)
+  - [`rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`](#rtx-plugins-install-options-new_plugin-git_url)
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
-  - [`rtx plugins uninstall [OPTIONS] <PLUGIN>...`](#rtx-plugins-uninstall-options-plugin)
+  - [`rtx plugins uninstall [OPTIONS] [PLUGIN]...`](#rtx-plugins-uninstall-options-plugin)
   - [`rtx plugins update [PLUGIN]...`](#rtx-plugins-update-plugin)
-  - [`rtx prune [OPTIONS] [PLUGINS]...`](#rtx-prune-options-plugins)
+  - [`rtx prune [OPTIONS] [PLUGIN]...`](#rtx-prune-options-plugin)
   - [`rtx reshim`](#rtx-reshim)
   - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
   - [`rtx settings get <KEY>`](#rtx-settings-get-key)
@@ -1670,7 +1670,7 @@ Examples:
  20.0.0
 ```
 
-### `rtx alias ls [OPTIONS]`
+### `rtx alias ls [PLUGIN]`
 
 ```
 List aliases
@@ -1682,10 +1682,10 @@ For user config, aliases are defined like the following in `~/.config/rtx/config
   [alias.node]
   lts = "20.0.0"
 
-Usage: alias ls [OPTIONS]
+Usage: alias ls [PLUGIN]
 
-Options:
-  -p, --plugin <PLUGIN>
+Arguments:
+  [PLUGIN]
           Show aliases for <PLUGIN>
 
 Examples:
@@ -1868,10 +1868,8 @@ Options:
 
           [possible values: bash, fish, nu, xonsh, zsh]
 
-      --json
+  -J, --json
           Output in JSON format
-
-          [short aliases: J]
 
 Examples:
   $ eval "$(rtx env -s bash)"
@@ -1933,10 +1931,8 @@ Options:
   -c, --command <C>
           Command string to execute
 
-      --cd <CD>
+  -C, --cd <CD>
           Change to this directory before executing the command
-
-          [short aliases: C]
 
 Examples:
   $ rtx exec node@20 -- node ./app.js  # launch app.js using node-20.x
@@ -1962,7 +1958,7 @@ Options:
       --config
           Also remove config directory
 
-      --dry-run
+  -n, --dry-run
           List directories that would be removed without actually removing them
 ```
 
@@ -2054,17 +2050,18 @@ Examples:
   $ rtx use node@brew
 ```
 
-### `rtx ls [OPTIONS]`
+### `rtx ls [OPTIONS] [PLUGIN]`
 
 ```
 List installed and/or currently selected tool versions
 
-Usage: ls [OPTIONS]
+Usage: ls [OPTIONS] [PLUGIN]
 
-Options:
-  -p, --plugin <PLUGIN>
+Arguments:
+  [PLUGIN]
           Only show tool versions from [PLUGIN]
 
+Options:
   -c, --current
           Only show tool versions currently specified in a .tool-versions/.rtx.toml
 
@@ -2074,10 +2071,8 @@ Options:
   -i, --installed
           Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed
 
-      --json
+  -J, --json
           Output in json format
-
-          [short aliases: J]
 
   -m, --missing
           Display missing tool versions
@@ -2167,7 +2162,7 @@ Examples:
   node    20         20.0.0   20.1.0
 ```
 
-### `rtx plugins install [OPTIONS] [NAME] [GIT_URL]`
+### `rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
 
 ```
 Install a plugin
@@ -2177,10 +2172,10 @@ e.g.: `rtx install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/rtx/config.toml
 
-Usage: plugins install [OPTIONS] [NAME] [GIT_URL]
+Usage: plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]
 
 Arguments:
-  [NAME]
+  [NEW_PLUGIN]
           The name of the plugin to install
           e.g.: node, ruby
           Can specify multiple plugins: `rtx plugins install node ruby python`
@@ -2259,6 +2254,12 @@ Options:
           The built-in plugins only
           Normally these are not shown
 
+      --user
+          List installed plugins
+
+          This is the default behavior but can be used with --core
+          to show core and user plugins
+
   -u, --urls
           Show the git url for each plugin
           e.g.: https://github.com/asdf-vm/asdf-node.git
@@ -2298,20 +2299,23 @@ Options:
           Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
 
-### `rtx plugins uninstall [OPTIONS] <PLUGIN>...`
+### `rtx plugins uninstall [OPTIONS] [PLUGIN]...`
 
 ```
 Removes a plugin
 
-Usage: plugins uninstall [OPTIONS] <PLUGIN>...
+Usage: plugins uninstall [OPTIONS] [PLUGIN]...
 
 Arguments:
-  <PLUGIN>...
+  [PLUGIN]...
           Plugin(s) to remove
 
 Options:
   -p, --purge
           Also remove the plugin's installs, downloads, and cache
+
+  -a, --all
+          Remove all plugins
 
 Examples:
   $ rtx uninstall node
@@ -2336,7 +2340,7 @@ Examples:
   $ rtx plugins update node#beta  # specify a ref
 ```
 
-### `rtx prune [OPTIONS] [PLUGINS]...`
+### `rtx prune [OPTIONS] [PLUGIN]...`
 
 ```
 Delete unused versions of tools
@@ -2346,14 +2350,14 @@ Versions which are no longer the latest specified in any of those configs are de
 Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
 as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
 
-Usage: prune [OPTIONS] [PLUGINS]...
+Usage: prune [OPTIONS] [PLUGIN]...
 
 Arguments:
-  [PLUGINS]...
+  [PLUGIN]...
           Prune only versions from these plugins
 
 Options:
-      --dry-run
+  -n, --dry-run
           Do not actually delete anything
 
 Examples:

@@ -25,8 +25,15 @@ pub struct Plugins {
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[clap(short, long, verbatim_doc_comment)]
+    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all")]
     pub core: bool,
+
+    /// List installed plugins
+    ///
+    /// This is the default behavior but can be used with --core
+    /// to show core and user plugins
+    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
+    pub user: bool,
 
     /// show the git url for each plugin
     ///
@@ -69,8 +76,9 @@ impl Plugins {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,
-            urls: self.urls,
             refs: self.refs,
+            urls: self.urls,
+            user: self.user,
         }));
 
         cmd.run(config, out)

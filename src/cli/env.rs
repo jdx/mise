@@ -22,7 +22,7 @@ pub struct Env {
     tool: Vec<ToolArg>,
 
     /// Output in JSON format
-    #[clap(long, visible_short_alias = 'J', overrides_with = "shell")]
+    #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
 }
 

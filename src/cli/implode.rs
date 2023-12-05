@@ -19,7 +19,7 @@ pub struct Implode {
     config: bool,
 
     /// List directories that would be removed without actually removing them
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 }
 

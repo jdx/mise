@@ -11,6 +11,7 @@ use crate::output::Output;
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsSet {
     /// The setting to set
+    #[clap()]
     pub key: String,
     /// The value to set
     pub value: String,

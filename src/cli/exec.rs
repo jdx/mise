@@ -40,7 +40,7 @@ pub struct Exec {
     pub c: Option<OsString>,
 
     /// Change to this directory before executing the command
-    #[clap(visible_short_alias = 'C', value_hint = ValueHint::DirPath, long)]
+    #[clap(short = 'C', value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
 }
 
