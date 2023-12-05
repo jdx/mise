@@ -11,7 +11,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 
-pub use settings::{MissingRuntimeBehavior, Settings};
+pub use settings::Settings;
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;

@@ -18,9 +18,8 @@ pub struct Envrc {}
 
 impl Envrc {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new()
-            .with_install_missing()
-            .build(&mut config)?;
+        let ts = ToolsetBuilder::new().build(&mut config)?;
+
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
             .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");

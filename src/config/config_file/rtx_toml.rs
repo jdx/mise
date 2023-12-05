@@ -12,7 +12,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsBuilder;
-use crate::config::{config_file, AliasMap, MissingRuntimeBehavior};
+use crate::config::{config_file, AliasMap};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
@@ -377,10 +377,6 @@ impl RtxToml {
                     let k = format!("{}.{}", key, config_key);
                     match config_key.to_lowercase().as_str() {
                         "experimental" => settings.experimental = Some(self.parse_bool(&k, v)?),
-                        "missing_runtime_behavior" => {
-                            settings.missing_runtime_behavior =
-                                Some(self.parse_missing_runtime_behavior(&k, v)?)
-                        }
                         "legacy_version_file" => {
                             settings.legacy_version_file = Some(self.parse_bool(&k, v)?)
                         }
@@ -512,16 +508,6 @@ impl RtxToml {
         }
     }
 
-    fn parse_string(&mut self, k: &str, v: &Item) -> Result<String> {
-        match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => {
-                let v = self.parse_template(k, v)?;
-                Ok(v)
-            }
-            _ => parse_error!(k, v, "string")?,
-        }
-    }
-
     fn parse_string_array(&self, k: &String, v: &Item) -> Result<Vec<String>> {
         match v
             .as_array()
@@ -529,24 +515,6 @@ impl RtxToml {
         {
             Some(v) => Ok(v),
             _ => parse_error!(k, v, "array of strings")?,
-        }
-    }
-
-    fn parse_missing_runtime_behavior(
-        &mut self,
-        k: &str,
-        v: &Item,
-    ) -> Result<MissingRuntimeBehavior> {
-        let v = self.parse_string("missing_runtime_behavior", v)?;
-        warn!("The 'missing_runtime_behavior' setting is deprecated. Use '--yes' instead.");
-        match v.to_lowercase().as_str() {
-            "warn" => Ok(MissingRuntimeBehavior::Warn),
-            "ignore" => Ok(MissingRuntimeBehavior::Ignore),
-            "prompt" => Ok(MissingRuntimeBehavior::Prompt),
-            "autoinstall" => Ok(MissingRuntimeBehavior::AutoInstall),
-            _ => Err(eyre!(
-                "expected {k} to be one of: 'warn', 'ignore', 'prompt', 'autoinstall'. Got: {v}"
-            )),
         }
     }
 

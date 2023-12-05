@@ -51,7 +51,6 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
-        missing_runtime_behavior = autoinstall
         plugin_autoupdate_last_check_duration = 20
         raw = false
         trusted_config_paths = []
