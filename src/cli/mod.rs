@@ -32,6 +32,8 @@ mod ls_remote;
 mod outdated;
 mod plugins;
 mod prune;
+#[cfg(feature = "clap_complete")]
+mod render_completion;
 #[cfg(debug_assertions)]
 mod render_help;
 #[cfg(feature = "clap_mangen")]
@@ -93,6 +95,9 @@ pub enum Commands {
     Where(r#where::Where),
     Which(which::Which),
 
+    #[cfg(feature = "clap_complete")]
+    RenderCompletion(render_completion::RenderCompletion),
+
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
 
@@ -139,6 +144,9 @@ impl Commands {
             Self::Version(cmd) => cmd.run(config, out),
             Self::Where(cmd) => cmd.run(config, out),
             Self::Which(cmd) => cmd.run(config, out),
+
+            #[cfg(feature = "clap_complete")]
+            Self::RenderCompletion(cmd) => cmd.run(config, out),
 
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(config, out),

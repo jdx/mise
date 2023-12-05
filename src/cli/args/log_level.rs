@@ -1,16 +1,11 @@
-use clap::builder::ValueParser;
 use clap::{Arg, ArgAction};
-use log::{LevelFilter, ParseLevelError};
+use log::LevelFilter;
 use once_cell::sync::Lazy;
 
 use crate::env;
 
 #[derive(Clone)]
 pub struct LogLevel(pub LevelFilter);
-
-fn parse_log_level(input: &str) -> core::result::Result<LevelFilter, ParseLevelError> {
-    input.parse::<LevelFilter>()
-}
 
 impl LogLevel {
     pub fn arg() -> clap::Arg {
@@ -20,7 +15,7 @@ impl LogLevel {
             .help("Set the log output verbosity")
             .default_value(DEFAULT_LOG_LEVEL.as_str())
             .global(true)
-            .value_parser(ValueParser::new(parse_log_level))
+            .value_parser(["error", "warn", "info", "debug", "trace"])
     }
 }
 

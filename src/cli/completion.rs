@@ -1,10 +1,8 @@
-use std::io::Cursor;
-
-use clap_complete::generate;
+use clap::builder::PossibleValue;
+use clap::ValueEnum;
 use color_eyre::eyre::Result;
+use std::fmt::Display;
 
-use crate::cli::self_update::SelfUpdate;
-use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::Output;
 
@@ -13,25 +11,22 @@ use crate::output::Output;
 #[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Completion {
     /// Shell type to generate completions for
-    #[clap()]
-    shell: Option<clap_complete::Shell>,
+    #[clap(required_unless_present = "shell_type")]
+    shell: Option<Shell>,
 
     /// Shell type to generate completions for
     #[clap(long = "shell", short = 's', hide = true)]
-    shell_type: Option<clap_complete::Shell>,
+    shell_type: Option<Shell>,
 }
 
 impl Completion {
     pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let shell = match self.shell.or(self.shell_type) {
-            Some(shell) => shell,
-            None => panic!("no shell provided"),
+        let c = match self.shell.or(self.shell_type).unwrap() {
+            Shell::Bash => include_str!("../../completions/rtx.bash"),
+            Shell::Fish => include_str!("../../completions/rtx.fish"),
+            Shell::Zsh => include_str!("../../completions/_rtx"),
         };
-
-        let mut c = Cursor::new(Vec::new());
-        let mut cmd = Cli::command().subcommand(SelfUpdate::command());
-        generate(shell, &mut cmd, "rtx", &mut c);
-        rtxprintln!(out, "{}", String::from_utf8(c.into_inner()).unwrap());
+        rtxprintln!(out, "{}", c.trim());
 
         Ok(())
     }
@@ -44,3 +39,49 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>rtx completion fish > ~/.config/fish/completions/rtx.fish</bold>
 "#
 );
+
+#[derive(Debug, Clone)]
+enum Shell {
+    Bash,
+    Fish,
+    Zsh,
+}
+
+impl ValueEnum for Shell {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Bash, Self::Fish, Self::Zsh]
+    }
+    fn from_str(input: &str, _ignore_case: bool) -> std::result::Result<Self, String> {
+        match input {
+            "bash" => Ok(Self::Bash),
+            "fish" => Ok(Self::Fish),
+            "zsh" => Ok(Self::Zsh),
+            _ => Err(format!("unknown shell type: {}", input)),
+        }
+    }
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(PossibleValue::new(self.to_string()))
+    }
+}
+
+impl Display for Shell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bash => write!(f, "bash"),
+            Self::Fish => write!(f, "fish"),
+            Self::Zsh => write!(f, "zsh"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::assert_cli;
+
+    #[test]
+    fn test_completion() {
+        assert_cli!("completion", "zsh");
+        assert_cli!("completion", "bash");
+        assert_cli!("completion", "fish");
+    }
+}
