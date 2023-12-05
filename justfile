@@ -26,7 +26,7 @@ test-update-snapshots:
 
 # run the rust "unit" tests
 test-unit *args:
-    cargo test {{ args }}
+    cargo test --all-features {{ args }}
 
 # runs the E2E tests in ./e2e
 
