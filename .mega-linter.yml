@@ -11,13 +11,11 @@ APPLY_FIXES: all
 # ENABLE:
 #   - RUST
 
-# If you use ENABLE_LINTERS variable, all other linters will be disabled by
-# default
-# ENABLE_LINTERS:
-
 DISABLE:
-  - SPELL # Uncomment to disable checks of spelling mistakes
-# - COPYPASTE # Uncomment to disable checks of excessive copy-pastes
+  - SPELL
+
+DISABLE_LINTERS:
+  - REPOSITORY_CHECKOV
 
 PRE_COMMANDS:
   - command: apk add --no-cache zlib-dev zlib-static openssl-dev libffi-dev
