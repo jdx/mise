@@ -3,18 +3,18 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
+use confique::Partial;
 use console::style;
 use eyre::WrapErr;
 use tera::Context;
-use toml_edit::{table, value, Array, Document, Item, Value};
+use toml_edit::{table, value, Array, Document, Item, Table, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::settings::SettingsBuilder;
-use crate::config::{config_file, AliasMap};
+use crate::config::settings::SettingsPartial;
+use crate::config::{config_file, AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
@@ -34,7 +34,7 @@ pub struct RtxToml {
     env: HashMap<String, String>,
     env_remove: Vec<String>,
     path_dirs: Vec<PathBuf>,
-    settings: SettingsBuilder,
+    settings: Table,
     alias: AliasMap,
     doc: Document,
     plugins: HashMap<String, String>,
@@ -370,59 +370,11 @@ impl RtxToml {
         }
     }
 
-    fn parse_settings(&self, key: &str, v: &Item) -> Result<SettingsBuilder> {
-        let mut settings = SettingsBuilder::default();
-
-        match v.as_table_like() {
-            Some(table) => {
-                for (config_key, v) in table.iter() {
-                    let k = format!("{}.{}", key, config_key);
-                    match config_key.to_lowercase().as_str() {
-                        "experimental" => settings.experimental = Some(self.parse_bool(&k, v)?),
-                        "legacy_version_file" => {
-                            settings.legacy_version_file = Some(self.parse_bool(&k, v)?)
-                        }
-                        "legacy_version_file_disable_tools" => {
-                            settings.legacy_version_file_disable_tools =
-                                self.parse_string_array(&k, v)?.into_iter().collect()
-                        }
-                        "always_keep_download" => {
-                            settings.always_keep_download = Some(self.parse_bool(&k, v)?)
-                        }
-                        "always_keep_install" => {
-                            settings.always_keep_install = Some(self.parse_bool(&k, v)?)
-                        }
-                        "plugin_autoupdate_last_check_duration" => {
-                            settings.plugin_autoupdate_last_check_duration =
-                                Some(self.parse_duration_minutes(&k, v)?)
-                        }
-                        "trusted_config_paths" => {
-                            settings.trusted_config_paths =
-                                self.parse_paths(&k, v)?.into_iter().collect();
-                        }
-                        "verbose" => settings.verbose = Some(self.parse_bool(&k, v)?),
-                        "asdf_compat" => settings.asdf_compat = Some(self.parse_bool(&k, v)?),
-                        "jobs" => settings.jobs = Some(self.parse_usize(&k, v)?),
-                        "shorthands_file" => {
-                            settings.shorthands_file = Some(self.parse_path(&k, v)?)
-                        }
-                        "disable_default_shorthands" => {
-                            settings.disable_default_shorthands = Some(self.parse_bool(&k, v)?)
-                        }
-                        "disable_tools" => {
-                            settings.disable_tools =
-                                self.parse_string_array(&k, v)?.into_iter().collect()
-                        }
-                        "raw" => settings.raw = Some(self.parse_bool(&k, v)?),
-                        "yes" => settings.yes = Some(self.parse_bool(&k, v)?),
-                        _ => Err(eyre!("Unknown config setting: {}", k))?,
-                    };
-                }
-            }
-            None => parse_error!("settings", v, "table")?,
+    fn parse_settings(&self, _k: &str, v: &Item) -> Result<Table> {
+        match v.as_table() {
+            Some(table) => Ok(table.clone()),
+            None => parse_error!("settings", v, "table"),
         }
-
-        Ok(settings)
     }
 
     pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
@@ -458,18 +410,17 @@ impl RtxToml {
         }
     }
 
-    fn parse_duration_minutes(&self, k: &str, v: &Item) -> Result<Duration> {
-        match v.as_value() {
-            Some(Value::String(s)) => Ok(humantime::parse_duration(s.value())?),
-            Some(Value::Integer(i)) => Ok(Duration::from_secs(*i.value() as u64 * 60)),
-            _ => parse_error!(k, v, "duration")?,
-        }
-    }
-
     fn parse_bool(&self, k: &str, v: &Item) -> Result<bool> {
         match v.as_value().map(|v| v.as_bool()) {
             Some(Some(v)) => Ok(v),
             _ => parse_error!(k, v, "boolean")?,
+        }
+    }
+
+    fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
+        match v.as_value().map(|v| v.as_str()) {
+            Some(Some(v)) => Ok(v.to_string()),
+            _ => parse_error!(k, v, "string")?,
         }
     }
 
@@ -714,8 +665,46 @@ impl ConfigFile for RtxToml {
         &self.toolset
     }
 
-    fn settings(&self) -> SettingsBuilder {
-        self.settings.clone()
+    fn settings(&self) -> Result<SettingsPartial> {
+        let mut s = SettingsPartial::empty();
+
+        for (config_key, v) in self.settings.iter() {
+            let k = format!("settings.{config_key}");
+            match config_key.to_lowercase().as_str() {
+                "experimental" => s.experimental = Some(self.parse_bool(&k, v)?),
+                "legacy_version_file" => s.legacy_version_file = Some(self.parse_bool(&k, v)?),
+                "legacy_version_file_disable_tools" => {
+                    s.legacy_version_file_disable_tools =
+                        Some(self.parse_string_array(&k, v)?.into_iter().collect())
+                }
+                "always_keep_download" => s.always_keep_download = Some(self.parse_bool(&k, v)?),
+                "always_keep_install" => s.always_keep_install = Some(self.parse_bool(&k, v)?),
+                "plugin_autoupdate_last_check_duration" => {
+                    s.plugin_autoupdate_last_check_duration = match v.as_integer() {
+                        Some(i) => Some(format!("{}m", i)),
+                        None => Some(self.parse_string(&k, v)?),
+                    }
+                }
+                "trusted_config_paths" => {
+                    s.trusted_config_paths = Some(self.parse_paths(&k, v)?.into_iter().collect());
+                }
+                "verbose" => s.verbose = Some(self.parse_bool(&k, v)?),
+                "asdf_compat" => s.asdf_compat = Some(self.parse_bool(&k, v)?),
+                "jobs" => s.jobs = Some(self.parse_usize(&k, v)?),
+                "shorthands_file" => s.shorthands_file = Some(self.parse_path(&k, v)?),
+                "disable_default_shorthands" => {
+                    s.disable_default_shorthands = Some(self.parse_bool(&k, v)?)
+                }
+                "disable_tools" => {
+                    s.disable_tools = Some(self.parse_string_array(&k, v)?.into_iter().collect());
+                }
+                "raw" => s.raw = Some(self.parse_bool(&k, v)?),
+                "yes" => s.yes = Some(self.parse_bool(&k, v)?),
+                _ => Err(eyre!("Unknown config setting: {}", k))?,
+            };
+        }
+
+        Ok(s)
     }
 
     fn aliases(&self) -> AliasMap {
@@ -735,8 +724,12 @@ impl Debug for RtxToml {
         let mut d = f.debug_struct("RtxToml");
         d.field("path", &self.path)
             .field("toolset", &self.toolset.to_string())
-            .field("is_trusted", &self.is_trusted)
-            .field("settings", &self.settings);
+            .field("is_trusted", &self.is_trusted);
+        if let Ok(partial) = self.settings() {
+            if let Ok(settings) = Settings::default_builder().preloaded(partial).load() {
+                d.field("settings", &settings);
+            }
+        }
         if let Some(env_file) = &self.env_file {
             d.field("env_file", env_file);
         }
@@ -771,9 +764,13 @@ mod tests {
     #[test]
     fn test_fixture() {
         let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml"), true).unwrap();
+        let settings = Settings::default_builder()
+            .preloaded(cf.settings().unwrap())
+            .load()
+            .unwrap();
 
         assert_debug_snapshot!(cf.env());
-        assert_debug_snapshot!(cf.settings());
+        assert_debug_snapshot!(settings);
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
