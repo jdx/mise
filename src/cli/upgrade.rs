@@ -22,11 +22,15 @@ pub struct Upgrade {
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
-    pub tool: Vec<ToolArg>,
+    tool: Vec<ToolArg>,
+
+    /// Just print what would be done, don't actually do it
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 }
 
 impl Upgrade {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&mut config)?;
@@ -41,13 +45,13 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.upgrade(&mut config, outdated)?;
+            self.upgrade(&mut config, outdated, out)?;
         }
 
         Ok(())
     }
 
-    fn upgrade(&self, config: &mut Config, outdated: OutputVec) -> Result<()> {
+    fn upgrade(&self, config: &mut Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
@@ -66,6 +70,15 @@ impl Upgrade {
             .map(|(tool, tv, _)| (tool, tv))
             .collect::<Vec<_>>();
 
+        if self.dry_run {
+            for (tool, tv) in &to_remove {
+                rtxprintln!(out, "Would uninstall {} {}", tool, tv);
+            }
+            for tv in &new_versions {
+                rtxprintln!(out, "Would install {}", tv);
+            }
+            return Ok(());
+        }
         ts.install_versions(config, new_versions, &mpr, false)?;
         for (tool, tv) in to_remove {
             let mut pr = mpr.add();
@@ -86,7 +99,7 @@ impl Upgrade {
         pr: &mut ProgressReport,
     ) -> Result<()> {
         tool.decorate_progress_bar(pr, Some(tv));
-        match tool.uninstall_version(config, tv, pr, false) {
+        match tool.uninstall_version(config, tv, pr, self.dry_run) {
             Ok(_) => {
                 pr.finish();
                 Ok(())
@@ -100,3 +113,22 @@ impl Upgrade {
 }
 
 type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
+
+#[cfg(test)]
+pub mod tests {
+    use crate::test::reset_config;
+    use crate::{assert_cli_snapshot, dirs, file};
+
+    #[test]
+    fn test_upgrade() {
+        reset_config();
+        file::rename(
+            dirs::INSTALLS.join("tiny").join("3.1.0"),
+            dirs::INSTALLS.join("tiny").join("3.0.0"),
+        )
+        .unwrap();
+        assert_cli_snapshot!("upgrade", "--dry-run");
+        assert_cli_snapshot!("upgrade");
+        assert!(dirs::INSTALLS.join("tiny").join("3.1.0").exists());
+    }
+}
