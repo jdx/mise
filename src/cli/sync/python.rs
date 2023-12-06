@@ -21,7 +21,7 @@ pub struct SyncPython {
 
 impl SyncPython {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let python = config.get_or_create_tool(&PluginName::from("python"));
+        let python = config.get_or_create_plugin(&PluginName::from("python"));
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
         let installed_python_versions_path = dirs::INSTALLS.join("python");

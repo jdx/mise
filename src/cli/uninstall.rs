@@ -32,15 +32,15 @@ impl Uninstall {
         let mut tool_versions = vec![];
         if self.all {
             for runtime in runtimes {
-                let tool = config.get_or_create_tool(&runtime.plugin);
+                let tool = config.get_or_create_plugin(&runtime.plugin);
                 let query = runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default();
                 let tvs = tool
                     .list_installed_versions()?
                     .into_iter()
                     .filter(|v| v.starts_with(&query))
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.name.clone(), &v);
-                        let tv = ToolVersion::new(&tool, tvr, Default::default(), v);
+                        let tvr = ToolVersionRequest::new(tool.name().into(), &v);
+                        let tv = ToolVersion::new(tool.clone(), tvr, Default::default(), v);
                         (tool.clone(), tv)
                     })
                     .collect::<Vec<_>>();
@@ -53,10 +53,10 @@ impl Uninstall {
             tool_versions = runtimes
                 .into_iter()
                 .map(|a| {
-                    let tool = config.get_or_create_tool(&a.plugin);
+                    let tool = config.get_or_create_plugin(&a.plugin);
                     let tvs = match a.tvr {
                         Some(tvr) => {
-                            vec![tvr.resolve(&config, &tool, Default::default(), false)?]
+                            vec![tvr.resolve(&config, tool.clone(), Default::default(), false)?]
                         }
                         None => {
                             let ts = ToolsetBuilder::new().build(&mut config)?;

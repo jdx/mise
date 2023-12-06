@@ -22,7 +22,7 @@ impl ToolVersionList {
     }
     pub fn resolve(&mut self, config: &Config, latest_versions: bool) {
         self.versions.clear();
-        let plugin = match config.tools.get(&self.plugin_name) {
+        let plugin = match config.plugins.get(&self.plugin_name) {
             Some(p) => p,
             _ => {
                 debug!("Plugin {} is not installed", self.plugin_name);
@@ -30,7 +30,7 @@ impl ToolVersionList {
             }
         };
         for (tvr, opts) in &mut self.requests {
-            match tvr.resolve(config, plugin, opts.clone(), latest_versions) {
+            match tvr.resolve(config, plugin.clone(), opts.clone(), latest_versions) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => warn!("failed to resolve tool version: {:#}", err),
             }
@@ -40,10 +40,7 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::plugins::ExternalPlugin;
-    use crate::tool::Tool;
     use crate::{dirs, env, file};
 
     use super::*;
@@ -52,9 +49,8 @@ mod tests {
     fn test_tool_version_list() {
         let mut config = Config::default();
         let plugin_name = "tiny".to_string();
-        let plugin = ExternalPlugin::new(plugin_name.clone());
-        let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
-        config.tools.insert(plugin_name.clone(), Arc::new(tool));
+        let plugin = ExternalPlugin::newa(plugin_name.clone());
+        config.plugins.insert(plugin_name.clone(), plugin);
         let mut tvl = ToolVersionList::new(plugin_name.clone(), ToolSource::Argument);
         tvl.requests.push((
             ToolVersionRequest::new(plugin_name, "latest"),
@@ -70,9 +66,8 @@ mod tests {
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let mut config = Config::default();
         let plugin_name = "dummy".to_string();
-        let plugin = ExternalPlugin::new(plugin_name.clone());
-        let tool = Tool::new(plugin_name.clone(), Box::new(plugin));
-        config.tools.insert(plugin_name.clone(), Arc::new(tool));
+        let plugin = ExternalPlugin::newa(plugin_name.clone());
+        config.plugins.insert(plugin_name.clone(), plugin);
         let mut tvl = ToolVersionList::new(plugin_name.clone(), ToolSource::Argument);
         tvl.requests.push((
             ToolVersionRequest::new(plugin_name, "latest"),

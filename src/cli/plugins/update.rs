@@ -31,7 +31,7 @@ impl Update {
                         None => (p.as_str(), None),
                     };
                     let p = unalias_plugin(p);
-                    let plugin = config.tools.get(p).ok_or_else(|| {
+                    let plugin = config.plugins.get(p).ok_or_else(|| {
                         eyre!("plugin {} not found", style(p).cyan().for_stderr())
                     })?;
                     Ok((plugin.clone(), ref_))
@@ -45,7 +45,7 @@ impl Update {
         };
 
         for (plugin, ref_) in plugins {
-            rtxprintln!(out, "updating plugin {}", plugin.name);
+            rtxprintln!(out, "updating plugin {plugin}");
             plugin.update(ref_)?;
         }
         Ok(())

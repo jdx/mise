@@ -4,6 +4,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::Arc;
 
 use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
@@ -80,11 +81,14 @@ impl ExternalPlugin {
             name,
         }
     }
+    pub fn newa(name: PluginName) -> Arc<dyn Plugin> {
+        Arc::new(Self::new(name))
+    }
 
-    pub fn list() -> Result<Vec<Self>> {
+    pub fn list() -> Result<Vec<Arc<dyn Plugin>>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_iter()
-            .map(Self::new)
+            .map(Self::newa)
             .collect())
     }
 

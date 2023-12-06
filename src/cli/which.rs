@@ -36,7 +36,7 @@ impl Which {
                 if self.version {
                     rtxprintln!(out, "{}", tv.version);
                 } else if self.plugin {
-                    rtxprintln!(out, "{}", p.name);
+                    rtxprintln!(out, "{p}");
                 } else {
                     let path = p.which(&config, &ts, &tv, &self.bin_name)?;
                     rtxprintln!(out, "{}", path.unwrap().display());

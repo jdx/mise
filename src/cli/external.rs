@@ -7,7 +7,7 @@ use crate::config::Config;
 
 pub fn commands(config: &Config) -> Vec<Command> {
     config
-        .tools
+        .plugins
         .values()
         .collect_vec()
         .into_par_iter()
@@ -16,7 +16,8 @@ pub fn commands(config: &Config) -> Vec<Command> {
             Err(e) => {
                 warn!(
                     "failed to load external commands for plugin {}: {:#}",
-                    p.name, e
+                    p.name(),
+                    e
                 );
                 vec![]
             }
@@ -35,7 +36,7 @@ pub fn execute(
         .find(|c| c.get_name() == plugin)
     {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = config.tools.get(&plugin.to_string()).unwrap();
+            let plugin = config.plugins.get(&plugin.to_string()).unwrap();
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

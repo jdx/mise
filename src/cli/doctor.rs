@@ -45,9 +45,9 @@ impl Doctor {
         );
 
         let mut checks = Vec::new();
-        for plugin in config.tools.values() {
+        for plugin in config.plugins.values() {
             if !plugin.is_installed() {
-                checks.push(format!("plugin {} is not installed", &plugin.name));
+                checks.push(format!("plugin {} is not installed", &plugin.name()));
                 continue;
             }
         }
@@ -123,16 +123,16 @@ fn render_config_files(config: &Config) -> String {
 fn render_plugins(config: &Config) -> String {
     let mut s = style("plugins:\n").bold().to_string();
     let plugins = config
-        .tools
+        .plugins
         .values()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();
-    let max_plugin_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0) + 2;
+    let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;
     for p in plugins {
-        let padded_name = pad_str(&p.name, max_plugin_name_len, Alignment::Left, None);
-        let si = match p.plugin.get_type() {
+        let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
+        let si = match p.get_type() {
             PluginType::External => {
-                let git = Git::new(p.plugin_path.clone());
+                let git = Git::new(dirs::PLUGINS.join(p.name()));
                 match git.get_remote_url() {
                     Some(url) => {
                         let sha = git

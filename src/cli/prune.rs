@@ -6,8 +6,7 @@ use console::style;
 
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::PluginName;
-use crate::tool::Tool;
+use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -37,7 +36,7 @@ impl Prune {
             .list_installed_versions(&config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<BTreeMap<String, (Arc<Tool>, ToolVersion)>>();
+            .collect::<BTreeMap<String, (Arc<dyn Plugin>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugin {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
@@ -54,7 +53,11 @@ impl Prune {
         self.delete(&config, to_delete.into_values().collect())
     }
 
-    fn delete(&self, config: &Config, to_delete: Vec<(Arc<Tool>, ToolVersion)>) -> Result<()> {
+    fn delete(
+        &self,
+        config: &Config,
+        to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>,
+    ) -> Result<()> {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
         for (p, tv) in to_delete {
             let mut pr = mpr.add();

@@ -25,10 +25,10 @@ pub struct PluginsLsRemote {
 impl PluginsLsRemote {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let installed_plugins = config
-            .tools
+            .plugins
             .values()
             .filter(|p| p.is_installed())
-            .map(|p| p.name.clone())
+            .map(|p| p.name())
             .collect::<HashSet<_>>();
 
         let shorthands = config.get_shorthands().iter().sorted().collect_vec();
@@ -43,7 +43,7 @@ impl PluginsLsRemote {
         }
 
         for (plugin, repo) in shorthands {
-            let installed = if !self.only_names && installed_plugins.contains(plugin) {
+            let installed = if !self.only_names && installed_plugins.contains(plugin.as_str()) {
                 "*"
             } else {
                 " "

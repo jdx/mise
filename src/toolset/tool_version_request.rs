@@ -1,29 +1,29 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::plugins::PluginName;
-use crate::tool::Tool;
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolVersionRequest {
-    Version(PluginName, String),
-    Prefix(PluginName, String),
-    Ref(PluginName, String),
-    Path(PluginName, PathBuf),
+    Version(String, String),
+    Prefix(String, String),
+    Ref(String, String),
+    Path(String, PathBuf),
     Sub {
-        plugin_name: PluginName,
+        plugin_name: String,
         sub: String,
         orig_version: String,
     },
-    System(PluginName),
+    System(String),
 }
 
 impl ToolVersionRequest {
-    pub fn new(plugin_name: PluginName, s: &str) -> Self {
+    pub fn new(plugin_name: String, s: &str) -> Self {
         let s = match s.split_once('-') {
             Some(("ref", r)) => format!("ref:{}", r),
             _ => s.to_string(),
@@ -48,7 +48,7 @@ impl ToolVersionRequest {
         }
     }
 
-    pub fn plugin_name(&self) -> &PluginName {
+    pub fn plugin_name(&self) -> &String {
         match self {
             Self::Version(p, _) => p,
             Self::Prefix(p, _) => p,
@@ -75,7 +75,7 @@ impl ToolVersionRequest {
     pub fn resolve(
         &self,
         config: &Config,
-        plugin: &Tool,
+        plugin: Arc<dyn Plugin>,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<ToolVersion> {
