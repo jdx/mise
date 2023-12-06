@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update; sudo apt-get install musl-tools
-        if: runs-on == 'buildjet-4vcpu-ubuntu-2204-arm'
+        if: matrix.runs-on == 'buildjet-4vcpu-ubuntu-2204-arm'
       - run: rustup target add ${{matrix.target}}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
