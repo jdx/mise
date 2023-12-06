@@ -142,6 +142,6 @@ mod tests {
     #[test]
     fn test_version() {
         let stdout = assert_cli!("version");
-        assert_str_eq!(stdout, VERSION.to_string() + "\n");
+        assert_str_eq!(stdout, VERSION.to_string());
     }
 }

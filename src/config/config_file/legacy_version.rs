@@ -6,7 +6,6 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-
 use crate::config::Settings;
 use crate::plugins::PluginName;
 use crate::tool::Tool;

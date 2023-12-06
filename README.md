@@ -937,7 +937,7 @@ installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/as
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
 
-#### `RTX_YES=yes`
+#### `RTX_YES=1`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
 
