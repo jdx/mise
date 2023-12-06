@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
       - if: matrix.os == 'macos'
         run: rustup target add ${{matrix.target}}
-      - uses: buildjet/cache@v3
+      - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
           provider: buildjet
