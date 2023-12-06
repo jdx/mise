@@ -59,13 +59,23 @@ get_arch() {
 		;;
 	esac
 }
+get_suffix() {
+	case "$RUST_TRIPLE" in
+	*-musl | *-musleabi | *-musleabihf)
+		echo "-musl"
+		;;
+	*)
+		echo ""
+		;;
+	esac
+}
 #endregion
 
 set -x
 VERSION=$(./scripts/get-version.sh)
-BASENAME=$NAME-$VERSION-$(get_os)-$(get_arch)
+BASENAME=$NAME-$VERSION-$(get_os)-$(get_arch)$(get_suffix)
 
-if [ "${CROSS:-}" = "1" ]; then
+if command -v cross >/dev/null; then
 	cross build "$@"
 else
 	cargo build "$@"
