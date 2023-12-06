@@ -674,7 +674,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-|-----------|----------------------------------------------------|
+| --------- | -------------------------------------------------- |
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |

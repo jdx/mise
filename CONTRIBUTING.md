@@ -16,11 +16,11 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 
 ## Dependencies
 
-* [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.
-* [just](https://github.com/casey/just) any version should do, but as of this writing I'm on 1.13.0
-* [md-magic](https://github.com/DavidWells/markdown-magic)
-* [shfmt](https://github.com/mvdan/sh)
-* [shellcheck](https://www.shellcheck.net/)
+- [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.
+- [just](https://github.com/casey/just) any version should do, but as of this writing I'm on 1.13.0
+- [md-magic](https://github.com/DavidWells/markdown-magic)
+- [shfmt](https://github.com/mvdan/sh)
+- [shellcheck](https://www.shellcheck.net/)
 
 (you'd think we'd use rtx to fetch these but frankly it's kind of a pain to dogfood rtx while testing it)
 
@@ -72,9 +72,9 @@ You don't have to do this, but it makes things like `rtx activate` a lot easier 
 
 ## Running Tests
 
-* Run only unit tests: `just test-unit`
-* Run only E2E tests: `just test-e2e`
-* Run all tests: `just test`
+- Run only unit tests: `just test-unit`
+- Run only E2E tests: `just test-e2e`
+- Run all tests: `just test`
 
 ## Releasing
 
@@ -82,8 +82,8 @@ Run `just release -x [minor|patch]`. (minor if it is the first release in a mont
 
 ## Linting
 
-* Lint codebase: `just lint`
-* Lint and fix codebase: `just lint-fix`
+- Lint codebase: `just lint`
+- Lint and fix codebase: `just lint-fix`
 
 ## Generating readme and shell completion files
 
