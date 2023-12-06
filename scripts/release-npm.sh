@@ -23,6 +23,8 @@ dist_tag="$(dist_tag_from_version "$RTX_VERSION")"
 platforms=(
 	linux-x64
 	linux-arm64
+	linux-armv6
+	linux-armv7
 	macos-x64
 	macos-arm64
 )

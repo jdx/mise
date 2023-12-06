@@ -187,9 +187,7 @@ impl Plugin for PythonPlugin {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
             let http = http::Client::new()?;
-            let resp = http.get(patch_url).send()?;
-            resp.error_for_status_ref()?;
-            let patch = resp.text()?;
+            let patch = http.get_text(patch_url)?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {

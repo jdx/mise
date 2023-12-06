@@ -2,8 +2,10 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::file::display_path;
+use crate::{env, file};
 use eyre::{Report, Result};
-use reqwest::blocking::{ClientBuilder, RequestBuilder};
+use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
 
 #[derive(Debug)]
@@ -30,16 +32,24 @@ impl Client {
             .gzip(true)
     }
 
-    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
         debug!("GET {}", url);
-        self.reqwest.get(url)
+        let mut req = self.reqwest.get(url.clone());
+        if url.host_str() == Some("api.github.com") {
+            if let Some(token) = &*env::GITHUB_API_TOKEN {
+                req = req.header("authorization", format!("token {}", token));
+            }
+        }
+        let resp = req.send()?;
+        debug!("GET {url} {}", resp.status());
+        resp.error_for_status_ref()?;
+        Ok(resp)
     }
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
-        let resp = self.get(url).send()?;
-        resp.error_for_status_ref()?;
+        let resp = self.get(url)?;
         let text = resp.text()?;
         Ok(text)
     }
@@ -49,17 +59,17 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let resp = self.get(url.clone()).send()?;
-        resp.error_for_status_ref()?;
+        let resp = self.get(url.clone())?;
         let json = resp.json()?;
         Ok(json)
     }
 
     pub fn download_file<U: IntoUrl>(&self, url: U, path: &Path) -> Result<()> {
         let url = url.into_url()?;
-        debug!("Downloading {} to {}", &url, path.display());
-        let mut resp = self.get(url).send()?;
-        resp.error_for_status_ref()?;
+        debug!("GET Downloading {} to {}", &url, display_path(path));
+        let mut resp = self.get(url.clone())?;
+
+        file::create_dir_all(path.parent().unwrap())?;
         let mut file = File::create(path)?;
         resp.copy_to(&mut file)?;
         Ok(())
