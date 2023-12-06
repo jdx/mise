@@ -2,5 +2,4 @@
 source: src/cli/use.rs
 expression: output
 ---
-rtx ~/cwd/.test.rtx.toml 
-
+rtx ~/cwd/.test.rtx.toml

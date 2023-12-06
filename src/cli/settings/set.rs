@@ -62,10 +62,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 pub mod tests {
-    use insta::assert_snapshot;
-
-    use crate::assert_cli;
     use crate::test::reset_config;
+    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_settings_set() {
@@ -79,8 +77,7 @@ pub mod tests {
             "1"
         );
 
-        let stdout = assert_cli!("settings");
-        assert_snapshot!(stdout);
+        assert_cli_snapshot!("settings");
         reset_config();
     }
 }

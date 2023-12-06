@@ -1,6 +1,6 @@
 ---
 source: src/cli/settings/ls.rs
-expression: stdout
+expression: output
 ---
 always_keep_download = true
 always_keep_install = true
@@ -16,4 +16,3 @@ raw = false
 trusted_config_paths = []
 verbose = true
 yes = true
-
