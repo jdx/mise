@@ -281,7 +281,7 @@ Supported platforms:
 - `macos`
 - `linux`
 
-If you need something else, compile it with [cargo](#cargo).
+If you need something else, compile it with `cargo install rtx-cli` (see below).
 [Windows isn't currently supported.](https://github.com/jdx/rtx/discussions/66)
 
 </details>
@@ -1316,8 +1316,7 @@ you should post an issue on the plugin's repository.
 
 ### How do the shorthand plugin names map to repositories?
 
-e.g.: how does `rtx plugin install node` know to fetch [https://github.com/rtx-plugins/rtx-nodejs]
-(<https://github.com/rtx-plugins/rtx-nodejs>)?
+e.g.: how does `rtx plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
 asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
 This is regularly updated every time that rtx has a release. This repository is stored directly into
@@ -1565,7 +1564,7 @@ If you continue to struggle, you can also try using the [shims method](#shims).
 
 While making rtx compatible with direnv is, and will always be a major goal of this project, I also
 want rtx to be capable of replacing direnv if needed. This is why rtx includes support for managing
-env vars and [virtualenv](https://github.com/jdx/rtx-python#experimental-virtualenv-support)
+env vars and [virtualenv](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation)
 for python using `.rtx.toml`.
 
 If you find you continue to need direnv, please open an issue and let me know what it is to see if
