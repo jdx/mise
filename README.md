@@ -183,7 +183,7 @@ v20.0.0
 _New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction._
 
 rtx is a tool for managing programming language and tool versions. For example, use this to install
-a particular version of node.js and ruby for a project. Using `rtx activate`, you can have your
+a particular version of Node.js and ruby for a project. Using `rtx activate`, you can have your
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
 directory[^cd]. Other projects on your machine can use a different set of versions.
 
@@ -281,7 +281,7 @@ Supported platforms:
 - `macos`
 - `linux`
 
-If you need something else, compile it with [cargo](#cargo).
+If you need something else, compile it with `cargo install rtx-cli` (see below).
 [Windows isn't currently supported.](https://github.com/jdx/rtx/discussions/66)
 
 </details>
@@ -333,7 +333,7 @@ cargo install rtx-cli --git https://github.com/jdx/rtx --branch main
 <details>
   <summary>npm</summary>
 
-rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
+rtx is available on npm as a precompiled binary. This isn't a Node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
 
 ```
@@ -483,8 +483,8 @@ do {
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
 
 ```xsh
-from pathlib        	import Path
-from xonsh.built_ins	import XSH
+from pathlib         import Path
+from xonsh.built_ins import XSH
 
 ctx = XSH.ctx
 rtx_init = subprocess.run([Path('~/bin/rtx').expanduser(),'activate','xonsh'],capture_output=True,encoding="UTF-8").stdout
@@ -546,7 +546,7 @@ that has lot more flexibility. It supports functionality that is not possible wi
 
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdx/rtx-python#virtualenv-support).
-- specifying custom plugin urls
+- specifying custom plugin URLs
 
 Here is what an `.rtx.toml` looks like:
 
@@ -606,7 +606,7 @@ You can also have environment specific config files like `.rtx.production.toml`,
 #### `[env]` - Arbitrary Environment Variables
 
 The `[env]` section of .rtx.toml allows setting arbitrary environment variables.
-These can be simple key/value entries like this:
+These can be simple key-value entries like this:
 
 ```toml
 [env]
@@ -646,7 +646,7 @@ _Note: `env_file` goes at the top of the file, above `[env]`._
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
-#### `[plugins]` - Specify Custom Plugin Repo URLs
+#### `[plugins]` - Specify Custom Plugin Repository URLs
 
 Use `[plugins]` to add/modify plugin shortnames. Note that this will only modify
 _new_ plugin installations. Existing plugins can use any URL.
@@ -836,7 +836,7 @@ to use this feature.
 
 #### `RTX_${PLUGIN}_VERSION`
 
-Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use node@20.x regardless
+Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.rtx.toml`.
 
 #### `RTX_LEGACY_VERSION_FILE=1`
@@ -929,7 +929,7 @@ node = "https://github.com/my-org/rtx-node.git"
 
 #### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
 
-Disables the shorthand aliases for installing plugins. You will have to specify full urls when
+Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
 installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
 
 #### `RTX_DISABLE_TOOLS=python,node`
@@ -966,7 +966,7 @@ Defaults to enabled, set to "0" to disable.
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for node@20.x
+versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
 so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.rtx.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
@@ -997,7 +997,7 @@ echo "lts-fermium 14"
 rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See https://github.com/asdf-vm/asdf-plugins for the list of built-in plugins shorthands. See asdf's
+See <https://github.com/asdf-vm/asdf-plugins> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
@@ -1023,7 +1023,7 @@ rtx uses [Calver](https://calver.org/) versioning (`2023.6.1`).
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
 
-Rather than have semver major releases to communicate change in large releases,
+Rather than have SemVer major releases to communicate change in large releases,
 new functionality and changes can be opted-into with settings like `experimental = true`.
 This way plugin authors and users can
 test out new functionality immediately without waiting for a major release.
@@ -1194,7 +1194,7 @@ You can see the core plugins with `rtx plugin ls --core`.
 
 ## FAQs
 
-### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.
+### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file
 
 You can make git ignore these files in 3 different ways:
 
@@ -1299,7 +1299,7 @@ detected with your setup. If you submit a bug report, please include the output 
 
 ### Windows support?
 
-This is something we'd like to add! https://github.com/jdx/rtx/discussions/66
+This is something we'd like to add! <https://github.com/jdx/rtx/discussions/66>
 
 It's not a near-term goal and it would require plugin modifications, but it should be feasible.
 
@@ -1312,12 +1312,11 @@ and `rtx self-update`. It uses `git` to clone plugins and the plugins themselves
 files with `curl` or `wget`.
 
 However this is really up to the plugin. If you're having a proxy-related issue installing something
-you should post an issue on the plugin's repo.
+you should post an issue on the plugin's repository.
 
 ### How do the shorthand plugin names map to repositories?
 
-e.g.: how does `rtx plugin install node` know to fetch [https://github.com/rtx-plugins/rtx-nodejs]
-(https://github.com/rtx-plugins/rtx-nodejs)?
+e.g.: how does `rtx plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
 asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
 This is regularly updated every time that rtx has a release. This repository is stored directly into
@@ -1415,7 +1414,7 @@ and the runtime itself. e.g.: when you call `node` it will call an asdf shim fil
 which then calls `asdf exec`, which then calls the correct version of node.
 
 These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
-updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo gif at the top of this README
+updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo GIF at the top of this README
 that `rtx` isn't actually used when calling `node -v` for this reason. The performance is
 identical to running node without using rtx.
 
@@ -1565,7 +1564,7 @@ If you continue to struggle, you can also try using the [shims method](#shims).
 
 While making rtx compatible with direnv is, and will always be a major goal of this project, I also
 want rtx to be capable of replacing direnv if needed. This is why rtx includes support for managing
-env vars and [virtualenv](https://github.com/jdx/rtx-python#experimental-virtualenv-support)
+env vars and [virtualenv](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation)
 for python using `.rtx.toml`.
 
 If you find you continue to need direnv, please open an issue and let me know what it is to see if

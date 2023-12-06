@@ -93,7 +93,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
         "
         ### `rtx {usage}`
 
-        ```
+        ```text
         {about}
         ```
 

@@ -88,9 +88,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "version"
-          ]
+          "required": ["version"]
         }
       ]
     },
@@ -107,8 +105,8 @@
           "description": "tools that should not have their legacy version files parsed",
           "type": "array",
           "items": {
-              "description": "tool name",
-              "type": "string"
+            "description": "tool name",
+            "type": "string"
           }
         },
         "always_keep_download": {

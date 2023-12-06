@@ -20,3 +20,5 @@ lcov.info
 .abuild
 /aports
 /aur
+
+megalinter-reports/
