@@ -43,7 +43,7 @@ additional to that `rtx-python` has a few extra configuration variables:
 
 rtx-python can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
 
-```
+```text
 ansible
 pipenv
 ```
@@ -53,7 +53,7 @@ You can specify a non-default location of this file by setting a `RTX_PYTHON_DEF
 ## [experimental] Automatic virtualenv creation/activation
 
 Python comes with virtualenv support built in, use it with `.rtx.toml` configuration like
-the following:
+one of the following:
 
 ```toml
 [tools]

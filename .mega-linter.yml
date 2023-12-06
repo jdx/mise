@@ -26,5 +26,5 @@ SHOW_ELAPSED_TIME: true
 
 #FILEIO_REPORTER: false
 
-FILTER_REGEX_EXCLUDE: '(completions/)'
+FILTER_REGEX_EXCLUDE: "(completions/)"
 JSON_JSONLINT_FILTER_REGEX_EXCLUDE: '(\.vscode/)'

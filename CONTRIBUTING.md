@@ -29,7 +29,7 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 Just should be used for just about every task. Here is a full list of its
 tasks:
 
-```
+```shell
 ~/src/rtx ❯ just --list
 Available recipes:
     build *args           # just `cargo build`
@@ -61,7 +61,7 @@ Shouldn't require anything special I'm aware of, but `just build` is a good sani
 I put a shim for `cargo run` that makes it easy to run build + run rtx in dev mode. It's at `.bin/rtx`. What I do is add this to PATH
 with direnv. Here is my `.envrc`:
 
-```
+```shell
 source_up_if_exists
 PATH_add "$(expand_path .bin)"
 ```
@@ -87,7 +87,7 @@ Run `just release -x [minor|patch]`. (minor if it is the first release in a mont
 
 ## Generating readme and shell completion files
 
-```
+```shell
 just pre-commit
 ```
 
@@ -95,7 +95,7 @@ just pre-commit
 
 This project uses lefthook which will automatically install a pre-commit hook:
 
-```
+```shell
 brew install lefthook # or install via some other means
 lefthook install
 git commit
@@ -110,7 +110,7 @@ if actually changing the packaging setup.
 
 This is for arm64, but you can change the arch to amd64 if you want.
 
-```
+```shell
 finch run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
@@ -124,7 +124,7 @@ rtx -V
 
 ### Amazon Linux 2 (yum)
 
-```
+```shell
 finch run -ti --rm amazonlinux
 yum install -y yum-utils
 yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
@@ -134,7 +134,7 @@ rtx -v
 
 ### Fedora (dnf)
 
-```
+```shell
 finch run -ti --rm fedora
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo

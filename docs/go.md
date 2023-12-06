@@ -33,7 +33,7 @@ rtx can automatically install a default set of packages right after installing a
 To enable this feature, provide a `$HOME/.default-go-packages` file that lists one packages per
 line, for example:
 
-```
+```text
 github.com/Dreamacro/clash # allows comments
 github.com/jesseduffield/lazygit
 ```
