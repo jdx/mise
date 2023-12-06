@@ -11,7 +11,7 @@ rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
 targets=$(find artifacts -name 'tarball-*' -exec basename {} \; | sed 's/^tarball-//')
-for target in "$targets"; do
+for target in $targets; do
   cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
   cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
 done

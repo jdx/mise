@@ -14,7 +14,7 @@ env:
 
 jobs:
   unit:
-    runs-on: ubuntu-22.04
+    runs-on: buildjet-4vcpu-ubuntu-2204
     container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     steps:
@@ -55,7 +55,7 @@ jobs:
   coverage:
     name: coverage-${{matrix.tranche}}
     #container: ghcr.io/jdx/rtx:github-actions
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     timeout-minutes: 30
     strategy:
       fail-fast: false
