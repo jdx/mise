@@ -260,7 +260,7 @@ impl Plugin for NodePlugin {
         Ok(body.to_string())
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let opts = BuildOpts::new(ctx)?;
         debug!("node build opts: {:#?}", opts);
         if *env::RTX_NODE_COMPILE {

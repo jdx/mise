@@ -169,7 +169,7 @@ impl Plugin for PythonPlugin {
         Ok(vec![".python-version".to_string()])
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         self.install_python_build()?;
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));

@@ -346,7 +346,7 @@ impl Plugin for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         self.update_build_tool()?;
         assert!(matches!(
             &ctx.tv.request,

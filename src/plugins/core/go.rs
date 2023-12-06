@@ -149,7 +149,7 @@ impl Plugin for GoPlugin {
         Ok(vec![".go-version".into()])
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
         self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
         self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
@@ -157,7 +157,7 @@ impl Plugin for GoPlugin {
         Ok(())
     }
 
-    fn uninstall_version(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;
