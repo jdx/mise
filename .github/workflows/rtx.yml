@@ -3,10 +3,9 @@ name: rtx
 on:
   push:
     tags: ["v*"]
-    branches: ["main"]
+    branches: ["main", "release/*"]
   pull_request:
     branches: ["main"]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 env:
@@ -82,6 +81,7 @@ jobs:
           files: lcov.info
 
   build-tarball:
+    if: startsWith(github.event.ref, 'refs/tags/v') || startsWith(github.event.ref, 'refs/heads/release/') || (github.event_name == 'push' && github.ref_name == 'main')
     name: build-tarball-${{matrix.name}}
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
