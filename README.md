@@ -483,8 +483,8 @@ do {
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/rtx.py` config file and `import rtx` it in `~/.config/xonsh/rc.xsh`:
 
 ```xsh
-from pathlib        	import Path
-from xonsh.built_ins	import XSH
+from pathlib         import Path
+from xonsh.built_ins import XSH
 
 ctx = XSH.ctx
 rtx_init = subprocess.run([Path('~/bin/rtx').expanduser(),'activate','xonsh'],capture_output=True,encoding="UTF-8").stdout
@@ -674,7 +674,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-| --------- | -------------------------------------------------- |
+|-----------|----------------------------------------------------|
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |
@@ -836,7 +836,7 @@ to use this feature.
 
 #### `RTX_${PLUGIN}_VERSION`
 
-Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use node@20.x regardless
+Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.rtx.toml`.
 
 #### `RTX_LEGACY_VERSION_FILE=1`
@@ -966,7 +966,7 @@ Defaults to enabled, set to "0" to disable.
 ## Aliases
 
 rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for node@20.x
+versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
 so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.rtx.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
@@ -997,7 +997,7 @@ echo "lts-fermium 14"
 rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See https://github.com/asdf-vm/asdf-plugins for the list of built-in plugins shorthands. See asdf's
+See <https://github.com/asdf-vm/asdf-plugins> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
@@ -1194,7 +1194,7 @@ You can see the core plugins with `rtx plugin ls --core`.
 
 ## FAQs
 
-### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.
+### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file
 
 You can make git ignore these files in 3 different ways:
 
@@ -1299,7 +1299,7 @@ detected with your setup. If you submit a bug report, please include the output 
 
 ### Windows support?
 
-This is something we'd like to add! https://github.com/jdx/rtx/discussions/66
+This is something we'd like to add! <https://github.com/jdx/rtx/discussions/66>
 
 It's not a near-term goal and it would require plugin modifications, but it should be feasible.
 
@@ -1317,7 +1317,7 @@ you should post an issue on the plugin's repository.
 ### How do the shorthand plugin names map to repositories?
 
 e.g.: how does `rtx plugin install node` know to fetch [https://github.com/rtx-plugins/rtx-nodejs]
-(https://github.com/rtx-plugins/rtx-nodejs)?
+(<https://github.com/rtx-plugins/rtx-nodejs>)?
 
 asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
 This is regularly updated every time that rtx has a release. This repository is stored directly into

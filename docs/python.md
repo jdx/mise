@@ -11,7 +11,7 @@ The following installs the latest version of python-3.11.x and makes it the glob
 default:
 
 ```sh-session
-$ rtx use -g python@3.11
+rtx use -g python@3.11
 ```
 
 You can also use multiple versions of python at the same time:

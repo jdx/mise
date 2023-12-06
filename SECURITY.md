@@ -33,7 +33,7 @@ Plugins are by far the biggest source of potential problems and where the most w
 
 There are 3 types of plugins:
 
-* [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI. 
+* [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI.
   These are official plugins for the most common languages written in Rust.
 * community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
 only have @jdx as the sole contributor, however this may change in the future for particular plugins with

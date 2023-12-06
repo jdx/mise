@@ -1,5 +1,5 @@
 def debug?
-  !!ENV['RTX_DEBUG']
+  !!ENV["RTX_DEBUG"]
 end
 
 def log_debug(msg)
@@ -7,7 +7,7 @@ def log_debug(msg)
 end
 
 def reshim
-  if `which ruby`.strip != ''
+  if `which ruby`.strip != ""
     log_debug "reshim"
     `rtx reshim`
   else

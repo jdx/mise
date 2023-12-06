@@ -14,13 +14,17 @@ APPLY_FIXES: all
 # default
 # ENABLE_LINTERS:
 
-# DISABLE:
-  # - COPYPASTE # Uncomment to disable checks of excessive copy-pastes
-  # - SPELL # Uncomment to disable checks of spelling mistakes
+DISABLE:
+  - SPELL # Uncomment to disable checks of spelling mistakes
+# - COPYPASTE # Uncomment to disable checks of excessive copy-pastes
 
 SHOW_ELAPSED_TIME: true
 
-FILEIO_REPORTER: false
+#FILEIO_REPORTER: false
 
-# Uncomment if you want MegaLinter to detect errors but not block CI to pass
-# DISABLE_ERRORS: true
+FILTER_REGEX_EXCLUDE: "completions/*"
+
+PRE_COMMANDS:
+  - command: apk add --no-cache zlib-dev openssl-dev libffi-dev
+
+JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "\\.devcontainer/.**"

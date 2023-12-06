@@ -14,12 +14,12 @@ The following installs the latest version of node-20.x and makes it the global
 default:
 
 ```sh-session
-$ rtx use -g node@20
+rtx use -g node@20
 ```
 
 ## Requirements
 
-See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for 
+See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for
 required system dependencies.
 
 ## Configuration
@@ -63,7 +63,7 @@ rtx node node-build --version
 
 ### node-build advanced variations
 
-`node-build` has some additional variations aside from the versions listed in `rtx ls-remote 
+`node-build` has some additional variations aside from the versions listed in `rtx ls-remote
 node` (chakracore/graalvm branches and some others). As of now, we weakly support these variations. In the sense that they are available for install and can be used in a `.tool-versions` file, but we don't list them as installation candidates nor give them full attention.
 
 Some of them will work out of the box, and some will need a bit of investigation to get them built. We are planning in providing better support for these variations in the future.
