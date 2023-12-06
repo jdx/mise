@@ -79,6 +79,7 @@ jobs:
           shared-key: test
           cache-provider: buildjet
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          cache-all-crates: true
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
       - run: npm i -g markdown-magic

@@ -65,16 +65,16 @@ jobs:
             runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.os == 'macos'
-        run: rustup target add ${{matrix.target}}
-      - run: rustup update
+#      - if: matrix.os == 'macos'
+      - run: rustup target add ${{matrix.target}}
+      - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: build-tarball-${{matrix.name}}
           cache-provider: buildjet
-          save-if: false
-      - if: matrix.os == 'ubuntu'
-        uses: taiki-e/install-action@cross
+          #save-if: false
+#      - if: matrix.os == 'ubuntu'
+#        uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
