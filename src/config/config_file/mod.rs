@@ -3,12 +3,13 @@ use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use confique::Partial;
 
 use tool_versions::ToolVersions;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::rtx_toml::RtxToml;
-use crate::config::settings::SettingsBuilder;
+use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, AliasMap, Config, Settings};
 use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
@@ -49,8 +50,8 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;
-    fn settings(&self) -> SettingsBuilder {
-        Default::default()
+    fn settings(&self) -> Result<SettingsPartial> {
+        Ok(SettingsPartial::empty())
     }
     fn aliases(&self) -> AliasMap {
         Default::default()
@@ -58,7 +59,6 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
     fn watch_files(&self) -> Vec<PathBuf> {
         vec![self.get_path().to_path_buf()]
     }
-
     fn is_global(&self) -> bool {
         global_config_files().iter().any(|p| p == self.get_path())
     }

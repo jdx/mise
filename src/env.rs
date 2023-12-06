@@ -77,7 +77,6 @@ pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH"
     None => vec![],
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
-pub static RTX_YES: Lazy<bool> = Lazy::new(|| *CI || var_is_true("RTX_YES"));
 pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_ALL_COMPILE") {
     Some(v) => v,
     None => matches!(

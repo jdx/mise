@@ -16,6 +16,7 @@ pub use settings::Settings;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
+
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::plugins::core::{CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
@@ -52,21 +53,23 @@ pub struct Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let global_config = load_rtxrc()?;
-        let mut settings_b = global_config.settings();
-        let settings = settings_b.build();
+        let settings = Settings::default_builder()
+            .preloaded(global_config.settings()?)
+            .load()?;
         let config_filenames = load_config_filenames(&settings, &BTreeMap::new());
         let tools = load_tools(&settings)?;
         let config_files = load_all_config_files(
-            &settings_b.build(),
+            &settings,
             &config_filenames,
             &tools,
             &BTreeMap::new(),
             ConfigMap::new(),
         )?;
+        let mut settings = Settings::default_builder();
         for cf in config_files.values() {
-            settings_b.merge(cf.settings());
+            settings = settings.preloaded(cf.settings()?);
         }
-        let settings = settings_b.build();
+        let settings = settings.load()?;
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &tools);
