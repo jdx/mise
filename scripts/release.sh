@@ -10,14 +10,7 @@ export RTX_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
-targets=(
-	x86_64-unknown-linux-gnu
-	aarch64-unknown-linux-gnu
-	arm-unknown-linux-gnueabihf
-	armv7-unknown-linux-gnueabihf
-	x86_64-apple-darwin
-	aarch64-apple-darwin
-)
+targets=$(find artifacts -name 'tarball-*' -exec basename {} \; | sed 's/^tarball-//')
 for target in "${targets[@]}"; do
 	cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
 	cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
@@ -25,9 +18,13 @@ done
 
 platforms=(
 	linux-x64
+	linux-x64-musl
 	linux-arm64
+	linux-arm64-musl
 	linux-armv6
+	linux-armv6-musl
 	linux-armv7
+	linux-armv7-musl
 	macos-x64
 	macos-arm64
 )

@@ -3,10 +3,9 @@ name: rtx
 on:
   push:
     tags: ["v*"]
-    branches: ["main"]
+    branches: ["main", "release/*"]
   pull_request:
     branches: ["main"]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 env:
@@ -81,58 +80,56 @@ jobs:
           fail_ci_if_error: false
           files: lcov.info
 
-  build-linux:
-    name: build-${{matrix.target}}
-    runs-on: ubuntu-22.04
+  build-tarball:
+    if: startsWith(github.event.ref, 'refs/tags/v') || startsWith(github.event.ref, 'refs/heads/release/') || (github.event_name == 'push' && github.ref_name == 'main')
+    name: build-tarball-${{matrix.name}}
+    runs-on: ${{matrix.os}}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-          - x86_64-unknown-linux-gnu
-          - arm-unknown-linux-musleabihf
-          - armv7-unknown-linux-gnueabihf
+        include:
+          - os: ubuntu-22.04
+            name: linux-x64
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            name: linux-x64-musl
+            target: aarch64-unknown-linux-musl
+          - os: ubuntu-22.04
+            name: linux-arm64
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            name: linux-arm64-musl
+            target: aarch64-unknown-linux-musl
+          - os: ubuntu-22.04
+            name: linux-armv7
+            target: armv7-unknown-linux-gnueabi
+          - os: ubuntu-22.04
+            name: linux-armv7-musl
+            target: armv7-unknown-linux-musleabi
+          - os: ubuntu-22.04
+            name: linux-armv6
+            target: arm-unknown-linux-gnueabi
+          - os: ubuntu-22.04
+            name: linux-armv6-musl
+            target: arm-unknown-linux-musleabi
+          - os: macos-12
+            name: macos-x64
+            target: x86_64-apple-darwin
+          - os: macos-12
+            name: macos-arm64
+            target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
+      - if: matrix.os == 'macos-12'
+        run: rustup target add ${{matrix.target}}
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "build-linux-${{matrix.target}}"
+          shared-key: "build-tarball-${{matrix.name}}"
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-      - uses: taiki-e/install-action@cross
-      - run: scripts/setup-zipsign.sh
-        env:
-          ZIPSIGN: ${{ secrets.ZIPSIGN }}
-      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored --target ${{matrix.target}}
-        env:
-          CROSS: "1"
-      - uses: actions/upload-artifact@v3
-        with:
-          name: tarball-${{matrix.target}}
-          path: |
-            dist/rtx-*.tar.xz
-            dist/rtx-*.tar.gz
-          if-no-files-found: error
-
-  build-macos:
-    name: build-${{matrix.target}}
-    runs-on: macos-12
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup target add ${{matrix.target}}
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "${{matrix.target}}"
-          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - if: matrix.os == 'ubuntu-22.04'
+        uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
@@ -147,7 +144,7 @@ jobs:
   e2e-linux:
     runs-on: ubuntu-22.04
     #container: ghcr.io/jdx/rtx:github-actions
-    needs: [build-linux]
+    needs: [build-tarball]
     timeout-minutes: 30
     if: github.event_name != 'pull_request'
     steps:
@@ -171,7 +168,7 @@ jobs:
           command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
-    needs: [build-linux]
+    needs: [build-tarball]
     timeout-minutes: 10
     container: ghcr.io/jdx/rtx:rpm
     if: github.event_name != 'pull_request'
@@ -199,7 +196,7 @@ jobs:
     container: ghcr.io/jdx/rtx:deb
     timeout-minutes: 10
     if: github.event_name != 'pull_request'
-    needs: [build-linux]
+    needs: [build-tarball]
     steps:
       - uses: actions/checkout@v4
       - uses: crazy-max/ghaction-import-gpg@v6
@@ -230,8 +227,7 @@ jobs:
       - unit
       - coverage
       - e2e-linux
-      - build-linux
-      - build-macos
+      - build-tarball
       - rpm
       - deb
     steps:
