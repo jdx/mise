@@ -7,7 +7,7 @@ use console::{pad_str, style, Alignment};
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::output::Output;
-use crate::tool::Tool;
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 
 /// Shows outdated tool versions
@@ -47,7 +47,7 @@ impl Outdated {
         // TODO: make a generic table printer in src/ui/table
         let plugins = outdated
             .iter()
-            .map(|(t, _, _)| t.name.clone())
+            .map(|(t, _, _)| t.name())
             .collect::<Vec<_>>();
         let requests = outdated
             .iter()
@@ -103,7 +103,7 @@ impl Outdated {
             rtxprintln!(
                 out,
                 "{} {} {} {}",
-                pad_plugin(&plugins[i]),
+                pad_plugin(plugins[i]),
                 pad_requested(&requests[i]),
                 pad_current(&currents[i]),
                 latests[i]
@@ -112,7 +112,7 @@ impl Outdated {
     }
 }
 
-type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

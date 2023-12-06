@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result};
 use eyre::WrapErr;
@@ -16,7 +17,7 @@ use crate::fake_asdf;
 use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
 use crate::output::Output;
-use crate::tool::Tool;
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
@@ -90,7 +91,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     let shims: HashSet<String> = ts
         .list_installed_versions(config)?
         .into_par_iter()
-        .flat_map(|(t, tv)| match list_tool_bins(config, ts, &t, &tv) {
+        .flat_map(|(t, tv)| match list_tool_bins(config, ts, t.clone(), &tv) {
             Ok(paths) => paths,
             Err(e) => {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
@@ -116,8 +117,8 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         remove_all(&symlink_path)?;
     }
-    for plugin in config.tools.values() {
-        match plugin.plugin_path.join("shims").read_dir() {
+    for plugin in config.plugins.values() {
+        match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {
                     let bin = bin?;
@@ -139,7 +140,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 fn list_tool_bins(
     config: &Config,
     ts: &Toolset,
-    t: &Tool,
+    t: Arc<dyn Plugin>,
     tv: &ToolVersion,
 ) -> Result<Vec<String>> {
     Ok(t.list_bin_paths(config, ts, tv)?

@@ -104,9 +104,13 @@ impl dyn ConfigFile {
                 .into_iter()
                 .map(|tvr| {
                     if pin {
-                        let plugin = config.tools.get(&plugin).unwrap();
-                        let tv =
-                            tvr.resolve(config, plugin, Default::default(), ts.latest_versions)?;
+                        let plugin = config.plugins.get(&plugin).unwrap();
+                        let tv = tvr.resolve(
+                            config,
+                            plugin.clone(),
+                            Default::default(),
+                            ts.latest_versions,
+                        )?;
                         Ok(tv.version)
                     } else {
                         Ok(tvr.version())

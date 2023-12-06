@@ -6,7 +6,7 @@ use crate::cli::args::tool::ToolArg;
 use crate::cli::args::tool::ToolArgParser;
 use crate::config::Config;
 use crate::output::Output;
-use crate::tool::Tool;
+use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 
 /// List runtime versions available for install
@@ -39,7 +39,7 @@ impl LsRemote {
         }
     }
 
-    fn run_single(self, config: Config, out: &mut Output, plugin: Arc<Tool>) -> Result<()> {
+    fn run_single(self, config: Config, out: &mut Output, plugin: Arc<dyn Plugin>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
@@ -65,21 +65,21 @@ impl LsRemote {
     }
 
     fn run_all(self, config: Config, out: &mut Output) -> Result<()> {
-        for plugin in config.tools.values() {
+        for plugin in config.plugins.values() {
             let versions = plugin.list_remote_versions(&config.settings)?;
             for version in versions {
-                rtxprintln!(out, "{}@{}", plugin.name, version);
+                rtxprintln!(out, "{}@{}", plugin.name(), version);
             }
         }
         Ok(())
     }
 
-    fn get_plugin(&self, config: &mut Config) -> Result<Option<Arc<Tool>>> {
+    fn get_plugin(&self, config: &mut Config) -> Result<Option<Arc<dyn Plugin>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let tool = config.get_or_create_tool(&tool_arg.plugin);
-                tool.ensure_installed(config, None, false)?;
-                Ok(Some(tool))
+                let plugin = config.get_or_create_plugin(&tool_arg.plugin);
+                plugin.ensure_installed(config, None, false)?;
+                Ok(Some(plugin))
             }
             None => Ok(None),
         }

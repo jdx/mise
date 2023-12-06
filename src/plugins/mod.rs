@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Command;
 use color_eyre::eyre::Result;
@@ -19,7 +20,6 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
@@ -73,8 +73,8 @@ pub trait Plugin: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tool: &Tool, config: &Config, tv: &ToolVersion) -> bool {
-        let latest = match tv.latest_version(config, tool) {
+    fn is_version_outdated(&self, config: &Config, tv: &ToolVersion, p: Arc<dyn Plugin>) -> bool {
+        let latest = match tv.latest_version(config, p) {
             Ok(latest) => latest,
             Err(e) => {
                 debug!("Error getting latest version for {}: {:#}", self.name(), e);
@@ -393,6 +393,29 @@ fn rmdir(dir: &Path, pr: &ProgressReport) -> Result<()> {
     })
 }
 
+impl Display for dyn Plugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+impl Eq for dyn Plugin {}
+impl PartialEq for dyn Plugin {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_type() == other.get_type() && self.name() == other.name()
+    }
+}
+impl PartialOrd for dyn Plugin {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for dyn Plugin {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name().cmp(other.name())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PluginType {
     #[allow(dead_code)]
     Core,
@@ -405,7 +428,6 @@ mod tests {
 
     use crate::assert_cli;
     use crate::config::Settings;
-    use crate::tool::Tool;
 
     use super::*;
 
@@ -413,14 +435,13 @@ mod tests {
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
         let settings = Settings::default();
-        let plugin = ExternalPlugin::new(PluginName::from("tiny"));
-        let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
-        let version = tool
+        let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
+        let version = plugin
             .latest_version(&settings, Some("1.0.0".into()))
             .unwrap()
             .unwrap();
         assert_str_eq!(version, "1.0.0");
-        let version = tool.latest_version(&settings, None).unwrap().unwrap();
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
         assert_str_eq!(version, "3.1.0");
     }
 
@@ -428,8 +449,7 @@ mod tests {
     fn test_latest_stable() {
         let settings = Settings::default();
         let plugin = ExternalPlugin::new(PluginName::from("dummy"));
-        let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
-        let version = tool.latest_version(&settings, None).unwrap().unwrap();
+        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }
 }

@@ -36,9 +36,9 @@ impl Shell {
         let shell = get_shell(None).expect("no shell detected");
 
         for (p, tv) in ts.list_current_installed_versions(&config) {
-            let source = &ts.versions.get(&p.name).unwrap().source;
+            let source = &ts.versions.get(p.name()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("RTX_{}_VERSION", p.name.to_uppercase());
+                let k = format!("RTX_{}_VERSION", p.name().to_uppercase());
                 let op = if self.unset {
                     shell.unset_env(&k)
                 } else {

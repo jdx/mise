@@ -94,9 +94,9 @@ impl Install {
         }
         let mut tool_versions = vec![];
         for (plugin_name, tvr, opts) in requests {
-            let plugin = config.get_or_create_tool(&plugin_name);
+            let plugin = config.get_or_create_plugin(&plugin_name);
             plugin.ensure_installed(config, Some(mpr), false)?;
-            let tv = tvr.resolve(config, &plugin, opts, ts.latest_versions)?;
+            let tv = tvr.resolve(config, plugin, opts, ts.latest_versions)?;
             tool_versions.push(tv);
         }
         Ok(tool_versions)

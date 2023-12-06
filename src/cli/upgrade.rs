@@ -7,9 +7,9 @@ use eyre::WrapErr;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::runtime_symlinks;
 use crate::shims;
-use crate::tool::Tool;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
@@ -82,7 +82,7 @@ impl Upgrade {
         ts.install_versions(config, new_versions, &mpr, false)?;
         for (tool, tv) in to_remove {
             let mut pr = mpr.add();
-            self.uninstall_old_version(config, &tool, &tv, &mut pr)?;
+            self.uninstall_old_version(config, tool.clone(), &tv, &mut pr)?;
         }
 
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
@@ -94,7 +94,7 @@ impl Upgrade {
     fn uninstall_old_version(
         &self,
         config: &Config,
-        tool: &Tool,
+        tool: Arc<dyn Plugin>,
         tv: &ToolVersion,
         pr: &mut ProgressReport,
     ) -> Result<()> {
@@ -112,7 +112,7 @@ impl Upgrade {
     }
 }
 
-type OutputVec = Vec<(Arc<Tool>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
 
 #[cfg(test)]
 pub mod tests {

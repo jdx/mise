@@ -6,7 +6,6 @@ use color_eyre::eyre::Result;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::{ExternalPlugin, PluginType};
-use crate::tool::Tool;
 
 /// List installed plugins
 ///
@@ -44,25 +43,24 @@ pub struct PluginsLs {
 
 impl PluginsLs {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let mut tools = config.tools.values().cloned().collect::<BTreeSet<_>>();
+        let mut tools = config.plugins.values().cloned().collect::<BTreeSet<_>>();
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {
                 let mut ep = ExternalPlugin::new(plugin.clone());
                 ep.repo_url = Some(url.to_string());
-                let tool = Tool::new(plugin.clone(), Box::from(ep));
-                tools.insert(Arc::new(tool));
+                tools.insert(Arc::new(ep));
             }
         } else if self.user && self.core {
         } else if self.core {
-            tools.retain(|p| matches!(p.plugin.get_type(), PluginType::Core));
+            tools.retain(|p| matches!(p.get_type(), PluginType::Core));
         } else {
-            tools.retain(|p| matches!(p.plugin.get_type(), PluginType::External));
+            tools.retain(|p| matches!(p.get_type(), PluginType::External));
         }
 
         if self.urls || self.refs {
             for tool in tools {
-                rtxprint!(out, "{:29}", tool.name);
+                rtxprint!(out, "{:29}", tool.name());
                 if self.urls {
                     if let Some(url) = tool.get_remote_url() {
                         rtxprint!(out, " {}", url);
@@ -80,7 +78,7 @@ impl PluginsLs {
             }
         } else {
             for tool in tools {
-                rtxprintln!(out, "{}", tool.name);
+                rtxprintln!(out, "{tool}");
             }
         }
         Ok(())

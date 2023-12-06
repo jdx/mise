@@ -19,10 +19,9 @@ use crate::config::config_file::{ConfigFile, ConfigFileType};
 
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
-use crate::plugins::core::{CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
+use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
-use crate::tool::Tool;
 use crate::{dirs, env, file, hook_env};
 
 pub mod config_file;
@@ -31,14 +30,14 @@ mod tracking;
 
 type AliasMap = BTreeMap<PluginName, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
+type ToolMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
 
 #[derive(Debug, Default)]
 pub struct Config {
     pub settings: Settings,
     pub global_config: RtxToml,
     pub config_files: ConfigMap,
-    pub tools: ToolMap,
+    pub plugins: PluginMap,
     pub env: BTreeMap<String, String>,
     pub env_sources: HashMap<String, PathBuf>,
     pub path_dirs: Vec<PathBuf>,
@@ -57,11 +56,11 @@ impl Config {
             .preloaded(global_config.settings()?)
             .load()?;
         let config_filenames = load_config_filenames(&settings, &BTreeMap::new());
-        let tools = load_tools(&settings)?;
+        let plugins = load_plugins(&settings)?;
         let config_files = load_all_config_files(
             &settings,
             &config_filenames,
-            &tools,
+            &plugins,
             &BTreeMap::new(),
             ConfigMap::new(),
         )?;
@@ -72,14 +71,14 @@ impl Config {
         let settings = settings.load()?;
         trace!("Settings: {:#?}", settings);
 
-        let legacy_files = load_legacy_files(&settings, &tools);
+        let legacy_files = load_legacy_files(&settings, &plugins);
         let config_filenames = load_config_filenames(&settings, &legacy_files);
         let config_track = track_config_files(&config_filenames);
 
         let config_files = load_all_config_files(
             &settings,
             &config_filenames,
-            &tools,
+            &plugins,
             &legacy_files,
             config_files,
         );
@@ -115,7 +114,7 @@ impl Config {
             config_files,
             settings,
             global_config,
-            tools,
+            plugins,
             should_exit_early,
             repo_urls,
         };
@@ -150,13 +149,13 @@ impl Config {
         self.settings.verbose || !console::user_attended_stderr()
     }
 
-    pub fn resolve_alias(&self, plugin_name: &PluginName, v: &str) -> Result<String> {
+    pub fn resolve_alias(&self, plugin_name: &str, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.aliases.get(plugin_name) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
         }
-        if let Some(plugin) = self.tools.get(plugin_name) {
+        if let Some(plugin) = self.plugins.get(plugin_name) {
             if let Some(alias) = plugin.get_aliases(&self.settings)?.get(v) {
                 return Ok(alias.clone());
             }
@@ -164,28 +163,25 @@ impl Config {
         Ok(v.to_string())
     }
 
-    pub fn external_plugins(&self) -> Vec<(&PluginName, Arc<Tool>)> {
-        self.tools
+    pub fn external_plugins(&self) -> Vec<(&PluginName, Arc<dyn Plugin>)> {
+        self.plugins
             .iter()
-            .filter(|(_, tool)| matches!(tool.plugin.get_type(), PluginType::External))
+            .filter(|(_, tool)| matches!(tool.get_type(), PluginType::External))
             .map(|(name, tool)| (name, tool.clone()))
             .collect()
     }
 
-    pub fn get_or_create_tool(&mut self, plugin_name: &PluginName) -> Arc<Tool> {
-        self.tools
+    pub fn get_or_create_plugin(&mut self, plugin_name: &PluginName) -> Arc<dyn Plugin> {
+        self.plugins
             .entry(plugin_name.clone())
-            .or_insert_with(|| {
-                let plugin = ExternalPlugin::new(plugin_name.clone());
-                build_tool(plugin_name.clone(), Box::new(plugin))
-            })
+            .or_insert_with(|| ExternalPlugin::newa(plugin_name.clone()))
             .clone()
     }
 
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self
-            .tools
+            .plugins
             .values()
             .par_bridge()
             .map(|plugin| {
@@ -196,7 +192,7 @@ impl Config {
                         BTreeMap::new()
                     }
                 };
-                (plugin.name.clone(), aliases)
+                (plugin.name(), aliases)
             })
             .collect();
         for (plugin, plugin_aliases) in plugin_aliases {
@@ -278,32 +274,23 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_tools(settings: &Settings) -> Result<ToolMap> {
+fn load_plugins(settings: &Settings) -> Result<PluginMap> {
     let mut tools = CORE_PLUGINS.clone();
     if settings.experimental {
         tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
     }
-    let plugins = ExternalPlugin::list()?
-        .into_par_iter()
-        .map(|p| {
-            (
-                p.name.clone(),
-                Arc::new(Tool::new(p.name.clone(), Box::new(p))),
-            )
-        })
-        .collect::<Vec<_>>();
-    tools.extend(plugins);
+    let external = ExternalPlugin::list()?
+        .into_iter()
+        .map(|e| (e.name().into(), e))
+        .collect::<Vec<(PluginName, Arc<dyn Plugin>)>>();
+    tools.extend(external);
     for tool in &settings.disable_tools {
         tools.remove(tool);
     }
     Ok(tools)
 }
 
-fn build_tool(name: PluginName, plugin: Box<dyn Plugin>) -> Arc<Tool> {
-    Arc::new(Tool::new(name, plugin))
-}
-
-fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, Vec<PluginName>> {
+fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String, Vec<PluginName>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
@@ -314,13 +301,13 @@ fn load_legacy_files(settings: &Settings, tools: &ToolMap) -> BTreeMap<String, V
         .filter(|tool| {
             !settings
                 .legacy_version_file_disable_tools
-                .contains(&tool.name)
+                .contains(tool.name())
         })
         .filter_map(|tool| match tool.legacy_filenames(settings) {
             Ok(filenames) => Some(
                 filenames
                     .iter()
-                    .map(|f| (f.to_string(), tool.name.to_string()))
+                    .map(|f| (f.to_string(), tool.name().to_string()))
                     .collect_vec(),
             ),
             Err(err) => {
@@ -394,7 +381,7 @@ pub fn global_config_files() -> Vec<PathBuf> {
 fn load_all_config_files(
     settings: &Settings,
     config_filenames: &[PathBuf],
-    tools: &ToolMap,
+    tools: &PluginMap,
     legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
     mut existing: ConfigMap,
 ) -> Result<ConfigMap> {
@@ -498,9 +485,9 @@ fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let plugins = self
-            .tools
+            .plugins
             .iter()
-            .filter(|(_, t)| matches!(t.plugin.get_type(), PluginType::External))
+            .filter(|(_, t)| matches!(t.get_type(), PluginType::External))
             .map(|(p, _)| p.to_string())
             .collect::<Vec<_>>();
         let config_files = self

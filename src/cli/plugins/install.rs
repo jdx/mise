@@ -4,7 +4,6 @@ use url::Url;
 use crate::config::Config;
 use crate::output::Output;
 use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
-use crate::tool::Tool;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -117,8 +116,7 @@ impl PluginsInstall {
             mpr.warn(format!("Plugin {} already installed", name));
             mpr.warn("Use --force to install anyway".to_string());
         } else {
-            let tool = Tool::new(plugin.name.clone(), Box::new(plugin));
-            tool.ensure_installed(config, Some(mpr), true)?;
+            plugin.ensure_installed(config, Some(mpr), true)?;
         }
         Ok(())
     }

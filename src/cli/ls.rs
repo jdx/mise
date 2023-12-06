@@ -14,8 +14,7 @@ use versions::Versioning;
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::output::Output;
-use crate::plugins::{unalias_plugin, PluginName};
-use crate::tool::Tool;
+use crate::plugins::{unalias_plugin, Plugin, PluginName};
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
 /// List installed and/or currently selected tool versions
@@ -95,7 +94,7 @@ impl Ls {
     fn verify_plugin(&self, config: &Config) -> Result<()> {
         match &self.plugin {
             Some(plugin_name) => {
-                let plugin = config.tools.get(plugin_name);
+                let plugin = config.plugins.get(plugin_name);
                 if plugin.is_none() || !plugin.unwrap().is_installed() {
                     return Err(PluginNotInstalled(plugin_name.clone()))?;
                 }
@@ -110,7 +109,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(p, _, _)| plugin.eq(&p.name))
+                .filter(|(p, _, _)| plugin.eq(&p.name()))
                 .map(|row| row.into())
                 .collect();
             out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
@@ -120,7 +119,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(p, _, _)| p.name.to_string())
+            .group_by(|(p, _, _)| p.name().to_string())
         {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
@@ -156,13 +155,16 @@ impl Ls {
         let output = runtimes
             .into_iter()
             .map(|(p, tv, source)| {
-                let plugin = p.name.to_string();
+                let plugin = p.name().to_string();
                 let version = if let Some(symlink_path) = p.symlink_path(&tv) {
                     VersionStatus::Symlink(tv.version, symlink_path, source.is_some())
                 } else if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
-                    VersionStatus::Active(tv.version.clone(), p.is_version_outdated(config, &tv))
+                    VersionStatus::Active(
+                        tv.version.clone(),
+                        p.is_version_outdated(config, &tv, p.clone()),
+                    )
                 } else {
                     VersionStatus::Inactive(tv.version)
                 };
@@ -212,20 +214,20 @@ impl Ls {
 
         if let Some(plugin) = &self.plugin {
             tsb = tsb.with_tools(&[plugin]);
-            config.tools.retain(|p, _| p == plugin);
+            config.plugins.retain(|p, _| p == plugin);
         }
         let ts = tsb.build(config)?;
-        let mut versions: HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)> = ts
+        let mut versions: HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)> = ts
             .list_installed_versions(config)?
             .into_iter()
-            .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
+            .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
             .collect();
 
         let active = ts
             .list_current_versions(config)
             .into_iter()
-            .map(|(p, tv)| ((p.name.clone(), tv.version.clone()), (p, tv)))
-            .collect::<HashMap<(PluginName, String), (Arc<Tool>, ToolVersion)>>();
+            .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
+            .collect::<HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)>>();
 
         versions.extend(active.clone());
 
@@ -263,7 +265,7 @@ struct JSONToolVersion {
     symlinked_to: Option<PathBuf>,
 }
 
-type RuntimeRow = (Arc<Tool>, ToolVersion, Option<ToolSource>);
+type RuntimeRow = (Arc<dyn Plugin>, ToolVersion, Option<ToolSource>);
 
 impl From<RuntimeRow> for JSONToolVersion {
     fn from(row: RuntimeRow) -> Self {
