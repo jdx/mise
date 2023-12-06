@@ -2487,7 +2487,7 @@ _rtx() {
             return 0
             ;;
         rtx__ls__remote)
-            opts="-j -r -v -y -h --jobs --debug --log-level --trace --raw --verbose --yes --help <TOOL@VERSION> [PREFIX]"
+            opts="-j -r -v -y -h --all --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION] [PREFIX]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
