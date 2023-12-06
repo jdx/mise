@@ -60,7 +60,6 @@ pub mod tera;
 mod test;
 pub mod timeout;
 mod toml;
-mod tool;
 mod toolset;
 mod ui;
 

@@ -35,7 +35,7 @@ impl Latest {
                 style(&self.tool).cyan().for_stderr()
             ))?,
         };
-        let plugin = config.tools.get(&self.tool.plugin).ok_or_else(|| {
+        let plugin = config.plugins.get(&self.tool.plugin).ok_or_else(|| {
             eyre!(
                 "plugin {} not found. run {} to install it",
                 style(self.tool.plugin.to_string()).cyan().for_stderr(),
@@ -45,7 +45,7 @@ impl Latest {
             )
         })?;
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(&plugin.name, &v)?);
+            prefix = Some(config.resolve_alias(plugin.name(), &v)?);
         }
 
         let latest_version = if self.installed {

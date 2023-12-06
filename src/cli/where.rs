@@ -47,7 +47,7 @@ impl Where {
             _ => self.tool,
         };
 
-        let plugin = match config.tools.get(&runtime.plugin) {
+        let plugin = match config.plugins.get(&runtime.plugin) {
             Some(plugin) => plugin,
             None => Err(PluginNotInstalled(runtime.plugin.clone()))?,
         };
@@ -55,7 +55,7 @@ impl Where {
         match runtime
             .tvr
             .as_ref()
-            .map(|tvr| tvr.resolve(&config, plugin, Default::default(), false))
+            .map(|tvr| tvr.resolve(&config, plugin.clone(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
                 rtxprintln!(out, "{}", tv.install_path().to_string_lossy());

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::iter::Iterator;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -19,7 +20,6 @@ use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::{Plugin, PluginName};
 use crate::timeout::run_with_timeout;
-use crate::tool::Tool;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
 
@@ -32,37 +32,34 @@ mod node_build;
 mod python;
 mod ruby;
 
-type ToolMap = BTreeMap<PluginName, Arc<Tool>>;
+pub type PluginMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
 
-pub static CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
-    build_core_plugins(vec![
-        Box::new(GoPlugin::new()),
-        Box::new(JavaPlugin::new()),
+pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
+    let plugins: Vec<Arc<dyn Plugin>> = vec![
+        Arc::new(GoPlugin::new()),
+        Arc::new(JavaPlugin::new()),
         if *RTX_NODE_BUILD == Some(true) {
-            Box::new(NodeBuildPlugin::new())
+            Arc::new(NodeBuildPlugin::new())
         } else {
-            Box::new(NodePlugin::new())
+            Arc::new(NodePlugin::new())
         },
-        Box::new(PythonPlugin::new()),
-        Box::new(RubyPlugin::new()),
-    ])
+        Arc::new(PythonPlugin::new()),
+        Arc::new(RubyPlugin::new()),
+    ];
+    plugins
+        .into_iter()
+        .map(|plugin| (plugin.name().to_string(), plugin))
+        .collect()
 });
 
-pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<ToolMap> = Lazy::new(|| {
-    build_core_plugins(vec![
-        Box::new(BunPlugin::new()),
-        Box::new(DenoPlugin::new()),
-    ])
+pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
+    let plugins: Vec<Arc<dyn Plugin>> =
+        vec![Arc::new(BunPlugin::new()), Arc::new(DenoPlugin::new())];
+    plugins
+        .into_iter()
+        .map(|plugin| (plugin.name().to_string(), plugin))
+        .collect()
 });
-
-fn build_core_plugins(tools: Vec<Box<dyn Plugin>>) -> ToolMap {
-    ToolMap::from_iter(tools.into_iter().map(|plugin| {
-        (
-            plugin.name().to_string(),
-            Arc::new(Tool::new(plugin.name().to_string(), plugin)),
-        )
-    }))
-}
 
 #[derive(Debug)]
 pub struct CorePlugin {

@@ -1,9 +1,9 @@
 use color_eyre::eyre::Result;
+use std::sync::Arc;
 
 use crate::config::Config;
 use crate::output::Output;
-use crate::plugins::unalias_plugin;
-use crate::tool::Tool;
+use crate::plugins::{unalias_plugin, Plugin};
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -25,8 +25,8 @@ impl Current {
         match &self.plugin {
             Some(plugin_name) => {
                 let plugin_name = unalias_plugin(plugin_name);
-                match config.tools.get(plugin_name) {
-                    Some(plugin) => self.one(&config, ts, out, plugin),
+                match config.plugins.get(plugin_name) {
+                    Some(plugin) => self.one(&config, ts, out, plugin.clone()),
                     None => {
                         warn!("Plugin {} is not installed", plugin_name);
                         Ok(())
@@ -37,15 +37,21 @@ impl Current {
         }
     }
 
-    fn one(&self, config: &Config, ts: Toolset, out: &mut Output, tool: &Tool) -> Result<()> {
+    fn one(
+        &self,
+        config: &Config,
+        ts: Toolset,
+        out: &mut Output,
+        tool: Arc<dyn Plugin>,
+    ) -> Result<()> {
         if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.name);
+            warn!("Plugin {} is not installed", tool.name());
             return Ok(());
         }
         match ts
             .list_versions_by_plugin(config)
             .into_iter()
-            .find(|(p, _)| p.name == tool.name)
+            .find(|(p, _)| p.name() == tool.name())
         {
             Some((_, versions)) => {
                 rtxprintln!(
@@ -59,7 +65,7 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", tool.name);
+                warn!("Plugin {} does not have a version set", tool.name());
             }
         };
         Ok(())
@@ -82,7 +88,7 @@ impl Current {
             rtxprintln!(
                 out,
                 "{} {}",
-                &plugin.name,
+                &plugin.name(),
                 versions
                     .iter()
                     .map(|v| v.version.to_string())
