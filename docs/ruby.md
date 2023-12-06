@@ -1,6 +1,6 @@
 # Ruby in rtx
 
-The following are instructions for using the ruby rtx core plugin. This is used when there isn't a 
+The following are instructions for using the ruby rtx core plugin. This is used when there isn't a
 git plugin installed named "ruby".
 
 If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
@@ -16,7 +16,7 @@ The following installs the latest version of ruby-3.2.x (if some version of 3.2.
 installed) and makes it the global default:
 
 ```sh-session
-$ rtx use -g ruby@3.2
+rtx use -g ruby@3.2
 ```
 
 Behind the scenes, rtx uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby
@@ -39,8 +39,8 @@ in additional to that rtx has a few extra configuration variables:
 
 ## Default gems
 
-rtx can automatically install a default set of gems right after installing a new ruby version. 
-To enable this feature, provide a `$HOME/.default-gems` file that lists one gem per line, for 
+rtx can automatically install a default set of gems right after installing a new ruby version.
+To enable this feature, provide a `$HOME/.default-gems` file that lists one gem per line, for
 example:
 
 ```
@@ -59,12 +59,12 @@ However it can also read ruby-specific version files `.ruby-version` or `Gemfile
 Create a `.ruby-version` file for the current version of ruby:
 
 ```sh-session
-$ ruby -v > .ruby-version
+ruby -v > .ruby-version
 ```
 
 ### Manually updating ruby-build
 
-ruby-build should update daily, however if you find versions do not yet exist you can force an 
+ruby-build should update daily, however if you find versions do not yet exist you can force an
 update:
 
 ```bash

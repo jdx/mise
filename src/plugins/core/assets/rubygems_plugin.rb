@@ -1,13 +1,13 @@
 def debug?
-  !!ENV['RTX_DEBUG']
+  !!ENV["RTX_DEBUG"]
 end
 
 def log_debug(msg)
-  $stderr.puts "[DEBUG] rtx #{msg}" if debug?
+  warn "[DEBUG] rtx #{msg}" if debug?
 end
 
 def reshim
-  if `which ruby`.strip != ''
+  if `which ruby`.strip != ""
     log_debug "reshim"
     `rtx reshim`
   else

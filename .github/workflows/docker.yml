@@ -3,7 +3,7 @@ name: docker
 on:
   push:
     tags: ["v*"]
-    branches: ['docker-release']
+    branches: ["docker-release"]
   workflow_dispatch:
 
 env:

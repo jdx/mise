@@ -35,7 +35,9 @@
         "cache-key": {
           "description": "cache the results of bin/exec-env separately based on these values",
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -46,7 +48,9 @@
         "cache-key": {
           "description": "cache the results of bin/exec-env separately based on these values",
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

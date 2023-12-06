@@ -7,3 +7,5 @@ RUN echo "packager ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 RUN mkdir -p /__w && chown packager:packager /__w && chmod 777 /__w
 #USER packager
 #WORKDIR /home/packager
+
+HEALTHCHECK CMD abuild -v

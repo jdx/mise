@@ -1,20 +1,23 @@
 #!/bin/sh
 set -e
+# shellcheck disable=SC2185
+# shellcheck disable=SC2086
+# shellcheck disable=SC2044
 
 do_hash() {
-    HASH_NAME=$1
-    HASH_CMD=$2
-    echo "${HASH_NAME}:"
-    for f in $(find -type f); do
-        f=$(echo $f | cut -c3-) # remove ./ prefix
-        if [ "$f" = "Release" ]; then
-            continue
-        fi
-        echo " $(${HASH_CMD} ${f}  | cut -d" " -f1) $(wc -c $f)"
-    done
+  HASH_NAME=$1
+  HASH_CMD=$2
+  echo "$HASH_NAME:"
+  for f in "$(find -type f)"; do
+    f=$(echo "$f" | cut -c3-) # remove ./ prefix
+    if [ "$f" = "Release" ]; then
+      continue
+    fi
+    echo " $("$HASH_CMD" "$f" | cut -d" " -f1) $(wc -c "$f")"
+  done
 }
 
-cat << EOF
+cat <<EOF
 Origin: RTX Repository
 Label: RTX
 Suite: stable
