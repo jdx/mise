@@ -9,6 +9,7 @@ APPLY_FIXES: all
 # If you use ENABLE variable, all other languages/formats/tooling-formats will
 # be disabled by default
 # ENABLE:
+#   - RUST
 
 # If you use ENABLE_LINTERS variable, all other linters will be disabled by
 # default
@@ -18,13 +19,12 @@ DISABLE:
   - SPELL # Uncomment to disable checks of spelling mistakes
 # - COPYPASTE # Uncomment to disable checks of excessive copy-pastes
 
+PRE_COMMANDS:
+  - command: apk add --no-cache zlib-dev zlib-static openssl-dev libffi-dev
+
 SHOW_ELAPSED_TIME: true
 
 #FILEIO_REPORTER: false
 
 FILTER_REGEX_EXCLUDE: "completions/*"
-
-PRE_COMMANDS:
-  - command: apk add --no-cache zlib-dev openssl-dev libffi-dev
-
-JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "\\.devcontainer/.**"
+JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "\\.devcontainer\/.**"
