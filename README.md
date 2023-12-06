@@ -183,7 +183,7 @@ v20.0.0
 _New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction._
 
 rtx is a tool for managing programming language and tool versions. For example, use this to install
-a particular version of node.js and ruby for a project. Using `rtx activate`, you can have your
+a particular version of Node.js and ruby for a project. Using `rtx activate`, you can have your
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
 directory[^cd]. Other projects on your machine can use a different set of versions.
 
@@ -333,7 +333,7 @@ cargo install rtx-cli --git https://github.com/jdx/rtx --branch main
 <details>
   <summary>npm</summary>
 
-rtx is available on npm as a precompiled binary. This isn't a node.js package—just distributed
+rtx is available on npm as a precompiled binary. This isn't a Node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
 
 ```
@@ -546,7 +546,7 @@ that has lot more flexibility. It supports functionality that is not possible wi
 
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdx/rtx-python#virtualenv-support).
-- specifying custom plugin urls
+- specifying custom plugin URLs
 
 Here is what an `.rtx.toml` looks like:
 
@@ -606,7 +606,7 @@ You can also have environment specific config files like `.rtx.production.toml`,
 #### `[env]` - Arbitrary Environment Variables
 
 The `[env]` section of .rtx.toml allows setting arbitrary environment variables.
-These can be simple key/value entries like this:
+These can be simple key-value entries like this:
 
 ```toml
 [env]
@@ -646,7 +646,7 @@ _Note: `env_file` goes at the top of the file, above `[env]`._
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
-#### `[plugins]` - Specify Custom Plugin Repo URLs
+#### `[plugins]` - Specify Custom Plugin Repository URLs
 
 Use `[plugins]` to add/modify plugin shortnames. Note that this will only modify
 _new_ plugin installations. Existing plugins can use any URL.
@@ -929,7 +929,7 @@ node = "https://github.com/my-org/rtx-node.git"
 
 #### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
 
-Disables the shorthand aliases for installing plugins. You will have to specify full urls when
+Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
 installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
 
 #### `RTX_DISABLE_TOOLS=python,node`
@@ -1023,7 +1023,7 @@ rtx uses [Calver](https://calver.org/) versioning (`2023.6.1`).
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
 
-Rather than have semver major releases to communicate change in large releases,
+Rather than have SemVer major releases to communicate change in large releases,
 new functionality and changes can be opted-into with settings like `experimental = true`.
 This way plugin authors and users can
 test out new functionality immediately without waiting for a major release.
@@ -1312,7 +1312,7 @@ and `rtx self-update`. It uses `git` to clone plugins and the plugins themselves
 files with `curl` or `wget`.
 
 However this is really up to the plugin. If you're having a proxy-related issue installing something
-you should post an issue on the plugin's repo.
+you should post an issue on the plugin's repository.
 
 ### How do the shorthand plugin names map to repositories?
 
@@ -1415,7 +1415,7 @@ and the runtime itself. e.g.: when you call `node` it will call an asdf shim fil
 which then calls `asdf exec`, which then calls the correct version of node.
 
 These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
-updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo gif at the top of this README
+updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo GIF at the top of this README
 that `rtx` isn't actually used when calling `node -v` for this reason. The performance is
 identical to running node without using rtx.
 
