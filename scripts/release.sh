@@ -10,11 +10,11 @@ export RTX_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
-targets=$(find artifacts -name 'tarball-*' -exec basename {} \; | sed 's/^tarball-//')
-for target in $targets; do
+find artifacts -name 'tarball-*' -exec sh -c '
+	target=${1#artifacts/tarball-}
   cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
   cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
-done
+  ' sh {} \;
 
 platforms=(
   linux-x64

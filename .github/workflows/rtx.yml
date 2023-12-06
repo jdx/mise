@@ -8,6 +8,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
@@ -23,7 +27,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-          provider: buildjet
+          cache-provider: buildjet
       # - uses: taiki-e/install-action@v2
       #   with:
       #     tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
@@ -47,7 +51,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-          provider: buildjet
+          cache-provider: buildjet
       - run: sudo apt-get update; sudo apt-get install shfmt shellcheck
       - uses: taiki-e/install-action@just
       - run: just lint-fix
@@ -66,11 +70,14 @@ jobs:
         tranche: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - run: rustup toolchain install nightly --component llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-          provider: buildjet
+          cache-provider: buildjet
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
