@@ -78,12 +78,12 @@ jobs:
 #      - run: sudo apt-get update; sudo apt-get install musl-tools
 #        if: matrix.runs-on == 'buildjet-4vcpu-ubuntu-2204-arm'
       - run: rustup target add ${{matrix.target}}
+        if: matrix.target != 'universal2-apple-darwin'
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-tarball-${{matrix.name}}
           cache-provider: buildjet
-          #save-if: false
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
