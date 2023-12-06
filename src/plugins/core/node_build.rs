@@ -252,7 +252,7 @@ impl Plugin for NodeBuildPlugin {
         exit(0);
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         self.install_node_build()?;
         ctx.pr.set_message("running node-build");
         let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.node_build_bin())

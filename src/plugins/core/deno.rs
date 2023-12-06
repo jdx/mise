@@ -105,7 +105,7 @@ impl Plugin for DenoPlugin {
         Ok(vec![".deno-version".into()])
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         assert!(matches!(
             &ctx.tv.request,
             ToolVersionRequest::Version { .. }
