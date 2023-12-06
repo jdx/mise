@@ -3,7 +3,7 @@ def debug?
 end
 
 def log_debug(msg)
-  $stderr.puts "[DEBUG] rtx #{msg}" if debug?
+  warn "[DEBUG] rtx #{msg}" if debug?
 end
 
 def reshim
