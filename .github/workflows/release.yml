@@ -154,7 +154,7 @@ jobs:
       - rpm
       - deb
     env:
-      DRY_RUN: "${{ startsWith(github.event.ref, 'refs/tags/v') ? '0' : '1' }}"
+      DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
     steps:
       - uses: actions/checkout@v4
         with:

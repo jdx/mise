@@ -3,7 +3,7 @@ name: rtx
 on:
   push:
     tags: ["v*"]
-    branches: ["main", "release/*"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
