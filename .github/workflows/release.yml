@@ -67,6 +67,7 @@ jobs:
       - uses: actions/checkout@v4
       - if: matrix.os == 'macos'
         run: rustup target add ${{matrix.target}}
+      - run: rustup update
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
