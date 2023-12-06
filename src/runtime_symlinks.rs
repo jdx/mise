@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use indexmap::IndexMap;
@@ -9,13 +10,13 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::tool::Tool;
+use crate::plugins::Plugin;
 use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for plugin in config.tools.values() {
-        let symlinks = list_symlinks(config, plugin)?;
-        let installs_dir = dirs::INSTALLS.join(&plugin.name);
+    for plugin in config.plugins.values() {
+        let symlinks = list_symlinks(config, plugin.clone())?;
+        let installs_dir = dirs::INSTALLS.join(plugin.name());
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -28,17 +29,17 @@ pub fn rebuild(config: &Config) -> Result<()> {
             }
             make_symlink(&to, &from)?;
         }
-        remove_missing_symlinks(plugin)?;
+        remove_missing_symlinks(plugin.clone())?;
         // attempt to remove the installs dir (will fail if not empty)
         let _ = file::remove_dir(&installs_dir);
     }
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<String, PathBuf>> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions(plugin)? {
+    for v in installed_versions(&plugin)? {
         let versions = Versioning::new(&v).expect("invalid version");
         let mut partial = vec![];
         while versions.nth(partial.len() + 1).is_some() {
@@ -49,7 +50,7 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
         symlinks.insert("latest".into(), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(&plugin.name)
+            .get(plugin.name())
             .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {
@@ -68,7 +69,7 @@ fn list_symlinks(config: &Config, plugin: &Tool) -> Result<IndexMap<String, Path
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &Tool) -> Result<Vec<String>> {
+fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
     let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
     let versions = plugin
         .list_installed_versions()?
@@ -78,8 +79,8 @@ fn installed_versions(plugin: &Tool) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(plugin: &Tool) -> Result<()> {
-    let installs_dir = dirs::INSTALLS.join(&plugin.name);
+fn remove_missing_symlinks(plugin: Arc<dyn Plugin>) -> Result<()> {
+    let installs_dir = dirs::INSTALLS.join(plugin.name());
     if !installs_dir.exists() {
         return Ok(());
     }
@@ -113,9 +114,8 @@ mod tests {
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::new(PluginName::from("tiny"));
-        let tool = Tool::new(String::from("tiny"), Box::new(plugin));
-        let symlinks = list_symlinks(&config, &tool).unwrap();
+        let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
+        let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }
 }

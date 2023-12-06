@@ -28,7 +28,7 @@ impl PluginsUninstall {
         let mpr = MultiProgressReport::new(config.show_progress_bars());
 
         let plugins = match self.all {
-            true => config.tools.keys().cloned().collect(),
+            true => config.plugins.keys().cloned().collect(),
             false => self.plugin.clone(),
         };
 
@@ -45,7 +45,7 @@ impl PluginsUninstall {
         plugin_name: &str,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        match config.tools.get(plugin_name) {
+        match config.plugins.get(plugin_name) {
             Some(plugin) if plugin.is_installed() => {
                 let mut pr = mpr.add();
                 plugin.decorate_progress_bar(&mut pr, None);
