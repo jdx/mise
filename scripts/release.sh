@@ -10,12 +10,11 @@ export RTX_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
-#cp artifacts/tarball-x86_64-pc-windows-gnu/*.zip "$RELEASE_DIR/$RTX_VERSION"
-#cp artifacts/tarball-x86_64-pc-windows-gnu/*.zip "$RELEASE_DIR/rtx-latest-windows.zip"
-
 targets=(
 	x86_64-unknown-linux-gnu
 	aarch64-unknown-linux-gnu
+	arm-unknown-linux-gnueabihf
+	armv7-unknown-linux-gnueabihf
 	x86_64-apple-darwin
 	aarch64-apple-darwin
 )
@@ -27,6 +26,8 @@ done
 platforms=(
 	linux-x64
 	linux-arm64
+	linux-armv6
+	linux-armv7
 	macos-x64
 	macos-arm64
 )
@@ -60,7 +61,7 @@ gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_
 
 NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
 NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
-AWS_S3_BUCKET=rtx.pub ./rtx/scripts/publish-s3.sh
+#AWS_S3_BUCKET=rtx.pub ./rtx/scripts/publish-s3.sh
 ./rtx/scripts/publish-r2.sh
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
