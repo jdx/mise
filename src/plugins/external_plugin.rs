@@ -81,6 +81,13 @@ impl ExternalPlugin {
         }
     }
 
+    pub fn list() -> Result<Vec<Self>> {
+        Ok(file::dir_subdirs(&dirs::PLUGINS)?
+            .into_iter()
+            .map(Self::new)
+            .collect())
+    }
+
     fn get_repo_url(&self, config: &Config) -> Result<String> {
         self.repo_url
             .clone()
@@ -388,7 +395,7 @@ impl Plugin for ExternalPlugin {
 
     fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
         if !self.has_latest_stable_script() {
-            return Ok(None);
+            return self.latest_version(settings, Some("latest".into()));
         }
         self.latest_stable_cache
             .get_or_try_init(|| self.fetch_latest_stable(settings))
@@ -617,7 +624,7 @@ impl Plugin for ExternalPlugin {
         exit(result.status.code().unwrap_or(1));
     }
 
-    fn install_version(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let mut sm = self.script_man_for_tv(ctx.config, &ctx.tv);
 
         for p in ctx.ts.list_paths(ctx.config) {
@@ -636,7 +643,7 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn uninstall_version(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
             self.script_man_for_tv(config, tv)
                 .run(&config.settings, &Script::Uninstall)?;

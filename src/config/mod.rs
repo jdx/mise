@@ -283,9 +283,14 @@ fn load_tools(settings: &Settings) -> Result<ToolMap> {
     if settings.experimental {
         tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
     }
-    let plugins = Tool::list()?
+    let plugins = ExternalPlugin::list()?
         .into_par_iter()
-        .map(|p| (p.name.clone(), Arc::new(p)))
+        .map(|p| {
+            (
+                p.name.clone(),
+                Arc::new(Tool::new(p.name.clone(), Box::new(p))),
+            )
+        })
         .collect::<Vec<_>>();
     tools.extend(plugins);
     for tool in &settings.disable_tools {
