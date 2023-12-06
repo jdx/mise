@@ -61,7 +61,7 @@ If you want, you may encrypt the message with GPG:
 
 <details>
   <summary>@jdx's public key</summary>
-  
+
   ```
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
