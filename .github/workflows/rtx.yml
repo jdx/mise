@@ -45,6 +45,8 @@ jobs:
         with:
           shared-key: test
           save-if: false
+      - run: sudo apt-get update; sudo apt-get install shfmt shellcheck
+      - uses: taiki-e/install-action@just
       - run: just lint-fix
       - uses: EndBug/add-and-commit@v9
         with:
@@ -86,3 +88,24 @@ jobs:
         with:
           fail_ci_if_error: false
           files: lcov.info
+
+  super-linter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          # Full git history is needed to get a proper
+          # list of changed files within `super-linter`
+          fetch-depth: 0
+
+      - name: Lint Code Base
+        uses: super-linter/super-linter@v5
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
