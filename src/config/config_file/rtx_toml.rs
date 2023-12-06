@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use color_eyre::eyre::eyre;
@@ -36,7 +38,7 @@ pub struct RtxToml {
     alias: AliasMap,
     doc: Document,
     plugins: HashMap<String, String>,
-    is_trusted: bool,
+    is_trusted: Mutex<RefCell<bool>>,
 }
 
 impl RtxToml {
@@ -46,7 +48,7 @@ impl RtxToml {
         Self {
             path: path.to_path_buf(),
             context,
-            is_trusted,
+            is_trusted: Mutex::new(RefCell::new(is_trusted)),
             toolset: Toolset {
                 source: Some(ToolSource::RtxToml(path.to_path_buf())),
                 ..Default::default()
@@ -137,7 +139,7 @@ impl RtxToml {
         Ok(())
     }
 
-    fn parse_path_env(&mut self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
         self.trust_check()?;
         match v.as_array() {
             Some(array) => {
@@ -165,7 +167,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_alias(&mut self, k: &str, v: &Item) -> Result<AliasMap> {
+    fn parse_alias(&self, k: &str, v: &Item) -> Result<AliasMap> {
         match v.as_table_like() {
             Some(table) => {
                 let mut aliases = AliasMap::new();
@@ -194,12 +196,12 @@ impl RtxToml {
         }
     }
 
-    fn parse_plugins(&mut self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+    fn parse_plugins(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
         self.trust_check()?;
         self.parse_hashmap(key, v)
     }
 
-    fn parse_hashmap(&mut self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+    fn parse_hashmap(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
         match v.as_table_like() {
             Some(table) => {
                 let mut env = HashMap::new();
@@ -219,7 +221,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_toolset(&mut self, key: &str, v: &Item) -> Result<Toolset> {
+    fn parse_toolset(&self, key: &str, v: &Item) -> Result<Toolset> {
         let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
 
         match v.as_table_like() {
@@ -237,7 +239,7 @@ impl RtxToml {
     }
 
     fn parse_tool_version_list(
-        &mut self,
+        &self,
         key: &str,
         v: &Item,
         plugin_name: &PluginName,
@@ -284,7 +286,7 @@ impl RtxToml {
     }
 
     fn parse_tool_version(
-        &mut self,
+        &self,
         key: &str,
         v: &Item,
         plugin_name: &PluginName,
@@ -354,7 +356,7 @@ impl RtxToml {
     }
 
     fn parse_tool_version_request(
-        &mut self,
+        &self,
         key: &str,
         v: &Value,
         plugin_name: &PluginName,
@@ -368,7 +370,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_settings(&mut self, key: &str, v: &Item) -> Result<SettingsBuilder> {
+    fn parse_settings(&self, key: &str, v: &Item) -> Result<SettingsBuilder> {
         let mut settings = SettingsBuilder::default();
 
         match v.as_table_like() {
@@ -456,7 +458,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_duration_minutes(&mut self, k: &str, v: &Item) -> Result<Duration> {
+    fn parse_duration_minutes(&self, k: &str, v: &Item) -> Result<Duration> {
         match v.as_value() {
             Some(Value::String(s)) => Ok(humantime::parse_duration(s.value())?),
             Some(Value::Integer(i)) => Ok(Duration::from_secs(*i.value() as u64 * 60)),
@@ -464,21 +466,21 @@ impl RtxToml {
         }
     }
 
-    fn parse_bool(&mut self, k: &str, v: &Item) -> Result<bool> {
+    fn parse_bool(&self, k: &str, v: &Item) -> Result<bool> {
         match v.as_value().map(|v| v.as_bool()) {
             Some(Some(v)) => Ok(v),
             _ => parse_error!(k, v, "boolean")?,
         }
     }
 
-    fn parse_usize(&mut self, k: &str, v: &Item) -> Result<usize> {
+    fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
         match v.as_value().map(|v| v.as_integer()) {
             Some(Some(v)) => Ok(v as usize),
             _ => parse_error!(k, v, "usize")?,
         }
     }
 
-    fn parse_path(&mut self, k: &str, v: &Item) -> Result<PathBuf> {
+    fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
                 let v = self.parse_template(k, v)?;
@@ -488,7 +490,7 @@ impl RtxToml {
         }
     }
 
-    fn parse_paths(&mut self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+    fn parse_paths(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
         match v.as_value().map(|v| v.as_array()) {
             Some(Some(v)) => {
                 let mut paths = vec![];
@@ -585,7 +587,7 @@ impl RtxToml {
         env_tbl.remove(key);
     }
 
-    fn parse_template(&mut self, k: &str, input: &str) -> Result<String> {
+    fn parse_template(&self, k: &str, input: &str) -> Result<String> {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
@@ -597,10 +599,10 @@ impl RtxToml {
         Ok(output)
     }
 
-    fn trust_check(&mut self) -> Result<()> {
+    fn trust_check(&self) -> Result<()> {
         let default_cmd = String::new();
         let cmd = env::ARGS.get(1).unwrap_or(&default_cmd).as_str();
-        if self.is_trusted || cmd == "trust" || cmd == "completion" || cfg!(test) {
+        if self.get_is_trusted() || cmd == "trust" || cmd == "completion" || cfg!(test) {
             return Ok(());
         }
         if cmd != "hook-env" {
@@ -611,11 +613,15 @@ impl RtxToml {
             ))?;
             if ans {
                 config_file::trust(self.path.as_path())?;
-                self.is_trusted = true;
+                self.is_trusted.lock().unwrap().replace(true);
                 return Ok(());
             }
         }
         Err(UntrustedConfig())?
+    }
+
+    fn get_is_trusted(&self) -> bool {
+        *self.is_trusted.lock().unwrap().borrow()
     }
 }
 
