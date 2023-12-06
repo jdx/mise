@@ -107,6 +107,6 @@ mod tests {
     #[test]
     fn test_latest_alias() {
         let stdout = assert_cli!("latest", "tiny@lts");
-        assert_str_eq!(stdout, "3.1.0");
+        assert_str_eq!(stdout, "3.1.0\n");
     }
 }
