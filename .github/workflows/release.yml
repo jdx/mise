@@ -30,31 +30,31 @@ jobs:
           - os: ubuntu
             name: linux-x64-musl
             target: x86_64-unknown-linux-musl
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-armv6
             target: arm-unknown-linux-gnueabi
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: ubuntu
             name: linux-armv6-musl
             target: arm-unknown-linux-musleabi
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+            runs-on: buildjet-4vcpu-ubuntu-2204
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
