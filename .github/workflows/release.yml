@@ -75,8 +75,8 @@ jobs:
           rustup target add aarch64-apple-darwin
           cargo install cargo-zigbuild
         if: matrix.target == 'universal2-apple-darwin'
-      - run: sudo apt-get update; sudo apt-get install musl-tools
-        if: matrix.runs-on == 'buildjet-4vcpu-ubuntu-2204-arm'
+#      - run: sudo apt-get update; sudo apt-get install musl-tools
+#        if: matrix.runs-on == 'buildjet-4vcpu-ubuntu-2204-arm'
       - run: rustup target add ${{matrix.target}}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -84,8 +84,8 @@ jobs:
           shared-key: build-tarball-${{matrix.name}}
           cache-provider: buildjet
           #save-if: false
-#      - if: matrix.os == 'ubuntu'
-#        uses: taiki-e/install-action@cross
+      - if: matrix.os == 'ubuntu'
+        uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
