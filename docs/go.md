@@ -1,6 +1,6 @@
 # Go in rtx
 
-The following are instructions for using the go rtx core plugin. This is used when there isn't a 
+The following are instructions for using the go rtx core plugin. This is used when there isn't a
 git plugin installed named "go".
 
 If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
@@ -16,7 +16,7 @@ The following installs the latest version of go-1.20.x (if some version of 1.20.
 installed) and makes it the global default:
 
 ```sh-session
-$ rtx use -g go@1.20
+rtx use -g go@1.20
 ```
 
 ## Configuration
@@ -29,11 +29,11 @@ $ rtx use -g go@1.20
 
 ## Default packages
 
-rtx can automatically install a default set of packages right after installing a new go version. 
-To enable this feature, provide a `$HOME/.default-go-packages` file that lists one packages per 
+rtx can automatically install a default set of packages right after installing a new go version.
+To enable this feature, provide a `$HOME/.default-go-packages` file that lists one packages per
 line, for example:
 
-```
+```text
 github.com/Dreamacro/clash # allows comments
 github.com/jesseduffield/lazygit
 ```

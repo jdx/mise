@@ -18,7 +18,7 @@ A clear and concise description of what you expected to happen.
 
 **`rtx doctor` output**
 
-```
+```text
 REPLACE WITH OUTPUT OF `rtx doctor`
 ```
 

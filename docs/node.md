@@ -14,12 +14,12 @@ The following installs the latest version of node-20.x and makes it the global
 default:
 
 ```sh-session
-$ rtx use -g node@20
+rtx use -g node@20
 ```
 
 ## Requirements
 
-See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for 
+See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for
 required system dependencies.
 
 ## Configuration
@@ -41,7 +41,7 @@ required system dependencies.
 
 rtx-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-npm-packages` file that lists one package per line, for example:
 
-```
+```text
 lodash
 request
 express
@@ -52,40 +52,6 @@ You can specify a non-default location of this file by setting a `RTX_NODE_DEFAU
 ## `.nvmrc` and `.node-version` support
 
 rtx uses a `.tool-versions` or `.rtx.toml` file for auto-switching between software versions. To ease migration, you can have also have it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `.tool-versions`/`.rtx.toml`.
-
-## Running the wrapped node-build command
-
-We provide a command for running the installed `node-build` command:
-
-```bash
-rtx node node-build --version
-```
-
-### node-build advanced variations
-
-`node-build` has some additional variations aside from the versions listed in `rtx ls-remote 
-node` (chakracore/graalvm branches and some others). As of now, we weakly support these variations. In the sense that they are available for install and can be used in a `.tool-versions` file, but we don't list them as installation candidates nor give them full attention.
-
-Some of them will work out of the box, and some will need a bit of investigation to get them built. We are planning in providing better support for these variations in the future.
-
-To list all the available variations run:
-
-```bash
-rtx node node-build --definitions
-```
-
-_Note that this command only lists the current `node-build` definitions. You might want to [update the local `node-build` repository](#updating-node-build-definitions) before listing them._
-
-### Manually updating node-build definitions
-
-Every new node version needs to have a definition file in the `node-build` repository.
-`rtx-node` already tries to update `node-build` on every new version installation, but if you
-want to update `node-build` manually for some reason you can clear the cache and list the versions:
-
-```bash
-rtx cache clean
-rtx ls-remote node
-```
 
 ## "nodejs" -> "node" Alias
 

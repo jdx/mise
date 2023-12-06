@@ -33,13 +33,13 @@ Plugins are by far the biggest source of potential problems and where the most w
 
 There are 3 types of plugins:
 
-* [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI. 
+- [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI.
   These are official plugins for the most common languages written in Rust.
-* community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
-only have @jdx as the sole contributor, however this may change in the future for particular plugins with
-dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
-* external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
-secure than installing any random tool from the internet.
+- community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
+  only have @jdx as the sole contributor, however this may change in the future for particular plugins with
+  dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
+- external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
+  secure than installing any random tool from the internet.
 
 Just because a plugin is inside of the shorthand registry (so you can run `rtx install foo@`, does not mean
 I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the rtx-plugins
@@ -61,7 +61,7 @@ If you want, you may encrypt the message with GPG:
 
 <details>
   <summary>@jdx's public key</summary>
-  
+
   ```
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -115,5 +115,7 @@ MFPobhR7zlCShd7TdY1a41uxTGB+Wmn4DO0s/wzSgdgxIzG+TM1X47owe7l5RiI1
 1wxfuzN2+ao=
 =/CHf
 -----END PGP PUBLIC KEY BLOCK-----
-  ```
+
+```
 </details>
+```

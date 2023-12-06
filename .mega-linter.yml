@@ -1,0 +1,28 @@
+# Configuration file for MegaLinter
+#
+# See all available variables at https://megalinter.io/latest/config-file/ and in
+# linters documentation
+
+# all, none, or list of linter keys
+APPLY_FIXES: all
+
+# If you use ENABLE variable, all other languages/formats/tooling-formats will
+# be disabled by default
+# ENABLE:
+#   - RUST
+
+DISABLE:
+  - SPELL
+
+DISABLE_LINTERS:
+  - REPOSITORY_CHECKOV
+
+PRE_COMMANDS:
+  - command: apk add --no-cache zlib-dev zlib-static openssl-dev libffi-dev
+
+SHOW_ELAPSED_TIME: true
+
+#FILEIO_REPORTER: false
+
+FILTER_REGEX_EXCLUDE: "(completions/|target/)"
+JSON_JSONLINT_FILTER_REGEX_EXCLUDE: '(\.vscode/)'

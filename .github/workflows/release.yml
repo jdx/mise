@@ -1,0 +1,245 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["main", "release/*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build-tarball:
+    name: build-tarball-${{matrix.name}}
+    runs-on: ${{matrix.os}}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux-x64
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            name: linux-x64-musl
+            target: aarch64-unknown-linux-musl
+          - os: ubuntu-22.04
+            name: linux-arm64
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            name: linux-arm64-musl
+            target: aarch64-unknown-linux-musl
+          - os: ubuntu-22.04
+            name: linux-armv7
+            target: armv7-unknown-linux-gnueabi
+          - os: ubuntu-22.04
+            name: linux-armv7-musl
+            target: armv7-unknown-linux-musleabi
+          - os: ubuntu-22.04
+            name: linux-armv6
+            target: arm-unknown-linux-gnueabi
+          - os: ubuntu-22.04
+            name: linux-armv6-musl
+            target: arm-unknown-linux-musleabi
+          - os: macos-12
+            name: macos-x64
+            target: x86_64-apple-darwin
+          - os: macos-12
+            name: macos-arm64
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - if: matrix.os == 'macos-12'
+        run: rustup target add ${{matrix.target}}
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "build-tarball-${{matrix.name}}"
+      - if: matrix.os == 'ubuntu-22.04'
+        uses: taiki-e/install-action@cross
+      - run: scripts/setup-zipsign.sh
+        env:
+          ZIPSIGN: ${{ secrets.ZIPSIGN }}
+      - run: scripts/build-tarball.sh rtx --release --features openssl/vendored --target ${{matrix.target}}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/rtx-*.tar.xz
+            dist/rtx-*.tar.gz
+          if-no-files-found: error
+  e2e-linux:
+    runs-on: ubuntu-22.04
+    #container: ghcr.io/jdx/rtx:github-actions
+    needs: [build-tarball]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
+      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: rtx -v
+      - name: Run e2e tests
+        uses: nick-fields/retry@v2
+        env:
+          RUST_BACKTRACE: "1"
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: ./e2e/run_all_tests
+  rpm:
+    runs-on: ubuntu-22.04
+    needs: [build-tarball]
+    timeout-minutes: 10
+    container: ghcr.io/jdx/rtx:rpm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-rpm.sh
+      - uses: actions/upload-artifact@v3
+        with:
+          name: rpm
+          path: dist/rpmrepo
+          if-no-files-found: error
+  deb:
+    runs-on: ubuntu-22.04
+    container: ghcr.io/jdx/rtx:deb
+    timeout-minutes: 10
+    needs: [build-tarball]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@v3
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-deb.sh
+      - uses: actions/upload-artifact@v3
+        with:
+          name: deb
+          path: dist/deb
+          if-no-files-found: error
+  release:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.event.ref, 'refs/tags/v')
+    #container: ghcr.io/jdx/rtx:github-actions
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    needs:
+      - e2e-linux
+      - build-tarball
+      - rpm
+      - deb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rtx
+      - uses: actions/checkout@v4
+        with:
+          repository: jdx/homebrew-tap
+          path: homebrew-tap
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+      - name: Install fd-find
+        run: |
+          sudo apt-get update
+          sudo apt-get install fd-find
+          mkdir -p "$HOME/.local/bin"
+          ln -s $(which fdfind) "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          registry-url: "https://registry.npmjs.org"
+      - name: Set AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.RTX_SSH_KEY }}
+          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          workdir: homebrew-tap
+      - uses: actions/download-artifact@v3
+        with: { path: artifacts }
+      - run: rtx/scripts/release.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+      - name: homebrew-tap push
+        run: git push
+        working-directory: homebrew-tap
+      - name: GitHub Release Assets
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        with:
+          fail_on_unmatched_files: true
+          draft: false
+          files: releases/${{github.ref_name}}/*
+          generate_release_notes: true
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+      - name: Release to aur
+        run: scripts/release-aur.sh
+        working-directory: rtx
+      - name: Release aur-bin
+        run: scripts/release-aur-bin.sh
+        working-directory: rtx
+  bump-homebrew-formula:
+    runs-on: macos-latest
+    if: startsWith(github.event.ref, 'refs/tags/v')
+    timeout-minutes: 10
+    needs: [release]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Bump Homebrew formula
+        uses: dawidd6/action-homebrew-bump-formula@v3
+        with:
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          formula: rtx
+  bump-alpine:
+    runs-on: ubuntu-22.04
+    container: ghcr.io/jdx/rtx:alpine
+    timeout-minutes: 30
+    needs: [release]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Bump APKBUILD
+        run: sudo -Eu packager ./scripts/release-alpine.sh
+        env:
+          ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
+          ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}

@@ -16,11 +16,11 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 
 ## Dependencies
 
-* [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.
-* [just](https://github.com/casey/just) any version should do, but as of this writing I'm on 1.13.0
-* [md-magic](https://github.com/DavidWells/markdown-magic)
-* [shfmt](https://github.com/mvdan/sh)
-* [shellcheck](https://www.shellcheck.net/)
+- [rust](https://www.rust-lang.org/) stable 1.66.1+ (it might be compatible with earlier, but I haven't tested that). As of this writing: 1.67.0 but GH actions will use the latest stable whenever it runs.
+- [just](https://github.com/casey/just) any version should do, but as of this writing I'm on 1.13.0
+- [md-magic](https://github.com/DavidWells/markdown-magic)
+- [shfmt](https://github.com/mvdan/sh)
+- [shellcheck](https://www.shellcheck.net/)
 
 (you'd think we'd use rtx to fetch these but frankly it's kind of a pain to dogfood rtx while testing it)
 
@@ -29,7 +29,7 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 Just should be used for just about every task. Here is a full list of its
 tasks:
 
-```
+```shell
 ~/src/rtx ❯ just --list
 Available recipes:
     build *args           # just `cargo build`
@@ -61,7 +61,7 @@ Shouldn't require anything special I'm aware of, but `just build` is a good sani
 I put a shim for `cargo run` that makes it easy to run build + run rtx in dev mode. It's at `.bin/rtx`. What I do is add this to PATH
 with direnv. Here is my `.envrc`:
 
-```
+```shell
 source_up_if_exists
 PATH_add "$(expand_path .bin)"
 ```
@@ -72,9 +72,9 @@ You don't have to do this, but it makes things like `rtx activate` a lot easier 
 
 ## Running Tests
 
-* Run only unit tests: `just test-unit`
-* Run only E2E tests: `just test-e2e`
-* Run all tests: `just test`
+- Run only unit tests: `just test-unit`
+- Run only E2E tests: `just test-e2e`
+- Run all tests: `just test`
 
 ## Releasing
 
@@ -82,12 +82,12 @@ Run `just release -x [minor|patch]`. (minor if it is the first release in a mont
 
 ## Linting
 
-* Lint codebase: `just lint`
-* Lint and fix codebase: `just lint-fix`
+- Lint codebase: `just lint`
+- Lint and fix codebase: `just lint-fix`
 
 ## Generating readme and shell completion files
 
-```
+```shell
 just pre-commit
 ```
 
@@ -95,7 +95,7 @@ just pre-commit
 
 This project uses lefthook which will automatically install a pre-commit hook:
 
-```
+```shell
 brew install lefthook # or install via some other means
 lefthook install
 git commit
@@ -110,7 +110,7 @@ if actually changing the packaging setup.
 
 This is for arm64, but you can change the arch to amd64 if you want.
 
-```
+```shell
 finch run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
@@ -124,7 +124,7 @@ rtx -V
 
 ### Amazon Linux 2 (yum)
 
-```
+```shell
 finch run -ti --rm amazonlinux
 yum install -y yum-utils
 yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
@@ -134,7 +134,7 @@ rtx -v
 
 ### Fedora (dnf)
 
-```
+```shell
 finch run -ti --rm fedora
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
