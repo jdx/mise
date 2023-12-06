@@ -31,12 +31,7 @@ function __rtx_plugins
 end
 function __rtx_tool_versions
     if test -z "$__rtx_tool_versions_cache"
-        set -g __rtx_tool_versions_cache
-        for plugin in (__rtx_plugins)
-            for v in (rtx ls-remote $plugin)
-                set -a __rtx_tool_versions_cache "$plugin@$v"
-            end
-        end
+        set -g __rtx_tool_versions_cache (rtx ls-remote --all)
     end
     for tv in $__rtx_tool_versions_cache
         echo $tv

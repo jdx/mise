@@ -149,7 +149,7 @@ v20.0.0
   - [`rtx latest [OPTIONS] <TOOL@VERSION>`](#rtx-latest-options-toolversion)
   - [`rtx link [OPTIONS] <TOOL@VERSION> <PATH>`](#rtx-link-options-toolversion-path)
   - [`rtx ls [OPTIONS] [PLUGIN]`](#rtx-ls-options-plugin)
-  - [`rtx ls-remote <TOOL@VERSION> [PREFIX]`](#rtx-ls-remote-toolversion-prefix)
+  - [`rtx ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`](#rtx-ls-remote-options-toolversion-prefix)
   - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
   - [`rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`](#rtx-plugins-install-options-new_plugin-git_url)
   - [`rtx plugins link [OPTIONS] <NAME> [PATH]`](#rtx-plugins-link-options-name-path)
@@ -2106,7 +2106,7 @@ Examples:
   }
 ```
 
-### `rtx ls-remote <TOOL@VERSION> [PREFIX]`
+### `rtx ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
 
 ```
 List runtime versions available for install
@@ -2114,15 +2114,19 @@ List runtime versions available for install
 note that the results are cached for 24 hours
 run `rtx cache clean` to clear the cache and get fresh results
 
-Usage: ls-remote <TOOL@VERSION> [PREFIX]
+Usage: ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]
 
 Arguments:
-  <TOOL@VERSION>
+  [TOOL@VERSION]
           Plugin to get versions for
 
   [PREFIX]
           The version prefix to use when querying the latest version
           same as the first argument after the "@"
+
+Options:
+      --all
+          Show all installed plugins and versions
 
 Examples:
   $ rtx ls-remote node
