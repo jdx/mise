@@ -74,4 +74,6 @@ EOF
 cd aur
 git add .SRCINFO PKGBUILD
 git commit -m "rtx ${RTX_VERSION#v}"
-git push
+if [ "$DRY_RUN" != 1 ]; then
+	git push
+fi
