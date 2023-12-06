@@ -920,10 +920,4 @@ else
 	compdef _rtx rtx
 fi
 
-# Local Variables:
-# mode: Shell-Script
-# sh-indentation: 2
-# indent-tabs-mode: nil
-# sh-basic-offset: 2
-# End:
-# vim: ft=zsh sw=2 ts=2 et
+# vim: noet ci pi sts=0 sw=4 ts=4

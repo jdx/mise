@@ -1,7 +1,6 @@
+use crate::shell::completions::is_banned;
 use clap::{Arg, ArgAction, Command, ValueHint};
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use std::collections::HashSet;
 
 pub fn render(cmd: &Command) -> String {
     let cmds = vec![cmd];
@@ -60,13 +59,7 @@ pub fn render(cmd: &Command) -> String {
             compdef _rtx rtx
         fi
 
-        # Local Variables:
-        # mode: Shell-Script
-        # sh-indentation: 2
-        # indent-tabs-mode: nil
-        # sh-basic-offset: 2
-        # End:
-        # vim: ft=zsh sw=2 ts=2 et
+        # vim: noet ci pi sts=0 sw=4 ts=4
         "#}
 }
 
@@ -109,7 +102,7 @@ fn render_subcommands(cmds: &[&Command]) -> String {
     let cmd = cmds.last().unwrap();
     let cases = cmd
         .get_subcommands()
-        .filter(|c| !banned(c))
+        .filter(|c| !is_banned(c))
         .sorted_by_cached_key(|c| c.get_name())
         .map(|cmd| {
             let mut names = cmd.get_all_aliases().sorted().collect_vec();
@@ -228,7 +221,7 @@ fn render_completion(arg: &Arg) -> String {
 fn render_command_funcs(cmds: &[&Command]) -> String {
     let cmd = cmds.last().unwrap();
     cmd.get_subcommands()
-        .filter(|c| !banned(c))
+        .filter(|c| !is_banned(c))
         .sorted_by_key(|c| c.get_name())
         .map(|cmd| {
             let mut cmds = cmds.iter().copied().collect_vec();
@@ -254,7 +247,7 @@ fn render_command_descriptions(cmds: &[&Command]) -> String {
     let cmd = cmds.last().unwrap();
     let commands = cmd
         .get_subcommands()
-        .filter(|c| !c.is_hide_set() && !banned(c))
+        .filter(|c| !c.is_hide_set() && !is_banned(c))
         .sorted_by_key(|c| c.get_name())
         .map(|cmd| {
             let name = cmd.get_name();
@@ -284,7 +277,7 @@ fn render_command_descriptions(cmds: &[&Command]) -> String {
 
     for cmd in cmd
         .get_subcommands()
-        .filter(|c| c.has_subcommands() && !banned(c))
+        .filter(|c| c.has_subcommands() && !is_banned(c))
     {
         let mut cmds = cmds.iter().copied().collect_vec();
         cmds.push(cmd);
@@ -327,11 +320,4 @@ fn escape_value(string: &str) -> String {
         .replace('(', "\\(")
         .replace(')', "\\)")
         .replace(' ', "\\ ")
-}
-
-static BANNED_COMMANDS: Lazy<HashSet<&str>> =
-    Lazy::new(|| ["render-mangen", "render-help", "render-completion"].into());
-
-fn banned(cmd: &Command) -> bool {
-    BANNED_COMMANDS.contains(&cmd.get_name())
 }
