@@ -202,7 +202,8 @@ pub fn is_executable(path: &Path) -> bool {
 pub fn make_executable(path: &Path) -> Result<()> {
     let mut perms = path.metadata()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
-    fs::set_permissions(path, perms)?;
+    fs::set_permissions(path, perms)
+        .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
     Ok(())
 }
 
@@ -264,7 +265,9 @@ pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
-    cmd!("unzip", archive, "-d", dest).run()?;
+    cmd!("unzip", archive, "-d", dest)
+        .run()
+        .wrap_err_with(|| eyre!("unzip {} -d {}", display_path(archive), display_path(dest)))?;
     Ok(())
 }
 

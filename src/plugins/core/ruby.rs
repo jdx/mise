@@ -7,7 +7,7 @@ use color_eyre::eyre::Result;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::GITHUB_API_TOKEN;
+
 use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::install_context::InstallContext;
@@ -220,13 +220,8 @@ impl RubyPlugin {
 
     fn latest_ruby_build_version(&self) -> Result<String> {
         let http = http::Client::new()?;
-        let mut req = http.get("https://api.github.com/repos/rbenv/ruby-build/releases/latest");
-        if let Some(token) = &*GITHUB_API_TOKEN {
-            req = req.header("authorization", format!("token {}", token));
-        }
-        let resp = req.send()?;
-        resp.error_for_status_ref()?;
-        let release: GithubRelease = resp.json()?;
+        let release: GithubRelease =
+            http.json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
@@ -311,9 +306,7 @@ impl RubyPlugin {
         for f in &self.fetch_patch_sources() {
             if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
                 let http = http::Client::new()?;
-                let resp = http.get(f).send()?;
-                resp.error_for_status_ref()?;
-                patches.push(resp.text()?);
+                patches.push(http.get_text(f)?);
             } else {
                 patches.push(file::read_to_string(f)?);
             }

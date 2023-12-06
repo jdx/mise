@@ -13,7 +13,7 @@ use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::ProgressReport;
-use crate::{env, file, http};
+use crate::{file, http};
 
 #[derive(Debug)]
 pub struct BunPlugin {
@@ -28,13 +28,8 @@ impl BunPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let http = http::Client::new()?;
-        let mut req = http.get("https://api.github.com/repos/oven-sh/bun/releases?per_page=100");
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
-            req = req.header("authorization", format!("token {}", token));
-        }
-        let resp = req.send()?;
-        resp.error_for_status_ref()?;
-        let releases: Vec<GithubRelease> = resp.json()?;
+        let releases: Vec<GithubRelease> =
+            http.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
