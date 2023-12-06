@@ -13,7 +13,7 @@ env:
 jobs:
   build-tarball:
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{matrix.os == 'macos' && 'macos-12' || 'buildjet-4vcpu-ubuntu-2204''}}
+    runs-on: ${{matrix.os == 'macos' && 'macos-12' || 'buildjet-4vcpu-ubuntu-2204'}}
     timeout-minutes: 45
     strategy:
       fail-fast: false
