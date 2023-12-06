@@ -1,26 +1,22 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display};
-use std::fs::File;
+
 use std::path::{Path, PathBuf};
 
 use clap::Command;
-use color_eyre::eyre::{eyre, Context, Result};
-use console::style;
-use itertools::Itertools;
-use regex::Regex;
-use versions::Versioning;
+use color_eyre::eyre::Result;
 
 use crate::config::{Config, Settings};
-use crate::file::{display_path, remove_all, remove_all_with_warning};
-use crate::install_context::InstallContext;
-use crate::plugins::{ExternalPlugin, Plugin};
-use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
-use crate::{dirs, file};
 
+use crate::dirs;
+use crate::install_context::InstallContext;
+use crate::plugins::Plugin;
+use crate::toolset::{ToolVersion, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::ProgressReport;
+
+#[derive(Debug)]
 pub struct Tool {
     pub name: String,
     pub plugin: Box<dyn Plugin>,
@@ -42,16 +38,6 @@ impl Tool {
         }
     }
 
-    pub fn list() -> Result<Vec<Self>> {
-        Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .into_iter()
-            .map(|name| {
-                let plugin = ExternalPlugin::new(name.clone());
-                Self::new(name, Box::new(plugin))
-            })
-            .collect())
-    }
-
     pub fn is_installed(&self) -> bool {
         self.plugin.is_installed()
     }
@@ -69,29 +55,11 @@ impl Tool {
     }
 
     pub fn list_installed_versions(&self) -> Result<Vec<String>> {
-        Ok(match self.installs_path.exists() {
-            true => file::dir_subdirs(&self.installs_path)?
-                .iter()
-                .filter(|v| !is_runtime_symlink(&self.installs_path.join(v)))
-                // TODO: share logic with incomplete_file_path
-                .filter(|v| {
-                    !dirs::CACHE
-                        .join(&self.name)
-                        .join(v)
-                        .join("incomplete")
-                        .exists()
-                })
-                .map(|v| Versioning::new(v).unwrap_or_default())
-                .sorted()
-                .map(|v| v.to_string())
-                .collect(),
-            false => vec![],
-        })
+        self.plugin.list_installed_versions()
     }
 
     pub fn list_installed_versions_matching(&self, query: &str) -> Result<Vec<String>> {
-        let versions = self.list_installed_versions()?;
-        self.fuzzy_match_filter(versions, query)
+        self.plugin.list_installed_versions_matching(query)
     }
 
     pub fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
@@ -99,8 +67,7 @@ impl Tool {
     }
 
     pub fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
-        let versions = self.list_remote_versions(settings)?;
-        self.fuzzy_match_filter(versions, query)
+        self.plugin.list_versions_matching(settings, query)
     }
 
     pub fn latest_version(
@@ -108,36 +75,11 @@ impl Tool {
         settings: &Settings,
         query: Option<String>,
     ) -> Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let matches = self.list_versions_matching(settings, &query)?;
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => self.latest_stable_version(settings),
-        }
+        self.plugin.latest_version(settings, query)
     }
 
     pub fn latest_installed_version(&self, query: Option<String>) -> Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let matches = self.list_installed_versions_matching(&query)?;
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => {
-                let installed_symlink = self.installs_path.join("latest");
-                if installed_symlink.exists() {
-                    let target = installed_symlink.read_link()?;
-                    let version = target
-                        .file_name()
-                        .ok_or_else(|| eyre!("Invalid symlink target"))?
-                        .to_string_lossy()
-                        .to_string();
-                    Ok(Some(version))
-                } else {
-                    Ok(None)
-                }
-            }
-        }
+        self.plugin.latest_installed_version(query)
     }
 
     pub fn get_aliases(&self, settings: &Settings) -> Result<BTreeMap<String, String>> {
@@ -148,96 +90,28 @@ impl Tool {
         self.plugin.legacy_filenames(settings)
     }
 
-    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
-        if let Some(latest) = self.plugin.latest_stable_version(settings)? {
-            Ok(Some(latest))
-        } else {
-            self.latest_version(settings, Some("latest".into()))
-        }
-    }
-
     pub fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
-        pr.set_style(PROG_TEMPLATE.clone());
-        let tool = match tv {
-            Some(tv) => tv.to_string(),
-            None => self.name.to_string(),
-        };
-        pr.set_prefix(format!(
-            "{} {} ",
-            style("rtx").dim().for_stderr(),
-            style(tool).cyan().for_stderr(),
-        ));
-        pr.enable_steady_tick();
+        self.plugin.decorate_progress_bar(pr, tv);
     }
 
     pub fn is_version_installed(&self, tv: &ToolVersion) -> bool {
-        match tv.request {
-            ToolVersionRequest::System(_) => true,
-            _ => {
-                tv.install_path().exists()
-                    && !self.incomplete_file_path(tv).exists()
-                    && !is_runtime_symlink(&tv.install_path())
-            }
-        }
+        self.plugin.is_version_installed(tv)
     }
 
     pub fn is_version_outdated(&self, config: &Config, tv: &ToolVersion) -> bool {
-        let latest = match tv.latest_version(config, self) {
-            Ok(latest) => latest,
-            Err(e) => {
-                debug!("Error getting latest version for {}: {:#}", self.name, e);
-                return false;
-            }
-        };
-        !self.is_version_installed(tv) || tv.version != latest
+        self.plugin.is_version_outdated(self, config, tv)
     }
 
     pub fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
-        match tv.install_path() {
-            path if path.is_symlink() => Some(path),
-            _ => None,
-        }
+        self.plugin.symlink_path(tv)
     }
 
     pub fn create_symlink(&self, version: &str, target: &Path) -> Result<()> {
-        let link = self.installs_path.join(version);
-        file::create_dir_all(link.parent().unwrap())?;
-        file::make_symlink(target, &link)
+        self.plugin.create_symlink(version, target)
     }
 
-    pub fn install_version(&self, mut ctx: InstallContext) -> Result<()> {
-        if self.is_version_installed(&ctx.tv) {
-            if ctx.force {
-                self.uninstall_version(ctx.config, &ctx.tv, &ctx.pr, false)?;
-            } else {
-                return Ok(());
-            }
-        }
-        self.decorate_progress_bar(&mut ctx.pr, Some(&ctx.tv));
-        let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
-        self.create_install_dirs(&ctx.tv)?;
-
-        if let Err(e) = self.plugin.install_version(&ctx) {
-            self.cleanup_install_dirs_on_error(&ctx.config.settings, &ctx.tv);
-            return Err(e);
-        }
-        self.cleanup_install_dirs(&ctx.config.settings, &ctx.tv);
-        // attempt to touch all the .tool-version files to trigger updates in hook-env
-        let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
-        touch_dirs.extend(ctx.config.config_files.keys().cloned());
-        for path in touch_dirs {
-            let err = file::touch_dir(&path);
-            if let Err(err) = err {
-                debug!("error touching config file: {:?} {:?}", path, err);
-            }
-        }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
-            debug!("error removing incomplete file: {:?}", err);
-        }
-        ctx.pr.set_message("");
-        ctx.pr.finish();
-
-        Ok(())
+    pub fn install_version(&self, ctx: InstallContext) -> Result<()> {
+        self.plugin.install_version(ctx)
     }
 
     pub fn uninstall_version(
@@ -247,25 +121,7 @@ impl Tool {
         pr: &ProgressReport,
         dryrun: bool,
     ) -> Result<()> {
-        pr.set_message(format!("uninstall {tv}"));
-
-        if !dryrun {
-            self.plugin.uninstall_version(config, tv)?;
-        }
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("removing {}", display_path(dir)));
-            if dryrun {
-                return Ok(());
-            }
-            remove_all_with_warning(dir)
-        };
-        rmdir(&tv.install_path())?;
-        rmdir(&tv.download_path())?;
-        rmdir(&tv.cache_path())?;
-        Ok(())
+        self.plugin.uninstall_version(config, tv, pr, dryrun)
     }
 
     pub fn ensure_installed(
@@ -283,10 +139,7 @@ impl Tool {
         self.plugin.uninstall(pr)
     }
     pub fn purge(&self, pr: &ProgressReport) -> Result<()> {
-        rmdir(&self.installs_path, pr)?;
-        rmdir(&self.cache_path, pr)?;
-        rmdir(&self.downloads_path, pr)?;
-        Ok(())
+        self.plugin.purge(pr)
     }
 
     pub fn external_commands(&self) -> Result<Vec<Command>> {
@@ -309,10 +162,7 @@ impl Tool {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        match tv.request {
-            ToolVersionRequest::System(_) => Ok(vec![]),
-            _ => self.plugin.list_bin_paths(config, ts, tv),
-        }
+        self.plugin.list_bin_paths(config, ts, tv)
     }
     pub fn exec_env(
         &self,
@@ -320,10 +170,7 @@ impl Tool {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<HashMap<String, String>> {
-        match tv.request {
-            ToolVersionRequest::System(_) => Ok(HashMap::new()),
-            _ => self.plugin.exec_env(config, ts, tv),
-        }
+        self.plugin.exec_env(config, ts, tv)
     }
 
     pub fn which(
@@ -333,83 +180,8 @@ impl Tool {
         tv: &ToolVersion,
         bin_name: &str,
     ) -> Result<Option<PathBuf>> {
-        let bin_paths = self.plugin.list_bin_paths(config, ts, tv)?;
-        for bin_path in bin_paths {
-            let bin_path = bin_path.join(bin_name);
-            if bin_path.exists() {
-                return Ok(Some(bin_path));
-            }
-        }
-        Ok(None)
+        self.plugin.which(config, ts, tv, bin_name)
     }
-
-    fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.cache_path().join("incomplete")
-    }
-
-    fn create_install_dirs(&self, tv: &ToolVersion) -> Result<()> {
-        let _ = remove_all_with_warning(tv.install_path());
-        let _ = remove_all_with_warning(tv.download_path());
-        let _ = remove_all_with_warning(tv.cache_path());
-        let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
-        file::create_dir_all(tv.install_path())?;
-        file::create_dir_all(tv.download_path())?;
-        file::create_dir_all(tv.cache_path())?;
-        File::create(self.incomplete_file_path(tv))?;
-        Ok(())
-    }
-    fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_install {
-            let _ = remove_all_with_warning(tv.install_path());
-            self.cleanup_install_dirs(settings, tv);
-        }
-    }
-    fn cleanup_install_dirs(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_download && !settings.always_keep_install {
-            let _ = remove_all_with_warning(tv.download_path());
-        }
-    }
-
-    fn get_lock(&self, path: &Path, force: bool) -> Result<Option<fslock::LockFile>> {
-        self.plugin.get_lock(path, force)
-    }
-
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Result<Vec<String>> {
-        let mut query = query;
-        if query == "latest" {
-            query = "[0-9].*";
-        }
-        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
-        let version_regex = regex!(
-            r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|SNAPSHOT|master)"
-        );
-        let versions = versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if version_regex.is_match(v) {
-                    return false;
-                }
-                query_regex.is_match(v)
-            })
-            .collect();
-        Ok(versions)
-    }
-}
-
-fn rmdir(dir: &Path, pr: &ProgressReport) -> Result<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    pr.set_message(format!("removing {}", &dir.to_string_lossy()));
-    remove_all(dir).wrap_err_with(|| {
-        format!(
-            "Failed to remove directory {}",
-            style(&dir.to_string_lossy()).cyan().for_stderr()
-        )
-    })
 }
 
 impl PartialEq for Tool {
@@ -418,28 +190,10 @@ impl PartialEq for Tool {
     }
 }
 
-impl Debug for Tool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tool")
-            .field("name", &self.name)
-            .field("installs_path", &self.installs_path)
-            .field("plugin", &self.plugin)
-            .finish()
-    }
-}
-
 impl Display for Tool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.name)
     }
-}
-
-fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
-    let v = match list.contains(&query.to_string()) {
-        true => Some(query.to_string()),
-        false => list.last().map(|s| s.to_string()),
-    };
-    v
 }
 
 impl PartialOrd for Tool {
@@ -455,21 +209,3 @@ impl Ord for Tool {
 }
 
 impl Eq for Tool {}
-
-#[cfg(test)]
-mod tests {
-    use crate::plugins::PluginName;
-
-    use super::*;
-
-    #[test]
-    fn test_debug() {
-        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
-        let tool = Tool::new("dummy".to_string(), Box::new(plugin));
-        let debug = format!("{:?}", tool);
-        assert!(debug.contains("Tool"));
-        assert!(debug.contains("name"));
-        assert!(debug.contains("installs_path"));
-        assert!(debug.contains("plugin"));
-    }
-}
