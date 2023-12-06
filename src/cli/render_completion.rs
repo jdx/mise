@@ -7,7 +7,7 @@ use color_eyre::eyre::Result;
 use crate::cli::self_update::SelfUpdate;
 use crate::config::Config;
 use crate::output::Output;
-use crate::shell::completions::zsh_complete;
+use crate::shell::completions;
 
 /// Generate shell completions
 #[derive(Debug, Args)]
@@ -29,7 +29,8 @@ impl RenderCompletion {
         let mut cmd = crate::cli::Cli::command().subcommand(SelfUpdate::command());
 
         let script = match shell {
-            clap_complete::Shell::Zsh => zsh_complete(&cmd)?,
+            clap_complete::Shell::Zsh => completions::zsh_complete(&cmd)?,
+            clap_complete::Shell::Fish => completions::fish_complete(&cmd)?,
             _ => {
                 let mut c = Cursor::new(Vec::new());
                 generate(shell, &mut cmd, "rtx", &mut c);
