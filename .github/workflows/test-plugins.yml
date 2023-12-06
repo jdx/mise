@@ -100,7 +100,7 @@ jobs:
           # dist/rtx-v1.16.0-linux-x64.tar.xz
           # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
       - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
       - run: rtx -v
       - name: ${{matrix.command}}
         uses: nick-fields/retry@v2
@@ -178,7 +178,7 @@ jobs:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
       - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
       - name: rtx install ${{matrix.plugins}}@latest
         uses: nick-fields/retry@v2
         with:

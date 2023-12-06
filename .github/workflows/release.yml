@@ -65,7 +65,7 @@ jobs:
             runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-#      - if: matrix.os == 'macos'
+      - run: sudo apt-get update; sudo apt-get install musl-gcc
       - run: rustup target add ${{matrix.target}}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -99,8 +99,8 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: tar -C "$HOME" -xvJf "dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz"
+      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
       - run: rtx -v
       - name: Run e2e tests
         uses: nick-fields/retry@v2
@@ -185,8 +185,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install fd-find
           mkdir -p "$HOME/.local/bin"
-          ln -s $(which fdfind) "$HOME/.local/bin/fd"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: "20.x"
