@@ -248,7 +248,7 @@ mod tests {
         run_test(|| {
             assert_cli!("local", "tiny", "2");
             let stdout = assert_cli!("local", "tiny");
-            assert_str_eq!(stdout, "2");
+            assert_str_eq!(stdout, "2\n");
         });
     }
 

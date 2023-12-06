@@ -3,4 +3,3 @@ source: src/cli/local.rs
 expression: output
 ---
 rtx ~/cwd/.test-tool-versions tiny@2
-

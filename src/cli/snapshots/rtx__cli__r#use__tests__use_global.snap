@@ -3,4 +3,3 @@ source: src/cli/use.rs
 expression: output
 ---
 rtx ~/config/config.toml tiny@2
-

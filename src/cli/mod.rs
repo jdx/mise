@@ -283,7 +283,7 @@ pub mod tests {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
             let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
-            console::strip_ansi_codes(output.trim()).to_string()
+            console::strip_ansi_codes(&output).to_string()
         }};
     }
 
