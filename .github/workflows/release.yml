@@ -55,13 +55,9 @@ jobs:
         run: rustup target add ${{matrix.target}}
       - uses: buildjet/cache@v3
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          shared-key: test
+          provider: buildjet
+          save-if: false
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
