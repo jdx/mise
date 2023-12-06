@@ -251,6 +251,7 @@ complete -xc rtx -n "$fssf uninstall" -s n -l dry-run -d 'Do not actually delete
 complete -xc rtx -n "$fssf uninstall" -a "(__rtx_tool_versions)" -d 'Tool(s) to remove'
 
 # upgrade
+complete -xc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
 complete -xc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'
 
 # use

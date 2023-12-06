@@ -721,6 +721,7 @@ _rtx() {
 	__rtx_upgrade_cmd() {
 		_arguments -s -S \
 			'*::tool:__rtx_tool_versions' \
+			'(-n --dry-run)'{-n,--dry-run}'[Just print what would be done, don'\''t actually do it]' \
 			'(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
 			'--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
 			'(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \

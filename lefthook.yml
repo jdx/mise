@@ -8,7 +8,7 @@ pre-commit:
       run: cargo clippy -- -Dwarnings
       glob: "src/**/*.rs"
     render:
-      run: just render-help render-completions render-mangen
+      run: just render-help render-completions render-mangen && git add README.md completions man
       glob: "src/**/*.rs"
     shellcheck:
       run: shellcheck -x {all_files} && shfmt -d {all_files}
