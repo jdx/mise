@@ -3423,7 +3423,7 @@ _rtx() {
             return 0
             ;;
         rtx__upgrade)
-            opts="-j -r -v -y -h --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]..."
+            opts="-n -j -r -v -y -h --dry-run --jobs --debug --log-level --trace --raw --verbose --yes --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

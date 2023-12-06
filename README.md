@@ -169,7 +169,7 @@ v20.0.0
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall [OPTIONS] <TOOL@VERSION>...`](#rtx-uninstall-options-toolversion)
-  - [`rtx upgrade [TOOL@VERSION]...`](#rtx-upgrade-toolversion)
+  - [`rtx upgrade [OPTIONS] [TOOL@VERSION]...`](#rtx-upgrade-options-toolversion)
   - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
   - [`rtx where <TOOL@VERSION>`](#rtx-where-toolversion)
@@ -2619,18 +2619,22 @@ Examples:
   $ rtx uninstall --all node@18.0.0 # will uninstall all node versions
 ```
 
-### `rtx upgrade [TOOL@VERSION]...`
+### `rtx upgrade [OPTIONS] [TOOL@VERSION]...`
 
 ```
 Upgrades outdated tool versions
 
-Usage: upgrade [TOOL@VERSION]...
+Usage: upgrade [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
   [TOOL@VERSION]...
           Tool(s) to upgrade
           e.g.: node@20 python@3.10
           If not specified, all current tools will be upgraded
+
+Options:
+  -n, --dry-run
+          Just print what would be done, don't actually do it
 ```
 
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
