@@ -3,12 +3,12 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/${RTX_VERSION}/rtx-${RTX_VERSION}-linux-x64.tar.gz"
+TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/$RTX_VERSION/rtx-$RTX_VERSION-linux-x64.tar.gz"
 
 SHA512=$(curl -L "$TAR_GZ_URI" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur-bin ]; then
-	git clone ssh://aur@aur.archlinux.org/rtx-bin.git aur-bin
+  git clone ssh://aur@aur.archlinux.org/rtx-bin.git aur-bin
 fi
 git -C aur-bin pull
 
@@ -69,5 +69,5 @@ cd aur-bin
 git add .SRCINFO PKGBUILD
 git commit -m "rtx ${RTX_VERSION#v}"
 if [[ "$DRY_RUN" != 1 ]]; then
-	git push
+  git push
 fi
