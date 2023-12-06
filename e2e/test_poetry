@@ -8,12 +8,13 @@ rm -rf "$RTX_DATA_DIR/cache/poetry"
 export POETRY_HOME=".poetry"
 
 eval "$(rtx activate bash)"
-rtx i python
+rtx i python && _rtx_hook
 rtx i poetry && _rtx_hook
 
 assert "poetry --version" "Poetry (version 1.7.1)"
 python3 -V
 poetry install && _rtx_hook
+rtx i poetry -f && _rtx_hook
 poetry env info
 assert "$(poetry env info -e) --version" "Python 3.12.0"
 assert "echo \$VIRTUAL_ENV" "$(poetry env info -p)"

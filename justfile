@@ -62,7 +62,7 @@ test-coverage:
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         rtx trust
-        just pre-commit
+        just render-help render-completions render-mangen
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         rtx trust
@@ -88,6 +88,8 @@ lint:
     shellcheck -x {{ scripts }}
     shfmt -d {{ scripts }}
     just --unstable --fmt --check
+    prettier -c $(git ls-files '*.yml' '*.yaml')
+    markdownlint .
 
 # runs linters but makes fixes when possible
 lint-fix:
@@ -96,6 +98,10 @@ lint-fix:
     shellcheck -x {{ scripts }}
     shfmt -w {{ scripts }}
     just --unstable --fmt
+    prettier -w $(git ls-files '*.yml' '*.yaml')
+    markdownlint --fix .
+
+render-all: render-help render-completions render-mangen
 
 # regenerate README.md
 render-help: build
@@ -114,7 +120,7 @@ render-mangen: build
     NO_COLOR=1 rtx render-mangen
 
 # called by lefthook precommit hook
-pre-commit: render-help render-completions render-mangen lint
+pre-commit: render-all lint
     git add README.md
     git add completions
     git add man

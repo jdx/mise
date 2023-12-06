@@ -257,7 +257,7 @@ impl Plugin for NodePlugin {
         let body = body.trim().strip_prefix('v').unwrap_or(&body);
         // replace lts/* with lts
         let body = body.replace("lts/*", "lts");
-        Ok(body.to_string())
+        Ok(body)
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {

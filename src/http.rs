@@ -59,7 +59,7 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let resp = self.get(url.clone())?;
+        let resp = self.get(url)?;
         let json = resp.json()?;
         Ok(json)
     }
@@ -67,7 +67,7 @@ impl Client {
     pub fn download_file<U: IntoUrl>(&self, url: U, path: &Path) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
-        let mut resp = self.get(url.clone())?;
+        let mut resp = self.get(url)?;
 
         file::create_dir_all(path.parent().unwrap())?;
         let mut file = File::create(path)?;

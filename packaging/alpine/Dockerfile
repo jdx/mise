@@ -1,10 +1,11 @@
 FROM alpine:edge
-RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools
-RUN apk fix
-RUN adduser -D packager
-RUN addgroup packager abuild
-RUN echo "packager ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-RUN mkdir -p /__w && chown packager:packager /__w && chmod 777 /__w
+
+RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools \
+      && apk fix \
+      && adduser -D packager \
+      && addgroup packager abuild \
+      && echo "packager ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+      && mkdir -p /__w && chown packager:packager /__w && chmod 777 /__w
 #USER packager
 #WORKDIR /home/packager
 
