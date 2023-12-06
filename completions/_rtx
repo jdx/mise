@@ -420,7 +420,8 @@ _rtx() {
 (($ + functions[__rtx_ls_remote_cmd])) ||
 	__rtx_ls_remote_cmd() {
 		_arguments -s -S \
-			':plugin:__rtx_plugins' \
+			'::plugin:__rtx_plugins' \
+			'--all[Show all installed plugins and versions]' \
 			'::prefix:__rtx_prefixes' \
 			'(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
 			'--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \

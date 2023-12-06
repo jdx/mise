@@ -17,8 +17,12 @@ use crate::toolset::ToolVersionRequest;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
-    plugin: ToolArg,
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
+    plugin: Option<ToolArg>,
+
+    /// Show all installed plugins and versions
+    #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
+    all: bool,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
@@ -28,18 +32,27 @@ pub struct LsRemote {
 
 impl LsRemote {
     pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let plugin = self.get_plugin(&mut config)?;
+        if let Some(plugin) = self.get_plugin(&mut config)? {
+            self.run_single(config, out, plugin)
+        } else {
+            self.run_all(config, out)
+        }
+    }
 
-        let prefix = match &self.plugin.tvr {
-            Some(ToolVersionRequest::Version(_, v)) => Some(v),
-            _ => self.prefix.as_ref(),
+    fn run_single(self, config: Config, out: &mut Output, plugin: Arc<Tool>) -> Result<()> {
+        let prefix = match &self.plugin {
+            Some(tool_arg) => match &tool_arg.tvr {
+                Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
+                _ => self.prefix.clone(),
+            },
+            _ => self.prefix.clone(),
         };
 
         let versions = plugin.list_remote_versions(&config.settings)?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
-                .filter(|v| v.starts_with(prefix))
+                .filter(|v| v.starts_with(&prefix))
                 .collect(),
             None => versions,
         };
@@ -50,14 +63,26 @@ impl LsRemote {
 
         Ok(())
     }
-}
 
-impl LsRemote {
-    fn get_plugin(&self, config: &mut Config) -> Result<Arc<Tool>> {
-        let plugin_name = self.plugin.plugin.clone();
-        let tool = config.get_or_create_tool(&plugin_name);
-        tool.ensure_installed(config, None, false)?;
-        Ok(tool)
+    fn run_all(self, config: Config, out: &mut Output) -> Result<()> {
+        for plugin in config.tools.values() {
+            let versions = plugin.list_remote_versions(&config.settings)?;
+            for version in versions {
+                rtxprintln!(out, "{}@{}", plugin.name, version);
+            }
+        }
+        Ok(())
+    }
+
+    fn get_plugin(&self, config: &mut Config) -> Result<Option<Arc<Tool>>> {
+        match &self.plugin {
+            Some(tool_arg) => {
+                let tool = config.get_or_create_tool(&tool_arg.plugin);
+                tool.ensure_installed(config, None, false)?;
+                Ok(Some(tool))
+            }
+            None => Ok(None),
+        }
     }
 }
 

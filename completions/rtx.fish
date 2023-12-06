@@ -140,6 +140,7 @@ complete -xc rtx -n "$fssf ls" -a "(__rtx_plugins)" -d 'Only show tool versions 
 complete -xc rtx -n "$fssf ls" -l prefix -d 'Display versions matching this prefix'
 
 # ls-remote
+complete -xc rtx -n "$fssf ls-remote" -l all -d 'Show all installed plugins and versions'
 complete -xc rtx -n "$fssf ls-remote" -a "(__rtx_plugins)" -d 'Plugin to get versions for'
 complete -xc rtx -n "$fssf ls-remote" -d 'The version prefix to use when querying the latest version'
 
@@ -292,12 +293,7 @@ function __rtx_plugins
 end
 function __rtx_tool_versions
     if test -z "$__rtx_tool_versions_cache"
-        set -g __rtx_tool_versions_cache
-        for plugin in (__rtx_plugins)
-            for v in (rtx ls-remote $plugin)
-                set -a __rtx_tool_versions_cache "$plugin@$v"
-            end
-        end
+        set -g __rtx_tool_versions_cache (rtx ls-remote --all)
     end
     for tv in $__rtx_tool_versions_cache
         echo $tv
