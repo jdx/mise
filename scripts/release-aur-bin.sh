@@ -3,7 +3,7 @@ set -euxo pipefail
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/${RTX_VERSION}/rtx-${RTX_VERSION}-linux-x64.tar.gz"
+TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/$RTX_VERSION/rtx-$RTX_VERSION-linux-x64.tar.gz"
 
 SHA512=$(curl -L "$TAR_GZ_URI" | sha512sum | awk '{print $1}')
 
