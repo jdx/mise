@@ -113,22 +113,17 @@ fn get_latest_version_call() -> Option<String> {
     let timeout = Duration::from_secs(3);
     const URL: &str = "http://rtx.pub/VERSION";
     debug!("checking rtx version from {}", URL);
-    let client = crate::http::Client::new().ok()?;
-    match client.get(URL).timeout(timeout).send() {
-        Ok(res) => {
-            if res.status().is_success() {
-                return res.text().ok().map(|text| {
-                    debug!("got version {text}");
-                    text.trim().to_string()
-                });
-            }
-            debug!("failed to check for version: {:#?}", res);
+    let client = crate::http::Client::new_with_timeout(timeout).ok()?;
+    match client.get_text(URL) {
+        Ok(text) => {
+            debug!("got version {text}");
+            Some(text.trim().to_string())
         }
         Err(err) => {
             debug!("failed to check for version: {:#?}", err);
+            None
         }
-    };
-    None
+    }
 }
 
 #[cfg(test)]

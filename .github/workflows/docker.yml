@@ -1,0 +1,63 @@
+name: docker
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ['docker-release']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  docker:
+    name: docker-${{ matrix.flavor }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor:
+          - alpine
+          - deb
+          - github-actions
+          - rpm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/jdx/rtx:${{ matrix.flavor }}
+          labels: ${{ steps.meta.outputs.labels }}
+          file: packaging/${{ matrix.flavor }}/Dockerfile
+  test:
+    runs-on: ubuntu-22.04
+    container: ghcr.io/jdx/rtx:github-actions
+    timeout-minutes: 10
+    steps:
+      - run: node -v
+      - run: cargo -V
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run cargo nextest
+        run: cargo nextest run --all-features
+        env:
+          RUST_BACKTRACE: "1"

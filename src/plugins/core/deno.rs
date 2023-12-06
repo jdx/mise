@@ -14,7 +14,7 @@ use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
-use crate::{env, file, http};
+use crate::{file, http};
 
 #[derive(Debug)]
 pub struct DenoPlugin {
@@ -29,13 +29,8 @@ impl DenoPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let http = http::Client::new()?;
-        let mut req = http.get("https://api.github.com/repos/denoland/deno/releases?per_page=100");
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
-            req = req.header("authorization", format!("token {}", token));
-        }
-        let resp = req.send()?;
-        resp.error_for_status_ref()?;
-        let releases: Vec<GithubRelease> = resp.json()?;
+        let releases: Vec<GithubRelease> =
+            http.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
         let versions = releases
             .into_iter()
             .map(|r| r.name)

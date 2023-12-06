@@ -16,6 +16,7 @@ env:
 jobs:
   unit:
     runs-on: ubuntu-22.04
+    container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -24,11 +25,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
-      - name: Install direnv/shfmt
-        run: sudo apt-get update; sudo apt-get install direnv shfmt
+      # - uses: taiki-e/install-action@v2
+      #   with:
+      #     tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
+      # - name: Install direnv/shfmt
+      #   run: sudo apt-get update; sudo apt-get install direnv shfmt
       - name: Run cargo nextest
         run: cargo nextest run --all-features
         env:
@@ -40,6 +41,7 @@ jobs:
 
   coverage:
     name: coverage-${{matrix.tranche}}
+    #container: ghcr.io/jdx/rtx:github-actions
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -89,6 +91,8 @@ jobs:
         target:
           - aarch64-unknown-linux-gnu
           - x86_64-unknown-linux-gnu
+          - arm-unknown-linux-musleabihf
+          - armv7-unknown-linux-gnueabihf
     steps:
       - uses: actions/checkout@v4
       - name: Rust Cache
@@ -142,6 +146,7 @@ jobs:
           if-no-files-found: error
   e2e-linux:
     runs-on: ubuntu-22.04
+    #container: ghcr.io/jdx/rtx:github-actions
     needs: [build-linux]
     timeout-minutes: 30
     if: github.event_name != 'pull_request'
@@ -168,7 +173,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-linux]
     timeout-minutes: 10
-    container: jdxcode/rtx:rpm
+    container: ghcr.io/jdx/rtx:rpm
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -191,7 +196,7 @@ jobs:
           if-no-files-found: error
   deb:
     runs-on: ubuntu-22.04
-    container: jdxcode/rtx:deb
+    container: ghcr.io/jdx/rtx:deb
     timeout-minutes: 10
     if: github.event_name != 'pull_request'
     needs: [build-linux]
@@ -217,6 +222,7 @@ jobs:
   release:
     runs-on: ubuntu-22.04
     if: startsWith(github.event.ref, 'refs/tags/v')
+    #container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     permissions:
       contents: write
@@ -305,7 +311,7 @@ jobs:
           formula: rtx
   bump-alpine:
     runs-on: ubuntu-22.04
-    container: jdxcode/rtx:alpine
+    container: ghcr.io/jdx/rtx:alpine
     timeout-minutes: 30
     needs: [release]
     steps:
