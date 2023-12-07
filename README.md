@@ -545,7 +545,7 @@ This can also be useful in environments where rtx isn't activated
 that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdx/rtx-python#virtualenv-support).
+- passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
 Here is what an `.rtx.toml` looks like:
@@ -570,7 +570,7 @@ python = {version='3.10', virtualenv='.venv'}
 [plugins]
 # specify a custom repo url
 # note this will only be used if the plugin does not already exist
-python = 'https://github.com/jdx/rtx-python'
+python = 'https://github.com/asdf-community/asdf-python'
 
 [settings] # project-local settings
 verbose = true
