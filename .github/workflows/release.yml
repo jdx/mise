@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-tarball]
     timeout-minutes: 10
-    container: ghcr.io/jdx/rtx:rpm
+    # container: ghcr.io/jdx/rtx:rpm
     steps:
       - uses: actions/checkout@v4
       - uses: crazy-max/ghaction-import-gpg@v6
@@ -148,7 +148,7 @@ jobs:
           if-no-files-found: error
   deb:
     runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/rtx:deb
+    # container: ghcr.io/jdx/rtx:deb
     timeout-minutes: 10
     needs: [build-tarball]
     steps:
