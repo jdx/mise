@@ -140,7 +140,11 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn prepend_path_env(&mut self, path: PathBuf) -> &mut Self {
         let k: OsString = "PATH".into();
-        let mut paths = env::split_paths(self.get_env(&k).unwrap()).collect::<Vec<_>>();
+        let existing = self
+            .get_env(&k)
+            .map(|c| c.to_owned())
+            .unwrap_or_else(|| env::var_os("PATH").unwrap());
+        let mut paths = env::split_paths(&existing).collect::<Vec<_>>();
         paths.insert(0, path);
         self.cmd.env("PATH", env::join_paths(paths).unwrap());
         self
