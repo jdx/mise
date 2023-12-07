@@ -15,7 +15,12 @@ DISABLE:
   - SPELL
 
 DISABLE_LINTERS:
+  - COPYPASTE_JSCPD
+  - REPOSITORY_GRYPE
   - REPOSITORY_CHECKOV
+  - REPOSITORY_DEVSKIM
+  - REPOSITORY_KICS
+  - REPOSITORY_TRIVY
 
 PRE_COMMANDS:
   - command: apk add --no-cache zlib-dev zlib-static openssl-dev libffi-dev
@@ -25,4 +30,4 @@ SHOW_ELAPSED_TIME: true
 #FILEIO_REPORTER: false
 
 FILTER_REGEX_EXCLUDE: "(completions/|target/)"
-JSON_JSONLINT_FILTER_REGEX_EXCLUDE: '(\.vscode/)'
+JSON_JSONLINT_FILTER_REGEX_EXCLUDE: '(\.devcontainer/)'

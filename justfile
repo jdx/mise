@@ -62,7 +62,7 @@ test-coverage:
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         rtx trust
-        just pre-commit
+        pre-commit: render-help render-completions render-mangen
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         rtx trust

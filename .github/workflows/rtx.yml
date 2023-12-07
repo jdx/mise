@@ -25,8 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
-          save-if: false
+          shared-key: unit
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           cache-provider: buildjet
       # - uses: taiki-e/install-action@v2
       #   with:
@@ -53,8 +53,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
-          save-if: false
+          shared-key: unit
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           cache-provider: buildjet
       - run: sudo apt-get update; sudo apt-get install shfmt shellcheck
       - uses: taiki-e/install-action@just
@@ -80,7 +80,7 @@ jobs:
       - run: rustup toolchain install nightly --component llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: coverage
           cache-provider: buildjet
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           cache-all-crates: true
