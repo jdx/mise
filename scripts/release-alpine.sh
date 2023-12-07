@@ -27,13 +27,13 @@ abuild -r
 apkbuild-lint APKBUILD
 
 git add APKBUILD
-git checkout -B rtx
+git checkout -b rtx
 git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
 
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
 
 if [ "$DRY_RUN" == 0 ]; then
-  git push -f jdxcode
+  git push jdxcode
 fi
 
 open_mr="$(gitlab mr list -R alpine/aports --author=@me)"
