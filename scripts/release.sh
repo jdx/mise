@@ -11,7 +11,7 @@ rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
 find artifacts -name 'tarball-*' -exec sh -c '
-	target=${1#artifacts/tarball-}
+  target=${1#artifacts/tarball-}
   cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
   cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
   ' sh {} \;
