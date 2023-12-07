@@ -35,7 +35,7 @@ if [ "$DRY_RUN" == 0 ]; then
   git push jdxcode
 fi
 
-open_mr="$(gitlab mr list -R alpine/aports --author=@me)"
+open_mr="$(glab mr list -R alpine/aports --author=@me)"
 if [[ "$open_mr" != "Showing"* ]]; then
   if [ "$DRY_RUN" == 0 ]; then
     glab mr create --draft --fill --yes -H jdxcode/aports -R alpine/aports

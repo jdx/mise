@@ -236,7 +236,7 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     timeout-minutes: 10
-    needs: [release]
+    needs: [e2e-linux]
     continue-on-error: true
     steps:
       - name: Checkout repository
