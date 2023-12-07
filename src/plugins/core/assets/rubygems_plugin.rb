@@ -1,5 +1,7 @@
+# frozen_string_literal: true
+
 def debug?
-  !!ENV["RTX_DEBUG"]
+  !!ENV['RTX_DEBUG']
 end
 
 def log_debug(msg)
@@ -7,11 +9,11 @@ def log_debug(msg)
 end
 
 def reshim
-  if `which ruby`.strip != ""
-    log_debug "reshim"
+  if `which ruby`.strip != ''
+    log_debug 'reshim'
     `rtx reshim`
   else
-    log_debug "reshim skipped: ruby not found"
+    log_debug 'reshim skipped: ruby not found'
   end
 end
 

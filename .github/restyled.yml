@@ -1,1 +1,4 @@
 enabled: true
+restylers:
+  - "!shellharden"
+  - "*"

@@ -42,7 +42,7 @@ jobs:
       - run: cargo machete --with-metadata
 
   lint-fix:
-    runs-on: ubuntu-22.04
+    runs-on: buildjet-4vcpu-ubuntu-2204
     timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
