@@ -54,6 +54,9 @@ get_arch() {
     x86_64-*)
       echo "x64"
       ;;
+    universal2-*)
+      echo "universal"
+      ;;
     *)
       error "unsupported arch: $RUST_TRIPLE"
       ;;
