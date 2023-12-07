@@ -37,7 +37,7 @@ jobs:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
       - name: Install direnv/shfmt
         run: sudo apt-get update; sudo apt-get install direnv shfmt
-      - run: pnpm i -g markdown-magic prettier markdownlint-cli
+      - run: npm i -g markdown-magic prettier markdownlint-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -76,7 +76,7 @@ jobs:
           cache-all-crates: true
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
-      - run: pnpm i -g markdown-magic
+      - run: npm i -g markdown-magic
       - uses: taiki-e/install-action@just
       - uses: nick-fields/retry@v2
         env:
