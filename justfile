@@ -88,7 +88,8 @@ lint:
     shellcheck -x {{ scripts }}
     shfmt -d {{ scripts }}
     just --unstable --fmt --check
-    npx prettier -c $(git ls-files '*.md' '*.yml' '*.yaml')
+    npx prettier -c $(git ls-files '*.yml' '*.yaml')
+    npx markdownlint-cli .
 
 # runs linters but makes fixes when possible
 lint-fix:
@@ -97,7 +98,10 @@ lint-fix:
     shellcheck -x {{ scripts }}
     shfmt -w {{ scripts }}
     just --unstable --fmt
-    npx prettier -w $(git ls-files '*.md' '*.yml' '*.yaml')
+    npx prettier -w $(git ls-files '*.yml' '*.yaml')
+    npx markdownlint-cli --fix .
+
+render-all: render-help render-completions render-mangen
 
 render-all: render-help render-completions render-mangen
 
