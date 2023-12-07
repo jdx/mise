@@ -1,5 +1,5 @@
-#!/bin/sh
-set -e
+#!/bin/bash
+set -euo pipefail
 # shellcheck disable=SC2044
 # shellcheck disable=SC2066
 # shellcheck disable=SC2086
@@ -8,13 +8,13 @@ set -e
 do_hash() {
   HASH_NAME=$1
   HASH_CMD=$2
-  echo "$HASH_NAME:"
-  for f in "$(find -type f)"; do
-    f=$(echo "$f" | cut -c3-) # remove ./ prefix
+  echo "${HASH_NAME}:"
+  for f in $(find -type f); do
+    f=$(echo $f | cut -c3-) # remove ./ prefix
     if [ "$f" = "Release" ]; then
       continue
     fi
-    echo " $("$HASH_CMD" "$f" | cut -d" " -f1) $(wc -c "$f")"
+    echo " $(${HASH_CMD} ${f} | cut -d" " -f1) $(wc -c $f)"
   done
 }
 
