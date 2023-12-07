@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Rtx < Formula
   desc "Multi-language runtime manager"
   homepage "https://github.com/jdx/rtx"
@@ -29,9 +31,9 @@ class Rtx < Formula
   def install
     bin.install "bin/rtx"
     man1.install "man/man1/rtx.1"
-    generate_completions_from_executable(bin/"rtx", "completion")
+    generate_completions_from_executable(bin / "rtx", "completion")
     lib.mkpath
-    touch lib/".disable-self-update"
+    touch lib / ".disable-self-update"
   end
 
   test do

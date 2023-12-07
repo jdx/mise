@@ -7,9 +7,11 @@ ENV RUSTUP_HOME="/root/.rustup"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-RUN apt-get update \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN    apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y \
+    && apt-get install -y --no-install-recommends \
         autoconf \
         bash \
         build-essential \
@@ -48,11 +50,14 @@ RUN apt-get update \
         zsh \
     && ln -s /usr/bin/{fdfind,fd} \
     && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update && apt-get install -y nodejs \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && node -v \
-    && npm i -g markdown-magic \
+    && npm i -g \
+        markdown-magic \
+        markdownlint-cli \
+        prettier \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
     && rustup install stable && rustup default stable \
@@ -68,6 +73,7 @@ RUN apt-get update \
         just \
         zipsign \
     && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
     && rustc -vV \
     && cargo -V \
     && node -v \

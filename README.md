@@ -102,7 +102,7 @@ v20.0.0
 - [IDE Integration](#ide-integration)
 - [Core Plugins](#core-plugins)
 - [FAQs](#faqs)
-  - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file.](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
+  - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [What is the difference between "nodejs" and "node" (or "golang" and "go")?](#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
   - [What does `rtx activate` do?](#what-does-rtx-activate-do)
   - [`rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`](#rtx-activate-doesnt-work-in-profile-bash_profile-zprofile)
@@ -221,16 +221,18 @@ See [plugins](#plugins) below.
 
 ### Common commands
 
-    rtx install node@20.0.0  Install a specific version number
-    rtx install node@20      Install a fuzzy version number
-    rtx use node@20          Use node-20.x in current project
-    rtx use -g node@20       Use node-20.x as global default
+```text
+rtx install node@20.0.0  Install a specific version number
+rtx install node@20      Install a fuzzy version number
+rtx use node@20          Use node-20.x in current project
+rtx use -g node@20       Use node-20.x as global default
 
-    rtx install node         Install the current version specified in .tool-versions/.rtx.toml
-    rtx use node@latest      Use latest node in current directory
-    rtx use -g node@system   Use system node as global default
+rtx install node         Install the current version specified in .tool-versions/.rtx.toml
+rtx use node@latest      Use latest node in current directory
+rtx use -g node@system   Use system node as global default
 
-    rtx x node@20 -- node app.js  Run `node app.js` node-20.x on PATH
+rtx x node@20 -- node app.js  Run `node app.js` node-20.x on PATH
+```
 
 ## Installation
 
@@ -545,7 +547,7 @@ This can also be useful in environments where rtx isn't activated
 that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv='.venv'` for [rtx-python](https://github.com/jdx/rtx-python#virtualenv-support).
+- passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
 Here is what an `.rtx.toml` looks like:
@@ -570,7 +572,7 @@ python = {version='3.10', virtualenv='.venv'}
 [plugins]
 # specify a custom repo url
 # note this will only be used if the plugin does not already exist
-python = 'https://github.com/jdx/rtx-python'
+python = 'https://github.com/asdf-community/asdf-python'
 
 [settings] # project-local settings
 verbose = true
@@ -674,7 +676,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in rtx and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-| --------- | -------------------------------------------------- |
+|-----------|----------------------------------------------------|
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |
@@ -1609,7 +1611,7 @@ behavior.
 
 ### `rtx activate [OPTIONS] [SHELL_TYPE]`
 
-```
+```text
 Initializes rtx in the current shell
 
 This should go into your shell's rc file.
@@ -1650,7 +1652,7 @@ Examples:
 
 ### `rtx alias get <PLUGIN> <ALIAS>`
 
-```
+```text
 Show an alias for a plugin
 
 This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
@@ -1671,7 +1673,7 @@ Examples:
 
 ### `rtx alias ls [PLUGIN]`
 
-```
+```text
 List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.
@@ -1694,7 +1696,7 @@ Examples:
 
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
-```
+```text
 Add/update an alias for a plugin
 
 This modifies the contents of ~/.config/rtx/config.toml
@@ -1717,7 +1719,7 @@ Examples:
 
 ### `rtx alias unset <PLUGIN> <ALIAS>`
 
-```
+```text
 Clears an alias for a plugin
 
 This modifies the contents of ~/.config/rtx/config.toml
@@ -1737,7 +1739,7 @@ Examples:
 
 ### `rtx bin-paths`
 
-```
+```text
 List all the active runtime bin paths
 
 Usage: bin-paths
@@ -1745,7 +1747,7 @@ Usage: bin-paths
 
 ### `rtx cache clear`
 
-```
+```text
 Deletes all cache files in rtx
 
 Usage: cache clear
@@ -1753,7 +1755,7 @@ Usage: cache clear
 
 ### `rtx completion [SHELL]`
 
-```
+```text
 Generate shell completions
 
 Usage: completion [SHELL]
@@ -1772,7 +1774,7 @@ Examples:
 
 ### `rtx current [PLUGIN]`
 
-```
+```text
 Shows current active and installed runtime versions
 
 This is similar to `rtx ls --current`, but this only shows the runtime
@@ -1802,7 +1804,7 @@ Examples:
 
 ### `rtx deactivate`
 
-```
+```text
 Disable rtx for current shell session
 
 This can be used to temporarily disable rtx in a shell session.
@@ -1818,7 +1820,7 @@ Examples:
 
 ### `rtx direnv activate`
 
-```
+```text
 Output direnv function to use rtx inside direnv
 
 See https://github.com/jdx/rtx#direnv for more information
@@ -1837,7 +1839,7 @@ Examples:
 
 ### `rtx doctor`
 
-```
+```text
 Check rtx installation for possible problems.
 
 Usage: doctor
@@ -1849,7 +1851,7 @@ Examples:
 
 ### `rtx env [OPTIONS] [TOOL@VERSION]...`
 
-```
+```text
 Exports env vars to activate rtx a single time
 
 Use this if you don't want to permanently install rtx. It's not necessary to
@@ -1879,7 +1881,7 @@ Examples:
 
 ### `rtx env-vars [OPTIONS] [ENV_VARS]...`
 
-```
+```text
 Manage environment variables
 
 By default this command modifies ".rtx.toml" in the current directory.
@@ -1906,7 +1908,7 @@ Options:
 
 ### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
-```
+```text
 Execute a command with tool(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with rtx tools set.
@@ -1946,7 +1948,7 @@ Examples:
 
 ### `rtx implode [OPTIONS]`
 
-```
+```text
 Removes rtx CLI and all related data
 
 Skips config directory by default.
@@ -1963,7 +1965,7 @@ Options:
 
 ### `rtx install [OPTIONS] [TOOL@VERSION]...`
 
-```
+```text
 Install a tool version
 
 This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
@@ -1995,7 +1997,7 @@ Examples:
 
 ### `rtx latest [OPTIONS] <TOOL@VERSION>`
 
-```
+```text
 Gets the latest available version for a plugin
 
 Usage: latest [OPTIONS] <TOOL@VERSION>
@@ -2018,7 +2020,7 @@ Examples:
 
 ### `rtx link [OPTIONS] <TOOL@VERSION> <PATH>`
 
-```
+```text
 Symlinks a tool version into rtx
 
 Use this for adding installs either custom compiled outside
@@ -2051,7 +2053,7 @@ Examples:
 
 ### `rtx ls [OPTIONS] [PLUGIN]`
 
-```
+```text
 List installed and/or currently selected tool versions
 
 Usage: ls [OPTIONS] [PLUGIN]
@@ -2107,7 +2109,7 @@ Examples:
 
 ### `rtx ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
 
-```
+```text
 List runtime versions available for install
 
 note that the results are cached for 24 hours
@@ -2143,7 +2145,7 @@ Examples:
 
 ### `rtx outdated [TOOL@VERSION]...`
 
-```
+```text
 Shows outdated tool versions
 
 Usage: outdated [TOOL@VERSION]...
@@ -2167,7 +2169,7 @@ Examples:
 
 ### `rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
 
-```
+```text
 Install a plugin
 
 note that rtx automatically can install plugins when you install a tool
@@ -2215,7 +2217,7 @@ Examples:
 
 ### `rtx plugins link [OPTIONS] <NAME> [PATH]`
 
-```
+```text
 Symlinks a plugin into rtx
 
 This is used for developing a plugin.
@@ -2245,7 +2247,7 @@ Examples:
 
 ### `rtx plugins ls [OPTIONS]`
 
-```
+```text
 List installed plugins
 
 Can also show remotely available plugins to install.
@@ -2283,7 +2285,7 @@ Examples:
 
 ### `rtx plugins ls-remote [OPTIONS]`
 
-```
+```text
 List all available remote plugins
 
 The full list is here: https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs
@@ -2304,7 +2306,7 @@ Options:
 
 ### `rtx plugins uninstall [OPTIONS] [PLUGIN]...`
 
-```
+```text
 Removes a plugin
 
 Usage: plugins uninstall [OPTIONS] [PLUGIN]...
@@ -2326,7 +2328,7 @@ Examples:
 
 ### `rtx plugins update [PLUGIN]...`
 
-```
+```text
 Updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
@@ -2345,7 +2347,7 @@ Examples:
 
 ### `rtx prune [OPTIONS] [PLUGIN]...`
 
-```
+```text
 Delete unused versions of tools
 
 rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
@@ -2371,7 +2373,7 @@ Examples:
 
 ### `rtx reshim`
 
-```
+```text
 rebuilds the shim farm
 
 This creates new shims in ~/.local/share/rtx/shims for CLIs that have been added.
@@ -2398,7 +2400,7 @@ Examples:
 
 ### `rtx self-update [OPTIONS] [VERSION]`
 
-```
+```text
 Updates rtx itself
 
 Uses the GitHub Releases API to find the latest release and binary
@@ -2423,7 +2425,7 @@ Options:
 
 ### `rtx settings get <KEY>`
 
-```
+```text
 Show a current setting
 
 This is the contents of a single entry in ~/.config/rtx/config.toml
@@ -2444,7 +2446,7 @@ Examples:
 
 ### `rtx settings ls`
 
-```
+```text
 Show current settings
 
 This is the contents of ~/.config/rtx/config.toml
@@ -2461,7 +2463,7 @@ Examples:
 
 ### `rtx settings set <KEY> <VALUE>`
 
-```
+```text
 Add/update a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
@@ -2481,7 +2483,7 @@ Examples:
 
 ### `rtx settings unset <KEY>`
 
-```
+```text
 Clears a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
@@ -2498,7 +2500,7 @@ Examples:
 
 ### `rtx shell [OPTIONS] [TOOL@VERSION]...`
 
-```
+```text
 Sets a tool version for the current shell session
 
 Only works in a session where rtx is already activated.
@@ -2521,7 +2523,7 @@ Examples:
 
 ### `rtx sync node <--brew|--nvm|--nodenv>`
 
-```
+```text
 Symlinks all tool versions from an external tool into rtx
 
 For example, use this to import all Homebrew node installs into rtx
@@ -2546,7 +2548,7 @@ Examples:
 
 ### `rtx sync python --pyenv`
 
-```
+```text
 Symlinks all tool versions from an external tool into rtx
 
 For example, use this to import all pyenv installs into rtx
@@ -2565,7 +2567,7 @@ Examples:
 
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
 
-```
+```text
 Marks a config file as trusted
 
 This means rtx will parse the file with potentially dangerous
@@ -2596,7 +2598,7 @@ Examples:
 
 ### `rtx uninstall [OPTIONS] <TOOL@VERSION>...`
 
-```
+```text
 Removes runtime versions
 
 Usage: uninstall [OPTIONS] <TOOL@VERSION>...
@@ -2620,7 +2622,7 @@ Examples:
 
 ### `rtx upgrade [OPTIONS] [TOOL@VERSION]...`
 
-```
+```text
 Upgrades outdated tool versions
 
 Usage: upgrade [OPTIONS] [TOOL@VERSION]...
@@ -2638,7 +2640,7 @@ Options:
 
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
 
-```
+```text
 Change the active version of a tool locally or globally.
 
 This will install the tool if it is not already installed.
@@ -2696,7 +2698,7 @@ Examples:
 
 ### `rtx version`
 
-```
+```text
 Show rtx version
 
 Usage: version
@@ -2704,7 +2706,7 @@ Usage: version
 
 ### `rtx where <TOOL@VERSION>`
 
-```
+```text
 Display the installation path for a runtime
 
 Must be installed.
@@ -2733,7 +2735,7 @@ Examples:
 
 ### `rtx which [OPTIONS] <BIN_NAME>`
 
-```
+```text
 Shows the path that a bin name points to
 
 Usage: which [OPTIONS] <BIN_NAME>

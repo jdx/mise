@@ -1,8 +1,9 @@
 #!/bin/sh
 set -e
-# shellcheck disable=SC2185
-# shellcheck disable=SC2086
 # shellcheck disable=SC2044
+# shellcheck disable=SC2066
+# shellcheck disable=SC2086
+# shellcheck disable=SC2185
 
 do_hash() {
   HASH_NAME=$1

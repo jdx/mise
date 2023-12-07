@@ -6,6 +6,10 @@ on:
     branches: ["main", "release/*"]
   workflow_dispatch:
 
+concurrency:
+  group: release
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
@@ -13,51 +17,72 @@ env:
 jobs:
   build-tarball:
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{matrix.os}}
+    runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu
             name: linux-x64
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-x64-musl
-            target: aarch64-unknown-linux-musl
-          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-armv6
             target: arm-unknown-linux-gnueabi
-          - os: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu
             name: linux-armv6-musl
             target: arm-unknown-linux-musleabi
-          - os: macos-12
+            runs-on: buildjet-4vcpu-ubuntu-2204
+          - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
-          - os: macos-12
+            runs-on: macos-12
+          - os: macos
             name: macos-arm64
             target: aarch64-apple-darwin
+            runs-on: macos-12
+    #          - os: macos
+    #            name: macos
+    #            target: universal2-apple-darwin
+    #            runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.os == 'macos-12'
-        run: rustup target add ${{matrix.target}}
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
+      - if: matrix.target == 'universal2-apple-darwin'
+        run: |
+          brew install zig
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+          cargo install cargo-zigbuild
+      - run: rustup target add ${{matrix.target}}
+        if: matrix.target != 'universal2-apple-darwin'
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "build-tarball-${{matrix.name}}"
-      - if: matrix.os == 'ubuntu-22.04'
+          shared-key: build-tarball-${{matrix.name}}
+          cache-provider: buildjet
+      - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
         env:
@@ -71,7 +96,7 @@ jobs:
             dist/rtx-*.tar.gz
           if-no-files-found: error
   e2e-linux:
-    runs-on: ubuntu-22.04
+    runs-on: buildjet-16vcpu-ubuntu-2204
     #container: ghcr.io/jdx/rtx:github-actions
     needs: [build-tarball]
     timeout-minutes: 30
@@ -83,8 +108,8 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> $GITHUB_PATH
+      - run: tar -C "$HOME" -xvJf "dist/rtx-$(./scripts/get-version.sh)-linux-x64.tar.xz"
+      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
       - run: rtx -v
       - name: Run e2e tests
         uses: nick-fields/retry@v2
@@ -143,8 +168,7 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    runs-on: ubuntu-22.04
-    if: startsWith(github.event.ref, 'refs/tags/v')
+    runs-on: buildjet-4vcpu-ubuntu-2204
     #container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     permissions:
@@ -154,6 +178,8 @@ jobs:
       - build-tarball
       - rpm
       - deb
+    env:
+      DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -168,18 +194,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install fd-find
           mkdir -p "$HOME/.local/bin"
-          ln -s $(which fdfind) "$HOME/.local/bin/fd"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
-      - name: Set AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
       - uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
@@ -199,6 +219,7 @@ jobs:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
       - name: homebrew-tap push
+        if: startsWith(github.event.ref, 'refs/tags/v')
         run: git push
         working-directory: homebrew-tap
       - name: GitHub Release Assets
@@ -231,6 +252,7 @@ jobs:
           formula: rtx
   bump-alpine:
     runs-on: ubuntu-22.04
+    if: startsWith(github.event.ref, 'refs/tags/v')
     container: ghcr.io/jdx/rtx:alpine
     timeout-minutes: 30
     needs: [release]

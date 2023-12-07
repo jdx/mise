@@ -62,7 +62,7 @@ If you want, you may encrypt the message with GPG:
 <details>
   <summary>@jdx's public key</summary>
 
-  ```
+```
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
 mQINBGQfPjUBEADAtjLxcoJlHYNwvN8xYEai/waWZpnKvNWP86kYuX5xqb/GR1wZ
@@ -117,5 +117,6 @@ MFPobhR7zlCShd7TdY1a41uxTGB+Wmn4DO0s/wzSgdgxIzG+TM1X47owe7l5RiI1
 -----END PGP PUBLIC KEY BLOCK-----
 
 ```
+
 </details>
 ```

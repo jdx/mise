@@ -10,30 +10,30 @@ export RTX_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
 
-targets=$(find artifacts -name 'tarball-*' -exec basename {} \; | sed 's/^tarball-//')
-for target in "${targets[@]}"; do
-	cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
-	cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
-done
+find artifacts -name 'tarball-*' -exec sh -c '
+  target=${1#artifacts/tarball-}
+  cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
+  cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
+  ' sh {} \;
 
 platforms=(
-	linux-x64
-	linux-x64-musl
-	linux-arm64
-	linux-arm64-musl
-	linux-armv6
-	linux-armv6-musl
-	linux-armv7
-	linux-armv7-musl
-	macos-x64
-	macos-arm64
+  linux-x64
+  linux-x64-musl
+  linux-arm64
+  linux-arm64-musl
+  linux-armv6
+  linux-armv6-musl
+  linux-armv7
+  linux-armv7-musl
+  macos-x64
+  macos-arm64
 )
 for platform in "${platforms[@]}"; do
-	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
-	cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
-	tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
-	cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
-	cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
+  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
+  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
+  tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
+  cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
+  cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
 
 pushd "$RELEASE_DIR"
@@ -56,10 +56,12 @@ popd
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 
-NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
-NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
-#AWS_S3_BUCKET=rtx.pub ./rtx/scripts/publish-s3.sh
-./rtx/scripts/publish-r2.sh
+if [[ "$DRY_RUN" != 1 ]]; then
+  NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
+  NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
+  #AWS_S3_BUCKET=rtx.pub ./rtx/scripts/publish-s3.sh
+  ./rtx/scripts/publish-r2.sh
+fi
 
 ./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
 pushd homebrew-tap

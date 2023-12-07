@@ -31,7 +31,7 @@ rtx uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/pytho
 ## Configuration
 
 `python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
-additional to that `rtx-python` has a few extra configuration variables:
+additional to that python in rtx has a few extra configuration variables:
 
 - `RTX_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
 - `RTX_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
@@ -40,7 +40,7 @@ additional to that `rtx-python` has a few extra configuration variables:
 
 ## Default Python packages
 
-rtx-python can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
+rtx can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
 
 ```text
 ansible

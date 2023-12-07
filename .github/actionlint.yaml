@@ -1,0 +1,18 @@
+self-hosted-runner:
+  # Labels of self-hosted runner in array of strings.
+  labels:
+    - buildjet-32vcpu-ubuntu-2204-arm
+    - buildjet-16vcpu-ubuntu-2204-arm
+    - buildjet-8vcpu-ubuntu-2204-arm
+    - buildjet-4vcpu-ubuntu-2204-arm
+    - buildjet-2vcpu-ubuntu-2204-arm
+    - buildjet-32vcpu-ubuntu-2204
+    - buildjet-16vcpu-ubuntu-2204
+    - buildjet-8vcpu-ubuntu-2204
+    - buildjet-4vcpu-ubuntu-2204
+    - buildjet-2vcpu-ubuntu-2204
+
+# Configuration variables in array of strings defined in your repository or
+# organization. `null` means disabling configuration variables check.
+# Empty array means no configuration variable is allowed.
+config-variables: null
