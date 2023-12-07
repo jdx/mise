@@ -44,7 +44,7 @@ impl ToolVersion {
         latest_versions: bool,
     ) -> Result<Self> {
         if !tool.is_installed() {
-            let tv = Self::new(tool, request.clone(), opts.clone(), request.version());
+            let tv = Self::new(tool, request.clone(), opts, request.version());
             return Ok(tv);
         }
         let tv = match request.clone() {

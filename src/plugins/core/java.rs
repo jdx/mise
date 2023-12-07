@@ -143,7 +143,7 @@ impl JavaPlugin {
             .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
             .unwrap()?
             .path();
-        let contents_dir = basedir.join("Contents").clone();
+        let contents_dir = basedir.join("Contents");
         let source_dir = match m.vendor.as_str() {
             "zulu" | "liberica" => basedir,
             _ if os() == "macosx" => basedir.join("Contents").join("Home"),
