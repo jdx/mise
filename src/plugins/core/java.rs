@@ -83,7 +83,10 @@ impl JavaPlugin {
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
                 let vendor = &m.vendor;
-                let is_jdk = m.image_type == "jdk";
+                let is_jdk = m
+                    .image_type
+                    .as_ref()
+                    .is_some_and(|image_type| image_type == "jdk");
                 let features = 10 - m.features.len();
                 let version = Versioning::new(v);
                 (is_shorthand, vendor, is_jdk, features, version)
@@ -128,7 +131,7 @@ impl JavaPlugin {
         m: &JavaMetadata,
     ) -> Result<()> {
         pr.set_message(format!("installing {}", tarball_path.display()));
-        if m.file_type == "zip" {
+        if m.file_type == Some("zip".to_string()) {
             file::unzip(tarball_path, &tv.download_path())?;
         } else {
             file::untar(tarball_path, &tv.download_path())?;
@@ -239,7 +242,11 @@ impl JavaPlugin {
             .http
             .json::<Vec<JavaMetadata>, _>(url)?
             .into_iter()
-            .filter(|m| JAVA_FILE_TYPES.contains(&m.file_type))
+            .filter(|m| {
+                m.file_type
+                    .as_ref()
+                    .is_some_and(|file_type| JAVA_FILE_TYPES.contains(file_type))
+            })
             .collect();
         Ok(metadata)
     }
@@ -340,8 +347,8 @@ struct JavaMetadata {
     jvm_impl: String,
     os: String,
     architecture: String,
-    file_type: String,
-    image_type: String,
+    file_type: Option<String>,
+    image_type: Option<String>,
     features: Vec<String>,
     url: String,
     sha256: String,
@@ -358,8 +365,14 @@ struct JavaMetadata {
 impl Display for JavaMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut v = vec![self.vendor.clone()];
-        if self.image_type == "jre" {
-            v.push(self.image_type.clone());
+        if self
+            .image_type
+            .as_ref()
+            .is_some_and(|image_type| image_type == "jre")
+        {
+            v.push(self.image_type.clone().unwrap());
+        } else if self.image_type.is_none() {
+            v.push("unknown".to_string());
         }
         for f in self.features.iter() {
             if JAVA_FEATURES.contains(f) {
