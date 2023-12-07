@@ -75,7 +75,7 @@ EOF
     echo npm publish --access public --tag "$dist_tag"
     echo DRY_RUN
   else
-    npm publish --access public --tag "$dist_tag"
+    npm publish --access public --tag "$dist_tag" || true
   fi
   popd
 done
@@ -172,6 +172,6 @@ if [ "$DRY_RUN" != "0" ]; then
   echo npm publish --access public --tag "$dist_tag"
   echo DRY_RUN
 else
-  npm publish --access public --tag "$dist_tag"
+  npm publish --access public --tag "$dist_tag" || true
 fi
 popd
