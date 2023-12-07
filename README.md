@@ -1485,7 +1485,16 @@ Using rtx in CI/CD is a great way to synchronize tool versions for dev/build.
 
 ### GitHub Actions
 
-Use [`jdx/rtx-action`](https://github.com/jdx/rtx-action):
+rtx is pretty easy to use without an action:
+
+```yaml
+jobs:
+  build:
+    steps:
+    - run: curl https://rtx.pub/install.sh | sh && echo "$HOME/.local/share/rtx/bin/rtx" >> $GITHUB_PATH
+```
+
+Or you can use the custom action [`jdx/rtx-action`](https://github.com/jdx/rtx-action):
 
 ```yaml
 jobs:
