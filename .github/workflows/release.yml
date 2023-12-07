@@ -245,6 +245,7 @@ jobs:
     if: startsWith(github.event.ref, 'refs/tags/v')
     timeout-minutes: 10
     needs: [release]
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
