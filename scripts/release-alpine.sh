@@ -18,7 +18,7 @@ git clone https://gitlab.alpinelinux.org/alpine/aports /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
-git checkout -b rtx
+git checkout -mb rtx
 cd community/rtx
 
 sed -i "s/pkgver=.*/pkgver=${RTX_VERSION#v}/" APKBUILD
