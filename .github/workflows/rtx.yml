@@ -58,7 +58,7 @@ jobs:
           cache-provider: buildjet
       - run: sudo apt-get update; sudo apt-get install shfmt shellcheck
       - uses: taiki-e/install-action@just
-      - run: just lint-fix
+      - run: just lint-fix render-all
       - uses: EndBug/add-and-commit@v9
         with:
           push: true
