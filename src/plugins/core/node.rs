@@ -148,6 +148,10 @@ impl NodePlugin {
         tv.install_path().join("bin/npm")
     }
 
+    fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join("bin/corepack")
+    }
+
     fn install_default_packages(
         &self,
         config: &Config,
@@ -181,6 +185,22 @@ impl NodePlugin {
         Ok(())
     }
 
+    fn enable_default_corepack_shims(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+    ) -> Result<()> {
+        pr.set_message("enabling corepack shims");
+        let corepack = self.corepack_path(tv);
+        CmdLineRunner::new(&config.settings, corepack)
+            .with_pr(pr)
+            .arg("enable")
+            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .execute()?;
+        Ok(())
+    }
+
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("node -v");
         CmdLineRunner::new(&config.settings, self.node_path(tv))
@@ -193,6 +213,16 @@ impl NodePlugin {
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("npm -v");
         CmdLineRunner::new(&config.settings, self.npm_path(tv))
+            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .with_pr(pr)
+            .arg("-v")
+            .envs(&config.env)
+            .execute()
+    }
+
+    fn test_corepack(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        pr.set_message("corepack -v");
+        CmdLineRunner::new(&config.settings, self.corepack_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
@@ -272,6 +302,11 @@ impl Plugin for NodePlugin {
         self.install_npm_shim(&ctx.tv)?;
         self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
         self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
+        if *env::RTX_NODE_COREPACK_ENABLE && self.corepack_path(&ctx.tv).exists() {
+            self.test_corepack(ctx.config, &ctx.tv, &ctx.pr)?;
+            self.enable_default_corepack_shims(ctx.config, &ctx.tv, &ctx.pr)?;
+        }
+
         Ok(())
     }
 }

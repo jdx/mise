@@ -167,6 +167,8 @@ pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
         HOME.join(".default-npm-packages")
     })
 });
+pub static RTX_NODE_COREPACK_ENABLE: Lazy<bool> =
+    Lazy::new(|| var_is_true("RTX_NODE_COREPACK_ENABLE"));
 pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
 pub static NODENV_ROOT: Lazy<PathBuf> =
