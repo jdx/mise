@@ -103,8 +103,6 @@ lint-fix:
 
 render-all: render-help render-completions render-mangen
 
-render-all: render-help render-completions render-mangen
-
 # regenerate README.md
 render-help: build
     NO_COLOR=1 rtx render-help
