@@ -69,7 +69,7 @@ jobs:
     #            runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - uses: ${{ matrix.os == 'macos' ?? 'actions/cache@v3' || 'buildjet/cache@v3' }}
+      - uses: ${{ matrix.os == 'macos' && 'actions/cache@v3' || 'buildjet/cache@v3' }}
         with:
           path: ~/.cargo/bin/zipsign
           key: ${{ runner.os }}-cargo-zipsign
@@ -78,7 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-tarball-${{matrix.name}}
-          cache-provider: ${{ matrix.os == 'macos' ?? 'github' || 'buildjet' }}
+          cache-provider: ${{ matrix.os == 'macos' && 'github' || 'buildjet' }}
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
