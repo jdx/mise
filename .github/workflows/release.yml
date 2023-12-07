@@ -69,14 +69,11 @@ jobs:
     #            runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.target == 'universal2-apple-darwin'
-        run: |
-          brew install zig
-          rustup target add x86_64-apple-darwin
-          rustup target add aarch64-apple-darwin
-          cargo install cargo-zigbuild
+      - uses: buildjet/cache@v3
+        with:
+          path: ~/.cargo/bin/zipsign
+          key: ${{ runner.os }}-cargo-zipsign
       - run: rustup target add ${{matrix.target}}
-        if: matrix.target != 'universal2-apple-darwin'
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:

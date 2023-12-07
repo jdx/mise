@@ -6,6 +6,9 @@ if [ -z "$ZIPSIGN" ]; then
   exit 0
 fi
 
-cargo install zipsign
+if ! command -v zipsign >/dev/null 2>&1; then
+  cargo install zipsign
+fi
+
 mkdir -p ~/.zipsign
 echo "$ZIPSIGN" | base64 -d >~/.zipsign/rtx.priv
