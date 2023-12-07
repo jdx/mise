@@ -235,7 +235,6 @@ jobs:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
   bump-homebrew-formula:
     runs-on: macos-latest
-    if: startsWith(github.event.ref, 'refs/tags/v')
     timeout-minutes: 10
     needs: [release]
     continue-on-error: true

@@ -29,7 +29,6 @@ abuild -r
 apkbuild-lint APKBUILD
 
 git add APKBUILD
-git checkout -b rtx
 git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
 
 if [ "$DRY_RUN" == 0 ]; then
