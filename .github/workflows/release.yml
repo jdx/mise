@@ -69,7 +69,13 @@ jobs:
     #            runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - uses: ${{ matrix.os == 'macos' && 'actions/cache@v3' || 'buildjet/cache@v3' }}
+      - if: matrix.os == 'macos'
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/bin/zipsign
+          key: ${{ runner.os }}-cargo-zipsign
+      - if: matrix.os == 'ubuntu'
+        uses: buildjet/cache@v3
         with:
           path: ~/.cargo/bin/zipsign
           key: ${{ runner.os }}-cargo-zipsign
