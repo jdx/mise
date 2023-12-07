@@ -17,6 +17,8 @@ git config --global user.email 6271-jdxcode@users.gitlab.alpinelinux.org
 git clone https://gitlab.alpinelinux.org/alpine/aports /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
+git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
+git checkout -b rtx --track jdxcode/rtx || git checkout -b rtx
 cd community/rtx
 
 sed -i "s/pkgver=.*/pkgver=${RTX_VERSION#v}/" APKBUILD
@@ -29,8 +31,6 @@ apkbuild-lint APKBUILD
 git add APKBUILD
 git checkout -b rtx
 git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
-
-git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
 
 if [ "$DRY_RUN" == 0 ]; then
   git push jdxcode
