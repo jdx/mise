@@ -14,6 +14,7 @@ fn init() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
     );
     set_current_dir(env::HOME.join("cwd")).unwrap();
+    env::remove_var("RTX_TRUSTED_CONFIG_PATHS");
     env::set_var("NO_COLOR", "1");
     env::set_var("RTX_YES", "1");
     env::set_var("RTX_USE_TOML", "0");

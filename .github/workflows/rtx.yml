@@ -3,59 +3,60 @@ name: rtx
 on:
   push:
     tags: ["v*"]
-    branches: ["main", "release/*"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  RTX_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
 jobs:
   unit:
-    runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/rtx:github-actions
+    runs-on: buildjet-8vcpu-ubuntu-2204
+    #container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: false
-      # - uses: taiki-e/install-action@v2
-      #   with:
-      #     tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
-      # - name: Install direnv/shfmt
-      #   run: sudo apt-get update; sudo apt-get install direnv shfmt
+          shared-key: unit
+          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          cache-provider: buildjet
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
+      - name: Install direnv/shfmt
+        run: sudo apt-get update; sudo apt-get install direnv shfmt
+      - run: pnpm i -g markdown-magic prettier markdownlint-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
-      - run: just lint
       - run: cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
-
-  lint-fix:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: test
-          save-if: false
-      - run: sudo apt-get update; sudo apt-get install shfmt shellcheck
-      - uses: taiki-e/install-action@just
-      - run: just lint-fix
-      - uses: EndBug/add-and-commit@v9
+      - run: just render-all lint-fix
+      - if: github.event_name == 'pull_request'
+        uses: EndBug/add-and-commit@v9
         with:
           push: true
+          author_name: rtx[bot]
+          author_email: 123107610+rtx-vm@users.noreply.github.com
+      - run: just lint
 
   coverage:
     name: coverage-${{matrix.tranche}}
     #container: ghcr.io/jdx/rtx:github-actions
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -63,14 +64,19 @@ jobs:
         tranche: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - run: rustup toolchain install nightly --component llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: coverage
+          cache-provider: buildjet
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          cache-all-crates: true
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
-      - run: npm i -g markdown-magic
+      - run: pnpm i -g markdown-magic
       - uses: taiki-e/install-action@just
       - uses: nick-fields/retry@v2
         env:

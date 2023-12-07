@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 def debug?
   !!ENV["RTX_DEBUG"]
 end

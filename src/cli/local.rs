@@ -123,7 +123,7 @@ pub fn local(
     }
 
     if !runtime.is_empty() {
-        let runtimes = ToolArg::double_tool_condition(&runtime.clone());
+        let runtimes = ToolArg::double_tool_condition(&runtime);
         if cf.display_runtime(out, &runtimes)? {
             return Ok(());
         }

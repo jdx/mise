@@ -6,20 +6,20 @@ git clone --depth 1 https://github.com/asdf-vm/asdf-plugins
 rm -f src/default_shorthands.rs
 
 custom_plugins=(
-	'("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
-	'("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
-	'("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
+  '("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
+  '("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
+  '("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
 )
 
 asdf_plugins=$(find asdf-plugins/plugins -maxdepth 1 |
-	sort |
-	grep -v '/go$' |
-	grep -v '/golang$' |
-	grep -v '/java$' |
-	grep -v '/nodejs$' |
-	grep -v '/plugins$' |
-	grep -v '/python$' |
-	grep -v '/ruby$')
+  sort |
+  grep -v '/go$' |
+  grep -v '/golang$' |
+  grep -v '/java$' |
+  grep -v '/nodejs$' |
+  grep -v '/plugins$' |
+  grep -v '/python$' |
+  grep -v '/ruby$')
 
 num_plugins=$(echo "$asdf_plugins" | wc -l | tr -d ' ')
 num_plugins=$((num_plugins + ${#custom_plugins[@]}))
@@ -54,14 +54,14 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); $num_plugins] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
 EOF
 for file in $asdf_plugins; do
-	plugin=$(basename "$file")
-	repository=$(cat "$file")
-	repository="${repository/#repository = /}"
-	echo "    (\"$plugin\", \"$repository\")," >>src/default_shorthands.rs
+  plugin=$(basename "$file")
+  repository=$(cat "$file")
+  repository="${repository/#repository = /}"
+  echo "    (\"$plugin\", \"$repository\")," >>src/default_shorthands.rs
 done
 echo "    // rtx custom shorthands" >>src/default_shorthands.rs
 for plugin in "${custom_plugins[@]}"; do
-	echo "    $plugin" >>src/default_shorthands.rs
+  echo "    $plugin" >>src/default_shorthands.rs
 done
 echo "];" >>src/default_shorthands.rs
 rm -rf asdf-plugins
