@@ -62,7 +62,7 @@ test-coverage:
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         rtx trust
-        just pre-commit: render-help render-completions render-mangen
+        just render-help render-completions render-mangen
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         rtx trust
@@ -88,7 +88,7 @@ lint:
     shellcheck -x {{ scripts }}
     shfmt -d {{ scripts }}
     just --unstable --fmt --check
-    prettier -c $(git ls-files '*.md' '*.yml' '*.yaml')
+    npx prettier -c $(git ls-files '*.md' '*.yml' '*.yaml')
 
 # runs linters but makes fixes when possible
 lint-fix:
@@ -97,7 +97,7 @@ lint-fix:
     shellcheck -x {{ scripts }}
     shfmt -w {{ scripts }}
     just --unstable --fmt
-    prettier -w $(git ls-files '*.md' '*.yml' '*.yaml')
+    npx prettier -w $(git ls-files '*.md' '*.yml' '*.yaml')
 
 # regenerate README.md
 render-help: build
