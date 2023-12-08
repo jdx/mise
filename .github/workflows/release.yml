@@ -99,10 +99,15 @@ jobs:
             dist/rtx-*.tar.gz
           if-no-files-found: error
   e2e-linux:
+    name: e2e-linux-${{matrix.tranche}}
     runs-on: buildjet-16vcpu-ubuntu-2204
     #container: ghcr.io/jdx/rtx:github-actions
     needs: [build-tarball]
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - name: Install zsh/fish/direnv
@@ -117,7 +122,10 @@ jobs:
       - name: Run e2e tests
         uses: nick-fields/retry@v2
         env:
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
+          TEST_TRANCHE: ${{matrix.tranche}}
+          TEST_TRANCHE_COUNT: 4
         with:
           timeout_minutes: 20
           max_attempts: 3

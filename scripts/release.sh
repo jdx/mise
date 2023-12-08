@@ -54,6 +54,7 @@ gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
 
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
+chmod +x "$RELEASE_DIR"/install.sh
 "$RELEASE_DIR"/install.sh
 ~/.local/share/rtx/bin/rtx -v
 gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
