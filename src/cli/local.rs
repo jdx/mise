@@ -200,7 +200,7 @@ mod tests {
         run_test(|| {
             assert_cli!("local", "--pin", "tiny@1");
             let stdout = assert_cli!("local");
-            assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
+            assert_str_eq!(grep(stdout, "tiny"), "tiny 1.1.0");
             assert_cli!("local", "--pin", "tiny", "2");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");

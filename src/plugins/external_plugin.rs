@@ -169,7 +169,13 @@ impl ExternalPlugin {
             display_stderr();
         }
 
-        Ok(stdout.split_whitespace().map(|v| v.into()).collect())
+        Ok(stdout
+            .split_whitespace()
+            .map(|v| v.to_string())
+            .rev()
+            .unique()
+            .rev()
+            .collect())
     }
 
     fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {

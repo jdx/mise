@@ -8,8 +8,8 @@ if [ "${RTX_TINY_LIST_ALL_FAIL:-}" = "1" ]; then
 fi
 
 echo 1.0.0
-echo 1.1.0
 echo 1.0.1
+echo 1.1.0
 echo 2.0.0
 echo 2.0.1
 echo 2.1.0

@@ -59,6 +59,7 @@ pub trait Plugin: Debug + Send + Sync {
                 .filter(|v| !self.installs_path().join(v).join("incomplete").exists())
                 .cloned()
                 .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                .unique()
                 .collect(),
             false => vec![],
         })
