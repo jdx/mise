@@ -67,7 +67,11 @@ EOF
 
 cd aur-bin
 git add .SRCINFO PKGBUILD
+if git diff-index --quiet HEAD --; then
+  echo "No changes to PKGBUILD or .SRCINFO"
+  exit 0
+fi
 git commit -m "rtx ${RTX_VERSION#v}"
-if [[ "$DRY_RUN" != 1 ]]; then
+if [[ "$DRY_RUN" == 0 ]]; then
   git push
 fi
