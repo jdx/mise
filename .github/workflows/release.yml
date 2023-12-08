@@ -235,8 +235,8 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     timeout-minutes: 10
-    needs: [e2e-linux]
     continue-on-error: true
+    if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
