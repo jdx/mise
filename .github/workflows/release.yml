@@ -8,7 +8,6 @@ on:
 
 concurrency:
   group: release-${{ github.ref_name }}
-  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
