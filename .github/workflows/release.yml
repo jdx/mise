@@ -13,6 +13,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
 
 jobs:
   build-tarball:
@@ -181,8 +182,6 @@ jobs:
       - build-tarball
       - rpm
       - deb
-    env:
-      DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -234,17 +233,10 @@ jobs:
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-      - name: Release to aur
-        run: scripts/release-aur.sh
-        working-directory: rtx
-      - name: Release aur-bin
-        run: scripts/release-aur-bin.sh
-        working-directory: rtx
   bump-homebrew-formula:
     runs-on: macos-latest
-    if: startsWith(github.event.ref, 'refs/tags/v')
     timeout-minutes: 10
-    needs: [release]
+    needs: [e2e-linux]
     continue-on-error: true
     steps:
       - name: Checkout repository
@@ -254,12 +246,37 @@ jobs:
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: rtx
+  bump-aur:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    needs: [e2e-linux]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.RTX_SSH_KEY }}
+          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
+      - name: Bump aur
+        run: ./scripts/release-aur.sh
+  bump-aur-bin:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    needs: [e2e-linux]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.RTX_SSH_KEY }}
+          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
+      - name: Bump aur-bin
+        run: ./scripts/release-aur-bin.sh
   bump-alpine:
     runs-on: ubuntu-22.04
-    if: startsWith(github.event.ref, 'refs/tags/v')
     container: ghcr.io/jdx/rtx:alpine
     timeout-minutes: 30
-    needs: [release]
+    needs: [e2e-linux]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
