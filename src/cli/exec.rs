@@ -93,9 +93,10 @@ impl Exec {
             cmd = cmd.env(k, v);
         }
         let res = cmd.unchecked().run()?;
-        match res.status.code().unwrap_or(1) {
-            0 => Ok(()),
-            code => Err(eyre!("command failed with exit code {}", code)),
+        match res.status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(eyre!("command failed: exit code {}", code)),
+            None => Err(eyre!("command failed: terminated by signal")),
         }
     }
 }
