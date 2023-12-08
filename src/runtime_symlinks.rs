@@ -64,7 +64,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<St
     }
     symlinks = symlinks
         .into_iter()
-        .sorted_by_cached_key(|(k, _)| Versioning::new(k).unwrap_or_default())
+        .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
     Ok(symlinks)
 }
