@@ -442,6 +442,14 @@ You can also import the package directly using
 systems.
 
 </details>
+<details>
+  <summary>Docker</summary>
+
+```
+docker run --rm jdx/rtx:latest rtx x node@20 -- node -v
+```
+
+</details>
 
 ### Register shell hook
 
