@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
+git config --global user.name rtx-vm
+git config --global user.email 123107610+rtx-vm@users.noreply.github.com
+
 RTX_VERSION=$(./scripts/get-version.sh)
 
 TAR_GZ_URI="https://github.com/jdx/rtx/releases/download/$RTX_VERSION/rtx-$RTX_VERSION-linux-x64.tar.gz"
