@@ -243,16 +243,6 @@ impl NodePlugin {
             .execute()
     }
 
-    fn test_corepack(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("corepack -v");
-        CmdLineRunner::new(&config.settings, self.corepack_path(tv))
-            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
-            .with_pr(pr)
-            .arg("-v")
-            .envs(&config.env)
-            .execute()
-    }
-
     fn shasums_url(&self, v: &str) -> Result<Url> {
         // let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
         let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
@@ -326,7 +316,6 @@ impl Plugin for NodePlugin {
         self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
         self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
         if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
-            self.test_corepack(ctx.config, &ctx.tv, &ctx.pr)?;
             self.enable_default_corepack_shims(ctx.config, &ctx.tv, &ctx.pr)?;
         }
 
