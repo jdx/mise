@@ -36,6 +36,7 @@ required system dependencies.
 - `RTX_NODE_CONFIGURE_OPTS` [string]: Additional `./configure` options.
 - `RTX_NODE_MAKE_OPTS` [string]: Additional `make` options.
 - `RTX_NODE_MAKE_INSTALL_OPTS` [string]: Additional `make install` options.
+- `RTX_NODE_COREPACK` [bool]: Installs the default corepack shims after installing any node version that ships with [corepack](https://github.com/nodejs/corepack).
 
 ## Default node packages
 

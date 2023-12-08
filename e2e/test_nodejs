@@ -36,3 +36,8 @@ assert "rtx x -- node --version" "v20.0.0"
 # rtx uninstall node
 # RTX_NODE_COMPILE=1 rtx i node
 # assert "rtx x -- node --version" "v20.0.0"
+
+export RTX_NODE_COREPACK=1
+rtx uninstall node
+rtx i node
+assert_contains "rtx x node -- which yarn" "yarn"
