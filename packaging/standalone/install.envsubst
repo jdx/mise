@@ -115,7 +115,8 @@ install_rtx() {
 	os="$(get_os)"
 	arch="$(get_arch)"
 	xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-	install_path="${RTX_INSTALL_PATH:-$xdg_data_home/rtx/bin/rtx}"
+	rtx_data_dir="${RTX_DATA_DIR:-$xdg_data_home/rtx}"
+	install_path="${RTX_INSTALL_PATH:-${rtx_data_dir:}/bin/rtx}"
 	install_dir="$(dirname "$install_path")"
 	tarball_url="https://github.com/jdx/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
 
