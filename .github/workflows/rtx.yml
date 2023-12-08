@@ -19,7 +19,7 @@ env:
 
 jobs:
   unit:
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     #container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     steps:
@@ -31,7 +31,6 @@ jobs:
         with:
           shared-key: unit
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-          cache-provider: buildjet
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
@@ -56,7 +55,7 @@ jobs:
   coverage:
     name: coverage-${{matrix.tranche}}
     #container: ghcr.io/jdx/rtx:github-actions
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -71,7 +70,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
-          cache-provider: buildjet
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           cache-all-crates: true
       - uses: taiki-e/install-action@cargo-llvm-cov
