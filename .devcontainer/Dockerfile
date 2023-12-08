@@ -21,6 +21,8 @@ RUN mkdir /workspaces/target \
     # shfmt
     && curl -sS https://webi.sh/shfmt | sh \
     # just
-    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin
+    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin \
+    # npm packages
+    && npm install -g prettier@3.1.0 markdownlint-cli@0.37.0 markdown-magic@2.6.1
 
 ENTRYPOINT [ "/bin/bash" ]
