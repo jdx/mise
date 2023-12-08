@@ -32,9 +32,22 @@ impl NodePlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        let node_url_overridden = env::var("RTX_NODE_MIRROR_URL")
+            .or(env::var("NODE_BUILD_MIRROR_URL"))
+            .is_ok();
+        if node_url_overridden {
+            self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
+        } else {
+            self.fetch_remote_versions_from_rtx().or_else(|e| {
+                warn!("failed to fetch remote versions from rtx: {}", e);
+                self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
+            })
+        }
+    }
+    fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
         let versions = self
             .http
-            .json::<Vec<NodeVersion>, _>(RTX_NODE_MIRROR_URL.join("index.json")?)?
+            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
             .into_iter()
             .map(|v| {
                 if regex!(r"^v\d+\.").is_match(&v.version) {
@@ -44,6 +57,16 @@ impl NodePlugin {
                 }
             })
             .rev()
+            .collect();
+        Ok(versions)
+    }
+    fn fetch_remote_versions_from_rtx(&self) -> Result<Vec<String>> {
+        let versions = self
+            .http
+            .get_text("http://metadata.rtx.pub/versions/node")?
+            .lines()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
             .collect();
         Ok(versions)
     }
