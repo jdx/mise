@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use rayon::prelude::*;
 
 use crate::cli::args::tool::ToolArg;
 use crate::cli::args::tool::ToolArgParser;
@@ -65,10 +66,18 @@ impl LsRemote {
     }
 
     fn run_all(self, config: Config, out: &mut Output) -> Result<()> {
-        for plugin in config.plugins.values() {
-            let versions = plugin.list_remote_versions(&config.settings)?;
-            for version in versions {
-                rtxprintln!(out, "{}@{}", plugin.name(), version);
+        let versions = config
+            .plugins
+            .values()
+            .par_bridge()
+            .map(|p| {
+                let versions = p.list_remote_versions(&config.settings)?;
+                Ok((p, versions))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (plugin, versions) in versions {
+            for v in versions {
+                rtxprintln!(out, "{}@{v}", plugin);
             }
         }
         Ok(())
