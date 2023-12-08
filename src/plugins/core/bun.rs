@@ -35,7 +35,7 @@ impl BunPlugin {
             .map(|r| r.tag_name)
             .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
             .unique()
-            .sorted_by_cached_key(|s| Versioning::new(s))
+            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
         Ok(versions)
     }

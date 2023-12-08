@@ -38,7 +38,7 @@ impl DenoPlugin {
             .filter(|v| v.starts_with('v'))
             .map(|v| v.trim_start_matches('v').to_string())
             .unique()
-            .sorted_by_cached_key(|s| Versioning::new(s))
+            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
         Ok(versions)
     }
