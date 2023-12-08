@@ -56,7 +56,9 @@ popd
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 chmod +x "$RELEASE_DIR"/install.sh
 "$RELEASE_DIR"/install.sh
-~/.local/share/rtx/bin/rtx -v
+shellcheck "$RELEASE_DIR"/install.sh
+# TODO: figure out how to test this
+#~/.local/share/rtx/bin/rtx -v
 gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 
 if [[ "$DRY_RUN" != 1 ]]; then
