@@ -11,7 +11,7 @@ RUN mkdir /workspaces/target \
     && cargo install cargo-insta cargo-llvm-cov \
     # Install dependencies
     && export DEBIAN_FRONTEND=noninteractive \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/nsolid_setup_deb.sh | bash -s -- 20 \
     && apt-get update \
     && apt-get -y install --no-install-recommends \
     # shells, direnv, shellcheck
