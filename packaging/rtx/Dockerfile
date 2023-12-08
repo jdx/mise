@@ -1,17 +1,22 @@
-FROM alpine:edge
+FROM ubuntu:22.04
 LABEL maintainer="jdx"
 
 ENV RTX_DATA_DIR="/rtx"
 ENV RTX_CONFIG_DIR="/rtx"
 ENV RTX_CACHE_DIR="/rtx/cache"
-ENV PATH="/rtx/shims:$PATH"
+ENV PATH="/rtx/shims:/rtx/bin:$PATH"
 
-RUN apk add --no-cache \
+ENV RTX_INSTALL_PATH="/rtx/bin/rtx"
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
     curl \
     bash \
     git \
-    rtx \
     wget \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    # TODO: build from this source
+    && curl -fsSL https://rtx.pub/install.sh | sh \
     && rtx --version
 
 WORKDIR /rtx

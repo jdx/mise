@@ -446,7 +446,7 @@ systems.
   <summary>Docker</summary>
 
 ```
-docker run --rm jdx/rtx:latest rtx x node@20 -- node -v
+docker run jdxcode/rtx x node@20 -- node -v
 ```
 
 </details>
