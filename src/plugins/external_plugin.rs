@@ -159,12 +159,11 @@ impl ExternalPlugin {
             }
         };
         if !result.status.success() {
-            return Err(eyre!(
-                "error running {}: exited with code {}\n{}",
-                Script::ListAll,
-                result.status.code().unwrap_or_default(),
-                stderr
-            ))?;
+            let s = Script::ListAll;
+            match result.status.code() {
+                Some(code) => bail!("error running {}: exited with code {}\n{}", s, code, stderr),
+                None => bail!("error running {}: terminated by signal\n{}", s, stderr),
+            };
         } else if settings.verbose {
             display_stderr();
         }
@@ -625,7 +624,7 @@ impl Plugin for ExternalPlugin {
             .cmd(&config.settings, &script)
             .unchecked()
             .run()?;
-        exit(result.status.code().unwrap_or(1));
+        exit(result.status.code().unwrap_or(-1));
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
