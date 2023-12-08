@@ -26,35 +26,35 @@ jobs:
           - os: ubuntu
             name: linux-x64
             target: x86_64-unknown-linux-gnu
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-x64-musl
             target: x86_64-unknown-linux-musl
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv6
             target: arm-unknown-linux-gnueabi
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv6-musl
             target: arm-unknown-linux-musleabi
-            runs-on: buildjet-4vcpu-ubuntu-2204
+            runs-on: ubuntu-latest
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
@@ -69,13 +69,7 @@ jobs:
     #            runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.os == 'macos'
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/bin/zipsign
-          key: ${{ runner.os }}-cargo-zipsign
-      - if: matrix.os == 'ubuntu'
-        uses: buildjet/cache@v3
+      - uses: actions/cache@v3
         with:
           path: ~/.cargo/bin/zipsign
           key: ${{ runner.os }}-cargo-zipsign
@@ -84,7 +78,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-tarball-${{matrix.name}}
-          cache-provider: ${{ matrix.os == 'macos' && 'github' || 'buildjet' }}
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
@@ -100,7 +93,7 @@ jobs:
           if-no-files-found: error
   e2e-linux:
     name: e2e-linux-${{matrix.tranche}}
-    runs-on: buildjet-16vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     #container: ghcr.io/jdx/rtx:github-actions
     needs: [build-tarball]
     timeout-minutes: 30
@@ -179,7 +172,7 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     #container: ghcr.io/jdx/rtx:github-actions
     timeout-minutes: 10
     permissions:
