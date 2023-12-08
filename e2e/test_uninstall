@@ -9,7 +9,7 @@ export CLICOLOR=0
 assert_contains "rtx ls tiny" "3.1.0 (missing)"
 
 rtx i tiny@1 tiny@2.0 tiny@2.1
-assert_contains "rtx ls tiny" "1.1.o"
+assert_contains "rtx ls tiny" "1.1.0"
 assert_contains "rtx ls tiny" "2.0.1"
 assert_contains "rtx ls tiny" "2.1.0"
 
