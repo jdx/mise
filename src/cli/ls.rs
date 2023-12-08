@@ -234,7 +234,11 @@ impl Ls {
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
             .sorted_by_cached_key(|((plugin_name, version), _)| {
-                (plugin_name.clone(), Versioning::new(version))
+                (
+                    plugin_name.clone(),
+                    Versioning::new(version),
+                    version.clone(),
+                )
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
