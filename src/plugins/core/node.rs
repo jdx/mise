@@ -325,7 +325,7 @@ impl Plugin for NodePlugin {
         self.install_npm_shim(&ctx.tv)?;
         self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
         self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
-        if *env::RTX_NODE_COREPACK_ENABLE && self.corepack_path(&ctx.tv).exists() {
+        if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
             self.test_corepack(ctx.config, &ctx.tv, &ctx.pr)?;
             self.enable_default_corepack_shims(ctx.config, &ctx.tv, &ctx.pr)?;
         }
