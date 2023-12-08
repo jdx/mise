@@ -171,6 +171,10 @@ impl NodePlugin {
         tv.install_path().join("bin/npm")
     }
 
+    fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join("bin/corepack")
+    }
+
     fn install_default_packages(
         &self,
         config: &Config,
@@ -201,6 +205,22 @@ impl NodePlugin {
         file::remove_file(self.npm_path(tv)).ok();
         file::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
         file::make_executable(&self.npm_path(tv))?;
+        Ok(())
+    }
+
+    fn enable_default_corepack_shims(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &ProgressReport,
+    ) -> Result<()> {
+        pr.set_message("enabling corepack shims");
+        let corepack = self.corepack_path(tv);
+        CmdLineRunner::new(&config.settings, corepack)
+            .with_pr(pr)
+            .arg("enable")
+            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .execute()?;
         Ok(())
     }
 
@@ -295,6 +315,10 @@ impl Plugin for NodePlugin {
         self.install_npm_shim(&ctx.tv)?;
         self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
         self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
+        if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
+            self.enable_default_corepack_shims(ctx.config, &ctx.tv, &ctx.pr)?;
+        }
+
         Ok(())
     }
 }
