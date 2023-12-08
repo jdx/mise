@@ -1,5 +1,6 @@
 FROM ubuntu:22.04
 LABEL maintainer="jdx"
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV RTX_DATA_DIR="/rtx"
 ENV RTX_CONFIG_DIR="/rtx"
