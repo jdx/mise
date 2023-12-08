@@ -89,7 +89,14 @@ impl JavaPlugin {
                     .is_some_and(|image_type| image_type == "jdk");
                 let features = 10 - m.features.len();
                 let version = Versioning::new(v);
-                (is_shorthand, vendor, is_jdk, features, version)
+                (
+                    is_shorthand,
+                    vendor,
+                    is_jdk,
+                    features,
+                    version,
+                    v.to_string(),
+                )
             })
             .map(|(v, _)| v.clone())
             .unique()
