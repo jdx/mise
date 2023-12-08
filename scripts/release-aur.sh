@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
+git config --global user.name rtx-vm
+git config --global user.email 123107610+rtx-vm@users.noreply.github.com
+
 RTX_VERSION=$(./scripts/get-version.sh)
 
 SHA512=$(curl -L "https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
