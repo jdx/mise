@@ -11,7 +11,7 @@ RUN mkdir /workspaces/target \
     && cargo install cargo-insta cargo-llvm-cov \
     # Install dependencies
     && export DEBIAN_FRONTEND=noninteractive \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/nsolid_setup_deb.sh | bash -s -- 20 \
     && apt-get update \
     && apt-get -y install --no-install-recommends \
     # shells, direnv, shellcheck
@@ -21,6 +21,8 @@ RUN mkdir /workspaces/target \
     # shfmt
     && curl -sS https://webi.sh/shfmt | sh \
     # just
-    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin
+    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin \
+    # npm packages
+    && npm install -g prettier@3.1.0 markdownlint-cli@0.37.0 markdown-magic@2.6.1
 
 ENTRYPOINT [ "/bin/bash" ]
