@@ -20,12 +20,11 @@ the project. I only select dependencies with broad usage across the Rust communi
 I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
 rtx more secure.
 
-## rtx.pub
+## rtx.jdx.dev
 
-rtx.pub is the asset host for rtx. It's used to host precompiled rtx CLI binaries, and hosts a "[VERSION](https://rtx.pub/VERSION)"
-which rtx uses to occasionally check for a new version being released. Currently this is hosted with a mix
-of 3 different vendors for CDN, assets, and domain registration. This will be brought down to a single vendor
-to reduce the surface area for security reasons.
+rtx.jdx.dev is the asset host for rtx. It's used to host precompiled rtx CLI binaries, and hosts a "[VERSION](https://rtx.jdx.dev/VERSION)"
+which rtx uses to occasionally check for a new version being released. Everything hosted there uses a single
+vendor to reduce surface area.
 
 ## rtx plugins
 

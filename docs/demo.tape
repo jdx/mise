@@ -58,7 +58,7 @@ Set Width 1200
 Set Height 600
 Set Padding 10
 
-Type "http rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx" Enter Sleep 2s
+Type "http rtx.jdx.dev/rtx-latest-macos-arm64 > ~/bin/rtx" Enter Sleep 2s
 Type "chmod +x ~/bin/rtx" Sleep 1s Enter Sleep 1s
 Type "rtx -v" Sleep 1s Enter Sleep 1s
 Type 'eval "$(rtx activate bash)"' Sleep 1s Enter Sleep 2s

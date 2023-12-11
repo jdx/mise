@@ -64,7 +64,7 @@ gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_
 if [[ "$DRY_RUN" != 1 ]]; then
   NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
   NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
-  #AWS_S3_BUCKET=rtx.pub ./rtx/scripts/publish-s3.sh
+  #AWS_S3_BUCKET=rtx.jdx.dev ./rtx/scripts/publish-s3.sh
   ./rtx/scripts/publish-r2.sh
 fi
 

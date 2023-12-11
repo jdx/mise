@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rtx.pub/schema/rtx.json",
+  "$id": "https://rtx.jdx.dev/schema/rtx.json",
   "title": "rtx",
   "description": "config file for rtx version manager (.rtx.toml)",
   "type": "object",

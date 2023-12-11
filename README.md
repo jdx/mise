@@ -36,7 +36,7 @@ Note that calling `which node` gives us a real path to node, not a shim.
 Install rtx on macOS (other methods [here](#installation)):
 
 ```sh-session
-$ curl https://rtx.pub/rtx-latest-macos-arm64 > ~/bin/rtx
+$ curl https://rtx.jdx.dev/rtx-latest-macos-arm64 > ~/bin/rtx
 $ chmod +x ~/bin/rtx
 $ rtx --version
 rtx 2023.12.21
@@ -252,14 +252,14 @@ Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate 
 file, rtx will automatically add itself to `PATH`.
 
 ```
-curl https://rtx.pub/install.sh | sh
+curl https://rtx.jdx.dev/install.sh | sh
 ```
 
 If you want to verify the install script hasn't been tampered with:
 
 ```
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x29DDE9E0
-curl https://rtx.pub/install.sh.sig | gpg --decrypt > install.sh
+curl https://rtx.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the rtx release key
 sh ./install.sh
 ```
@@ -267,7 +267,7 @@ sh ./install.sh
 or if you're allergic to `| sh`:
 
 ```
-curl https://rtx.pub/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+curl https://rtx.jdx.dev/rtx-latest-macos-arm64 > /usr/local/bin/rtx
 ```
 
 It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/rtx/bin/rtx`
@@ -367,8 +367,8 @@ For installation on Ubuntu/Debian:
 
 ```
 sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+wget -qO - https://rtx.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 sudo apt update
 sudo apt install -y rtx
 ```
@@ -378,7 +378,7 @@ sudo apt install -y rtx
 > If you're on arm64 you'll need to run the following:
 >
 > ```
-> echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+> echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 > ```
 
 </details>
@@ -389,7 +389,7 @@ For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
 ```
 dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+dnf config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
 dnf install -y rtx
 ```
 
@@ -399,7 +399,7 @@ dnf install -y rtx
 
 ```
 yum install -y yum-utils
-yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+yum-config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
 yum install -y rtx
 ```
 
@@ -1500,7 +1500,7 @@ jobs:
   build:
     steps:
     - run: |
-        curl https://rtx.pub/install.sh | sh
+        curl https://rtx.jdx.dev/install.sh | sh
         echo "$HOME/.local/share/rtx/bin" >> $GITHUB_PATH
         echo "$HOME/.local/share/rtx/shims" >> $GITHUB_PATH
 ```
