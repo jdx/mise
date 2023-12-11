@@ -28,7 +28,8 @@ impl BunPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         match self.core.fetch_remote_versions_from_rtx() {
-            Ok(versions) => return Ok(versions),
+            Ok(Some(versions)) => return Ok(versions),
+            Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         let releases: Vec<GithubRelease> =
