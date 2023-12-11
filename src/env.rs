@@ -87,6 +87,8 @@ pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
+pub static RTX_USE_VERSIONS_HOST: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_USE_VERSIONS_HOST"));
+
 // python
 pub static RTX_PYENV_REPO: Lazy<String> = Lazy::new(|| {
     var("RTX_PYENV_REPO").unwrap_or_else(|_| "https://github.com/pyenv/pyenv.git".into())

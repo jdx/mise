@@ -35,14 +35,14 @@ impl NodePlugin {
         let node_url_overridden = env::var("RTX_NODE_MIRROR_URL")
             .or(env::var("NODE_BUILD_MIRROR_URL"))
             .is_ok();
-        if node_url_overridden {
-            self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
-        } else {
-            self.fetch_remote_versions_from_rtx().or_else(|e| {
-                warn!("failed to fetch remote versions from rtx: {}", e);
-                self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
-            })
+        if !node_url_overridden {
+            match self.core.fetch_remote_versions_from_rtx() {
+                Ok(Some(versions)) => return Ok(versions),
+                Ok(None) => {}
+                Err(e) => warn!("failed to fetch remote versions: {}", e),
+            }
         }
+        self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
     }
     fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
         let versions = self
@@ -57,16 +57,6 @@ impl NodePlugin {
                 }
             })
             .rev()
-            .collect();
-        Ok(versions)
-    }
-    fn fetch_remote_versions_from_rtx(&self) -> Result<Vec<String>> {
-        let versions = self
-            .http
-            .get_text("http://rtx-versions.jdx.dev/node")?
-            .lines()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
             .collect();
         Ok(versions)
     }
