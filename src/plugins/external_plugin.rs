@@ -139,6 +139,9 @@ impl ExternalPlugin {
     }
 
     fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
+        if !*env::RTX_USE_VERSIONS_HOST {
+            return Ok(None);
+        }
         // ensure that we're using a default shorthand plugin
         let git = Git::new(self.plugin_path.to_path_buf());
         if git.get_remote_url()

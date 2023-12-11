@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 pub use python::PythonPlugin;
@@ -93,13 +94,16 @@ impl CorePlugin {
         run_with_timeout(f, *env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
     }
 
-    pub fn fetch_remote_versions_from_rtx(&self) -> Result<Vec<String>> {
+    pub fn fetch_remote_versions_from_rtx(&self) -> Result<Option<Vec<String>>> {
+        if !*env::RTX_USE_VERSIONS_HOST {
+            return Ok(None);
+        }
         let versions = HTTP
             .get_text(format!("http://rtx-versions.jdx.dev/{}", &self.name))?
             .lines()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
-            .collect();
-        Ok(versions)
+            .collect_vec();
+        Ok(Some(versions))
     }
 }
