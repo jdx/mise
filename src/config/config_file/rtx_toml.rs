@@ -14,7 +14,7 @@ use toml_edit::{table, value, Array, Document, Item, Table, Value};
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsPartial;
-use crate::config::{config_file, AliasMap, Settings};
+use crate::config::{config_file, AliasMap};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
@@ -725,10 +725,8 @@ impl Debug for RtxToml {
         d.field("path", &self.path)
             .field("toolset", &self.toolset.to_string())
             .field("is_trusted", &self.is_trusted);
-        if let Ok(partial) = self.settings() {
-            if let Ok(settings) = Settings::default_builder().preloaded(partial).load() {
-                d.field("settings", &settings);
-            }
+        if let Ok(settings) = self.settings() {
+            d.field("settings", &settings);
         }
         if let Some(env_file) = &self.env_file {
             d.field("env_file", env_file);
@@ -764,13 +762,9 @@ mod tests {
     #[test]
     fn test_fixture() {
         let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml"), true).unwrap();
-        let settings = Settings::default_builder()
-            .preloaded(cf.settings().unwrap())
-            .load()
-            .unwrap();
 
         assert_debug_snapshot!(cf.env());
-        assert_debug_snapshot!(settings);
+        assert_debug_snapshot!(cf.settings());
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
