@@ -24,7 +24,6 @@ aws s3 cp artifacts/deb/pool/ "s3://$AWS_S3_BUCKET/deb/pool/" --cache-control "$
 aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_day" --no-progress --no-progress --recursive
 
 export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
-export CLOUDFLARE_ZONE_ID=80d977fd09f01db52bec165778088891
 curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
