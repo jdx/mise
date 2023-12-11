@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rtx.pub/schema/rtx.plugin.json",
+  "$id": "https://rtx.jdx.dev/schema/rtx.plugin.json",
   "title": "rtx-plugin",
   "description": "config file for an rtx plugin",
   "type": "object",

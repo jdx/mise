@@ -115,8 +115,8 @@ finch run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://rtx.pub/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.pub/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+wget -qO - https://rtx.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
 apt update
 apt install -y rtx
 rtx -V
@@ -127,7 +127,7 @@ rtx -V
 ```shell
 finch run -ti --rm amazonlinux
 yum install -y yum-utils
-yum-config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+yum-config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
 yum install -y rtx
 rtx -v
 ```
@@ -137,7 +137,7 @@ rtx -v
 ```shell
 finch run -ti --rm fedora
 dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://rtx.pub/rpm/rtx.repo
+dnf config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
 dnf install -y rtx
 rtx -v
 ```

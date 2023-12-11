@@ -63,7 +63,7 @@ impl NodePlugin {
     fn fetch_remote_versions_from_rtx(&self) -> Result<Vec<String>> {
         let versions = self
             .http
-            .get_text("http://metadata.rtx.pub/versions/node")?
+            .get_text("http://rtx-versions.jdx.dev/node")?
             .lines()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())

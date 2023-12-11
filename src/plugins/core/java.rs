@@ -239,7 +239,7 @@ impl JavaPlugin {
 
     fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
         let url = format!(
-            "https://java.rtx.pub/metadata/{}/{}/{}.json",
+            "https://rtx-java-metadata.jdx.dev/metadata/{}/{}/{}.json",
             release_type,
             os(),
             arch()
