@@ -111,7 +111,7 @@ fn get_latest_version_call() -> Option<String> {
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
     let timeout = Duration::from_secs(3);
-    const URL: &str = "http://rtx.pub/VERSION";
+    const URL: &str = "http://rtx.jdx.dev/VERSION";
     debug!("checking rtx version from {}", URL);
     let client = crate::http::Client::new_with_timeout(timeout).ok()?;
     match client.get_text(URL) {

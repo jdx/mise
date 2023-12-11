@@ -1,6 +1,6 @@
 [rtx-repo]
 name=RTX Repo
-baseurl=https://rtx.pub/rpm
+baseurl=https://rtx.jdx.dev/rpm
 enabled=1
 gpgcheck=1
-gpgkey=http://rtx.pub/gpg-key.pub
+gpgkey=http://rtx.jdx.dev/gpg-key.pub
