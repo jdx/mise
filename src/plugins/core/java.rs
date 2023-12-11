@@ -77,6 +77,11 @@ impl JavaPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_rtx() {
+            Ok(Some(versions)) => return Ok(versions),
+            Ok(None) => {}
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
+        }
         let versions = self
             .fetch_java_metadata("ga")?
             .iter()
@@ -239,7 +244,7 @@ impl JavaPlugin {
 
     fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
         let url = format!(
-            "https://java.rtx.pub/metadata/{}/{}/{}.json",
+            "https://rtx-java-metadata.jdx.dev/metadata/{}/{}/{}.json",
             release_type,
             os(),
             arch()

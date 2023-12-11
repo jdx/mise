@@ -62,7 +62,7 @@ impl Doctor {
 
         if !config.is_activated() && !shims_on_path() {
             let cmd = style("rtx help activate").yellow().for_stderr();
-            let url = style("https://rtx.pub").underlined().for_stderr();
+            let url = style("https://rtx.jdx.dev").underlined().for_stderr();
             let shims = style(dirs::SHIMS.display()).cyan().for_stderr();
             checks.push(formatdoc!(
                 r#"rtx is not activated, run {cmd} or
