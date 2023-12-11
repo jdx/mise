@@ -337,9 +337,9 @@ checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
 name = "confique"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7944dc1c6dec3f9b3adc127a921affd93baeea3d04c9b2d0a84380a243c9258b"
+checksum = "c37945ed2efccb10339a12eea282a5af9ebac77720d088723b2bbbdc44eca964"
 dependencies = [
  "confique-macro",
  "serde",
@@ -347,9 +347,9 @@ dependencies = [
 
 [[package]]
 name = "confique-macro"
-version = "0.0.8"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7305b4979ffd6d8b02006da5520b21c66bfab961cd688b9b6db00780f61448ce"
+checksum = "3821efdaaab3c5297054a90201cc3afa2061fc6ba2bc5d2fa558b850a7dabefe"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -1148,15 +1148,6 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 
 [[package]]
 name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
@@ -1830,7 +1821,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
- "itertools 0.12.0",
+ "itertools",
  "log",
  "num_cpus",
  "once_cell",
@@ -2684,11 +2675,11 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "versions"
-version = "5.0.1"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c73a36bc44e3039f51fbee93e39f41225f6b17b380eb70cc2aab942df06b34dd"
+checksum = "d7c271c81503258e3850c9d0f0d279d4ce9458d3388ef9eaa081b10d542182c3"
 dependencies = [
- "itertools 0.11.0",
+ "itertools",
  "nom",
 ]
 
