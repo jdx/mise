@@ -18,7 +18,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::{Plugin, PluginName, HTTP};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
@@ -63,6 +63,7 @@ pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub struct CorePlugin {
+    pub name: &'static str,
     pub cache_path: PathBuf,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
@@ -71,6 +72,7 @@ impl CorePlugin {
     pub fn new(name: &'static str) -> Self {
         let cache_path = dirs::CACHE.join(name);
         Self {
+            name,
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             cache_path,
@@ -89,5 +91,15 @@ impl CorePlugin {
         T: Send,
     {
         run_with_timeout(f, *env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+    }
+
+    pub fn fetch_remote_versions_from_rtx(&self) -> Result<Vec<String>> {
+        let versions = HTTP
+            .get_text(format!("http://rtx-versions.jdx.dev/{}", &self.name))?
+            .lines()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect();
+        Ok(versions)
     }
 }

@@ -141,6 +141,10 @@ impl RubyPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_rtx() {
+            Ok(versions) => return Ok(versions),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
+        }
         self.update_build_tool()?;
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
