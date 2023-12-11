@@ -10,7 +10,12 @@ WORKDIR /usr/src/rtx
 
 COPY . /usr/src/rtx/
 
-RUN cargo build --release
+RUN cargo build --release \
+  && ln -s /usr/bin/{python3,python} \
+  && python -V \
+  && apt-get update && apt-get install -y \
+    jq \
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 FROM rust as runtime
 
