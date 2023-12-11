@@ -90,7 +90,7 @@ impl PythonPlugin {
             return Ok(());
         }
         pr.set_message("installing default packages");
-        CmdLineRunner::new(&config.settings, self.python_path(tv))
+        CmdLineRunner::new(&config.settings, tv.install_path().join("bin/python"))
             .with_pr(pr)
             .arg("-m")
             .arg("pip")
