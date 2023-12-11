@@ -14,6 +14,7 @@ use once_cell::sync::Lazy;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
+use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
@@ -24,13 +25,13 @@ use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
+use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager, HTTP};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
 use crate::ui::prompt;
-use crate::{dirs, env, file};
+use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/rtx/plugins
 pub struct ExternalPlugin {
@@ -137,7 +138,41 @@ impl ExternalPlugin {
         Ok(())
     }
 
+    fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
+        // ensure that we're using a default shorthand plugin
+        let git = Git::new(self.plugin_path.to_path_buf());
+        if git.get_remote_url()
+            != DEFAULT_SHORTHANDS
+                .get(self.name.as_str())
+                .map(|s| s.to_string())
+        {
+            return Ok(None);
+        }
+        let versions = match HTTP.get_text(format!("http://rtx-versions.jdx.dev/{}", self.name)) {
+            Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
+            res => res?,
+        };
+        let versions = versions
+            .lines()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect_vec();
+        match versions.is_empty() {
+            true => Ok(None),
+            false => Ok(Some(versions)),
+        }
+    }
+
     fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
+        match self.fetch_versions() {
+            Ok(Some(versions)) => return Ok(versions),
+            Err(err) => warn!(
+                "Failed to fetch remote versions for plugin {}: {}",
+                style(&self.name).cyan().for_stderr(),
+                err
+            ),
+            _ => {}
+        };
         let cmd = self.script_man.cmd(settings, &Script::ListAll);
         let result = run_with_timeout(
             move || {

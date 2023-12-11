@@ -6,5 +6,36 @@
         <language minSize="55" name="Rust" />
       </Languages>
     </inspection_tool>
+    <inspection_tool class="HttpUrlsUsage" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredUrls">
+        <list>
+          <option value="http://0.0.0.0" />
+          <option value="http://127.0.0.1" />
+          <option value="http://activemq.apache.org/schema/" />
+          <option value="http://cxf.apache.org/schemas/" />
+          <option value="http://java.sun.com/" />
+          <option value="http://javafx.com/fxml" />
+          <option value="http://javafx.com/javafx/" />
+          <option value="http://json-schema.org/draft" />
+          <option value="http://localhost" />
+          <option value="http://maven.apache.org/POM/" />
+          <option value="http://maven.apache.org/xsd/" />
+          <option value="http://primefaces.org/ui" />
+          <option value="http://rtx-versions.jdx.dev" />
+          <option value="http://schema.cloudfoundry.org/spring/" />
+          <option value="http://schemas.xmlsoap.org/" />
+          <option value="http://tiles.apache.org/" />
+          <option value="http://www.ibm.com/webservices/xsd" />
+          <option value="http://www.jboss.com/xml/ns/" />
+          <option value="http://www.jboss.org/j2ee/schema/" />
+          <option value="http://www.springframework.org/schema/" />
+          <option value="http://www.springframework.org/security/tags" />
+          <option value="http://www.springframework.org/tags" />
+          <option value="http://www.thymeleaf.org" />
+          <option value="http://www.w3.org/" />
+          <option value="http://xmlns.jcp.org/" />
+        </list>
+      </option>
+    </inspection_tool>
   </profile>
 </component>

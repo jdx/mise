@@ -28,6 +28,10 @@ impl GoPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_rtx() {
+            Ok(versions) => return Ok(versions),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
+        }
         CorePlugin::run_fetch_task_with_timeout(move || {
             let repo = &*env::RTX_GO_REPO;
             let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;

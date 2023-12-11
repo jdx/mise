@@ -11,7 +11,7 @@ use crate::config::{Config, Settings};
 use crate::github::GithubRelease;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, HTTP};
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::ProgressReport;
 use crate::{file, http};
@@ -28,9 +28,12 @@ impl DenoPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let http = http::Client::new()?;
+        match self.core.fetch_remote_versions_from_rtx() {
+            Ok(versions) => return Ok(versions),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
+        }
         let releases: Vec<GithubRelease> =
-            http.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
+            HTTP.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
         let versions = releases
             .into_iter()
             .map(|r| r.name)
