@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crate::env;
 
 #[derive(Config, Debug, Clone)]
+#[config(partial_attr(derive(Debug)))]
 pub struct Settings {
     #[config(env = "RTX_EXPERIMENTAL", default = false)]
     pub experimental: bool,
