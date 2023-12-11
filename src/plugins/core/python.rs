@@ -63,6 +63,10 @@ impl PythonPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_rtx() {
+            Ok(versions) => return Ok(versions),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
+        }
         self.install_or_update_python_build()?;
         let python_build_bin = self.python_build_bin();
         CorePlugin::run_fetch_task_with_timeout(move || {
