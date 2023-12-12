@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-git config --global user.name rtx-vm
-git config --global user.email 123107610+rtx-vm@users.noreply.github.com
-
 RTX_VERSION=$(./scripts/get-version.sh)
 
 SHA512=$(curl -fsSL "https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
@@ -75,6 +72,8 @@ pkgname = rtx
 EOF
 
 cd aur
+git config user.name rtx-vm
+git config user.email 123107610+rtx-vm@users.noreply.github.com
 git add .SRCINFO PKGBUILD
 if git diff-index --quiet HEAD --; then
   echo "No changes to PKGBUILD or .SRCINFO"
