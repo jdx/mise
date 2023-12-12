@@ -51,7 +51,7 @@ impl Upgrade {
         Ok(())
     }
 
-    fn upgrade(&self, config: &mut Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
+    fn upgrade(&self, config: &Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 

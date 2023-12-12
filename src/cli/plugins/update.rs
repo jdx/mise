@@ -1,5 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
-use console::style;
+use color_eyre::eyre::Result;
 
 use crate::config::Config;
 use crate::output::Output;
@@ -31,9 +30,7 @@ impl Update {
                         None => (p.as_str(), None),
                     };
                     let p = unalias_plugin(p);
-                    let plugin = config.plugins.get(p).ok_or_else(|| {
-                        eyre!("plugin {} not found", style(p).cyan().for_stderr())
-                    })?;
+                    let plugin = config.get_or_create_plugin(p);
                     Ok((plugin.clone(), ref_))
                 })
                 .collect::<Result<_>>()?,

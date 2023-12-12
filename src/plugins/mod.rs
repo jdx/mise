@@ -153,7 +153,7 @@ pub trait Plugin: Debug + Send + Sync {
     }
     fn ensure_installed(
         &self,
-        _config: &mut Config,
+        _config: &Config,
         _mpr: Option<&MultiProgressReport>,
         _force: bool,
     ) -> Result<()> {

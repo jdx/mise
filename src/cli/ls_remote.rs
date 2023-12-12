@@ -68,9 +68,8 @@ impl LsRemote {
 
     fn run_all(self, config: Config, out: &mut Output) -> Result<()> {
         let versions = config
-            .plugins
-            .values()
-            .par_bridge()
+            .list_plugins()
+            .into_par_iter()
             .map(|p| {
                 let versions = p.list_remote_versions(&config.settings)?;
                 Ok((p, versions))
@@ -87,7 +86,7 @@ impl LsRemote {
         Ok(())
     }
 
-    fn get_plugin(&self, config: &mut Config) -> Result<Option<Arc<dyn Plugin>>> {
+    fn get_plugin(&self, config: &Config) -> Result<Option<Arc<dyn Plugin>>> {
         match &self.plugin {
             Some(tool_arg) => {
                 let plugin = config.get_or_create_plugin(&tool_arg.plugin);

@@ -19,7 +19,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
-use crate::plugins::{Plugin, PluginName, HTTP};
+use crate::plugins::{Plugin, HTTP};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
@@ -33,7 +33,7 @@ mod node_build;
 mod python;
 mod ruby;
 
-pub type PluginMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
+pub type PluginMap = BTreeMap<String, Arc<dyn Plugin>>;
 
 pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Plugin>> = vec![

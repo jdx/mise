@@ -45,7 +45,7 @@ impl Doctor {
         );
 
         let mut checks = Vec::new();
-        for plugin in config.plugins.values() {
+        for plugin in config.list_plugins() {
             if !plugin.is_installed() {
                 checks.push(format!("plugin {} is not installed", &plugin.name()));
                 continue;
@@ -123,8 +123,8 @@ fn render_config_files(config: &Config) -> String {
 fn render_plugins(config: &Config) -> String {
     let mut s = style("plugins:\n").bold().to_string();
     let plugins = config
-        .plugins
-        .values()
+        .list_plugins()
+        .into_iter()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;

@@ -470,7 +470,7 @@ impl Plugin for ExternalPlugin {
 
     fn ensure_installed(
         &self,
-        config: &mut Config,
+        config: &Config,
         mpr: Option<&MultiProgressReport>,
         force: bool,
     ) -> Result<()> {

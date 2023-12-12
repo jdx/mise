@@ -46,7 +46,7 @@ impl Which {
             None => Err(eyre!("{} not found", self.bin_name)),
         }
     }
-    fn get_toolset(&self, config: &mut Config) -> Result<Toolset> {
+    fn get_toolset(&self, config: &Config) -> Result<Toolset> {
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(&[tool.clone()]);

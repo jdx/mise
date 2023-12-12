@@ -40,7 +40,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
     exit(0);
 }
 
-fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
+fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
     let shim = dirs::SHIMS.join(bin_name);
     if shim.exists() {
         let ts = ToolsetBuilder::new().build(config)?;
@@ -117,7 +117,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         remove_all(&symlink_path)?;
     }
-    for plugin in config.plugins.values() {
+    for plugin in config.list_plugins() {
         match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {

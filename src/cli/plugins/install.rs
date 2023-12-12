@@ -105,7 +105,7 @@ impl PluginsInstall {
 
     fn install_one(
         &self,
-        config: &mut Config,
+        config: &Config,
         name: PluginName,
         git_url: Option<String>,
         mpr: &MultiProgressReport,

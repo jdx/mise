@@ -25,13 +25,11 @@ impl Current {
         match &self.plugin {
             Some(plugin_name) => {
                 let plugin_name = unalias_plugin(plugin_name);
-                match config.plugins.get(plugin_name) {
-                    Some(plugin) => self.one(&config, ts, out, plugin.clone()),
-                    None => {
-                        warn!("Plugin {} is not installed", plugin_name);
-                        Ok(())
-                    }
+                let plugin = config.get_or_create_plugin(plugin_name);
+                if !plugin.is_installed() {
+                    bail!("Plugin {} is not installed", plugin_name);
                 }
+                self.one(&config, ts, out, plugin.clone())
             }
             None => self.all(&config, ts, out),
         }

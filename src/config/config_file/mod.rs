@@ -65,12 +65,7 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub fn add_runtimes(
-        &mut self,
-        config: &mut Config,
-        runtimes: &[ToolArg],
-        pin: bool,
-    ) -> Result<()> {
+    pub fn add_runtimes(&mut self, config: &Config, runtimes: &[ToolArg], pin: bool) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = self.to_toolset().to_owned();
@@ -104,7 +99,7 @@ impl dyn ConfigFile {
                 .into_iter()
                 .map(|tvr| {
                     if pin {
-                        let plugin = config.plugins.get(&plugin).unwrap();
+                        let plugin = config.get_or_create_plugin(&plugin);
                         let tv = tvr.resolve(
                             config,
                             plugin.clone(),
