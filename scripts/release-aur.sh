@@ -6,7 +6,7 @@ git config --global user.email 123107610+rtx-vm@users.noreply.github.com
 
 RTX_VERSION=$(./scripts/get-version.sh)
 
-SHA512=$(curl -L "https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
+SHA512=$(curl -fsSL "https://github.com/jdx/rtx/archive/$RTX_VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
   git clone ssh://aur@aur.archlinux.org/rtx.git aur
@@ -80,6 +80,7 @@ if git diff-index --quiet HEAD --; then
   echo "No changes to PKGBUILD or .SRCINFO"
   exit 0
 fi
+git diff --cached
 git commit -m "rtx ${RTX_VERSION#v}"
 if [ "$DRY_RUN" == 0 ]; then
   git push
