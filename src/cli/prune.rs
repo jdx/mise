@@ -30,8 +30,8 @@ pub struct Prune {
 }
 
 impl Prune {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
         let mut to_delete = ts
             .list_installed_versions(&config)?
             .into_iter()
@@ -44,7 +44,7 @@ impl Prune {
 
         for cf in config.get_tracked_config_files()?.values() {
             let mut ts = cf.to_toolset().clone();
-            ts.resolve(&mut config);
+            ts.resolve(&config);
             for (_, tv) in ts.list_current_versions(&config) {
                 to_delete.remove(&tv.to_string());
             }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use eyre::Context;
@@ -37,7 +37,6 @@ pub struct Config {
     pub settings: Settings,
     pub global_config: RtxToml,
     pub config_files: ConfigMap,
-    pub plugins: PluginMap,
     pub env: BTreeMap<String, String>,
     pub env_sources: HashMap<String, PathBuf>,
     pub path_dirs: Vec<PathBuf>,
@@ -45,6 +44,7 @@ pub struct Config {
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
     pub project_root: Option<PathBuf>,
+    plugins: RwLock<ToolMap>,
     shorthands: OnceCell<HashMap<String, String>>,
     repo_urls: HashMap<PluginName, String>,
 }
@@ -114,7 +114,7 @@ impl Config {
             config_files,
             settings,
             global_config,
-            plugins,
+            plugins: RwLock::new(plugins),
             should_exit_early,
             repo_urls,
         };
@@ -151,7 +151,7 @@ impl Config {
                 return Ok(alias.clone());
             }
         }
-        if let Some(plugin) = self.plugins.get(plugin_name) {
+        if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
             if let Some(alias) = plugin.get_aliases(&self.settings)?.get(v) {
                 return Ok(alias.clone());
             }
@@ -159,36 +159,40 @@ impl Config {
         Ok(v.to_string())
     }
 
-    pub fn external_plugins(&self) -> Vec<(&PluginName, Arc<dyn Plugin>)> {
-        self.plugins
-            .iter()
-            .filter(|(_, tool)| matches!(tool.get_type(), PluginType::External))
-            .map(|(name, tool)| (name, tool.clone()))
+    pub fn external_plugins(&self) -> Vec<(String, Arc<dyn Plugin>)> {
+        self.list_plugins()
+            .into_iter()
+            .filter(|tool| matches!(tool.get_type(), PluginType::External))
+            .map(|tool| (tool.name().to_string(), tool.clone()))
             .collect()
     }
 
-    pub fn get_or_create_plugin(&mut self, plugin_name: &PluginName) -> Arc<dyn Plugin> {
+    pub fn get_or_create_plugin(&self, plugin_name: &str) -> Arc<dyn Plugin> {
+        if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
+            return plugin.clone();
+        }
+        let plugin = ExternalPlugin::newa(plugin_name.to_string());
         self.plugins
-            .entry(plugin_name.clone())
-            .or_insert_with(|| ExternalPlugin::newa(plugin_name.clone()))
-            .clone()
+            .write()
+            .unwrap()
+            .insert(plugin_name.to_string(), plugin.clone());
+        plugin
+    }
+    pub fn list_plugins(&self) -> Vec<Arc<dyn Plugin>> {
+        self.plugins.read().unwrap().values().cloned().collect()
     }
 
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = self
-            .plugins
-            .values()
-            .par_bridge()
+            .list_plugins()
+            .into_par_iter()
             .map(|plugin| {
-                let aliases = match plugin.get_aliases(&self.settings) {
-                    Ok(aliases) => aliases,
-                    Err(err) => {
-                        eprintln!("Error: {err}");
-                        BTreeMap::new()
-                    }
-                };
-                (plugin.name(), aliases)
+                let aliases = plugin.get_aliases(&self.settings).unwrap_or_else(|err| {
+                    warn!("get_aliases: {err}");
+                    BTreeMap::new()
+                });
+                (plugin.name().to_string(), aliases)
             })
             .collect();
         for (plugin, plugin_aliases) in plugin_aliases {
@@ -231,7 +235,7 @@ impl Config {
         Ok(config_files)
     }
 
-    pub fn rebuild_shims_and_runtime_symlinks(&mut self) -> Result<()> {
+    pub fn rebuild_shims_and_runtime_symlinks(&self) -> Result<()> {
         let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
         crate::shims::reshim(self, &ts)?;
         crate::runtime_symlinks::rebuild(self)?;
@@ -351,10 +355,9 @@ fn load_config_filenames(
 }
 
 fn get_global_rtx_toml() -> PathBuf {
-    match env::RTX_CONFIG_FILE.clone() {
-        Some(global) => global,
-        None => dirs::CONFIG.join("config.toml"),
-    }
+    env::RTX_CONFIG_FILE
+        .clone()
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
 pub fn global_config_files() -> Vec<PathBuf> {
@@ -481,10 +484,10 @@ fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let plugins = self
-            .plugins
-            .iter()
-            .filter(|(_, t)| matches!(t.get_type(), PluginType::External))
-            .map(|(p, _)| p.to_string())
+            .list_plugins()
+            .into_iter()
+            .filter(|t| matches!(t.get_type(), PluginType::External))
+            .map(|t| t.name().to_string())
             .collect::<Vec<_>>();
         let config_files = self
             .config_files

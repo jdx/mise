@@ -30,10 +30,8 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
             .iter()
@@ -45,13 +43,13 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.upgrade(&mut config, outdated, out)?;
+            self.upgrade(&config, outdated, out)?;
         }
 
         Ok(())
     }
 
-    fn upgrade(&self, config: &mut Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
+    fn upgrade(&self, config: &Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 

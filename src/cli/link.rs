@@ -33,7 +33,7 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => {

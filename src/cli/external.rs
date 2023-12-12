@@ -1,26 +1,19 @@
 use clap::{ArgMatches, Command};
 use color_eyre::eyre::Result;
-use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::config::Config;
 
 pub fn commands(config: &Config) -> Vec<Command> {
     config
-        .plugins
-        .values()
-        .collect_vec()
+        .list_plugins()
         .into_par_iter()
-        .flat_map(|p| match p.external_commands() {
-            Ok(commands) => commands,
-            Err(e) => {
-                warn!(
-                    "failed to load external commands for plugin {}: {:#}",
-                    p.name(),
-                    e
-                );
+        .flat_map(|p| {
+            p.external_commands().unwrap_or_else(|e| {
+                let p = p.name();
+                warn!("failed to load external commands for plugin {p}: {e:#}");
                 vec![]
-            }
+            })
         })
         .collect()
 }
@@ -36,7 +29,7 @@ pub fn execute(
         .find(|c| c.get_name() == plugin)
     {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = config.plugins.get(&plugin.to_string()).unwrap();
+            let plugin = config.get_or_create_plugin(plugin);
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

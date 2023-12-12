@@ -23,15 +23,13 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }
 
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .build(&mut config)?;
-        ts.install_arg_versions(&mut config)?;
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        ts.install_arg_versions(&config)?;
 
         let shell = get_shell(None).expect("no shell detected");
 

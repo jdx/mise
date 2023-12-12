@@ -23,13 +23,13 @@ use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 #[allow(dead_code)]
-pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Result<Config> {
+pub fn handle_shim(config: Config, args: &[String], out: &mut Output) -> Result<Config> {
     let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
     if bin_name == "rtx" {
         return Ok(config);
     }
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(&mut config, bin_name)?.into();
+    args[0] = which_shim(&config, bin_name)?.into();
     let exec = Exec {
         tool: vec![],
         c: None,
@@ -40,7 +40,7 @@ pub fn handle_shim(mut config: Config, args: &[String], out: &mut Output) -> Res
     exit(0);
 }
 
-fn which_shim(config: &mut Config, bin_name: &str) -> Result<PathBuf> {
+fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
     let shim = dirs::SHIMS.join(bin_name);
     if shim.exists() {
         let ts = ToolsetBuilder::new().build(config)?;
@@ -117,7 +117,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         remove_all(&symlink_path)?;
     }
-    for plugin in config.plugins.values() {
+    for plugin in config.list_plugins() {
         match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {

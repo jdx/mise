@@ -10,8 +10,8 @@ use crate::toolset::ToolsetBuilder;
 pub struct BinPaths {}
 
 impl BinPaths {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
         for p in ts.list_paths(&config) {
             rtxprintln!(out, "{}", p.display());
         }

@@ -41,7 +41,7 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn build(self, config: &mut Config) -> Result<Toolset> {
+    pub fn build(self, config: &Config) -> Result<Toolset> {
         let mut toolset = Toolset {
             latest_versions: self.latest_versions,
             disable_tools: config.settings.disable_tools.clone(),

@@ -43,7 +43,7 @@ pub struct PluginsLs {
 
 impl PluginsLs {
     pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        let mut tools = config.plugins.values().cloned().collect::<BTreeSet<_>>();
+        let mut tools = config.list_plugins().into_iter().collect::<BTreeSet<_>>();
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {
