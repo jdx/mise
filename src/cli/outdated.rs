@@ -22,10 +22,8 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
             .iter()

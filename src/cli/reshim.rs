@@ -30,8 +30,8 @@ pub struct Reshim {
 }
 
 impl Reshim {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
 
         shims::reshim(&config, &ts)
     }

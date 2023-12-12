@@ -46,14 +46,14 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         if self.all {
             return self.install_all_missing_plugins(config, mpr);
         }
         let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
-            self.install_one(&mut config, name, git_url, &mpr)?;
+            self.install_one(&config, name, git_url, &mpr)?;
         } else {
             let mut plugins: Vec<PluginName> = vec![name];
             if let Some(second) = self.git_url.clone() {
@@ -66,13 +66,9 @@ impl PluginsInstall {
         Ok(())
     }
 
-    fn install_all_missing_plugins(
-        &self,
-        mut config: Config,
-        mpr: MultiProgressReport,
-    ) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
-        let missing_plugins = ts.list_missing_plugins(&mut config);
+    fn install_all_missing_plugins(&self, config: Config, mpr: MultiProgressReport) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
+        let missing_plugins = ts.list_missing_plugins(&config);
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
@@ -82,12 +78,12 @@ impl PluginsInstall {
 
     fn install_many(
         &self,
-        mut config: Config,
+        config: Config,
         plugins: Vec<PluginName>,
         mpr: MultiProgressReport,
     ) -> Result<()> {
         for plugin in plugins {
-            self.install_one(&mut config, plugin, None, &mpr)?;
+            self.install_one(&config, plugin, None, &mpr)?;
         }
         Ok(())
         // TODO: run in parallel
@@ -97,7 +93,7 @@ impl PluginsInstall {
         //     .install(|| -> Result<()> {
         //         plugins
         //             .into_par_iter()
-        //             .map(|plugin| self.install_one(&mut config, plugin, None, &mpr))
+        //             .map(|plugin| self.install_one(&config, plugin, None, &mpr))
         //             .collect::<Result<Vec<_>>>()?;
         //         Ok(())
         //     })
@@ -105,7 +101,7 @@ impl PluginsInstall {
 
     fn install_one(
         &self,
-        config: &mut Config,
+        config: &Config,
         name: PluginName,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
