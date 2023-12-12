@@ -66,17 +66,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - run: rustup toolchain install nightly --component llvm-tools-preview
+      #- run: rustup toolchain install nightly --component llvm-tools-preview --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
           save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           cache-all-crates: true
-      - uses: taiki-e/install-action@cargo-llvm-cov
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
       - run: npm i -g markdown-magic
-      - uses: taiki-e/install-action@just
-      - uses: nick-fields/retry@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,just
+      - name: Test w/ coverage
+        uses: nick-fields/retry@v2
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
