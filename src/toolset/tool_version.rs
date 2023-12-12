@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,7 +15,7 @@ use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ToolVersion {
     pub request: ToolVersionRequest,
     pub plugin_name: PluginName,
@@ -241,6 +243,32 @@ impl ToolVersion {
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", &self.plugin_name, &self.version)
+    }
+}
+
+impl PartialEq for ToolVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.plugin_name == other.plugin_name && self.version == other.version
+    }
+}
+impl Eq for ToolVersion {}
+impl PartialOrd for ToolVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ToolVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.plugin_name.cmp(&other.plugin_name) {
+            Ordering::Equal => self.version.cmp(&other.version),
+            o => o,
+        }
+    }
+}
+impl Hash for ToolVersion {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.plugin_name.hash(state);
+        self.version.hash(state);
     }
 }
 

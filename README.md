@@ -168,7 +168,7 @@ v20.0.0
   - [`rtx sync node <--brew|--nvm|--nodenv>`](#rtx-sync-node---brew--nvm--nodenv)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
-  - [`rtx uninstall [OPTIONS] <TOOL@VERSION>...`](#rtx-uninstall-options-toolversion)
+  - [`rtx uninstall [OPTIONS] [TOOL@VERSION]...`](#rtx-uninstall-options-toolversion)
   - [`rtx upgrade [OPTIONS] [TOOL@VERSION]...`](#rtx-upgrade-options-toolversion)
   - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
@@ -2630,15 +2630,15 @@ Examples:
   $ rtx trust
 ```
 
-### `rtx uninstall [OPTIONS] <TOOL@VERSION>...`
+### `rtx uninstall [OPTIONS] [TOOL@VERSION]...`
 
 ```text
 Removes runtime versions
 
-Usage: uninstall [OPTIONS] <TOOL@VERSION>...
+Usage: uninstall [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
-  <TOOL@VERSION>...
+  [TOOL@VERSION]...
           Tool(s) to remove
 
 Options:

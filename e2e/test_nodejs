@@ -30,7 +30,7 @@ rtx plugin uninstall nodejs
 RTX_DISABLE_TOOLS=node assert_not_contains "rtx plugins --core" "node"
 
 export RTX_NODE_BUILD=0
-rtx uninstall node
+rtx uninstall -a node
 rtx i node
 assert "rtx x -- node --version" "v20.0.0"
 # rtx uninstall node

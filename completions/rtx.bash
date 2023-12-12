@@ -3397,7 +3397,7 @@ _rtx() {
             return 0
             ;;
         rtx__uninstall)
-            opts="-a -n -j -q -r -v -y -h --all --dry-run --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <TOOL@VERSION>..."
+            opts="-a -n -j -q -r -v -y -h --all --dry-run --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
