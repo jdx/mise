@@ -15,6 +15,7 @@ impl LogLevel {
             .help("Set the log output verbosity")
             .default_value(DEFAULT_LOG_LEVEL.as_str())
             .global(true)
+            .hide(true)
             .value_parser(["error", "warn", "info", "debug", "trace"])
     }
 }

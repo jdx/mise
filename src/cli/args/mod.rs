@@ -5,3 +5,4 @@ pub mod raw;
 pub mod tool;
 pub mod verbose;
 pub mod yes;
+pub mod quiet;

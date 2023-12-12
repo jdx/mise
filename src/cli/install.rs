@@ -43,7 +43,7 @@ impl Install {
         Ok(())
     }
     fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
             .build(&mut config)?;
@@ -115,7 +115,7 @@ impl Install {
             info!("all runtimes are installed");
             return Ok(());
         }
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         ts.install_versions(&mut config, versions, &mpr, self.force)?;
         Ok(())
     }

@@ -145,10 +145,6 @@ impl Config {
         env::var("__RTX_DIFF").is_ok()
     }
 
-    pub fn show_progress_bars(&self) -> bool {
-        self.settings.verbose || !console::user_attended_stderr()
-    }
-
     pub fn resolve_alias(&self, plugin_name: &str, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.aliases.get(plugin_name) {
             if let Some(alias) = plugin_aliases.get(v) {

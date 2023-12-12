@@ -58,7 +58,7 @@ impl Prune {
         config: &Config,
         to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>,
     ) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         for (p, tv) in to_delete {
             let mut pr = mpr.add();
             if self.dry_run {

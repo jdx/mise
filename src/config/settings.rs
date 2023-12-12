@@ -28,6 +28,8 @@ pub struct Settings {
     pub trusted_config_paths: BTreeSet<PathBuf>,
     #[config(env = "RTX_VERBOSE", default = false)]
     pub verbose: bool,
+    #[config(env = "RTX_QUIET", default = false)]
+    pub quiet: bool,
     #[config(env = "RTX_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
     #[config(env = "RTX_JOBS", default = 4)]
