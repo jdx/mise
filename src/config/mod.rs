@@ -168,12 +168,15 @@ impl Config {
     }
 
     pub fn get_or_create_plugin(&self, plugin_name: &str) -> Arc<dyn Plugin> {
+        if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
+            return plugin.clone();
+        }
+        let plugin = ExternalPlugin::newa(plugin_name.to_string());
         self.plugins
             .write()
             .unwrap()
-            .entry(plugin_name.to_string())
-            .or_insert_with(|| ExternalPlugin::newa(plugin_name.to_string()))
-            .clone()
+            .insert(plugin_name.to_string(), plugin.clone());
+        plugin
     }
     pub fn list_plugins(&self) -> Vec<Arc<dyn Plugin>> {
         self.plugins.read().unwrap().values().cloned().collect()
