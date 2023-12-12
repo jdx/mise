@@ -190,6 +190,7 @@ impl Cli {
                 .arg(args::log_level::Debug::arg())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::log_level::Trace::arg())
+                .arg(args::quiet::Quiet::arg())
                 .arg(args::raw::Raw::arg())
                 .arg(args::verbose::Verbose::arg())
                 .arg(args::yes::Yes::arg()),
@@ -211,6 +212,9 @@ impl Cli {
         }
         if let Some(true) = matches.get_one::<bool>("yes") {
             config.settings.yes = true;
+        }
+        if let Some(true) = matches.get_one::<bool>("quiet") {
+            config.settings.quiet = true;
         }
         if *matches.get_one::<u8>("verbose").unwrap() > 0 {
             config.settings.verbose = true;

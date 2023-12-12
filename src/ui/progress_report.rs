@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 pub struct ProgressReport {
     pub pb: Option<ProgressBar>,
     prefix: String,
+    quiet: bool,
 }
 
 pub static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -33,7 +34,7 @@ pub static ERROR_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 });
 
 impl ProgressReport {
-    pub fn new(verbose: bool) -> ProgressReport {
+    pub fn new(verbose: bool, quiet: bool) -> ProgressReport {
         let pb = match verbose {
             true => None,
             false => Some(ProgressBar::new(0)),
@@ -41,6 +42,7 @@ impl ProgressReport {
         ProgressReport {
             pb,
             prefix: String::new(),
+            quiet,
         }
     }
 
@@ -79,19 +81,22 @@ impl ProgressReport {
     pub fn set_message<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.set_message(message.as_ref().replace('\r', "")),
-            None => eprintln!("{}", message.as_ref()),
+            None if !self.quiet => eprintln!("{}", message.as_ref()),
+            _ => (),
         }
     }
     pub fn println<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(message),
-            None => eprintln!("{}", message.as_ref()),
+            None if !self.quiet => eprintln!("{}", message.as_ref()),
+            _ => (),
         }
     }
     pub fn warn<S: AsRef<str>>(&self, message: S) {
         match &self.pb {
             Some(pb) => pb.println(format!("{} {}", style("[WARN]").yellow(), message.as_ref())),
-            None => eprintln!("{}", message.as_ref()),
+            None if !self.quiet => eprintln!("{}", message.as_ref()),
+            _ => (),
         }
     }
     pub fn error<S: AsRef<str>>(&self, message: S) {
@@ -123,7 +128,8 @@ impl ProgressReport {
                 pb.set_style(SUCCESS_TEMPLATE.clone());
                 pb.finish_with_message(message);
             }
-            None => eprintln!("{}", message.into()),
+            None if !self.quiet => eprintln!("{}", message.into()),
+            _ => (),
         }
     }
     // pub fn clear(&self) {
@@ -140,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_progress_report() {
-        let mut pr = ProgressReport::new(false);
+        let mut pr = ProgressReport::new(false, false);
         pr.set_prefix("prefix");
         assert_eq!(pr.prefix(), "prefix");
         pr.set_message("message");
@@ -149,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_progress_report_verbose() {
-        let mut pr = ProgressReport::new(true);
+        let mut pr = ProgressReport::new(true, false);
         pr.set_prefix("prefix");
         assert_eq!(pr.prefix(), "prefix");
         pr.set_message("message");

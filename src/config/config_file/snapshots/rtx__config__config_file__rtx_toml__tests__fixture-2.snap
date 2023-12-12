@@ -18,6 +18,7 @@ Ok(
         verbose: Some(
             true,
         ),
+        quiet: None,
         asdf_compat: None,
         jobs: None,
         shorthands_file: None,

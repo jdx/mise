@@ -47,7 +47,7 @@ pub struct PluginsInstall {
 
 impl PluginsInstall {
     pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         if self.all {
             return self.install_all_missing_plugins(config, mpr);
         }

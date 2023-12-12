@@ -6,9 +6,9 @@ _rtx() {
 
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_cmds' \
     '*::arg:->args' && ret=0
@@ -66,9 +66,9 @@ __rtx_activate_cmd() {
     '::shell_type:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_alias_cmd] )) ||
@@ -76,9 +76,9 @@ __rtx_alias_cmd() {
   _arguments -s -S \
     '(-p --plugin)'{-p,--plugin}'=[filter aliases by plugin]:plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_alias_cmds' \
     '*::arg:->args' && ret=0
@@ -103,9 +103,9 @@ __rtx_alias_get_cmd() {
     ':plugin:__rtx_plugins' \
     ':alias:__rtx_aliases' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_alias_ls_cmd] )) ||
@@ -113,9 +113,9 @@ __rtx_alias_ls_cmd() {
   _arguments -s -S \
     '::plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_alias_set_cmd] )) ||
@@ -125,9 +125,9 @@ __rtx_alias_set_cmd() {
     ':alias:__rtx_aliases' \
     ':value:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_alias_unset_cmd] )) ||
@@ -136,9 +136,9 @@ __rtx_alias_unset_cmd() {
     ':plugin:__rtx_plugins' \
     ':alias:__rtx_aliases' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_asdf_cmd] )) ||
@@ -146,27 +146,27 @@ __rtx_asdf_cmd() {
   _arguments -s -S \
     '*::args:_cmdambivalent' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_bin_paths_cmd] )) ||
 __rtx_bin_paths_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_cache_cmd] )) ||
 __rtx_cache_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_cache_cmds' \
     '*::arg:->args' && ret=0
@@ -186,9 +186,9 @@ return ret
 __rtx_cache_clear_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_completion_cmd] )) ||
@@ -196,9 +196,9 @@ __rtx_completion_cmd() {
   _arguments -s -S \
     '::shell:(bash fish zsh)' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_current_cmd] )) ||
@@ -206,27 +206,27 @@ __rtx_current_cmd() {
   _arguments -s -S \
     '::plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_deactivate_cmd] )) ||
 __rtx_deactivate_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_direnv_cmd] )) ||
 __rtx_direnv_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_direnv_cmds' \
     '*::arg:->args' && ret=0
@@ -248,36 +248,36 @@ return ret
 __rtx_direnv_activate_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_direnv_envrc_cmd] )) ||
 __rtx_direnv_envrc_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_direnv_exec_cmd] )) ||
 __rtx_direnv_exec_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_doctor_cmd] )) ||
 __rtx_doctor_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_env_cmd] )) ||
@@ -287,9 +287,9 @@ __rtx_env_cmd() {
     '*::tool:__rtx_tool_versions' \
     '(-J --json)'{-J,--json}'[Output in JSON format]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_env_vars_cmd] )) ||
@@ -299,9 +299,9 @@ __rtx_env_vars_cmd() {
     '*--remove=[Remove the environment variable from config file]:remove:' \
     '*::env_vars:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_exec_cmd] )) ||
@@ -311,9 +311,9 @@ __rtx_exec_cmd() {
     '(-c --command)'{-c,--command}'=[Command string to execute]:c:_cmdstring' \
     '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_global_cmd] )) ||
@@ -325,9 +325,9 @@ __rtx_global_cmd() {
     '*--remove=[Remove the plugin(s) from ~/.tool-versions]:remove:' \
     '--path[Get the path of the global config file]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_hook_env_cmd] )) ||
@@ -336,9 +336,9 @@ __rtx_hook_env_cmd() {
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_implode_cmd] )) ||
@@ -347,9 +347,9 @@ __rtx_implode_cmd() {
     '--config[Also remove config directory]' \
     '(-n --dry-run)'{-n,--dry-run}'[List directories that would be removed without actually removing them]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_install_cmd] )) ||
@@ -359,7 +359,7 @@ __rtx_install_cmd() {
     '(-f --force)'{-f,--force}'[Force reinstall even if already installed]' \
     '*'{-v,--verbose}'[Show installation output]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
@@ -369,9 +369,9 @@ __rtx_latest_cmd() {
     ':tool:__rtx_tool_versions' \
     '(-i --installed)'{-i,--installed}'[Show latest installed instead of available version]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_link_cmd] )) ||
@@ -381,9 +381,9 @@ __rtx_link_cmd() {
     ':path:_directories' \
     '(-f --force)'{-f,--force}'[Overwrite an existing tool version if it exists]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_local_cmd] )) ||
@@ -396,9 +396,9 @@ __rtx_local_cmd() {
     '*--remove=[Remove the plugin(s) from .tool-versions]:remove:' \
     '--path[Get the path of the config file]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_ls_cmd] )) ||
@@ -412,9 +412,9 @@ __rtx_ls_cmd() {
     '(-m --missing)'{-m,--missing}'[Display missing tool versions]' \
     '--prefix=[Display versions matching this prefix]:prefix:__rtx_prefixes' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_ls_remote_cmd] )) ||
@@ -424,9 +424,9 @@ __rtx_ls_remote_cmd() {
     '--all[Show all installed plugins and versions]' \
     '::prefix:__rtx_prefixes' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_outdated_cmd] )) ||
@@ -434,9 +434,9 @@ __rtx_outdated_cmd() {
   _arguments -s -S \
     '*::tool:__rtx_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_plugins_cmd] )) ||
@@ -447,9 +447,9 @@ __rtx_plugins_cmd() {
     '(-u --urls)'{-u,--urls}'[show the git url for each plugin]' \
     '--refs[show the git refs for each plugin]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_plugins_cmds' \
     '*::arg:->args' && ret=0
@@ -479,7 +479,7 @@ __rtx_plugins_install_cmd() {
     '(-a --all)'{-a,--all}'[Install all missing plugins]' \
     '*'{-v,--verbose}'[Show installation output]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
@@ -490,9 +490,9 @@ __rtx_plugins_link_cmd() {
     '::path:_directories' \
     '(-f --force)'{-f,--force}'[Overwrite existing plugin]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_plugins_ls_cmd] )) ||
@@ -503,9 +503,9 @@ __rtx_plugins_ls_cmd() {
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin]' \
     '--refs[Show the git refs for each plugin]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_plugins_ls_remote_cmd] )) ||
@@ -514,9 +514,9 @@ __rtx_plugins_ls_remote_cmd() {
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
     '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_plugins_uninstall_cmd] )) ||
@@ -526,9 +526,9 @@ __rtx_plugins_uninstall_cmd() {
     '(-p --purge)'{-p,--purge}'[Also remove the plugin'\''s installs, downloads, and cache]' \
     '(-a --all)'{-a,--all}'[Remove all plugins]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_plugins_update_cmd] )) ||
@@ -536,9 +536,9 @@ __rtx_plugins_update_cmd() {
   _arguments -s -S \
     '*::plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_prune_cmd] )) ||
@@ -547,18 +547,18 @@ __rtx_prune_cmd() {
     '*::plugin:__rtx_plugins' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_reshim_cmd] )) ||
 __rtx_reshim_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_self_update_cmd] )) ||
@@ -569,17 +569,17 @@ __rtx_self_update_cmd() {
     '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]' \
     '::version:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]'
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]'
 }
 (( $+functions[__rtx_settings_cmd] )) ||
 __rtx_settings_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_settings_cmds' \
     '*::arg:->args' && ret=0
@@ -603,18 +603,18 @@ __rtx_settings_get_cmd() {
   _arguments -s -S \
     ':key:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_settings_ls_cmd] )) ||
 __rtx_settings_ls_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_settings_set_cmd] )) ||
@@ -623,9 +623,9 @@ __rtx_settings_set_cmd() {
     ':key:' \
     ':value:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_settings_unset_cmd] )) ||
@@ -633,9 +633,9 @@ __rtx_settings_unset_cmd() {
   _arguments -s -S \
     ':key:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_shell_cmd] )) ||
@@ -644,18 +644,18 @@ __rtx_shell_cmd() {
     '*::tool:__rtx_tool_versions' \
     '(-u --unset)'{-u,--unset}'[Removes a previously set version]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_sync_cmd] )) ||
 __rtx_sync_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
     '1: :__rtx_sync_cmds' \
     '*::arg:->args' && ret=0
@@ -679,9 +679,9 @@ __rtx_sync_node_cmd() {
     '--nvm[Get tool versions from nvm]' \
     '--nodenv[Get tool versions from nodenv]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_sync_python_cmd] )) ||
@@ -689,9 +689,9 @@ __rtx_sync_python_cmd() {
   _arguments -s -S \
     '--pyenv[Get tool versions from pyenv]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_trust_cmd] )) ||
@@ -700,9 +700,9 @@ __rtx_trust_cmd() {
     '::config_file:_files' \
     '--untrust[No longer trust this config]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_uninstall_cmd] )) ||
@@ -712,9 +712,9 @@ __rtx_uninstall_cmd() {
     '(-a --all)'{-a,--all}'[Delete all installed versions]' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_upgrade_cmd] )) ||
@@ -723,9 +723,9 @@ __rtx_upgrade_cmd() {
     '*::tool:__rtx_tool_versions' \
     '(-n --dry-run)'{-n,--dry-run}'[Just print what would be done, don'\''t actually do it]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_use_cmd] )) ||
@@ -739,18 +739,18 @@ __rtx_use_cmd() {
     '(-e --env)'{-e,--env}'=[\[experimental\] Modify an environment-specific config file like .rtx.<env>.toml]:env:' \
     '(-p --path)'{-p,--path}'=[Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions]:path:_files' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_version_cmd] )) ||
 __rtx_version_cmd() {
   _arguments -s -S \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_where_cmd] )) ||
@@ -758,9 +758,9 @@ __rtx_where_cmd() {
   _arguments -s -S \
     ':tool:__rtx_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_which_cmd] )) ||
@@ -771,9 +771,9 @@ __rtx_which_cmd() {
     '--version[Show the version instead of the path]' \
     '(-t --tool)'{-t,--tool}'=[Use a specific tool@version]:tool:__rtx_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
-    '--log-level=[Set the log output verbosity]:log-level:(error warn info debug trace)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
-    '*'{-v,--verbose}'[Show installation output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
 (( $+functions[__rtx_cmds] )) ||

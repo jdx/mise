@@ -354,11 +354,14 @@ fn log_level() -> LevelFilter {
                 set_var("RTX_LOG_LEVEL", level);
             }
         }
-        if arg == "--debug" {
+        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && ARGS.len() > 1) {
             set_var("RTX_LOG_LEVEL", "debug");
         }
-        if arg == "--trace" {
+        if arg == "--trace" || arg == "-vv" {
             set_var("RTX_LOG_LEVEL", "trace");
+        }
+        if arg == "--quiet" || arg == "-q" {
+            set_var("RTX_LOG_LEVEL", "warn");
         }
     }
     let log_level = var("RTX_LOG_LEVEL")
