@@ -179,7 +179,7 @@ impl Plugin for PythonPlugin {
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
-        ctx.pr.set_message("running python-build");
+        ctx.pr.set_message("Running python-build");
         let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.python_build_bin())
             .with_pr(&ctx.pr)
             .arg(ctx.tv.version.as_str())
