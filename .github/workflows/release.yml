@@ -237,6 +237,7 @@ jobs:
   bump-homebrew-formula:
     runs-on: macos-latest
     timeout-minutes: 10
+    needs: [release]
     continue-on-error: true
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
