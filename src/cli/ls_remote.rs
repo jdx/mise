@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::cli::args::tool::ToolArg;
@@ -74,7 +75,10 @@ impl LsRemote {
                 let versions = p.list_remote_versions(&config.settings)?;
                 Ok((p, versions))
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .sorted_by_cached_key(|(p, _)| p.name().to_string())
+            .collect::<Vec<_>>();
         for (plugin, versions) in versions {
             for v in versions {
                 rtxprintln!(out, "{}@{v}", plugin);
