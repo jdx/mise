@@ -30,8 +30,8 @@ pub fn rebuild(config: &Config) -> Result<()> {
             make_symlink(&to, &from)?;
         }
         remove_missing_symlinks(plugin.clone())?;
-        // attempt to remove the installs dir (will fail if not empty)
-        let _ = file::remove_dir(&installs_dir);
+        // remove install dir if empty
+        file::remove_dir(&installs_dir)?;
     }
     Ok(())
 }
