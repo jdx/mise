@@ -36,8 +36,14 @@ pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    trace!("rmdir {}", display_path(path));
-    fs::remove_dir(path).wrap_err_with(|| format!("failed rmdir: {}", display_path(path)))
+    (|| -> Result<()> {
+        if path.exists() && is_empty_dir(path)? {
+            trace!("rmdir {}", display_path(path));
+            fs::remove_dir(path)?;
+        }
+        Ok(())
+    })()
+    .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
 }
 
 pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -205,6 +211,12 @@ pub fn make_executable(path: &Path) -> Result<()> {
     fs::set_permissions(path, perms)
         .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
     Ok(())
+}
+
+fn is_empty_dir(path: &Path) -> Result<bool> {
+    path.read_dir()
+        .map(|mut i| i.next().is_none())
+        .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
 }
 
 pub struct FindUp {

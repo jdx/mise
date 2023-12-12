@@ -1,9 +1,13 @@
 use console::style;
 use eyre::{Result, WrapErr};
+use itertools::Itertools;
+use rayon::prelude::*;
+use std::sync::Arc;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::output::Output;
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{runtime_symlinks, shims};
@@ -13,11 +17,11 @@ use crate::{runtime_symlinks, shims};
 #[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Tool(s) to remove
-    #[clap(required = true, value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
     tool: Vec<ToolArg>,
 
     /// Delete all installed versions
-    #[clap(long, short = 'a')]
+    #[clap(long, short)]
     all: bool,
 
     /// Do not actually delete anything
@@ -27,57 +31,18 @@ pub struct Uninstall {
 
 impl Uninstall {
     pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let runtimes = ToolArg::double_tool_condition(&self.tool);
-
-        let mut tool_versions = vec![];
-        if self.all {
-            for runtime in runtimes {
-                let tool = config.get_or_create_plugin(&runtime.plugin);
-                let query = runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default();
-                let tvs = tool
-                    .list_installed_versions()?
-                    .into_iter()
-                    .filter(|v| v.starts_with(&query))
-                    .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.name().into(), &v);
-                        let tv = ToolVersion::new(tool.clone(), tvr, Default::default(), v);
-                        (tool.clone(), tv)
-                    })
-                    .collect::<Vec<_>>();
-                if tvs.is_empty() {
-                    warn!("no versions found for {}", style(&tool).cyan().for_stderr());
-                }
-                tool_versions.extend(tvs);
-            }
+        let tool_versions = if self.tool.is_empty() && self.all {
+            self.get_all_tool_versions(&config)?
         } else {
-            tool_versions = runtimes
-                .into_iter()
-                .map(|a| {
-                    let tool = config.get_or_create_plugin(&a.plugin);
-                    let tvs = match a.tvr {
-                        Some(tvr) => {
-                            vec![tvr.resolve(&config, tool.clone(), Default::default(), false)?]
-                        }
-                        None => {
-                            let ts = ToolsetBuilder::new().build(&config)?;
-                            match ts.versions.get(&a.plugin) {
-                                Some(tvl) => tvl.versions.clone(),
-                                None => bail!(
-                                    "no versions found for {}",
-                                    style(&tool).cyan().for_stderr()
-                                ),
-                            }
-                        }
-                    };
-                    Ok(tvs
-                        .into_iter()
-                        .map(|tv| (tool.clone(), tv))
-                        .collect::<Vec<_>>())
-                })
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
+            self.get_requested_tool_versions(&config)?
+        };
+        let tool_versions = tool_versions
+            .into_iter()
+            .unique()
+            .sorted()
+            .collect::<Vec<_>>();
+        if !self.all && tool_versions.len() > 1 {
+            bail!("multiple tools specified, use --all to uninstall all versions");
         }
 
         let mpr = MultiProgressReport::new(&config.settings);
@@ -93,7 +58,11 @@ impl Uninstall {
                 pr.error(err.to_string());
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
-            pr.finish_with_message("uninstalled");
+            if self.dry_run {
+                pr.finish_with_message("uninstalled (dry-run)");
+            } else {
+                pr.finish_with_message("uninstalled");
+            }
         }
 
         let ts = ToolsetBuilder::new().build(&config)?;
@@ -101,6 +70,55 @@ impl Uninstall {
         runtime_symlinks::rebuild(&config)?;
 
         Ok(())
+    }
+
+    fn get_all_tool_versions(
+        &self,
+        config: &Config,
+    ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
+        let ts = ToolsetBuilder::new().build(config)?;
+        let tool_versions = ts
+            .list_installed_versions(config)?
+            .into_iter()
+            .collect::<Vec<_>>();
+        Ok(tool_versions)
+    }
+    fn get_requested_tool_versions(
+        &self,
+        config: &Config,
+    ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
+        let runtimes = ToolArg::double_tool_condition(&self.tool);
+        let tool_versions = runtimes
+            .into_par_iter()
+            .map(|a| {
+                let tool = config.get_or_create_plugin(&a.plugin);
+                let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
+                let mut tvs = tool
+                    .list_installed_versions()?
+                    .into_iter()
+                    .filter(|v| v.starts_with(&query))
+                    .map(|v| {
+                        let tvr = ToolVersionRequest::new(tool.name().into(), &v);
+                        let tv = ToolVersion::new(tool.clone(), tvr, Default::default(), v);
+                        (tool.clone(), tv)
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(tvr) = &a.tvr {
+                    tvs.push((
+                        tool.clone(),
+                        tvr.resolve(config, tool.clone(), Default::default(), false)?,
+                    ));
+                }
+                if tvs.is_empty() {
+                    warn!("no versions found for {}", style(&tool).cyan().for_stderr());
+                }
+                Ok(tvs)
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        Ok(tool_versions)
     }
 }
 
