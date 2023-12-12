@@ -20,7 +20,8 @@ RUN <<EOT
 set -euxo pipefail
 
 apt-get update && apt-get install -y \
-    jq \
+    jq                               \
+    python3-full                     \
     python3-pip
 rm -rf /var/lib/apt/lists/* && apt-get clean
 
