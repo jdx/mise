@@ -84,7 +84,7 @@ impl Toolset {
             .for_each(|(_, v)| v.resolve(config, self.latest_versions));
     }
     pub fn install_arg_versions(&mut self, config: &mut Config) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         let versions = self
             .list_missing_versions(config)
             .into_iter()

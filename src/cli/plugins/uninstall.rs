@@ -25,7 +25,7 @@ pub struct PluginsUninstall {
 
 impl PluginsUninstall {
     pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
 
         let plugins = match self.all {
             true => config.plugins.keys().cloned().collect(),

@@ -490,7 +490,7 @@ impl Plugin for ExternalPlugin {
                 }
             }
         }
-        let _mpr = MultiProgressReport::new(config.show_progress_bars());
+        let _mpr = MultiProgressReport::new(&config.settings);
         let mpr = mpr.unwrap_or(&_mpr);
         let mut pr = mpr.add();
         self.decorate_progress_bar(&mut pr, None);

@@ -2,9 +2,9 @@ set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
 complete -xc rtx -s j -l jobs -d 'Number of plugins and runtimes to install in parallel'
-complete -xc rtx -l log-level -a "error warn info debug trace" -d 'Set the log output verbosity'
+complete -xc rtx -s q -l quiet -d 'Suppress output'
 complete -xc rtx -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.'
-complete -xc rtx -s v -l verbose -d 'Show installation output'
+complete -xc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -xc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
 complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell'
