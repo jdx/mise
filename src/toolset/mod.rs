@@ -130,7 +130,7 @@ impl Toolset {
             (0..config.settings.jobs)
                 .map(|_| {
                     let queue = queue.clone();
-                    let config = &*config;
+                    let config = config;
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
