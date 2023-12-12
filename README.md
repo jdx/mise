@@ -787,7 +787,6 @@ disable_default_shorthands = false # disable the default shorthands, see `RTX_DI
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
 experimental = false # enable experimental features
-log_level = 'debug' # log verbosity, see `RTX_LOG_LEVEL`
 
 [alias.node]
 my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20.x
@@ -843,6 +842,15 @@ Use this for different env vars or different tool versions in
 development/staging/production environments. See
 [Config Environments](#experimental-config-environments) for more on how
 to use this feature.
+
+#### `RTX_USE_VERSIONS_HOST`
+
+Default: `true`
+
+Set to "false" to disable using [rtx-versions](https://rtx-versions.jdx.dev) as
+a quick way for rtx to query for new versions. This host regularly grabs all the
+latest versions of core and community plugins. It's faster than running a plugin's
+`list-all` command and gets around GitHub rate limiting problems when using it.
 
 #### `RTX_${PLUGIN}_VERSION`
 
@@ -902,6 +910,12 @@ Set to "1" to always keep the install directory. By default it is deleted on fai
 This shows the installation output during `rtx install` and `rtx plugin install`.
 This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
 2 configuration for the same thing, but for now it is its own config.
+
+Equivalent to `RTX_LOG_LEVEL=debug`.
+
+#### `RTX_QUIET=1`
+
+Equivalent to `RTX_LOG_LEVEL=warn`.
 
 #### `RTX_ASDF_COMPAT=1`
 
