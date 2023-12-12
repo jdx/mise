@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display};
 use std::fs::File;
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -407,6 +408,11 @@ impl Eq for dyn Plugin {}
 impl PartialEq for dyn Plugin {
     fn eq(&self, other: &Self) -> bool {
         self.get_type() == other.get_type() && self.name() == other.name()
+    }
+}
+impl Hash for dyn Plugin {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name().hash(state)
     }
 }
 impl PartialOrd for dyn Plugin {
