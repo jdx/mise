@@ -20,8 +20,8 @@ pub struct Current {
 }
 
 impl Current {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(plugin_name) => {
                 let plugin_name = unalias_plugin(plugin_name);

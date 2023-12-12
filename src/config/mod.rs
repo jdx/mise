@@ -355,10 +355,9 @@ fn load_config_filenames(
 }
 
 fn get_global_rtx_toml() -> PathBuf {
-    match env::RTX_CONFIG_FILE.clone() {
-        Some(global) => global,
-        None => dirs::CONFIG.join("config.toml"),
-    }
+    env::RTX_CONFIG_FILE
+        .clone()
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
 pub fn global_config_files() -> Vec<PathBuf> {

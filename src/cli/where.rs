@@ -28,14 +28,14 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),
                 None => {
                     let ts = ToolsetBuilder::new()
                         .with_args(&[self.tool.clone()])
-                        .build(&mut config)?;
+                        .build(&config)?;
                     let v = ts
                         .versions
                         .get(&self.tool.plugin)

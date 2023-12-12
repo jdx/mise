@@ -59,7 +59,7 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
         self.plugin = self
             .plugin
             .clone()
@@ -67,7 +67,7 @@ impl Ls {
             .map(|p| PluginName::from(unalias_plugin(&p)));
         self.verify_plugin(&config)?;
 
-        let mut runtimes = self.get_runtime_list(&mut config)?;
+        let mut runtimes = self.get_runtime_list(&config)?;
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally

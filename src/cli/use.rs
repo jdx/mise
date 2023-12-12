@@ -64,11 +64,9 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .build(&mut config)?;
-        ts.install_arg_versions(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        ts.install_arg_versions(&config)?;
 
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));

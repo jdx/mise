@@ -36,7 +36,7 @@ impl Asdf {
     }
 }
 
-fn list_versions(mut config: Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
+fn list_versions(config: Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
     if args[2] == "all" {
         let mut new_args: Vec<String> = vec!["rtx".into(), "ls-remote".into()];
         if args.len() >= 3 {
@@ -44,7 +44,7 @@ fn list_versions(mut config: Config, out: &mut Output, args: &Vec<String>) -> Re
         }
         return Cli::new().run(config, &new_args, out);
     }
-    let ts = ToolsetBuilder::new().build(&mut config)?;
+    let ts = ToolsetBuilder::new().build(&config)?;
     let mut versions = ts.list_installed_versions(&config)?;
     let plugin = match args.len() {
         3 => Some(&args[2]),

@@ -32,8 +32,8 @@ pub struct HookEnv {
 }
 
 impl HookEnv {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         out.stdout.write(hook_env::clear_old_env(&*shell));
         let mut env = ts.env(&config);

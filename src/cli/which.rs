@@ -28,8 +28,8 @@ pub struct Which {
 }
 
 impl Which {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = self.get_toolset(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = self.get_toolset(&config)?;
 
         match ts.which(&config, &self.bin_name) {
             Some((p, tv)) => {

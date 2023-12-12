@@ -33,8 +33,8 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        if let Some(plugin) = self.get_plugin(&mut config)? {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        if let Some(plugin) = self.get_plugin(&config)? {
             self.run_single(config, out, plugin)
         } else {
             self.run_all(config, out)

@@ -22,8 +22,8 @@ use crate::{duration, env};
 pub struct Doctor {}
 
 impl Doctor {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
         rtxprintln!(out, "{}", rtx_version());
         rtxprintln!(out, "{}", build_info());
         rtxprintln!(out, "{}", shell());

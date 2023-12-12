@@ -130,7 +130,6 @@ impl Toolset {
             (0..config.settings.jobs)
                 .map(|_| {
                     let queue = queue.clone();
-                    let config = config;
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
@@ -311,12 +310,11 @@ impl Toolset {
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
         self.list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|(p, tv)| match p.list_bin_paths(config, self, &tv) {
-                Ok(paths) => paths,
-                Err(e) => {
-                    warn!("Error listing bin paths for {}: {:#}", tv, e);
+            .flat_map(|(p, tv)| {
+                p.list_bin_paths(config, self, &tv).unwrap_or_else(|e| {
+                    warn!("Error listing bin paths for {tv}: {e:#}");
                     Vec::new()
-                }
+                })
             })
             .collect()
     }

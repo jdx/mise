@@ -93,7 +93,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn local(
-    mut config: Config,
+    config: Config,
     out: &mut Output,
     path: &Path,
     runtime: Vec<ToolArg>,
@@ -128,7 +128,7 @@ pub fn local(
             return Ok(());
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
-        cf.add_runtimes(&mut config, &runtimes, pin)?;
+        cf.add_runtimes(&config, &runtimes, pin)?;
         let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
             out,

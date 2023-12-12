@@ -42,12 +42,12 @@ impl Install {
 
         Ok(())
     }
-    fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
+    fn install_runtimes(&self, config: Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
-            .build(&mut config)?;
-        let tool_versions = self.get_requested_tool_versions(&mut config, &ts, runtimes, &mpr)?;
+            .build(&config)?;
+        let tool_versions = self.get_requested_tool_versions(&config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
