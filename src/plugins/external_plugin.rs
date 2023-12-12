@@ -117,19 +117,6 @@ impl ExternalPlugin {
             git.update(Some(ref_.to_string()))?;
         }
 
-        pr.set_message("loading plugin remote versions");
-        if self.has_list_all_script() {
-            self.list_remote_versions(&config.settings)?;
-        }
-        if self.has_list_alias_script() {
-            pr.set_message("getting plugin aliases");
-            self.get_aliases(&config.settings)?;
-        }
-        if self.has_list_legacy_filenames_script() {
-            pr.set_message("getting plugin legacy filenames");
-            self.legacy_filenames(&config.settings)?;
-        }
-
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
             "{repo_url}#{}",
@@ -231,9 +218,6 @@ impl ExternalPlugin {
         })
     }
 
-    fn has_list_all_script(&self) -> bool {
-        self.script_man.script_exists(&Script::ListAll)
-    }
     fn has_list_alias_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAliases)
     }
