@@ -80,7 +80,7 @@ impl Uninstall {
                 .collect::<Vec<_>>();
         }
 
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
                 warn!("{} is not installed", style(&tv).cyan().for_stderr());

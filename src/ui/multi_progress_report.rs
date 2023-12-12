@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use console::style;
 use indicatif::MultiProgress;
 
@@ -6,25 +7,28 @@ use crate::ui::progress_report::ProgressReport;
 #[derive(Debug)]
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
+    quiet: bool,
 }
 
 impl MultiProgressReport {
-    pub fn new(verbose: bool) -> Self {
-        match verbose {
-            true => Self { mp: None },
-            false => Self {
-                mp: Some(MultiProgress::new()),
-            },
+    pub fn new(settings: &Settings) -> Self {
+        let mp = match settings.quiet || settings.verbose || !console::user_attended_stderr() {
+            true => None,
+            false => Some(MultiProgress::new()),
+        };
+        MultiProgressReport {
+            mp,
+            quiet: settings.quiet,
         }
     }
     pub fn add(&self) -> ProgressReport {
         match &self.mp {
             Some(mp) => {
-                let mut pr = ProgressReport::new(false);
+                let mut pr = ProgressReport::new(false, self.quiet);
                 pr.pb = Some(mp.add(pr.pb.unwrap()));
                 pr
             }
-            None => ProgressReport::new(true),
+            None => ProgressReport::new(true, self.quiet),
         }
     }
     pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
@@ -42,7 +46,8 @@ impl MultiProgressReport {
                     message
                 ));
             }
-            None => warn!("{}", message),
+            None if !self.quiet => warn!("{}", message),
+            _ => (),
         }
     }
     // pub fn clear(&self) {
@@ -61,7 +66,8 @@ mod tests {
 
     #[test]
     fn test_multi_progress_report() {
-        let mpr = MultiProgressReport::new(false);
+        let settings = Settings::default();
+        let mpr = MultiProgressReport::new(&settings);
         let pr = mpr.add();
         pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
         pr.enable_steady_tick();

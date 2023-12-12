@@ -72,7 +72,7 @@ impl dyn ConfigFile {
         pin: bool,
     ) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
-        let mpr = MultiProgressReport::new(config.show_progress_bars());
+        let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = self.to_toolset().to_owned();
         ts.latest_versions = true;
         ts.resolve(config);
