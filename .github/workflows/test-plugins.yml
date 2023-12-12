@@ -54,9 +54,16 @@ jobs:
           - plugin: direnv
             command: rtx exec direnv@latest -- direnv --version
           - plugin: erlang
-            command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+            command: |
+              set -eux
+              rtx plugins install erlang
+              # replace FOO with BAR
+              sed -i 's/>\/dev\/null 2>&1//g' ~/.local/share/rtx/plugins/erlang/bin/install
+              echo ~/.local/share/rtx/plugins/erlang/bin/install
+              rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
             command: |
+              rtx plugins install erlang
               rtx use --global erlang@latest
               eval "$(rtx env bash)"
               rtx use --global elixir@latest
@@ -92,7 +99,16 @@ jobs:
             command: rtx exec postgres@latest -- psql -V
     steps:
       - name: apt-get
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev libwxgtk-webview3.0-gtk3-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev \
+            libonig-dev autoconf bison build-essential curl gettext git libgd-dev \
+            libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev \
+            libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev \
+            libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev libwxgtk-webview3.0-gtk3-dev \
+            build-essential autoconf m4 libncurses5-dev libwxgtk3.0-gtk3-dev libwxgtk-webview3.0-gtk3-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libpng-dev libssh-dev unixodbc-dev xsltproc fop libxml2-utils \
+            libncurses-dev openjdk-11-jdk
       - uses: actions/download-artifact@v3
         with:
           name: tarball-x86_64-unknown-linux-gnu
