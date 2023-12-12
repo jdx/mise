@@ -27,11 +27,9 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .build(&mut config)?;
-        ts.install_arg_versions(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        ts.install_arg_versions(&config)?;
 
         if self.json {
             self.output_json(config, out, ts)

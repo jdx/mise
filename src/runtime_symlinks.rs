@@ -14,7 +14,7 @@ use crate::plugins::Plugin;
 use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for plugin in config.plugins.values() {
+    for plugin in config.list_plugins() {
         let symlinks = list_symlinks(config, plugin.clone())?;
         let installs_dir = dirs::INSTALLS.join(plugin.name());
         for (from, to) in symlinks {

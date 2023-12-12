@@ -17,8 +17,8 @@ use crate::{dirs, env};
 pub struct Envrc {}
 
 impl Envrc {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(&config)?;
 
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")

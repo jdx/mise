@@ -59,7 +59,7 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
         self.plugin = self
             .plugin
             .clone()
@@ -67,7 +67,7 @@ impl Ls {
             .map(|p| PluginName::from(unalias_plugin(&p)));
         self.verify_plugin(&config)?;
 
-        let mut runtimes = self.get_runtime_list(&mut config)?;
+        let mut runtimes = self.get_runtime_list(&config)?;
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
@@ -94,8 +94,8 @@ impl Ls {
     fn verify_plugin(&self, config: &Config) -> Result<()> {
         match &self.plugin {
             Some(plugin_name) => {
-                let plugin = config.plugins.get(plugin_name);
-                if plugin.is_none() || !plugin.unwrap().is_installed() {
+                let plugin = config.get_or_create_plugin(plugin_name);
+                if !plugin.is_installed() {
                     return Err(PluginNotInstalled(plugin_name.clone()))?;
                 }
             }
@@ -209,12 +209,11 @@ impl Ls {
         Ok(())
     }
 
-    fn get_runtime_list(&self, config: &mut Config) -> Result<Vec<RuntimeRow>> {
+    fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
         let mut tsb = ToolsetBuilder::new().with_global_only(self.global);
 
         if let Some(plugin) = &self.plugin {
             tsb = tsb.with_tools(&[plugin]);
-            config.plugins.retain(|p, _| p == plugin);
         }
         let ts = tsb.build(config)?;
         let mut versions: HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)> = ts
@@ -233,6 +232,10 @@ impl Ls {
 
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
+            .filter(|((plugin_name, _), _)| match &self.plugin {
+                Some(p) => p.eq(plugin_name),
+                None => true,
+            })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
                 (
                     plugin_name.clone(),

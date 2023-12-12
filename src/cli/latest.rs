@@ -26,7 +26,7 @@ pub struct Latest {
 }
 
 impl Latest {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolVersionRequest::Version(_, version)) => Some(version),
@@ -37,7 +37,7 @@ impl Latest {
         };
 
         let plugin = config.get_or_create_plugin(&self.tool.plugin);
-        plugin.ensure_installed(&mut config, None, false)?;
+        plugin.ensure_installed(&config, None, false)?;
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(plugin.name(), &v)?);
         }

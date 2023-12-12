@@ -42,23 +42,23 @@ impl Install {
 
         Ok(())
     }
-    fn install_runtimes(&self, mut config: Config, runtimes: &[ToolArg]) -> Result<()> {
+    fn install_runtimes(&self, config: Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
-            .build(&mut config)?;
-        let tool_versions = self.get_requested_tool_versions(&mut config, &ts, runtimes, &mpr)?;
+            .build(&config)?;
+        let tool_versions = self.get_requested_tool_versions(&config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
             return Ok(());
         }
-        ts.install_versions(&mut config, tool_versions, &mpr, self.force)
+        ts.install_versions(&config, tool_versions, &mpr, self.force)
     }
 
     fn get_requested_tool_versions(
         &self,
-        config: &mut Config,
+        config: &Config,
         ts: &Toolset,
         runtimes: &[ToolArg],
         mpr: &MultiProgressReport,
@@ -102,10 +102,10 @@ impl Install {
         Ok(tool_versions)
     }
 
-    fn install_missing_runtimes(&self, mut config: Config) -> Result<()> {
+    fn install_missing_runtimes(&self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new()
             .with_latest_versions()
-            .build(&mut config)?;
+            .build(&config)?;
         let versions = ts
             .list_missing_versions(&config)
             .into_iter()
@@ -116,7 +116,7 @@ impl Install {
             return Ok(());
         }
         let mpr = MultiProgressReport::new(&config.settings);
-        ts.install_versions(&mut config, versions, &mpr, self.force)?;
+        ts.install_versions(&config, versions, &mpr, self.force)?;
         Ok(())
     }
 }

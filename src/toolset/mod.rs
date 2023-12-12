@@ -75,7 +75,7 @@ impl Toolset {
         self.versions = versions;
         self.source = other.source.clone();
     }
-    pub fn resolve(&mut self, config: &mut Config) {
+    pub fn resolve(&mut self, config: &Config) {
         self.list_missing_plugins(config);
         self.versions
             .iter_mut()
@@ -83,7 +83,7 @@ impl Toolset {
             .par_iter_mut()
             .for_each(|(_, v)| v.resolve(config, self.latest_versions));
     }
-    pub fn install_arg_versions(&mut self, config: &mut Config) -> Result<()> {
+    pub fn install_arg_versions(&mut self, config: &Config) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let versions = self
             .list_missing_versions(config)
@@ -94,7 +94,7 @@ impl Toolset {
         self.install_versions(config, versions, &mpr, false)
     }
 
-    pub fn list_missing_plugins(&self, config: &mut Config) -> Vec<PluginName> {
+    pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
         self.versions
             .keys()
             .map(|p| config.get_or_create_plugin(p))
@@ -105,7 +105,7 @@ impl Toolset {
 
     pub fn install_versions(
         &mut self,
-        config: &mut Config,
+        config: &Config,
         versions: Vec<ToolVersion>,
         mpr: &MultiProgressReport,
         force: bool,
@@ -130,7 +130,6 @@ impl Toolset {
             (0..config.settings.jobs)
                 .map(|_| {
                     let queue = queue.clone();
-                    let config = &*config;
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
@@ -167,7 +166,7 @@ impl Toolset {
         self.versions
             .iter()
             .map(|(p, tvl)| {
-                let p = config.plugins.get(p).unwrap();
+                let p = config.get_or_create_plugin(p);
                 (p, tvl)
             })
             .flat_map(|(p, tvl)| {
@@ -188,23 +187,24 @@ impl Toolset {
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let versions = config
-            .plugins
-            .values()
-            .collect_vec()
+            .list_plugins()
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_installed_versions()?;
-                Ok(versions.into_iter().map(|v| {
-                    match current_versions.get(&(p.name().into(), v.clone())) {
-                        Some((p, tv)) => (p.clone(), tv.clone()),
-                        None => {
-                            let tv = ToolVersionRequest::new(p.name().into(), &v)
-                                .resolve(config, p.clone(), Default::default(), false)
-                                .unwrap();
-                            (p.clone(), tv)
-                        }
-                    }
-                }))
+                Ok(versions
+                    .into_iter()
+                    .map(
+                        |v| match current_versions.get(&(p.name().into(), v.clone())) {
+                            Some((p, tv)) => (p.clone(), tv.clone()),
+                            None => {
+                                let tv = ToolVersionRequest::new(p.name().into(), &v)
+                                    .resolve(config, p.clone(), Default::default(), false)
+                                    .unwrap();
+                                (p.clone(), tv)
+                            }
+                        },
+                    )
+                    .collect_vec())
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -219,10 +219,7 @@ impl Toolset {
     ) -> Vec<(Arc<dyn Plugin>, &Vec<ToolVersion>)> {
         self.versions
             .iter()
-            .map(|(p, v)| {
-                let p = config.plugins.get(p).unwrap();
-                (p.clone(), &v.versions)
-            })
+            .map(|(p, v)| (config.get_or_create_plugin(p), &v.versions))
             .collect()
     }
     pub fn list_current_versions(&self, config: &Config) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
@@ -313,12 +310,11 @@ impl Toolset {
     pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
         self.list_current_installed_versions(config)
             .into_par_iter()
-            .flat_map(|(p, tv)| match p.list_bin_paths(config, self, &tv) {
-                Ok(paths) => paths,
-                Err(e) => {
-                    warn!("Error listing bin paths for {}: {:#}", tv, e);
+            .flat_map(|(p, tv)| {
+                p.list_bin_paths(config, self, &tv).unwrap_or_else(|e| {
+                    warn!("Error listing bin paths for {tv}: {e:#}");
                     Vec::new()
-                }
+                })
             })
             .collect()
     }

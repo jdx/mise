@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::errors::Error::{PluginNotInstalled, VersionNotInstalled};
+use crate::errors::Error::VersionNotInstalled;
 use crate::output::Output;
 use crate::toolset::ToolsetBuilder;
 
@@ -28,14 +28,14 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self, mut config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),
                 None => {
                     let ts = ToolsetBuilder::new()
                         .with_args(&[self.tool.clone()])
-                        .build(&mut config)?;
+                        .build(&config)?;
                     let v = ts
                         .versions
                         .get(&self.tool.plugin)
@@ -47,10 +47,7 @@ impl Where {
             _ => self.tool,
         };
 
-        let plugin = match config.plugins.get(&runtime.plugin) {
-            Some(plugin) => plugin,
-            None => Err(PluginNotInstalled(runtime.plugin.clone()))?,
-        };
+        let plugin = config.get_or_create_plugin(&runtime.plugin);
 
         match runtime
             .tvr

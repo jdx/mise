@@ -26,7 +26,7 @@ pub struct Uninstall {
 }
 
 impl Uninstall {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
         let runtimes = ToolArg::double_tool_condition(&self.tool);
 
         let mut tool_versions = vec![];
@@ -59,7 +59,7 @@ impl Uninstall {
                             vec![tvr.resolve(&config, tool.clone(), Default::default(), false)?]
                         }
                         None => {
-                            let ts = ToolsetBuilder::new().build(&mut config)?;
+                            let ts = ToolsetBuilder::new().build(&config)?;
                             match ts.versions.get(&a.plugin) {
                                 Some(tvl) => tvl.versions.clone(),
                                 None => bail!(
@@ -96,7 +96,7 @@ impl Uninstall {
             pr.finish_with_message("uninstalled");
         }
 
-        let ts = ToolsetBuilder::new().build(&mut config)?;
+        let ts = ToolsetBuilder::new().build(&config)?;
         shims::reshim(&config, &ts).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(&config)?;
 
