@@ -344,7 +344,7 @@ pub trait Plugin: Debug + Send + Sync {
     }
 
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("incomplete")
+        tv.cache_path().join("incomplete")
     }
 }
 
