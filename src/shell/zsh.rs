@@ -19,6 +19,7 @@ impl Shell for Zsh {
         }
         out.push_str(&formatdoc! {r#"
             export RTX_SHELL=zsh
+            export __RTX_ORIG_PATH="$PATH"
 
             rtx() {{
               local command

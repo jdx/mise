@@ -67,6 +67,7 @@ pub static RTX_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|
 /// used to prevent infinite loops
 pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
 pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
+pub static __RTX_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__RTX_ORIG_PATH").ok());
 pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS));
 /// essentially, this is whether we show spinners or build output on runtime install

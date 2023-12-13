@@ -20,6 +20,7 @@ impl Shell for Fish {
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
             set -gx RTX_SHELL fish
+            set -gx __RTX_ORIG_PATH $PATH
 
             function rtx
               if test (count $argv) -eq 0
