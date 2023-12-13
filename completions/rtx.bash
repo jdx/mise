@@ -919,7 +919,7 @@ _rtx() {
             return 0
             ;;
         rtx__cache__clear)
-            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help"
+            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

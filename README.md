@@ -135,7 +135,7 @@ v20.0.0
   - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
-  - [`rtx cache clear`](#rtx-cache-clear)
+  - [`rtx cache clear [PLUGIN]...`](#rtx-cache-clear-plugin)
   - [`rtx completion [SHELL]`](#rtx-completion-shell)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
@@ -1774,12 +1774,16 @@ List all the active runtime bin paths
 Usage: bin-paths
 ```
 
-### `rtx cache clear`
+### `rtx cache clear [PLUGIN]...`
 
 ```text
 Deletes all cache files in rtx
 
-Usage: cache clear
+Usage: cache clear [PLUGIN]...
+
+Arguments:
+  [PLUGIN]...
+          Plugin(s) to clear cache for e.g.: node, python
 ```
 
 ### `rtx completion [SHELL]`
