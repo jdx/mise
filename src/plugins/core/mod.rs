@@ -14,6 +14,7 @@ use crate::cache::CacheManager;
 use crate::env::RTX_NODE_BUILD;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
+use crate::plugins::core::erlang::ErlangPlugin;
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
@@ -26,6 +27,7 @@ use crate::{dirs, env};
 
 mod bun;
 mod deno;
+mod erlang;
 mod go;
 mod java;
 mod node;
@@ -54,8 +56,11 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 });
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Plugin>> =
-        vec![Arc::new(BunPlugin::new()), Arc::new(DenoPlugin::new())];
+    let plugins: Vec<Arc<dyn Plugin>> = vec![
+        Arc::new(BunPlugin::new()),
+        Arc::new(DenoPlugin::new()),
+        Arc::new(ErlangPlugin::new()),
+    ];
     plugins
         .into_iter()
         .map(|plugin| (plugin.name().to_string(), plugin))
