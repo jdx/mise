@@ -1,0 +1,5 @@
+---
+source: src/cli/cache/clear.rs
+expression: output
+---
+rtx cache cleared for tiny

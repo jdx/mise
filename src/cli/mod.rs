@@ -304,6 +304,18 @@ pub mod tests {
     }
 
     #[macro_export]
+    macro_rules! assert_cli_snapshot_stderr {
+        ($($args:expr),+) => {{
+            let args = &vec!["rtx".into(), $($args.into()),+];
+            let output = $crate::cli::tests::cli_run(args).unwrap().stderr.content;
+            let output = console::strip_ansi_codes(&output.trim()).to_string();
+            let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
+            let output = $crate::test::replace_path(&output);
+            insta::assert_snapshot!(output);
+        }};
+    }
+
+    #[macro_export]
     macro_rules! assert_cli_err {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];

@@ -77,6 +77,7 @@ set -l others clear
 complete -xc rtx -n "$fssf cache; and not $fssf $others" -a clear -d 'Deletes all cache files in rtx'
 
 # cache clear
+complete -xc rtx -n "$fssf cache; and $fssf clear" -a "(__rtx_plugins)" -d 'Plugin(s) to clear cache for e.g.: node, python'
 
 
 # completion
