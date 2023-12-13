@@ -45,6 +45,22 @@ function __rtx_installed_tool_versions
         echo $tv
     end
 end
+function __rtx_aliases
+    if test -z "$__rtx_aliases_cache"
+        set -g __rtx_aliases_cache (rtx alias ls | awk '{{print $2}}')
+    end
+    for a in $__rtx_aliases_cache
+        echo $a
+    end
+end
+function __rtx_settings
+    if test -z "$__rtx_settings_cache"
+        set -g __rtx_settings_cache (rtx settings ls | awk '{{print $1}}')
+    end
+    for s in $__rtx_settings_cache
+        echo $s
+    end
+end
 
 # vim: noet ci pi sts=0 sw=4 ts=4
 "#}
@@ -103,7 +119,8 @@ fn render_completer(a: &Arg) -> Option<String> {
             "installed_tool" => Some("(__rtx_installed_tool_versions)".to_string()),
             "plugin" => Some("(__rtx_plugins)".to_string()),
             "new_plugin" => Some("(__rtx_all_plugins)".to_string()),
-            //"alias" => Some("(__rtx_aliases)".to_string()),
+            "alias" => Some("(__rtx_aliases)".to_string()),
+            "setting" => Some("(__rtx_settings)".to_string()),
             //"prefix" => Some("(__rtx_prefixes)".to_string()),
             _ => None,
         },

@@ -602,7 +602,7 @@ return ret
 (( $+functions[__rtx_settings_get_cmd] )) ||
 __rtx_settings_get_cmd() {
   _arguments -s -S \
-    ':key:' \
+    ':setting:__rtx_settings' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
@@ -621,7 +621,7 @@ __rtx_settings_ls_cmd() {
 (( $+functions[__rtx_settings_set_cmd] )) ||
 __rtx_settings_set_cmd() {
   _arguments -s -S \
-    ':key:' \
+    ':setting:__rtx_settings' \
     ':value:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
@@ -632,7 +632,7 @@ __rtx_settings_set_cmd() {
 (( $+functions[__rtx_settings_unset_cmd] )) ||
 __rtx_settings_unset_cmd() {
   _arguments -s -S \
-    ':key:' \
+    ':setting:__rtx_settings' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
@@ -910,6 +910,11 @@ __rtx_all_plugins() {
 __rtx_aliases() {
   local -a aliases; aliases=($(rtx aliases ls ${words[CURRENT-1]} | awk '{print $2}'))
   _describe -t aliases 'alias' aliases "$@"
+}
+(( $+functions[__rtx_settings] )) ||
+__rtx_settings() {
+  local -a settings; settings=($(rtx settings ls | awk '{print $1}'))
+  _describe -t settings 'setting' settings "$@"
 }
 (( $+functions[__rtx_prefixes] )) ||
 __rtx_prefixes() {
