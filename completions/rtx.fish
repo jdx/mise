@@ -1,11 +1,11 @@
 set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
-complete -xc rtx -s j -l jobs -d 'Number of plugins and runtimes to install in parallel'
-complete -xc rtx -s q -l quiet -d 'Suppress output'
-complete -xc rtx -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.'
-complete -xc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
-complete -xc rtx -s y -l yes -d 'Answer yes to all prompts'
+complete -kxc rtx -s j -l jobs -d 'Number of plugins and runtimes to install in parallel'
+complete -kxc rtx -s q -l quiet -d 'Suppress output'
+complete -kxc rtx -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.'
+complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
+complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
 complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell'
 complete -xc rtx -n "not $fssf $others" -a alias -d 'Manage aliases'
@@ -42,11 +42,11 @@ complete -xc rtx -n "not $fssf $others" -a where -d 'Display the installation pa
 complete -xc rtx -n "not $fssf $others" -a which -d 'Shows the path that a bin name points to'
 
 # activate
-complete -xc rtx -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type to generate the script for'
-complete -xc rtx -n "$fssf activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
+complete -kxc rtx -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type to generate the script for'
+complete -kxc rtx -n "$fssf activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 
 # alias
-complete -xc rtx -n "$fssf alias" -s p -l plugin -a "(__rtx_plugins)" -d 'filter aliases by plugin'
+complete -kxc rtx -n "$fssf alias" -s p -l plugin -a "(__rtx_plugins)" -d 'filter aliases by plugin'
 set -l others get ls set unset
 complete -xc rtx -n "$fssf alias; and not $fssf $others" -a get -d 'Show an alias for a plugin'
 complete -xc rtx -n "$fssf alias; and not $fssf $others" -a ls -d 'List aliases'
@@ -54,20 +54,20 @@ complete -xc rtx -n "$fssf alias; and not $fssf $others" -a set -d 'Add/update a
 complete -xc rtx -n "$fssf alias; and not $fssf $others" -a unset -d 'Clears an alias for a plugin'
 
 # alias get
-complete -xc rtx -n "$fssf alias; and $fssf get" -d 'The alias to show'
-complete -xc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_plugins)" -d 'The plugin to show the alias for'
+complete -kxc rtx -n "$fssf alias; and $fssf get" -d 'The alias to show'
+complete -kxc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_plugins)" -d 'The plugin to show the alias for'
 
 # alias ls
-complete -xc rtx -n "$fssf alias; and $fssf ls" -a "(__rtx_plugins)" -d 'Show aliases for <PLUGIN>'
+complete -kxc rtx -n "$fssf alias; and $fssf ls" -a "(__rtx_plugins)" -d 'Show aliases for <PLUGIN>'
 
 # alias set
-complete -xc rtx -n "$fssf alias; and $fssf set" -d 'The alias to set'
-complete -xc rtx -n "$fssf alias; and $fssf set" -a "(__rtx_plugins)" -d 'The plugin to set the alias for'
-complete -xc rtx -n "$fssf alias; and $fssf set" -d 'The value to set the alias to'
+complete -kxc rtx -n "$fssf alias; and $fssf set" -d 'The alias to set'
+complete -kxc rtx -n "$fssf alias; and $fssf set" -a "(__rtx_plugins)" -d 'The plugin to set the alias for'
+complete -kxc rtx -n "$fssf alias; and $fssf set" -d 'The value to set the alias to'
 
 # alias unset
-complete -xc rtx -n "$fssf alias; and $fssf unset" -d 'The alias to remove'
-complete -xc rtx -n "$fssf alias; and $fssf unset" -a "(__rtx_plugins)" -d 'The plugin to remove the alias from'
+complete -kxc rtx -n "$fssf alias; and $fssf unset" -d 'The alias to remove'
+complete -kxc rtx -n "$fssf alias; and $fssf unset" -a "(__rtx_plugins)" -d 'The plugin to remove the alias from'
 
 
 # bin-paths
@@ -77,14 +77,14 @@ set -l others clear
 complete -xc rtx -n "$fssf cache; and not $fssf $others" -a clear -d 'Deletes all cache files in rtx'
 
 # cache clear
-complete -xc rtx -n "$fssf cache; and $fssf clear" -a "(__rtx_plugins)" -d 'Plugin(s) to clear cache for e.g.: node, python'
+complete -kxc rtx -n "$fssf cache; and $fssf clear" -a "(__rtx_plugins)" -d 'Plugin(s) to clear cache for e.g.: node, python'
 
 
 # completion
-complete -xc rtx -n "$fssf completion" -a "bash fish zsh" -d 'Shell type to generate completions for'
+complete -kxc rtx -n "$fssf completion" -a "bash fish zsh" -d 'Shell type to generate completions for'
 
 # current
-complete -xc rtx -n "$fssf current" -a "(__rtx_plugins)" -d 'Plugin to show versions of e.g.: ruby, node'
+complete -kxc rtx -n "$fssf current" -a "(__rtx_plugins)" -d 'Plugin to show versions of e.g.: ruby, node'
 
 # deactivate
 
@@ -98,61 +98,61 @@ complete -xc rtx -n "$fssf direnv; and not $fssf $others" -a activate -d 'Output
 # doctor
 
 # env
-complete -xc rtx -n "$fssf env" -s J -l json -d 'Output in JSON format'
-complete -xc rtx -n "$fssf env" -s s -l shell -a "bash fish nu xonsh zsh" -d 'Shell type to generate environment variables for'
-complete -xc rtx -n "$fssf env" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
+complete -kxc rtx -n "$fssf env" -s J -l json -d 'Output in JSON format'
+complete -kxc rtx -n "$fssf env" -s s -l shell -a "bash fish nu xonsh zsh" -d 'Shell type to generate environment variables for'
+complete -kxc rtx -n "$fssf env" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
 
 # env-vars
-complete -xc rtx -n "$fssf env-vars" -d 'Environment variable(s) to set'
-complete -xc rtx -n "$fssf env-vars" -l file -a "(__fish_complete_path)" -d 'The TOML file to update'
-complete -xc rtx -n "$fssf env-vars" -l remove -d 'Remove the environment variable from config file'
+complete -kxc rtx -n "$fssf env-vars" -d 'Environment variable(s) to set'
+complete -kxc rtx -n "$fssf env-vars" -l file -a "(__fish_complete_path)" -d 'The TOML file to update'
+complete -kxc rtx -n "$fssf env-vars" -l remove -d 'Remove the environment variable from config file'
 
 # exec
-complete -xc rtx -n "$fssf exec" -s c -l command -d 'Command string to execute'
-complete -xc rtx -n "$fssf exec" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
-complete -xc rtx -n "$fssf exec" -d 'Command string to execute (same as --command)'
-complete -xc rtx -n "$fssf exec" -a "(__rtx_tool_versions)" -d 'Tool(s) to start e.g.: node@20 python@3.10'
+complete -kxc rtx -n "$fssf exec" -s c -l command -d 'Command string to execute'
+complete -kxc rtx -n "$fssf exec" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
+complete -kxc rtx -n "$fssf exec" -d 'Command string to execute (same as --command)'
+complete -kxc rtx -n "$fssf exec" -a "(__rtx_tool_versions)" -d 'Tool(s) to start e.g.: node@20 python@3.10'
 
 # implode
-complete -xc rtx -n "$fssf implode" -l config -d 'Also remove config directory'
-complete -xc rtx -n "$fssf implode" -s n -l dry-run -d 'List directories that would be removed without actually removing them'
+complete -kxc rtx -n "$fssf implode" -l config -d 'Also remove config directory'
+complete -kxc rtx -n "$fssf implode" -s n -l dry-run -d 'List directories that would be removed without actually removing them'
 
 # install
-complete -xc rtx -n "$fssf install" -s f -l force -d 'Force reinstall even if already installed'
-complete -xc rtx -n "$fssf install" -a "(__rtx_tool_versions)" -d 'Tool(s) to install e.g.: node@20'
-complete -xc rtx -n "$fssf install" -s v -l verbose -d 'Show installation output'
+complete -kxc rtx -n "$fssf install" -s f -l force -d 'Force reinstall even if already installed'
+complete -kxc rtx -n "$fssf install" -a "(__rtx_tool_versions)" -d 'Tool(s) to install e.g.: node@20'
+complete -kxc rtx -n "$fssf install" -s v -l verbose -d 'Show installation output'
 
 # latest
-complete -xc rtx -n "$fssf latest" -s i -l installed -d 'Show latest installed instead of available version'
-complete -xc rtx -n "$fssf latest" -a "(__rtx_tool_versions)" -d 'Tool to get the latest version of'
+complete -kxc rtx -n "$fssf latest" -s i -l installed -d 'Show latest installed instead of available version'
+complete -kxc rtx -n "$fssf latest" -a "(__rtx_tool_versions)" -d 'Tool to get the latest version of'
 
 # link
-complete -xc rtx -n "$fssf link" -s f -l force -d 'Overwrite an existing tool version if it exists'
-complete -xc rtx -n "$fssf link" -a "(__fish_complete_directories)" -d 'The local path to the tool version'
-complete -xc rtx -n "$fssf link" -a "(__rtx_tool_versions)" -d 'Tool name and version to create a symlink for'
+complete -kxc rtx -n "$fssf link" -s f -l force -d 'Overwrite an existing tool version if it exists'
+complete -kxc rtx -n "$fssf link" -a "(__fish_complete_directories)" -d 'The local path to the tool version'
+complete -kxc rtx -n "$fssf link" -a "(__rtx_tool_versions)" -d 'Tool name and version to create a symlink for'
 
 # ls
-complete -xc rtx -n "$fssf ls" -s c -l current -d 'Only show tool versions currently specified in a .tool-versions/.rtx.toml'
-complete -xc rtx -n "$fssf ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.rtx.toml'
-complete -xc rtx -n "$fssf ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
-complete -xc rtx -n "$fssf ls" -s J -l json -d 'Output in json format'
-complete -xc rtx -n "$fssf ls" -s m -l missing -d 'Display missing tool versions'
-complete -xc rtx -n "$fssf ls" -a "(__rtx_plugins)" -d 'Only show tool versions from [PLUGIN]'
-complete -xc rtx -n "$fssf ls" -l prefix -d 'Display versions matching this prefix'
+complete -kxc rtx -n "$fssf ls" -s c -l current -d 'Only show tool versions currently specified in a .tool-versions/.rtx.toml'
+complete -kxc rtx -n "$fssf ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.rtx.toml'
+complete -kxc rtx -n "$fssf ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
+complete -kxc rtx -n "$fssf ls" -s J -l json -d 'Output in json format'
+complete -kxc rtx -n "$fssf ls" -s m -l missing -d 'Display missing tool versions'
+complete -kxc rtx -n "$fssf ls" -a "(__rtx_plugins)" -d 'Only show tool versions from [PLUGIN]'
+complete -kxc rtx -n "$fssf ls" -l prefix -d 'Display versions matching this prefix'
 
 # ls-remote
-complete -xc rtx -n "$fssf ls-remote" -l all -d 'Show all installed plugins and versions'
-complete -xc rtx -n "$fssf ls-remote" -a "(__rtx_plugins)" -d 'Plugin to get versions for'
-complete -xc rtx -n "$fssf ls-remote" -d 'The version prefix to use when querying the latest version'
+complete -kxc rtx -n "$fssf ls-remote" -l all -d 'Show all installed plugins and versions'
+complete -kxc rtx -n "$fssf ls-remote" -a "(__rtx_plugins)" -d 'Plugin to get versions for'
+complete -kxc rtx -n "$fssf ls-remote" -d 'The version prefix to use when querying the latest version'
 
 # outdated
-complete -xc rtx -n "$fssf outdated" -a "(__rtx_tool_versions)" -d 'Tool(s) to show outdated versions for'
+complete -kxc rtx -n "$fssf outdated" -a "(__rtx_tool_versions)" -d 'Tool(s) to show outdated versions for'
 
 # plugins
-complete -xc rtx -n "$fssf plugins" -s c -l core -d 'The built-in plugins only'
-complete -xc rtx -n "$fssf plugins" -l refs -d 'show the git refs for each plugin'
-complete -xc rtx -n "$fssf plugins" -s u -l urls -d 'show the git url for each plugin'
-complete -xc rtx -n "$fssf plugins" -l user -d 'List installed plugins'
+complete -kxc rtx -n "$fssf plugins" -s c -l core -d 'The built-in plugins only'
+complete -kxc rtx -n "$fssf plugins" -l refs -d 'show the git refs for each plugin'
+complete -kxc rtx -n "$fssf plugins" -s u -l urls -d 'show the git url for each plugin'
+complete -kxc rtx -n "$fssf plugins" -l user -d 'List installed plugins'
 set -l others install link ls ls-remote uninstall update
 complete -xc rtx -n "$fssf plugins; and not $fssf $others" -a install -d 'Install a plugin'
 complete -xc rtx -n "$fssf plugins; and not $fssf $others" -a link -d 'Symlinks a plugin into rtx'
@@ -162,47 +162,47 @@ complete -xc rtx -n "$fssf plugins; and not $fssf $others" -a uninstall -d 'Remo
 complete -xc rtx -n "$fssf plugins; and not $fssf $others" -a update -d 'Updates a plugin to the latest version'
 
 # plugins install
-complete -xc rtx -n "$fssf plugins; and $fssf install" -s a -l all -d 'Install all missing plugins'
-complete -xc rtx -n "$fssf plugins; and $fssf install" -s f -l force -d 'Reinstall even if plugin exists'
-complete -xc rtx -n "$fssf plugins; and $fssf install" -d 'The git url of the plugin'
-complete -xc rtx -n "$fssf plugins; and $fssf install" -a "(__rtx_all_plugins)" -d 'The name of the plugin to install'
-complete -xc rtx -n "$fssf plugins; and $fssf install" -s v -l verbose -d 'Show installation output'
+complete -kxc rtx -n "$fssf plugins; and $fssf install" -s a -l all -d 'Install all missing plugins'
+complete -kxc rtx -n "$fssf plugins; and $fssf install" -s f -l force -d 'Reinstall even if plugin exists'
+complete -kxc rtx -n "$fssf plugins; and $fssf install" -d 'The git url of the plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf install" -a "(__rtx_all_plugins)" -d 'The name of the plugin to install'
+complete -kxc rtx -n "$fssf plugins; and $fssf install" -s v -l verbose -d 'Show installation output'
 
 # plugins link
-complete -xc rtx -n "$fssf plugins; and $fssf link" -s f -l force -d 'Overwrite existing plugin'
-complete -xc rtx -n "$fssf plugins; and $fssf link" -d 'The name of the plugin'
-complete -xc rtx -n "$fssf plugins; and $fssf link" -a "(__fish_complete_directories)" -d 'The local path to the plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf link" -s f -l force -d 'Overwrite existing plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf link" -d 'The name of the plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf link" -a "(__fish_complete_directories)" -d 'The local path to the plugin'
 
 # plugins ls
-complete -xc rtx -n "$fssf plugins; and $fssf ls" -s c -l core -d 'The built-in plugins only'
-complete -xc rtx -n "$fssf plugins; and $fssf ls" -l refs -d 'Show the git refs for each plugin'
-complete -xc rtx -n "$fssf plugins; and $fssf ls" -s u -l urls -d 'Show the git url for each plugin'
-complete -xc rtx -n "$fssf plugins; and $fssf ls" -l user -d 'List installed plugins'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls" -s c -l core -d 'The built-in plugins only'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls" -l refs -d 'Show the git refs for each plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls" -s u -l urls -d 'Show the git url for each plugin'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls" -l user -d 'List installed plugins'
 
 # plugins ls-remote
-complete -xc rtx -n "$fssf plugins; and $fssf ls-remote" -l only-names -d 'Only show the name of each plugin by default it will show a "*" next to installed plugins'
-complete -xc rtx -n "$fssf plugins; and $fssf ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls-remote" -l only-names -d 'Only show the name of each plugin by default it will show a "*" next to installed plugins'
+complete -kxc rtx -n "$fssf plugins; and $fssf ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git'
 
 # plugins uninstall
-complete -xc rtx -n "$fssf plugins; and $fssf uninstall" -s a -l all -d 'Remove all plugins'
-complete -xc rtx -n "$fssf plugins; and $fssf uninstall" -a "(__rtx_plugins)" -d 'Plugin(s) to remove'
-complete -xc rtx -n "$fssf plugins; and $fssf uninstall" -s p -l purge -d 'Also remove the plugin'\''s installs, downloads, and cache'
+complete -kxc rtx -n "$fssf plugins; and $fssf uninstall" -s a -l all -d 'Remove all plugins'
+complete -kxc rtx -n "$fssf plugins; and $fssf uninstall" -a "(__rtx_plugins)" -d 'Plugin(s) to remove'
+complete -kxc rtx -n "$fssf plugins; and $fssf uninstall" -s p -l purge -d 'Also remove the plugin'\''s installs, downloads, and cache'
 
 # plugins update
-complete -xc rtx -n "$fssf plugins; and $fssf update" -a "(__rtx_plugins)" -d 'Plugin(s) to update'
+complete -kxc rtx -n "$fssf plugins; and $fssf update" -a "(__rtx_plugins)" -d 'Plugin(s) to update'
 
 
 # prune
-complete -xc rtx -n "$fssf prune" -s n -l dry-run -d 'Do not actually delete anything'
-complete -xc rtx -n "$fssf prune" -a "(__rtx_plugins)" -d 'Prune only versions from these plugins'
+complete -kxc rtx -n "$fssf prune" -s n -l dry-run -d 'Do not actually delete anything'
+complete -kxc rtx -n "$fssf prune" -a "(__rtx_plugins)" -d 'Prune only versions from these plugins'
 
 # reshim
 
 # self-update
-complete -xc rtx -n "$fssf self-update" -s f -l force -d 'Update even if already up to date'
-complete -xc rtx -n "$fssf self-update" -l no-plugins -d 'Disable auto-updating plugins'
-complete -xc rtx -n "$fssf self-update" -d 'Update to a specific version'
-complete -xc rtx -n "$fssf self-update" -s y -l yes -d 'Skip confirmation prompt'
+complete -kxc rtx -n "$fssf self-update" -s f -l force -d 'Update even if already up to date'
+complete -kxc rtx -n "$fssf self-update" -l no-plugins -d 'Disable auto-updating plugins'
+complete -kxc rtx -n "$fssf self-update" -d 'Update to a specific version'
+complete -kxc rtx -n "$fssf self-update" -s y -l yes -d 'Skip confirmation prompt'
 
 # settings
 set -l others get ls set unset
@@ -212,21 +212,21 @@ complete -xc rtx -n "$fssf settings; and not $fssf $others" -a set -d 'Add/updat
 complete -xc rtx -n "$fssf settings; and not $fssf $others" -a unset -d 'Clears a setting'
 
 # settings get
-complete -xc rtx -n "$fssf settings; and $fssf get" -d 'The setting to show'
+complete -kxc rtx -n "$fssf settings; and $fssf get" -d 'The setting to show'
 
 # settings ls
 
 # settings set
-complete -xc rtx -n "$fssf settings; and $fssf set" -d 'The setting to set'
-complete -xc rtx -n "$fssf settings; and $fssf set" -d 'The value to set'
+complete -kxc rtx -n "$fssf settings; and $fssf set" -d 'The setting to set'
+complete -kxc rtx -n "$fssf settings; and $fssf set" -d 'The value to set'
 
 # settings unset
-complete -xc rtx -n "$fssf settings; and $fssf unset" -d 'The setting to remove'
+complete -kxc rtx -n "$fssf settings; and $fssf unset" -d 'The setting to remove'
 
 
 # shell
-complete -xc rtx -n "$fssf shell" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
-complete -xc rtx -n "$fssf shell" -s u -l unset -d 'Removes a previously set version'
+complete -kxc rtx -n "$fssf shell" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
+complete -kxc rtx -n "$fssf shell" -s u -l unset -d 'Removes a previously set version'
 
 # sync
 set -l others node python
@@ -234,46 +234,46 @@ complete -xc rtx -n "$fssf sync; and not $fssf $others" -a node -d 'Symlinks all
 complete -xc rtx -n "$fssf sync; and not $fssf $others" -a python -d 'Symlinks all tool versions from an external tool into rtx'
 
 # sync node
-complete -xc rtx -n "$fssf sync; and $fssf node" -l brew -d 'Get tool versions from Homebrew'
-complete -xc rtx -n "$fssf sync; and $fssf node" -l nodenv -d 'Get tool versions from nodenv'
-complete -xc rtx -n "$fssf sync; and $fssf node" -l nvm -d 'Get tool versions from nvm'
+complete -kxc rtx -n "$fssf sync; and $fssf node" -l brew -d 'Get tool versions from Homebrew'
+complete -kxc rtx -n "$fssf sync; and $fssf node" -l nodenv -d 'Get tool versions from nodenv'
+complete -kxc rtx -n "$fssf sync; and $fssf node" -l nvm -d 'Get tool versions from nvm'
 
 # sync python
-complete -xc rtx -n "$fssf sync; and $fssf python" -l pyenv -d 'Get tool versions from pyenv'
+complete -kxc rtx -n "$fssf sync; and $fssf python" -l pyenv -d 'Get tool versions from pyenv'
 
 
 # trust
-complete -xc rtx -n "$fssf trust" -a "(__fish_complete_path)" -d 'The config file to trust'
-complete -xc rtx -n "$fssf trust" -l untrust -d 'No longer trust this config'
+complete -kxc rtx -n "$fssf trust" -a "(__fish_complete_path)" -d 'The config file to trust'
+complete -kxc rtx -n "$fssf trust" -l untrust -d 'No longer trust this config'
 
 # uninstall
-complete -xc rtx -n "$fssf uninstall" -s a -l all -d 'Delete all installed versions'
-complete -xc rtx -n "$fssf uninstall" -s n -l dry-run -d 'Do not actually delete anything'
-complete -xc rtx -n "$fssf uninstall" -a "(__rtx_installed_tool_versions)" -d 'Tool(s) to remove'
+complete -kxc rtx -n "$fssf uninstall" -s a -l all -d 'Delete all installed versions'
+complete -kxc rtx -n "$fssf uninstall" -s n -l dry-run -d 'Do not actually delete anything'
+complete -kxc rtx -n "$fssf uninstall" -a "(__rtx_installed_tool_versions)" -d 'Tool(s) to remove'
 
 # upgrade
-complete -xc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
-complete -xc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'
+complete -kxc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
+complete -kxc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'
 
 # use
-complete -xc rtx -n "$fssf use" -s e -l env -d 'Modify an environment-specific config file like .rtx.<env>.toml'
-complete -xc rtx -n "$fssf use" -l fuzzy -d 'Save fuzzy version to config file'
-complete -xc rtx -n "$fssf use" -s g -l global -d 'Use the global config file (~/.config/rtx/config.toml) instead of the local one'
-complete -xc rtx -n "$fssf use" -s p -l path -a "(__fish_complete_path)" -d 'Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions'
-complete -xc rtx -n "$fssf use" -l pin -d 'Save exact version to config file'
-complete -xc rtx -n "$fssf use" -l remove -d 'Remove the tool(s) from config file'
-complete -xc rtx -n "$fssf use" -a "(__rtx_tool_versions)" -d 'Tool(s) to add to config file'
+complete -kxc rtx -n "$fssf use" -s e -l env -d 'Modify an environment-specific config file like .rtx.<env>.toml'
+complete -kxc rtx -n "$fssf use" -l fuzzy -d 'Save fuzzy version to config file'
+complete -kxc rtx -n "$fssf use" -s g -l global -d 'Use the global config file (~/.config/rtx/config.toml) instead of the local one'
+complete -kxc rtx -n "$fssf use" -s p -l path -a "(__fish_complete_path)" -d 'Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions'
+complete -kxc rtx -n "$fssf use" -l pin -d 'Save exact version to config file'
+complete -kxc rtx -n "$fssf use" -l remove -d 'Remove the tool(s) from config file'
+complete -kxc rtx -n "$fssf use" -a "(__rtx_tool_versions)" -d 'Tool(s) to add to config file'
 
 # version
 
 # where
-complete -xc rtx -n "$fssf where" -a "(__rtx_tool_versions)" -d 'Tool(s) to look up'
+complete -kxc rtx -n "$fssf where" -a "(__rtx_tool_versions)" -d 'Tool(s) to look up'
 
 # which
-complete -xc rtx -n "$fssf which" -d 'The bin name to look up'
-complete -xc rtx -n "$fssf which" -l plugin -a "(__rtx_plugins)" -d 'Show the plugin name instead of the path'
-complete -xc rtx -n "$fssf which" -s t -l tool -a "(__rtx_tool_versions)" -d 'Use a specific tool@version'
-complete -xc rtx -n "$fssf which" -l version -d 'Show the version instead of the path'
+complete -kxc rtx -n "$fssf which" -d 'The bin name to look up'
+complete -kxc rtx -n "$fssf which" -l plugin -a "(__rtx_plugins)" -d 'Show the plugin name instead of the path'
+complete -kxc rtx -n "$fssf which" -s t -l tool -a "(__rtx_tool_versions)" -d 'Use a specific tool@version'
+complete -kxc rtx -n "$fssf which" -l version -d 'Show the version instead of the path'
 
 
 
@@ -295,7 +295,7 @@ function __rtx_plugins
 end
 function __rtx_tool_versions
     if test -z "$__rtx_tool_versions_cache"
-        set -g __rtx_tool_versions_cache (rtx ls-remote --all)
+        set -g __rtx_tool_versions_cache (rtx plugins --core --user) (rtx ls-remote --all | tac)
     end
     for tv in $__rtx_tool_versions_cache
         echo $tv
