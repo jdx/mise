@@ -37,6 +37,14 @@ function __rtx_tool_versions
         echo $tv
     end
 end
+function __rtx_installed_tool_versions
+    if test -z "$__rtx_installed_tool_versions_cache"
+        set -g __rtx_installed_tool_versions_cache (rtx ls --installed | awk '{{print $1 "@" $2}}')
+    end
+    for tv in $__rtx_installed_tool_versions_cache
+        echo $tv
+    end
+end
 
 # vim: noet ci pi sts=0 sw=4 ts=4
 "#}
@@ -92,6 +100,7 @@ fn render_completer(a: &Arg) -> Option<String> {
         ValueHint::AnyPath => Some("(__fish_complete_path)".to_string()),
         _ => match a.get_id().as_str() {
             "tool" => Some("(__rtx_tool_versions)".to_string()),
+            "installed_tool" => Some("(__rtx_installed_tool_versions)".to_string()),
             "plugin" => Some("(__rtx_plugins)".to_string()),
             "new_plugin" => Some("(__rtx_all_plugins)".to_string()),
             //"alias" => Some("(__rtx_aliases)".to_string()),
