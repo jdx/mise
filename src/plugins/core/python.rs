@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use itertools::Itertools;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -72,7 +73,12 @@ impl PythonPlugin {
         let python_build_bin = self.python_build_bin();
         CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(python_build_bin, "--definitions").read()?;
-            Ok(output.split('\n').map(|s| s.to_string()).collect())
+            let versions = output
+                .split('\n')
+                .map(|s| s.to_string())
+                .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(v))
+                .collect();
+            Ok(versions)
         })
     }
 
