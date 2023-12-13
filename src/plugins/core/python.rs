@@ -175,7 +175,7 @@ impl Plugin for PythonPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        self.install_python_build()?;
+        self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
