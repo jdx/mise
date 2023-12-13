@@ -9,7 +9,7 @@ use crate::build_time::built_info;
 use crate::cli::version::VERSION;
 use crate::config::Config;
 use crate::git::Git;
-use crate::output::Output;
+
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
@@ -22,27 +22,21 @@ use crate::{duration, env};
 pub struct Doctor {}
 
 impl Doctor {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
-        rtxprintln!(out, "{}", rtx_version());
-        rtxprintln!(out, "{}", build_info());
-        rtxprintln!(out, "{}", shell());
-        rtxprintln!(out, "{}", rtx_data_dir());
-        rtxprintln!(out, "{}", rtx_env_vars());
+        rtxprintln!("{}", rtx_version());
+        rtxprintln!("{}", build_info());
+        rtxprintln!("{}", shell());
+        rtxprintln!("{}", rtx_data_dir());
+        rtxprintln!("{}", rtx_env_vars());
         rtxprintln!(
-            out,
             "{}\n{}\n",
             style("settings:").bold(),
             indent(config.settings.to_string())
         );
-        rtxprintln!(out, "{}", render_config_files(&config));
-        rtxprintln!(out, "{}", render_plugins(&config));
-        rtxprintln!(
-            out,
-            "{}\n{}\n",
-            style("toolset:").bold(),
-            indent(ts.to_string())
-        );
+        rtxprintln!("{}", render_config_files(&config));
+        rtxprintln!("{}", render_plugins(&config));
+        rtxprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()));
 
         let mut checks = Vec::new();
         for plugin in config.list_plugins() {
@@ -73,13 +67,13 @@ impl Doctor {
         }
 
         if checks.is_empty() {
-            rtxprintln!(out, "No problems found");
+            rtxprintln!("No problems found");
         } else {
             let checks_plural = if checks.len() == 1 { "" } else { "s" };
             let summary = format!("{} problem{checks_plural} found:", checks.len());
-            rtxprintln!(out, "{}", style(summary).red().bold());
+            rtxprintln!("{}", style(summary).red().bold());
             for check in &checks {
-                rtxprintln!(out, "{}\n", check);
+                rtxprintln!("{}\n", check);
             }
             exit(1);
         }

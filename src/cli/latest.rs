@@ -3,7 +3,7 @@ use console::style;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::toolset::ToolVersionRequest;
 
 /// Gets the latest available version for a plugin
@@ -26,7 +26,7 @@ pub struct Latest {
 }
 
 impl Latest {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolVersionRequest::Version(_, version)) => Some(version),
@@ -48,7 +48,7 @@ impl Latest {
             plugin.latest_version(&config.settings, prefix)?
         };
         if let Some(version) = latest_version {
-            rtxprintln!(out, "{}", version);
+            rtxprintln!("{}", version);
         }
         Ok(())
     }
@@ -101,6 +101,6 @@ mod tests {
     #[test]
     fn test_latest_alias() {
         let stdout = assert_cli!("latest", "tiny@lts");
-        assert_str_eq!(stdout, "3.1.0\n");
+        assert_str_eq!(stdout, "3.1.0");
     }
 }

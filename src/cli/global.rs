@@ -5,7 +5,6 @@ use color_eyre::eyre::Result;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::local::local;
 use crate::config::Config;
-use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{dirs, env};
 
@@ -49,10 +48,9 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         local(
             config,
-            out,
             &global_file(),
             self.tool,
             self.remove,

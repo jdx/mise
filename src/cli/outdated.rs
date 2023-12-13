@@ -6,7 +6,6 @@ use console::{pad_str, style, Alignment};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 
@@ -22,7 +21,7 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
@@ -35,13 +34,13 @@ impl Outdated {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.display(outdated, out);
+            self.display(outdated);
         }
 
         Ok(())
     }
 
-    fn display(&self, outdated: OutputVec, out: &mut Output) {
+    fn display(&self, outdated: OutputVec) {
         // TODO: make a generic table printer in src/ui/table
         let plugins = outdated
             .iter()
@@ -90,7 +89,6 @@ impl Outdated {
         let pad_requested = |s| pad_str(s, requested_width, Alignment::Left, None);
         let pad_current = |s| pad_str(s, current_width, Alignment::Left, None);
         rtxprintln!(
-            out,
             "{} {} {} {}",
             style(pad_plugin("Tool")).dim(),
             style(pad_requested("Requested")).dim(),
@@ -99,7 +97,6 @@ impl Outdated {
         );
         for i in 0..outdated.len() {
             rtxprintln!(
-                out,
                 "{} {} {} {}",
                 pad_plugin(plugins[i]),
                 pad_requested(&requests[i]),

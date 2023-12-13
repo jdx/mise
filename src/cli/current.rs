@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::{unalias_plugin, Plugin};
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -20,7 +20,7 @@ pub struct Current {
 }
 
 impl Current {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(plugin_name) => {
@@ -29,19 +29,13 @@ impl Current {
                 if !plugin.is_installed() {
                     bail!("Plugin {} is not installed", plugin_name);
                 }
-                self.one(&config, ts, out, plugin.clone())
+                self.one(&config, ts, plugin.clone())
             }
-            None => self.all(&config, ts, out),
+            None => self.all(&config, ts),
         }
     }
 
-    fn one(
-        &self,
-        config: &Config,
-        ts: Toolset,
-        out: &mut Output,
-        tool: Arc<dyn Plugin>,
-    ) -> Result<()> {
+    fn one(&self, config: &Config, ts: Toolset, tool: Arc<dyn Plugin>) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.name());
             return Ok(());
@@ -53,7 +47,6 @@ impl Current {
         {
             Some((_, versions)) => {
                 rtxprintln!(
-                    out,
                     "{}",
                     versions
                         .iter()
@@ -69,7 +62,7 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, config: &Config, ts: Toolset, out: &mut Output) -> Result<()> {
+    fn all(&self, config: &Config, ts: Toolset) -> Result<()> {
         for (plugin, versions) in ts.list_versions_by_plugin(config) {
             if versions.is_empty() {
                 continue;
@@ -84,7 +77,6 @@ impl Current {
                 }
             }
             rtxprintln!(
-                out,
                 "{} {}",
                 &plugin.name(),
                 versions

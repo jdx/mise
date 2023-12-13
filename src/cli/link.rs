@@ -8,7 +8,7 @@ use path_absolutize::Absolutize;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
-use crate::output::Output;
+
 use crate::{dirs, file};
 
 /// Symlinks a tool version into rtx
@@ -33,7 +33,7 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => {

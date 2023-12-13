@@ -11,7 +11,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
-use crate::output::Output;
+
 use crate::toolset::ToolsetBuilder;
 
 /// Execute a command with tool(s) set
@@ -45,7 +45,7 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         ts.install_arg_versions(&config)?;
 

@@ -4,7 +4,7 @@ use eyre::WrapErr;
 use serde_derive::Deserialize;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] This is an internal command that writes an envrc file
@@ -20,7 +20,7 @@ struct DirenvWatches {
 }
 
 impl DirenvExec {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
 
         let mut cmd = env_cmd();
@@ -35,7 +35,7 @@ impl DirenvExec {
         let w: DirenvWatches = serde_json::from_str(&json)?;
         cmd = cmd.env("DIRENV_WATCHES", w.watches);
 
-        rtxprint!(out, "{}", cmd.read()?);
+        rtxprint!("{}", cmd.read()?);
         Ok(())
     }
 }

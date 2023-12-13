@@ -1,7 +1,7 @@
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::{unalias_plugin, PluginName};
 
 /// Updates a plugin to the latest version
@@ -20,7 +20,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()
@@ -42,7 +42,7 @@ impl Update {
         };
 
         for (plugin, ref_) in plugins {
-            rtxprintln!(out, "updating plugin {plugin}");
+            rtxprintln!("updating plugin {plugin}");
             plugin.update(ref_)?;
         }
         Ok(())

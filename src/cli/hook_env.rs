@@ -14,7 +14,7 @@ use crate::config::Settings;
 use crate::direnv::DirenvDiff;
 use crate::env::__RTX_DIFF;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::output::Output;
+
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{env, hook_env};
@@ -33,10 +33,10 @@ pub struct HookEnv {
 }
 
 impl HookEnv {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
-        out.stdout.write(hook_env::clear_old_env(&*shell));
+        rtxprint!("{}", hook_env::clear_old_env(&*shell));
         let mut env = ts.env(&config);
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
@@ -54,15 +54,15 @@ impl HookEnv {
         patches.push(self.build_watch_operation(&config)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
-        out.stdout.write(output);
+        rtxprint!("{output}");
         if self.status {
-            self.display_status(&config, &ts, out);
+            self.display_status(&config, &ts);
         }
 
         Ok(())
     }
 
-    fn display_status(&self, config: &Config, ts: &Toolset, out: &mut Output) {
+    fn display_status(&self, config: &Config, ts: &Toolset) {
         let installed_versions = ts
             .list_current_installed_versions(config)
             .into_iter()
@@ -76,12 +76,12 @@ impl HookEnv {
             } as usize;
             let w = max(w, 40);
             let status = installed_versions.into_iter().rev().join(" ");
-            rtxstatusln!(out, "{}", truncate_str(&status, w - 4, "..."));
+            rtxstatusln!("{}", truncate_str(&status, w - 4, "..."));
         }
         let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
         if !env_diff.is_empty() {
             let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-            rtxstatusln!(out, "{env_diff}");
+            rtxstatusln!("{env_diff}");
         }
     }
 

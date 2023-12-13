@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
@@ -17,32 +17,32 @@ pub struct Asdf {
 }
 
 impl Asdf {
-    pub fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(mut self, config: Config) -> Result<()> {
         let mut args = vec![String::from("rtx")];
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Cli::new().run(config, &args, out),
-            Some("list") => list_versions(config, out, &args),
+            Some("reshim") => Cli::new().run(config, &args),
+            Some("list") => list_versions(config, &args),
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
                     args[2] = format!("{}@{}", args[2], version);
                 }
-                Cli::new().run(config, &args, out)
+                Cli::new().run(config, &args)
             }
-            _ => Cli::new().run(config, &args, out),
+            _ => Cli::new().run(config, &args),
         }
     }
 }
 
-fn list_versions(config: Config, out: &mut Output, args: &Vec<String>) -> Result<()> {
+fn list_versions(config: Config, args: &Vec<String>) -> Result<()> {
     if args[2] == "all" {
         let mut new_args: Vec<String> = vec!["rtx".into(), "ls-remote".into()];
         if args.len() >= 3 {
             new_args.push(args[3].clone());
         }
-        return Cli::new().run(config, &new_args, out);
+        return Cli::new().run(config, &new_args);
     }
     let ts = ToolsetBuilder::new().build(&config)?;
     let mut versions = ts.list_installed_versions(&config)?;
@@ -53,16 +53,16 @@ fn list_versions(config: Config, out: &mut Output, args: &Vec<String>) -> Result
     if let Some(plugin) = plugin {
         versions.retain(|(_, v)| v.plugin_name.as_str() == plugin);
         for (_, version) in versions {
-            rtxprintln!(out, "{}", version.version);
+            rtxprintln!("{}", version.version);
         }
     } else {
         for (plugin, versions) in &versions
             .into_iter()
             .group_by(|(_, v)| v.plugin_name.to_string())
         {
-            rtxprintln!(out, "{}", plugin);
+            rtxprintln!("{}", plugin);
             for (_, tv) in versions {
-                rtxprintln!(out, "  {}", tv.version);
+                rtxprintln!("  {}", tv.version);
             }
         }
     }

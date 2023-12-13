@@ -4,7 +4,7 @@ use color_eyre::eyre::Result;
 
 use crate::config::Config;
 use crate::file::remove_all;
-use crate::output::Output;
+
 use crate::ui::prompt;
 use crate::{dirs, env, file};
 
@@ -24,14 +24,14 @@ pub struct Implode {
 }
 
 impl Implode {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
         }
         for f in files.into_iter().filter(|d| d.exists()) {
             if self.dry_run {
-                rtxprintln!(out, "rm -rf {}", f.display());
+                rtxprintln!("rm -rf {}", f.display());
             }
 
             if self.confirm_remove(&config, f)? {
