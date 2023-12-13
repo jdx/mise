@@ -10,12 +10,12 @@ use crate::config::Config;
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsUnset {
     /// The setting to remove
-    pub key: String,
+    pub setting: String,
 }
 
 impl SettingsUnset {
     pub fn run(self, mut config: Config) -> Result<()> {
-        config.global_config.remove_setting(&self.key);
+        config.global_config.remove_setting(&self.setting);
         config.global_config.save()
     }
 }

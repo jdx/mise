@@ -160,10 +160,10 @@ v20.0.0
   - [`rtx prune [OPTIONS] [PLUGIN]...`](#rtx-prune-options-plugin)
   - [`rtx reshim`](#rtx-reshim)
   - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
-  - [`rtx settings get <KEY>`](#rtx-settings-get-key)
+  - [`rtx settings get <SETTING>`](#rtx-settings-get-setting)
   - [`rtx settings ls`](#rtx-settings-ls)
-  - [`rtx settings set <KEY> <VALUE>`](#rtx-settings-set-key-value)
-  - [`rtx settings unset <KEY>`](#rtx-settings-unset-key)
+  - [`rtx settings set <SETTING> <VALUE>`](#rtx-settings-set-setting-value)
+  - [`rtx settings unset <SETTING>`](#rtx-settings-unset-setting)
   - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
   - [`rtx sync node <--brew|--nvm|--nodenv>`](#rtx-sync-node---brew--nvm--nodenv)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
@@ -2456,7 +2456,7 @@ Options:
           Skip confirmation prompt
 ```
 
-### `rtx settings get <KEY>`
+### `rtx settings get <SETTING>`
 
 ```text
 Show a current setting
@@ -2466,10 +2466,10 @@ This is the contents of a single entry in ~/.config/rtx/config.toml
 Note that aliases are also stored in this file
 but managed separately with `rtx aliases get`
 
-Usage: settings get <KEY>
+Usage: settings get <SETTING>
 
 Arguments:
-  <KEY>
+  <SETTING>
           The setting to show
 
 Examples:
@@ -2494,17 +2494,17 @@ Examples:
   legacy_version_file = false
 ```
 
-### `rtx settings set <KEY> <VALUE>`
+### `rtx settings set <SETTING> <VALUE>`
 
 ```text
 Add/update a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: settings set <KEY> <VALUE>
+Usage: settings set <SETTING> <VALUE>
 
 Arguments:
-  <KEY>
+  <SETTING>
           The setting to set
 
   <VALUE>
@@ -2514,17 +2514,17 @@ Examples:
   $ rtx settings set legacy_version_file true
 ```
 
-### `rtx settings unset <KEY>`
+### `rtx settings unset <SETTING>`
 
 ```text
 Clears a setting
 
 This modifies the contents of ~/.config/rtx/config.toml
 
-Usage: settings unset <KEY>
+Usage: settings unset <SETTING>
 
 Arguments:
-  <KEY>
+  <SETTING>
           The setting to remove
 
 Examples:
