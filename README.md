@@ -1213,8 +1213,8 @@ You can see the core plugins with `rtx plugin ls --core`.
 - [Ruby](./docs/ruby.md)
 - [Go](./docs/go.md)
 - [Java](./docs/java.md)
-- [Deno (experimental)](./docs/deno.md)
-- [Bun (experimental)](./docs/bun.md)
+- [Deno](./docs/deno.md)
+- [Bun](./docs/bun.md)
 
 ## FAQs
 
