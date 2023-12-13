@@ -3023,7 +3023,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__get)
-            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <KEY>"
+            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <SETTING>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3159,7 +3159,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__set)
-            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <KEY> <VALUE>"
+            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <SETTING> <VALUE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3185,7 +3185,7 @@ _rtx() {
             return 0
             ;;
         rtx__settings__unset)
-            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <KEY>"
+            opts="-j -q -r -v -y -h --jobs --debug --log-level --trace --quiet --raw --verbose --yes --help <SETTING>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

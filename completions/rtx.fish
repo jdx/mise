@@ -54,19 +54,19 @@ complete -xc rtx -n "$fssf alias; and not $fssf $others" -a set -d 'Add/update a
 complete -xc rtx -n "$fssf alias; and not $fssf $others" -a unset -d 'Clears an alias for a plugin'
 
 # alias get
-complete -kxc rtx -n "$fssf alias; and $fssf get" -d 'The alias to show'
+complete -kxc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_aliases)" -d 'The alias to show'
 complete -kxc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_plugins)" -d 'The plugin to show the alias for'
 
 # alias ls
 complete -kxc rtx -n "$fssf alias; and $fssf ls" -a "(__rtx_plugins)" -d 'Show aliases for <PLUGIN>'
 
 # alias set
-complete -kxc rtx -n "$fssf alias; and $fssf set" -d 'The alias to set'
+complete -kxc rtx -n "$fssf alias; and $fssf set" -a "(__rtx_aliases)" -d 'The alias to set'
 complete -kxc rtx -n "$fssf alias; and $fssf set" -a "(__rtx_plugins)" -d 'The plugin to set the alias for'
 complete -kxc rtx -n "$fssf alias; and $fssf set" -d 'The value to set the alias to'
 
 # alias unset
-complete -kxc rtx -n "$fssf alias; and $fssf unset" -d 'The alias to remove'
+complete -kxc rtx -n "$fssf alias; and $fssf unset" -a "(__rtx_aliases)" -d 'The alias to remove'
 complete -kxc rtx -n "$fssf alias; and $fssf unset" -a "(__rtx_plugins)" -d 'The plugin to remove the alias from'
 
 
@@ -212,16 +212,16 @@ complete -xc rtx -n "$fssf settings; and not $fssf $others" -a set -d 'Add/updat
 complete -xc rtx -n "$fssf settings; and not $fssf $others" -a unset -d 'Clears a setting'
 
 # settings get
-complete -kxc rtx -n "$fssf settings; and $fssf get" -d 'The setting to show'
+complete -kxc rtx -n "$fssf settings; and $fssf get" -a "(__rtx_settings)" -d 'The setting to show'
 
 # settings ls
 
 # settings set
-complete -kxc rtx -n "$fssf settings; and $fssf set" -d 'The setting to set'
+complete -kxc rtx -n "$fssf settings; and $fssf set" -a "(__rtx_settings)" -d 'The setting to set'
 complete -kxc rtx -n "$fssf settings; and $fssf set" -d 'The value to set'
 
 # settings unset
-complete -kxc rtx -n "$fssf settings; and $fssf unset" -d 'The setting to remove'
+complete -kxc rtx -n "$fssf settings; and $fssf unset" -a "(__rtx_settings)" -d 'The setting to remove'
 
 
 # shell
@@ -307,6 +307,22 @@ function __rtx_installed_tool_versions
     end
     for tv in $__rtx_installed_tool_versions_cache
         echo $tv
+    end
+end
+function __rtx_aliases
+    if test -z "$__rtx_aliases_cache"
+        set -g __rtx_aliases_cache (rtx alias ls | awk '{print $2}')
+    end
+    for a in $__rtx_aliases_cache
+        echo $a
+    end
+end
+function __rtx_settings
+    if test -z "$__rtx_settings_cache"
+        set -g __rtx_settings_cache (rtx settings ls | awk '{print $1}')
+    end
+    for s in $__rtx_settings_cache
+        echo $s
     end
 end
 

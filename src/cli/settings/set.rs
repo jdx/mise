@@ -11,14 +11,14 @@ use crate::config::Config;
 pub struct SettingsSet {
     /// The setting to set
     #[clap()]
-    pub key: String,
+    pub setting: String,
     /// The value to set
     pub value: String,
 }
 
 impl SettingsSet {
     pub fn run(self, mut config: Config) -> Result<()> {
-        let value: toml_edit::Value = match self.key.as_str() {
+        let value: toml_edit::Value = match self.setting.as_str() {
             "experimental" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
@@ -30,10 +30,10 @@ impl SettingsSet {
             "shorthands_file" => self.value.into(),
             "disable_default_shorthands" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
-            _ => return Err(eyre!("Unknown setting: {}", self.key)),
+            _ => return Err(eyre!("Unknown setting: {}", self.setting)),
         };
 
-        config.global_config.update_setting(&self.key, value);
+        config.global_config.update_setting(&self.setting, value);
         config.global_config.save()
     }
 }

@@ -12,14 +12,14 @@ use crate::config::Config;
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
     /// The setting to show
-    pub key: String,
+    pub setting: String,
 }
 
 impl SettingsGet {
     pub fn run(self, config: Config) -> Result<()> {
-        match config.settings.to_index_map().get(&self.key) {
+        match config.settings.to_index_map().get(&self.setting) {
             Some(value) => Ok(rtxprintln!("{}", value)),
-            None => Err(eyre!("Unknown setting: {}", self.key)),
+            None => Err(eyre!("Unknown setting: {}", self.setting)),
         }
     }
 }
