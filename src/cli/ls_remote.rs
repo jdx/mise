@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::cli::args::tool::ToolArg;
 use crate::cli::args::tool::ToolArgParser;
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 
@@ -33,15 +33,15 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         if let Some(plugin) = self.get_plugin(&config)? {
-            self.run_single(config, out, plugin)
+            self.run_single(config, plugin)
         } else {
-            self.run_all(config, out)
+            self.run_all(config)
         }
     }
 
-    fn run_single(self, config: Config, out: &mut Output, plugin: Arc<dyn Plugin>) -> Result<()> {
+    fn run_single(self, config: Config, plugin: Arc<dyn Plugin>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
@@ -60,13 +60,13 @@ impl LsRemote {
         };
 
         for version in versions {
-            rtxprintln!(out, "{}", version);
+            rtxprintln!("{}", version);
         }
 
         Ok(())
     }
 
-    fn run_all(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run_all(self, config: Config) -> Result<()> {
         let versions = config
             .list_plugins()
             .into_par_iter()
@@ -80,7 +80,7 @@ impl LsRemote {
             .collect::<Vec<_>>();
         for (plugin, versions) in versions {
             for v in versions {
-                rtxprintln!(out, "{}@{v}", plugin);
+                rtxprintln!("{}@{v}", plugin);
             }
         }
         Ok(())

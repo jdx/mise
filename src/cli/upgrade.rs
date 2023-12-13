@@ -6,7 +6,7 @@ use eyre::WrapErr;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::Plugin;
 use crate::runtime_symlinks;
 use crate::shims;
@@ -30,7 +30,7 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
@@ -43,13 +43,13 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.upgrade(&config, outdated, out)?;
+            self.upgrade(&config, outdated)?;
         }
 
         Ok(())
     }
 
-    fn upgrade(&self, config: &Config, outdated: OutputVec, out: &mut Output) -> Result<()> {
+    fn upgrade(&self, config: &Config, outdated: OutputVec) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
@@ -70,10 +70,10 @@ impl Upgrade {
 
         if self.dry_run {
             for (tool, tv) in &to_remove {
-                rtxprintln!(out, "Would uninstall {} {}", tool, tv);
+                rtxprintln!("Would uninstall {} {}", tool, tv);
             }
             for tv in &new_versions {
-                rtxprintln!(out, "Would install {}", tv);
+                rtxprintln!("Would install {}", tv);
             }
             return Ok(());
         }

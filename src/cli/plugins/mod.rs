@@ -2,7 +2,6 @@ use clap::Subcommand;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
 
 mod install;
 mod link;
@@ -59,20 +58,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self {
-            Self::Install(cmd) => cmd.run(config, out),
-            Self::Link(cmd) => cmd.run(config, out),
-            Self::Ls(cmd) => cmd.run(config, out),
-            Self::LsRemote(cmd) => cmd.run(config, out),
-            Self::Uninstall(cmd) => cmd.run(config, out),
-            Self::Update(cmd) => cmd.run(config, out),
+            Self::Install(cmd) => cmd.run(config),
+            Self::Link(cmd) => cmd.run(config),
+            Self::Ls(cmd) => cmd.run(config),
+            Self::LsRemote(cmd) => cmd.run(config),
+            Self::Uninstall(cmd) => cmd.run(config),
+            Self::Update(cmd) => cmd.run(config),
         }
     }
 }
 
 impl Plugins {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,
@@ -81,6 +80,6 @@ impl Plugins {
             user: self.user,
         }));
 
-        cmd.run(config, out)
+        cmd.run(config)
     }
 }

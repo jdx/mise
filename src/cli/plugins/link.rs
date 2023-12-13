@@ -7,7 +7,7 @@ use path_absolutize::Absolutize;
 
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
-use crate::output::Output;
+
 use crate::plugins::unalias_plugin;
 use crate::{dirs, file};
 
@@ -33,7 +33,7 @@ pub struct PluginsLink {
 }
 
 impl PluginsLink {
-    pub fn run(self, _config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {

@@ -6,7 +6,6 @@ use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
 use crate::file::display_path;
-use crate::output::Output;
 
 use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 
@@ -36,11 +35,11 @@ pub struct EnvVars {
 }
 
 impl EnvVars {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         if self.remove.is_none() && self.env_vars.is_none() {
             for (key, value) in &config.env {
                 let source = config.env_sources.get(key).unwrap();
-                rtxprintln!(out, "{key}={value} {}", display_path(source));
+                rtxprintln!("{key}={value} {}", display_path(source));
             }
             return Ok(());
         }

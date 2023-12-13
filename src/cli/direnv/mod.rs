@@ -2,7 +2,6 @@ use clap::Subcommand;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
 
 mod activate;
 mod envrc;
@@ -30,20 +29,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(config, out),
-            Self::Envrc(cmd) => cmd.run(config, out),
-            Self::Exec(cmd) => cmd.run(config, out),
+            Self::Activate(cmd) => cmd.run(config),
+            Self::Envrc(cmd) => cmd.run(config),
+            Self::Exec(cmd) => cmd.run(config),
         }
     }
 }
 
 impl Direnv {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));
-        cmd.run(config, out)
+        cmd.run(config)
     }
 }

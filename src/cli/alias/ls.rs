@@ -1,7 +1,7 @@
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::PluginName;
 
 /// List aliases
@@ -21,7 +21,7 @@ pub struct AliasLs {
 }
 
 impl AliasLs {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         for (plugin_name, aliases) in config.get_all_aliases() {
             if let Some(plugin) = &self.plugin {
                 if plugin_name != plugin {
@@ -35,9 +35,9 @@ impl AliasLs {
                     continue;
                 }
                 if self.plugin.is_some() {
-                    rtxprintln!(out, "{:20} {}", from, to);
+                    rtxprintln!("{:20} {}", from, to);
                 } else {
-                    rtxprintln!(out, "{:20} {:20} {}", plugin_name, from, to);
+                    rtxprintln!("{:20} {:20} {}", plugin_name, from, to);
                 }
             }
         }

@@ -3,7 +3,6 @@ use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
 
 mod activate;
 mod alias;
@@ -106,53 +105,53 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(config, out),
-            Self::Alias(cmd) => cmd.run(config, out),
-            Self::Asdf(cmd) => cmd.run(config, out),
-            Self::BinPaths(cmd) => cmd.run(config, out),
-            Self::Cache(cmd) => cmd.run(config, out),
-            Self::Completion(cmd) => cmd.run(config, out),
-            Self::Current(cmd) => cmd.run(config, out),
-            Self::Deactivate(cmd) => cmd.run(config, out),
-            Self::Direnv(cmd) => cmd.run(config, out),
-            Self::Doctor(cmd) => cmd.run(config, out),
-            Self::Env(cmd) => cmd.run(config, out),
-            Self::EnvVars(cmd) => cmd.run(config, out),
-            Self::Exec(cmd) => cmd.run(config, out),
-            Self::Global(cmd) => cmd.run(config, out),
-            Self::HookEnv(cmd) => cmd.run(config, out),
-            Self::Implode(cmd) => cmd.run(config, out),
-            Self::Install(cmd) => cmd.run(config, out),
-            Self::Latest(cmd) => cmd.run(config, out),
-            Self::Link(cmd) => cmd.run(config, out),
-            Self::Local(cmd) => cmd.run(config, out),
-            Self::Ls(cmd) => cmd.run(config, out),
-            Self::LsRemote(cmd) => cmd.run(config, out),
-            Self::Outdated(cmd) => cmd.run(config, out),
-            Self::Plugins(cmd) => cmd.run(config, out),
-            Self::Prune(cmd) => cmd.run(config, out),
-            Self::Reshim(cmd) => cmd.run(config, out),
-            Self::Settings(cmd) => cmd.run(config, out),
-            Self::Shell(cmd) => cmd.run(config, out),
-            Self::Sync(cmd) => cmd.run(config, out),
-            Self::Trust(cmd) => cmd.run(config, out),
-            Self::Uninstall(cmd) => cmd.run(config, out),
-            Self::Upgrade(cmd) => cmd.run(config, out),
-            Self::Use(cmd) => cmd.run(config, out),
-            Self::Version(cmd) => cmd.run(config, out),
-            Self::Where(cmd) => cmd.run(config, out),
-            Self::Which(cmd) => cmd.run(config, out),
+            Self::Activate(cmd) => cmd.run(config),
+            Self::Alias(cmd) => cmd.run(config),
+            Self::Asdf(cmd) => cmd.run(config),
+            Self::BinPaths(cmd) => cmd.run(config),
+            Self::Cache(cmd) => cmd.run(config),
+            Self::Completion(cmd) => cmd.run(config),
+            Self::Current(cmd) => cmd.run(config),
+            Self::Deactivate(cmd) => cmd.run(config),
+            Self::Direnv(cmd) => cmd.run(config),
+            Self::Doctor(cmd) => cmd.run(config),
+            Self::Env(cmd) => cmd.run(config),
+            Self::EnvVars(cmd) => cmd.run(config),
+            Self::Exec(cmd) => cmd.run(config),
+            Self::Global(cmd) => cmd.run(config),
+            Self::HookEnv(cmd) => cmd.run(config),
+            Self::Implode(cmd) => cmd.run(config),
+            Self::Install(cmd) => cmd.run(config),
+            Self::Latest(cmd) => cmd.run(config),
+            Self::Link(cmd) => cmd.run(config),
+            Self::Local(cmd) => cmd.run(config),
+            Self::Ls(cmd) => cmd.run(config),
+            Self::LsRemote(cmd) => cmd.run(config),
+            Self::Outdated(cmd) => cmd.run(config),
+            Self::Plugins(cmd) => cmd.run(config),
+            Self::Prune(cmd) => cmd.run(config),
+            Self::Reshim(cmd) => cmd.run(config),
+            Self::Settings(cmd) => cmd.run(config),
+            Self::Shell(cmd) => cmd.run(config),
+            Self::Sync(cmd) => cmd.run(config),
+            Self::Trust(cmd) => cmd.run(config),
+            Self::Uninstall(cmd) => cmd.run(config),
+            Self::Upgrade(cmd) => cmd.run(config),
+            Self::Use(cmd) => cmd.run(config),
+            Self::Version(cmd) => cmd.run(config),
+            Self::Where(cmd) => cmd.run(config),
+            Self::Which(cmd) => cmd.run(config),
 
             #[cfg(feature = "clap_complete")]
-            Self::RenderCompletion(cmd) => cmd.run(config, out),
+            Self::RenderCompletion(cmd) => cmd.run(config),
 
             #[cfg(debug_assertions)]
-            Self::RenderHelp(cmd) => cmd.run(config, out),
+            Self::RenderHelp(cmd) => cmd.run(config),
 
             #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(config, out),
+            Self::RenderMangen(cmd) => cmd.run(config),
         }
     }
 }
@@ -197,11 +196,11 @@ impl Cli {
         )
     }
 
-    pub fn run(self, mut config: Config, args: &Vec<String>, out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config, args: &Vec<String>) -> Result<()> {
         debug!("{}", &args.join(" "));
         if args[1..] == ["-v"] {
             // normally this would be considered --verbose
-            return version::Version {}.run(config, out);
+            return version::Version {}.run(config);
         }
         let matches = self.command.get_matches_from(args);
         if let Some(jobs) = matches.get_one::<usize>("jobs") {
@@ -225,12 +224,12 @@ impl Cli {
         }
         if let Some((command, sub_m)) = matches.subcommand() {
             if command == "self-update" {
-                return SelfUpdate::from_arg_matches(sub_m)?.run(config, out);
+                return SelfUpdate::from_arg_matches(sub_m)?.run(config);
             }
             external::execute(&config, command, sub_m, self.external_commands)?;
         }
         let cmd = Commands::from_arg_matches(&matches)?;
-        cmd.run(config, out)
+        cmd.run(config)
     }
 }
 
@@ -269,25 +268,28 @@ pub mod tests {
     use color_eyre::{Section, SectionExt};
 
     use crate::dirs;
+    use crate::output::tests::{STDERR, STDOUT};
 
     use super::*;
 
-    pub fn cli_run(args: &Vec<String>) -> Result<Output> {
+    pub fn cli_run(args: &Vec<String>) -> Result<()> {
+        STDOUT.lock().unwrap().clear();
+        STDERR.lock().unwrap().clear();
         let config = Config::load()?;
-        let mut out = Output::tracked();
         Cli::new_with_external_commands(&config)
-            .run(config, args, &mut out)
+            .run(config, args)
             .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
 
-        Ok(out)
+        Ok(())
     }
 
     #[macro_export]
     macro_rules! assert_cli {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
-            console::strip_ansi_codes(&output).to_string()
+            $crate::cli::tests::cli_run(args).unwrap();
+            let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
+            console::strip_ansi_codes(&output).trim().to_string()
         }};
     }
 
@@ -295,7 +297,8 @@ pub mod tests {
     macro_rules! assert_cli_snapshot {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            let output = $crate::cli::tests::cli_run(args).unwrap().stdout.content;
+            $crate::cli::tests::cli_run(args).unwrap();
+            let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
             let output = console::strip_ansi_codes(&output.trim()).to_string();
             let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
             let output = $crate::test::replace_path(&output);
@@ -307,7 +310,8 @@ pub mod tests {
     macro_rules! assert_cli_snapshot_stderr {
         ($($args:expr),+) => {{
             let args = &vec!["rtx".into(), $($args.into()),+];
-            let output = $crate::cli::tests::cli_run(args).unwrap().stderr.content;
+            $crate::cli::tests::cli_run(args).unwrap();
+            let output = $crate::output::tests::STDERR.lock().unwrap().join("\n");
             let output = console::strip_ansi_codes(&output.trim()).to_string();
             let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
             let output = $crate::test::replace_path(&output);

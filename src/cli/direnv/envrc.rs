@@ -6,7 +6,7 @@ use color_eyre::eyre::Result;
 
 use crate::config::Config;
 use crate::hash::hash_to_str;
-use crate::output::Output;
+
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
@@ -17,7 +17,7 @@ use crate::{dirs, env};
 pub struct Envrc {}
 
 impl Envrc {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
 
         let envrc_path = env::RTX_TMP_DIR
@@ -51,7 +51,7 @@ impl Envrc {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 
-        rtxprintln!(out, "{}", envrc_path.to_string_lossy());
+        rtxprintln!("{}", envrc_path.to_string_lossy());
         Ok(())
     }
 }

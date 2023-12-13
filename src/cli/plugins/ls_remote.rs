@@ -5,7 +5,6 @@ use console::{measure_text_width, pad_str, Alignment};
 use itertools::Itertools;
 
 use crate::config::Config;
-use crate::output::Output;
 
 /// List all available remote plugins
 #[derive(Debug, clap::Args)]
@@ -23,7 +22,7 @@ pub struct PluginsLsRemote {
 }
 
 impl PluginsLsRemote {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let installed_plugins = config
             .list_plugins()
             .into_iter()
@@ -50,7 +49,7 @@ impl PluginsLsRemote {
             };
             let url = if self.urls { repo } else { "" };
             let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
-            rtxprintln!(out, "{} {}{}", plugin, installed, url);
+            rtxprintln!("{} {}{}", plugin, installed, url);
         }
 
         Ok(())

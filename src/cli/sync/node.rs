@@ -6,7 +6,6 @@ use itertools::sorted;
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
 use crate::file;
-use crate::output::Output;
 use crate::plugins::PluginName;
 use crate::{cmd, dirs};
 
@@ -37,18 +36,18 @@ pub struct SyncNodeType {
 }
 
 impl SyncNode {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         if self._type.brew {
-            self.run_brew(config, out)?;
+            self.run_brew(config)?;
         } else if self._type.nvm {
-            self.run_nvm(config, out)?;
+            self.run_nvm(config)?;
         } else if self._type.nodenv {
-            self.run_nodenv(config, out)?;
+            self.run_nodenv(config)?;
         }
         Ok(())
     }
 
-    fn run_brew(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run_brew(self, config: Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -63,13 +62,13 @@ impl SyncNode {
             }
             let v = entry.trim_start_matches("node@");
             tool.create_symlink(v, &brew_prefix.join(&entry))?;
-            rtxprintln!(out, "Synced node@{} from Homebrew", v);
+            rtxprintln!("Synced node@{} from Homebrew", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
     }
 
-    fn run_nvm(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run_nvm(self, config: Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
@@ -81,13 +80,13 @@ impl SyncNode {
         for entry in sorted(subdirs) {
             let v = entry.trim_start_matches('v');
             tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
-            rtxprintln!(out, "Synced node@{} from nvm", v);
+            rtxprintln!("Synced node@{} from nvm", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
     }
 
-    fn run_nodenv(self, config: Config, out: &mut Output) -> Result<()> {
+    fn run_nodenv(self, config: Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");
@@ -98,7 +97,7 @@ impl SyncNode {
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
         for v in sorted(subdirs) {
             tool.create_symlink(&v, &nodenv_versions_path.join(&v))?;
-            rtxprintln!(out, "Synced node@{} from nodenv", v);
+            rtxprintln!("Synced node@{} from nodenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()

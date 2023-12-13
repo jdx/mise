@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::toolset::{
     ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
@@ -34,7 +34,7 @@ pub struct Install {
 }
 
 impl Install {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,

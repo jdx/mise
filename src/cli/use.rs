@@ -9,7 +9,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-use crate::output::Output;
+
 use crate::plugins::PluginName;
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env, file};
@@ -64,7 +64,7 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         ts.install_arg_versions(&config)?;
 
@@ -95,7 +95,6 @@ impl Use {
         cf.save()?;
         let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
         rtxprintln!(
-            out,
             "{} {} {}",
             style("rtx").dim(),
             display_path(cf.get_path()),

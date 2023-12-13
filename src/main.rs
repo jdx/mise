@@ -15,7 +15,6 @@ use console::{style, Term};
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::output::Output;
 
 #[macro_use]
 mod output;
@@ -80,19 +79,17 @@ fn main() -> Result<()> {
 }
 
 fn run(args: &Vec<String>) -> Result<()> {
-    let out = &mut Output::new();
-
     // show version before loading config in case of error
-    cli::version::print_version_if_requested(&env::ARGS, out);
+    cli::version::print_version_if_requested(&env::ARGS);
     migrate::run();
 
     let config = Config::load()?;
-    let config = shims::handle_shim(config, args, out)?;
+    let config = shims::handle_shim(config, args)?;
     if config.should_exit_early {
         return Ok(());
     }
     let cli = Cli::new_with_external_commands(&config);
-    cli.run(config, args, out)
+    cli.run(config, args)
 }
 
 fn handle_ctrlc() {
