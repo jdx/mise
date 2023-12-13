@@ -255,7 +255,7 @@ complete -xc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be
 complete -xc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'
 
 # use
-complete -xc rtx -n "$fssf use" -s e -l env -d '[experimental] Modify an environment-specific config file like .rtx.<env>.toml'
+complete -xc rtx -n "$fssf use" -s e -l env -d 'Modify an environment-specific config file like .rtx.<env>.toml'
 complete -xc rtx -n "$fssf use" -l fuzzy -d 'Save fuzzy version to config file'
 complete -xc rtx -n "$fssf use" -s g -l global -d 'Use the global config file (~/.config/rtx/config.toml) instead of the local one'
 complete -xc rtx -n "$fssf use" -s p -l path -a "(__fish_complete_path)" -d 'Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions'

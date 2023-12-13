@@ -98,7 +98,7 @@ v20.0.0
   - [`~/.cache/rtx`](#cachertx)
   - [`~/.local/share/rtx`](#localsharertx)
 - [Templates](#templates)
-- [&#91;experimental&#93; Config Environments](#experimental-config-environments)
+- [Config Environments](#config-environments)
 - [IDE Integration](#ide-integration)
 - [Core Plugins](#core-plugins)
 - [FAQs](#faqs)
@@ -611,7 +611,7 @@ Then when inside of `~/src/myproj/backend`, `node` will be `18`, `python` will b
 will be `3.1`. You can check the active versions with `rtx ls --current`.
 
 You can also have environment specific config files like `.rtx.production.toml`, see
-[Config Environments](#experimental-config-environments) for more details.
+[Config Environments](#config-environments) for more details.
 
 #### `[env]` - Arbitrary Environment Variables
 
@@ -835,12 +835,12 @@ a different name.
 
 Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config files with a different name.
 
-#### [experimental] `RTX_ENV`
+#### `RTX_ENV`
 
 Enables environment-specific config files such as `.rtx.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
-[Config Environments](#experimental-config-environments) for more on how
+[Config Environments](#config-environments) for more on how
 to use this feature.
 
 #### `RTX_USE_VERSIONS_HOST`
@@ -1123,10 +1123,6 @@ does not work for some reason.
 
 ## Templates
 
-> **Warning**
->
-> This functionality is experimental and may change in the future.
-
 Templates are used in the following locations:
 
 - `.tool-versions` files
@@ -1157,11 +1153,10 @@ Here's another using `exec()`:
 current = "{{exec(command='node --version')}}"
 ```
 
-## [experimental] Config Environments
+## Config Environments
 
 It's possible to have separate `.rtx.toml` files in the same directory for different
-environments like `development` and `production`. To enable, set
-`experimental = true` in `~/.config/rtx/config.toml`, then set `RTX_ENV` to an environment like
+environments like `development` and `production`. To enable, set `RTX_ENV` to an environment like
 `development` or `production`. rtx will then look for a `.rtx.{RTX_ENV}.toml` file in the current directory.
 
 rtx will also look for "local" files like `.rtx.local.toml` and `.rtx.{RTX_ENV}.local.toml` in
@@ -2709,7 +2704,7 @@ Options:
           Use the global config file (~/.config/rtx/config.toml) instead of the local one
 
   -e, --env <ENV>
-          [experimental] Modify an environment-specific config file like .rtx.<env>.toml
+          Modify an environment-specific config file like .rtx.<env>.toml
 
   -p, --path <PATH>
           Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions

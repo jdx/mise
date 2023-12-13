@@ -52,10 +52,10 @@ pub struct Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let global_config = load_rtxrc()?;
+        let config_filenames = load_config_filenames(&BTreeMap::new());
         let settings = Settings::default_builder()
             .preloaded(global_config.settings()?)
             .load()?;
-        let config_filenames = load_config_filenames(&settings, &BTreeMap::new());
         let plugins = load_plugins(&settings)?;
         let config_files = load_all_config_files(
             &settings,
@@ -72,7 +72,7 @@ impl Config {
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
-        let config_filenames = load_config_filenames(&settings, &legacy_files);
+        let config_filenames = load_config_filenames(&legacy_files);
         let config_track = track_config_files(&config_filenames);
 
         let config_files = load_all_config_files(
@@ -98,10 +98,6 @@ impl Config {
         config_track.join().unwrap();
 
         let (env, env_sources) = load_env(&config_files);
-
-        if !settings.experimental && env::RTX_ENV.is_some() {
-            warn!("RTX_ENV is set but RTX_EXPERIMENTAL is not. Ignoring RTX_ENV.");
-        }
 
         let config = Self {
             env,
@@ -330,14 +326,11 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
     legacy_filenames
 }
 
-fn load_config_filenames(
-    settings: &Settings,
-    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
-) -> Vec<PathBuf> {
+fn load_config_filenames(legacy_filenames: &BTreeMap<String, Vec<PluginName>>) -> Vec<PathBuf> {
     let mut filenames = legacy_filenames.keys().cloned().collect_vec();
     filenames.push(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone());
     filenames.push(env::RTX_DEFAULT_CONFIG_FILENAME.clone());
-    if settings.experimental && *env::RTX_DEFAULT_CONFIG_FILENAME == ".rtx.toml" {
+    if *env::RTX_DEFAULT_CONFIG_FILENAME == ".rtx.toml" {
         filenames.push(".rtx.local.toml".to_string());
         if let Some(env) = &*env::RTX_ENV {
             filenames.push(format!(".rtx.{}.toml", env));
