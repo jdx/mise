@@ -58,9 +58,7 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 });
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Plugin>> = vec![
-        Arc::new(ErlangPlugin::new()),
-    ];
+    let plugins: Vec<Arc<dyn Plugin>> = vec![Arc::new(ErlangPlugin::new())];
     plugins
         .into_iter()
         .map(|plugin| (plugin.name().to_string(), plugin))
