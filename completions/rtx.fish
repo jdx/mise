@@ -1,9 +1,7 @@
 set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
-complete -kxc rtx -s j -l jobs -d 'Number of plugins and runtimes to install in parallel'
 complete -kxc rtx -s q -l quiet -d 'Suppress output'
-complete -kxc rtx -s r -l raw -d 'Directly pipe stdin/stdout/stderr to user.'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
@@ -98,7 +96,9 @@ complete -xc rtx -n "$fssf direnv; and not $fssf $others" -a activate -d 'Output
 # doctor
 
 # env
+complete -kxc rtx -n "$fssf env" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf env" -s J -l json -d 'Output in JSON format'
+complete -kxc rtx -n "$fssf env" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf env" -s s -l shell -a "bash fish nu xonsh zsh" -d 'Shell type to generate environment variables for'
 complete -kxc rtx -n "$fssf env" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
 
@@ -111,6 +111,8 @@ complete -kxc rtx -n "$fssf env-vars" -l remove -d 'Remove the environment varia
 complete -kxc rtx -n "$fssf exec" -s c -l command -d 'Command string to execute'
 complete -kxc rtx -n "$fssf exec" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
 complete -kxc rtx -n "$fssf exec" -d 'Command string to execute (same as --command)'
+complete -kxc rtx -n "$fssf exec" -s j -l jobs -d 'Number of jobs to run in parallel'
+complete -kxc rtx -n "$fssf exec" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf exec" -a "(__rtx_tool_versions)" -d 'Tool(s) to start e.g.: node@20 python@3.10'
 
 # implode
@@ -119,6 +121,8 @@ complete -kxc rtx -n "$fssf implode" -s n -l dry-run -d 'List directories that w
 
 # install
 complete -kxc rtx -n "$fssf install" -s f -l force -d 'Force reinstall even if already installed'
+complete -kxc rtx -n "$fssf install" -s j -l jobs -d 'Number of jobs to run in parallel'
+complete -kxc rtx -n "$fssf install" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf install" -a "(__rtx_tool_versions)" -d 'Tool(s) to install e.g.: node@20'
 complete -kxc rtx -n "$fssf install" -s v -l verbose -d 'Show installation output'
 
@@ -225,6 +229,8 @@ complete -kxc rtx -n "$fssf settings; and $fssf unset" -a "(__rtx_settings)" -d 
 
 
 # shell
+complete -kxc rtx -n "$fssf shell" -s j -l jobs -d 'Number of jobs to run in parallel'
+complete -kxc rtx -n "$fssf shell" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf shell" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
 complete -kxc rtx -n "$fssf shell" -s u -l unset -d 'Removes a previously set version'
 
@@ -253,14 +259,19 @@ complete -kxc rtx -n "$fssf uninstall" -a "(__rtx_installed_tool_versions)" -d '
 
 # upgrade
 complete -kxc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
+complete -kxc rtx -n "$fssf upgrade" -s j -l jobs -d 'Number of jobs to run in parallel'
+complete -kxc rtx -n "$fssf upgrade" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'
 
 # use
 complete -kxc rtx -n "$fssf use" -s e -l env -d 'Modify an environment-specific config file like .rtx.<env>.toml'
+complete -kxc rtx -n "$fssf use" -s f -l force -d 'Force reinstall even if already installed'
 complete -kxc rtx -n "$fssf use" -l fuzzy -d 'Save fuzzy version to config file'
 complete -kxc rtx -n "$fssf use" -s g -l global -d 'Use the global config file (~/.config/rtx/config.toml) instead of the local one'
+complete -kxc rtx -n "$fssf use" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf use" -s p -l path -a "(__fish_complete_path)" -d 'Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions'
 complete -kxc rtx -n "$fssf use" -l pin -d 'Save exact version to config file'
+complete -kxc rtx -n "$fssf use" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf use" -l remove -d 'Remove the tool(s) from config file'
 complete -kxc rtx -n "$fssf use" -a "(__rtx_tool_versions)" -d 'Tool(s) to add to config file'
 

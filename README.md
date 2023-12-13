@@ -1902,8 +1902,17 @@ Options:
 
           [possible values: bash, fish, nu, xonsh, zsh]
 
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
   -J, --json
           Output in JSON format
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
   $ eval "$(rtx env -s bash)"
@@ -1968,6 +1977,15 @@ Options:
   -C, --cd <CD>
           Change to this directory before executing the command
 
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+
 Examples:
   $ rtx exec node@20 -- node ./app.js  # launch app.js using node-20.x
   $ rtx x node@20 -- node ./app.js     # shorter alias
@@ -2017,6 +2035,15 @@ Arguments:
 Options:
   -f, --force
           Force reinstall even if already installed
+
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
   -v, --verbose...
           Show installation output
@@ -2545,6 +2572,15 @@ Arguments:
           Tool(s) to use
 
 Options:
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+
   -u, --unset
           Removes a previously set version
 
@@ -2669,6 +2705,15 @@ Arguments:
 Options:
   -n, --dry-run
           Just print what would be done, don't actually do it
+
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 ```
 
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
@@ -2690,19 +2735,13 @@ Arguments:
           If no version is specified, it will default to @latest
 
 Options:
-      --pin
-          Save exact version to config file
-          e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
-
-          [env: RTX_ASDF_COMPAT=]
+  -f, --force
+          Force reinstall even if already installed
 
       --fuzzy
           Save fuzzy version to config file
           e.g.: `rtx use --fuzzy node@20` will save 20 as the version
           this is the default behavior unless RTX_ASDF_COMPAT=1
-
-      --remove <TOOL>
-          Remove the tool(s) from config file
 
   -g, --global
           Use the global config file (~/.config/rtx/config.toml) instead of the local one
@@ -2710,8 +2749,26 @@ Options:
   -e, --env <ENV>
           Modify an environment-specific config file like .rtx.<env>.toml
 
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          [default: 4]
+
+          [env: RTX_JOBS=]
+
+      --raw
+          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+
+      --remove <TOOL>
+          Remove the tool(s) from config file
+
   -p, --path <PATH>
           Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
+
+      --pin
+          Save exact version to config file
+          e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
+
+          [env: RTX_ASDF_COMPAT=]
 
 Examples:
   # set the current version of node to 20.x in .rtx.toml of current directory
