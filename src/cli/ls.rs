@@ -22,10 +22,10 @@ use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 pub struct Ls {
     /// Only show tool versions from [PLUGIN]
     #[clap(conflicts_with = "plugin_flag")]
-    plugin: Option<PluginName>,
+    plugin: Option<Vec<String>>,
 
     #[clap(long = "plugin", short, hide = true)]
-    plugin_flag: Option<PluginName>,
+    plugin_flag: Option<String>,
 
     /// Only show tool versions currently specified in a .tool-versions/.rtx.toml
     #[clap(long, short)]
@@ -61,9 +61,8 @@ impl Ls {
     pub fn run(mut self, config: Config) -> Result<()> {
         self.plugin = self
             .plugin
-            .clone()
-            .or(self.plugin_flag.clone())
-            .map(|p| PluginName::from(unalias_plugin(&p)));
+            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]))
+            .map(|p| p.into_iter().map(|p| unalias_plugin(&p).into()).collect());
         self.verify_plugin(&config)?;
 
         let mut runtimes = self.get_runtime_list(&config)?;
@@ -92,10 +91,12 @@ impl Ls {
 
     fn verify_plugin(&self, config: &Config) -> Result<()> {
         match &self.plugin {
-            Some(plugin_name) => {
-                let plugin = config.get_or_create_plugin(plugin_name);
-                if !plugin.is_installed() {
-                    return Err(PluginNotInstalled(plugin_name.clone()))?;
+            Some(plugins) => {
+                for plugin_name in plugins {
+                    let plugin = config.get_or_create_plugin(plugin_name);
+                    if !plugin.is_installed() {
+                        return Err(PluginNotInstalled(plugin_name.clone()))?;
+                    }
                 }
             }
             None => {}
@@ -104,11 +105,11 @@ impl Ls {
     }
 
     fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        if let Some(plugin) = &self.plugin {
+        if let Some(plugins) = &self.plugin {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(p, _, _)| plugin.eq(&p.name()))
+                .filter(|(p, _, _)| plugins.contains(&p.name().to_string()))
                 .map(|row| row.into())
                 .collect();
             rtxprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
@@ -206,8 +207,9 @@ impl Ls {
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
         let mut tsb = ToolsetBuilder::new().with_global_only(self.global);
 
-        if let Some(plugin) = &self.plugin {
-            tsb = tsb.with_tools(&[plugin]);
+        if let Some(plugins) = &self.plugin {
+            let plugins = plugins.iter().map(|p| p.as_str()).collect_vec();
+            tsb = tsb.with_tools(&plugins);
         }
         let ts = tsb.build(config)?;
         let mut versions: HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)> = ts
@@ -227,7 +229,7 @@ impl Ls {
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
             .filter(|((plugin_name, _), _)| match &self.plugin {
-                Some(p) => p.eq(plugin_name),
+                Some(p) => p.contains(plugin_name),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
