@@ -148,7 +148,7 @@ v20.0.0
   - [`rtx install [OPTIONS] [TOOL@VERSION]...`](#rtx-install-options-toolversion)
   - [`rtx latest [OPTIONS] <TOOL@VERSION>`](#rtx-latest-options-toolversion)
   - [`rtx link [OPTIONS] <TOOL@VERSION> <PATH>`](#rtx-link-options-toolversion-path)
-  - [`rtx ls [OPTIONS] [PLUGIN]`](#rtx-ls-options-plugin)
+  - [`rtx ls [OPTIONS] [PLUGIN]...`](#rtx-ls-options-plugin)
   - [`rtx ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`](#rtx-ls-remote-options-toolversion-prefix)
   - [`rtx outdated [TOOL@VERSION]...`](#rtx-outdated-toolversion)
   - [`rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`](#rtx-plugins-install-options-new_plugin-git_url)
@@ -2084,15 +2084,15 @@ Examples:
   $ rtx use node@brew
 ```
 
-### `rtx ls [OPTIONS] [PLUGIN]`
+### `rtx ls [OPTIONS] [PLUGIN]...`
 
 ```text
 List installed and/or currently selected tool versions
 
-Usage: ls [OPTIONS] [PLUGIN]
+Usage: ls [OPTIONS] [PLUGIN]...
 
 Arguments:
-  [PLUGIN]
+  [PLUGIN]...
           Only show tool versions from [PLUGIN]
 
 Options:
