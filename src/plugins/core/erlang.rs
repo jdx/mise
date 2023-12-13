@@ -102,7 +102,7 @@ impl Plugin for ErlangPlugin {
             ToolVersionRequest::Ref(..) => {
                 unimplemented!("erlang does not yet support refs");
             }
-            ToolVersionRequest::Version(..) => {
+            _ => {
                 cmd!(
                     self.kerl_path(),
                     "build-install",
@@ -113,7 +113,6 @@ impl Plugin for ErlangPlugin {
                 .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
                 .run()?;
             }
-            _ => unimplemented!(),
         }
 
         Ok(())
