@@ -8,7 +8,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-use crate::output::Output;
+
 use crate::plugins::PluginName;
 use crate::{dirs, env, file};
 
@@ -54,7 +54,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let path = if self.parent {
             get_parent_path()?
         } else {
@@ -62,7 +62,6 @@ impl Local {
         };
         local(
             config,
-            out,
             &path,
             self.tool,
             self.remove,
@@ -94,7 +93,6 @@ pub fn get_parent_path() -> Result<PathBuf> {
 #[allow(clippy::too_many_arguments)]
 pub fn local(
     config: Config,
-    out: &mut Output,
     path: &Path,
     runtime: Vec<ToolArg>,
     remove: Option<Vec<PluginName>>,
@@ -104,7 +102,7 @@ pub fn local(
 ) -> Result<()> {
     let mut cf = config_file::parse_or_init(&config.settings, path)?;
     if show_path {
-        rtxprintln!(out, "{}", path.display());
+        rtxprintln!("{}", path.display());
         return Ok(());
     }
 
@@ -114,7 +112,6 @@ pub fn local(
         }
         let tools = plugins.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
-            out,
             "{} {} {}",
             style("rtx").dim(),
             display_path(path),
@@ -124,14 +121,13 @@ pub fn local(
 
     if !runtime.is_empty() {
         let runtimes = ToolArg::double_tool_condition(&runtime);
-        if cf.display_runtime(out, &runtimes)? {
+        if cf.display_runtime(&runtimes)? {
             return Ok(());
         }
         let pin = pin || (config.settings.asdf_compat && !fuzzy);
         cf.add_runtimes(&config, &runtimes, pin)?;
         let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
-            out,
             "{} {} {}",
             style("rtx").dim(),
             display_path(path),
@@ -142,7 +138,7 @@ pub fn local(
     if !runtime.is_empty() || remove.is_some() {
         cf.save()?;
     } else {
-        rtxprint!(out, "{}", cf.dump());
+        rtxprint!("{}", cf.dump());
     }
 
     Ok(())
@@ -248,7 +244,7 @@ mod tests {
         run_test(|| {
             assert_cli!("local", "tiny", "2");
             let stdout = assert_cli!("local", "tiny");
-            assert_str_eq!(stdout, "2\n");
+            assert_str_eq!(stdout, "2");
         });
     }
 

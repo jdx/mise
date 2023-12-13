@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 use console::style;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::unalias_plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -24,7 +24,7 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
 
         let plugins = match self.all {

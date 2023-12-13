@@ -4,7 +4,6 @@ use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_EXE;
 use crate::file::touch_dir;
-use crate::output::Output;
 use crate::shell::{get_shell, ShellType};
 
 /// Initializes rtx in the current shell
@@ -46,7 +45,7 @@ pub struct Activate {
 }
 
 impl Activate {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
@@ -54,7 +53,7 @@ impl Activate {
         let _ = touch_dir(&dirs::DATA);
 
         let output = shell.activate(&RTX_EXE, self.status);
-        out.stdout.write(output);
+        rtxprint!("{output}");
 
         Ok(())
     }

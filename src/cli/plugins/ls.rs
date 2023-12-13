@@ -4,7 +4,7 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::{ExternalPlugin, PluginType};
 
 /// List installed plugins
@@ -42,7 +42,7 @@ pub struct PluginsLs {
 }
 
 impl PluginsLs {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut tools = config.list_plugins().into_iter().collect::<BTreeSet<_>>();
 
         if self.all {
@@ -60,25 +60,25 @@ impl PluginsLs {
 
         if self.urls || self.refs {
             for tool in tools {
-                rtxprint!(out, "{:29}", tool.name());
+                rtxprint!("{:29}", tool.name());
                 if self.urls {
                     if let Some(url) = tool.get_remote_url() {
-                        rtxprint!(out, " {}", url);
+                        rtxprint!(" {}", url);
                     }
                 }
                 if self.refs {
                     if let Ok(aref) = tool.current_abbrev_ref() {
-                        rtxprint!(out, " {}", aref);
+                        rtxprint!(" {}", aref);
                     }
                     if let Ok(sha) = tool.current_sha_short() {
-                        rtxprint!(out, " {}", sha);
+                        rtxprint!(" {}", sha);
                     }
                 }
-                rtxprint!(out, "\n");
+                rtxprint!("\n");
             }
         } else {
             for tool in tools {
-                rtxprintln!(out, "{tool}");
+                rtxprintln!("{tool}");
             }
         }
         Ok(())

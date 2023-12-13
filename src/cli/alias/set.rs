@@ -2,7 +2,6 @@ use color_eyre::eyre::Result;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
-use crate::output::Output;
 
 /// Add/update an alias for a plugin
 ///
@@ -19,7 +18,7 @@ pub struct AliasSet {
 }
 
 impl AliasSet {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
         config
             .global_config
             .set_alias(&self.plugin, &self.alias, &self.value);

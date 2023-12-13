@@ -2,7 +2,6 @@ use clap::Subcommand;
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::output::Output;
 
 mod node;
 mod python;
@@ -21,16 +20,16 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self {
-            Self::Node(cmd) => cmd.run(config, out),
-            Self::Python(cmd) => cmd.run(config, out),
+            Self::Node(cmd) => cmd.run(config),
+            Self::Python(cmd) => cmd.run(config),
         }
     }
 }
 
 impl Sync {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
-        self.command.run(config, out)
+    pub fn run(self, config: Config) -> Result<()> {
+        self.command.run(config)
     }
 }

@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use console::style;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -30,7 +30,7 @@ pub struct Prune {
 }
 
 impl Prune {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(&config)?;
         let mut to_delete = ts
             .list_installed_versions(&config)?

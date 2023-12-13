@@ -3,7 +3,6 @@ use color_eyre::eyre::Result;
 
 use crate::config::Config;
 use crate::env;
-use crate::output::Output;
 
 mod clear;
 
@@ -23,20 +22,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self {
-            Self::Clear(cmd) => cmd.run(config, out),
+            Self::Clear(cmd) => cmd.run(config),
         }
     }
 }
 
 impl Cache {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match self.command {
-            Some(cmd) => cmd.run(config, out),
+            Some(cmd) => cmd.run(config),
             None => {
                 // just show the cache dir
-                rtxprintln!(out, "{}", env::RTX_CACHE_DIR.display());
+                rtxprintln!("{}", env::RTX_CACHE_DIR.display());
                 Ok(())
             }
         }

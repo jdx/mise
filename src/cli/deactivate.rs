@@ -3,7 +3,7 @@ use console::style;
 
 use crate::config::Config;
 use crate::hook_env;
-use crate::output::Output;
+
 use crate::shell::get_shell;
 
 /// Disable rtx for current shell session
@@ -14,16 +14,16 @@ use crate::shell::get_shell;
 pub struct Deactivate {}
 
 impl Deactivate {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }
 
         let shell = get_shell(None).expect("no shell detected");
 
-        out.stdout.write(hook_env::clear_old_env(&*shell));
+        rtxprint!("{}", hook_env::clear_old_env(&*shell));
         let output = shell.deactivate();
-        out.stdout.write(output);
+        rtxprint!("{output}");
 
         Ok(())
     }

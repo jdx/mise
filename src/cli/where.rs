@@ -3,7 +3,7 @@ use color_eyre::eyre::Result;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
-use crate::output::Output;
+
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a runtime
@@ -28,7 +28,7 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),
@@ -55,7 +55,7 @@ impl Where {
             .map(|tvr| tvr.resolve(&config, plugin.clone(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
-                rtxprintln!(out, "{}", tv.install_path().to_string_lossy());
+                rtxprintln!("{}", tv.install_path().to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(

@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::dirs;
 use crate::env::PYENV_ROOT;
 use crate::file;
-use crate::output::Output;
+
 use crate::plugins::PluginName;
 
 /// Symlinks all tool versions from an external tool into rtx
@@ -20,7 +20,7 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let python = config.get_or_create_plugin(&PluginName::from("python"));
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -34,7 +34,7 @@ impl SyncPython {
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
         for v in sorted(subdirs) {
             python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
-            rtxprintln!(out, "Synced python@{} from pyenv", v);
+            rtxprintln!("Synced python@{} from pyenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()

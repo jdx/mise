@@ -6,7 +6,6 @@ use color_eyre::eyre::Result;
 
 use crate::cli::self_update::SelfUpdate;
 use crate::config::Config;
-use crate::output::Output;
 use crate::shell::completions;
 
 /// Generate shell completions
@@ -23,7 +22,7 @@ pub struct RenderCompletion {
 }
 
 impl RenderCompletion {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
         let mut cmd = crate::cli::Cli::command().subcommand(SelfUpdate::command());
@@ -37,7 +36,7 @@ impl RenderCompletion {
                 String::from_utf8(c.into_inner()).unwrap()
             }
         };
-        rtxprintln!(out, "{}", script.trim());
+        rtxprintln!("{}", script.trim());
 
         Ok(())
     }

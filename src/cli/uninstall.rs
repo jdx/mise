@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -30,7 +30,7 @@ pub struct Uninstall {
 }
 
 impl Uninstall {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let tool_versions = if self.tool.is_empty() && self.all {
             self.get_all_tool_versions(&config)?
         } else {

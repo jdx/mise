@@ -3,7 +3,6 @@ use color_eyre::eyre::Result;
 use crate::config::Config;
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
-use crate::output::Output;
 
 /// Deletes all cache files in rtx
 #[derive(Debug, clap::Args)]
@@ -15,7 +14,7 @@ pub struct CacheClear {
 }
 
 impl CacheClear {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let cache_dirs = match &self.plugin {
             Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
             None => vec![CACHE.to_path_buf()],
@@ -27,8 +26,8 @@ impl CacheClear {
             }
         }
         match &self.plugin {
-            Some(plugins) => rtxstatusln!(out, "cache cleared for {}", plugins.join(", ")),
-            None => rtxstatusln!(out, "cache cleared"),
+            Some(plugins) => rtxstatusln!("cache cleared for {}", plugins.join(", ")),
+            None => rtxstatusln!("cache cleared"),
         }
         Ok(())
     }

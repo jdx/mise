@@ -3,7 +3,6 @@ use console::style;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
 use crate::shell::get_shell;
 use crate::toolset::{ToolSource, ToolsetBuilder};
 
@@ -23,7 +22,7 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }
@@ -42,7 +41,7 @@ impl Shell {
                 } else {
                     shell.set_env(&k, &tv.version)
                 };
-                out.stdout.writeln(op);
+                rtxprintln!("{op}");
             }
         }
 

@@ -13,7 +13,6 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
-use crate::output::Output;
 use crate::plugins::{unalias_plugin, Plugin, PluginName};
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 
@@ -59,7 +58,7 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(mut self, config: Config) -> Result<()> {
         self.plugin = self
             .plugin
             .clone()
@@ -83,11 +82,11 @@ impl Ls {
             runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
         }
         if self.json {
-            self.display_json(runtimes, out)
+            self.display_json(runtimes)
         } else if self.parseable {
-            self.display_parseable(runtimes, out)
+            self.display_parseable(runtimes)
         } else {
-            self.display_user(&config, runtimes, out)
+            self.display_user(&config, runtimes)
         }
     }
 
@@ -104,7 +103,7 @@ impl Ls {
         Ok(())
     }
 
-    fn display_json(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
+    fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
         if let Some(plugin) = &self.plugin {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
@@ -112,7 +111,7 @@ impl Ls {
                 .filter(|(p, _, _)| plugin.eq(&p.name()))
                 .map(|row| row.into())
                 .collect();
-            out.stdout.writeln(serde_json::to_string_pretty(&runtimes)?);
+            rtxprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
             return Ok(());
         }
 
@@ -124,11 +123,11 @@ impl Ls {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
-        out.stdout.writeln(serde_json::to_string_pretty(&plugins)?);
+        rtxprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 
-    fn display_parseable(&self, runtimes: Vec<RuntimeRow>, out: &mut Output) -> Result<()> {
+    fn display_parseable(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
         warn!("The parseable output format is deprecated and will be removed in a future release.");
         warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
         runtimes
@@ -138,20 +137,15 @@ impl Ls {
             .for_each(|(_, tv)| {
                 if self.plugin.is_some() {
                     // only displaying 1 plugin so only show the version
-                    rtxprintln!(out, "{}", tv.version);
+                    rtxprintln!("{}", tv.version);
                 } else {
-                    rtxprintln!(out, "{} {}", tv.plugin_name, tv.version);
+                    rtxprintln!("{} {}", tv.plugin_name, tv.version);
                 }
             });
         Ok(())
     }
 
-    fn display_user(
-        &self,
-        config: &Config,
-        runtimes: Vec<RuntimeRow>,
-        out: &mut Output,
-    ) -> Result<()> {
+    fn display_user(&self, config: &Config, runtimes: Vec<RuntimeRow>) -> Result<()> {
         let output = runtimes
             .into_iter()
             .map(|(p, tv, source)| {
@@ -204,7 +198,7 @@ impl Ls {
                     format!("{} {}", plugin, version)
                 }
             };
-            rtxprintln!(out, "{}", line.trim_end());
+            rtxprintln!("{}", line.trim_end());
         }
         Ok(())
     }
