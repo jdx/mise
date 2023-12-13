@@ -2,7 +2,7 @@ use color_eyre::eyre::{eyre, Result};
 use url::Url;
 
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -46,7 +46,7 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub fn run(self, config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         if self.all {
             return self.install_all_missing_plugins(config, mpr);

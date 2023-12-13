@@ -4,7 +4,6 @@ use color_eyre::eyre::Result;
 use std::fmt::Display;
 
 use crate::config::Config;
-use crate::output::Output;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
@@ -20,13 +19,13 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let c = match self.shell.or(self.shell_type).unwrap() {
             Shell::Bash => include_str!("../../completions/rtx.bash"),
             Shell::Fish => include_str!("../../completions/rtx.fish"),
             Shell::Zsh => include_str!("../../completions/_rtx"),
         };
-        rtxprintln!(out, "{}", c.trim());
+        rtxprintln!("{}", c.trim());
 
         Ok(())
     }

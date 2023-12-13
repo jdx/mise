@@ -13,7 +13,7 @@ use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, AliasMap, Config, Settings};
 use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
-use crate::output::Output;
+
 use crate::plugins::PluginName;
 use crate::toolset::{ToolVersion, ToolVersionList, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -121,7 +121,7 @@ impl dyn ConfigFile {
     /// this is for `rtx local|global TOOL` which will display the version instead of setting it
     /// it's only valid to use a single tool in this case
     /// returns "true" if the tool was displayed which means the CLI should exit
-    pub fn display_runtime(&self, out: &mut Output, runtimes: &[ToolArg]) -> Result<bool> {
+    pub fn display_runtime(&self, runtimes: &[ToolArg]) -> Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let plugin = &runtimes[0].plugin;
@@ -140,7 +140,7 @@ impl dyn ConfigFile {
                 .iter()
                 .map(|(tvr, _)| tvr.version())
                 .collect::<Vec<_>>();
-            rtxprintln!(out, "{}", tvl.join(" "));
+            rtxprintln!("{}", tvl.join(" "));
             return Ok(true);
         }
         // check for something like `rtx local node python@latest` which is invalid

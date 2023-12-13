@@ -16,14 +16,14 @@ use crate::env;
 use crate::fake_asdf;
 use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
-use crate::output::Output;
+
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 #[allow(dead_code)]
-pub fn handle_shim(config: Config, args: &[String], out: &mut Output) -> Result<Config> {
+pub fn handle_shim(config: Config, args: &[String]) -> Result<Config> {
     let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
     if bin_name == "rtx" {
         return Ok(config);
@@ -36,7 +36,7 @@ pub fn handle_shim(config: Config, args: &[String], out: &mut Output) -> Result<
         command: Some(args),
         cd: None,
     };
-    exec.run(config, out)?;
+    exec.run(config)?;
     exit(0);
 }
 

@@ -2,7 +2,6 @@ use color_eyre::eyre::{eyre, Result};
 
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
-use crate::output::Output;
 
 /// Add/update a setting
 ///
@@ -18,7 +17,7 @@ pub struct SettingsSet {
 }
 
 impl SettingsSet {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
         let value: toml_edit::Value = match self.key.as_str() {
             "experimental" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,

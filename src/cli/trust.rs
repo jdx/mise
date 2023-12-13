@@ -5,7 +5,6 @@ use color_eyre::eyre::Result;
 
 use crate::cli::local;
 use crate::config::{config_file, Config};
-use crate::output::Output;
 
 /// Marks a config file as trusted
 ///
@@ -29,17 +28,17 @@ pub struct Trust {
 }
 
 impl Trust {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let path = match &self.config_file {
             Some(filename) => PathBuf::from(filename),
             None => local::get_parent_path()?,
         };
         if self.untrust {
             config_file::untrust(&path)?;
-            rtxprintln!(out, "untrusted {}", &path.canonicalize()?.display());
+            rtxprintln!("untrusted {}", &path.canonicalize()?.display());
         } else {
             config_file::trust(&path)?;
-            rtxprintln!(out, "trusted {}", &path.canonicalize()?.display());
+            rtxprintln!("trusted {}", &path.canonicalize()?.display());
         }
         Ok(())
     }

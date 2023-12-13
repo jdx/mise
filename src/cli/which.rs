@@ -2,7 +2,7 @@ use color_eyre::eyre::{eyre, Result};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows the path that a bin name points to
@@ -28,18 +28,18 @@ pub struct Which {
 }
 
 impl Which {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let ts = self.get_toolset(&config)?;
 
         match ts.which(&config, &self.bin_name) {
             Some((p, tv)) => {
                 if self.version {
-                    rtxprintln!(out, "{}", tv.version);
+                    rtxprintln!("{}", tv.version);
                 } else if self.plugin {
-                    rtxprintln!(out, "{p}");
+                    rtxprintln!("{p}");
                 } else {
                     let path = p.which(&config, &ts, &tv, &self.bin_name)?;
-                    rtxprintln!(out, "{}", path.unwrap().display());
+                    rtxprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
             }

@@ -7,7 +7,7 @@ use self_update::{cargo_crate_version, Status};
 
 use crate::cli::version::{ARCH, OS};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::{cmd, env};
 
 /// Updates rtx itself
@@ -34,14 +34,14 @@ pub struct SelfUpdate {
 }
 
 impl SelfUpdate {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, _config: Config) -> Result<()> {
         let status = self.do_update()?;
 
         if status.updated() {
             let version = style(status.version()).bright().yellow();
-            rtxprintln!(out, "Updated rtx to {version}");
+            rtxprintln!("Updated rtx to {version}");
         } else {
-            rtxprintln!(out, "rtx is already up to date");
+            rtxprintln!("rtx is already up to date");
         }
         if !self.no_plugins {
             cmd!(&*env::RTX_EXE, "plugins", "update").run()?;

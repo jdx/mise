@@ -2,7 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
-use crate::output::Output;
+
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -27,30 +27,30 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         ts.install_arg_versions(&config)?;
 
         if self.json {
-            self.output_json(config, out, ts)
+            self.output_json(config, ts)
         } else {
-            self.output_shell(config, out, ts)
+            self.output_shell(config, ts)
         }
     }
 
-    fn output_json(&self, config: Config, out: &mut Output, ts: Toolset) -> Result<()> {
+    fn output_json(&self, config: Config, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(&config);
-        rtxprintln!(out, "{}", serde_json::to_string_pretty(&env)?);
+        rtxprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
-    fn output_shell(&self, config: Config, out: &mut Output, ts: Toolset) -> Result<()> {
+    fn output_shell(&self, config: Config, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
         for (k, v) in ts.env_with_path(&config) {
             let k = k.to_string();
             let v = v.to_string();
-            rtxprint!(out, "{}", shell.set_env(&k, &v));
+            rtxprint!("{}", shell.set_env(&k, &v));
         }
         Ok(())
     }

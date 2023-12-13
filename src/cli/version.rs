@@ -11,7 +11,7 @@ use crate::cli::self_update::SelfUpdate;
 use crate::config::Config;
 use crate::env::CI;
 use crate::file::modified_duration;
-use crate::output::Output;
+
 use crate::{dirs, duration, file};
 
 #[derive(Debug, clap::Args)]
@@ -44,24 +44,24 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
 pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
 
 impl Version {
-    pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        show_version(out);
+    pub fn run(self, _config: Config) -> Result<()> {
+        show_version();
         Ok(())
     }
 }
 
-pub fn print_version_if_requested(args: &[String], out: &mut Output) {
+pub fn print_version_if_requested(args: &[String]) {
     if args.len() == 2 && (args[0] == "rtx" || args[0].ends_with("/rtx")) {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
-            show_version(out);
+            show_version();
             std::process::exit(0);
         }
     }
 }
 
-fn show_version(out: &mut Output) {
-    rtxprintln!(out, "{}", *VERSION);
+fn show_version() {
+    rtxprintln!("{}", *VERSION);
     show_latest();
 }
 
@@ -137,6 +137,6 @@ mod tests {
     #[test]
     fn test_version() {
         let stdout = assert_cli!("version");
-        assert_str_eq!(stdout, VERSION.to_string() + "\n");
+        assert_str_eq!(stdout, VERSION.to_string());
     }
 }

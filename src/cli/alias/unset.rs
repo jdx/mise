@@ -2,7 +2,6 @@ use color_eyre::eyre::Result;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
-use crate::output::Output;
 
 /// Clears an alias for a plugin
 ///
@@ -17,7 +16,7 @@ pub struct AliasUnset {
 }
 
 impl AliasUnset {
-    pub fn run(self, mut config: Config, _out: &mut Output) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
         config.global_config.remove_alias(&self.plugin, &self.alias);
         config.global_config.save()
     }

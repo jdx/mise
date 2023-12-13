@@ -1,97 +1,67 @@
-use std::io;
-use std::io::Write;
-use std::process::ExitCode;
-
-#[derive(Debug)]
-pub enum OutputType {
-    Stdout,
-    Stderr,
-}
-
-#[derive(Debug)]
-pub struct Output {
-    pub stdout: OutputStream,
-    pub stderr: OutputStream,
-    pub status: ExitCode,
-}
-
-impl Output {
-    pub fn new() -> Self {
-        Self {
-            stdout: OutputStream::new(OutputType::Stdout),
-            stderr: OutputStream::new(OutputType::Stderr),
-            status: ExitCode::from(0),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn tracked() -> Self {
-        let mut output = Self::new();
-        output.stdout.track = true;
-        output.stderr.track = true;
-
-        output
-    }
-}
-
-impl Default for Output {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug)]
-pub struct OutputStream {
-    pub content: String,
-    pub output_type: OutputType,
-    pub track: bool,
-}
-
-impl OutputStream {
-    pub fn new(output_type: OutputType) -> Self {
-        Self {
-            content: Default::default(),
-            track: false,
-            output_type,
-        }
-    }
-    pub fn write(&mut self, content: String) {
-        if self.track {
-            self.content.push_str(&content);
-        } else {
-            let _ = match self.output_type {
-                OutputType::Stdout => io::stdout().write(content.as_bytes()),
-                OutputType::Stderr => io::stderr().write(content.as_bytes()),
-            };
-        }
-    }
-
-    pub fn writeln(&mut self, content: String) {
-        self.write(format!("{content}\n"));
-    }
-}
-
+#[cfg(test)]
 #[macro_export]
 macro_rules! rtxprintln {
     () => {
         rtxprint!("\n")
     };
-    ($out:ident, $($arg:tt)*) => {{
-        $out.stdout.writeln(format!($($arg)*));
+    ($($arg:tt)*) => {{
+        let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
+        stdout.push(format!($($arg)*));
     }};
 }
 
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! rtxprintln {
+    () => {
+        rtxprint!("\n")
+    };
+    ($($arg:tt)*) => {{
+        println!($($arg)*);
+    }};
+}
+
+#[cfg(test)]
 #[macro_export]
 macro_rules! rtxprint {
-    ($out:ident, $($arg:tt)*) => {{
-        $out.stdout.write(format!($($arg)*));
+    ($($arg:tt)*) => {{
+        let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
+        let cur = stdout.pop().unwrap_or_default();
+        stdout.push(cur + &format!($($arg)*));
     }};
 }
 
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! rtxprint {
+    ($($arg:tt)*) => {{
+        print!($($arg)*);
+    }};
+}
+
+#[cfg(test)]
 #[macro_export]
 macro_rules! rtxstatusln {
-    ($out:ident, $($arg:tt)*) => {{
+        ($($arg:tt)*) => {{
+            let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+            let rtx = console::style("rtx ").dim().for_stderr();
+            stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+        }};
+    }
+
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! rtxstatusln {
+    ($($arg:tt)*) => {{
         let rtx = console::style("rtx ").dim().for_stderr();
-        $out.stderr.writeln(format!("{}{}", rtx, format!($($arg)*)));
+        eprintln!("{}{}", rtx, format!($($arg)*));
     }};
+}
+
+#[cfg(test)]
+pub mod tests {
+    use std::sync::Mutex;
+
+    pub static STDOUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub static STDERR: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }

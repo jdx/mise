@@ -1,7 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 
 use crate::config::Config;
-use crate::output::Output;
 
 /// Show an alias for a plugin
 ///
@@ -17,10 +16,10 @@ pub struct AliasGet {
 }
 
 impl AliasGet {
-    pub fn run(self, config: Config, out: &mut Output) -> Result<()> {
+    pub fn run(self, config: Config) -> Result<()> {
         match config.get_all_aliases().get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
-                Some(alias) => Ok(rtxprintln!(out, "{}", alias)),
+                Some(alias) => Ok(rtxprintln!("{}", alias)),
                 None => Err(eyre!("Unknown alias: {}", &self.alias)),
             },
             None => Err(eyre!("Unknown plugin: {}", &self.plugin)),
