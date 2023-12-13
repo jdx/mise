@@ -3,6 +3,7 @@ source: src/shell/fish.rs
 expression: "fish.activate(exe, true)"
 ---
 set -gx RTX_SHELL fish
+set -gx __RTX_ORIG_PATH $PATH
 
 function rtx
   if test (count $argv) -eq 0
