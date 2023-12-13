@@ -12,7 +12,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::env;
 
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -42,12 +42,30 @@ pub struct Exec {
     /// Change to this directory before executing the command
     #[clap(short = 'C', value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
+
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    pub jobs: Option<usize>,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    pub raw: bool,
 }
 
 impl Exec {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_arg_versions(&config)?;
+        let opts = InstallOptions {
+            force: false,
+            jobs: self.jobs,
+            raw: self.raw,
+        };
+        ts.install_arg_versions(&config, &opts)?;
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
         let env = ts.env_with_path(&config);

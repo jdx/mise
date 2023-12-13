@@ -35,6 +35,8 @@ pub fn handle_shim(config: Config, args: &[String]) -> Result<Config> {
         c: None,
         command: Some(args),
         cd: None,
+        jobs: None,
+        raw: false,
     };
     exec.run(config)?;
     exit(0);

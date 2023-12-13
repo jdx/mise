@@ -73,26 +73,29 @@ mod tests {
 
     #[test]
     fn test_which() {
-        assert_cli!("global", "dummy@1.0.0");
+        assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "dummy");
-        assert_cli!("global", "dummy@ref:master");
+        assert_cli!("use", "dummy@ref:master");
         assert_cli!("uninstall", "dummy@1.0.0");
+        assert_cli!("use", "--rm", "dummy");
     }
 
     #[test]
     fn test_which_plugin() {
-        assert_cli!("global", "dummy@1.0.0");
+        assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--plugin", "dummy");
-        assert_cli!("global", "dummy@ref:master");
+        assert_cli!("use", "dummy@ref:master");
         assert_cli!("uninstall", "dummy@1.0.0");
+        assert_cli!("use", "--rm", "dummy");
     }
 
     #[test]
     fn test_which_version() {
-        assert_cli!("global", "dummy@1.0.0");
+        assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--version", "dummy");
-        assert_cli!("global", "dummy@ref:master");
+        assert_cli!("use", "dummy@ref:master");
         assert_cli!("uninstall", "dummy@1.0.0");
+        assert_cli!("use", "--rm", "dummy");
     }
 
     #[test]

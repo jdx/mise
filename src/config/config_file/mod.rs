@@ -15,8 +15,7 @@ use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 
 use crate::plugins::PluginName;
-use crate::toolset::{ToolVersion, ToolVersionList, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::toolset::{ToolVersionList, Toolset};
 use crate::{dirs, env, file};
 
 pub mod legacy_version;
@@ -67,7 +66,6 @@ pub trait ConfigFile: Debug + Display + Send + Sync {
 impl dyn ConfigFile {
     pub fn add_runtimes(&mut self, config: &Config, runtimes: &[ToolArg], pin: bool) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
-        let mpr = MultiProgressReport::new(&config.settings);
         let mut ts = self.to_toolset().to_owned();
         ts.latest_versions = true;
         ts.resolve(config);
@@ -89,11 +87,6 @@ impl dyn ConfigFile {
             ts.versions.insert(plugin.clone(), tvl);
         }
         ts.resolve(config);
-        let versions: Vec<ToolVersion> = plugins_to_update
-            .iter()
-            .flat_map(|(pn, _)| ts.versions.get(pn).unwrap().versions.clone())
-            .collect();
-        ts.install_versions(config, versions, &mpr, false)?;
         for (plugin, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()

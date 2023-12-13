@@ -11,7 +11,7 @@ use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME
 use crate::file::display_path;
 
 use crate::plugins::PluginName;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -29,25 +29,15 @@ pub struct Use {
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment, required_unless_present = "remove")]
     tool: Vec<ToolArg>,
 
-    /// Save exact version to config file
-    /// e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
-    #[clap(
-        long,
-        env = "RTX_ASDF_COMPAT",
-        verbatim_doc_comment,
-        overrides_with = "fuzzy"
-    )]
-    pin: bool,
+    /// Force reinstall even if already installed
+    #[clap(long, short, requires = "tool")]
+    force: bool,
 
     /// Save fuzzy version to config file
     /// e.g.: `rtx use --fuzzy node@20` will save 20 as the version
     /// this is the default behavior unless RTX_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
-
-    /// Remove the tool(s) from config file
-    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
 
     /// Use the global config file (~/.config/rtx/config.toml) instead of the local one
     #[clap(short, long, overrides_with_all = &["path", "env"])]
@@ -57,16 +47,49 @@ pub struct Use {
     #[clap(long, short, overrides_with_all = &["global", "path"])]
     env: Option<String>,
 
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
+    /// Remove the tool(s) from config file
+    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    remove: Option<Vec<PluginName>>,
+
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
     #[clap(short, long, overrides_with_all = &["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
+
+    /// Save exact version to config file
+    /// e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
+    #[clap(
+        long,
+        env = "RTX_ASDF_COMPAT",
+        verbatim_doc_comment,
+        overrides_with = "fuzzy"
+    )]
+    pin: bool,
 }
 
 impl Use {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_arg_versions(&config)?;
+
+        let opts = InstallOptions {
+            force: self.force,
+            jobs: self.jobs,
+            raw: self.raw,
+        };
+        ts.install_arg_versions(&config, &opts)?;
 
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));

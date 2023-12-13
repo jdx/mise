@@ -4,7 +4,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 
 use crate::toolset::{
-    ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
+    InstallOptions, ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -28,13 +28,26 @@ pub struct Install {
     #[clap(long, short, requires = "tool")]
     force: bool,
 
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
     /// Show installation output
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
 }
 
 impl Install {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
@@ -53,7 +66,15 @@ impl Install {
             warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
             return Ok(());
         }
-        ts.install_versions(&config, tool_versions, &mpr, self.force)
+        ts.install_versions(&config, tool_versions, &mpr, &self.install_opts())
+    }
+
+    fn install_opts(&self) -> InstallOptions {
+        InstallOptions {
+            force: self.force,
+            jobs: self.jobs,
+            raw: self.raw,
+        }
     }
 
     fn get_requested_tool_versions(
@@ -116,7 +137,7 @@ impl Install {
             return Ok(());
         }
         let mpr = MultiProgressReport::new(&config.settings);
-        ts.install_versions(&config, versions, &mpr, self.force)?;
+        ts.install_versions(&config, versions, &mpr, &self.install_opts())?;
         Ok(())
     }
 }

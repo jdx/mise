@@ -4,7 +4,7 @@ use console::style;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::shell::get_shell;
-use crate::toolset::{ToolSource, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 
 /// Sets a tool version for the current shell session
 ///
@@ -16,19 +16,37 @@ pub struct Shell {
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
     /// Removes a previously set version
     #[clap(long, short)]
     unset: bool,
 }
 
 impl Shell {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         if !config.is_activated() {
             err_inactive()?;
         }
 
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_arg_versions(&config)?;
+        let opts = InstallOptions {
+            force: false,
+            jobs: self.jobs,
+            raw: self.raw,
+        };
+        ts.install_arg_versions(&config, &opts)?;
 
         let shell = get_shell(None).expect("no shell detected");
 
