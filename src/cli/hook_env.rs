@@ -10,6 +10,7 @@ use terminal_size::{terminal_size, Width};
 
 use crate::config::Config;
 
+use crate::config::Settings;
 use crate::direnv::DirenvDiff;
 use crate::env::__RTX_DIFF;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -48,7 +49,7 @@ impl HookEnv {
         paths.extend(ts.list_paths(&config)); // load the active runtime paths
         diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
 
-        patches.extend(self.build_path_operations(&paths, &__RTX_DIFF.path)?);
+        patches.extend(self.build_path_operations(&config.settings, &paths, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&config)?);
 
@@ -87,14 +88,17 @@ impl HookEnv {
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
     fn build_path_operations(
         &self,
+        settings: &Settings,
         installs: &Vec<PathBuf>,
         to_remove: &Vec<PathBuf>,
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__RTX_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
-                Some((pre, post)) => (pre.to_string(), (orig_path.to_string() + post)),
-                None => (String::new(), full),
+                Some((pre, post)) if settings.experimental => {
+                    (pre.to_string(), (orig_path.to_string() + post))
+                }
+                _ => (String::new(), full),
             },
             None => (String::new(), full),
         };
