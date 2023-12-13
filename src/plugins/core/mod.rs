@@ -39,6 +39,8 @@ pub type PluginMap = BTreeMap<String, Arc<dyn Plugin>>;
 
 pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Plugin>> = vec![
+        Arc::new(BunPlugin::new()),
+        Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
         if *RTX_NODE_BUILD == Some(true) {
@@ -57,8 +59,6 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Plugin>> = vec![
-        Arc::new(BunPlugin::new()),
-        Arc::new(DenoPlugin::new()),
         Arc::new(ErlangPlugin::new()),
     ];
     plugins
