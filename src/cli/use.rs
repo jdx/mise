@@ -53,7 +53,7 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = &["path", "env"])]
     global: bool,
 
-    /// [experimental] Modify an environment-specific config file like .rtx.<env>.toml
+    /// Modify an environment-specific config file like .rtx.<env>.toml
     #[clap(long, short, overrides_with_all = &["global", "path"])]
     env: Option<String>,
 
