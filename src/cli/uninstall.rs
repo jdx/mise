@@ -18,7 +18,7 @@ use crate::{runtime_symlinks, shims};
 pub struct Uninstall {
     /// Tool(s) to remove
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
-    tool: Vec<ToolArg>,
+    installed_tool: Vec<ToolArg>,
 
     /// Delete all installed versions
     #[clap(long, short)]
@@ -31,7 +31,7 @@ pub struct Uninstall {
 
 impl Uninstall {
     pub fn run(self, config: Config) -> Result<()> {
-        let tool_versions = if self.tool.is_empty() && self.all {
+        let tool_versions = if self.installed_tool.is_empty() && self.all {
             self.get_all_tool_versions(&config)?
         } else {
             self.get_requested_tool_versions(&config)?
@@ -87,7 +87,7 @@ impl Uninstall {
         &self,
         config: &Config,
     ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
-        let runtimes = ToolArg::double_tool_condition(&self.tool);
+        let runtimes = ToolArg::double_tool_condition(&self.installed_tool);
         let tool_versions = runtimes
             .into_par_iter()
             .map(|a| {
