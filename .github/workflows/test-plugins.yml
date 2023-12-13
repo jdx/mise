@@ -54,12 +54,12 @@ jobs:
           - plugin: direnv
             command: rtx exec direnv@latest -- direnv --version
           - plugin: erlang
-            command: rtx exec erlang@latest -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+            command: rtx exec erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
             command: |
-              rtx use --global erlang@latest
+              rtx use --global erlang@24.3.4.9
               eval "$(rtx env bash)"
-              rtx use --global elixir@latest
+              rtx use --global elixir@main-otp-24
               eval "$(rtx env bash)"
               rtx exec -- elixir --version
           - plugin: golang
@@ -109,6 +109,8 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 30
           command: ${{matrix.command}}
+        env:
+          RTX_EXPERIMENTAL: "1"
   test-install:
     # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
     # installing is a better-than-nothing smoke test that the plugin is correctly implemented
