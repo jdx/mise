@@ -32,6 +32,13 @@ mod tool_version_request;
 
 pub type ToolVersionOptions = BTreeMap<String, String>;
 
+#[derive(Debug, Default)]
+pub struct InstallOptions {
+    pub force: bool,
+    pub jobs: Option<usize>,
+    pub raw: bool,
+}
+
 /// a toolset is a collection of tools for various plugins
 ///
 /// one example is a .tool-versions file
@@ -83,7 +90,7 @@ impl Toolset {
             .par_iter_mut()
             .for_each(|(_, v)| v.resolve(config, self.latest_versions));
     }
-    pub fn install_arg_versions(&mut self, config: &Config) -> Result<()> {
+    pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
         let mpr = MultiProgressReport::new(&config.settings);
         let versions = self
             .list_missing_versions(config)
@@ -91,7 +98,7 @@ impl Toolset {
             .filter(|tv| matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
             .cloned()
             .collect_vec();
-        self.install_versions(config, versions, &mpr, false)
+        self.install_versions(config, versions, &mpr, opts)
     }
 
     pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
@@ -108,7 +115,7 @@ impl Toolset {
         config: &Config,
         versions: Vec<ToolVersion>,
         mpr: &MultiProgressReport,
-        force: bool,
+        opts: &InstallOptions,
     ) -> Result<()> {
         if versions.is_empty() {
             return Ok(());
@@ -126,8 +133,9 @@ impl Toolset {
             }
         }
         let queue = Arc::new(Mutex::new(queue));
+        let jobs = opts.jobs.unwrap_or(config.settings.jobs);
         thread::scope(|s| {
-            (0..config.settings.jobs)
+            (0..jobs)
                 .map(|_| {
                     let queue = queue.clone();
                     let ts = &*self;
@@ -145,7 +153,8 @@ impl Toolset {
                                         true,
                                     )?,
                                     pr: mpr.add(),
-                                    force,
+                                    raw: opts.raw,
+                                    force: opts.force,
                                 };
                                 t.install_version(ctx)?;
                             }

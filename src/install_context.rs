@@ -7,5 +7,6 @@ pub struct InstallContext<'a> {
     pub ts: &'a Toolset,
     pub tv: ToolVersion,
     pub pr: ProgressReport,
+    pub raw: bool,
     pub force: bool,
 }
