@@ -405,7 +405,7 @@ __rtx_local_cmd() {
 (( $+functions[__rtx_ls_cmd] )) ||
 __rtx_ls_cmd() {
   _arguments -s -S \
-    '::plugin:__rtx_plugins' \
+    '*::plugin:__rtx_plugins' \
     '(-c --current)'{-c,--current}'[Only show tool versions currently specified in a .tool-versions/.rtx.toml]' \
     '(-g --global)'{-g,--global}'[Only show tool versions currently specified in a the global .tool-versions/.rtx.toml]' \
     '(-i --installed)'{-i,--installed}'[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed]' \
