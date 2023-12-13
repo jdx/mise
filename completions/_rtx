@@ -185,6 +185,7 @@ return ret
 (( $+functions[__rtx_cache_clear_cmd] )) ||
 __rtx_cache_clear_cmd() {
   _arguments -s -S \
+    '*::plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '(-r --raw)'{-r,--raw}'[Directly pipe stdin/stdout/stderr to user.]' \
