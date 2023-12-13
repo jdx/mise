@@ -31,7 +31,7 @@ function __rtx_plugins
 end
 function __rtx_tool_versions
     if test -z "$__rtx_tool_versions_cache"
-        set -g __rtx_tool_versions_cache (rtx ls-remote --all)
+        set -g __rtx_tool_versions_cache (rtx plugins --core --user) (rtx ls-remote --all | tac)
     end
     for tv in $__rtx_tool_versions_cache
         echo $tv
@@ -60,7 +60,7 @@ fn render_args(cmds: &[&Command]) -> Vec<String> {
 }
 
 fn render_arg(cmds: &[&Command], a: &Arg) -> String {
-    let mut complete_cmd = r#"complete -xc rtx"#.to_string();
+    let mut complete_cmd = r#"complete -kxc rtx"#.to_string();
     let parents = cmds.iter().skip(1).map(|c| c.get_name()).collect_vec();
     if cmds.len() > 1 {
         let mut p = format!("$fssf {}", &parents[0]);
