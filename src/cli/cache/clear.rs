@@ -1,33 +1,50 @@
 use color_eyre::eyre::Result;
 
 use crate::config::Config;
-use crate::env;
-use crate::file::remove_all;
+use crate::dirs::CACHE;
+use crate::file::{display_path, remove_all};
 use crate::output::Output;
 
 /// Deletes all cache files in rtx
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
-pub struct CacheClear {}
+pub struct CacheClear {
+    /// Plugin(s) to clear cache for
+    /// e.g.: node, python
+    plugin: Option<Vec<String>>,
+}
 
 impl CacheClear {
     pub fn run(self, _config: Config, out: &mut Output) -> Result<()> {
-        let cache_dir = env::RTX_CACHE_DIR.to_path_buf();
-        if cache_dir.exists() {
-            debug!("clearing cache from {}", cache_dir.display());
-            remove_all(cache_dir)?;
+        let cache_dirs = match &self.plugin {
+            Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
+            None => vec![CACHE.to_path_buf()],
+        };
+        for p in cache_dirs {
+            if p.exists() {
+                debug!("clearing cache from {}", display_path(&p));
+                remove_all(p)?;
+            }
         }
-        rtxstatusln!(out, "cache cleared");
+        match &self.plugin {
+            Some(plugins) => rtxstatusln!(out, "cache cleared for {}", plugins.join(", ")),
+            None => rtxstatusln!(out, "cache cleared"),
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
+    use crate::assert_cli_snapshot_stderr;
 
     #[test]
     fn test_cache_clear() {
-        assert_cli!("cache", "clear");
+        assert_cli_snapshot_stderr!("cache", "clear");
+    }
+
+    #[test]
+    fn test_cache_clear_plugin() {
+        assert_cli_snapshot_stderr!("cache", "clear", "tiny");
     }
 }
