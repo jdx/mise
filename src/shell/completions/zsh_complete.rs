@@ -25,7 +25,20 @@ pub fn render(cmd: &Command) -> String {
           if compset -P '*@'; then
             local -a tool_versions; tool_versions=($(rtx ls-remote ${{words[CURRENT]}}))
             _wanted tool_version expl 'version of tool' \
-              compadd -a tool_versions
+              compadd -a tool_versions -o nosort
+          else
+            local -a plugins; plugins=($(rtx plugins --core --user))
+            _wanted plugin expl 'plugin name' \
+              compadd -S '@' -a plugins
+          fi
+        }}
+        (( $+functions[__rtx_installed_tool_versions] )) ||
+        __rtx_installed_tool_versions() {{
+          if compset -P '*@'; then
+            local plugin; plugin=${{words[CURRENT]%%@*}}
+            local -a installed_tool_versions; installed_tool_versions=($(rtx ls --installed $plugin | awk '{{print $2}}'))
+            _wanted installed_tool_version expl 'version of tool' \
+              compadd -a installed_tool_versions -o nosort
           else
             local -a plugins; plugins=($(rtx plugins --core --user))
             _wanted plugin expl 'plugin name' \
@@ -49,8 +62,10 @@ pub fn render(cmd: &Command) -> String {
         }}
         (( $+functions[__rtx_prefixes] )) ||
         __rtx_prefixes() {{
-          local -a prefixes; prefixes=($(rtx ls-remote ${{words[CURRENT-1]}}))
-          _describe -t prefixes 'prefix' prefixes "$@"
+          if [[ CURRENT -gt 2 ]]; then
+              local -a prefixes; prefixes=($(rtx ls-remote ${{words[CURRENT-1]}}))
+              _describe -t prefixes 'prefix' prefixes "$@"
+          fi
         }}
 
         if [ "$funcstack[1]" = "_rtx" ]; then
@@ -209,6 +224,7 @@ fn render_completion(arg: &Arg) -> String {
         ValueHint::Other => "( )".to_string(),
         _ => match arg.get_id().as_str() {
             "tool" => "__rtx_tool_versions".to_string(),
+            "installed_tool" => "__rtx_installed_tool_versions".to_string(),
             "plugin" => "__rtx_plugins".to_string(),
             "new_plugin" => "__rtx_all_plugins".to_string(),
             "alias" => "__rtx_aliases".to_string(),

@@ -249,7 +249,7 @@ complete -xc rtx -n "$fssf trust" -l untrust -d 'No longer trust this config'
 # uninstall
 complete -xc rtx -n "$fssf uninstall" -s a -l all -d 'Delete all installed versions'
 complete -xc rtx -n "$fssf uninstall" -s n -l dry-run -d 'Do not actually delete anything'
-complete -xc rtx -n "$fssf uninstall" -a "(__rtx_tool_versions)" -d 'Tool(s) to remove'
+complete -xc rtx -n "$fssf uninstall" -a "(__rtx_installed_tool_versions)" -d 'Tool(s) to remove'
 
 # upgrade
 complete -xc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
@@ -298,6 +298,14 @@ function __rtx_tool_versions
         set -g __rtx_tool_versions_cache (rtx ls-remote --all)
     end
     for tv in $__rtx_tool_versions_cache
+        echo $tv
+    end
+end
+function __rtx_installed_tool_versions
+    if test -z "$__rtx_installed_tool_versions_cache"
+        set -g __rtx_installed_tool_versions_cache (rtx ls --installed | awk '{print $1 "@" $2}')
+    end
+    for tv in $__rtx_installed_tool_versions_cache
         echo $tv
     end
 end

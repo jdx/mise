@@ -709,7 +709,7 @@ __rtx_trust_cmd() {
 (( $+functions[__rtx_uninstall_cmd] )) ||
 __rtx_uninstall_cmd() {
   _arguments -s -S \
-    '*::tool:__rtx_tool_versions' \
+    '*::installed_tool:__rtx_installed_tool_versions' \
     '(-a --all)'{-a,--all}'[Delete all installed versions]' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of plugins and runtimes to install in parallel]:jobs:' \
@@ -876,7 +876,20 @@ __rtx_tool_versions() {
   if compset -P '*@'; then
     local -a tool_versions; tool_versions=($(rtx ls-remote ${words[CURRENT]}))
     _wanted tool_version expl 'version of tool' \
-      compadd -a tool_versions
+      compadd -a tool_versions -o nosort
+  else
+    local -a plugins; plugins=($(rtx plugins --core --user))
+    _wanted plugin expl 'plugin name' \
+      compadd -S '@' -a plugins
+  fi
+}
+(( $+functions[__rtx_installed_tool_versions] )) ||
+__rtx_installed_tool_versions() {
+  if compset -P '*@'; then
+    local plugin; plugin=${words[CURRENT]%%@*}
+    local -a installed_tool_versions; installed_tool_versions=($(rtx ls --installed $plugin | awk '{print $2}'))
+    _wanted installed_tool_version expl 'version of tool' \
+      compadd -a installed_tool_versions -o nosort
   else
     local -a plugins; plugins=($(rtx plugins --core --user))
     _wanted plugin expl 'plugin name' \
@@ -900,8 +913,10 @@ __rtx_aliases() {
 }
 (( $+functions[__rtx_prefixes] )) ||
 __rtx_prefixes() {
-  local -a prefixes; prefixes=($(rtx ls-remote ${words[CURRENT-1]}))
-  _describe -t prefixes 'prefix' prefixes "$@"
+  if [[ CURRENT -gt 2 ]]; then
+      local -a prefixes; prefixes=($(rtx ls-remote ${words[CURRENT-1]}))
+      _describe -t prefixes 'prefix' prefixes "$@"
+  fi
 }
 
 if [ "$funcstack[1]" = "_rtx" ]; then
