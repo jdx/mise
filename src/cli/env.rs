@@ -4,7 +4,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 
 use crate::shell::{get_shell, ShellType};
-use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Exports env vars to activate rtx a single time
 ///
@@ -21,15 +21,33 @@ pub struct Env {
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
     /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
 }
 
 impl Env {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_arg_versions(&config)?;
+        let opts = InstallOptions {
+            force: false,
+            jobs: self.jobs,
+            raw: self.raw,
+        };
+        ts.install_arg_versions(&config, &opts)?;
 
         if self.json {
             self.output_json(config, ts)

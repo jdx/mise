@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::plugins::Plugin;
 use crate::runtime_symlinks;
 use crate::shims;
-use crate::toolset::{ToolVersion, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::ProgressReport;
 
@@ -27,10 +27,23 @@ pub struct Upgrade {
     /// Just print what would be done, don't actually do it
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
+
+    /// Number of jobs to run in parallel
+    /// [default: 4]
+    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
 }
 
 impl Upgrade {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, mut config: Config) -> Result<()> {
+        if self.raw {
+            config.settings.raw = true;
+        }
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
@@ -77,7 +90,12 @@ impl Upgrade {
             }
             return Ok(());
         }
-        ts.install_versions(config, new_versions, &mpr, false)?;
+        let opts = InstallOptions {
+            force: false,
+            jobs: self.jobs,
+            raw: self.raw,
+        };
+        ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
             let mut pr = mpr.add();
             self.uninstall_old_version(config, tool.clone(), &tv, &mut pr)?;

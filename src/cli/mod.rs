@@ -185,12 +185,10 @@ impl Cli {
                 .arg_required_else_help(true)
                 .subcommand_required(true)
                 .after_long_help(AFTER_LONG_HELP)
-                .arg(args::jobs::Jobs::arg())
                 .arg(args::log_level::Debug::arg())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::log_level::Trace::arg())
                 .arg(args::quiet::Quiet::arg())
-                .arg(args::raw::Raw::arg())
                 .arg(args::verbose::Verbose::arg())
                 .arg(args::yes::Yes::arg()),
         )
@@ -203,12 +201,6 @@ impl Cli {
             return version::Version {}.run(config);
         }
         let matches = self.command.get_matches_from(args);
-        if let Some(jobs) = matches.get_one::<usize>("jobs") {
-            config.settings.jobs = *jobs;
-        }
-        if let Some(raw) = matches.get_one::<bool>("raw") {
-            config.settings.raw = *raw;
-        }
         if let Some(true) = matches.get_one::<bool>("yes") {
             config.settings.yes = true;
         }
