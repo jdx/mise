@@ -4,6 +4,7 @@ expression: "fish.activate(exe, true)"
 ---
 fish_add_path -g /some/dir
 set -gx RTX_SHELL fish
+set -gx __RTX_ORIG_PATH $PATH
 
 function rtx
   if test (count $argv) -eq 0

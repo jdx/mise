@@ -90,9 +90,19 @@ impl HookEnv {
         installs: &Vec<PathBuf>,
         to_remove: &Vec<PathBuf>,
     ) -> Result<Vec<EnvDiffOperation>> {
-        let new_path = join_paths([installs.clone(), env::PATH.clone()].concat())?
-            .to_string_lossy()
-            .to_string();
+        let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
+        let (pre, post) = match &*env::__RTX_ORIG_PATH {
+            Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
+                Some((pre, post)) => (pre.to_string(), (orig_path.to_string() + post)),
+                None => (String::new(), full),
+            },
+            None => (String::new(), full),
+        };
+        let install_path = join_paths(installs)?.to_string_lossy().to_string();
+        let new_path = vec![pre, install_path, post]
+            .into_iter()
+            .filter(|p| !p.is_empty())
+            .join(":");
         let mut ops = vec![EnvDiffOperation::Add("PATH".into(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {

@@ -15,6 +15,7 @@ impl Shell for Bash {
         }
         out.push_str(&formatdoc! {r#"
             export RTX_SHELL=bash
+            export __RTX_ORIG_PATH="$PATH"
 
             rtx() {{
               local command
