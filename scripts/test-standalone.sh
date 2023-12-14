@@ -17,3 +17,4 @@ if [[ ! "$("$RELEASE_DIR/bin/rtx" -v)" =~ ^${RTX_VERSION//v/} ]]; then
   echo "rtx version mismatch"
   exit 1
 fi
+rm -rf "$RELEASE_DIR"
