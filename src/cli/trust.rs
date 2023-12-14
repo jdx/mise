@@ -37,27 +37,27 @@ impl Trust {
         }
     }
     fn untrust(&self) -> Result<()> {
-            let path = match &self.config_file {
-                Some(filename) => PathBuf::from(filename),
-                None => match self.get_next_trusted() {
-                    Some(path) => path,
-                    None => bail!("No trusted config files found."),
-                },
-            };
-            config_file::untrust(&path)?;
-            rtxprintln!("untrusted {}", &path.canonicalize()?.display());
+        let path = match &self.config_file {
+            Some(filename) => PathBuf::from(filename),
+            None => match self.get_next_trusted() {
+                Some(path) => path,
+                None => bail!("No trusted config files found."),
+            },
+        };
+        config_file::untrust(&path)?;
+        rtxprintln!("untrusted {}", &path.canonicalize()?.display());
         Ok(())
     }
     fn trust(&self) -> Result<()> {
-            let path = match &self.config_file {
-                Some(filename) => PathBuf::from(filename),
-                None => match self.get_next_untrusted() {
-                    Some(path) => path,
-                    None => bail!("No untrusted config files found."),
-                },
-            };
-            config_file::trust(&path)?;
-            rtxprintln!("trusted {}", &path.canonicalize()?.display());
+        let path = match &self.config_file {
+            Some(filename) => PathBuf::from(filename),
+            None => match self.get_next_untrusted() {
+                Some(path) => path,
+                None => bail!("No untrusted config files found."),
+            },
+        };
+        config_file::trust(&path)?;
+        rtxprintln!("trusted {}", &path.canonicalize()?.display());
         Ok(())
     }
 
