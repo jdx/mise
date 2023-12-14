@@ -32,7 +32,7 @@ pub struct Env {
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
-    #[clap(long, env = "RTX_RAW", overrides_with = "jobs")]
+    #[clap(long, overrides_with = "jobs")]
     raw: bool,
 }
 

@@ -1914,8 +1914,6 @@ Options:
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-          [env: RTX_RAW=]
-
 Examples:
   $ eval "$(rtx env -s bash)"
   $ eval "$(rtx env -s zsh)"
@@ -1988,8 +1986,6 @@ Options:
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-          [env: RTX_RAW=]
-
 Examples:
   $ rtx exec node@20 -- node ./app.js  # launch app.js using node-20.x
   $ rtx x node@20 -- node ./app.js     # shorter alias
@@ -2048,8 +2044,6 @@ Options:
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
-
-          [env: RTX_RAW=]
 
   -v, --verbose...
           Show installation output
@@ -2587,8 +2581,6 @@ Options:
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-          [env: RTX_RAW=]
-
   -u, --unset
           Removes a previously set version
 
@@ -2722,8 +2714,6 @@ Options:
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
-
-          [env: RTX_RAW=]
 ```
 
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
@@ -2767,8 +2757,6 @@ Options:
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
-
-          [env: RTX_RAW=]
 
       --remove <TOOL>
           Remove the tool(s) from config file
