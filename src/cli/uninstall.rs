@@ -99,14 +99,14 @@ impl Uninstall {
                     .filter(|v| v.starts_with(&query))
                     .map(|v| {
                         let tvr = ToolVersionRequest::new(tool.name().into(), &v);
-                        let tv = ToolVersion::new(tool.clone(), tvr, Default::default(), v);
+                        let tv = ToolVersion::new(tool.as_ref(), tvr, Default::default(), v);
                         (tool.clone(), tv)
                     })
                     .collect::<Vec<_>>();
                 if let Some(tvr) = &a.tvr {
                     tvs.push((
                         tool.clone(),
-                        tvr.resolve(tool.clone(), Default::default(), false)?,
+                        tvr.resolve(tool.as_ref(), Default::default(), false)?,
                     ));
                 }
                 if tvs.is_empty() {

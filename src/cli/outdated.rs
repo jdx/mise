@@ -126,8 +126,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::env;
 
-    use crate::assert_cli_snapshot;
-
     #[test]
     fn test_current() {
         assert_cli_snapshot!("outdated");

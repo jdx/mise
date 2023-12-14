@@ -169,13 +169,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+
     use std::panic;
 
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;
     use crate::test::reset_config;
-    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs, file};
+    use crate::{dirs, file};
 
     #[test]
     fn test_local_remove() {
@@ -185,9 +186,9 @@ mod tests {
             assert_cli_snapshot!("local", "tiny@2");
             assert_cli_snapshot!("local", "--remove", "tiny");
             let stdout = assert_cli!("ls", "--current");
-            assert_str_eq!(
+            assert_snapshot!(
                 grep(stdout, "tiny"),
-                "tiny  2.1.0      ~/.test-tool-versions 2"
+                @"tiny   2.1.0       ~/.test-tool-versions 2"
             );
         });
     }

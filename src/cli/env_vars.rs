@@ -78,11 +78,8 @@ fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{dirs, file};
     use std::path::PathBuf;
-
-    use insta::assert_snapshot;
-
-    use crate::{assert_cli, assert_cli_snapshot, dirs, file};
 
     fn remove_config_file(filename: &str) -> PathBuf {
         let cf_path = dirs::CURRENT.join(filename);

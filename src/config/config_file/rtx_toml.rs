@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -57,11 +57,11 @@ impl RtxToml {
     }
 
     pub fn from_file(path: &Path) -> Result<Self> {
-        trace!("parsing: {}", path.display());
+        trace!("parsing: {}", display_path(path));
         let mut rf = Self::init(path);
         let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
-        trace!("{rf}");
+        trace!("{}", rf.dump());
         Ok(rf)
     }
 
@@ -576,12 +576,6 @@ impl RtxToml {
     }
 }
 
-impl Display for RtxToml {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.dump())
-    }
-}
-
 impl ConfigFile for RtxToml {
     fn get_type(&self) -> ConfigFileType {
         ConfigFileType::RtxToml
@@ -721,12 +715,13 @@ impl ConfigFile for RtxToml {
 
 impl Debug for RtxToml {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut d = f.debug_struct("RtxToml");
-        d.field("path", &self.path)
-            .field("toolset", &self.toolset.to_string())
-            .field("is_trusted", &self.is_trusted);
+        let tools = self.toolset.to_string();
+        let title = format!("RtxToml({}): {tools}", &display_path(&self.path));
+        let mut d = f.debug_struct(&title);
+        // d.field("is_trusted", &self.is_trusted);
         if let Ok(settings) = self.settings() {
-            d.field("settings", &settings);
+            let json = serde_json::to_value(settings).unwrap_or_default();
+            d.field("settings", &json);
         }
         if let Some(env_file) = &self.env_file {
             d.field("env_file", env_file);
@@ -771,8 +766,6 @@ impl Clone for RtxToml {
 
 #[cfg(test)]
 mod tests {
-    use insta::{assert_debug_snapshot, assert_display_snapshot, assert_snapshot};
-
     use crate::dirs;
     use crate::test::replace_path;
 
@@ -783,12 +776,12 @@ mod tests {
         let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env());
-        assert_debug_snapshot!(cf.settings());
+        assert_json_snapshot!(cf.settings().unwrap());
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
 
-        assert_snapshot!(replace_path(&cf.to_string()));
+        assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
     }
 
     #[test]
@@ -806,27 +799,37 @@ mod tests {
         }
         "###);
         assert_debug_snapshot!(cf.path_dirs(), @"[]");
-        assert_display_snapshot!(cf);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        with_settings!({
+            assert_snapshot!(cf.dump());
+            assert_display_snapshot!(cf);
+            assert_debug_snapshot!(cf);
+        });
     }
 
     #[test]
     fn test_path_dirs() {
-        let p = dirs::HOME.join("fixtures/.rtx.toml");
-        let mut cf = RtxToml::init(&p);
-        cf.parse(&formatdoc! {r#"
-        env_path=["/foo", "./bar"]
-        [env]
-        foo="bar"
-        "#})
-            .unwrap();
+        with_settings!({
+            let p = dirs::HOME.join("fixtures/.rtx.toml");
+            let mut cf = RtxToml::init(&p);
+            cf.parse(&formatdoc! {r#"
+            env_path=["/foo", "./bar"]
+            [env]
+            foo="bar"
+            "#})
+                .unwrap();
 
-        assert_debug_snapshot!(cf.env(), @r###"
-        {
-            "foo": "bar",
-        }
-        "###);
-        assert_snapshot!(replace_path(&format!("{:?}", cf.path_dirs())), @r###"["/foo", "~/fixtures/bar"]"###);
-        assert_display_snapshot!(cf);
+            assert_debug_snapshot!(cf.env(), @r###"
+            {
+                "foo": "bar",
+            }
+            "###);
+            assert_snapshot!(replace_path(&format!("{:?}", cf.path_dirs())), @r###"["/foo", "~/fixtures/bar"]"###);
+            let cf: Box<dyn ConfigFile> = Box::new(cf);
+            assert_snapshot!(cf.dump());
+            assert_display_snapshot!(cf);
+            assert_debug_snapshot!(cf);
+        });
     }
 
     #[test]
@@ -844,6 +847,7 @@ mod tests {
         cf.set_alias("python", "3.10", "3.10.0");
 
         assert_debug_snapshot!(cf.alias);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_display_snapshot!(cf);
     }
 
@@ -863,7 +867,10 @@ mod tests {
         cf.remove_alias("python", "3.10");
 
         assert_debug_snapshot!(cf.alias);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump());
         assert_display_snapshot!(cf);
+        assert_debug_snapshot!(cf);
     }
 
     #[test]
@@ -880,7 +887,10 @@ mod tests {
         );
 
         assert_debug_snapshot!(cf.toolset);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump());
         assert_display_snapshot!(cf);
+        assert_debug_snapshot!(cf);
     }
 
     #[test]
@@ -894,7 +904,10 @@ mod tests {
         cf.remove_plugin(&PluginName::from("node"));
 
         assert_debug_snapshot!(cf.toolset);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump());
         assert_display_snapshot!(cf);
+        assert_debug_snapshot!(cf);
     }
 
     #[test]

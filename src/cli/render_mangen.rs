@@ -42,7 +42,7 @@ fn project_root() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use crate::env::HOME;
-    use crate::{assert_cli, file};
+    use crate::file;
 
     #[test]
     fn test_render_mangen() {

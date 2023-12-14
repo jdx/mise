@@ -115,6 +115,13 @@ impl PythonPlugin {
         pr: Option<&dyn SingleReport>,
     ) -> Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.opts.get("virtualenv") {
+            let settings = Settings::try_get()?;
+            if !settings.experimental {
+                warn!(
+                    "please enable experimental mode with `rtx config set experimental true` \
+                    to use python virtualenv activation"
+                );
+            }
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
             if !virtualenv.is_absolute() {
                 // TODO: use the path of the config file that specified python, not the top one like this
@@ -230,22 +237,15 @@ impl Plugin for PythonPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<HashMap<String, String>> {
-        let hm = match self.get_virtualenv(config, tv, None) {
-            Err(e) => {
-                warn!("failed to get virtualenv: {e}");
-                HashMap::new()
+        let mut hm = HashMap::new();
+        match self.get_virtualenv(config, tv, None) {
+            Err(e) => warn!("failed to get virtualenv: {e}"),
+            Ok(Some(virtualenv)) => {
+                let bin = virtualenv.join("bin");
+                hm.insert("VIRTUAL_ENV".into(), virtualenv.to_string_lossy().into());
+                hm.insert("RTX_ADD_PATH".into(), bin.to_string_lossy().into());
             }
-            Ok(Some(virtualenv)) => HashMap::from([
-                (
-                    "VIRTUAL_ENV".to_string(),
-                    virtualenv.to_string_lossy().to_string(),
-                ),
-                (
-                    "RTX_ADD_PATH".to_string(),
-                    virtualenv.join("bin").to_string_lossy().to_string(),
-                ),
-            ]),
-            Ok(None) => HashMap::new(),
+            Ok(None) => {}
         };
         Ok(hm)
     }

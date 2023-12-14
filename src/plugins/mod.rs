@@ -3,7 +3,6 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use clap::Command;
 use color_eyre::eyre::Result;
@@ -79,7 +78,7 @@ pub trait Plugin: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tv: &ToolVersion, p: Arc<dyn Plugin>) -> bool {
+    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Plugin) -> bool {
         let latest = match tv.latest_version(p) {
             Ok(latest) => latest,
             Err(e) => {
@@ -400,8 +399,6 @@ pub enum PluginType {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_str_eq;
-
-    use crate::assert_cli;
 
     use super::*;
 

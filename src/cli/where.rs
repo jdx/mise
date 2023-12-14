@@ -52,7 +52,7 @@ impl Where {
         match runtime
             .tvr
             .as_ref()
-            .map(|tvr| tvr.resolve(plugin.clone(), Default::default(), false))
+            .map(|tvr| tvr.resolve(plugin.as_ref(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
                 rtxprintln!("{}", tv.install_path().to_string_lossy());
@@ -82,11 +82,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
-    use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err};
-    use crate::{assert_cli_snapshot, dirs};
+    use crate::dirs;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_where() {

@@ -137,6 +137,8 @@ v20.0.0
   - [`rtx bin-paths`](#rtx-bin-paths)
   - [`rtx cache clear [PLUGIN]...`](#rtx-cache-clear-plugin)
   - [`rtx completion [SHELL]`](#rtx-completion-shell)
+  - [`rtx config ls [OPTIONS]`](#rtx-config-ls-options)
+  - [`rtx config generate [OPTIONS]`](#rtx-config-generate-options)
   - [`rtx current [PLUGIN]`](#rtx-current-plugin)
   - [`rtx deactivate`](#rtx-deactivate)
   - [`rtx direnv activate`](#rtx-direnv-activate)
@@ -1805,6 +1807,37 @@ Examples:
   $ rtx completion fish > ~/.config/fish/completions/rtx.fish
 ```
 
+### `rtx config ls [OPTIONS]`
+
+```text
+[experimental] List config files currently in use
+
+Usage: config ls [OPTIONS]
+
+Options:
+      --no-header
+          Do not print table header
+
+Examples:
+  $ rtx config ls
+```
+
+### `rtx config generate [OPTIONS]`
+
+```text
+[experimental] Generate an .rtx.toml file
+
+Usage: config generate [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>
+          Output to file instead of stdout
+
+Examples:
+  $ rtx cf generate > .rtx.toml
+  $ rtx cf generate --output=.rtx.toml
+```
+
 ### `rtx current [PLUGIN]`
 
 ```text
@@ -2140,6 +2173,9 @@ Options:
 
       --prefix <PREFIX>
           Display versions matching this prefix
+
+      --no-header
+          Don't display headers
 
 Examples:
   $ rtx ls

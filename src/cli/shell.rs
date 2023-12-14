@@ -87,10 +87,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::env;
 
-    use insta::assert_display_snapshot;
-
-    use crate::{assert_cli_err, assert_cli_snapshot};
-
     #[test]
     fn test_shell() {
         let err = assert_cli_err!("shell", "tiny@1.0.1");

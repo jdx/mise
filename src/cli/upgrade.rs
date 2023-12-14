@@ -130,7 +130,7 @@ type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
 #[cfg(test)]
 pub mod tests {
     use crate::test::reset_config;
-    use crate::{assert_cli_snapshot, dirs, file};
+    use crate::{dirs, file};
 
     #[test]
     fn test_upgrade() {

@@ -72,7 +72,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
 
     #[test]
     fn test_plugin_update() {
