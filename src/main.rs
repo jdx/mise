@@ -80,18 +80,17 @@ fn main() -> Result<()> {
 }
 
 fn run() -> Result<()> {
-    let args = env::ARGS.read().unwrap();
     // show version before loading config in case of error
-    cli::version::print_version_if_requested(&args);
+    cli::version::print_version_if_requested();
     migrate::run();
 
     let config = Config::try_get()?;
-    shims::handle_shim(&config, &args)?;
+    shims::handle_shim(&config)?;
     if config.should_exit_early {
         return Ok(());
     }
     let cli = Cli::new_with_external_commands(&config);
-    cli.run(&args)
+    cli.run(&env::ARGS.read().unwrap())
 }
 
 fn handle_ctrlc() {
