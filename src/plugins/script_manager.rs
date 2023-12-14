@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::process::Output;
 
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
@@ -28,10 +27,7 @@ pub struct ScriptManager {
 
 #[derive(Debug, Clone)]
 pub enum Script {
-    // PreInstall,
-    // PostInstall,
-    // PreUninstall,
-    // PostUninstall,
+    Hook(String),
 
     // Plugin
     LatestStable,
@@ -58,6 +54,7 @@ impl Display for Script {
             Script::ListLegacyFilenames => write!(f, "list-legacy-filenames"),
             Script::ListAliases => write!(f, "list-aliases"),
             Script::ParseLegacyFile(_) => write!(f, "parse-legacy-file"),
+            Script::Hook(script) => write!(f, "{script}"),
 
             // RuntimeVersion
             Script::Install => write!(f, "install"),
@@ -150,18 +147,6 @@ impl ScriptManager {
             cmd = cmd.stdin_null();
         }
         cmd
-    }
-
-    pub fn run(&self, script: &Script) -> Result<()> {
-        let cmd = self.cmd(script);
-        let Output { status, .. } = cmd.unchecked().run()?;
-
-        match status.success() {
-            true => Ok(()),
-            false => {
-                Err(ScriptFailed(display_path(&self.get_script_path(script)), Some(status)).into())
-            }
-        }
     }
 
     pub fn read(&self, script: &Script) -> Result<String> {

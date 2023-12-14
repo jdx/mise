@@ -1,6 +1,8 @@
 use crate::config::Settings;
 use console::style;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use once_cell::sync::Lazy;
+use std::time::Duration;
 
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
@@ -9,6 +11,11 @@ pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
 }
+
+static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    ProgressStyle::with_template("{prefix} {wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
+        .unwrap()
+});
 
 impl MultiProgressReport {
     pub fn new() -> Self {
@@ -22,11 +29,17 @@ impl MultiProgressReport {
             quiet: settings.quiet,
         }
     }
-    pub fn add(&self) -> Box<dyn SingleReport> {
+    pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         match &self.mp {
             _ if self.quiet => Box::new(QuietReport::new()),
-            Some(mp) => Box::new(ProgressReport::new(mp.add(ProgressBar::new(0)))),
-            None => Box::new(VerboseReport::new()),
+            Some(mp) => {
+                let pb = ProgressBar::new(1)
+                    .with_style(PROG_TEMPLATE.clone())
+                    .with_prefix(format!("{} {}", style("rtx").dim().for_stderr(), prefix));
+                pb.enable_steady_tick(Duration::from_millis(250));
+                Box::new(ProgressReport::new(mp.add(pb)))
+            }
+            None => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
     pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
@@ -57,9 +70,7 @@ mod tests {
     #[test]
     fn test_multi_progress_report() {
         let mpr = MultiProgressReport::new();
-        let pr = mpr.add();
-        pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
-        pr.enable_steady_tick();
+        let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());
         pr.println("".into());
         pr.set_message("test".into());

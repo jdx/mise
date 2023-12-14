@@ -1,8 +1,11 @@
 use color_eyre::eyre::Result;
+use console::style;
+use rayon::prelude::*;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 
 use crate::plugins::{unalias_plugin, PluginName};
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
 ///
@@ -14,9 +17,10 @@ pub struct Update {
     #[clap()]
     plugin: Option<Vec<PluginName>>,
 
-    /// Update all plugins
-    #[clap(long, short = 'a', conflicts_with = "plugin", hide = true)]
-    all: bool,
+    /// Number of jobs to run in parallel
+    /// Default: 4
+    #[clap(long, short, verbatim_doc_comment)]
+    jobs: Option<usize>,
 }
 
 impl Update {
@@ -41,11 +45,20 @@ impl Update {
                 .collect::<Vec<_>>(),
         };
 
-        for (plugin, ref_) in plugins {
-            rtxprintln!("updating plugin {plugin}");
-            plugin.update(ref_)?;
-        }
-        Ok(())
+        // let queue = Mutex::new(plugins);
+        let settings = Settings::try_get()?;
+        let mpr = MultiProgressReport::new();
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(self.jobs.unwrap_or(settings.jobs))
+            .build()?
+            .install(|| {
+                plugins.into_par_iter().for_each(|(plugin, ref_)| {
+                    let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
+                    let pr = mpr.add(&prefix);
+                    plugin.update(pr.as_ref(), ref_).unwrap();
+                });
+                Ok(())
+            })
     }
 }
 

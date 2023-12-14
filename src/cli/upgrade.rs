@@ -1,3 +1,4 @@
+use console::style;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -94,8 +95,9 @@ impl Upgrade {
         };
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
-            let mut pr = mpr.add();
-            self.uninstall_old_version(tool.clone(), &tv, pr.as_mut())?;
+            let prefix = format!("{}", style(&tv).cyan().for_stderr());
+            let pr = mpr.add(&prefix);
+            self.uninstall_old_version(tool.clone(), &tv, pr.as_ref())?;
         }
 
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
@@ -108,9 +110,8 @@ impl Upgrade {
         &self,
         tool: Arc<dyn Plugin>,
         tv: &ToolVersion,
-        pr: &mut dyn SingleReport,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
-        tool.decorate_progress_bar(pr, Some(tv));
         match tool.uninstall_version(tv, pr, self.dry_run) {
             Ok(_) => {
                 pr.finish();

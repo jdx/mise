@@ -2527,12 +2527,20 @@ _rtx() {
             return 0
             ;;
         rtx__plugins__update)
-            opts="-a -q -v -y -h --all --debug --log-level --trace --quiet --verbose --yes --help [PLUGIN]..."
+            opts="-j -q -v -y -h --jobs --debug --log-level --trace --quiet --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --log-level)
                     COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0

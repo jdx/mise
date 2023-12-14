@@ -84,7 +84,7 @@ impl Settings {
             if *env::CI {
                 p.yes = Some(true);
             }
-            if *env::RTX_LOG_LEVEL < LevelFilter::Info {
+            if *env::RTX_LOG_LEVEL > LevelFilter::Info {
                 p.verbose = Some(true);
             }
             for arg in &*env::ARGS.read().unwrap() {

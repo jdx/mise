@@ -156,7 +156,7 @@ v20.0.0
   - [`rtx plugins ls [OPTIONS]`](#rtx-plugins-ls-options)
   - [`rtx plugins ls-remote [OPTIONS]`](#rtx-plugins-ls-remote-options)
   - [`rtx plugins uninstall [OPTIONS] [PLUGIN]...`](#rtx-plugins-uninstall-options-plugin)
-  - [`rtx plugins update [PLUGIN]...`](#rtx-plugins-update-plugin)
+  - [`rtx plugins update [OPTIONS] [PLUGIN]...`](#rtx-plugins-update-options-plugin)
   - [`rtx prune [OPTIONS] [PLUGIN]...`](#rtx-prune-options-plugin)
   - [`rtx reshim`](#rtx-reshim)
   - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
@@ -2386,18 +2386,23 @@ Examples:
   $ rtx uninstall node
 ```
 
-### `rtx plugins update [PLUGIN]...`
+### `rtx plugins update [OPTIONS] [PLUGIN]...`
 
 ```text
 Updates a plugin to the latest version
 
 note: this updates the plugin itself, not the runtime versions
 
-Usage: plugins update [PLUGIN]...
+Usage: plugins update [OPTIONS] [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
           Plugin(s) to update
+
+Options:
+  -j, --jobs <JOBS>
+          Number of jobs to run in parallel
+          Default: 4
 
 Examples:
   $ rtx plugins update            # update all plugins

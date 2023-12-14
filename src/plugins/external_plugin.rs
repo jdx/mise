@@ -117,6 +117,7 @@ impl ExternalPlugin {
             pr.set_message(format!("checking out {ref_}"));
             git.update(Some(ref_.to_string()))?;
         }
+        self.exec_hook(pr, "post-plugin-add")?;
 
         let sha = git.current_sha_short()?;
         pr.finish_with_message(format!(
@@ -366,6 +367,15 @@ impl ExternalPlugin {
             .with_env("ASDF_INSTALL_VERSION", install_version);
         sm
     }
+
+    fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> Result<()> {
+        let script = Script::Hook(hook.to_string());
+        if self.script_man.script_exists(&script) {
+            pr.set_message(format!("executing {hook} hook"));
+            self.script_man.run_by_line(&script, pr)?;
+        }
+        Ok(())
+    }
 }
 
 fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
@@ -464,32 +474,38 @@ impl Plugin for ExternalPlugin {
         }
         let _mpr = MultiProgressReport::new();
         let mpr = mpr.unwrap_or(&_mpr);
-        let mut pr = mpr.add();
-        self.decorate_progress_bar(pr.as_mut(), None);
+        let pr = mpr.add(&style(&self.name).blue().for_stderr().to_string());
         let _lock = self.get_lock(&self.plugin_path, force)?;
         self.install(pr.as_ref())
     }
 
-    fn update(&self, gitref: Option<String>) -> Result<()> {
+    fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
+        let config = Config::get();
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
-            warn!(
+            pr.warn(format!(
                 "Plugin: {} is a symlink, not updating",
                 style(&self.name).cyan().for_stderr()
-            );
+            ));
             return Ok(());
         }
         let git = Git::new(plugin_path);
         if !git.is_repo() {
-            warn!(
+            pr.warn(format!(
                 "Plugin {} is not a git repository, not updating",
                 style(&self.name).cyan().for_stderr()
-            );
+            ));
             return Ok(());
         }
-        // TODO: asdf_run_hook "pre_plugin_update"
+        pr.set_message("updating git repo".into());
         let (_pre, _post) = git.update(gitref)?;
-        // TODO: asdf_run_hook "post_plugin_update"
+        let sha = git.current_sha_short()?;
+        let repo_url = self.get_repo_url(&config)?;
+        self.exec_hook(pr, "post-plugin-update")?;
+        pr.finish_with_message(format!(
+            "{repo_url}#{}",
+            style(&sha).bright().yellow().for_stderr(),
+        ));
         Ok(())
     }
 
@@ -497,6 +513,7 @@ impl Plugin for ExternalPlugin {
         if !self.is_installed() {
             return Ok(());
         }
+        self.exec_hook(pr, "pre-plugin-remove")?;
         pr.set_message("uninstalling".into());
 
         let rmdir = |dir: &Path| {
@@ -647,9 +664,10 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn uninstall_version_impl(&self, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
-            self.script_man_for_tv(tv).run(&Script::Uninstall)?;
+            self.script_man_for_tv(tv)
+                .run_by_line(&Script::Uninstall, pr)?;
         }
         Ok(())
     }

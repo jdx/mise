@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use color_eyre::eyre::Result;
+use console::style;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -149,10 +150,11 @@ impl Toolset {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
                             for tv in versions {
+                                let prefix = format!("{}", style(&tv).cyan().for_stderr());
                                 let ctx = InstallContext {
                                     ts,
                                     tv: tv.request.resolve(t.clone(), tv.opts.clone(), true)?,
-                                    pr: mpr.add(),
+                                    pr: mpr.add(&prefix),
                                     raw,
                                     force: opts.force,
                                 };
