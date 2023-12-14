@@ -6,7 +6,7 @@ use crate::env::RTX_EXE;
 use crate::file::touch_dir;
 use crate::shell::{get_shell, ShellType};
 
-/// Initializes rtx in the current shell
+/// Initializes rtx in the current shell session
 ///
 /// This should go into your shell's rc file.
 /// Otherwise, it will only take effect in the current session.
