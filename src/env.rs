@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::time::Duration;
 
 use itertools::Itertools;
@@ -12,7 +13,7 @@ use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 
-pub static ARGS: Lazy<Vec<String>> = Lazy::new(|| args().collect());
+pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 
 // paths and directories
@@ -73,7 +74,7 @@ pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
 pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __RTX_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__RTX_ORIG_PATH").ok());
 pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
-pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS));
+pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
     Lazy::new(|| get_pristine_env(&__RTX_DIFF, vars().collect()));
@@ -346,7 +347,8 @@ fn log_level() -> LevelFilter {
     if var_is_true("RTX_TRACE") {
         set_var("RTX_LOG_LEVEL", "trace");
     }
-    for (i, arg) in ARGS.iter().enumerate() {
+    let args = ARGS.read().unwrap();
+    for (i, arg) in args.iter().enumerate() {
         if arg == "--" {
             break;
         }
@@ -354,11 +356,11 @@ fn log_level() -> LevelFilter {
             set_var("RTX_LOG_LEVEL", level);
         }
         if arg == "--log-level" {
-            if let Some(level) = ARGS.get(i + 1) {
+            if let Some(level) = args.get(i + 1) {
                 set_var("RTX_LOG_LEVEL", level);
             }
         }
-        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && ARGS.len() > 1) {
+        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && args.len() > 1) {
             set_var("RTX_LOG_LEVEL", "debug");
         }
         if arg == "--trace" || arg == "-vv" {
