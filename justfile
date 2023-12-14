@@ -57,10 +57,10 @@ test-coverage:
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 
-    echo "::group::Unit tests"
-    cargo test --all-features
     echo "::group::Build w/ coverage"
     cargo build --all-features
+    echo "::group::Unit tests"
+    cargo test --all-features
     echo "::endgroup::"
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
