@@ -393,7 +393,6 @@ impl Ord for dyn Plugin {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PluginType {
-    #[allow(dead_code)]
     Core,
     External,
 }

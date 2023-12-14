@@ -31,7 +31,7 @@ impl MultiProgressReport {
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         match &self.mp {
-            _ if self.quiet => Box::new(QuietReport::new()),
+            _ if self.quiet => Box::new(QuietReport::new(prefix.to_string())),
             Some(mp) => {
                 let pb = ProgressBar::new(1)
                     .with_style(PROG_TEMPLATE.clone())

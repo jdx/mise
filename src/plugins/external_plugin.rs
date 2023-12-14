@@ -462,19 +462,22 @@ impl Plugin for ExternalPlugin {
             }
             if !settings.yes && self.repo_url.is_none() {
                 let url = self.get_repo_url(&config)?;
-                eprintln!(
-                    "⚠️  {name} is a community-developed plugin: {url}",
-                    name = style(&self.name).cyan(),
-                    url = style(url.trim_end_matches(".git")).yellow(),
-                );
-                if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
-                    Err(PluginNotInstalled(self.name.clone()))?
+                if !url.starts_with("https://github.com/rtx-plugins/") {
+                    eprintln!(
+                        "⚠️  {name} is a community-developed plugin: {url}",
+                        name = style(&self.name).cyan(),
+                        url = style(url.trim_end_matches(".git")).yellow(),
+                    );
+                    if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
+                        Err(PluginNotInstalled(self.name.clone()))?
+                    }
                 }
             }
         }
         let _mpr = MultiProgressReport::new();
         let mpr = mpr.unwrap_or(&_mpr);
-        let pr = mpr.add(&style(&self.name).blue().for_stderr().to_string());
+        let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
+        let pr = mpr.add(&prefix);
         let _lock = self.get_lock(&self.plugin_path, force)?;
         self.install(pr.as_ref())
     }

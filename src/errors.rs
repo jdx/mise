@@ -10,9 +10,6 @@ pub enum Error {
     PluginNotInstalled(PluginName),
     #[error("{0}@{1} not installed")]
     VersionNotInstalled(PluginName, String),
-    #[error("{0}@{1} not found")]
-    #[allow(dead_code)]
-    VersionNotFound(PluginName, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error("Config file is not trusted.\nTrust it with `rtx trust`.")]
