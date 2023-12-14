@@ -51,7 +51,8 @@ impl PluginsUninstall {
     ) -> Result<()> {
         match config.get_or_create_plugin(plugin_name) {
             plugin if plugin.is_installed() => {
-                let pr = mpr.add(&style(plugin.name()).blue().for_stderr().to_string());
+                let prefix = format!("plugin:{}", style(&plugin.name()).blue().for_stderr());
+                let pr = mpr.add(&prefix);
                 plugin.uninstall(pr.as_ref())?;
                 if self.purge {
                     plugin.purge(pr.as_ref())?;

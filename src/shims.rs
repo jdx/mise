@@ -22,7 +22,6 @@ use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
-#[allow(dead_code)]
 pub fn handle_shim(config: &Config) -> Result<()> {
     if *env::RTX_BIN_NAME == "rtx" {
         return Ok(());
