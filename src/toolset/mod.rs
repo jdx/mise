@@ -93,11 +93,13 @@ impl Toolset {
     pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
         let mpr = MultiProgressReport::new();
         let versions = self
-            .list_missing_versions(config)
+            .list_current_versions()
             .into_iter()
+            .filter(|(p, tv)| opts.force || p.is_version_installed(tv))
+            .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
-            .cloned()
             .collect_vec();
+        debug!("install_arg_versions: {}", versions.iter().join(", "));
         self.install_versions(config, versions, &mpr, opts)
     }
 
