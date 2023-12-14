@@ -9,8 +9,9 @@ use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use tar::Archive;
+use zip::ZipArchive;
 
-use crate::{cmd, dirs, env};
+use crate::{dirs, env};
 
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
@@ -277,10 +278,10 @@ pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
-    cmd!("unzip", archive, "-d", dest)
-        .run()
-        .wrap_err_with(|| eyre!("unzip {} -d {}", display_path(archive), display_path(dest)))?;
-    Ok(())
+    ZipArchive::new(File::open(archive)?)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
+        .extract(dest)
+        .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
 }
 
 #[cfg(test)]
