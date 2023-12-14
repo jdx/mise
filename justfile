@@ -71,8 +71,6 @@ test-coverage:
         echo "::group::Implode"
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
-        echo "::group::Trust"
-        rtx trust
         echo "::group::Self update"
         rtx self-update -fy
     fi
