@@ -334,7 +334,7 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
     legacy_filenames
 }
 
-fn load_config_filenames(legacy_filenames: &BTreeMap<String, Vec<PluginName>>) -> Vec<PathBuf> {
+pub fn load_config_filenames(legacy_filenames: &BTreeMap<String, Vec<PluginName>>) -> Vec<PathBuf> {
     let mut filenames = legacy_filenames.keys().cloned().collect_vec();
     filenames.push(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone());
     filenames.push(env::RTX_DEFAULT_CONFIG_FILENAME.clone());
