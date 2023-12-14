@@ -3,6 +3,10 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
+if [ "${TEST_ALL:-}" != 1 ]; then
+  exit
+fi
+
 export RTX_EXPERIMENTAL=1
 export RTX_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
 

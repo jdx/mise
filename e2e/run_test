@@ -15,6 +15,7 @@ setup_env() {
 	export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
 	export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
 	export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
+	export RTX_ALWAYS_KEEP_DOWNLOAD="1"
 	export RTX_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
 	export RTX_YES="1"
 	export NPM_CONFIG_FUND="false"
@@ -30,15 +31,26 @@ setup_config_files() {
 }
 
 run_test() {
-	echo "Running $TEST"
+	echo "::group::E2E $TEST"
 	rm -f "$RTX_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
 
 	START=$(date +%s)
-	"./$(basename "$TEST")"
+	local status=0
+	"./$(basename "$TEST")" || status=$?
 	END=$(date +%s)
 
+	if [[ "$status" == 0 ]]; then
+		STATUS_MSG=":white_check_mark:"
+	else
+		echo "::error file=$TEST::E2E Test Failed (code: $status)"
+		STATUS_MSG=":x:"
+	fi
 	echo "$TEST: $((END - START))s"
+	if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+		echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
+	fi
+	return "$status"
 }
 
 setup_env
