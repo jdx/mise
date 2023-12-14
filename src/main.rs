@@ -63,12 +63,13 @@ mod toolset;
 mod ui;
 
 fn main() -> Result<()> {
+    *env::ARGS.write().unwrap() = env::args().collect();
     color_eyre::install()?;
     let log_level = *env::RTX_LOG_LEVEL;
     logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
     handle_ctrlc();
 
-    match run(&env::ARGS).with_section(|| VERSION.to_string().header("Version:")) {
+    match run().with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
         Err(err) if log_level < log::LevelFilter::Debug => {
             display_friendly_err(err);
@@ -78,18 +79,19 @@ fn main() -> Result<()> {
     }
 }
 
-fn run(args: &Vec<String>) -> Result<()> {
+fn run() -> Result<()> {
+    let args = env::ARGS.read().unwrap();
     // show version before loading config in case of error
-    cli::version::print_version_if_requested(&env::ARGS);
+    cli::version::print_version_if_requested(&args);
     migrate::run();
 
     let config = Config::load()?;
-    let config = shims::handle_shim(config, args)?;
+    let config = shims::handle_shim(config, &args)?;
     if config.should_exit_early {
         return Ok(());
     }
     let cli = Cli::new_with_external_commands(&config);
-    cli.run(config, args)
+    cli.run(config, &args)
 }
 
 fn handle_ctrlc() {

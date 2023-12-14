@@ -552,7 +552,8 @@ impl RtxToml {
 
     fn trust_check(&self) -> Result<()> {
         let default_cmd = String::new();
-        let cmd = env::ARGS.get(1).unwrap_or(&default_cmd).as_str();
+        let args = env::ARGS.read().unwrap();
+        let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
         if self.get_is_trusted() || cmd == "trust" || cmd == "completion" || cfg!(test) {
             return Ok(());
         }

@@ -164,14 +164,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::assert_cli_err;
     use insta::assert_display_snapshot;
-
-    use crate::cli::tests::cli_run;
 
     #[test]
     fn test_plugin_install_invalid_url() {
-        let args = ["rtx", "plugin", "add", "tiny:"].map(String::from).into();
-        let err = cli_run(&args).unwrap_err();
+        let err = assert_cli_err!("plugin", "add", "tiny:");
         assert_display_snapshot!(err);
     }
 }
