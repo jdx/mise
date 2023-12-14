@@ -82,12 +82,13 @@ pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH"
     None => vec![],
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
-pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_ALL_COMPILE") {
-    Some(v) => v,
-    None => matches!(
-        linux_distro().unwrap_or_default().as_str(),
-        "alpine" | "nixos"
-    ),
+pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| {
+    var_option_bool("RTX_ALL_COMPILE").unwrap_or_else(|| {
+        matches!(
+            linux_distro().unwrap_or_default().as_str(),
+            "alpine" | "nixos"
+        )
+    })
 });
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
@@ -136,10 +137,8 @@ pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
 pub static RTX_NODE_MAKE: Lazy<String> =
     Lazy::new(|| var("RTX_NODE_MAKE").unwrap_or_else(|_| "make".into()));
-pub static RTX_NODE_NINJA: Lazy<bool> = Lazy::new(|| match var_option_bool("RTX_NODE_NINJA") {
-    Some(v) => v,
-    None => is_ninja_on_path(),
-});
+pub static RTX_NODE_NINJA: Lazy<bool> =
+    Lazy::new(|| var_option_bool("RTX_NODE_NINJA").unwrap_or_else(is_ninja_on_path));
 pub static RTX_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_NODE_VERIFY"));
 pub static RTX_NODE_COMPILE: Lazy<bool> = Lazy::new(|| {
     *RTX_ALL_COMPILE || var_is_true("RTX_NODE_COMPILE") || var_is_true("RTX_NODE_FORCE_COMPILE")
