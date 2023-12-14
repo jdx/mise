@@ -55,10 +55,7 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self, mut config: Config) -> Result<()> {
-        if self.raw {
-            config.settings.raw = true;
-        }
+    pub fn run(self, config: Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let opts = InstallOptions {
             force: false,
