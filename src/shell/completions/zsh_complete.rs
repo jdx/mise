@@ -251,15 +251,14 @@ fn render_command_funcs(cmds: &[&Command]) -> String {
             let func = func_name(&cmds);
             let args = render_args(&cmds);
             let subcommand_funcs = render_command_funcs(&cmds);
-            formatdoc! {r#"
+            let s = formatdoc! {r#"
                     (( $+functions[__{func}_cmd] )) ||
                     __{func}_cmd() {{
                       {args}
                     }}
                     {subcommand_funcs}"#,
-            }
-            .trim()
-            .to_string()
+            };
+            s.trim().to_string()
         })
         .collect::<Vec<_>>()
         .join("\n")
