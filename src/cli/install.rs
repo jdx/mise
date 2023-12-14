@@ -44,10 +44,7 @@ pub struct Install {
 }
 
 impl Install {
-    pub fn run(self, mut config: Config) -> Result<()> {
-        if self.raw {
-            config.settings.raw = true;
-        }
+    pub fn run(self, config: Config) -> Result<()> {
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
