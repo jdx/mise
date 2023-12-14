@@ -35,14 +35,21 @@ run_test() {
 	cd "$(dirname "$TEST")"
 
 	START=$(date +%s)
-	"./$(basename "$TEST")"
+	local status=0
+	"./$(basename "$TEST")" || status=$?
 	END=$(date +%s)
 
-	echo "$TEST: $((END - START))s"
-	if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
-		return
+	if [[ "$status" == 0 ]]; then
+		STATUS_MSG=":white_check_mark:"
+	else
+		echo "::error::file=$TEST::Failed"
+		STATUS_MSG=":x:"
 	fi
-	echo "| $TEST | $((END - START))s |" >>"$GITHUB_STEP_SUMMARY"
+	echo "$TEST: $((END - START))s"
+	if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+		echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
+	fi
+	return "$status"
 }
 
 setup_env
