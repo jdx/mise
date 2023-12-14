@@ -1,17 +1,21 @@
 use crate::config::Settings;
 use console::style;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use once_cell::sync::Lazy;
 use std::time::Duration;
 
-use crate::ui::progress_report::{
-    ProgressReport, QuietReport, SingleReport, VerboseReport, PROG_TEMPLATE,
-};
+use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
 }
+
+static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    ProgressStyle::with_template("{prefix} {wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
+        .unwrap()
+});
 
 impl MultiProgressReport {
     pub fn new() -> Self {

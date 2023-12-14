@@ -11,11 +11,6 @@ pub trait SingleReport: Send + Sync {
     fn finish_with_message(&self, _message: String) {}
 }
 
-pub static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    ProgressStyle::with_template("{prefix} {wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
-        .unwrap()
-});
-
 static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = format!(
         "{{prefix}} {{wide_msg}} {} {{elapsed:3.dim.italic}}",
