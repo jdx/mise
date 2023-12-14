@@ -53,15 +53,15 @@ impl Uninstall {
             }
 
             let mut pr = mpr.add();
-            plugin.decorate_progress_bar(&mut pr, Some(&tv));
-            if let Err(err) = plugin.uninstall_version(&tv, &pr, self.dry_run) {
+            plugin.decorate_progress_bar(pr.as_mut(), Some(&tv));
+            if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
                 pr.error(err.to_string());
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             if self.dry_run {
-                pr.finish_with_message("uninstalled (dry-run)");
+                pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
-                pr.finish_with_message("uninstalled");
+                pr.finish_with_message("uninstalled".into());
             }
         }
 

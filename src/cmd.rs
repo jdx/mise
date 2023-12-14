@@ -14,7 +14,7 @@ use eyre::Context;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments, which may be
 /// different types (anything that implements
@@ -90,7 +90,7 @@ where
 
 pub struct CmdLineRunner<'a> {
     cmd: Command,
-    pr: Option<&'a ProgressReport>,
+    pr: Option<&'a dyn SingleReport>,
     stdin: Option<String>,
 }
 
@@ -171,7 +171,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn with_pr(mut self, pr: &'a ProgressReport) -> Self {
+    pub fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }
@@ -270,7 +270,7 @@ impl<'a> CmdLineRunner<'a> {
     fn on_stdout(&self, line: &str) {
         if !line.trim().is_empty() {
             if let Some(pr) = self.pr {
-                pr.set_message(line)
+                pr.set_message(line.into())
             }
         }
     }
@@ -278,7 +278,7 @@ impl<'a> CmdLineRunner<'a> {
     fn on_stderr(&self, line: &str) {
         if !line.trim().is_empty() {
             match self.pr {
-                Some(pr) => pr.println(line),
+                Some(pr) => pr.println(line.into()),
                 None => eprintln!("{}", line),
             }
         }

@@ -16,7 +16,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file};
 
 #[derive(Debug)]
@@ -114,7 +114,7 @@ impl NodeBuildPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let body = file::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
@@ -143,8 +143,8 @@ impl NodeBuildPlugin {
         Ok(())
     }
 
-    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("node -v");
+    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("node -v".into());
         CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -152,8 +152,8 @@ impl NodeBuildPlugin {
             .execute()
     }
 
-    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("npm -v");
+    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
@@ -256,9 +256,9 @@ impl Plugin for NodeBuildPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let config = Config::get();
         self.install_node_build()?;
-        ctx.pr.set_message("running node-build");
+        ctx.pr.set_message("running node-build".into());
         let mut cmd = CmdLineRunner::new(self.node_build_bin())
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .env("NODE_BUILD_MIRROR_URL", RTX_NODE_MIRROR_URL.to_string())
             .envs(&config.env)
             .arg(ctx.tv.version.as_str());
@@ -286,10 +286,10 @@ impl Plugin for NodeBuildPlugin {
             cmd = cmd.arg("--verbose");
         }
         cmd.arg(&ctx.tv.install_path()).execute()?;
-        self.test_node(&config, &ctx.tv, &ctx.pr)?;
+        self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_npm_shim(&ctx.tv)?;
-        self.test_npm(&config, &ctx.tv, &ctx.pr)?;
-        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
+        self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
+        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
         Ok(())
     }
 }

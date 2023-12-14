@@ -13,7 +13,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, HTTP};
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{file, http};
 
 #[derive(Debug)]
@@ -51,15 +51,15 @@ impl DenoPlugin {
         tv.install_path().join("bin/deno")
     }
 
-    fn test_deno(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("deno -V");
+    fn test_deno(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("deno -V".into());
         CmdLineRunner::new(self.deno_bin(tv))
             .with_pr(pr)
             .arg("-V")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let url = format!(
             "https://github.com/denoland/deno/releases/download/v{}/deno-{}-{}.zip",
@@ -78,7 +78,7 @@ impl DenoPlugin {
         Ok(tarball_path)
     }
 
-    fn install(&self, tv: &ToolVersion, pr: &ProgressReport, tarball_path: &Path) -> Result<()> {
+    fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
         pr.set_message(format!("installing {}", tarball_path.display()));
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
@@ -88,7 +88,7 @@ impl DenoPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         self.test_deno(tv, pr)
     }
 }
@@ -115,9 +115,9 @@ impl Plugin for DenoPlugin {
             ToolVersionRequest::Version { .. }
         ));
 
-        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
-        self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
-        self.verify(&ctx.tv, &ctx.pr)?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
+        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
+        self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }

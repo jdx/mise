@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::{Plugin, HTTP};
 use crate::toolset::{ToolVersion, ToolVersionRequest};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{file, http};
 
 #[derive(Debug)]
@@ -48,14 +48,14 @@ impl BunPlugin {
     }
 
     fn test_bun(&self, ctx: &InstallContext) -> Result<()> {
-        ctx.pr.set_message("bun -v");
+        ctx.pr.set_message("bun -v".into());
         CmdLineRunner::new(self.bun_bin(&ctx.tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("-v")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
@@ -116,7 +116,7 @@ impl Plugin for BunPlugin {
             ToolVersionRequest::Version { .. }
         ));
 
-        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(ctx, &tarball_path)?;
         self.verify(ctx)?;
 

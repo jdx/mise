@@ -16,7 +16,7 @@ use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::fake_asdf::get_path_with_fake_asdf;
 use crate::file::{basename, display_path};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
@@ -174,7 +174,7 @@ impl ScriptManager {
             .wrap_err_with(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line(&self, script: &Script, pr: &ProgressReport) -> Result<()> {
+    pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
         let cmd = CmdLineRunner::new(self.get_script_path(script))
             .with_pr(pr)
             .env_clear()

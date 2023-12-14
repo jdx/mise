@@ -14,7 +14,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersion;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash, http};
 
 #[derive(Debug)]
@@ -63,7 +63,7 @@ impl NodePlugin {
 
     fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
         match self.fetch_tarball(
-            &ctx.pr,
+            ctx.pr.as_ref(),
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
             &opts.version,
@@ -87,7 +87,7 @@ impl NodePlugin {
     fn install_compiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
-            &ctx.pr,
+            ctx.pr.as_ref(),
             &opts.source_tarball_url,
             &opts.source_tarball_path,
             &opts.version,
@@ -103,7 +103,7 @@ impl NodePlugin {
 
     fn fetch_tarball(
         &self,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
         url: &Url,
         local: &Path,
         version: &str,
@@ -127,7 +127,10 @@ impl NodePlugin {
         for p in &opts.path {
             cmd.prepend_path_env(p.clone());
         }
-        cmd = cmd.with_pr(&ctx.pr).current_dir(&opts.build_dir).arg("-c");
+        cmd = cmd
+            .with_pr(ctx.pr.as_ref())
+            .current_dir(&opts.build_dir)
+            .arg("-c");
         if let Some(cflags) = &*env::RTX_NODE_CFLAGS {
             cmd = cmd.env("CFLAGS", cflags);
         }
@@ -169,7 +172,7 @@ impl NodePlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let body = file::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
@@ -198,8 +201,8 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn enable_default_corepack_shims(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("enabling corepack shims");
+    fn enable_default_corepack_shims(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("enabling corepack shims".into());
         let corepack = self.corepack_path(tv);
         CmdLineRunner::new(corepack)
             .with_pr(pr)
@@ -209,8 +212,8 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("node -v");
+    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("node -v".into());
         CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -218,8 +221,8 @@ impl NodePlugin {
             .execute()
     }
 
-    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("npm -v");
+    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
@@ -297,12 +300,12 @@ impl Plugin for NodePlugin {
         } else {
             self.install_precompiled(ctx, &opts)?;
         }
-        self.test_node(&config, &ctx.tv, &ctx.pr)?;
+        self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_npm_shim(&ctx.tv)?;
-        self.test_npm(&config, &ctx.tv, &ctx.pr)?;
-        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
+        self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
+        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
         if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
-            self.enable_default_corepack_shims(&ctx.tv, &ctx.pr)?;
+            self.enable_default_corepack_shims(&ctx.tv, ctx.pr.as_ref())?;
         }
 
         Ok(())

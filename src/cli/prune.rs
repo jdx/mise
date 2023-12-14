@@ -59,11 +59,11 @@ impl Prune {
         for (p, tv) in to_delete {
             let mut pr = mpr.add();
             if self.dry_run {
-                pr.set_prefix(format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
+                pr.set_prefix(&format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
             }
             if self.dry_run || settings.yes || prompt::confirm(&format!("remove {} ?", &tv))? {
-                p.decorate_progress_bar(&mut pr, Some(&tv));
-                p.uninstall_version(&tv, &pr, self.dry_run)?;
+                p.decorate_progress_bar(pr.as_mut(), Some(&tv));
+                p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
                 pr.finish();
             }
         }
