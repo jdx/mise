@@ -30,7 +30,7 @@ setup_config_files() {
 }
 
 run_test() {
-	echo "Running $TEST"
+	echo "::group::E2E $TEST"
 	rm -f "$RTX_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
 
@@ -39,6 +39,11 @@ run_test() {
 	END=$(date +%s)
 
 	echo "$TEST: $((END - START))s"
+	echo "::endgroup::"
+	if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
+		return
+	fi
+	echo "| $TEST | $((END - START))s |" >> "$GITHUB_STEP_SUMMARY"
 }
 
 setup_env
