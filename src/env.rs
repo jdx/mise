@@ -50,8 +50,8 @@ pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| "rtx".into())
 });
 pub static RTX_BIN_NAME: Lazy<String> = Lazy::new(|| {
-    let args = ARGS.read().unwrap();
-    args[0].rsplit_once('/').unwrap_or(("", &args[0])).1.to_string()
+    let arg0 = &ARGS.read().unwrap()[0];
+    arg0.rsplit_once('/').unwrap_or(("", &arg0)).1.to_string()
 });
 
 pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
