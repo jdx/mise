@@ -20,7 +20,8 @@ use crate::{dirs, env};
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
 pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
-    if env::ARGS.len() < 2 || env::ARGS[1] != "hook-env" {
+    let args = env::ARGS.read().unwrap();
+    if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
     let watch_files = get_watch_files(watch_files);

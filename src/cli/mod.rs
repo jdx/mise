@@ -260,11 +260,13 @@ pub mod tests {
     use color_eyre::{Section, SectionExt};
 
     use crate::dirs;
+    use crate::env;
     use crate::output::tests::{STDERR, STDOUT};
 
     use super::*;
 
     pub fn cli_run(args: &Vec<String>) -> Result<()> {
+        *env::ARGS.write().unwrap() = args.clone();
         STDOUT.lock().unwrap().clear();
         STDERR.lock().unwrap().clear();
         let config = Config::load()?;

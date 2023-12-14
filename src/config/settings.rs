@@ -62,7 +62,7 @@ impl Settings {
         if *env::RTX_LOG_LEVEL < LevelFilter::Info {
             p.verbose = Some(true);
         }
-        for arg in &*env::ARGS {
+        for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
                 break;
             }

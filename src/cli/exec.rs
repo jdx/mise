@@ -144,8 +144,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
-    use crate::cli::tests::cli_run;
+    use crate::{assert_cli, assert_cli_err};
+    use insta::assert_display_snapshot;
 
     #[test]
     fn test_exec_ok() {
@@ -154,13 +154,8 @@ mod tests {
 
     #[test]
     fn test_exec_fail() {
-        let _ = cli_run(
-            &vec!["rtx", "exec", "--", "exit", "1"]
-                .into_iter()
-                .map(String::from)
-                .collect::<Vec<String>>(),
-        )
-        .unwrap_err();
+        let err = assert_cli_err!("exec", "--", "exit", "1");
+        assert_display_snapshot!(err);
     }
 
     #[test]
