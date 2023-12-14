@@ -29,7 +29,7 @@ use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager, HTTP
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{dirs, env, file, http};
 
@@ -100,7 +100,7 @@ impl ExternalPlugin {
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
     }
 
-    fn install(&self, pr: &ProgressReport) -> Result<()> {
+    fn install(&self, pr: &dyn SingleReport) -> Result<()> {
         let config = Config::get();
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
@@ -465,9 +465,9 @@ impl Plugin for ExternalPlugin {
         let _mpr = MultiProgressReport::new();
         let mpr = mpr.unwrap_or(&_mpr);
         let mut pr = mpr.add();
-        self.decorate_progress_bar(&mut pr, None);
+        self.decorate_progress_bar(pr.as_mut(), None);
         let _lock = self.get_lock(&self.plugin_path, force)?;
-        self.install(&pr)
+        self.install(pr.as_ref())
     }
 
     fn update(&self, gitref: Option<String>) -> Result<()> {
@@ -493,11 +493,11 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn uninstall(&self, pr: &ProgressReport) -> Result<()> {
+    fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
-        pr.set_message("uninstalling");
+        pr.set_message("uninstalling".into());
 
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -635,13 +635,13 @@ impl Plugin for ExternalPlugin {
             sm.prepend_path(p);
         }
 
-        let run_script = |script| sm.run_by_line(script, &ctx.pr);
+        let run_script = |script| sm.run_by_line(script, ctx.pr.as_ref());
 
         if sm.script_exists(&Download) {
-            ctx.pr.set_message("downloading");
+            ctx.pr.set_message("downloading".into());
             run_script(&Download)?;
         }
-        ctx.pr.set_message("installing");
+        ctx.pr.set_message("installing".into());
         run_script(&Install)?;
 
         Ok(())

@@ -25,7 +25,7 @@ use crate::lock_file::LockFile;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::{ProgressReport, PROG_TEMPLATE};
+use crate::ui::progress_report::{SingleReport, PROG_TEMPLATE};
 use crate::{dirs, file, http};
 
 pub mod core;
@@ -158,10 +158,10 @@ pub trait Plugin: Debug + Send + Sync {
     fn update(&self, _git_ref: Option<String>) -> Result<()> {
         Ok(())
     }
-    fn uninstall(&self, _pr: &ProgressReport) -> Result<()> {
+    fn uninstall(&self, _pr: &dyn SingleReport) -> Result<()> {
         Ok(())
     }
-    fn purge(&self, pr: &ProgressReport) -> Result<()> {
+    fn purge(&self, pr: &dyn SingleReport) -> Result<()> {
         rmdir(&self.installs_path(), pr)?;
         rmdir(&self.cache_path(), pr)?;
         rmdir(&self.downloads_path(), pr)?;
@@ -188,12 +188,12 @@ pub trait Plugin: Debug + Send + Sync {
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
             if ctx.force {
-                self.uninstall_version(&ctx.tv, &ctx.pr, false)?;
+                self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
             } else {
                 return Ok(());
             }
         }
-        self.decorate_progress_bar(&mut ctx.pr, Some(&ctx.tv));
+        self.decorate_progress_bar(ctx.pr.as_mut(), Some(&ctx.tv));
         let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
@@ -214,13 +214,18 @@ pub trait Plugin: Debug + Send + Sync {
         if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
-        ctx.pr.set_message("");
+        ctx.pr.set_message("".into());
         ctx.pr.finish();
 
         Ok(())
     }
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()>;
-    fn uninstall_version(&self, tv: &ToolVersion, pr: &ProgressReport, dryrun: bool) -> Result<()> {
+    fn uninstall_version(
+        &self,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+        dryrun: bool,
+    ) -> Result<()> {
         pr.set_message(format!("uninstall {tv}"));
 
         if !dryrun {
@@ -304,13 +309,13 @@ pub trait Plugin: Debug + Send + Sync {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
-    fn decorate_progress_bar(&self, pr: &mut ProgressReport, tv: Option<&ToolVersion>) {
+    fn decorate_progress_bar(&self, pr: &mut dyn SingleReport, tv: Option<&ToolVersion>) {
         pr.set_style(PROG_TEMPLATE.clone());
         let tool = match tv {
             Some(tv) => tv.to_string(),
             None => self.name().to_string(),
         };
-        pr.set_prefix(format!(
+        pr.set_prefix(&format!(
             "{} {} ",
             style("rtx").dim().for_stderr(),
             style(tool).cyan().for_stderr(),
@@ -361,7 +366,7 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     };
     v
 }
-fn rmdir(dir: &Path, pr: &ProgressReport) -> Result<()> {
+fn rmdir(dir: &Path, pr: &dyn SingleReport) -> Result<()> {
     if !dir.exists() {
         return Ok(());
     }
