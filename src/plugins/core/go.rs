@@ -157,7 +157,7 @@ impl Plugin for GoPlugin {
         Ok(())
     }
 
-    fn uninstall_version_impl(&self, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;

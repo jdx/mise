@@ -51,8 +51,7 @@ impl PluginsUninstall {
     ) -> Result<()> {
         match config.get_or_create_plugin(plugin_name) {
             plugin if plugin.is_installed() => {
-                let mut pr = mpr.add();
-                plugin.decorate_progress_bar(pr.as_mut(), None);
+                let pr = mpr.add(&style(plugin.name()).blue().for_stderr().to_string());
                 plugin.uninstall(pr.as_ref())?;
                 if self.purge {
                     plugin.purge(pr.as_ref())?;
