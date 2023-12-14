@@ -9,9 +9,8 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-
 use crate::plugins::PluginName;
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -112,6 +111,9 @@ impl Use {
             cf.replace_versions(&plugin_name, &versions);
         }
 
+        if self.global {
+            self.warn_if_hidden(&config, cf.get_path());
+        }
         for plugin_name in self.remove.unwrap_or_default() {
             cf.remove_plugin(&plugin_name);
         }
@@ -137,6 +139,25 @@ impl Use {
             config_file_from_dir(&dirs::CURRENT)
         };
         config_file::parse_or_init(&config.settings, &path)
+    }
+
+    fn warn_if_hidden(&self, config: &Config, global: &Path) {
+        let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
+        let warn = |targ: &ToolArg, p| {
+            let plugin = &targ.plugin;
+            let p = display_path(p);
+            let global = display_path(global);
+            warn!("{plugin} is is defined in {p} which overrides the global config ({global})");
+        };
+        for targ in &self.tool {
+            if let Some(tv) = ts.versions.get(&targ.plugin) {
+                if let ToolSource::RtxToml(p) | ToolSource::ToolVersions(p) = &tv.source {
+                    if p != global {
+                        warn(targ, p);
+                    }
+                }
+            }
+        }
     }
 }
 
