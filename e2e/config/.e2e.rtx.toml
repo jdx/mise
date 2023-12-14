@@ -5,8 +5,6 @@ env_path = ["/root", "./cwd"]
 FOO = "bar"
 
 [tools]
-bun = "1.0.17"
-deno = "1.38.5"
 tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}
 
