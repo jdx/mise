@@ -13,6 +13,8 @@ custom_plugins=(
 
 asdf_plugins=$(find asdf-plugins/plugins -maxdepth 1 |
   sort |
+  grep -v '/bun$' |
+  grep -v '/deno$' |
   grep -v '/go$' |
   grep -v '/golang$' |
   grep -v '/java$' |
