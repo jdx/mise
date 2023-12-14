@@ -119,6 +119,7 @@ jobs:
           RUST_BACKTRACE: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
+          TEST_ALL: 1
         with:
           timeout_minutes: 20
           max_attempts: 3
