@@ -8,8 +8,13 @@ rm -rf "$RTX_DATA_DIR/cache/poetry"
 export POETRY_HOME=".poetry"
 
 eval "$(rtx activate bash)"
-rtx use python@3.12.0 && _rtx_hook
-rtx use poetry@1.7.1 && _rtx_hook
+cat >.rtx.local.toml <<EOF
+[tools]
+python = "3.12.0"
+poetry = {version="1.7.1", pyproject="pyproject.toml"}
+EOF
+rtx i python && _rtx_hook
+rtx i poetry && _rtx_hook
 
 assert "poetry --version" "Poetry (version 1.7.1)"
 python3 -V

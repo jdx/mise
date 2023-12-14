@@ -42,7 +42,7 @@ run_test() {
 	if [[ "$status" == 0 ]]; then
 		STATUS_MSG=":white_check_mark:"
 	else
-		echo "::error::file=$TEST::Failed"
+		echo "::error file=$TEST::E2E Test Failed (code: $status)"
 		STATUS_MSG=":x:"
 	fi
 	echo "$TEST: $((END - START))s"
