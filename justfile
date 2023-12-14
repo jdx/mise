@@ -59,11 +59,11 @@ test-coverage:
 
     echo "::group::Build w/ coverage"
     cargo build --all-features
-    echo "::group::Unit tests"
-    cargo test --all-features
     echo "::endgroup::"
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
+        echo "::group::Unit tests"
+        cargo test --all-features
         echo "::group::Trust"
         rtx trust
         echo "::group::render-help render-completions render-mangen"

@@ -95,7 +95,7 @@ impl Toolset {
         let versions = self
             .list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| opts.force || p.is_version_installed(tv))
+            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv))
             .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
             .collect_vec();
@@ -172,19 +172,11 @@ impl Toolset {
         shims::reshim(config, self)?;
         runtime_symlinks::rebuild(config)
     }
-    pub fn list_missing_versions(&self, config: &Config) -> Vec<&ToolVersion> {
-        self.versions
-            .iter()
-            .map(|(p, tvl)| {
-                let p = config.get_or_create_plugin(p);
-                (p, tvl)
-            })
-            .flat_map(|(p, tvl)| {
-                tvl.versions
-                    .iter()
-                    .filter(|tv| !p.is_version_installed(tv))
-                    .collect_vec()
-            })
+    pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
+        self.list_current_versions()
+            .into_iter()
+            .filter(|(p, tv)| !p.is_version_installed(tv))
+            .map(|(_, tv)| tv)
             .collect()
     }
     pub fn list_installed_versions(
