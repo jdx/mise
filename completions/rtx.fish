@@ -193,6 +193,7 @@ complete -kxc rtx -n "$fssf plugins; and $fssf uninstall" -a "(__rtx_plugins)" -
 complete -kxc rtx -n "$fssf plugins; and $fssf uninstall" -s p -l purge -d 'Also remove the plugin'\''s installs, downloads, and cache'
 
 # plugins update
+complete -kxc rtx -n "$fssf plugins; and $fssf update" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf plugins; and $fssf update" -a "(__rtx_plugins)" -d 'Plugin(s) to update'
 
 
