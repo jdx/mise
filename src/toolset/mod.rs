@@ -133,7 +133,8 @@ impl Toolset {
             }
         }
         let queue = Arc::new(Mutex::new(queue));
-        let jobs = match opts.raw {
+        let raw = opts.raw || config.settings.raw;
+        let jobs = match raw {
             true => 1,
             false => opts.jobs.unwrap_or(config.settings.jobs),
         };
@@ -156,7 +157,7 @@ impl Toolset {
                                         true,
                                     )?,
                                     pr: mpr.add(),
-                                    raw: opts.raw,
+                                    raw,
                                     force: opts.force,
                                 };
                                 t.install_version(ctx)?;

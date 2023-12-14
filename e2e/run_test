@@ -33,7 +33,6 @@ run_test() {
 	echo "Running $TEST"
 	rm -f "$RTX_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
-	rtx i
 
 	"./$(basename "$TEST")"
 }

@@ -7,7 +7,6 @@ source "$(dirname "$0")/../assert.sh"
 export RTX_EXPERIMENTAL=1
 export RTX_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
 export RTX_RUBY_VERBOSE_INSTALL=1
-export RTX_RAW=1
 
 if [ "${TEST_ALL:-}" != 1 ]; then
   exit
@@ -22,7 +21,7 @@ source "https://rubygems.org"
 git_source(:github) { |repo| "https://github.com/#{repo}.git" }
 EOF
 
-rtx i ruby
+rtx i ruby -v
 assert_contains "rtx x -- ruby --version" "ruby 3.2.2"
 
 rm Gemfile
