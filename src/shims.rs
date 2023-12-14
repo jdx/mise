@@ -23,13 +23,13 @@ use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 #[allow(dead_code)]
-pub fn handle_shim(config: &Config, args: &[String]) -> Result<()> {
-    let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
-    if bin_name == "rtx" {
+pub fn handle_shim(config: &Config) -> Result<()> {
+    if *env::RTX_BIN_NAME == "rtx" {
         return Ok(());
     }
+    let args = env::ARGS.read().unwrap();
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(config, bin_name)?.into();
+    args[0] = which_shim(config, &env::RTX_BIN_NAME)?.into();
     let exec = Exec {
         tool: vec![],
         c: None,

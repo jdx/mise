@@ -49,6 +49,10 @@ pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| {
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "rtx".into())
 });
+pub static RTX_BIN_NAME: Lazy<String> = Lazy::new(|| {
+    let arg0 = &ARGS.read().unwrap()[0];
+    arg0.rsplit_once('/').unwrap_or(("", &arg0)).1.to_string()
+});
 pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
@@ -349,7 +353,8 @@ fn log_level() -> LevelFilter {
     }
     let args = ARGS.read().unwrap();
     for (i, arg) in args.iter().enumerate() {
-        if arg == "--" {
+        // stop parsing after "--" or if we're executing as a shim
+        if arg == "--" || &*RTX_BIN_NAME != "rtx" {
             break;
         }
         if let Some(("--log-level", level)) = arg.split_once('=') {
