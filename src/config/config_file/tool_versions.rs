@@ -1,13 +1,14 @@
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
+use crate::config::config_file;
 use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use tera::Context;
 
-use crate::config::config_file::{is_trusted, ConfigFile, ConfigFileType};
+use crate::config::config_file::{ConfigFile, ConfigFileType};
 
 use crate::file;
 use crate::file::display_path;
@@ -56,7 +57,7 @@ impl ToolVersions {
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent().unwrap();
-        let s = if is_trusted(&path) {
+        let s = if config_file::is_trusted(&path) {
             get_tera(dir).render_str(s, &cf.context)?
         } else {
             s.to_string()
@@ -202,7 +203,7 @@ pub(crate) mod tests {
     use insta::{assert_display_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
-    use crate::dirs;
+    use crate::{assert_cli, dirs};
 
     use super::*;
 
@@ -247,7 +248,9 @@ pub(crate) mod tests {
         python {{exec(command='echo 3.11.0')}}
         "};
         let path = dirs::CURRENT.join(".test-tool-versions");
-        let tv = ToolVersions::parse_str(orig, path).unwrap();
+        assert_cli!("trust", path.to_string_lossy());
+        let tv = ToolVersions::parse_str(orig, path.clone()).unwrap();
+        assert_cli!("trust", "--untrust", path.to_string_lossy());
         assert_snapshot!(tv.dump(), @r###"
         ruby   3.0.5
         python 3.11.0
