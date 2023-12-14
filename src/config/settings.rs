@@ -1,6 +1,7 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Builder, Config, Partial};
 
+use crate::cli::Cli;
 use log::LevelFilter;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,13 +57,14 @@ impl Default for Settings {
 impl Settings {
     pub fn default_builder() -> Builder<Self> {
         let mut p = SettingsPartial::empty();
+        let args = env::ARGS.read().unwrap();
         if *env::CI {
             p.yes = Some(true);
         }
         if *env::RTX_LOG_LEVEL < LevelFilter::Info {
             p.verbose = Some(true);
         }
-        for arg in &*env::ARGS.read().unwrap() {
+        for arg in &*args {
             if arg == "--" {
                 break;
             }
@@ -70,7 +72,8 @@ impl Settings {
                 p.raw = Some(true);
             }
         }
-        Self::builder().preloaded(p).env()
+        let cli = Cli::new().settings(&args);
+        Self::builder().preloaded(cli).preloaded(p).env()
     }
 
     pub fn to_index_map(&self) -> BTreeMap<String, String> {
