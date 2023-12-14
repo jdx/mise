@@ -9,6 +9,7 @@ pub struct Zsh {}
 impl Shell for Zsh {
     fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
+        let exe = exe.to_string_lossy();
         let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
@@ -25,7 +26,7 @@ impl Shell for Zsh {
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
-                command rtx
+                command {exe}
                 return
               fi
               shift
@@ -34,16 +35,16 @@ impl Shell for Zsh {
               deactivate|s|shell)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-                  eval "$(command rtx "$command" "$@")"
+                  eval "$(command {exe} "$command" "$@")"
                   return $?
                 fi
                 ;;
               esac
-              command rtx "$command" "$@"
+              command {exe} "$command" "$@"
             }}
 
             _rtx_hook() {{
-              eval "$(rtx hook-env{status} -s zsh)";
+              eval "$({exe} hook-env{status} -s zsh)";
             }}
             typeset -ag precmd_functions;
             if [[ -z "${{precmd_functions[(r)_rtx_hook]+1}}" ]]; then

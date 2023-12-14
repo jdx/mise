@@ -10,7 +10,7 @@ rtx() {
   local command
   command="${1:-}"
   if [ "$#" = 0 ]; then
-    command rtx
+    command /some/dir/rtx
     return
   fi
   shift
@@ -19,12 +19,12 @@ rtx() {
   deactivate|s|shell)
     # if argv doesn't contains -h,--help
     if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-      eval "$(command rtx "$command" "$@")"
+      eval "$(command /some/dir/rtx "$command" "$@")"
       return $?
     fi
     ;;
   esac
-  command rtx "$command" "$@"
+  command /some/dir/rtx "$command" "$@"
 }
 
 _rtx_hook() {
