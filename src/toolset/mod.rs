@@ -99,7 +99,6 @@ impl Toolset {
             .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.plugin_name].source, ToolSource::Argument))
             .collect_vec();
-        debug!("install_arg_versions: {}", versions.iter().join(", "));
         self.install_versions(config, versions, &mpr, opts)
     }
 
