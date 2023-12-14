@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -38,17 +37,17 @@ pub struct RtxToml {
     alias: AliasMap,
     doc: Document,
     plugins: HashMap<String, String>,
-    is_trusted: Mutex<RefCell<bool>>,
+    is_trusted: Mutex<Option<bool>>,
 }
 
 impl RtxToml {
-    pub fn init(path: &Path, is_trusted: bool) -> Self {
+    pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", path.parent().unwrap().to_str().unwrap());
         Self {
             path: path.to_path_buf(),
             context,
-            is_trusted: Mutex::new(RefCell::new(is_trusted)),
+            is_trusted: Mutex::new(None),
             toolset: Toolset {
                 source: Some(ToolSource::RtxToml(path.to_path_buf())),
                 ..Default::default()
@@ -57,9 +56,9 @@ impl RtxToml {
         }
     }
 
-    pub fn from_file(path: &Path, is_trusted: bool) -> Result<Self> {
+    pub fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing: {}", path.display());
-        let mut rf = Self::init(path, is_trusted);
+        let mut rf = Self::init(path);
         let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         trace!("{rf}");
@@ -568,7 +567,12 @@ impl RtxToml {
     }
 
     fn get_is_trusted(&self) -> bool {
-        *self.is_trusted.lock().unwrap().borrow()
+        let mut is_trusted = self.is_trusted.lock().unwrap();
+        is_trusted.unwrap_or_else(|| {
+            let b = config_file::is_trusted(self.path.as_path());
+            *is_trusted = Some(b);
+            b
+        })
     }
 }
 
@@ -760,7 +764,7 @@ impl Clone for RtxToml {
             alias: self.alias.clone(),
             doc: self.doc.clone(),
             plugins: self.plugins.clone(),
-            is_trusted: Mutex::new(RefCell::new(*self.is_trusted.lock().unwrap().borrow())),
+            is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
         }
     }
 }
@@ -776,7 +780,7 @@ mod tests {
 
     #[test]
     fn test_fixture() {
-        let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml"), true).unwrap();
+        let cf = RtxToml::from_file(&dirs::HOME.join("fixtures/.rtx.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env());
         assert_debug_snapshot!(cf.settings());
@@ -789,7 +793,7 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [env]
         foo="bar"
@@ -808,7 +812,7 @@ mod tests {
     #[test]
     fn test_path_dirs() {
         let p = dirs::HOME.join("fixtures/.rtx.toml");
-        let mut cf = RtxToml::init(&p, true);
+        let mut cf = RtxToml::init(&p);
         cf.parse(&formatdoc! {r#"
         env_path=["/foo", "./bar"]
         [env]
@@ -827,7 +831,7 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.node]
         16 = "16.0.0"
@@ -845,7 +849,7 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [alias.node]
         16 = "16.0.0"
@@ -864,7 +868,7 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         node = ["16.0.0", "18.0.0"]
@@ -881,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [tools]
         node = ["16.0.0", "18.0.0"]
@@ -895,7 +899,7 @@ mod tests {
 
     #[test]
     fn test_update_setting() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
@@ -914,7 +918,7 @@ mod tests {
 
     #[test]
     fn test_remove_setting() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         cf.parse(&formatdoc! {r#"
         [settings]
         legacy_version_file = true
@@ -927,7 +931,7 @@ mod tests {
 
     #[test]
     fn test_fail_with_unknown_key() {
-        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path(), true);
+        let mut cf = RtxToml::init(PathBuf::from("/tmp/.rtx.toml").as_path());
         let err = cf
             .parse(&formatdoc! {r#"
         invalid_key = true
