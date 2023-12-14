@@ -8,6 +8,7 @@ pub struct Fish {}
 impl Shell for Fish {
     fn activate(&self, exe: &Path, status: bool) -> String {
         let dir = exe.parent().unwrap();
+        let exe = exe.to_string_lossy();
         let status = if status { " --status" } else { "" };
         let description = "'Update rtx environment when changing directories'";
         let mut out = String::new();
@@ -24,7 +25,7 @@ impl Shell for Fish {
 
             function rtx
               if test (count $argv) -eq 0
-                command rtx
+                command {exe}
                 return
               end
 
@@ -32,7 +33,7 @@ impl Shell for Fish {
               set -e argv[1]
 
               if contains -- --help $argv
-                command rtx "$command" $argv
+                command {exe} "$command" $argv
                 return $status
               end
 
@@ -40,26 +41,26 @@ impl Shell for Fish {
               case deactivate s shell
                 # if help is requested, don't eval
                 if contains -- -h $argv
-                  command rtx "$command" $argv
+                  command {exe} "$command" $argv
                 else if contains -- --help $argv
-                  command rtx "$command" $argv
+                  command {exe} "$command" $argv
                 else
-                  source (command rtx "$command" $argv |psub)
+                  source (command {exe} "$command" $argv |psub)
                 end
               case '*'
-                command rtx "$command" $argv
+                command {exe} "$command" $argv
               end
             end
 
             function __rtx_env_eval --on-event fish_prompt --description {description};
-                rtx hook-env{status} -s fish | source;
+                {exe} hook-env{status} -s fish | source;
 
                 if test "$rtx_fish_mode" != "disable_arrow";
                     function __rtx_cd_hook --on-variable PWD --description {description};
                         if test "$rtx_fish_mode" = "eval_after_arrow";
                             set -g __rtx_env_again 0;
                         else;
-                            rtx hook-env{status} -s fish | source;
+                            {exe} hook-env{status} -s fish | source;
                         end;
                     end;
                 end;
@@ -68,7 +69,7 @@ impl Shell for Fish {
             function __rtx_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __rtx_env_again;
                     set -e __rtx_env_again;
-                    rtx hook-env{status} -s fish | source;
+                    {exe} hook-env{status} -s fish | source;
                     echo;
                 end;
 
