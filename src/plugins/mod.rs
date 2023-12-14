@@ -25,7 +25,7 @@ use crate::lock_file::LockFile;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::{SingleReport, PROG_TEMPLATE};
+use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file, http};
 
 pub mod core;
@@ -155,7 +155,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn ensure_installed(&self, _mpr: Option<&MultiProgressReport>, _force: bool) -> Result<()> {
         Ok(())
     }
-    fn update(&self, _git_ref: Option<String>) -> Result<()> {
+    fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> Result<()> {
         Ok(())
     }
     fn uninstall(&self, _pr: &dyn SingleReport) -> Result<()> {
@@ -183,7 +183,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
         unimplemented!()
     }
-    fn install_version(&self, mut ctx: InstallContext) -> Result<()> {
+    fn install_version(&self, ctx: InstallContext) -> Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
@@ -193,7 +193,6 @@ pub trait Plugin: Debug + Send + Sync {
                 return Ok(());
             }
         }
-        self.decorate_progress_bar(ctx.pr.as_mut(), Some(&ctx.tv));
         let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
@@ -229,7 +228,7 @@ pub trait Plugin: Debug + Send + Sync {
         pr.set_message(format!("uninstall {tv}"));
 
         if !dryrun {
-            self.uninstall_version_impl(tv)?;
+            self.uninstall_version_impl(pr, tv)?;
         }
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -246,7 +245,7 @@ pub trait Plugin: Debug + Send + Sync {
         rmdir(&tv.cache_path())?;
         Ok(())
     }
-    fn uninstall_version_impl(&self, _tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, _pr: &dyn SingleReport, _tv: &ToolVersion) -> Result<()> {
         Ok(())
     }
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
@@ -309,20 +308,6 @@ pub trait Plugin: Debug + Send + Sync {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
-    fn decorate_progress_bar(&self, pr: &mut dyn SingleReport, tv: Option<&ToolVersion>) {
-        pr.set_style(PROG_TEMPLATE.clone());
-        let tool = match tv {
-            Some(tv) => tv.to_string(),
-            None => self.name().to_string(),
-        };
-        pr.set_prefix(&format!(
-            "{} {} ",
-            style("rtx").dim().for_stderr(),
-            style(tool).cyan().for_stderr(),
-        ));
-        pr.enable_steady_tick();
-    }
-
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.cache_path().join("incomplete")
     }
