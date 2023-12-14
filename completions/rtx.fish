@@ -5,7 +5,7 @@ complete -kxc rtx -s q -l quiet -d 'Suppress output'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
-complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell'
+complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell session'
 complete -xc rtx -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc rtx -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
 complete -xc rtx -n "not $fssf $others" -a cache -d 'Manage the rtx cache'
