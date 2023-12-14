@@ -34,7 +34,11 @@ run_test() {
 	rm -f "$RTX_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
 
+	START=$(date +%s)
 	"./$(basename "$TEST")"
+	END=$(date +%s)
+
+	echo "$TEST: $((END - START))s"
 }
 
 setup_env
