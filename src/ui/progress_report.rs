@@ -78,23 +78,25 @@ impl QuietReport {
 
 impl SingleReport for QuietReport {}
 
-pub struct VerboseReport {}
+pub struct VerboseReport {
+    prefix: String,
+}
 
 impl VerboseReport {
-    pub fn new() -> VerboseReport {
-        VerboseReport {}
+    pub fn new(prefix: String) -> VerboseReport {
+        VerboseReport { prefix }
     }
 }
 
 impl SingleReport for VerboseReport {
     fn set_message(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
     fn println(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
     fn warn(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
 }
 
@@ -111,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_progress_report_verbose() {
-        let pr = VerboseReport::new();
+        let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }

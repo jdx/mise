@@ -39,7 +39,7 @@ impl MultiProgressReport {
                 pb.enable_steady_tick(Duration::from_millis(250));
                 Box::new(ProgressReport::new(mp.add(pb)))
             }
-            None => Box::new(VerboseReport::new()),
+            None => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
     pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
