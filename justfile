@@ -64,8 +64,6 @@ test-coverage:
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         echo "::group::Unit tests"
         cargo test --all-features
-        echo "::group::Trust"
-        rtx trust
         echo "::group::render-help render-completions render-mangen"
         just render-help render-completions render-mangen
         echo "::group::Implode"
