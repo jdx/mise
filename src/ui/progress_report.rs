@@ -3,10 +3,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 
 pub trait SingleReport: Send + Sync {
-    fn set_message(&self, _message: String) {}
     fn println(&self, _message: String) {}
-    fn warn(&self, _message: String) {}
-    fn error(&self, _message: String) {}
+    fn warn(&self, _message: String);
+    fn error(&self, _message: String);
+    fn set_message(&self, _message: String) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
 }
@@ -39,9 +39,6 @@ impl ProgressReport {
 }
 
 impl SingleReport for ProgressReport {
-    fn set_message(&self, message: String) {
-        self.pb.set_message(message.replace('\r', ""));
-    }
     fn println(&self, message: String) {
         self.pb.println(message);
     }
@@ -58,6 +55,9 @@ impl SingleReport for ProgressReport {
         self.pb.set_style(ERROR_TEMPLATE.clone());
         self.pb.finish();
     }
+    fn set_message(&self, message: String) {
+        self.pb.set_message(message.replace('\r', ""));
+    }
     fn finish(&self) {
         self.pb.set_style(SUCCESS_TEMPLATE.clone());
         self.pb.finish()
@@ -68,15 +68,24 @@ impl SingleReport for ProgressReport {
     }
 }
 
-pub struct QuietReport {}
+pub struct QuietReport {
+    prefix: String,
+}
 
 impl QuietReport {
-    pub fn new() -> QuietReport {
-        QuietReport {}
+    pub fn new(prefix: String) -> QuietReport {
+        QuietReport { prefix }
     }
 }
 
-impl SingleReport for QuietReport {}
+impl SingleReport for QuietReport {
+    fn warn(&self, message: String) {
+        warn!("{} {}", self.prefix, message);
+    }
+    fn error(&self, message: String) {
+        error!("{} {}", self.prefix, message);
+    }
+}
 
 pub struct VerboseReport {
     prefix: String,
@@ -89,14 +98,23 @@ impl VerboseReport {
 }
 
 impl SingleReport for VerboseReport {
-    fn set_message(&self, message: String) {
-        eprintln!("{} {}", self.prefix, message);
-    }
     fn println(&self, message: String) {
-        eprintln!("{} {}", self.prefix, message);
+        eprintln!("{message}");
     }
     fn warn(&self, message: String) {
-        eprintln!("{} {}", self.prefix, message);
+        warn!("{} {}", self.prefix, message);
+    }
+    fn error(&self, message: String) {
+        error!("{} {}", self.prefix, message);
+    }
+    fn set_message(&self, message: String) {
+        eprintln!("{} {message}", self.prefix);
+    }
+    fn finish(&self) {
+        self.finish_with_message(style("done").green().to_string());
+    }
+    fn finish_with_message(&self, message: String) {
+        self.set_message(message);
     }
 }
 
@@ -120,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_progress_report_quiet() {
-        let pr = QuietReport::new();
+        let pr = QuietReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
