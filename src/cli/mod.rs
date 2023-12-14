@@ -1,8 +1,9 @@
 use crate::cli::self_update::SelfUpdate;
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
+use confique::Partial;
 
-use crate::config::Config;
+use crate::config::{Config, SettingsPartial};
 
 mod activate;
 mod alias;
@@ -194,26 +195,13 @@ impl Cli {
         )
     }
 
-    pub fn run(self, mut config: Config, args: &Vec<String>) -> Result<()> {
+    pub fn run(self, config: Config, args: &Vec<String>) -> Result<()> {
         debug!("{}", &args.join(" "));
         if args[1..] == ["-v"] {
             // normally this would be considered --verbose
             return version::Version {}.run(config);
         }
         let matches = self.command.get_matches_from(args);
-        if let Some(true) = matches.get_one::<bool>("yes") {
-            config.settings.yes = true;
-        }
-        if let Some(true) = matches.get_one::<bool>("quiet") {
-            config.settings.quiet = true;
-        }
-        if *matches.get_one::<u8>("verbose").unwrap() > 0 {
-            config.settings.verbose = true;
-        }
-        if config.settings.raw {
-            config.settings.jobs = 1;
-            config.settings.verbose = true;
-        }
         if let Some((command, sub_m)) = matches.subcommand() {
             if command == "self-update" {
                 return SelfUpdate::from_arg_matches(sub_m)?.run(config);
@@ -222,6 +210,27 @@ impl Cli {
         }
         let cmd = Commands::from_arg_matches(&matches)?;
         cmd.run(config)
+    }
+
+    pub fn settings(self, args: &Vec<String>) -> SettingsPartial {
+        let mut s = SettingsPartial::empty();
+        if let Ok(m) = self.command.try_get_matches_from(args) {
+            if let Some(true) = m.get_one::<bool>("yes") {
+                s.yes = Some(true);
+            }
+            if let Some(true) = m.get_one::<bool>("quiet") {
+                s.quiet = Some(true);
+            }
+            if *m.get_one::<u8>("verbose").unwrap() > 0 {
+                s.verbose = Some(true);
+            }
+        }
+        // if let Some(true) = m.get_one::<bool>("trace") {
+        //     s.log_level = Some(true);
+        // }
+        // TODO: log_level/debug/trace
+
+        s
     }
 }
 
