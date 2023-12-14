@@ -43,7 +43,7 @@ run_test() {
 	if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
 		return
 	fi
-	echo "| $TEST | $((END - START))s |" >> "$GITHUB_STEP_SUMMARY"
+	echo "| $TEST | $((END - START))s |" >>"$GITHUB_STEP_SUMMARY"
 }
 
 setup_env

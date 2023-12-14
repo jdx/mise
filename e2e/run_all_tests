@@ -10,7 +10,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "### E2E Test Tranche $TEST_TRANCHE/$TEST_TRANCHE_COUNT"
 		echo "| Test | Duration |"
 		echo "| ---- | -------- |"
-	} >> "$GITHUB_STEP_SUMMARY"
+	} >>"$GITHUB_STEP_SUMMARY"
 fi
 for f in $FILES; do
 	# split tests into two tranches to reduce test time
