@@ -39,7 +39,6 @@ run_test() {
 	END=$(date +%s)
 
 	echo "$TEST: $((END - START))s"
-	echo "::endgroup::"
 	if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
 		return
 	fi

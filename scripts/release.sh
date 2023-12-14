@@ -11,7 +11,6 @@ RELEASE_DIR=releases
 export BASE_DIR RTX_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
 mkdir -p "$RELEASE_DIR/$RTX_VERSION"
-echo "::endgroup::"
 
 echo "::group::Build"
 find artifacts -name 'tarball-*' -exec sh -c '
@@ -39,7 +38,6 @@ for platform in "${platforms[@]}"; do
   cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
   cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
 done
-echo "::endgroup::"
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
@@ -58,25 +56,20 @@ sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
 popd
-echo "::endgroup::"
 
 echo "::group::install.sh"
 ./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
 gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
-echo "::endgroup::"
 
 if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish npm @jdxcode/rtx"
   NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
-  echo "::endgroup::"
   echo "::group::Publish npm rtx-cli"
   NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
-  echo "::endgroup::"
   echo "::group::Publish r2"
   ./rtx/scripts/publish-r2.sh
-  echo "::endgroup::"
 fi
 
 echo "::group::Publish homebrew"
@@ -84,4 +77,3 @@ echo "::group::Publish homebrew"
 pushd homebrew-tap
 git add . && git commit -m "rtx ${RTX_VERSION#v}"
 popd
-echo "::endgroup::"
