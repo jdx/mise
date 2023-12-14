@@ -3,11 +3,20 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
+if [ "${TEST_ALL:-}" != 1 ]; then
+  exit
+fi
+
 rm -rf "$RTX_DATA_DIR/cache/poetry"
 
 export POETRY_HOME=".poetry"
 
 eval "$(rtx activate bash)"
+cat >.e2e.rtx.toml <<EOF
+[tools]
+python = "3.12.0"
+poetry = {version="1.7.1", pyproject="pyproject.toml"}
+EOF
 rtx i python && _rtx_hook
 rtx i poetry && _rtx_hook
 

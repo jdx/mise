@@ -4,20 +4,21 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export RTX_EXPERIMENTAL=1
-export RTX_NODE_BUILD=1
+export RTX_NODE_COREPACK=1
 export RTX_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-npm-packages"
 
 rtx plugin uninstall node
 rtx i node node@lts/hydrogen
 assert_contains "rtx x node@lts/hydrogen -- node --version" "v18."
 assert "rtx x -- node --version" "v20.0.0"
-assert_contains "rtx node node-build --version" "node-build "
+assert_contains "rtx x -- which yarn" "yarn"
 
 # test asdf-nodejs
 rtx plugin i nodejs https://github.com/asdf-vm/asdf-nodejs.git
 rtx use nodejs@20.1.0
 rtx ls
 assert "rtx x -- node --version" "v20.1.0"
+assert_contains "rtx ls-remote nodejs" "20.1.0"
 assert_contains "rtx node nodebuild --version" "node-build "
 rtx use --rm node
 
@@ -25,19 +26,7 @@ rtx use --rm node
 RTX_LEGACY_VERSION_FILE=1 assert_contains "rtx current node" "20.0.0"
 RTX_LEGACY_VERSION_FILE=0 assert_not_contains "rtx current node" "20.0.0"
 rtx plugin uninstall nodejs
+assert_not_contains "rtx plugins --user" "node"
 
 # disable nodejs plugin
 RTX_DISABLE_TOOLS=node assert_not_contains "rtx plugins --core" "node"
-
-export RTX_NODE_BUILD=0
-rtx uninstall -a node
-rtx i node
-assert "rtx x -- node --version" "v20.0.0"
-# rtx uninstall node
-# RTX_NODE_COMPILE=1 rtx i node
-# assert "rtx x -- node --version" "v20.0.0"
-
-export RTX_NODE_COREPACK=1
-rtx uninstall node
-rtx i node
-assert_contains "rtx x node -- which yarn" "yarn"

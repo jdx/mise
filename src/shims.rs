@@ -64,7 +64,7 @@ fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
             }
         }
         let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
-        err_no_version_set(config, ts, bin_name, tvs)?;
+        err_no_version_set(ts, bin_name, tvs)?;
     }
     Err(eyre!("{} is not a valid shim", bin_name))
 }
@@ -190,18 +190,13 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-fn err_no_version_set(
-    config: &Config,
-    ts: Toolset,
-    bin_name: &str,
-    tvs: Vec<ToolVersion>,
-) -> Result<()> {
+fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<()> {
     if tvs.is_empty() {
         return Ok(());
     }
     let missing_plugins = tvs.iter().map(|tv| &tv.plugin_name).collect::<HashSet<_>>();
     let mut missing_tools = ts
-        .list_missing_versions(config)
+        .list_missing_versions()
         .into_iter()
         .filter(|t| missing_plugins.contains(&t.plugin_name))
         .collect_vec();
