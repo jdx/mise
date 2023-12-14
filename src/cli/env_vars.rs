@@ -1,7 +1,7 @@
 use color_eyre::Result;
 
 use crate::config::config_file::rtx_toml::RtxToml;
-use crate::config::config_file::{self, ConfigFile};
+use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
@@ -67,11 +67,10 @@ impl EnvVars {
 
 fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
     let path = dirs::CURRENT.join(filename);
-    let is_trusted = config_file::is_trusted(&path);
     let rtx_toml = if path.exists() {
-        RtxToml::from_file(&path, is_trusted)?
+        RtxToml::from_file(&path)?
     } else {
-        RtxToml::init(&path, is_trusted)
+        RtxToml::init(&path)
     };
 
     Ok(rtx_toml)

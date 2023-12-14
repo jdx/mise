@@ -141,10 +141,9 @@ impl dyn ConfigFile {
 }
 
 fn init(path: &Path) -> Box<dyn ConfigFile> {
-    let is_trusted = is_trusted(path);
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path, is_trusted)),
-        Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path, is_trusted)),
+        Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path)),
+        Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path)),
         _ => panic!("Unknown config file type: {}", path.display()),
     }
 }
@@ -158,12 +157,9 @@ pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
 }
 
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
-    let is_trusted = is_trusted(path);
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path, is_trusted)?)),
-        Some(ConfigFileType::ToolVersions) => {
-            Ok(Box::new(ToolVersions::from_file(path, is_trusted)?))
-        }
+        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path)?)),
+        Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
         #[allow(clippy::box_default)]
         _ => Ok(Box::new(RtxToml::default())),
     }

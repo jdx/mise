@@ -268,14 +268,13 @@ fn load_rtxrc() -> Result<RtxToml> {
     let settings_path = env::RTX_CONFIG_FILE
         .clone()
         .unwrap_or(dirs::CONFIG.join("config.toml"));
-    let is_trusted = config_file::is_trusted(&settings_path);
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);
-            Ok(RtxToml::init(&settings_path, is_trusted))
+            Ok(RtxToml::init(&settings_path))
         }
-        true => RtxToml::from_file(&settings_path, is_trusted)
-            .wrap_err_with(|| format!("Error parsing {}", display_path(&settings_path))),
+        true => RtxToml::from_file(&settings_path)
+            .wrap_err_with(|| eyre!("Error parsing {}", display_path(&settings_path))),
     }
 }
 
