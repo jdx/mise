@@ -471,12 +471,15 @@ echo 'eval "$(rtx activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Note:**
->
+> [!NOTE]
 > For homebrew and possibly other installs rtx is automatically activated so
 > this is not necessary.
 >
 > See [`RTX_FISH_AUTO_ACTIVATE=1`](#rtx_fish_auto_activate1) for more information.
+
+> [!WARNING]
+> Do not place the activation code inside the `if status --is-interactive` block
+> until you explicitly set the `RTX_FISH_AUTO_ACTIVATE` to zero.
 
 #### Nushell
 
