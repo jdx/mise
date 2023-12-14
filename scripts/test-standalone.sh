@@ -13,7 +13,7 @@ chmod +x tmp/install.sh
 shellcheck tmp/install.sh
 
 RTX_DATA_DIR="$RELEASE_DIR" ./tmp/install.sh
-if [[ ! "$("$RELEASE_DIR/bin/rtx" -v)" =~ ^${RTX_VERSION//v} ]]; then
+if [[ ! "$("$RELEASE_DIR/bin/rtx" -v)" =~ ^${RTX_VERSION//v/} ]]; then
   echo "rtx version mismatch"
   exit 1
 fi
