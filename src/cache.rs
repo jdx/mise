@@ -99,7 +99,7 @@ where
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn clear(&self) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
