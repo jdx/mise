@@ -3,6 +3,10 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
+if [ "${TEST_ALL:-}" != 1 ]; then
+	exit
+fi
+
 export RTX_EXPERIMENTAL=1
 
 assert_contains "rtx x erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell" "24"

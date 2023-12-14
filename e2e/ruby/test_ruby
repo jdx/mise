@@ -9,6 +9,10 @@ export RTX_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
 export RTX_RUBY_VERBOSE_INSTALL=1
 export RTX_RAW=1
 
+if [ "${TEST_ALL:-}" != 1 ]; then
+  exit
+fi
+
 cat >Gemfile <<EOF
 # frozen_string_literal: true
 
