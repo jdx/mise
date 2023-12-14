@@ -62,6 +62,14 @@ impl Settings {
         if *env::RTX_LOG_LEVEL < LevelFilter::Info {
             p.verbose = Some(true);
         }
+        for arg in &*env::ARGS {
+            if arg == "--" {
+                break;
+            }
+            if arg == "--raw" {
+                p.raw = Some(true);
+            }
+        }
         Self::builder().preloaded(p).env()
     }
 

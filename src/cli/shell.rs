@@ -32,10 +32,7 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self, mut config: Config) -> Result<()> {
-        if self.raw {
-            config.settings.raw = true;
-        }
+    pub fn run(self, config: Config) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }
