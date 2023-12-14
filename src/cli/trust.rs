@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::ValueHint;
 use color_eyre::eyre::Result;
 
-use crate::cli::local;
+use crate::config;
 use crate::config::config_file;
 
 /// Marks a config file as trusted
@@ -29,18 +30,46 @@ pub struct Trust {
 
 impl Trust {
     pub fn run(self) -> Result<()> {
+        if self.untrust {
+            self.untrust()
+        } else {
+            self.trust()
+        }
+    }
+    fn untrust(&self) -> Result<()> {
         let path = match &self.config_file {
             Some(filename) => PathBuf::from(filename),
-            None => local::get_parent_path()?,
+            None => match self.get_next_trusted() {
+                Some(path) => path,
+                None => bail!("No trusted config files found."),
+            },
         };
-        if self.untrust {
-            config_file::untrust(&path)?;
-            rtxprintln!("untrusted {}", &path.canonicalize()?.display());
-        } else {
-            config_file::trust(&path)?;
-            rtxprintln!("trusted {}", &path.canonicalize()?.display());
-        }
+        config_file::untrust(&path)?;
+        rtxprintln!("untrusted {}", &path.canonicalize()?.display());
         Ok(())
+    }
+    fn trust(&self) -> Result<()> {
+        let path = match &self.config_file {
+            Some(filename) => PathBuf::from(filename),
+            None => match self.get_next_untrusted() {
+                Some(path) => path,
+                None => bail!("No untrusted config files found."),
+            },
+        };
+        config_file::trust(&path)?;
+        rtxprintln!("trusted {}", &path.canonicalize()?.display());
+        Ok(())
+    }
+
+    fn get_next_trusted(&self) -> Option<PathBuf> {
+        config::load_config_filenames(&BTreeMap::new())
+            .into_iter()
+            .find(|p| config_file::is_trusted(p))
+    }
+    fn get_next_untrusted(&self) -> Option<PathBuf> {
+        config::load_config_filenames(&BTreeMap::new())
+            .into_iter()
+            .find(|p| !config_file::is_trusted(p))
     }
 }
 
@@ -63,5 +92,6 @@ mod tests {
         assert_cli_snapshot!("trust");
         assert_cli_snapshot!("trust", "--untrust");
         assert_cli_snapshot!("trust", ".test-tool-versions");
+        assert_cli_snapshot!("trust", "--untrust", ".test-tool-versions");
     }
 }
