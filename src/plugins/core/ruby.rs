@@ -15,7 +15,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, http};
 
 #[derive(Debug)]
@@ -172,7 +172,7 @@ impl RubyPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let body = file::read_to_string(&*env::RTX_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
@@ -197,8 +197,8 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn test_ruby(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("ruby -v");
+    fn test_ruby(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -206,8 +206,8 @@ impl RubyPlugin {
             .execute()
     }
 
-    fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("gem -v");
+    fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("gem -v".into());
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
@@ -246,7 +246,7 @@ impl RubyPlugin {
         &'a self,
         config: &'a Config,
         tv: &ToolVersion,
-        pr: &'a ProgressReport,
+        pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner> {
         let cmd = if *env::RTX_RUBY_INSTALL {
             CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
@@ -354,14 +354,15 @@ impl Plugin for RubyPlugin {
             ToolVersionRequest::Version { .. }
         ));
 
-        ctx.pr.set_message("running ruby-build");
+        ctx.pr.set_message("running ruby-build".into());
         let config = Config::get();
-        self.install_cmd(&config, &ctx.tv, &ctx.pr)?.execute()?;
+        self.install_cmd(&config, &ctx.tv, ctx.pr.as_ref())?
+            .execute()?;
 
-        self.test_ruby(&config, &ctx.tv, &ctx.pr)?;
+        self.test_ruby(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_rubygems_hook(&ctx.tv)?;
-        self.test_gem(&config, &ctx.tv, &ctx.pr)?;
-        self.install_default_gems(&config, &ctx.tv, &ctx.pr)?;
+        self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
+        self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref())?;
         Ok(())
     }
 

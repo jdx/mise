@@ -28,9 +28,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: unit
           save-if: ${{ github.ref_name == 'main' }}
-          cache-all-crates: true
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
@@ -66,12 +65,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       #- run: rustup toolchain install nightly --component llvm-tools-preview --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
-          save-if: false
+          shared-key: coverage
+          save-if: ${{ github.ref_name == 'main' }}
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
       - run: npm i -g markdown-magic
       - uses: taiki-e/install-action@v2

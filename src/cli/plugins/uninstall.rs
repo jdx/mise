@@ -52,12 +52,12 @@ impl PluginsUninstall {
         match config.get_or_create_plugin(plugin_name) {
             plugin if plugin.is_installed() => {
                 let mut pr = mpr.add();
-                plugin.decorate_progress_bar(&mut pr, None);
-                plugin.uninstall(&pr)?;
+                plugin.decorate_progress_bar(pr.as_mut(), None);
+                plugin.uninstall(pr.as_ref())?;
                 if self.purge {
-                    plugin.purge(&pr)?;
+                    plugin.purge(pr.as_ref())?;
                 }
-                pr.finish_with_message("uninstalled");
+                pr.finish_with_message("uninstalled".into());
             }
             _ => mpr.suspend(|| {
                 warn!(

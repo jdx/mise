@@ -17,7 +17,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash, http};
 
 #[derive(Debug)]
@@ -114,7 +114,7 @@ impl JavaPlugin {
         tv.install_path().join("bin/java")
     }
 
-    fn test_java(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
@@ -122,7 +122,12 @@ impl JavaPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &ProgressReport, m: &JavaMetadata) -> Result<PathBuf> {
+    fn download(
+        &self,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+        m: &JavaMetadata,
+    ) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let filename = m.url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -138,7 +143,7 @@ impl JavaPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
         tarball_path: &Path,
         m: &JavaMetadata,
     ) -> Result<()> {
@@ -206,8 +211,8 @@ impl JavaPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("java -version");
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("java -version".into());
         self.test_java(tv, pr)
     }
 
@@ -288,9 +293,9 @@ impl Plugin for JavaPlugin {
         ));
 
         let metadata = self.tv_to_metadata(&ctx.tv)?;
-        let tarball_path = self.download(&ctx.tv, &ctx.pr, metadata)?;
-        self.install(&ctx.tv, &ctx.pr, &tarball_path, metadata)?;
-        self.verify(&ctx.tv, &ctx.pr)?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;
+        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }

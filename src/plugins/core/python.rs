@@ -12,7 +12,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, http};
 
 #[derive(Debug)]
@@ -90,12 +90,12 @@ impl PythonPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &ProgressReport,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         if !env::RTX_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
             return Ok(());
         }
-        pr.set_message("installing default packages");
+        pr.set_message("installing default packages".into());
         CmdLineRunner::new(tv.install_path().join("bin/python"))
             .with_pr(pr)
             .arg("-m")
@@ -112,7 +112,7 @@ impl PythonPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: Option<&ProgressReport>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.opts.get("virtualenv") {
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
@@ -155,8 +155,8 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("python --version");
+    fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("python --version".into());
         CmdLineRunner::new(self.python_path(tv))
             .arg("--version")
             .envs(&config.env)
@@ -187,9 +187,9 @@ impl Plugin for PythonPlugin {
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
-        ctx.pr.set_message("Running python-build");
+        ctx.pr.set_message("Running python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg(ctx.tv.version.as_str())
             .arg(&ctx.tv.install_path())
             .envs(&config.env);
@@ -216,11 +216,11 @@ impl Plugin for PythonPlugin {
             }
         }
         cmd.execute()?;
-        self.test_python(&config, &ctx.tv, &ctx.pr)?;
-        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(&ctx.pr)) {
+        self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
+        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
             warn!("failed to get virtualenv: {e}");
         }
-        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
         Ok(())
     }
 
