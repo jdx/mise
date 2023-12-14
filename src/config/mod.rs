@@ -68,7 +68,11 @@ impl Config {
         for cf in config_files.values() {
             settings = settings.preloaded(cf.settings()?);
         }
-        let settings = settings.load()?;
+        let mut settings = settings.load()?;
+        if settings.raw {
+            settings.verbose = true;
+            settings.jobs = 1;
+        }
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
