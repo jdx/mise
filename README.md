@@ -1641,7 +1641,7 @@ behavior.
 ### `rtx activate [OPTIONS] [SHELL_TYPE]`
 
 ```text
-Initializes rtx in the current shell
+Initializes rtx in the current shell session
 
 This should go into your shell's rc file.
 Otherwise, it will only take effect in the current session.
