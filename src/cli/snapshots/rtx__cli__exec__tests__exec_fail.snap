@@ -1,0 +1,5 @@
+---
+source: src/cli/exec.rs
+expression: err
+---
+No such file or directory (os error 2)
