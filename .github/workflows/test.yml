@@ -1,5 +1,4 @@
-name: rtx
-
+name: test
 on:
   push:
     tags: ["v*"]
@@ -29,8 +28,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: unit
-          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          shared-key: test
+          save-if: ${{ github.ref_name == 'main' }}
+          cache-all-crates: true
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
@@ -70,9 +70,8 @@ jobs:
       #- run: rustup toolchain install nightly --component llvm-tools-preview --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: coverage
-          save-if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-          cache-all-crates: true
+          shared-key: test
+          save-if: false
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
       - run: npm i -g markdown-magic
       - uses: taiki-e/install-action@v2
