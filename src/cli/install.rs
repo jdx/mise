@@ -120,11 +120,7 @@ impl Install {
 
     fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_latest_versions().build(config)?;
-        let versions = ts
-            .list_missing_versions(config)
-            .into_iter()
-            .cloned()
-            .collect::<Vec<_>>();
+        let versions = ts.list_missing_versions();
         if versions.is_empty() {
             info!("all runtimes are installed");
             return Ok(());

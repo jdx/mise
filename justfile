@@ -47,27 +47,36 @@ test-e2e TEST=("all"): build
 # run unit tests w/ coverage
 test-coverage:
     #!/usr/bin/env bash
+    echo "::group::Setup"
     set -euxo pipefail
     source <(cargo llvm-cov show-env --export-prefix)
     cargo llvm-cov clean --workspace
-
     if [[ -n "${RTX_GITHUB_BOT_TOKEN:-}" ]]; then
     	export GITHUB_API_TOKEN="$RTX_GITHUB_BOT_TOKEN"
     fi
-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
-    cargo test --all-features
+
+    echo "::group::Build w/ coverage"
     cargo build --all-features
+    echo "::endgroup::"
     ./e2e/run_all_tests
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
+        echo "::group::Unit tests"
+        cargo test --all-features
+        echo "::group::Trust"
         rtx trust
+        echo "::group::render-help render-completions render-mangen"
         just render-help render-completions render-mangen
+        echo "::group::Implode"
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
+        echo "::group::Trust"
         rtx trust
+        echo "::group::Self update"
         rtx self-update -fy
     fi
+    echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
 
 # delete built files
