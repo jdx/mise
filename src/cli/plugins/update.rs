@@ -20,7 +20,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()

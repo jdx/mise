@@ -58,14 +58,14 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self, config: Config) -> Result<()> {
+    pub fn run(mut self, config: &Config) -> Result<()> {
         self.plugin = self
             .plugin
             .or_else(|| self.plugin_flag.clone().map(|p| vec![p]))
             .map(|p| p.into_iter().map(|p| unalias_plugin(&p).into()).collect());
-        self.verify_plugin(&config)?;
+        self.verify_plugin(config)?;
 
-        let mut runtimes = self.get_runtime_list(&config)?;
+        let mut runtimes = self.get_runtime_list(config)?;
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
@@ -85,7 +85,7 @@ impl Ls {
         } else if self.parseable {
             self.display_parseable(runtimes)
         } else {
-            self.display_user(&config, runtimes)
+            self.display_user(runtimes)
         }
     }
 
@@ -146,7 +146,7 @@ impl Ls {
         Ok(())
     }
 
-    fn display_user(&self, config: &Config, runtimes: Vec<RuntimeRow>) -> Result<()> {
+    fn display_user(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
         let output = runtimes
             .into_iter()
             .map(|(p, tv, source)| {
@@ -156,10 +156,7 @@ impl Ls {
                 } else if !p.is_version_installed(&tv) {
                     VersionStatus::Missing(tv.version)
                 } else if source.is_some() {
-                    VersionStatus::Active(
-                        tv.version.clone(),
-                        p.is_version_outdated(config, &tv, p.clone()),
-                    )
+                    VersionStatus::Active(tv.version.clone(), p.is_version_outdated(&tv, p.clone()))
                 } else {
                     VersionStatus::Inactive(tv.version)
                 };
@@ -219,7 +216,7 @@ impl Ls {
             .collect();
 
         let active = ts
-            .list_current_versions(config)
+            .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
             .collect::<HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)>>();

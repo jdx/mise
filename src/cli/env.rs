@@ -37,14 +37,14 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
         };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(config, &opts)?;
 
         if self.json {
             self.output_json(config, ts)
@@ -53,16 +53,16 @@ impl Env {
         }
     }
 
-    fn output_json(&self, config: Config, ts: Toolset) -> Result<()> {
-        let env = ts.env_with_path(&config);
+    fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+        let env = ts.env_with_path(config);
         rtxprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
-    fn output_shell(&self, config: Config, ts: Toolset) -> Result<()> {
+    fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-        for (k, v) in ts.env_with_path(&config) {
+        for (k, v) in ts.env_with_path(config) {
             let k = k.to_string();
             let v = v.to_string();
             rtxprint!("{}", shell.set_env(&k, &v));

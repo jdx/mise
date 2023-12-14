@@ -15,7 +15,7 @@ pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_request::ToolVersionRequest;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::env;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
@@ -91,7 +91,7 @@ impl Toolset {
             .for_each(|(_, v)| v.resolve(config, self.latest_versions));
     }
     pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
+        let mpr = MultiProgressReport::new();
         let versions = self
             .list_missing_versions(config)
             .into_iter()
@@ -120,6 +120,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(());
         }
+        let settings = Settings::try_get()?;
         self.latest_versions = true;
         let queue: Vec<_> = versions
             .into_iter()
@@ -129,14 +130,14 @@ impl Toolset {
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
-                t.ensure_installed(config, Some(mpr), false)?;
+                t.ensure_installed(Some(mpr), false)?;
             }
         }
         let queue = Arc::new(Mutex::new(queue));
-        let raw = opts.raw || config.settings.raw;
+        let raw = opts.raw || settings.raw;
         let jobs = match raw {
             true => 1,
-            false => opts.jobs.unwrap_or(config.settings.jobs),
+            false => opts.jobs.unwrap_or(settings.jobs),
         };
         thread::scope(|s| {
             (0..jobs)
@@ -148,14 +149,8 @@ impl Toolset {
                         while let Some((t, versions)) = next_job() {
                             for tv in versions {
                                 let ctx = InstallContext {
-                                    config,
                                     ts,
-                                    tv: tv.request.resolve(
-                                        config,
-                                        t.clone(),
-                                        tv.opts.clone(),
-                                        true,
-                                    )?,
+                                    tv: tv.request.resolve(t.clone(), tv.opts.clone(), true)?,
                                     pr: mpr.add(),
                                     raw,
                                     force: opts.force,
@@ -195,7 +190,7 @@ impl Toolset {
         config: &Config,
     ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
         let current_versions: HashMap<(PluginName, String), (Arc<dyn Plugin>, ToolVersion)> = self
-            .list_current_versions(config)
+            .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
@@ -211,7 +206,7 @@ impl Toolset {
                             Some((p, tv)) => (p.clone(), tv.clone()),
                             None => {
                                 let tv = ToolVersionRequest::new(p.name().into(), &v)
-                                    .resolve(config, p.clone(), Default::default(), false)
+                                    .resolve(p.clone(), Default::default(), false)
                                     .unwrap();
                                 (p.clone(), tv)
                             }
@@ -226,42 +221,34 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_versions_by_plugin(
-        &self,
-        config: &Config,
-    ) -> Vec<(Arc<dyn Plugin>, &Vec<ToolVersion>)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Plugin>, &Vec<ToolVersion>)> {
+        let config = Config::get();
         self.versions
             .iter()
             .map(|(p, v)| (config.get_or_create_plugin(p), &v.versions))
             .collect()
     }
-    pub fn list_current_versions(&self, config: &Config) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
-        self.list_versions_by_plugin(config)
+    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
+        self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| v.iter().map(|v| (p.clone(), v.clone())))
             .collect()
     }
-    pub fn list_current_installed_versions(
-        &self,
-        config: &Config,
-    ) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
-        self.list_current_versions(config)
+    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
+        self.list_current_versions()
             .into_iter()
             .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
-    pub fn list_outdated_versions(
-        &self,
-        config: &Config,
-    ) -> Vec<(Arc<dyn Plugin>, ToolVersion, String)> {
-        self.list_current_versions(config)
+    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion, String)> {
+        self.list_current_versions()
             .into_iter()
             .filter_map(|(t, tv)| {
                 if t.symlink_path(&tv).is_some() {
                     // do not consider symlinked versions to be outdated
                     return None;
                 }
-                let latest = match tv.latest_version(config, t.clone()) {
+                let latest = match tv.latest_version(t.clone()) {
                     Ok(latest) => latest,
                     Err(e) => {
                         warn!("Error getting latest version for {t}: {e:#}");
@@ -281,7 +268,7 @@ impl Toolset {
         for p in config.path_dirs.clone() {
             path_env.add(p);
         }
-        for p in self.list_paths(config) {
+        for p in self.list_paths() {
             path_env.add(p);
         }
         let mut env = self.env(config);
@@ -293,7 +280,7 @@ impl Toolset {
     }
     pub fn env(&self, config: &Config) -> BTreeMap<String, String> {
         let entries = self
-            .list_current_installed_versions(config)
+            .list_current_installed_versions()
             .into_par_iter()
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
@@ -320,22 +307,22 @@ impl Toolset {
         entries.extend(config.env.clone());
         entries
     }
-    pub fn list_paths(&self, config: &Config) -> Vec<PathBuf> {
-        self.list_current_installed_versions(config)
+    pub fn list_paths(&self) -> Vec<PathBuf> {
+        self.list_current_installed_versions()
             .into_par_iter()
             .flat_map(|(p, tv)| {
-                p.list_bin_paths(config, self, &tv).unwrap_or_else(|e| {
+                p.list_bin_paths(&tv).unwrap_or_else(|e| {
                     warn!("Error listing bin paths for {tv}: {e:#}");
                     Vec::new()
                 })
             })
             .collect()
     }
-    pub fn which(&self, config: &Config, bin_name: &str) -> Option<(Arc<dyn Plugin>, ToolVersion)> {
-        self.list_current_installed_versions(config)
+    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Plugin>, ToolVersion)> {
+        self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|(p, tv)| {
-                if let Ok(x) = p.which(config, self, tv, bin_name) {
+                if let Ok(x) = p.which(tv, bin_name) {
                     x.is_some()
                 } else {
                     false
@@ -347,7 +334,7 @@ impl Toolset {
         Ok(self
             .list_installed_versions(config)?
             .into_par_iter()
-            .filter(|(p, tv)| match p.which(config, self, tv, bin_name) {
+            .filter(|(p, tv)| match p.which(tv, bin_name) {
                 Ok(x) => x.is_some(),
                 Err(e) => {
                     warn!("Error running which: {:#}", e);

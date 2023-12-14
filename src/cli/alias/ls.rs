@@ -21,7 +21,8 @@ pub struct AliasLs {
 }
 
 impl AliasLs {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::get();
         for (plugin_name, aliases) in config.get_all_aliases() {
             if let Some(plugin) = &self.plugin {
                 if plugin_name != plugin {

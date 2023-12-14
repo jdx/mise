@@ -746,6 +746,25 @@ impl Debug for RtxToml {
     }
 }
 
+impl Clone for RtxToml {
+    fn clone(&self) -> Self {
+        Self {
+            context: self.context.clone(),
+            path: self.path.clone(),
+            toolset: self.toolset.clone(),
+            env_file: self.env_file.clone(),
+            env: self.env.clone(),
+            env_remove: self.env_remove.clone(),
+            path_dirs: self.path_dirs.clone(),
+            settings: self.settings.clone(),
+            alias: self.alias.clone(),
+            doc: self.doc.clone(),
+            plugins: self.plugins.clone(),
+            is_trusted: Mutex::new(RefCell::new(*self.is_trusted.lock().unwrap().borrow())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_display_snapshot, assert_snapshot};

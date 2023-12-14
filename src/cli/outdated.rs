@@ -21,8 +21,8 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let tool_set = self
             .tool
             .iter()
@@ -30,7 +30,7 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
-        let outdated = ts.list_outdated_versions(&config);
+        let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {

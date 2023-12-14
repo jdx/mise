@@ -46,44 +46,39 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mpr = MultiProgressReport::new();
         if self.all {
             return self.install_all_missing_plugins(config, mpr);
         }
         let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
-            self.install_one(&config, name, git_url, &mpr)?;
+            self.install_one(name, git_url, &mpr)?;
         } else {
             let mut plugins: Vec<PluginName> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
             };
             plugins.extend(self.rest.clone());
-            self.install_many(config, plugins, mpr)?;
+            self.install_many(plugins, mpr)?;
         }
 
         Ok(())
     }
 
-    fn install_all_missing_plugins(&self, config: Config, mpr: MultiProgressReport) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
-        let missing_plugins = ts.list_missing_plugins(&config);
+    fn install_all_missing_plugins(&self, config: &Config, mpr: MultiProgressReport) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
+        let missing_plugins = ts.list_missing_plugins(config);
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
-        self.install_many(config, missing_plugins, mpr)?;
+        self.install_many(missing_plugins, mpr)?;
         Ok(())
     }
 
-    fn install_many(
-        &self,
-        config: Config,
-        plugins: Vec<PluginName>,
-        mpr: MultiProgressReport,
-    ) -> Result<()> {
+    fn install_many(&self, plugins: Vec<PluginName>, mpr: MultiProgressReport) -> Result<()> {
         for plugin in plugins {
-            self.install_one(&config, plugin, None, &mpr)?;
+            self.install_one(plugin, None, &mpr)?;
         }
         Ok(())
         // TODO: run in parallel
@@ -101,7 +96,6 @@ impl PluginsInstall {
 
     fn install_one(
         &self,
-        config: &Config,
         name: PluginName,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
@@ -112,7 +106,7 @@ impl PluginsInstall {
             mpr.warn(format!("Plugin {} already installed", name));
             mpr.warn("Use --force to install anyway".to_string());
         } else {
-            plugin.ensure_installed(config, Some(mpr), true)?;
+            plugin.ensure_installed(Some(mpr), true)?;
         }
         Ok(())
     }

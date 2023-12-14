@@ -7,7 +7,7 @@ use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::github::GithubRelease;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -51,9 +51,9 @@ impl DenoPlugin {
         tv.install_path().join("bin/deno")
     }
 
-    fn test_deno(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn test_deno(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("deno -V");
-        CmdLineRunner::new(&config.settings, self.deno_bin(tv))
+        CmdLineRunner::new(self.deno_bin(tv))
             .with_pr(pr)
             .arg("-V")
             .execute()
@@ -88,8 +88,8 @@ impl DenoPlugin {
         Ok(())
     }
 
-    fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        self.test_deno(config, tv, pr)
+    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        self.test_deno(tv, pr)
     }
 }
 
@@ -98,14 +98,14 @@ impl Plugin for DenoPlugin {
         "deno"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".deno-version".into()])
     }
 
@@ -117,17 +117,12 @@ impl Plugin for DenoPlugin {
 
         let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
         self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
-        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.verify(&ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
 
-    fn list_bin_paths(
-        &self,
-        _config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         let bin_paths = vec![
             tv.install_short_path().join("bin"),
             tv.install_short_path().join(".deno/bin"),

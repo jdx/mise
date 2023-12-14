@@ -55,17 +55,17 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
         };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(config, &opts)?;
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = ts.env_with_path(&config);
+        let env = ts.env_with_path(config);
 
         self.exec(program, args, env)
     }

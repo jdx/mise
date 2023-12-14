@@ -20,8 +20,8 @@ pub struct Current {
 }
 
 impl Current {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
         match &self.plugin {
             Some(plugin_name) => {
                 let plugin_name = unalias_plugin(plugin_name);
@@ -29,19 +29,19 @@ impl Current {
                 if !plugin.is_installed() {
                     bail!("Plugin {} is not installed", plugin_name);
                 }
-                self.one(&config, ts, plugin.clone())
+                self.one(ts, plugin.clone())
             }
-            None => self.all(&config, ts),
+            None => self.all(ts),
         }
     }
 
-    fn one(&self, config: &Config, ts: Toolset, tool: Arc<dyn Plugin>) -> Result<()> {
+    fn one(&self, ts: Toolset, tool: Arc<dyn Plugin>) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.name());
             return Ok(());
         }
         match ts
-            .list_versions_by_plugin(config)
+            .list_versions_by_plugin()
             .into_iter()
             .find(|(p, _)| p.name() == tool.name())
         {
@@ -62,8 +62,8 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, config: &Config, ts: Toolset) -> Result<()> {
-        for (plugin, versions) in ts.list_versions_by_plugin(config) {
+    fn all(&self, ts: Toolset) -> Result<()> {
+        for (plugin, versions) in ts.list_versions_by_plugin() {
             if versions.is_empty() {
                 continue;
             }

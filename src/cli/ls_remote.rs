@@ -33,15 +33,15 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub fn run(self, config: Config) -> Result<()> {
-        if let Some(plugin) = self.get_plugin(&config)? {
-            self.run_single(config, plugin)
+    pub fn run(self, config: &Config) -> Result<()> {
+        if let Some(plugin) = self.get_plugin(config)? {
+            self.run_single(plugin)
         } else {
             self.run_all(config)
         }
     }
 
-    fn run_single(self, config: Config, plugin: Arc<dyn Plugin>) -> Result<()> {
+    fn run_single(self, plugin: Arc<dyn Plugin>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
@@ -50,7 +50,7 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions(&config.settings)?;
+        let versions = plugin.list_remote_versions()?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
@@ -66,12 +66,12 @@ impl LsRemote {
         Ok(())
     }
 
-    fn run_all(self, config: Config) -> Result<()> {
+    fn run_all(self, config: &Config) -> Result<()> {
         let versions = config
             .list_plugins()
             .into_par_iter()
             .map(|p| {
-                let versions = p.list_remote_versions(&config.settings)?;
+                let versions = p.list_remote_versions()?;
                 Ok((p, versions))
             })
             .collect::<Result<Vec<_>>>()?
@@ -90,7 +90,7 @@ impl LsRemote {
         match &self.plugin {
             Some(tool_arg) => {
                 let plugin = config.get_or_create_plugin(&tool_arg.plugin);
-                plugin.ensure_installed(config, None, false)?;
+                plugin.ensure_installed(None, false)?;
                 Ok(Some(plugin))
             }
             None => Ok(None),

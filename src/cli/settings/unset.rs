@@ -14,9 +14,10 @@ pub struct SettingsUnset {
 }
 
 impl SettingsUnset {
-    pub fn run(self, mut config: Config) -> Result<()> {
-        config.global_config.remove_setting(&self.setting);
-        config.global_config.save()
+    pub fn run(self) -> Result<()> {
+        let mut global_config = Config::try_get()?.global_config.clone();
+        global_config.remove_setting(&self.setting);
+        global_config.save()
     }
 }
 

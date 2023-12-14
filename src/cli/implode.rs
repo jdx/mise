@@ -2,7 +2,7 @@ use std::path::Path;
 
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
+use crate::config::Settings;
 use crate::file::remove_all;
 
 use crate::ui::prompt;
@@ -24,7 +24,7 @@ pub struct Implode {
 }
 
 impl Implode {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_EXE];
         if self.config {
             files.push(&*dirs::CONFIG);
@@ -34,7 +34,7 @@ impl Implode {
                 rtxprintln!("rm -rf {}", f.display());
             }
 
-            if self.confirm_remove(&config, f)? {
+            if self.confirm_remove(f)? {
                 if f.is_dir() {
                     remove_all(f)?;
                 } else {
@@ -46,10 +46,11 @@ impl Implode {
         Ok(())
     }
 
-    fn confirm_remove(&self, config: &Config, f: &Path) -> Result<bool> {
+    fn confirm_remove(&self, f: &Path) -> Result<bool> {
+        let settings = Settings::try_get()?;
         if self.dry_run {
             Ok(false)
-        } else if config.settings.yes {
+        } else if settings.yes {
             Ok(true)
         } else {
             let r = prompt::confirm(&format!("remove {} ?", f.display()))?;

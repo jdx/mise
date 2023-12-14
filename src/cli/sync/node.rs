@@ -36,18 +36,19 @@ pub struct SyncNodeType {
 }
 
 impl SyncNode {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         if self._type.brew {
-            self.run_brew(config)?;
+            self.run_brew(&config)?;
         } else if self._type.nvm {
-            self.run_nvm(config)?;
+            self.run_nvm(&config)?;
         } else if self._type.nodenv {
-            self.run_nodenv(config)?;
+            self.run_nodenv(&config)?;
         }
         Ok(())
     }
 
-    fn run_brew(self, config: Config) -> Result<()> {
+    fn run_brew(self, config: &Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -68,7 +69,7 @@ impl SyncNode {
         config.rebuild_shims_and_runtime_symlinks()
     }
 
-    fn run_nvm(self, config: Config) -> Result<()> {
+    fn run_nvm(self, config: &Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
@@ -86,7 +87,7 @@ impl SyncNode {
         config.rebuild_shims_and_runtime_symlinks()
     }
 
-    fn run_nodenv(self, config: Config) -> Result<()> {
+    fn run_nodenv(self, config: &Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");

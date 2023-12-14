@@ -32,7 +32,8 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         if !config.is_activated() {
             err_inactive()?;
         }
@@ -47,7 +48,7 @@ impl Shell {
 
         let shell = get_shell(None).expect("no shell detected");
 
-        for (p, tv) in ts.list_current_installed_versions(&config) {
+        for (p, tv) in ts.list_current_installed_versions() {
             let source = &ts.versions.get(p.name()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("RTX_{}_VERSION", p.name().to_uppercase());

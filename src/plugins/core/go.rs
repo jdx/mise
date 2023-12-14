@@ -7,7 +7,7 @@ use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
@@ -57,12 +57,7 @@ impl GoPlugin {
         tv.install_path().join("packages")
     }
 
-    fn install_default_packages(
-        &self,
-        settings: &Settings,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
+    fn install_default_packages(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         let body = file::read_to_string(&*env::RTX_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
@@ -82,7 +77,7 @@ impl GoPlugin {
             if *env::RTX_GO_SET_GOPATH != Some(false) {
                 env.insert("GOPATH", self.gopath(tv));
             }
-            CmdLineRunner::new(settings, self.go_bin(tv))
+            CmdLineRunner::new(self.go_bin(tv))
                 .with_pr(pr)
                 .arg("install")
                 .arg(package)
@@ -92,9 +87,9 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn test_go(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn test_go(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("go version");
-        CmdLineRunner::new(&config.settings, self.go_bin(tv))
+        CmdLineRunner::new(self.go_bin(tv))
             .with_pr(pr)
             .arg("version")
             .execute()
@@ -133,9 +128,9 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        self.test_go(config, tv, pr)?;
-        self.install_default_packages(&config.settings, tv, pr)
+    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        self.test_go(tv, pr)?;
+        self.install_default_packages(tv, pr)
     }
 }
 
@@ -144,25 +139,25 @@ impl Plugin for GoPlugin {
         "go"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
         self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
-        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.verify(&ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
 
-    fn uninstall_version_impl(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, tv: &ToolVersion) -> Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;
@@ -170,12 +165,7 @@ impl Plugin for GoPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(
-        &self,
-        _config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         // goroot/bin must always be included, irrespective of RTX_GO_SET_GOROOT
         let mut paths = vec![self.goroot(tv).join("bin")];
         if *env::RTX_GO_SET_GOPATH != Some(false) {

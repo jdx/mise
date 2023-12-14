@@ -6,7 +6,6 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::config::Settings;
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -17,11 +16,11 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(settings: &Settings, path: PathBuf, plugins: &[&Arc<dyn Plugin>]) -> Result<Self> {
+    pub fn parse(path: PathBuf, plugins: &[&Arc<dyn Plugin>]) -> Result<Self> {
         let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.clone()));
 
         for plugin in plugins {
-            let version = plugin.parse_legacy_file(&path, settings)?;
+            let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
                 toolset.add_version(
                     ToolVersionRequest::new(plugin.name().to_string(), version),

@@ -17,7 +17,7 @@ pub struct SettingsSet {
 }
 
 impl SettingsSet {
-    pub fn run(self, mut config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let value: toml_edit::Value = match self.setting.as_str() {
             "experimental" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,
@@ -33,8 +33,9 @@ impl SettingsSet {
             _ => return Err(eyre!("Unknown setting: {}", self.setting)),
         };
 
-        config.global_config.update_setting(&self.setting, value);
-        config.global_config.save()
+        let mut global_config = Config::try_get()?.global_config.clone();
+        global_config.update_setting(&self.setting, value);
+        global_config.save()
     }
 }
 
