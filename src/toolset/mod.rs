@@ -133,7 +133,10 @@ impl Toolset {
             }
         }
         let queue = Arc::new(Mutex::new(queue));
-        let jobs = opts.jobs.unwrap_or(config.settings.jobs);
+        let jobs = match opts.raw {
+            true => 1,
+            false => opts.jobs.unwrap_or(config.settings.jobs),
+        };
         thread::scope(|s| {
             (0..jobs)
                 .map(|_| {
