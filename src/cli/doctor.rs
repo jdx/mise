@@ -7,7 +7,7 @@ use indenter::indented;
 
 use crate::build_time::built_info;
 use crate::cli::version::VERSION;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::git::Git;
 
 use crate::plugins::PluginType;
@@ -22,8 +22,9 @@ use crate::{duration, env};
 pub struct Doctor {}
 
 impl Doctor {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let settings = Settings::try_get()?;
+        let ts = ToolsetBuilder::new().build(config)?;
         rtxprintln!("{}", rtx_version());
         rtxprintln!("{}", build_info());
         rtxprintln!("{}", shell());
@@ -32,10 +33,10 @@ impl Doctor {
         rtxprintln!(
             "{}\n{}\n",
             style("settings:").bold(),
-            indent(config.settings.to_string())
+            indent(settings.to_string())
         );
-        rtxprintln!("{}", render_config_files(&config));
-        rtxprintln!("{}", render_plugins(&config));
+        rtxprintln!("{}", render_config_files(config));
+        rtxprintln!("{}", render_plugins(config));
         rtxprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()));
 
         let mut checks = Vec::new();

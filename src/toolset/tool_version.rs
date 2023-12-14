@@ -39,7 +39,6 @@ impl ToolVersion {
     }
 
     pub fn resolve(
-        config: &Config,
         tool: Arc<dyn Plugin>,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
@@ -51,22 +50,14 @@ impl ToolVersion {
         }
         let tv = match request.clone() {
             ToolVersionRequest::Version(_, v) => {
-                Self::resolve_version(config, tool, request, latest_versions, &v, opts)?
+                Self::resolve_version(tool, request, latest_versions, &v, opts)?
             }
             ToolVersionRequest::Prefix(_, prefix) => {
-                Self::resolve_prefix(config, tool, request, &prefix, opts)?
+                Self::resolve_prefix(tool, request, &prefix, opts)?
             }
             ToolVersionRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(
-                config,
-                tool,
-                request,
-                latest_versions,
-                &sub,
-                &orig_version,
-                opts,
-            )?,
+            } => Self::resolve_sub(tool, request, latest_versions, &sub, &orig_version, opts)?,
             _ => {
                 let version = request.version();
                 Self::new(tool, request, opts, version)
@@ -102,10 +93,8 @@ impl ToolVersion {
             .join(&self.plugin_name)
             .join(self.tv_pathname())
     }
-    pub fn latest_version(&self, config: &Config, tool: Arc<dyn Plugin>) -> Result<String> {
-        let tv = self
-            .request
-            .resolve(config, tool, self.opts.clone(), true)?;
+    pub fn latest_version(&self, tool: Arc<dyn Plugin>) -> Result<String> {
+        let tv = self.request.resolve(tool, self.opts.clone(), true)?;
         Ok(tv.version)
     }
     fn tv_pathname(&self) -> String {
@@ -126,13 +115,13 @@ impl ToolVersion {
     }
 
     fn resolve_version(
-        config: &Config,
         tool: Arc<dyn Plugin>,
         request: ToolVersionRequest,
         latest_versions: bool,
         v: &str,
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
+        let config = Config::get();
         let v = config.resolve_alias(tool.name(), v)?;
         match v.split_once(':') {
             Some(("ref", r)) => {
@@ -142,11 +131,11 @@ impl ToolVersion {
                 return Self::resolve_path(tool, PathBuf::from(p), opts);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(config, tool, request, p, opts);
+                return Self::resolve_prefix(tool, request, p, opts);
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(config, tool, request, latest_versions, sub, v, opts);
+                return Self::resolve_sub(tool, request, latest_versions, sub, v, opts);
             }
             _ => (),
         }
@@ -168,7 +157,7 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = tool.latest_version(&config.settings, None)? {
+            if let Some(v) = tool.latest_version(None)? {
                 return build(v);
             }
         }
@@ -181,16 +170,15 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = tool.list_versions_matching(&config.settings, &v)?;
+        let matches = tool.list_versions_matching(&v)?;
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(config, tool, request, &v, opts)
+        Self::resolve_prefix(tool, request, &v, opts)
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
     fn resolve_sub(
-        config: &Config,
         tool: Arc<dyn Plugin>,
         request: ToolVersionRequest,
         latest_versions: bool,
@@ -199,21 +187,20 @@ impl ToolVersion {
         opts: ToolVersionOptions,
     ) -> Result<Self> {
         let v = match v {
-            "latest" => tool.latest_version(&config.settings, None)?.unwrap(),
-            _ => config.resolve_alias(tool.name(), v)?,
+            "latest" => tool.latest_version(None)?.unwrap(),
+            _ => Config::get().resolve_alias(tool.name(), v)?,
         };
         let v = version_sub(&v, sub);
-        Self::resolve_version(config, tool, request, latest_versions, &v, opts)
+        Self::resolve_version(tool, request, latest_versions, &v, opts)
     }
 
     fn resolve_prefix(
-        config: &Config,
         tool: Arc<dyn Plugin>,
         request: ToolVersionRequest,
         prefix: &str,
         opts: ToolVersionOptions,
     ) -> Result<Self> {
-        let matches = tool.list_versions_matching(&config.settings, prefix)?;
+        let matches = tool.list_versions_matching(prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

@@ -4,7 +4,7 @@ use color_eyre::eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::tool::ToolArg;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -42,9 +42,10 @@ impl ToolsetBuilder {
     }
 
     pub fn build(self, config: &Config) -> Result<Toolset> {
+        let settings = Settings::try_get()?;
         let mut toolset = Toolset {
             latest_versions: self.latest_versions,
-            disable_tools: config.settings.disable_tools.clone(),
+            disable_tools: settings.disable_tools.clone(),
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset);

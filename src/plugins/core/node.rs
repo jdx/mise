@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::env::{RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_MIRROR_URL};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -123,7 +123,7 @@ impl NodePlugin {
     }
 
     fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> CmdLineRunner {
-        let mut cmd = CmdLineRunner::new(&ctx.config.settings, "sh");
+        let mut cmd = CmdLineRunner::new("sh");
         for p in &opts.path {
             cmd.prepend_path_env(p.clone());
         }
@@ -179,7 +179,7 @@ impl NodePlugin {
             }
             pr.set_message(format!("installing default package: {}", package));
             let npm = self.npm_path(tv);
-            CmdLineRunner::new(&config.settings, npm)
+            CmdLineRunner::new(npm)
                 .with_pr(pr)
                 .arg("install")
                 .arg("--global")
@@ -198,15 +198,10 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn enable_default_corepack_shims(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-    ) -> Result<()> {
+    fn enable_default_corepack_shims(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("enabling corepack shims");
         let corepack = self.corepack_path(tv);
-        CmdLineRunner::new(&config.settings, corepack)
+        CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
@@ -216,7 +211,7 @@ impl NodePlugin {
 
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("node -v");
-        CmdLineRunner::new(&config.settings, self.node_path(tv))
+        CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
             .envs(&config.env)
@@ -225,7 +220,7 @@ impl NodePlugin {
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("npm -v");
-        CmdLineRunner::new(&config.settings, self.npm_path(tv))
+        CmdLineRunner::new(self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
@@ -245,14 +240,14 @@ impl Plugin for NodePlugin {
         "node"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn get_aliases(&self, _settings: &Settings) -> Result<BTreeMap<String, String>> {
+    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = [
             ("lts/argon", "4"),
             ("lts/boron", "6"),
@@ -280,11 +275,11 @@ impl Plugin for NodePlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
         let body = file::read_to_string(path)?;
         // trim "v" prefix
         let body = body.trim().strip_prefix('v').unwrap_or(&body);
@@ -294,6 +289,7 @@ impl Plugin for NodePlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        let config = Config::get();
         let opts = BuildOpts::new(ctx)?;
         debug!("node build opts: {:#?}", opts);
         if *env::RTX_NODE_COMPILE {
@@ -301,12 +297,12 @@ impl Plugin for NodePlugin {
         } else {
             self.install_precompiled(ctx, &opts)?;
         }
-        self.test_node(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_node(&config, &ctx.tv, &ctx.pr)?;
         self.install_npm_shim(&ctx.tv)?;
-        self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
-        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_npm(&config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
         if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
-            self.enable_default_corepack_shims(ctx.config, &ctx.tv, &ctx.pr)?;
+            self.enable_default_corepack_shims(&ctx.tv, &ctx.pr)?;
         }
 
         Ok(())
@@ -339,7 +335,7 @@ impl BuildOpts {
 
         Ok(Self {
             version: v.clone(),
-            path: ctx.ts.list_paths(ctx.config),
+            path: ctx.ts.list_paths(),
             build_dir: env::RTX_TMP_DIR.join(format!("node-v{v}")),
             configure_cmd: configure_cmd(&install_path),
             make_cmd: make_cmd(),

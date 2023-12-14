@@ -34,7 +34,6 @@ type ToolMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
 
 #[derive(Debug, Default)]
 pub struct Config {
-    pub settings: Settings,
     pub global_config: RtxToml,
     pub config_files: ConfigMap,
     pub env: BTreeMap<String, String>,
@@ -49,17 +48,29 @@ pub struct Config {
     repo_urls: HashMap<PluginName, String>,
 }
 
+static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+
 impl Config {
+    pub fn get() -> Arc<Self> {
+        Self::try_get().unwrap()
+    }
+    pub fn try_get() -> Result<Arc<Self>> {
+        if let Some(config) = &*CONFIG.read().unwrap() {
+            return Ok(config.clone());
+        }
+        let config = Arc::new(Self::load()?);
+        *CONFIG.write().unwrap() = Some(config.clone());
+        Ok(config)
+    }
     pub fn load() -> Result<Self> {
         let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
         Settings::add_partial(cli_settings);
         let global_config = load_rtxrc()?;
         Settings::add_partial(global_config.settings()?);
         let config_filenames = load_config_filenames(&BTreeMap::new());
-        let settings = Settings::default_builder().load()?;
+        let settings = Settings::try_get()?;
         let plugins = load_plugins(&settings)?;
         let config_files = load_all_config_files(
-            &settings,
             &config_filenames,
             &plugins,
             &BTreeMap::new(),
@@ -68,24 +79,15 @@ impl Config {
         for cf in config_files.values() {
             Settings::add_partial(cf.settings()?);
         }
-        let mut settings = Settings::default_builder().load()?;
-        if settings.raw {
-            settings.verbose = true;
-            settings.jobs = 1;
-        }
+        let settings = Settings::try_get()?;
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
         let config_filenames = load_config_filenames(&legacy_files);
         let config_track = track_config_files(&config_filenames);
 
-        let config_files = load_all_config_files(
-            &settings,
-            &config_filenames,
-            &plugins,
-            &legacy_files,
-            config_files,
-        );
+        let config_files =
+            load_all_config_files(&config_filenames, &plugins, &legacy_files, config_files);
         let config_files = config_files?;
         let watch_files = config_files
             .values()
@@ -112,7 +114,6 @@ impl Config {
             shorthands: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
-            settings,
             global_config,
             plugins: RwLock::new(plugins),
             should_exit_early,
@@ -124,8 +125,7 @@ impl Config {
         Ok(config)
     }
     pub fn get_shorthands(&self) -> &Shorthands {
-        self.shorthands
-            .get_or_init(|| get_shorthands(&self.settings))
+        self.shorthands.get_or_init(get_shorthands)
     }
 
     pub fn get_repo_url(&self, plugin_name: &PluginName) -> Option<String> {
@@ -151,7 +151,7 @@ impl Config {
             }
         }
         if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
-            if let Some(alias) = plugin.get_aliases(&self.settings)?.get(v) {
+            if let Some(alias) = plugin.get_aliases()?.get(v) {
                 return Ok(alias.clone());
             }
         }
@@ -187,7 +187,7 @@ impl Config {
             .list_plugins()
             .into_par_iter()
             .map(|plugin| {
-                let aliases = plugin.get_aliases(&self.settings).unwrap_or_else(|err| {
+                let aliases = plugin.get_aliases().unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
@@ -220,7 +220,7 @@ impl Config {
         let config_files = tracker
             .list_all()?
             .into_par_iter()
-            .map(|path| match config_file::parse(&self.settings, &path) {
+            .map(|path| match config_file::parse(&path) {
                 Ok(cf) => Some((path, cf)),
                 Err(err) => {
                     error!("Error loading config file: {:#}", err);
@@ -244,6 +244,7 @@ impl Config {
     #[cfg(test)]
     pub fn reset() {
         Settings::reset();
+        CONFIG.write().unwrap().take();
     }
 }
 
@@ -267,7 +268,7 @@ fn load_rtxrc() -> Result<RtxToml> {
     let settings_path = env::RTX_CONFIG_FILE
         .clone()
         .unwrap_or(dirs::CONFIG.join("config.toml"));
-    let is_trusted = config_file::is_trusted(&Settings::default(), &settings_path);
+    let is_trusted = config_file::is_trusted(&settings_path);
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);
@@ -307,7 +308,7 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
                 .legacy_version_file_disable_tools
                 .contains(tool.name())
         })
-        .filter_map(|tool| match tool.legacy_filenames(settings) {
+        .filter_map(|tool| match tool.legacy_filenames() {
             Ok(filenames) => Some(
                 filenames
                     .iter()
@@ -379,7 +380,6 @@ pub fn global_config_files() -> Vec<PathBuf> {
 }
 
 fn load_all_config_files(
-    settings: &Settings,
     config_filenames: &[PathBuf],
     tools: &PluginMap,
     legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
@@ -396,7 +396,7 @@ fn load_all_config_files(
             Some(cf) => Ok((f, cf)),
             // need to parse this config file
             None => {
-                let cf = parse_config_file(&f, settings, legacy_filenames, tools)
+                let cf = parse_config_file(&f, legacy_filenames, tools)
                     .wrap_err_with(|| format!("error parsing config file: {}", display_path(&f)))?;
                 Ok((f, cf))
             }
@@ -410,7 +410,6 @@ fn load_all_config_files(
 
 fn parse_config_file(
     f: &PathBuf,
-    settings: &Settings,
     legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
     tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
@@ -421,10 +420,9 @@ fn parse_config_file(
                 .filter(|(k, _)| plugin.contains(k))
                 .map(|(_, t)| t)
                 .collect::<Vec<_>>();
-            LegacyVersionFile::parse(settings, f.into(), &tools)
-                .map(|f| Box::new(f) as Box<dyn ConfigFile>)
+            LegacyVersionFile::parse(f.into(), &tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
         }
-        None => config_file::parse(settings, f),
+        None => config_file::parse(f),
     }
 }
 

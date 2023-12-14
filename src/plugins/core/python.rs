@@ -96,7 +96,7 @@ impl PythonPlugin {
             return Ok(());
         }
         pr.set_message("installing default packages");
-        CmdLineRunner::new(&config.settings, tv.install_path().join("bin/python"))
+        CmdLineRunner::new(tv.install_path().join("bin/python"))
             .with_pr(pr)
             .arg("-m")
             .arg("pip")
@@ -124,7 +124,7 @@ impl PythonPlugin {
             }
             if !virtualenv.exists() {
                 info!("setting up virtualenv at: {}", virtualenv.display());
-                let mut cmd = CmdLineRunner::new(&config.settings, self.python_path(tv))
+                let mut cmd = CmdLineRunner::new(self.python_path(tv))
                     .arg("-m")
                     .arg("venv")
                     .arg(&virtualenv)
@@ -157,7 +157,7 @@ impl PythonPlugin {
 
     fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("python --version");
-        CmdLineRunner::new(&config.settings, self.python_path(tv))
+        CmdLineRunner::new(self.python_path(tv))
             .arg("--version")
             .envs(&config.env)
             .execute()
@@ -169,29 +169,31 @@ impl Plugin for PythonPlugin {
         "python"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        let config = Config::get();
+        let settings = Settings::try_get()?;
         self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build");
-        let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.python_build_bin())
+        let mut cmd = CmdLineRunner::new(self.python_build_bin())
             .with_pr(&ctx.pr)
             .arg(ctx.tv.version.as_str())
             .arg(&ctx.tv.install_path())
-            .envs(&ctx.config.env);
-        if ctx.config.settings.verbose {
+            .envs(&config.env);
+        if settings.verbose {
             cmd = cmd.arg("--verbose");
         }
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
@@ -214,11 +216,11 @@ impl Plugin for PythonPlugin {
             }
         }
         cmd.execute()?;
-        self.test_python(ctx.config, &ctx.tv, &ctx.pr)?;
-        if let Err(e) = self.get_virtualenv(ctx.config, &ctx.tv, Some(&ctx.pr)) {
+        self.test_python(&config, &ctx.tv, &ctx.pr)?;
+        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(&ctx.pr)) {
             warn!("failed to get virtualenv: {e}");
         }
-        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 

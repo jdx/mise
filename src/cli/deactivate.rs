@@ -14,7 +14,7 @@ use crate::shell::get_shell;
 pub struct Deactivate {}
 
 impl Deactivate {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         if !config.is_activated() {
             err_inactive()?;
         }

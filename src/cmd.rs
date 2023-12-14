@@ -6,11 +6,11 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
 use std::thread;
 
+use crate::config::Settings;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
 
-use crate::config::Settings;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
@@ -90,13 +90,12 @@ where
 
 pub struct CmdLineRunner<'a> {
     cmd: Command,
-    settings: &'a Settings,
     pr: Option<&'a ProgressReport>,
     stdin: Option<String>,
 }
 
 impl<'a> CmdLineRunner<'a> {
-    pub fn new<P: AsRef<OsStr>>(settings: &'a Settings, program: P) -> Self {
+    pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
         let mut cmd = Command::new(program);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
@@ -104,7 +103,6 @@ impl<'a> CmdLineRunner<'a> {
 
         Self {
             cmd,
-            settings,
             pr: None,
             stdin: None,
         }
@@ -185,8 +183,9 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn execute(mut self) -> Result<()> {
+        let settings = &Settings::try_get()?;
         debug!("$ {}", self);
-        if self.settings.raw {
+        if settings.raw {
             return self.execute_raw();
         }
         let mut cp = self
@@ -286,10 +285,11 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
+        let settings = Settings::try_get()?;
         match self.pr {
             Some(pr) => {
                 pr.error(format!("{} failed", self.get_program()));
-                if !self.settings.verbose && !output.trim().is_empty() {
+                if !settings.verbose && !output.trim().is_empty() {
                     pr.println(output);
                 }
             }

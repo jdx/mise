@@ -133,7 +133,7 @@ impl ScriptManager {
         self.get_script_path(script).is_file()
     }
 
-    pub fn cmd(&self, settings: &Settings, script: &Script) -> Expression {
+    pub fn cmd(&self, script: &Script) -> Expression {
         let args = match script {
             Script::ParseLegacyFile(filename) => vec![filename.clone()],
             Script::RunExternalCommand(_, args) => args.clone(),
@@ -144,6 +144,7 @@ impl ScriptManager {
         //     return Err(PluginNotInstalled(self.plugin_name.clone()).into());
         // }
         let mut cmd = cmd(script_path, args).full_env(&self.env);
+        let settings = &Settings::get();
         if !settings.raw {
             // ignore stdin, otherwise a prompt may show up where the user won't see it
             cmd = cmd.stdin_null();
@@ -151,8 +152,8 @@ impl ScriptManager {
         cmd
     }
 
-    pub fn run(&self, settings: &Settings, script: &Script) -> Result<()> {
-        let cmd = self.cmd(settings, script);
+    pub fn run(&self, script: &Script) -> Result<()> {
+        let cmd = self.cmd(script);
         let Output { status, .. } = cmd.unchecked().run()?;
 
         match status.success() {
@@ -163,8 +164,9 @@ impl ScriptManager {
         }
     }
 
-    pub fn read(&self, settings: &Settings, script: &Script) -> Result<String> {
-        let mut cmd = self.cmd(settings, script);
+    pub fn read(&self, script: &Script) -> Result<String> {
+        let mut cmd = self.cmd(script);
+        let settings = &Settings::try_get()?;
         if !settings.verbose {
             cmd = cmd.stderr_null();
         }
@@ -172,13 +174,8 @@ impl ScriptManager {
             .wrap_err_with(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line(
-        &self,
-        settings: &Settings,
-        script: &Script,
-        pr: &ProgressReport,
-    ) -> Result<()> {
-        let cmd = CmdLineRunner::new(settings, self.get_script_path(script))
+    pub fn run_by_line(&self, script: &Script, pr: &ProgressReport) -> Result<()> {
+        let cmd = CmdLineRunner::new(self.get_script_path(script))
             .with_pr(pr)
             .env_clear()
             .envs(&self.env);

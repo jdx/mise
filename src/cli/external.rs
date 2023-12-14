@@ -35,7 +35,7 @@ pub fn execute(
                 .unwrap_or_default()
                 .map(|s| s.to_string_lossy().to_string())
                 .collect();
-            plugin.execute_external_command(config, subcommand, args)?;
+            plugin.execute_external_command(subcommand, args)?;
         } else {
             cmd.print_help().unwrap();
         }

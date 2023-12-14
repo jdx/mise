@@ -48,7 +48,7 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         local(
             config,
             &global_file(),

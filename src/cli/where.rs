@@ -28,14 +28,14 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),
                 None => {
                     let ts = ToolsetBuilder::new()
                         .with_args(&[self.tool.clone()])
-                        .build(&config)?;
+                        .build(config)?;
                     let v = ts
                         .versions
                         .get(&self.tool.plugin)
@@ -52,7 +52,7 @@ impl Where {
         match runtime
             .tvr
             .as_ref()
-            .map(|tvr| tvr.resolve(&config, plugin.clone(), Default::default(), false))
+            .map(|tvr| tvr.resolve(plugin.clone(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
                 rtxprintln!("{}", tv.install_path().to_string_lossy());

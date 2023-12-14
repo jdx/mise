@@ -100,8 +100,9 @@ impl ExternalPlugin {
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
     }
 
-    fn install(&self, config: &Config, pr: &ProgressReport) -> Result<()> {
-        let repository = self.get_repo_url(config)?;
+    fn install(&self, pr: &ProgressReport) -> Result<()> {
+        let config = Config::get();
+        let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("install {} {:?}", self.name, repository);
 
@@ -153,7 +154,8 @@ impl ExternalPlugin {
         }
     }
 
-    fn fetch_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
+    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        let settings = Settings::try_get()?;
         match self.fetch_versions() {
             Ok(Some(versions)) => return Ok(versions),
             Err(err) => warn!(
@@ -163,7 +165,7 @@ impl ExternalPlugin {
             ),
             _ => {}
         };
-        let cmd = self.script_man.cmd(settings, &Script::ListAll);
+        let cmd = self.script_man.cmd(&Script::ListAll);
         let result = run_with_timeout(
             move || {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
@@ -196,19 +198,17 @@ impl ExternalPlugin {
         Ok(stdout.split_whitespace().map(|v| v.into()).collect())
     }
 
-    fn fetch_legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
-        let stdout = self
-            .script_man
-            .read(settings, &Script::ListLegacyFilenames)?;
+    fn fetch_legacy_filenames(&self) -> Result<Vec<String>> {
+        let stdout = self.script_man.read(&Script::ListLegacyFilenames)?;
         Ok(self.parse_legacy_filenames(&stdout))
     }
     fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
         data.split_whitespace().map(|v| v.into()).collect()
     }
-    fn fetch_latest_stable(&self, settings: &Settings) -> Result<Option<String>> {
+    fn fetch_latest_stable(&self) -> Result<Option<String>> {
         let latest_stable = self
             .script_man
-            .read(settings, &Script::LatestStable)?
+            .read(&Script::LatestStable)?
             .trim()
             .to_string();
         Ok(if latest_stable.is_empty() {
@@ -227,8 +227,8 @@ impl ExternalPlugin {
     fn has_latest_stable_script(&self) -> bool {
         self.script_man.script_exists(&Script::LatestStable)
     }
-    fn fetch_aliases(&self, settings: &Settings) -> Result<Vec<(String, String)>> {
-        let stdout = self.script_man.read(settings, &Script::ListAliases)?;
+    fn fetch_aliases(&self) -> Result<Vec<(String, String)>> {
+        let stdout = self.script_man.read(&Script::ListAliases)?;
         Ok(self.parse_aliases(&stdout))
     }
     fn parse_aliases(&self, data: &str) -> Vec<(String, String)> {
@@ -270,17 +270,12 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn fetch_bin_paths(
-        &self,
-        config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
+    fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let sm = self.script_man_for_tv(config, tv);
+            let sm = self.script_man_for_tv(tv);
             // TODO: find a way to enable this without deadlocking
             // for (t, tv) in ts.list_current_installed_versions(config) {
             //     if t.name == self.name {
@@ -290,7 +285,7 @@ impl ExternalPlugin {
             //         sm.prepend_path(p);
             //     }
             // }
-            let output = sm.cmd(&config.settings, &Script::ListBinPaths).read()?;
+            let output = sm.cmd(&Script::ListBinPaths).read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
         } else {
             vec!["bin".into()]
@@ -301,14 +296,9 @@ impl ExternalPlugin {
             .collect();
         Ok(bin_paths)
     }
-    fn fetch_exec_env(
-        &self,
-        config: &Config,
-        ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
-        let mut sm = self.script_man_for_tv(config, tv);
-        for p in ts.list_paths(config) {
+    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+        let mut sm = self.script_man_for_tv(tv);
+        for p in ts.list_paths() {
             sm.prepend_path(p);
         }
         let script = sm.get_script_path(&ExecEnv);
@@ -325,7 +315,8 @@ impl ExternalPlugin {
         Ok(env)
     }
 
-    fn script_man_for_tv(&self, config: &Config, tv: &ToolVersion) -> ScriptManager {
+    fn script_man_for_tv(&self, tv: &ToolVersion) -> ScriptManager {
+        let config = Config::get();
         let mut sm = self.script_man.clone();
         for (key, value) in &tv.opts {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
@@ -406,9 +397,9 @@ impl Plugin for ExternalPlugin {
     fn get_type(&self) -> PluginType {
         PluginType::External
     }
-    fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions(settings))
+            .get_or_try_init(|| self.fetch_remote_versions())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed listing remote versions for plugin {}",
@@ -418,12 +409,12 @@ impl Plugin for ExternalPlugin {
             .cloned()
     }
 
-    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
+    fn latest_stable_version(&self) -> Result<Option<String>> {
         if !self.has_latest_stable_script() {
-            return self.latest_version(settings, Some("latest".into()));
+            return self.latest_version(Some("latest".into()));
         }
         self.latest_stable_cache
-            .get_or_try_init(|| self.fetch_latest_stable(settings))
+            .get_or_try_init(|| self.fetch_latest_stable())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching latest stable version for plugin {}",
@@ -452,18 +443,15 @@ impl Plugin for ExternalPlugin {
         self.plugin_path.exists()
     }
 
-    fn ensure_installed(
-        &self,
-        config: &Config,
-        mpr: Option<&MultiProgressReport>,
-        force: bool,
-    ) -> Result<()> {
+    fn ensure_installed(&self, mpr: Option<&MultiProgressReport>, force: bool) -> Result<()> {
+        let config = Config::get();
+        let settings = Settings::try_get()?;
         if !force {
             if self.is_installed() {
                 return Ok(());
             }
-            if !config.settings.yes && self.repo_url.is_none() {
-                let url = self.get_repo_url(config)?;
+            if !settings.yes && self.repo_url.is_none() {
+                let url = self.get_repo_url(&config)?;
                 eprintln!(
                     "⚠️  {name} is a community-developed plugin: {url}",
                     name = style(&self.name).cyan(),
@@ -474,12 +462,12 @@ impl Plugin for ExternalPlugin {
                 }
             }
         }
-        let _mpr = MultiProgressReport::new(&config.settings);
+        let _mpr = MultiProgressReport::new();
         let mpr = mpr.unwrap_or(&_mpr);
         let mut pr = mpr.add();
         self.decorate_progress_bar(&mut pr, None);
         let _lock = self.get_lock(&self.plugin_path, force)?;
-        self.install(config, &pr)
+        self.install(&pr)
     }
 
     fn update(&self, gitref: Option<String>) -> Result<()> {
@@ -529,7 +517,7 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn get_aliases(&self, settings: &Settings) -> Result<BTreeMap<String, String>> {
+    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         if let Some(data) = &self.toml.list_aliases.data {
             return Ok(self.parse_aliases(data).into_iter().collect());
         }
@@ -538,7 +526,7 @@ impl Plugin for ExternalPlugin {
         }
         let aliases = self
             .alias_cache
-            .get_or_try_init(|| self.fetch_aliases(settings))
+            .get_or_try_init(|| self.fetch_aliases())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching aliases for plugin {}",
@@ -551,7 +539,7 @@ impl Plugin for ExternalPlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self, settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_legacy_filenames.data {
             return Ok(self.parse_legacy_filenames(data));
         }
@@ -559,7 +547,7 @@ impl Plugin for ExternalPlugin {
             return Ok(vec![]);
         }
         self.legacy_filename_cache
-            .get_or_try_init(|| self.fetch_legacy_filenames(settings))
+            .get_or_try_init(|| self.fetch_legacy_filenames())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching legacy filenames for plugin {}",
@@ -569,14 +557,14 @@ impl Plugin for ExternalPlugin {
             .cloned()
     }
 
-    fn parse_legacy_file(&self, legacy_file: &Path, settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, legacy_file: &Path) -> Result<String> {
         if let Some(cached) = self.fetch_cached_legacy_file(legacy_file)? {
             return Ok(cached);
         }
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(settings, &script)?,
+            true => self.script_man.read(&script)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()
@@ -626,12 +614,7 @@ impl Plugin for ExternalPlugin {
         Ok(vec![topic])
     }
 
-    fn execute_external_command(
-        &self,
-        config: &Config,
-        command: &str,
-        args: Vec<String>,
-    ) -> Result<()> {
+    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
         if !self.is_installed() {
             return Err(PluginNotInstalled(self.name.clone()).into());
         }
@@ -641,22 +624,18 @@ impl Plugin for ExternalPlugin {
                 .join(format!("command-{command}.bash")),
             args,
         );
-        let result = self
-            .script_man
-            .cmd(&config.settings, &script)
-            .unchecked()
-            .run()?;
+        let result = self.script_man.cmd(&script).unchecked().run()?;
         exit(result.status.code().unwrap_or(-1));
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let mut sm = self.script_man_for_tv(ctx.config, &ctx.tv);
+        let mut sm = self.script_man_for_tv(&ctx.tv);
 
-        for p in ctx.ts.list_paths(ctx.config) {
+        for p in ctx.ts.list_paths() {
             sm.prepend_path(p);
         }
 
-        let run_script = |script| sm.run_by_line(&ctx.config.settings, script, &ctx.pr);
+        let run_script = |script| sm.run_by_line(script, &ctx.pr);
 
         if sm.script_exists(&Download) {
             ctx.pr.set_message("downloading");
@@ -668,22 +647,16 @@ impl Plugin for ExternalPlugin {
         Ok(())
     }
 
-    fn uninstall_version_impl(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
-            self.script_man_for_tv(config, tv)
-                .run(&config.settings, &Script::Uninstall)?;
+            self.script_man_for_tv(tv).run(&Script::Uninstall)?;
         }
         Ok(())
     }
 
-    fn list_bin_paths(
-        &self,
-        config: &Config,
-        ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         self.cache
-            .list_bin_paths(config, self, tv, || self.fetch_bin_paths(config, ts, tv))
+            .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))
     }
 
     fn exec_env(
@@ -701,7 +674,7 @@ impl Plugin for ExternalPlugin {
             return Ok(EMPTY_HASH_MAP.clone());
         }
         self.cache
-            .exec_env(config, self, tv, || self.fetch_exec_env(config, ts, tv))
+            .exec_env(config, self, tv, || self.fetch_exec_env(ts, tv))
     }
 }
 

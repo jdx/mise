@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
 
@@ -14,7 +13,7 @@ pub struct CacheClear {
 }
 
 impl CacheClear {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let cache_dirs = match &self.plugin {
             Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
             None => vec![CACHE.to_path_buf()],

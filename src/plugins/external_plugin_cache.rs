@@ -22,7 +22,6 @@ pub struct ExternalPluginCache {
 impl ExternalPluginCache {
     pub fn list_bin_paths<F>(
         &self,
-        config: &Config,
         plugin: &ExternalPlugin,
         tv: &ToolVersion,
         fetch: F,
@@ -34,7 +33,8 @@ impl ExternalPluginCache {
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
             let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                 Some(key) => {
-                    let key = render_cache_key(config, tv, key);
+                    let config = Config::get();
+                    let key = render_cache_key(&config, tv, key);
                     let filename = format!("{}.msgpack.z", key);
                     tv.cache_path().join("list_bin_paths").join(filename)
                 }

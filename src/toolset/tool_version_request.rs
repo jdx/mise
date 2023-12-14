@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
@@ -74,12 +73,11 @@ impl ToolVersionRequest {
 
     pub fn resolve(
         &self,
-        config: &Config,
         plugin: Arc<dyn Plugin>,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<ToolVersion> {
-        ToolVersion::resolve(config, plugin, self.clone(), opts, latest_versions)
+        ToolVersion::resolve(plugin, self.clone(), opts, latest_versions)
     }
 }
 

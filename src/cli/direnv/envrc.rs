@@ -17,8 +17,8 @@ use crate::{dirs, env};
 pub struct Envrc {}
 
 impl Envrc {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
 
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
@@ -35,7 +35,7 @@ impl Envrc {
         for cf in config.config_files.keys() {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
-        for (k, v) in ts.env(&config) {
+        for (k, v) in ts.env(config) {
             if k == "PATH" {
                 writeln!(file, "PATH_add {}", v)?;
             } else {
@@ -47,7 +47,7 @@ impl Envrc {
                 )?;
             }
         }
-        for path in ts.list_paths(&config).into_iter().rev() {
+        for path in ts.list_paths().into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 

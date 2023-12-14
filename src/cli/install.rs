@@ -44,7 +44,7 @@ pub struct Install {
 }
 
 impl Install {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         match &self.tool {
             Some(runtime) => self.install_runtimes(config, runtime)?,
             None => self.install_missing_runtimes(config)?,
@@ -52,18 +52,16 @@ impl Install {
 
         Ok(())
     }
-    fn install_runtimes(&self, config: Config, runtimes: &[ToolArg]) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
-        let mut ts = ToolsetBuilder::new()
-            .with_latest_versions()
-            .build(&config)?;
-        let tool_versions = self.get_requested_tool_versions(&config, &ts, runtimes, &mpr)?;
+    fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
+        let mpr = MultiProgressReport::new();
+        let mut ts = ToolsetBuilder::new().with_latest_versions().build(config)?;
+        let tool_versions = self.get_requested_tool_versions(config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
             return Ok(());
         }
-        ts.install_versions(&config, tool_versions, &mpr, &self.install_opts())
+        ts.install_versions(config, tool_versions, &mpr, &self.install_opts())
     }
 
     fn install_opts(&self) -> InstallOptions {
@@ -113,19 +111,17 @@ impl Install {
         let mut tool_versions = vec![];
         for (plugin_name, tvr, opts) in requests {
             let plugin = config.get_or_create_plugin(&plugin_name);
-            plugin.ensure_installed(config, Some(mpr), false)?;
-            let tv = tvr.resolve(config, plugin, opts, ts.latest_versions)?;
+            plugin.ensure_installed(Some(mpr), false)?;
+            let tv = tvr.resolve(plugin, opts, ts.latest_versions)?;
             tool_versions.push(tv);
         }
         Ok(tool_versions)
     }
 
-    fn install_missing_runtimes(&self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_latest_versions()
-            .build(&config)?;
+    fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_latest_versions().build(config)?;
         let versions = ts
-            .list_missing_versions(&config)
+            .list_missing_versions(config)
             .into_iter()
             .cloned()
             .collect::<Vec<_>>();
@@ -133,8 +129,8 @@ impl Install {
             info!("all runtimes are installed");
             return Ok(());
         }
-        let mpr = MultiProgressReport::new(&config.settings);
-        ts.install_versions(&config, versions, &mpr, &self.install_opts())?;
+        let mpr = MultiProgressReport::new();
+        ts.install_versions(config, versions, &mpr, &self.install_opts())?;
         Ok(())
     }
 }

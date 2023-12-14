@@ -28,17 +28,17 @@ pub struct Which {
 }
 
 impl Which {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = self.get_toolset(&config)?;
+    pub fn run(self) -> Result<()> {
+        let ts = self.get_toolset()?;
 
-        match ts.which(&config, &self.bin_name) {
+        match ts.which(&self.bin_name) {
             Some((p, tv)) => {
                 if self.version {
                     rtxprintln!("{}", tv.version);
                 } else if self.plugin {
                     rtxprintln!("{p}");
                 } else {
-                    let path = p.which(&config, &ts, &tv, &self.bin_name)?;
+                    let path = p.which(&tv, &self.bin_name)?;
                     rtxprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
@@ -46,12 +46,13 @@ impl Which {
             None => Err(eyre!("{} not found", self.bin_name)),
         }
     }
-    fn get_toolset(&self, config: &Config) -> Result<Toolset> {
+    fn get_toolset(&self) -> Result<Toolset> {
+        let config = Config::try_get()?;
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(&[tool.clone()]);
         }
-        let ts = tsb.build(config)?;
+        let ts = tsb.build(&config)?;
         Ok(ts)
     }
 }

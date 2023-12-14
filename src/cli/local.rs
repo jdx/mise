@@ -5,7 +5,7 @@ use console::style;
 use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::config::{config_file, Config};
+use crate::config::{config_file, Config, Settings};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 
@@ -54,7 +54,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let path = if self.parent {
             get_parent_path()?
         } else {
@@ -92,7 +92,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn local(
-    config: Config,
+    config: &Config,
     path: &Path,
     runtime: Vec<ToolArg>,
     remove: Option<Vec<PluginName>>,
@@ -100,7 +100,8 @@ pub fn local(
     fuzzy: bool,
     show_path: bool,
 ) -> Result<()> {
-    let mut cf = config_file::parse_or_init(&config.settings, path)?;
+    let settings = Settings::try_get()?;
+    let mut cf = config_file::parse_or_init(path)?;
     if show_path {
         rtxprintln!("{}", path.display());
         return Ok(());
@@ -124,8 +125,8 @@ pub fn local(
         if cf.display_runtime(&runtimes)? {
             return Ok(());
         }
-        let pin = pin || (config.settings.asdf_compat && !fuzzy);
-        cf.add_runtimes(&config, &runtimes, pin)?;
+        let pin = pin || (settings.asdf_compat && !fuzzy);
+        cf.add_runtimes(config, &runtimes, pin)?;
         let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
         rtxprintln!(
             "{} {} {}",

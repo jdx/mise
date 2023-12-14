@@ -30,10 +30,10 @@ pub struct Reshim {
 }
 
 impl Reshim {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
 
-        shims::reshim(&config, &ts)
+        shims::reshim(config, &ts)
     }
 }
 
