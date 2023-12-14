@@ -1,17 +1,18 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
-use confique::{Builder, Config, Partial};
 
-use crate::cli::Cli;
-use log::LevelFilter;
-use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
+use std::sync::{Once, RwLock};
+
+use confique::{Builder, Config, Partial};
+use log::LevelFilter;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::env;
 
 #[derive(Config, Debug, Clone)]
-#[config(partial_attr(derive(Debug)))]
+#[config(partial_attr(derive(Debug, Clone)))]
 pub struct Settings {
     #[config(env = "RTX_EXPERIMENTAL", default = false)]
     pub experimental: bool,
@@ -54,26 +55,38 @@ impl Default for Settings {
         Settings::default_builder().load().unwrap()
     }
 }
+
+static PARTIALS: RwLock<Vec<SettingsPartial>> = RwLock::new(Vec::new());
+
 impl Settings {
+    pub fn add_partial(partial: SettingsPartial) {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            let mut p = SettingsPartial::empty();
+            if *env::CI {
+                p.yes = Some(true);
+            }
+            if *env::RTX_LOG_LEVEL < LevelFilter::Info {
+                p.verbose = Some(true);
+            }
+            for arg in &*env::ARGS.read().unwrap() {
+                if arg == "--" {
+                    break;
+                }
+                if arg == "--raw" {
+                    p.raw = Some(true);
+                }
+            }
+            PARTIALS.write().unwrap().push(p);
+        });
+        PARTIALS.write().unwrap().push(partial);
+    }
     pub fn default_builder() -> Builder<Self> {
-        let mut p = SettingsPartial::empty();
-        let args = env::ARGS.read().unwrap();
-        if *env::CI {
-            p.yes = Some(true);
+        let mut b = Self::builder();
+        for partial in PARTIALS.read().unwrap().iter() {
+            b = b.preloaded(partial.clone());
         }
-        if *env::RTX_LOG_LEVEL < LevelFilter::Info {
-            p.verbose = Some(true);
-        }
-        for arg in &*args {
-            if arg == "--" {
-                break;
-            }
-            if arg == "--raw" {
-                p.raw = Some(true);
-            }
-        }
-        let cli = Cli::new().settings(&args);
-        Self::builder().preloaded(cli).preloaded(p).env()
+        b.env()
     }
 
     pub fn to_index_map(&self) -> BTreeMap<String, String> {
@@ -128,6 +141,11 @@ impl Settings {
         map.insert("raw".into(), self.raw.to_string());
         map.insert("yes".into(), self.yes.to_string());
         map
+    }
+
+    #[cfg(test)]
+    pub fn reset() {
+        PARTIALS.write().unwrap().clear();
     }
 }
 

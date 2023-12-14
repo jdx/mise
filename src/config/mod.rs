@@ -13,10 +13,10 @@ use rayon::prelude::*;
 
 pub use settings::{Settings, SettingsPartial};
 
+use crate::cli::Cli;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
@@ -51,11 +51,12 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
+        let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
+        Settings::add_partial(cli_settings);
         let global_config = load_rtxrc()?;
+        Settings::add_partial(global_config.settings()?);
         let config_filenames = load_config_filenames(&BTreeMap::new());
-        let settings = Settings::default_builder()
-            .preloaded(global_config.settings()?)
-            .load()?;
+        let settings = Settings::default_builder().load()?;
         let plugins = load_plugins(&settings)?;
         let config_files = load_all_config_files(
             &settings,
@@ -64,11 +65,10 @@ impl Config {
             &BTreeMap::new(),
             ConfigMap::new(),
         )?;
-        let mut settings = Settings::default_builder();
         for cf in config_files.values() {
-            settings = settings.preloaded(cf.settings()?);
+            Settings::add_partial(cf.settings()?);
         }
-        let mut settings = settings.load()?;
+        let mut settings = Settings::default_builder().load()?;
         if settings.raw {
             settings.verbose = true;
             settings.jobs = 1;
@@ -123,7 +123,6 @@ impl Config {
 
         Ok(config)
     }
-
     pub fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
             .get_or_init(|| get_shorthands(&self.settings))
@@ -240,6 +239,11 @@ impl Config {
         crate::shims::reshim(self, &ts)?;
         crate::runtime_symlinks::rebuild(self)?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn reset() {
+        Settings::reset();
     }
 }
 

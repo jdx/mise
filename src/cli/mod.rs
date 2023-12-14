@@ -275,6 +275,7 @@ pub mod tests {
     use super::*;
 
     pub fn cli_run(args: &Vec<String>) -> Result<()> {
+        Config::reset();
         *env::ARGS.write().unwrap() = args.clone();
         STDOUT.lock().unwrap().clear();
         STDERR.lock().unwrap().clear();
