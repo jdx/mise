@@ -7,7 +7,6 @@ FILES=$(find e2e -name 'test_*' -type f -not -path "*/.rtx/*" | sort)
 test_count=0
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 	{
-		echo "### E2E Test Tranche $TEST_TRANCHE/$TEST_TRANCHE_COUNT"
 		echo "| Test | Duration | Result |"
 		echo "| ---- | -------- | ------ |"
 	} >>"$GITHUB_STEP_SUMMARY"
