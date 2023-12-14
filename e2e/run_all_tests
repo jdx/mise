@@ -8,8 +8,8 @@ test_count=0
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 	{
 		echo "### E2E Test Tranche $TEST_TRANCHE/$TEST_TRANCHE_COUNT"
-		echo "| Test | Duration |"
-		echo "| ---- | -------- |"
+		echo "| Test | Duration | Result |"
+		echo "| ---- | -------- | ------ |"
 	} >>"$GITHUB_STEP_SUMMARY"
 fi
 for f in $FILES; do

@@ -29,7 +29,7 @@ tiny = \"latest\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 
 [plugins]
-tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4\"
+tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
 "
 
 rtx local shfmt@3.5.0
@@ -45,7 +45,7 @@ shfmt = \"3.5.0\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 
 [plugins]
-tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4\"
+tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
 "
 
 rtx exec -- shfmt --version >&2
@@ -66,7 +66,7 @@ shfmt = \"3.6.0\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 
 [plugins]
-tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4\"
+tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
 "
 
 rtx exec -- shfmt --version >&2
@@ -86,7 +86,7 @@ tiny = \"latest\"
 #golang = {version=\"1.19.5\", foo=\"bar\"}
 
 [plugins]
-tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#df03b6719dd465d565bb66273942c8495673eaa4\"
+tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
 "
 
 export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
