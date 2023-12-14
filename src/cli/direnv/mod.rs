@@ -29,9 +29,9 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(config),
+            Self::Activate(cmd) => cmd.run(),
             Self::Envrc(cmd) => cmd.run(config),
             Self::Exec(cmd) => cmd.run(config),
         }
@@ -39,7 +39,7 @@ impl Commands {
 }
 
 impl Direnv {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));

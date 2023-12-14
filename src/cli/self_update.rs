@@ -6,7 +6,6 @@ use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};
 
 use crate::cli::version::{ARCH, OS};
-use crate::config::Config;
 
 use crate::{cmd, env};
 
@@ -34,7 +33,7 @@ pub struct SelfUpdate {
 }
 
 impl SelfUpdate {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let status = self.do_update()?;
 
         if status.updated() {

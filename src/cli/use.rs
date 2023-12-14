@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config};
+use crate::config::{config_file, Config, Settings};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::plugins::PluginName;
@@ -77,21 +77,22 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
         let opts = InstallOptions {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
         };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(config, &opts)?;
 
         ts.versions
             .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
 
-        let mut cf = self.get_config_file(&config)?;
-        let pin = self.pin || (config.settings.asdf_compat && !self.fuzzy);
+        let mut cf = self.get_config_file()?;
+        let settings = Settings::try_get()?;
+        let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
         for (plugin_name, tvl) in ts.versions {
             let versions: Vec<String> = tvl
@@ -109,7 +110,7 @@ impl Use {
         }
 
         if self.global {
-            self.warn_if_hidden(&config, cf.get_path());
+            self.warn_if_hidden(config, cf.get_path());
         }
         for plugin_name in self.remove.unwrap_or_default() {
             cf.remove_plugin(&plugin_name);
@@ -125,7 +126,7 @@ impl Use {
         Ok(())
     }
 
-    fn get_config_file(&self, config: &Config) -> Result<Box<dyn ConfigFile>> {
+    fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let path = if self.global {
             global_file()
         } else if let Some(env) = &self.env {
@@ -135,7 +136,7 @@ impl Use {
         } else {
             config_file_from_dir(&dirs::CURRENT)
         };
-        config_file::parse_or_init(&config.settings, &path)
+        config_file::parse_or_init(&path)
     }
 
     fn warn_if_hidden(&self, config: &Config, global: &Path) {

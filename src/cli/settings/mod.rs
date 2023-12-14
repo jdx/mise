@@ -1,8 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
-
 mod get;
 mod ls;
 mod set;
@@ -24,20 +22,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self {
-            Self::Get(cmd) => cmd.run(config),
-            Self::Ls(cmd) => cmd.run(config),
-            Self::Set(cmd) => cmd.run(config),
-            Self::Unset(cmd) => cmd.run(config),
+            Self::Get(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run(),
+            Self::Set(cmd) => cmd.run(),
+            Self::Unset(cmd) => cmd.run(),
         }
     }
 }
 
 impl Settings {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::SettingsLs {}));
 
-        cmd.run(config)
+        cmd.run()
     }
 }

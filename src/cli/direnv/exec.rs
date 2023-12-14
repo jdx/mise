@@ -20,12 +20,12 @@ struct DirenvWatches {
 }
 
 impl DirenvExec {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
 
         let mut cmd = env_cmd();
 
-        for (k, v) in ts.env_with_path(&config) {
+        for (k, v) in ts.env_with_path(config) {
             cmd = cmd.env(k, v);
         }
 

@@ -58,10 +58,10 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         match self {
             Self::Install(cmd) => cmd.run(config),
-            Self::Link(cmd) => cmd.run(config),
+            Self::Link(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run(config),
             Self::LsRemote(cmd) => cmd.run(config),
             Self::Uninstall(cmd) => cmd.run(config),
@@ -71,7 +71,7 @@ impl Commands {
 }
 
 impl Plugins {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,

@@ -1,6 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 
-use crate::config::Config;
+use crate::config::Settings;
 
 /// Show a current setting
 ///
@@ -16,8 +16,9 @@ pub struct SettingsGet {
 }
 
 impl SettingsGet {
-    pub fn run(self, config: Config) -> Result<()> {
-        match config.settings.to_index_map().get(&self.setting) {
+    pub fn run(self) -> Result<()> {
+        let settings = Settings::try_get()?;
+        match settings.to_index_map().get(&self.setting) {
             Some(value) => Ok(rtxprintln!("{}", value)),
             None => Err(eyre!("Unknown setting: {}", self.setting)),
         }

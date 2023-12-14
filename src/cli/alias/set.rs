@@ -18,11 +18,10 @@ pub struct AliasSet {
 }
 
 impl AliasSet {
-    pub fn run(self, mut config: Config) -> Result<()> {
-        config
-            .global_config
-            .set_alias(&self.plugin, &self.alias, &self.value);
-        config.global_config.save()
+    pub fn run(self) -> Result<()> {
+        let mut global_config = Config::get().global_config.clone();
+        global_config.set_alias(&self.plugin, &self.alias, &self.value);
+        global_config.save()
     }
 }
 

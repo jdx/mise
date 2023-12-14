@@ -3,8 +3,6 @@ use clap::ValueEnum;
 use color_eyre::eyre::Result;
 use std::fmt::Display;
 
-use crate::config::Config;
-
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -19,7 +17,7 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let c = match self.shell.or(self.shell_type).unwrap() {
             Shell::Bash => include_str!("../../completions/rtx.bash"),
             Shell::Fish => include_str!("../../completions/rtx.fish"),

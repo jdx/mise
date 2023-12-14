@@ -35,7 +35,7 @@ pub struct EnvVars {
 }
 
 impl EnvVars {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         if self.remove.is_none() && self.env_vars.is_none() {
             for (key, value) in &config.env {
                 let source = config.env_sources.get(key).unwrap();
@@ -48,7 +48,7 @@ impl EnvVars {
             .file
             .unwrap_or_else(|| RTX_DEFAULT_CONFIG_FILENAME.to_string());
 
-        let mut rtx_toml = get_rtx_toml(&config, filename.as_str())?;
+        let mut rtx_toml = get_rtx_toml(filename.as_str())?;
 
         if let Some(env_names) = &self.remove {
             for name in env_names {
@@ -65,9 +65,9 @@ impl EnvVars {
     }
 }
 
-fn get_rtx_toml(config: &Config, filename: &str) -> Result<RtxToml> {
+fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
     let path = dirs::CURRENT.join(filename);
-    let is_trusted = config_file::is_trusted(&config.settings, &path);
+    let is_trusted = config_file::is_trusted(&path);
     let rtx_toml = if path.exists() {
         RtxToml::from_file(&path, is_trusted)?
     } else {

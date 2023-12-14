@@ -22,7 +22,7 @@ pub struct PluginsLsRemote {
 }
 
 impl PluginsLsRemote {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = config
             .list_plugins()
             .into_iter()

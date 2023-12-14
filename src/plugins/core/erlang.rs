@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 
-use crate::config::Settings;
-
 use crate::file::display_path;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -87,7 +85,7 @@ impl Plugin for ErlangPlugin {
         self.core.name
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())

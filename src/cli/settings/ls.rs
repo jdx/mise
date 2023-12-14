@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
+use crate::config::Settings;
 
 /// Show current settings
 ///
@@ -13,8 +13,9 @@ use crate::config::Config;
 pub struct SettingsLs {}
 
 impl SettingsLs {
-    pub fn run(self, config: Config) -> Result<()> {
-        for (key, value) in config.settings.to_index_map() {
+    pub fn run(self) -> Result<()> {
+        let settings = Settings::try_get()?;
+        for (key, value) in settings.to_index_map() {
             rtxprintln!("{} = {}", key, value);
         }
         Ok(())

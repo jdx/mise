@@ -106,14 +106,14 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(config),
-            Self::Alias(cmd) => cmd.run(config),
+            Self::Activate(cmd) => cmd.run(),
+            Self::Alias(cmd) => cmd.run(),
             Self::Asdf(cmd) => cmd.run(config),
             Self::BinPaths(cmd) => cmd.run(config),
-            Self::Cache(cmd) => cmd.run(config),
-            Self::Completion(cmd) => cmd.run(config),
+            Self::Cache(cmd) => cmd.run(),
+            Self::Completion(cmd) => cmd.run(),
             Self::Current(cmd) => cmd.run(config),
             Self::Deactivate(cmd) => cmd.run(config),
             Self::Direnv(cmd) => cmd.run(config),
@@ -123,7 +123,7 @@ impl Commands {
             Self::Exec(cmd) => cmd.run(config),
             Self::Global(cmd) => cmd.run(config),
             Self::HookEnv(cmd) => cmd.run(config),
-            Self::Implode(cmd) => cmd.run(config),
+            Self::Implode(cmd) => cmd.run(),
             Self::Install(cmd) => cmd.run(config),
             Self::Latest(cmd) => cmd.run(config),
             Self::Link(cmd) => cmd.run(config),
@@ -134,25 +134,25 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run(config),
             Self::Prune(cmd) => cmd.run(config),
             Self::Reshim(cmd) => cmd.run(config),
-            Self::Settings(cmd) => cmd.run(config),
-            Self::Shell(cmd) => cmd.run(config),
-            Self::Sync(cmd) => cmd.run(config),
-            Self::Trust(cmd) => cmd.run(config),
+            Self::Settings(cmd) => cmd.run(),
+            Self::Shell(cmd) => cmd.run(),
+            Self::Sync(cmd) => cmd.run(),
+            Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(config),
             Self::Upgrade(cmd) => cmd.run(config),
             Self::Use(cmd) => cmd.run(config),
-            Self::Version(cmd) => cmd.run(config),
+            Self::Version(cmd) => cmd.run(),
             Self::Where(cmd) => cmd.run(config),
-            Self::Which(cmd) => cmd.run(config),
+            Self::Which(cmd) => cmd.run(),
 
             #[cfg(feature = "clap_complete")]
-            Self::RenderCompletion(cmd) => cmd.run(config),
+            Self::RenderCompletion(cmd) => cmd.run(),
 
             #[cfg(debug_assertions)]
-            Self::RenderHelp(cmd) => cmd.run(config),
+            Self::RenderHelp(cmd) => cmd.run(),
 
             #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(config),
+            Self::RenderMangen(cmd) => cmd.run(),
         }
     }
 }
@@ -195,21 +195,22 @@ impl Cli {
         )
     }
 
-    pub fn run(self, config: Config, args: &Vec<String>) -> Result<()> {
+    pub fn run(self, args: &Vec<String>) -> Result<()> {
         debug!("{}", &args.join(" "));
+        let config = Config::try_get()?;
         if args[1..] == ["-v"] {
             // normally this would be considered --verbose
-            return version::Version {}.run(config);
+            return version::Version {}.run();
         }
         let matches = self.command.get_matches_from(args);
         if let Some((command, sub_m)) = matches.subcommand() {
             if command == "self-update" {
-                return SelfUpdate::from_arg_matches(sub_m)?.run(config);
+                return SelfUpdate::from_arg_matches(sub_m)?.run();
             }
             external::execute(&config, command, sub_m, self.external_commands)?;
         }
         let cmd = Commands::from_arg_matches(&matches)?;
-        cmd.run(config)
+        cmd.run(&config)
     }
 
     pub fn settings(self, args: &Vec<String>) -> SettingsPartial {
@@ -279,9 +280,9 @@ pub mod tests {
         *env::ARGS.write().unwrap() = args.clone();
         STDOUT.lock().unwrap().clear();
         STDERR.lock().unwrap().clear();
-        let config = Config::load()?;
+        let config = Config::try_get()?;
         Cli::new_with_external_commands(&config)
-            .run(config, args)
+            .run(args)
             .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
 
         Ok(())

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 use console::style;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolsetBuilder};
@@ -30,10 +30,10 @@ pub struct Prune {
 }
 
 impl Prune {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
         let mut to_delete = ts
-            .list_installed_versions(&config)?
+            .list_installed_versions(config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
             .collect::<BTreeMap<String, (Arc<dyn Plugin>, ToolVersion)>>();
@@ -44,30 +44,26 @@ impl Prune {
 
         for cf in config.get_tracked_config_files()?.values() {
             let mut ts = cf.to_toolset().clone();
-            ts.resolve(&config);
-            for (_, tv) in ts.list_current_versions(&config) {
+            ts.resolve(config);
+            for (_, tv) in ts.list_current_versions() {
                 to_delete.remove(&tv.to_string());
             }
         }
 
-        self.delete(&config, to_delete.into_values().collect())
+        self.delete(to_delete.into_values().collect())
     }
 
-    fn delete(
-        &self,
-        config: &Config,
-        to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>,
-    ) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
+    fn delete(&self, to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>) -> Result<()> {
+        let settings = Settings::try_get()?;
+        let mpr = MultiProgressReport::new();
         for (p, tv) in to_delete {
             let mut pr = mpr.add();
             if self.dry_run {
                 pr.set_prefix(format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
             }
-            if self.dry_run || config.settings.yes || prompt::confirm(&format!("remove {} ?", &tv))?
-            {
+            if self.dry_run || settings.yes || prompt::confirm(&format!("remove {} ?", &tv))? {
                 p.decorate_progress_bar(&mut pr, Some(&tv));
-                p.uninstall_version(config, &tv, &pr, self.dry_run)?;
+                p.uninstall_version(&tv, &pr, self.dry_run)?;
                 pr.finish();
             }
         }

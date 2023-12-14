@@ -33,11 +33,11 @@ pub struct HookEnv {
 }
 
 impl HookEnv {
-    pub fn run(self, config: Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         rtxprint!("{}", hook_env::clear_old_env(&*shell));
-        let mut env = ts.env(&config);
+        let mut env = ts.env(config);
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
@@ -46,17 +46,18 @@ impl HookEnv {
         if let Some(p) = env_path {
             paths.extend(split_paths(&p).collect_vec());
         }
-        paths.extend(ts.list_paths(&config)); // load the active runtime paths
+        paths.extend(ts.list_paths()); // load the active runtime paths
         diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
 
-        patches.extend(self.build_path_operations(&config.settings, &paths, &__RTX_DIFF.path)?);
+        let settings = Settings::try_get()?;
+        patches.extend(self.build_path_operations(&settings, &paths, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
-        patches.push(self.build_watch_operation(&config)?);
+        patches.push(self.build_watch_operation(config)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         rtxprint!("{output}");
         if self.status {
-            self.display_status(&config, &ts);
+            self.display_status(config, &ts);
         }
 
         Ok(())
@@ -64,7 +65,7 @@ impl HookEnv {
 
     fn display_status(&self, config: &Config, ts: &Toolset) {
         let installed_versions = ts
-            .list_current_installed_versions(config)
+            .list_current_installed_versions()
             .into_iter()
             .rev()
             .map(|(_, v)| v.to_string())

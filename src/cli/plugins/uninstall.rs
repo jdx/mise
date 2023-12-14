@@ -24,8 +24,8 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mpr = MultiProgressReport::new();
 
         let plugins = match self.all {
             true => config
@@ -38,7 +38,7 @@ impl PluginsUninstall {
 
         for plugin_name in plugins {
             let plugin_name = unalias_plugin(&plugin_name);
-            self.uninstall_one(&config, plugin_name, &mpr)?;
+            self.uninstall_one(config, plugin_name, &mpr)?;
         }
         Ok(())
     }

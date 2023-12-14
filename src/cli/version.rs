@@ -8,7 +8,7 @@ use versions::Versioning;
 
 use crate::build_time::{built_info, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
-use crate::config::Config;
+
 use crate::env::CI;
 use crate::file::modified_duration;
 
@@ -44,7 +44,7 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
 pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
 
 impl Version {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         show_version();
         Ok(())
     }

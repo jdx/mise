@@ -30,11 +30,11 @@ pub struct Uninstall {
 }
 
 impl Uninstall {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let tool_versions = if self.installed_tool.is_empty() && self.all {
-            self.get_all_tool_versions(&config)?
+            self.get_all_tool_versions(config)?
         } else {
-            self.get_requested_tool_versions(&config)?
+            self.get_requested_tool_versions(config)?
         };
         let tool_versions = tool_versions
             .into_iter()
@@ -45,7 +45,7 @@ impl Uninstall {
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
 
-        let mpr = MultiProgressReport::new(&config.settings);
+        let mpr = MultiProgressReport::new();
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
                 warn!("{} is not installed", style(&tv).cyan().for_stderr());
@@ -54,7 +54,7 @@ impl Uninstall {
 
             let mut pr = mpr.add();
             plugin.decorate_progress_bar(&mut pr, Some(&tv));
-            if let Err(err) = plugin.uninstall_version(&config, &tv, &pr, self.dry_run) {
+            if let Err(err) = plugin.uninstall_version(&tv, &pr, self.dry_run) {
                 pr.error(err.to_string());
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
@@ -65,9 +65,9 @@ impl Uninstall {
             }
         }
 
-        let ts = ToolsetBuilder::new().build(&config)?;
-        shims::reshim(&config, &ts).wrap_err("failed to reshim")?;
-        runtime_symlinks::rebuild(&config)?;
+        let ts = ToolsetBuilder::new().build(config)?;
+        shims::reshim(config, &ts).wrap_err("failed to reshim")?;
+        runtime_symlinks::rebuild(config)?;
 
         Ok(())
     }
@@ -106,7 +106,7 @@ impl Uninstall {
                 if let Some(tvr) = &a.tvr {
                     tvs.push((
                         tool.clone(),
-                        tvr.resolve(config, tool.clone(), Default::default(), false)?,
+                        tvr.resolve(tool.clone(), Default::default(), false)?,
                     ));
                 }
                 if tvs.is_empty() {

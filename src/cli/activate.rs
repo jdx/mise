@@ -1,6 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
 use crate::dirs;
 use crate::env::RTX_EXE;
 use crate::file::touch_dir;
@@ -45,7 +44,7 @@ pub struct Activate {
 }
 
 impl Activate {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided, use `--shell=zsh`");
 
