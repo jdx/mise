@@ -677,7 +677,7 @@ __rtx_which_cmd() {
 (( $+functions[__rtx_cmds] )) ||
 __rtx_cmds() {
   local commands; commands=(
-    'activate:Initializes rtx in the current shell'
+    'activate:Initializes rtx in the current shell session'
     {a,alias}':Manage aliases'
     'bin-paths:List all the active runtime bin paths'
     'cache:Manage the rtx cache'
