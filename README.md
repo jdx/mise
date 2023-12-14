@@ -667,7 +667,7 @@ elixir = "https://github.com/my-org/rtx-elixir.git"
 node = "https://github.com/my-org/rtx-node.git#DEADBEEF" # supports specific gitref
 ```
 
-If you simply want to install a plugin from a specific URL once, it's better to use
+If you simply want to install a plugin from a specific URL ONCE, it's better to use
 `rtx plugin install plugin <GIT_URL>`. Add this section to `.rtx.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
@@ -1379,7 +1379,7 @@ and see what happens.
 rtx should be able to read/install any `.tool-versions` file used by asdf. Any asdf plugin
 should be usable in rtx. The commands in rtx are slightly
 different, such as `rtx install node@20.0.0` vs `asdf install node 20.0.0`—this is done so
-multiple tools can be specified at once. However, asdf-style syntax is still supported: (`rtx
+multiple tools can be specified at ONCE. However, asdf-style syntax is still supported: (`rtx
 install node 20.0.0`). This is the case for most commands, though the help for the command may
 say that asdf-style syntax is supported.
 
