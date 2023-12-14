@@ -11,7 +11,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 
-pub use settings::Settings;
+pub use settings::{Settings, SettingsPartial};
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
@@ -68,7 +68,11 @@ impl Config {
         for cf in config_files.values() {
             settings = settings.preloaded(cf.settings()?);
         }
-        let settings = settings.load()?;
+        let mut settings = settings.load()?;
+        if settings.raw {
+            settings.verbose = true;
+            settings.jobs = 1;
+        }
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
