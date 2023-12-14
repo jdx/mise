@@ -57,12 +57,12 @@ impl Prune {
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::new();
         for (p, tv) in to_delete {
-            let mut pr = mpr.add();
+            let mut prefix = format!("{}", style(&tv).cyan().for_stderr());
             if self.dry_run {
-                pr.set_prefix(&format!("{} {} ", pr.prefix(), style("[dryrun]").bold()));
+                prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
             }
+            let pr = mpr.add(&prefix);
             if self.dry_run || settings.yes || prompt::confirm(&format!("remove {} ?", &tv))? {
-                p.decorate_progress_bar(pr.as_mut(), Some(&tv));
                 p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
                 pr.finish();
             }

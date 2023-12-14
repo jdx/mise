@@ -466,6 +466,7 @@ __rtx_plugins_uninstall_cmd() {
 __rtx_plugins_update_cmd() {
   _arguments -s -S \
     '*::plugin:__rtx_plugins' \
+    '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'

@@ -1,14 +1,8 @@
-use std::time::Duration;
-
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 
 pub trait SingleReport: Send + Sync {
-    fn enable_steady_tick(&self) {}
-    fn set_prefix(&mut self, prefix: &str);
-    fn prefix(&self) -> String;
-    fn set_style(&self, _style: ProgressStyle) {}
     fn set_message(&self, _message: String) {}
     fn println(&self, _message: String) {}
     fn warn(&self, _message: String) {}
@@ -17,14 +11,9 @@ pub trait SingleReport: Send + Sync {
     fn finish_with_message(&self, _message: String) {}
 }
 
-pub static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    ProgressStyle::with_template("{prefix}{wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
-        .unwrap()
-});
-
 static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = format!(
-        "{{prefix}}{{wide_msg}} {} {{elapsed:3.dim.italic}}",
+        "{{prefix}} {{wide_msg}} {} {{elapsed:3.dim.italic}}",
         style("✓").bright().green().for_stderr()
     );
     ProgressStyle::with_template(tmpl.as_str()).unwrap()
@@ -32,7 +21,7 @@ static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 
 static ERROR_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = format!(
-        "{{prefix:.red}}{{wide_msg}} {} {{elapsed:3.dim.italic}}",
+        "{{prefix:.red}} {{wide_msg}} {} {{elapsed:3.dim.italic}}",
         style("✗").red().for_stderr()
     );
     ProgressStyle::with_template(tmpl.as_str()).unwrap()
@@ -40,7 +29,7 @@ static ERROR_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub struct ProgressReport {
-    pub pb: ProgressBar,
+    pb: ProgressBar,
 }
 
 impl ProgressReport {
@@ -50,23 +39,6 @@ impl ProgressReport {
 }
 
 impl SingleReport for ProgressReport {
-    fn enable_steady_tick(&self) {
-        self.pb.enable_steady_tick(Duration::from_millis(250));
-    }
-
-    fn set_prefix(&mut self, prefix: &str) {
-        self.pb.set_prefix(prefix.to_string());
-    }
-
-    fn prefix(&self) -> String {
-        self.pb.prefix()
-    }
-
-    fn set_style(&self, style: ProgressStyle) {
-        self.pb.set_style(style);
-        self.pb
-            .set_prefix(console::style("rtx").dim().for_stderr().to_string());
-    }
     fn set_message(&self, message: String) {
         self.pb.set_message(message.replace('\r', ""));
     }
@@ -96,52 +68,35 @@ impl SingleReport for ProgressReport {
     }
 }
 
-pub struct QuietReport {
-    prefix: String,
-}
+pub struct QuietReport {}
+
 impl QuietReport {
     pub fn new() -> QuietReport {
-        QuietReport {
-            prefix: String::new(),
-        }
+        QuietReport {}
     }
 }
-impl SingleReport for QuietReport {
-    fn set_prefix(&mut self, prefix: &str) {
-        self.prefix = prefix.to_string();
-    }
 
-    fn prefix(&self) -> String {
-        self.prefix.clone()
-    }
-}
+impl SingleReport for QuietReport {}
+
 pub struct VerboseReport {
     prefix: String,
 }
+
 impl VerboseReport {
-    pub fn new() -> VerboseReport {
-        VerboseReport {
-            prefix: String::new(),
-        }
+    pub fn new(prefix: String) -> VerboseReport {
+        VerboseReport { prefix }
     }
 }
+
 impl SingleReport for VerboseReport {
-    fn set_prefix(&mut self, prefix: &str) {
-        self.prefix = prefix.to_string();
-    }
-
-    fn prefix(&self) -> String {
-        self.prefix.clone()
-    }
-
     fn set_message(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
     fn println(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
     fn warn(&self, message: String) {
-        eprintln!("{}", message);
+        eprintln!("{} {}", self.prefix, message);
     }
 }
 
@@ -151,27 +106,21 @@ mod tests {
 
     #[test]
     fn test_progress_report() {
-        let mut pr = ProgressReport::new(ProgressBar::new(0));
-        pr.set_prefix("prefix");
-        assert_eq!(pr.prefix(), "prefix");
+        let pr = ProgressReport::new(ProgressBar::new(0));
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
     #[test]
     fn test_progress_report_verbose() {
-        let mut pr = VerboseReport::new();
-        pr.set_prefix("prefix");
-        assert_eq!(pr.prefix(), "prefix");
+        let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
     #[test]
     fn test_progress_report_quiet() {
-        let mut pr = QuietReport::new();
-        pr.set_prefix("prefix");
-        assert_eq!(pr.prefix(), "prefix");
+        let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
