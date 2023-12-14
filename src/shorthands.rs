@@ -10,8 +10,9 @@ use crate::{dirs, file};
 
 pub type Shorthands = HashMap<String, String>;
 
-pub fn get_shorthands(settings: &Settings) -> Shorthands {
+pub fn get_shorthands() -> Shorthands {
     let mut shorthands = HashMap::new();
+    let settings = Settings::get();
     if !settings.disable_default_shorthands {
         shorthands.extend(
             DEFAULT_SHORTHANDS
@@ -50,17 +51,19 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::SettingsPartial;
+    use confique::Partial;
     use pretty_assertions::assert_str_eq;
 
     use super::*;
 
     #[test]
     fn test_get_shorthands() {
-        let settings = Settings {
-            shorthands_file: Some("../fixtures/shorthands.toml".into()),
-            ..Settings::default()
-        };
-        let shorthands = get_shorthands(&settings);
+        Settings::reset();
+        let mut partial = SettingsPartial::empty();
+        partial.shorthands_file = Some("../fixtures/shorthands.toml".into());
+        Settings::add_partial(partial);
+        let shorthands = get_shorthands();
         assert_str_eq!(
             shorthands["elixir"],
             "https://github.com/asdf-vm/asdf-elixir.git"
@@ -71,11 +74,11 @@ mod tests {
 
     #[test]
     fn test_get_shorthands_missing_file() {
-        let settings = Settings {
-            shorthands_file: Some("test/fixtures/missing.toml".into()),
-            ..Settings::default()
-        };
-        let shorthands = get_shorthands(&settings);
+        Settings::reset();
+        let mut partial = SettingsPartial::empty();
+        partial.shorthands_file = Some("test/fixtures/missing.toml".into());
+        Settings::add_partial(partial);
+        let shorthands = get_shorthands();
         assert!(!shorthands.is_empty());
     }
 }

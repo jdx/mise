@@ -20,7 +20,8 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let python = config.get_or_create_plugin(&PluginName::from("python"));
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");

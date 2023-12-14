@@ -182,7 +182,7 @@ impl RubyPlugin {
             }
             pr.set_message(format!("installing default gem: {}", package));
             let gem = self.gem_path(tv);
-            let mut cmd = CmdLineRunner::new(&config.settings, gem)
+            let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
                 .envs(&config.env);
@@ -199,7 +199,7 @@ impl RubyPlugin {
 
     fn test_ruby(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("ruby -v");
-        CmdLineRunner::new(&config.settings, self.ruby_path(tv))
+        CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
             .envs(&config.env)
@@ -208,7 +208,7 @@ impl RubyPlugin {
 
     fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("gem -v");
-        CmdLineRunner::new(&config.settings, self.gem_path(tv))
+        CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
             .envs(&config.env)
@@ -249,22 +249,17 @@ impl RubyPlugin {
         pr: &'a ProgressReport,
     ) -> Result<CmdLineRunner> {
         let cmd = if *env::RTX_RUBY_INSTALL {
-            CmdLineRunner::new(&config.settings, self.ruby_install_bin())
-                .args(self.install_args_ruby_install(tv)?)
+            CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
         } else {
-            CmdLineRunner::new(&config.settings, self.ruby_build_bin())
-                .args(self.install_args_ruby_build(&config.settings, tv)?)
+            CmdLineRunner::new(self.ruby_build_bin())
+                .args(self.install_args_ruby_build(tv)?)
                 .stdin_string(self.fetch_patches()?)
         };
         Ok(cmd.with_pr(pr).envs(&config.env))
     }
-    fn install_args_ruby_build(
-        &self,
-        settings: &Settings,
-        tv: &ToolVersion,
-    ) -> Result<Vec<String>> {
+    fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let mut args = env::RTX_RUBY_BUILD_OPTS.clone()?;
-        if self.verbose_install(settings) {
+        if self.verbose_install() {
             args.push("--verbose".into());
         }
         if env::RTX_RUBY_APPLY_PATCHES.is_some() {
@@ -292,7 +287,8 @@ impl RubyPlugin {
         Ok(args)
     }
 
-    fn verbose_install(&self, settings: &Settings) -> bool {
+    fn verbose_install(&self) -> bool {
+        let settings = Settings::get();
         let verbose_env = *env::RTX_RUBY_VERBOSE_INSTALL;
         verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
     }
@@ -325,18 +321,18 @@ impl Plugin for RubyPlugin {
         "ruby"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
@@ -359,12 +355,13 @@ impl Plugin for RubyPlugin {
         ));
 
         ctx.pr.set_message("running ruby-build");
-        self.install_cmd(ctx.config, &ctx.tv, &ctx.pr)?.execute()?;
+        let config = Config::get();
+        self.install_cmd(&config, &ctx.tv, &ctx.pr)?.execute()?;
 
-        self.test_ruby(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_ruby(&config, &ctx.tv, &ctx.pr)?;
         self.install_rubygems_hook(&ctx.tv)?;
-        self.test_gem(ctx.config, &ctx.tv, &ctx.pr)?;
-        self.install_default_gems(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_gem(&config, &ctx.tv, &ctx.pr)?;
+        self.install_default_gems(&config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 

@@ -11,7 +11,8 @@ pub struct MultiProgressReport {
 }
 
 impl MultiProgressReport {
-    pub fn new(settings: &Settings) -> Self {
+    pub fn new() -> Self {
+        let settings = Settings::get();
         let mp = match settings.quiet || settings.verbose || !console::user_attended_stderr() {
             true => None,
             false => Some(MultiProgress::new()),
@@ -66,8 +67,7 @@ mod tests {
 
     #[test]
     fn test_multi_progress_report() {
-        let settings = Settings::default();
-        let mpr = MultiProgressReport::new(&settings);
+        let mpr = MultiProgressReport::new();
         let pr = mpr.add();
         pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
         pr.enable_steady_tick();

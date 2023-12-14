@@ -42,7 +42,7 @@ pub struct PluginsLs {
 }
 
 impl PluginsLs {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self, config: &Config) -> Result<()> {
         let mut tools = config.list_plugins().into_iter().collect::<BTreeSet<_>>();
 
         if self.all {

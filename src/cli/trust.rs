@@ -4,7 +4,7 @@ use clap::ValueHint;
 use color_eyre::eyre::Result;
 
 use crate::cli::local;
-use crate::config::{config_file, Config};
+use crate::config::config_file;
 
 /// Marks a config file as trusted
 ///
@@ -28,7 +28,7 @@ pub struct Trust {
 }
 
 impl Trust {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let path = match &self.config_file {
             Some(filename) => PathBuf::from(filename),
             None => local::get_parent_path()?,

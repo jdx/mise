@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
 use crate::env;
 
 mod clear;
@@ -22,17 +21,17 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self {
-            Self::Clear(cmd) => cmd.run(config),
+            Self::Clear(cmd) => cmd.run(),
         }
     }
 }
 
 impl Cache {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self.command {
-            Some(cmd) => cmd.run(config),
+            Some(cmd) => cmd.run(),
             None => {
                 // just show the cache dir
                 rtxprintln!("{}", env::RTX_CACHE_DIR.display());

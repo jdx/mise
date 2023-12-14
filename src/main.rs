@@ -85,13 +85,13 @@ fn run() -> Result<()> {
     cli::version::print_version_if_requested(&args);
     migrate::run();
 
-    let config = Config::load()?;
-    let config = shims::handle_shim(config, &args)?;
+    let config = Config::try_get()?;
+    shims::handle_shim(&config, &args)?;
     if config.should_exit_early {
         return Ok(());
     }
     let cli = Cli::new_with_external_commands(&config);
-    cli.run(config, &args)
+    cli.run(&args)
 }
 
 fn handle_ctrlc() {

@@ -53,9 +53,9 @@ pub trait Plugin: Debug + Send + Sync {
     fn downloads_path(&self) -> PathBuf {
         dirs::DOWNLOADS.join(self.name())
     }
-    fn list_remote_versions(&self, settings: &Settings) -> Result<Vec<String>>;
-    fn latest_stable_version(&self, settings: &Settings) -> Result<Option<String>> {
-        self.latest_version(settings, Some("latest".into()))
+    fn list_remote_versions(&self) -> Result<Vec<String>>;
+    fn latest_stable_version(&self) -> Result<Option<String>> {
+        self.latest_version(Some("latest".into()))
     }
     fn list_installed_versions(&self) -> Result<Vec<String>> {
         Ok(match self.installs_path().exists() {
@@ -79,8 +79,8 @@ pub trait Plugin: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, config: &Config, tv: &ToolVersion, p: Arc<dyn Plugin>) -> bool {
-        let latest = match tv.latest_version(config, p) {
+    fn is_version_outdated(&self, tv: &ToolVersion, p: Arc<dyn Plugin>) -> bool {
+        let latest = match tv.latest_version(p) {
             Ok(latest) => latest,
             Err(e) => {
                 debug!("Error getting latest version for {}: {:#}", self.name(), e);
@@ -104,17 +104,17 @@ pub trait Plugin: Debug + Send + Sync {
         let versions = self.list_installed_versions()?;
         fuzzy_match_filter(versions, query)
     }
-    fn list_versions_matching(&self, settings: &Settings, query: &str) -> Result<Vec<String>> {
-        let versions = self.list_remote_versions(settings)?;
+    fn list_versions_matching(&self, query: &str) -> Result<Vec<String>> {
+        let versions = self.list_remote_versions()?;
         fuzzy_match_filter(versions, query)
     }
-    fn latest_version(&self, settings: &Settings, query: Option<String>) -> Result<Option<String>> {
+    fn latest_version(&self, query: Option<String>) -> Result<Option<String>> {
         match query {
             Some(query) => {
-                let matches = self.list_versions_matching(settings, &query)?;
+                let matches = self.list_versions_matching(&query)?;
                 Ok(find_match_in_list(&matches, &query))
             }
-            None => self.latest_stable_version(settings),
+            None => self.latest_stable_version(),
         }
     }
     fn latest_installed_version(&self, query: Option<String>) -> Result<Option<String>> {
@@ -152,12 +152,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
-    fn ensure_installed(
-        &self,
-        _config: &Config,
-        _mpr: Option<&MultiProgressReport>,
-        _force: bool,
-    ) -> Result<()> {
+    fn ensure_installed(&self, _mpr: Option<&MultiProgressReport>, _force: bool) -> Result<()> {
         Ok(())
     }
     fn update(&self, _git_ref: Option<String>) -> Result<()> {
@@ -172,31 +167,28 @@ pub trait Plugin: Debug + Send + Sync {
         rmdir(&self.downloads_path(), pr)?;
         Ok(())
     }
-    fn get_aliases(&self, _settings: &Settings) -> Result<BTreeMap<String, String>> {
+    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![])
     }
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
     fn external_commands(&self) -> Result<Vec<Command>> {
         Ok(vec![])
     }
-    fn execute_external_command(
-        &self,
-        _config: &Config,
-        _command: &str,
-        _args: Vec<String>,
-    ) -> Result<()> {
+    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> Result<()> {
         unimplemented!()
     }
     fn install_version(&self, mut ctx: InstallContext) -> Result<()> {
+        let config = Config::get();
+        let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
             if ctx.force {
-                self.uninstall_version(ctx.config, &ctx.tv, &ctx.pr, false)?;
+                self.uninstall_version(&ctx.tv, &ctx.pr, false)?;
             } else {
                 return Ok(());
             }
@@ -206,13 +198,13 @@ pub trait Plugin: Debug + Send + Sync {
         self.create_install_dirs(&ctx.tv)?;
 
         if let Err(e) = self.install_version_impl(&ctx) {
-            self.cleanup_install_dirs_on_error(&ctx.config.settings, &ctx.tv);
+            self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
             return Err(e);
         }
-        self.cleanup_install_dirs(&ctx.config.settings, &ctx.tv);
+        self.cleanup_install_dirs(&settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
-        touch_dirs.extend(ctx.config.config_files.keys().cloned());
+        touch_dirs.extend(config.config_files.keys().cloned());
         for path in touch_dirs {
             let err = file::touch_dir(&path);
             if let Err(err) = err {
@@ -228,17 +220,11 @@ pub trait Plugin: Debug + Send + Sync {
         Ok(())
     }
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()>;
-    fn uninstall_version(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &ProgressReport,
-        dryrun: bool,
-    ) -> Result<()> {
+    fn uninstall_version(&self, tv: &ToolVersion, pr: &ProgressReport, dryrun: bool) -> Result<()> {
         pr.set_message(format!("uninstall {tv}"));
 
         if !dryrun {
-            self.uninstall_version_impl(config, tv)?;
+            self.uninstall_version_impl(tv)?;
         }
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -255,15 +241,10 @@ pub trait Plugin: Debug + Send + Sync {
         rmdir(&tv.cache_path())?;
         Ok(())
     }
-    fn uninstall_version_impl(&self, _config: &Config, _tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, _tv: &ToolVersion) -> Result<()> {
         Ok(())
     }
-    fn list_bin_paths(
-        &self,
-        _config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolVersionRequest::System(_) => Ok(vec![]),
             _ => Ok(vec![tv.install_short_path().join("bin")]),
@@ -277,14 +258,8 @@ pub trait Plugin: Debug + Send + Sync {
     ) -> Result<HashMap<String, String>> {
         Ok(HashMap::new())
     }
-    fn which(
-        &self,
-        config: &Config,
-        ts: &Toolset,
-        tv: &ToolVersion,
-        bin_name: &str,
-    ) -> Result<Option<PathBuf>> {
-        let bin_paths = self.list_bin_paths(config, ts, tv)?;
+    fn which(&self, tv: &ToolVersion, bin_name: &str) -> Result<Option<PathBuf>> {
+        let bin_paths = self.list_bin_paths(tv)?;
         for bin_path in bin_paths {
             let bin_path = bin_path.join(bin_name);
             if bin_path.exists() {
@@ -438,29 +413,26 @@ mod tests {
     use pretty_assertions::assert_str_eq;
 
     use crate::assert_cli;
-    use crate::config::Settings;
 
     use super::*;
 
     #[test]
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
-        let settings = Settings::default();
         let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
         let version = plugin
-            .latest_version(&settings, Some("1.0.0".into()))
+            .latest_version(Some("1.0.0".into()))
             .unwrap()
             .unwrap();
         assert_str_eq!(version, "1.0.0");
-        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "3.1.0");
     }
 
     #[test]
     fn test_latest_stable() {
-        let settings = Settings::default();
         let plugin = ExternalPlugin::new(PluginName::from("dummy"));
-        let version = plugin.latest_version(&settings, None).unwrap().unwrap();
+        let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }
 }

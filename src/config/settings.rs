@@ -1,9 +1,10 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
+use eyre::Result;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
-use std::sync::{Once, RwLock};
+use std::sync::{Arc, Once, RwLock};
 
 use confique::{Builder, Config, Partial};
 use log::LevelFilter;
@@ -57,8 +58,25 @@ impl Default for Settings {
 }
 
 static PARTIALS: RwLock<Vec<SettingsPartial>> = RwLock::new(Vec::new());
+static SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 
 impl Settings {
+    pub fn get() -> Arc<Self> {
+        Self::try_get().unwrap()
+    }
+    pub fn try_get() -> Result<Arc<Self>> {
+        if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
+            return Ok(settings.clone());
+        }
+        let mut settings = Self::default_builder().load()?;
+        if settings.raw {
+            settings.verbose = true;
+            settings.jobs = 1;
+        }
+        let settings = Arc::new(Self::default_builder().load()?);
+        *SETTINGS.write().unwrap() = Some(settings.clone());
+        Ok(settings)
+    }
     pub fn add_partial(partial: SettingsPartial) {
         static ONCE: Once = Once::new();
         ONCE.call_once(|| {
@@ -80,6 +98,7 @@ impl Settings {
             PARTIALS.write().unwrap().push(p);
         });
         PARTIALS.write().unwrap().push(partial);
+        *SETTINGS.write().unwrap() = None;
     }
     pub fn default_builder() -> Builder<Self> {
         let mut b = Self::builder();
@@ -146,6 +165,7 @@ impl Settings {
     #[cfg(test)]
     pub fn reset() {
         PARTIALS.write().unwrap().clear();
+        *SETTINGS.write().unwrap() = None;
     }
 }
 

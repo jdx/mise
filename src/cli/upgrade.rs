@@ -40,8 +40,8 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self, config: Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+    pub fn run(self, config: &Config) -> Result<()> {
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let tool_set = self
             .tool
             .iter()
@@ -49,18 +49,18 @@ impl Upgrade {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
-        let outdated = ts.list_outdated_versions(&config);
+        let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.upgrade(&config, outdated)?;
+            self.upgrade(config, outdated)?;
         }
 
         Ok(())
     }
 
     fn upgrade(&self, config: &Config, outdated: OutputVec) -> Result<()> {
-        let mpr = MultiProgressReport::new(&config.settings);
+        let mpr = MultiProgressReport::new();
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
         let new_versions = outdated
@@ -95,7 +95,7 @@ impl Upgrade {
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
             let mut pr = mpr.add();
-            self.uninstall_old_version(config, tool.clone(), &tv, &mut pr)?;
+            self.uninstall_old_version(tool.clone(), &tv, &mut pr)?;
         }
 
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
@@ -106,13 +106,12 @@ impl Upgrade {
 
     fn uninstall_old_version(
         &self,
-        config: &Config,
         tool: Arc<dyn Plugin>,
         tv: &ToolVersion,
         pr: &mut ProgressReport,
     ) -> Result<()> {
         tool.decorate_progress_bar(pr, Some(tv));
-        match tool.uninstall_version(config, tv, pr, self.dry_run) {
+        match tool.uninstall_version(tv, pr, self.dry_run) {
             Ok(_) => {
                 pr.finish();
                 Ok(())

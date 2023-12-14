@@ -23,13 +23,13 @@ use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 #[allow(dead_code)]
-pub fn handle_shim(config: Config, args: &[String]) -> Result<Config> {
+pub fn handle_shim(config: &Config, args: &[String]) -> Result<()> {
     let (_, bin_name) = args[0].rsplit_once('/').unwrap_or(("", &args[0]));
     if bin_name == "rtx" {
-        return Ok(config);
+        return Ok(());
     }
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(&config, bin_name)?.into();
+    args[0] = which_shim(config, bin_name)?.into();
     let exec = Exec {
         tool: vec![],
         c: None,
@@ -46,8 +46,8 @@ fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
     let shim = dirs::SHIMS.join(bin_name);
     if shim.exists() {
         let ts = ToolsetBuilder::new().build(config)?;
-        if let Some((p, tv)) = ts.which(config, bin_name) {
-            if let Some(bin) = p.which(config, &ts, &tv, bin_name)? {
+        if let Some((p, tv)) = ts.which(bin_name) {
+            if let Some(bin) = p.which(&tv, bin_name)? {
                 return Ok(bin);
             }
         }
@@ -93,12 +93,11 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     let shims: HashSet<String> = ts
         .list_installed_versions(config)?
         .into_par_iter()
-        .flat_map(|(t, tv)| match list_tool_bins(config, ts, t.clone(), &tv) {
-            Ok(paths) => paths,
-            Err(e) => {
+        .flat_map(|(t, tv)| {
+            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
-            }
+            })
         })
         .collect();
 
@@ -139,13 +138,8 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(
-    config: &Config,
-    ts: &Toolset,
-    t: Arc<dyn Plugin>,
-    tv: &ToolVersion,
-) -> Result<Vec<String>> {
-    Ok(t.list_bin_paths(config, ts, tv)?
+fn list_tool_bins(t: Arc<dyn Plugin>, tv: &ToolVersion) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(tv)?
         .into_iter()
         .par_bridge()
         .filter(|path| path.exists())

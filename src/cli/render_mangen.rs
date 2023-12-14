@@ -6,7 +6,6 @@ use eyre::Result;
 
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::{version, Cli};
-use crate::config::Config;
 
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
@@ -14,7 +13,7 @@ use crate::config::Config;
 pub struct RenderMangen {}
 
 impl RenderMangen {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let cli = Cli::command()
             .subcommand(SelfUpdate::command())
             .version(&*version::RAW_VERSION)

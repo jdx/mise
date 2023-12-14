@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
 use crate::plugins::PluginName;
 
 mod get;
@@ -29,22 +28,22 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self {
-            Self::Get(cmd) => cmd.run(config),
-            Self::Ls(cmd) => cmd.run(config),
-            Self::Set(cmd) => cmd.run(config),
-            Self::Unset(cmd) => cmd.run(config),
+            Self::Get(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run(),
+            Self::Set(cmd) => cmd.run(),
+            Self::Unset(cmd) => cmd.run(),
         }
     }
 }
 
 impl Alias {
-    pub fn run(self, config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::AliasLs {
             plugin: self.plugin,
         }));
 
-        cmd.run(config)
+        cmd.run()
     }
 }

@@ -12,7 +12,7 @@ use versions::Versioning;
 use crate::cache::CacheManager;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
@@ -114,8 +114,8 @@ impl JavaPlugin {
         tv.install_path().join("bin/java")
     }
 
-    fn test_java(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        CmdLineRunner::new(&config.settings, self.java_bin(tv))
+    fn test_java(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+        CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
             .arg("-version")
@@ -206,9 +206,9 @@ impl JavaPlugin {
         Ok(())
     }
 
-    fn verify(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("java -version");
-        self.test_java(config, tv, pr)
+        self.test_java(tv, pr)
     }
 
     fn tv_release_type(&self, tv: &ToolVersion) -> String {
@@ -269,14 +269,14 @@ impl Plugin for JavaPlugin {
         "java"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn get_aliases(&self, _settings: &Settings) -> Result<BTreeMap<String, String>> {
+    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "21".into())]);
         Ok(aliases)
     }
@@ -290,7 +290,7 @@ impl Plugin for JavaPlugin {
         let metadata = self.tv_to_metadata(&ctx.tv)?;
         let tarball_path = self.download(&ctx.tv, &ctx.pr, metadata)?;
         self.install(&ctx.tv, &ctx.pr, &tarball_path, metadata)?;
-        self.verify(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.verify(&ctx.tv, &ctx.pr)?;
 
         Ok(())
     }
@@ -308,11 +308,11 @@ impl Plugin for JavaPlugin {
         Ok(map)
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents

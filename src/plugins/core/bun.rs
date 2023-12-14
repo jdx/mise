@@ -6,7 +6,6 @@ use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
 use crate::github::GithubRelease;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -50,7 +49,7 @@ impl BunPlugin {
 
     fn test_bun(&self, ctx: &InstallContext) -> Result<()> {
         ctx.pr.set_message("bun -v");
-        CmdLineRunner::new(&ctx.config.settings, self.bun_bin(&ctx.tv))
+        CmdLineRunner::new(self.bun_bin(&ctx.tv))
             .with_pr(&ctx.pr)
             .arg("-v")
             .execute()
@@ -100,14 +99,14 @@ impl Plugin for BunPlugin {
         "bun"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".bun-version".into()])
     }
 

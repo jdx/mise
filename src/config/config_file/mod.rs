@@ -93,12 +93,8 @@ impl dyn ConfigFile {
                 .map(|tvr| {
                     if pin {
                         let plugin = config.get_or_create_plugin(&plugin);
-                        let tv = tvr.resolve(
-                            config,
-                            plugin.clone(),
-                            Default::default(),
-                            ts.latest_versions,
-                        )?;
+                        let tv =
+                            tvr.resolve(plugin.clone(), Default::default(), ts.latest_versions)?;
                         Ok(tv.version)
                     } else {
                         Ok(tvr.version())
@@ -144,8 +140,8 @@ impl dyn ConfigFile {
     }
 }
 
-fn init(settings: &Settings, path: &Path) -> Box<dyn ConfigFile> {
-    let is_trusted = is_trusted(settings, path);
+fn init(path: &Path) -> Box<dyn ConfigFile> {
+    let is_trusted = is_trusted(path);
     match detect_config_file_type(path) {
         Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path, is_trusted)),
         Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path, is_trusted)),
@@ -153,16 +149,16 @@ fn init(settings: &Settings, path: &Path) -> Box<dyn ConfigFile> {
     }
 }
 
-pub fn parse_or_init(settings: &Settings, path: &Path) -> Result<Box<dyn ConfigFile>> {
+pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
     let cf = match path.exists() {
-        true => parse(settings, path)?,
-        false => init(settings, path),
+        true => parse(path)?,
+        false => init(path),
     };
     Ok(cf)
 }
 
-pub fn parse(settings: &Settings, path: &Path) -> Result<Box<dyn ConfigFile>> {
-    let is_trusted = is_trusted(settings, path);
+pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
+    let is_trusted = is_trusted(path);
     match detect_config_file_type(path) {
         Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path, is_trusted)?)),
         Some(ConfigFileType::ToolVersions) => {
@@ -173,7 +169,8 @@ pub fn parse(settings: &Settings, path: &Path) -> Result<Box<dyn ConfigFile>> {
     }
 }
 
-pub fn is_trusted(settings: &Settings, path: &Path) -> bool {
+pub fn is_trusted(path: &Path) -> bool {
+    let settings = Settings::get();
     if settings
         .trusted_config_paths
         .iter()

@@ -1,7 +1,5 @@
 use color_eyre::eyre::Result;
 
-use crate::config::Config;
-
 /// Output direnv function to use rtx inside direnv
 ///
 /// See https://github.com/jdx/rtx#direnv for more information
@@ -14,7 +12,7 @@ use crate::config::Config;
 pub struct DirenvActivate {}
 
 impl DirenvActivate {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         rtxprintln!(
             //       source_env "$(rtx direnv envrc "$@")"
             indoc! {r#"

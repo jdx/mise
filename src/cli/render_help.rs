@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::Cli;
-use crate::config::Config;
+
 use crate::file;
 
 /// internal command to generate markdown from help
@@ -14,7 +14,7 @@ use crate::file;
 pub struct RenderHelp {}
 
 impl RenderHelp {
-    pub fn run(self, _config: Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let readme = file::read_to_string("README.md")?;
         let mut current_readme = readme.split("<!-- RTX:COMMANDS -->");
 

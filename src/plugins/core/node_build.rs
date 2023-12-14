@@ -124,7 +124,7 @@ impl NodeBuildPlugin {
             }
             pr.set_message(format!("installing default package: {}", package));
             let npm = self.npm_path(tv);
-            CmdLineRunner::new(&config.settings, npm)
+            CmdLineRunner::new(npm)
                 .with_pr(pr)
                 .arg("install")
                 .arg("--global")
@@ -145,7 +145,7 @@ impl NodeBuildPlugin {
 
     fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("node -v");
-        CmdLineRunner::new(&config.settings, self.node_path(tv))
+        CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
             .envs(&config.env)
@@ -154,7 +154,7 @@ impl NodeBuildPlugin {
 
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
         pr.set_message("npm -v");
-        CmdLineRunner::new(&config.settings, self.npm_path(tv))
+        CmdLineRunner::new(self.npm_path(tv))
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
@@ -167,7 +167,8 @@ impl NodeBuildPlugin {
         Ok(updated_at < DAILY)
     }
 
-    fn verbose_install(&self, settings: &Settings) -> bool {
+    fn verbose_install(&self) -> bool {
+        let settings = Settings::get();
         let verbose_env = *env::RTX_NODE_VERBOSE_INSTALL;
         verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
     }
@@ -178,14 +179,14 @@ impl Plugin for NodeBuildPlugin {
         "node"
     }
 
-    fn list_remote_versions(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn get_aliases(&self, _settings: &Settings) -> Result<BTreeMap<String, String>> {
+    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = [
             ("lts/argon", "4"),
             ("lts/boron", "6"),
@@ -213,11 +214,11 @@ impl Plugin for NodeBuildPlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self, _settings: &Settings) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
-    fn parse_legacy_file(&self, path: &Path, _settings: &Settings) -> Result<String> {
+    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
         let body = file::read_to_string(path)?;
         // trim "v" prefix
         let body = body.trim().strip_prefix('v').unwrap_or(&body);
@@ -241,12 +242,7 @@ impl Plugin for NodeBuildPlugin {
         Ok(vec![topic])
     }
 
-    fn execute_external_command(
-        &self,
-        _config: &Config,
-        command: &str,
-        args: Vec<String>,
-    ) -> Result<()> {
+    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
         match command {
             "node-build" => {
                 self.install_or_update_node_build()?;
@@ -258,12 +254,13 @@ impl Plugin for NodeBuildPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        let config = Config::get();
         self.install_node_build()?;
         ctx.pr.set_message("running node-build");
-        let mut cmd = CmdLineRunner::new(&ctx.config.settings, self.node_build_bin())
+        let mut cmd = CmdLineRunner::new(self.node_build_bin())
             .with_pr(&ctx.pr)
             .env("NODE_BUILD_MIRROR_URL", RTX_NODE_MIRROR_URL.to_string())
-            .envs(&ctx.config.env)
+            .envs(&config.env)
             .arg(ctx.tv.version.as_str());
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref { .. }) || *RTX_NODE_COMPILE {
             let mut make_opts = RTX_NODE_MAKE_OPTS.clone().unwrap_or_default();
@@ -285,14 +282,14 @@ impl Plugin for NodeBuildPlugin {
             }
             cmd = cmd.arg("--compile");
         }
-        if self.verbose_install(&ctx.config.settings) {
+        if self.verbose_install() {
             cmd = cmd.arg("--verbose");
         }
         cmd.arg(&ctx.tv.install_path()).execute()?;
-        self.test_node(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_node(&config, &ctx.tv, &ctx.pr)?;
         self.install_npm_shim(&ctx.tv)?;
-        self.test_npm(ctx.config, &ctx.tv, &ctx.pr)?;
-        self.install_default_packages(ctx.config, &ctx.tv, &ctx.pr)?;
+        self.test_npm(&config, &ctx.tv, &ctx.pr)?;
+        self.install_default_packages(&config, &ctx.tv, &ctx.pr)?;
         Ok(())
     }
 }
