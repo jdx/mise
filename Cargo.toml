@@ -102,6 +102,7 @@ toml_edit = "<1"
 url = "2.4"
 versions = "6"
 which = "5"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
