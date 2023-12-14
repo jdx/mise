@@ -1,8 +1,8 @@
 use crate::config::Settings;
 use console::style;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar};
 
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
@@ -22,14 +22,11 @@ impl MultiProgressReport {
             quiet: settings.quiet,
         }
     }
-    pub fn add(&self) -> ProgressReport {
+    pub fn add(&self) -> Box<dyn SingleReport> {
         match &self.mp {
-            Some(mp) => {
-                let mut pr = ProgressReport::new(false, self.quiet);
-                pr.pb = Some(mp.add(pr.pb.unwrap()));
-                pr
-            }
-            None => ProgressReport::new(true, self.quiet),
+            _ if self.quiet => Box::new(QuietReport::new()),
+            Some(mp) => Box::new(ProgressReport::new(mp.add(ProgressBar::new(0)))),
+            None => Box::new(VerboseReport::new()),
         }
     }
     pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
@@ -51,14 +48,6 @@ impl MultiProgressReport {
             _ => (),
         }
     }
-    // pub fn clear(&self) {
-    //     match &self.mp {
-    //         Some(mp) => {
-    //             let _ = mp.clear();
-    //         },
-    //         None => ()
-    //     }
-    // }
 }
 
 #[cfg(test)]
@@ -71,8 +60,8 @@ mod tests {
         let pr = mpr.add();
         pr.set_style(indicatif::ProgressStyle::with_template("").unwrap());
         pr.enable_steady_tick();
-        pr.finish_with_message("test");
-        pr.println("");
-        pr.set_message("test");
+        pr.finish_with_message("test".into());
+        pr.println("".into());
+        pr.set_message("test".into());
     }
 }

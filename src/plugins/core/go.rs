@@ -12,7 +12,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset};
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, hash, http};
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ impl GoPlugin {
         tv.install_path().join("packages")
     }
 
-    fn install_default_packages(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn install_default_packages(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         let body = file::read_to_string(&*env::RTX_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
@@ -87,15 +87,15 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn test_go(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
-        pr.set_message("go version");
+    fn test_go(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("go version".into());
         CmdLineRunner::new(self.go_bin(tv))
             .with_pr(pr)
             .arg("version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let http = http::Client::new()?;
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
         let tarball_url = format!("{}/{}", &*env::RTX_GO_DOWNLOAD_MIRROR, &filename);
@@ -118,7 +118,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn install(&self, tv: &ToolVersion, pr: &ProgressReport, tarball_path: &Path) -> Result<()> {
+    fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
         let tarball = tarball_path
             .file_name()
             .unwrap_or_default()
@@ -128,7 +128,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &ProgressReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         self.test_go(tv, pr)?;
         self.install_default_packages(tv, pr)
     }
@@ -150,9 +150,9 @@ impl Plugin for GoPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.download(&ctx.tv, &ctx.pr)?;
-        self.install(&ctx.tv, &ctx.pr, &tarball_path)?;
-        self.verify(&ctx.tv, &ctx.pr)?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
+        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
+        self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }

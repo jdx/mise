@@ -12,7 +12,7 @@ use crate::runtime_symlinks;
 use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::ProgressReport;
+use crate::ui::progress_report::SingleReport;
 
 /// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
@@ -95,7 +95,7 @@ impl Upgrade {
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
             let mut pr = mpr.add();
-            self.uninstall_old_version(tool.clone(), &tv, &mut pr)?;
+            self.uninstall_old_version(tool.clone(), &tv, pr.as_mut())?;
         }
 
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
@@ -108,7 +108,7 @@ impl Upgrade {
         &self,
         tool: Arc<dyn Plugin>,
         tv: &ToolVersion,
-        pr: &mut ProgressReport,
+        pr: &mut dyn SingleReport,
     ) -> Result<()> {
         tool.decorate_progress_bar(pr, Some(tv));
         match tool.uninstall_version(tv, pr, self.dry_run) {
