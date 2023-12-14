@@ -23,7 +23,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 714] = [
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 712] = [
     // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
@@ -96,7 +96,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 714] = [
     ("btrace", "https://github.com/joschi/asdf-btrace.git"),
     ("buf", "https://github.com/truepay/asdf-buf.git"),
     ("buildpack", "https://github.com/johnlayton/asdf-buildpack.git"),
-    ("bun", "https://github.com/cometkim/asdf-bun.git"),
     ("bundler", "https://github.com/jonathanmorley/asdf-bundler.git"),
     ("caddy", "https://github.com/salasrod/asdf-caddy.git"),
     ("calicoctl", "https://github.com/TheCubicleJockey/asdf-calicoctl.git"),
@@ -165,7 +164,6 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 714] = [
     ("dbmate", "https://github.com/juusujanar/asdf-dbmate.git"),
     ("deck", "https://github.com/nutellinoit/asdf-deck.git"),
     ("delta", "https://github.com/andweeb/asdf-delta.git"),
-    ("deno", "https://github.com/asdf-community/asdf-deno.git"),
     ("dep", "https://github.com/paxosglobal/asdf-dep.git"),
     ("depot", "https://github.com/depot/asdf-depot.git"),
     ("desk", "https://github.com/endorama/asdf-desk.git"),
