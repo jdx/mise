@@ -1,8 +1,6 @@
 use crate::config::Settings;
 use console::style;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use once_cell::sync::Lazy;
-use std::time::Duration;
+use indicatif::MultiProgress;
 
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
@@ -11,11 +9,6 @@ pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
 }
-
-static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    ProgressStyle::with_template("{prefix} {wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
-        .unwrap()
-});
 
 impl MultiProgressReport {
     pub fn new() -> Self {
@@ -33,11 +26,9 @@ impl MultiProgressReport {
         match &self.mp {
             _ if self.quiet => Box::new(QuietReport::new(prefix.to_string())),
             Some(mp) => {
-                let pb = ProgressBar::new(1)
-                    .with_style(PROG_TEMPLATE.clone())
-                    .with_prefix(format!("{} {}", style("rtx").dim().for_stderr(), prefix));
-                pb.enable_steady_tick(Duration::from_millis(250));
-                Box::new(ProgressReport::new(mp.add(pb)))
+                let mut pr = ProgressReport::new(prefix.into());
+                pr.pb = mp.add(pr.pb);
+                Box::new(pr)
             }
             None => Box::new(VerboseReport::new(prefix.to_string())),
         }

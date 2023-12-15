@@ -58,7 +58,7 @@ pub struct Use {
 
     /// Remove the tool(s) from config file
     #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
+    remove: Vec<PluginName>,
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
@@ -112,17 +112,11 @@ impl Use {
         if self.global {
             self.warn_if_hidden(config, cf.get_path());
         }
-        for plugin_name in self.remove.unwrap_or_default() {
-            cf.remove_plugin(&plugin_name);
+        for plugin_name in &self.remove {
+            cf.remove_plugin(plugin_name);
         }
         cf.save()?;
-        let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
-        rtxprintln!(
-            "{} {} {}",
-            style("rtx").dim(),
-            display_path(cf.get_path()),
-            style(tools).cyan()
-        );
+        self.render_success_message(cf.as_ref());
         Ok(())
     }
 
@@ -156,6 +150,19 @@ impl Use {
                 }
             }
         }
+    }
+
+    fn render_success_message(&self, cf: &dyn ConfigFile) {
+        let path = display_path(cf.get_path());
+        let (dir, file) = path.rsplit_once('/').unwrap_or(("", &path));
+        let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
+        rtxprintln!(
+            "{} {}{}: {}",
+            style("rtx").green(),
+            style(dir.to_owned() + "/").dim(),
+            file,
+            style(tools).cyan()
+        );
     }
 }
 
@@ -210,18 +217,27 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@2");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tiny@2");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = "2"
+        "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml tiny");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = "2.1.0"
+        "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tiny@2");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = "2"
+        "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p);
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
     }
@@ -231,8 +247,10 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@3");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions tiny@3");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        tiny 3
+        "###);
     }
 
     #[test]
@@ -241,8 +259,11 @@ mod tests {
         let orig = file::read_to_string(&cf_path).unwrap();
         let _ = file::remove_file(&cf_path);
 
-        assert_cli_snapshot!("use", "-g", "tiny@2");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap());
+        assert_cli_snapshot!("use", "-g", "tiny@2", @"rtx ~/config/config.toml tiny@2");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = "2"
+        "###);
 
         file::write(&cf_path, orig).unwrap();
     }

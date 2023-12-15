@@ -212,8 +212,7 @@ pub trait Plugin: Debug + Send + Sync {
         if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
-        ctx.pr.set_message("".into());
-        ctx.pr.finish();
+        ctx.pr.finish_with_message("installed".to_string());
 
         Ok(())
     }
