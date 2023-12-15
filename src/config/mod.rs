@@ -8,7 +8,7 @@ use eyre::Context;
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
 
 pub use settings::{Settings, SettingsPartial};
@@ -67,15 +67,12 @@ impl Config {
         Settings::add_partial(cli_settings);
         let global_config = load_rtxrc()?;
         Settings::add_partial(global_config.settings()?);
-        let config_filenames = load_config_filenames(&BTreeMap::new());
+
+        let config_paths = load_config_paths(&DEFAULT_CONFIG_FILENAMES);
         let settings = Settings::try_get()?;
         let plugins = load_plugins(&settings)?;
-        let config_files = load_all_config_files(
-            &config_filenames,
-            &plugins,
-            &BTreeMap::new(),
-            ConfigMap::new(),
-        )?;
+        let config_files =
+            load_all_config_files(&config_paths, &plugins, &BTreeMap::new(), ConfigMap::new())?;
         for cf in config_files.values() {
             Settings::add_partial(cf.settings()?);
         }
@@ -83,11 +80,16 @@ impl Config {
         trace!("Settings: {:#?}", settings);
 
         let legacy_files = load_legacy_files(&settings, &plugins);
-        let config_filenames = load_config_filenames(&legacy_files);
-        let config_track = track_config_files(&config_filenames);
+        let config_filenames = legacy_files
+            .keys()
+            .chain(DEFAULT_CONFIG_FILENAMES.iter())
+            .cloned()
+            .collect_vec();
+        let config_paths = load_config_paths(&config_filenames);
+        let config_track = track_config_files(&config_paths);
 
         let config_files =
-            load_all_config_files(&config_filenames, &plugins, &legacy_files, config_files);
+            load_all_config_files(&config_paths, &plugins, &legacy_files, config_files);
         let config_files = config_files?;
         let watch_files = config_files
             .values()
@@ -334,8 +336,8 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
     legacy_filenames
 }
 
-pub fn load_config_filenames(legacy_filenames: &BTreeMap<String, Vec<PluginName>>) -> Vec<PathBuf> {
-    let mut filenames = legacy_filenames.keys().cloned().collect_vec();
+pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    let mut filenames = vec![];
     filenames.push(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone());
     filenames.push(env::RTX_DEFAULT_CONFIG_FILENAME.clone());
     if *env::RTX_DEFAULT_CONFIG_FILENAME == ".rtx.toml" {
@@ -345,8 +347,11 @@ pub fn load_config_filenames(legacy_filenames: &BTreeMap<String, Vec<PluginName>
             filenames.push(format!(".rtx.{}.local.toml", env));
         }
     }
+    filenames
+});
 
-    let mut config_files = file::FindUp::new(&dirs::CURRENT, &filenames).collect::<Vec<_>>();
+pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
+    let mut config_files = file::FindUp::new(&dirs::CURRENT, config_filenames).collect::<Vec<_>>();
 
     for cf in global_config_files() {
         config_files.push(cf);
