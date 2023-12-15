@@ -344,23 +344,13 @@ impl ExternalPlugin {
         for (key, value) in &config.env {
             sm = sm.with_env(key, value.clone());
         }
+        let install = tv.install_path().to_string_lossy().to_string();
+        let download = tv.download_path().to_string_lossy().to_string();
         sm = sm
-            .with_env(
-                "RTX_INSTALL_PATH",
-                tv.install_path().to_string_lossy().to_string(),
-            )
-            .with_env(
-                "ASDF_INSTALL_PATH",
-                tv.install_path().to_string_lossy().to_string(),
-            )
-            .with_env(
-                "RTX_DOWNLOAD_PATH",
-                tv.download_path().to_string_lossy().to_string(),
-            )
-            .with_env(
-                "ASDF_DOWNLOAD_PATH",
-                tv.download_path().to_string_lossy().to_string(),
-            )
+            .with_env("RTX_INSTALL_PATH", &install)
+            .with_env("ASDF_INSTALL_PATH", install)
+            .with_env("RTX_DOWNLOAD_PATH", &download)
+            .with_env("ASDF_DOWNLOAD_PATH", download)
             .with_env("RTX_INSTALL_TYPE", install_type)
             .with_env("ASDF_INSTALL_TYPE", install_type)
             .with_env("RTX_INSTALL_VERSION", install_version)
@@ -453,7 +443,7 @@ impl Plugin for ExternalPlugin {
         self.plugin_path.exists()
     }
 
-    fn ensure_installed(&self, mpr: Option<&MultiProgressReport>, force: bool) -> Result<()> {
+    fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
         if !force {
@@ -474,8 +464,6 @@ impl Plugin for ExternalPlugin {
                 }
             }
         }
-        let _mpr = MultiProgressReport::new();
-        let mpr = mpr.unwrap_or(&_mpr);
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add(&prefix);
         let _lock = self.get_lock(&self.plugin_path, force)?;
@@ -523,11 +511,11 @@ impl Plugin for ExternalPlugin {
             if !dir.exists() {
                 return Ok(());
             }
-            pr.set_message(format!("removing {}", &dir.to_string_lossy()));
+            pr.set_message(format!("removing {}", display_path(dir)));
             remove_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
-                    style(&dir.to_string_lossy()).cyan().for_stderr()
+                    style(display_path(dir)).cyan().for_stderr()
                 )
             })
         };
@@ -663,6 +651,7 @@ impl Plugin for ExternalPlugin {
         }
         ctx.pr.set_message("installing".into());
         run_script(&Install)?;
+        file::remove_dir(&self.downloads_path)?;
 
         Ok(())
     }

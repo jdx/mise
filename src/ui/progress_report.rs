@@ -36,20 +36,26 @@ pub struct ProgressReport {
     prefix: String,
 }
 
+fn normal_prefix(prefix: &str) -> String {
+    format!("{} {prefix}", style("rtx").dim().for_stderr())
+}
+fn error_prefix(prefix: &str) -> String {
+    format!("{} {prefix}", style("rtx").red().for_stderr())
+}
+fn warn_prefix(prefix: &str) -> String {
+    format!("{} {prefix}", style("rtx").yellow().for_stderr())
+}
+fn success_prefix(prefix: &str) -> String {
+    format!("{} {prefix}", style("rtx").green().for_stderr())
+}
+
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
         let pb = ProgressBar::new(100)
             .with_style(PROG_TEMPLATE.clone())
-            .with_prefix(format!("{} {prefix}", style("rtx").dim().for_stderr()));
+            .with_prefix(normal_prefix(&prefix));
         pb.enable_steady_tick(Duration::from_millis(250));
         ProgressReport { prefix, pb }
-    }
-
-    fn error_prefix(&self) -> String {
-        format!("{} {}", style("rtx").red().for_stderr(), self.prefix)
-    }
-    fn success_prefix(&self) -> String {
-        format!("{} {}", style("rtx").green().for_stderr(), self.prefix)
     }
 }
 
@@ -59,13 +65,14 @@ impl SingleReport for ProgressReport {
     }
     fn warn(&self, message: String) {
         let msg = format!("{} {message}", style("[WARN]").yellow().for_stderr());
+        self.pb.set_prefix(warn_prefix(&self.prefix));
         self.pb.println(msg);
     }
     fn error(&self, message: String) {
         let msg = format!("{} {message}", style("[ERROR]").red().for_stderr());
         self.set_message(msg);
         self.pb.set_style(ERROR_TEMPLATE.clone());
-        self.pb.set_prefix(self.error_prefix());
+        self.pb.set_prefix(error_prefix(&self.prefix));
         self.pb.finish();
     }
     fn set_message(&self, message: String) {
@@ -73,12 +80,12 @@ impl SingleReport for ProgressReport {
     }
     fn finish(&self) {
         self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb.set_prefix(self.success_prefix());
+        self.pb.set_prefix(success_prefix(&self.prefix));
         self.pb.finish()
     }
     fn finish_with_message(&self, message: String) {
         self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb.set_prefix(self.success_prefix());
+        self.pb.set_prefix(success_prefix(&self.prefix));
         self.pb.finish_with_message(message);
     }
 }
@@ -95,10 +102,12 @@ impl QuietReport {
 
 impl SingleReport for QuietReport {
     fn warn(&self, message: String) {
-        warn!("{} {message}", self.prefix);
+        let prefix = warn_prefix(&self.prefix);
+        warn!("{prefix} {message}");
     }
     fn error(&self, message: String) {
-        error!("{} {message}", self.prefix);
+        let prefix = error_prefix(&self.prefix);
+        error!("{prefix} {message}");
     }
 }
 
@@ -117,19 +126,23 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn warn(&self, message: String) {
-        warn!("{} {message}", self.prefix);
+        let prefix = warn_prefix(&self.prefix);
+        warn!("{prefix} {message}");
     }
     fn error(&self, message: String) {
-        error!("{} {message}", self.prefix);
+        let prefix = error_prefix(&self.prefix);
+        error!("{prefix} {message}");
     }
     fn set_message(&self, message: String) {
-        eprintln!("{} {message}", self.prefix);
+        let prefix = normal_prefix(&self.prefix);
+        eprintln!("{prefix} {message}");
     }
     fn finish(&self) {
         self.finish_with_message(style("done").green().for_stderr().to_string());
     }
     fn finish_with_message(&self, message: String) {
-        self.set_message(message);
+        let prefix = success_prefix(&self.prefix);
+        eprintln!("{prefix} {message}");
     }
 }
 

@@ -151,7 +151,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
-    fn ensure_installed(&self, _mpr: Option<&MultiProgressReport>, _force: bool) -> Result<()> {
+    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> Result<()> {
         Ok(())
     }
     fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> Result<()> {
@@ -223,7 +223,7 @@ pub trait Plugin: Debug + Send + Sync {
         pr: &dyn SingleReport,
         dryrun: bool,
     ) -> Result<()> {
-        pr.set_message(format!("uninstall {tv}"));
+        pr.set_message("uninstall".into());
 
         if !dryrun {
             self.uninstall_version_impl(pr, tv)?;

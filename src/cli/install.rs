@@ -111,7 +111,7 @@ impl Install {
         let mut tool_versions = vec![];
         for (plugin_name, tvr, opts) in requests {
             let plugin = config.get_or_create_plugin(&plugin_name);
-            plugin.ensure_installed(Some(mpr), false)?;
+            plugin.ensure_installed(mpr, false)?;
             let tv = tvr.resolve(plugin.as_ref(), opts, ts.latest_versions)?;
             tool_versions.push(tv);
         }

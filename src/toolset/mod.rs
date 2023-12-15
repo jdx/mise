@@ -132,7 +132,7 @@ impl Toolset {
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
-                t.ensure_installed(Some(mpr), false)?;
+                t.ensure_installed(mpr, false)?;
             }
         }
         let queue = Arc::new(Mutex::new(queue));

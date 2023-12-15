@@ -10,6 +10,7 @@ use crate::config::Config;
 
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// List runtime versions available for install
 ///
@@ -90,7 +91,8 @@ impl LsRemote {
         match &self.plugin {
             Some(tool_arg) => {
                 let plugin = config.get_or_create_plugin(&tool_arg.plugin);
-                plugin.ensure_installed(None, false)?;
+                let mpr = MultiProgressReport::new();
+                plugin.ensure_installed(&mpr, false)?;
                 Ok(Some(plugin))
             }
             None => Ok(None),
