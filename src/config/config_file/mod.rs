@@ -10,7 +10,7 @@ use tool_versions::ToolVersions;
 use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::settings::SettingsPartial;
-use crate::config::{global_config_files, AliasMap, Config, Settings};
+use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
 use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 
@@ -59,7 +59,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         vec![self.get_path().to_path_buf()]
     }
     fn is_global(&self) -> bool {
-        global_config_files().iter().any(|p| p == self.get_path())
+        global_config_files()
+            .iter()
+            .chain(system_config_files().iter())
+            .any(|p| p == self.get_path())
     }
 }
 

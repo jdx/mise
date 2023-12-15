@@ -88,6 +88,7 @@ v20.0.0
   - [`.tool-versions`](#tool-versions)
   - [Scopes](#scopes)
   - [Global config: `~/.config/rtx/config.toml`](#global-config-configrtxconfigtoml)
+  - [System config: `/etc/rtx/config.toml`](#system-config-etcrtxconfigtoml)
   - [Environment variables](#environment-variables)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
@@ -796,6 +797,11 @@ my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20
 ```
 
 These settings can also be managed with `rtx settings ls|get|set|unset`.
+
+### System config: `/etc/rtx/config.toml`
+
+Similar to `~/.config/rtx/config.toml` but for all users on the system. This is useful for
+setting defaults for all users.
 
 ### Environment variables
 

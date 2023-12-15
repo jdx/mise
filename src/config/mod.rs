@@ -356,6 +356,9 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     for cf in global_config_files() {
         config_files.push(cf);
     }
+    for cf in system_config_files() {
+        config_files.push(cf);
+    }
 
     config_files.into_iter().unique().collect()
 }
@@ -379,6 +382,15 @@ pub fn global_config_files() -> Vec<PathBuf> {
     let global_config = get_global_rtx_toml();
     if global_config.is_file() {
         config_files.push(global_config);
+    }
+    config_files
+}
+
+pub fn system_config_files() -> Vec<PathBuf> {
+    let mut config_files = vec![];
+    let system = dirs::SYSTEM.join("config.toml");
+    if system.is_file() {
+        config_files.push(system);
     }
     config_files
 }
