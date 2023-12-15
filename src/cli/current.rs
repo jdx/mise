@@ -1,5 +1,4 @@
 use color_eyre::eyre::Result;
-use std::sync::Arc;
 
 use crate::config::Config;
 
@@ -29,13 +28,13 @@ impl Current {
                 if !plugin.is_installed() {
                     bail!("Plugin {} is not installed", plugin_name);
                 }
-                self.one(ts, plugin.clone())
+                self.one(ts, plugin.as_ref())
             }
             None => self.all(ts),
         }
     }
 
-    fn one(&self, ts: Toolset, tool: Arc<dyn Plugin>) -> Result<()> {
+    fn one(&self, ts: Toolset, tool: &dyn Plugin) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.name());
             return Ok(());
@@ -112,16 +111,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::env;
 
-    use crate::{assert_cli, assert_cli_snapshot};
-
     #[test]
     fn test_current() {
-        assert_cli_snapshot!("current");
+        assert_cli_snapshot!("current", @r###"
+        tiny 3.1.0
+        dummy ref:master
+        "###);
     }
 
     #[test]
     fn test_current_with_runtimes() {
-        assert_cli_snapshot!("current", "tiny");
+        assert_cli_snapshot!("current", "tiny", @"3.1.0");
     }
 
     #[test]
@@ -129,7 +129,10 @@ mod tests {
         assert_cli!("uninstall", "dummy@1.0.1");
 
         env::set_var("RTX_DUMMY_VERSION", "1.1.0");
-        assert_cli_snapshot!("current");
+        assert_cli_snapshot!("current", @r###"
+        dummy 1.1.0
+        tiny 3.1.0
+        "###);
 
         env::remove_var("RTX_DUMMY_VERSION");
     }

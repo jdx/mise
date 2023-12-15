@@ -160,7 +160,9 @@ impl ScriptManager {
     }
 
     pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
-        let cmd = CmdLineRunner::new(self.get_script_path(script))
+        let path = self.get_script_path(script);
+        pr.set_message(display_path(&path));
+        let cmd = CmdLineRunner::new(path.clone())
             .with_pr(pr)
             .env_clear()
             .envs(&self.env);
@@ -169,8 +171,7 @@ impl ScriptManager {
                 Some(ScriptFailed(_, status)) => *status,
                 _ => None,
             };
-            let path = display_path(&self.get_script_path(script));
-            return Err(ScriptFailed(path, status).into());
+            return Err(ScriptFailed(display_path(&path), status).into());
         }
         Ok(())
     }

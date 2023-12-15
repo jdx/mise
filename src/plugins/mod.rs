@@ -3,7 +3,6 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use clap::Command;
 use color_eyre::eyre::Result;
@@ -79,7 +78,7 @@ pub trait Plugin: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tv: &ToolVersion, p: Arc<dyn Plugin>) -> bool {
+    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Plugin) -> bool {
         let latest = match tv.latest_version(p) {
             Ok(latest) => latest,
             Err(e) => {
@@ -152,7 +151,7 @@ pub trait Plugin: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
-    fn ensure_installed(&self, _mpr: Option<&MultiProgressReport>, _force: bool) -> Result<()> {
+    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> Result<()> {
         Ok(())
     }
     fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> Result<()> {
@@ -213,8 +212,7 @@ pub trait Plugin: Debug + Send + Sync {
         if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
-        ctx.pr.set_message("".into());
-        ctx.pr.finish();
+        ctx.pr.finish_with_message("installed".to_string());
 
         Ok(())
     }
@@ -225,7 +223,7 @@ pub trait Plugin: Debug + Send + Sync {
         pr: &dyn SingleReport,
         dryrun: bool,
     ) -> Result<()> {
-        pr.set_message(format!("uninstall {tv}"));
+        pr.set_message("uninstall".into());
 
         if !dryrun {
             self.uninstall_version_impl(pr, tv)?;
@@ -400,8 +398,6 @@ pub enum PluginType {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_str_eq;
-
-    use crate::assert_cli;
 
     use super::*;
 

@@ -62,7 +62,7 @@ impl Implode {
 #[cfg(test)]
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
+
     use crate::dirs;
 
     #[test]

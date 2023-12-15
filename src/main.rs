@@ -5,6 +5,12 @@ extern crate log;
 extern crate eyre;
 #[macro_use]
 extern crate indoc;
+#[cfg(test)]
+#[macro_use]
+extern crate insta;
+#[cfg(test)]
+#[macro_use]
+mod test;
 
 use std::process::exit;
 
@@ -55,8 +61,6 @@ mod shell;
 mod shims;
 mod shorthands;
 pub mod tera;
-#[cfg(test)]
-mod test;
 pub mod timeout;
 mod toml;
 mod toolset;

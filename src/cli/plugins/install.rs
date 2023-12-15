@@ -106,7 +106,7 @@ impl PluginsInstall {
             mpr.warn(format!("Plugin {} already installed", name));
             mpr.warn("Use --force to install anyway".to_string());
         } else {
-            plugin.ensure_installed(Some(mpr), true)?;
+            plugin.ensure_installed(mpr, true)?;
         }
         Ok(())
     }
@@ -158,8 +158,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli_err;
-    use insta::assert_display_snapshot;
 
     #[test]
     fn test_plugin_install_invalid_url() {

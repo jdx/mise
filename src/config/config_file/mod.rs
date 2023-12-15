@@ -29,7 +29,7 @@ pub enum ConfigFileType {
     LegacyVersion,
 }
 
-pub trait ConfigFile: Debug + Display + Send + Sync {
+pub trait ConfigFile: Debug + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
     fn plugins(&self) -> HashMap<PluginName, String> {
@@ -94,7 +94,7 @@ impl dyn ConfigFile {
                     if pin {
                         let plugin = config.get_or_create_plugin(&plugin);
                         let tv =
-                            tvr.resolve(plugin.clone(), Default::default(), ts.latest_versions)?;
+                            tvr.resolve(plugin.as_ref(), Default::default(), ts.latest_versions)?;
                         Ok(tv.version)
                     } else {
                         Ok(tvr.version())
@@ -211,6 +211,13 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
             Some(ConfigFileType::ToolVersions)
         }
         _ => None,
+    }
+}
+
+impl Display for dyn ConfigFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let toolset = self.to_toolset().to_string();
+        write!(f, "{}: {toolset}", &display_path(self.get_path()))
     }
 }
 

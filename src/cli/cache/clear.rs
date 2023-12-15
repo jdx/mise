@@ -34,15 +34,18 @@ impl CacheClear {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli_snapshot_stderr;
 
     #[test]
     fn test_cache_clear() {
-        assert_cli_snapshot_stderr!("cache", "clear");
+        assert_cli_snapshot!("cache", "clear", @r###"
+        rtx cache cleared
+        "###);
     }
 
     #[test]
     fn test_cache_clear_plugin() {
-        assert_cli_snapshot_stderr!("cache", "clear", "tiny");
+        assert_cli_snapshot!("cache", "clear", "tiny", @r###"
+        rtx cache cleared for tiny
+        "###);
     }
 }

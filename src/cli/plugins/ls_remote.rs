@@ -67,7 +67,6 @@ Examples:
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
 
     #[test]
     fn test_plugin_list_remote() {

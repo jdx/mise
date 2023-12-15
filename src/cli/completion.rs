@@ -73,7 +73,6 @@ impl Display for Shell {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
 
     #[test]
     fn test_completion() {

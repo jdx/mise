@@ -76,7 +76,6 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
 
     use crate::test::replace_path;
 

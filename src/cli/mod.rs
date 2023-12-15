@@ -1,8 +1,8 @@
-use crate::cli::self_update::SelfUpdate;
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 use confique::Partial;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::config::{Config, SettingsPartial};
 
 mod activate;
@@ -12,6 +12,7 @@ mod asdf;
 mod bin_paths;
 mod cache;
 mod completion;
+mod config;
 mod current;
 mod deactivate;
 mod direnv;
@@ -64,6 +65,7 @@ pub enum Commands {
     BinPaths(bin_paths::BinPaths),
     Cache(cache::Cache),
     Completion(completion::Completion),
+    Config(config::Config),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
@@ -114,6 +116,7 @@ impl Commands {
             Self::BinPaths(cmd) => cmd.run(config),
             Self::Cache(cmd) => cmd.run(),
             Self::Completion(cmd) => cmd.run(),
+            Self::Config(cmd) => cmd.run(),
             Self::Current(cmd) => cmd.run(config),
             Self::Deactivate(cmd) => cmd.run(config),
             Self::Direnv(cmd) => cmd.run(config),
@@ -267,70 +270,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 pub mod tests {
-    use color_eyre::{Section, SectionExt};
-
     use crate::dirs;
-    use crate::env;
-    use crate::output::tests::{STDERR, STDOUT};
-
-    use super::*;
-
-    pub fn cli_run(args: &Vec<String>) -> Result<()> {
-        Config::reset();
-        *env::ARGS.write().unwrap() = args.clone();
-        STDOUT.lock().unwrap().clear();
-        STDERR.lock().unwrap().clear();
-        let config = Config::try_get()?;
-        Cli::new_with_external_commands(&config)
-            .run(args)
-            .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
-
-        Ok(())
-    }
-
-    #[macro_export]
-    macro_rules! assert_cli {
-        ($($args:expr),+) => {{
-            let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::tests::cli_run(args).unwrap();
-            let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
-            console::strip_ansi_codes(&output).trim().to_string()
-        }};
-    }
-
-    #[macro_export]
-    macro_rules! assert_cli_snapshot {
-        ($($args:expr),+) => {{
-            let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::tests::cli_run(args).unwrap();
-            let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
-            let output = console::strip_ansi_codes(&output.trim()).to_string();
-            let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
-            let output = $crate::test::replace_path(&output);
-            insta::assert_snapshot!(output);
-        }};
-    }
-
-    #[macro_export]
-    macro_rules! assert_cli_snapshot_stderr {
-        ($($args:expr),+) => {{
-            let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::tests::cli_run(args).unwrap();
-            let output = $crate::output::tests::STDERR.lock().unwrap().join("\n");
-            let output = console::strip_ansi_codes(&output.trim()).to_string();
-            let output = output.replace($crate::dirs::HOME.to_string_lossy().as_ref(), "~");
-            let output = $crate::test::replace_path(&output);
-            insta::assert_snapshot!(output);
-        }};
-    }
-
-    #[macro_export]
-    macro_rules! assert_cli_err {
-        ($($args:expr),+) => {{
-            let args = &vec!["rtx".into(), $($args.into()),+];
-            $crate::cli::tests::cli_run(args).unwrap_err()
-        }};
-    }
 
     pub fn grep(output: String, pattern: &str) -> String {
         output

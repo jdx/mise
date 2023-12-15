@@ -5,6 +5,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 
 use crate::toolset::ToolVersionRequest;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
@@ -37,7 +38,8 @@ impl Latest {
         };
 
         let plugin = config.get_or_create_plugin(&self.tool.plugin);
-        plugin.ensure_installed(None, false)?;
+        let mpr = MultiProgressReport::new();
+        plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(plugin.name(), &v)?);
         }
@@ -66,10 +68,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
-    use pretty_assertions::assert_str_eq;
 
-    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot};
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_latest() {
