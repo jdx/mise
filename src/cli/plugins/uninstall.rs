@@ -8,7 +8,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsUninstall {
     /// Plugin(s) to remove
     #[clap(verbatim_doc_comment)]

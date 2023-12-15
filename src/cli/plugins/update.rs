@@ -11,7 +11,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "upgrade", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_alias = "upgrade", after_long_help = AFTER_LONG_HELP)]
 pub struct Update {
     /// Plugin(s) to update
     #[clap()]
