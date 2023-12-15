@@ -200,10 +200,9 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use insta::{assert_display_snapshot, assert_snapshot};
-    use pretty_assertions::assert_eq;
 
-    use crate::{assert_cli, dirs};
+    use crate::dirs;
+    use pretty_assertions::assert_eq;
 
     use super::*;
 

@@ -24,7 +24,7 @@ impl ToolVersionList {
         self.versions.clear();
         let plugin = config.get_or_create_plugin(&self.plugin_name);
         for (tvr, opts) in &mut self.requests {
-            match tvr.resolve(plugin.clone(), opts.clone(), latest_versions) {
+            match tvr.resolve(plugin.as_ref(), opts.clone(), latest_versions) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => warn!("failed to resolve tool version: {:#}", err),
             }

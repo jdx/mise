@@ -63,7 +63,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 pub mod tests {
     use crate::test::reset_config;
-    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_settings_set() {

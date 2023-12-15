@@ -85,7 +85,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli_snapshot;
 
     #[test]
     fn test_trust() {

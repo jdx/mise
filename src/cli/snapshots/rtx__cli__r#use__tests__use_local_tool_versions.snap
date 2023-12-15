@@ -1,5 +1,0 @@
----
-source: src/cli/use.rs
-expression: output
----
-rtx ~/cwd/.test-tool-versions tiny@3

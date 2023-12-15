@@ -1,22 +1,25 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
 use eyre::Result;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Once, RwLock};
 
 use confique::{Builder, Config, Partial};
 use log::LevelFilter;
-use serde_derive::{Deserialize, Serialize};
+use serde::ser::Error;
+use serde_derive::Serialize;
 
 use crate::env;
 
-#[derive(Config, Debug, Clone)]
-#[config(partial_attr(derive(Debug, Clone)))]
+#[derive(Config, Debug, Clone, Serialize)]
+#[config(partial_attr(derive(Clone, Serialize)))]
 pub struct Settings {
     #[config(env = "RTX_EXPERIMENTAL", default = false)]
     pub experimental: bool,
+    #[config(env = "RTX_COLOR", default = true)]
+    pub color: bool,
     #[config(env = "RTX_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
     #[config(env = "RTX_ALWAYS_KEEP_INSTALL", default = false)]
@@ -73,6 +76,10 @@ impl Settings {
             settings.verbose = true;
             settings.jobs = 1;
         }
+        if !settings.color {
+            console::set_colors_enabled(false);
+            console::set_colors_enabled_stderr(false);
+        }
         let settings = Arc::new(Self::default_builder().load()?);
         *SETTINGS.write().unwrap() = Some(settings.clone());
         Ok(settings)
@@ -101,65 +108,11 @@ impl Settings {
         *SETTINGS.write().unwrap() = None;
     }
     pub fn default_builder() -> Builder<Self> {
-        let mut b = Self::builder();
+        let mut b = Self::builder().env();
         for partial in PARTIALS.read().unwrap().iter() {
             b = b.preloaded(partial.clone());
         }
-        b.env()
-    }
-
-    pub fn to_index_map(&self) -> BTreeMap<String, String> {
-        let mut map = BTreeMap::new();
-        map.insert("experimental".to_string(), self.experimental.to_string());
-        map.insert(
-            "always_keep_download".to_string(),
-            self.always_keep_download.to_string(),
-        );
-        map.insert(
-            "always_keep_install".to_string(),
-            self.always_keep_install.to_string(),
-        );
-        map.insert(
-            "legacy_version_file".to_string(),
-            self.legacy_version_file.to_string(),
-        );
-        map.insert(
-            "legacy_version_file_disable_tools".to_string(),
-            format!(
-                "{:?}",
-                self.legacy_version_file_disable_tools
-                    .iter()
-                    .collect::<Vec<_>>()
-            ),
-        );
-        map.insert(
-            "plugin_autoupdate_last_check_duration".to_string(),
-            self.plugin_autoupdate_last_check_duration.to_string(),
-        );
-        map.insert(
-            "trusted_config_paths".to_string(),
-            format!("{:?}", self.trusted_config_paths.iter().collect::<Vec<_>>()),
-        );
-        map.insert("verbose".into(), self.verbose.to_string());
-        map.insert("asdf_compat".into(), self.asdf_compat.to_string());
-        map.insert("jobs".into(), self.jobs.to_string());
-        if let Some(shorthands_file) = &self.shorthands_file {
-            map.insert(
-                "shorthands_file".into(),
-                shorthands_file.to_string_lossy().to_string(),
-            );
-        }
-        map.insert(
-            "disable_default_shorthands".into(),
-            self.disable_default_shorthands.to_string(),
-        );
-        map.insert(
-            "disable_tools".into(),
-            format!("{:?}", self.disable_tools.iter().collect::<Vec<_>>()),
-        );
-        map.insert("raw".into(), self.raw.to_string());
-        map.insert("yes".into(), self.yes.to_string());
-        map
+        b
     }
 
     #[cfg(test)]
@@ -167,30 +120,19 @@ impl Settings {
         PARTIALS.write().unwrap().clear();
         *SETTINGS.write().unwrap() = None;
     }
+
+    pub fn ensure_experimental(&self) -> Result<()> {
+        let msg = "This command is experimental. Enable it with `rtx config set experimental 1`";
+        ensure!(self.experimental, msg);
+        Ok(())
+    }
 }
 
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.to_index_map().fmt(f)
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MissingRuntimeBehavior {
-    AutoInstall,
-    Prompt,
-    Warn,
-    Ignore,
-}
-
-impl Display for MissingRuntimeBehavior {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MissingRuntimeBehavior::AutoInstall => write!(f, "autoinstall"),
-            MissingRuntimeBehavior::Prompt => write!(f, "prompt"),
-            MissingRuntimeBehavior::Warn => write!(f, "warn"),
-            MissingRuntimeBehavior::Ignore => write!(f, "ignore"),
+        match serde_json::to_string_pretty(self) {
+            Ok(s) => write!(f, "{}", s),
+            Err(e) => std::fmt::Result::Err(std::fmt::Error::custom(e)),
         }
     }
 }

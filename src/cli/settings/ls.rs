@@ -1,4 +1,6 @@
 use color_eyre::eyre::Result;
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::config::Settings;
 
@@ -15,7 +17,9 @@ pub struct SettingsLs {}
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
-        for (key, value) in settings.to_index_map() {
+        let json = settings.to_string();
+        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
+        for (key, value) in doc {
             rtxprintln!("{} = {}", key, value);
         }
         Ok(())
@@ -31,7 +35,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli_snapshot;
+
     use crate::test::reset_config;
 
     #[test]

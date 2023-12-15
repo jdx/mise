@@ -1,12 +1,9 @@
-use std::cmp::max;
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
-use console::truncate_str;
 use itertools::Itertools;
-use terminal_size::{terminal_size, Width};
 
 use crate::config::Config;
 
@@ -17,6 +14,7 @@ use crate::env_diff::{EnvDiff, EnvDiffOperation};
 
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::ui::truncate::screen_trunc;
 use crate::{env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
@@ -71,13 +69,8 @@ impl HookEnv {
             .map(|(_, v)| v.to_string())
             .collect_vec();
         if !installed_versions.is_empty() {
-            let w = match terminal_size() {
-                Some((Width(w), _)) => w,
-                None => 80,
-            } as usize;
-            let w = max(w, 40);
             let status = installed_versions.into_iter().rev().join(" ");
-            rtxstatusln!("{}", truncate_str(&status, w - 4, "..."));
+            rtxstatusln!("{}", screen_trunc(&status));
         }
         let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
         if !env_diff.is_empty() {
@@ -180,7 +173,6 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
 
     #[test]
     fn test_hook_env() {

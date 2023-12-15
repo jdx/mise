@@ -4,12 +4,13 @@ set -l fssf "__fish_seen_subcommand_from"
 complete -kxc rtx -s q -l quiet -d 'Suppress output'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
-set -l others activate alias bin-paths cache completion current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
+set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
 complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell session'
 complete -xc rtx -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc rtx -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
 complete -xc rtx -n "not $fssf $others" -a cache -d 'Manage the rtx cache'
 complete -xc rtx -n "not $fssf $others" -a completion -d 'Generate shell completions'
+complete -xc rtx -n "not $fssf $others" -a config -d '[experimental] Manage config files'
 complete -xc rtx -n "not $fssf $others" -a current -d 'Shows current active and installed runtime versions'
 complete -xc rtx -n "not $fssf $others" -a deactivate -d 'Disable rtx for current shell session'
 complete -xc rtx -n "not $fssf $others" -a direnv -d 'Output direnv function to use rtx inside direnv'
@@ -81,6 +82,19 @@ complete -kxc rtx -n "$fssf cache; and $fssf clear" -a "(__rtx_plugins)" -d 'Plu
 # completion
 complete -kxc rtx -n "$fssf completion" -a "bash fish zsh" -d 'Shell type to generate completions for'
 
+# config
+complete -kxc rtx -n "$fssf config" -l no-header -d 'Do not print table header'
+set -l others generate ls
+complete -xc rtx -n "$fssf config; and not $fssf $others" -a generate -d '[experimental] Generate an .rtx.toml file'
+complete -xc rtx -n "$fssf config; and not $fssf $others" -a ls -d '[experimental] List config files currently in use'
+
+# config generate
+complete -kxc rtx -n "$fssf config; and $fssf generate" -s o -l output -a "(__fish_complete_path)" -d 'Output to file instead of stdout'
+
+# config ls
+complete -kxc rtx -n "$fssf config; and $fssf ls" -l no-header -d 'Do not print table header'
+
+
 # current
 complete -kxc rtx -n "$fssf current" -a "(__rtx_plugins)" -d 'Plugin to show versions of e.g.: ruby, node'
 
@@ -141,6 +155,7 @@ complete -kxc rtx -n "$fssf ls" -s g -l global -d 'Only show tool versions curre
 complete -kxc rtx -n "$fssf ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed'
 complete -kxc rtx -n "$fssf ls" -s J -l json -d 'Output in json format'
 complete -kxc rtx -n "$fssf ls" -s m -l missing -d 'Display missing tool versions'
+complete -kxc rtx -n "$fssf ls" -l no-header -d 'Don'\''t display headers'
 complete -kxc rtx -n "$fssf ls" -a "(__rtx_plugins)" -d 'Only show tool versions from [PLUGIN]'
 complete -kxc rtx -n "$fssf ls" -l prefix -d 'Display versions matching this prefix'
 

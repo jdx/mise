@@ -1,0 +1,28 @@
+---
+source: src/config/config_file/rtx_toml.rs
+expression: cf
+---
+RtxToml(/tmp/.rtx.toml):  {
+    settings: Object {
+        "always_keep_download": Null,
+        "always_keep_install": Null,
+        "asdf_compat": Null,
+        "color": Null,
+        "disable_default_shorthands": Null,
+        "disable_tools": Null,
+        "experimental": Null,
+        "jobs": Null,
+        "legacy_version_file": Null,
+        "legacy_version_file_disable_tools": Null,
+        "plugin_autoupdate_last_check_duration": Null,
+        "quiet": Null,
+        "raw": Null,
+        "shorthands_file": Null,
+        "trusted_config_paths": Null,
+        "verbose": Null,
+        "yes": Null,
+    },
+    env: {
+        "foo": "bar",
+    },
+}

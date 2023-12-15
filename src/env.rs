@@ -7,6 +7,7 @@ use std::time::Duration;
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
+
 use url::Url;
 
 use crate::duration::HOURLY;
@@ -57,6 +58,16 @@ pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
+});
+
+#[cfg(test)]
+pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
+
+#[cfg(not(test))]
+pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
+    terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(80)
 });
 
 /// duration that remote version cache is kept for

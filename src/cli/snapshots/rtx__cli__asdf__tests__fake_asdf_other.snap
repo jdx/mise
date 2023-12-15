@@ -1,5 +1,0 @@
----
-source: src/cli/asdf.rs
-expression: output
----
-3.1.0

@@ -101,7 +101,6 @@ impl RtxPluginToml {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
 
     use crate::dirs;
 

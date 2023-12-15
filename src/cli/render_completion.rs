@@ -43,7 +43,6 @@ impl RenderCompletion {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_cli;
 
     #[test]
     fn test_completion() {

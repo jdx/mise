@@ -85,13 +85,18 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::file::create_dir_all;
-    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_link() {
         create_dir_all("../data/tmp/tiny").unwrap();
         assert_cli!("link", "tiny@9.8.7", "../data/tmp/tiny");
-        assert_cli_snapshot!("ls", "tiny");
+        assert_cli_snapshot!("ls", "tiny", @r###"
+        tiny  1.0.1                                       
+        tiny  2.1.0                                       
+        tiny  3.0.1                                       
+        tiny  3.1.0            ~/cwd/.test-tool-versions 3
+        tiny  9.8.7 (symlink)
+        "###);
         assert_cli!("uninstall", "tiny@9.8.7");
     }
 }

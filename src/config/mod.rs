@@ -499,7 +499,6 @@ impl Display for Config {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
 
     use super::*;
 

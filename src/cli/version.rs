@@ -131,8 +131,6 @@ fn get_latest_version_call() -> Option<String> {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
-
     use super::*;
 
     #[test]
