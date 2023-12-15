@@ -157,7 +157,7 @@ impl Use {
         let (dir, file) = path.rsplit_once('/').unwrap_or(("", &path));
         let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
         rtxprintln!(
-            "{} {}{}: {}",
+            "\n{} {}{} updated with tools: {}\n",
             style("rtx").green(),
             style(dir.to_owned() + "/").dim(),
             file,
@@ -217,26 +217,26 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml: tiny@2");
+        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml: tiny");
+        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2.1.0"
         "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml: tiny@2");
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml:");
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml updated with tools:");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
@@ -247,7 +247,7 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions: tiny@3");
+        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions updated with tools: tiny@3");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
@@ -259,7 +259,7 @@ mod tests {
         let orig = file::read_to_string(&cf_path).unwrap();
         let _ = file::remove_file(&cf_path);
 
-        assert_cli_snapshot!("use", "-g", "tiny@2", @"rtx ~/config/config.toml: tiny@2");
+        assert_cli_snapshot!("use", "-g", "tiny@2", @"rtx ~/config/config.toml updated with tools: tiny@2");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"

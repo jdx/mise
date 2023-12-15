@@ -13,7 +13,11 @@ pub struct MultiProgressReport {
 impl MultiProgressReport {
     pub fn new() -> Self {
         let settings = Settings::get();
-        let mp = match settings.quiet || settings.verbose || !console::user_attended_stderr() {
+        let mp = match settings.raw
+            || settings.quiet
+            || settings.verbose
+            || !console::user_attended_stderr()
+        {
             true => None,
             false => Some(MultiProgress::new()),
         };
