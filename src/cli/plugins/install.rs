@@ -14,7 +14,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// This behavior can be modified in ~/.config/rtx/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["i", "a"], alias = "add", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: node, ruby

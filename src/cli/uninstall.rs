@@ -14,7 +14,7 @@ use crate::{runtime_symlinks, shims};
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "remove", alias = "rm", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Tool(s) to remove
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]

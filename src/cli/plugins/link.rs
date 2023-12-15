@@ -14,7 +14,7 @@ use crate::{dirs, file};
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, clap::Args)]
-#[clap(alias = "l", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsLink {
     /// The name of the plugin
     /// e.g.: node, ruby

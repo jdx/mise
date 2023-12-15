@@ -16,7 +16,7 @@ use crate::{dirs, file};
 /// Use this for adding installs either custom compiled outside
 /// rtx or built with a different tool.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Link {
     /// Tool name and version to create a symlink for
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
