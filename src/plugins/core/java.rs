@@ -77,11 +77,13 @@ impl JavaPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_rtx() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
+        // TODO: find out how to get this to work for different os/arch
+        // See https://github.com/jdx/rtx/issues/1196
+        // match self.core.fetch_remote_versions_from_rtx() {
+        //     Ok(Some(versions)) => return Ok(versions),
+        //     Ok(None) => {}
+        //     Err(e) => warn!("failed to fetch remote versions: {}", e),
+        // }
         let versions = self
             .fetch_java_metadata("ga")?
             .iter()
