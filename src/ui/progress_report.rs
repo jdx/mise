@@ -82,7 +82,9 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        self.pb.println(message);
+        self.pb.suspend(|| {
+            eprintln!("{message}");
+        });
     }
     fn warn(&self, message: String) {
         let msg = format!("{} {message}", style("[WARN]").yellow().for_stderr());
@@ -169,8 +171,9 @@ impl SingleReport for VerboseReport {
         error!("{prefix} {x} {message}");
     }
     fn set_message(&self, message: String) {
-        let prefix = normal_prefix(self.pad, &self.prefix);
-        eprintln!("{prefix} {message}");
+        // let prefix = normal_prefix(self.pad, &self.prefix);
+        // eprintln!("{prefix} {message}");
+        eprintln!("{message}");
     }
     fn finish(&self) {
         self.finish_with_message(style("done").green().for_stderr().to_string());
