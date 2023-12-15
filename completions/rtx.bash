@@ -90,6 +90,9 @@ _rtx() {
             rtx,list)
                 cmd="rtx__ls"
                 ;;
+            rtx,ln)
+                cmd="rtx__link"
+                ;;
             rtx,local)
                 cmd="rtx__local"
                 ;;
@@ -111,6 +114,9 @@ _rtx() {
             rtx,prune)
                 cmd="rtx__prune"
                 ;;
+            rtx,remove)
+                cmd="rtx__uninstall"
+                ;;
             rtx,render-completion)
                 cmd="rtx__render__completion"
                 ;;
@@ -123,11 +129,17 @@ _rtx() {
             rtx,reshim)
                 cmd="rtx__reshim"
                 ;;
+            rtx,rm)
+                cmd="rtx__uninstall"
+                ;;
             rtx,self-update)
                 cmd="rtx__self__update"
                 ;;
             rtx,settings)
                 cmd="rtx__settings"
+                ;;
+            rtx,sh)
+                cmd="rtx__shell"
                 ;;
             rtx,shell)
                 cmd="rtx__shell"
@@ -468,6 +480,9 @@ _rtx() {
             rtx__plugins,a)
                 cmd="rtx__plugins__install"
                 ;;
+            rtx__plugins,add)
+                cmd="rtx__plugins__install"
+                ;;
             rtx__plugins,help)
                 cmd="rtx__plugins__help"
                 ;;
@@ -483,8 +498,14 @@ _rtx() {
             rtx__plugins,list)
                 cmd="rtx__plugins__ls"
                 ;;
+            rtx__plugins,list-all)
+                cmd="rtx__plugins__ls__remote"
+                ;;
             rtx__plugins,list-remote)
                 cmd="rtx__plugins__ls__remote"
+                ;;
+            rtx__plugins,ln)
+                cmd="rtx__plugins__link"
                 ;;
             rtx__plugins,ls)
                 cmd="rtx__plugins__ls"
@@ -492,10 +513,19 @@ _rtx() {
             rtx__plugins,ls-remote)
                 cmd="rtx__plugins__ls__remote"
                 ;;
+            rtx__plugins,remove)
+                cmd="rtx__plugins__uninstall"
+                ;;
+            rtx__plugins,rm)
+                cmd="rtx__plugins__uninstall"
+                ;;
             rtx__plugins,uninstall)
                 cmd="rtx__plugins__uninstall"
                 ;;
             rtx__plugins,update)
+                cmd="rtx__plugins__update"
+                ;;
+            rtx__plugins,upgrade)
                 cmd="rtx__plugins__update"
                 ;;
             rtx__plugins__help,help)
@@ -639,7 +669,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias)
-            opts="-p -q -v -y -h --plugin --debug --log-level --trace --quiet --verbose --yes --help get ls set unset help"
+            opts="-p -q -v -y -h --plugin --no-header --debug --log-level --trace --quiet --verbose --yes --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -767,7 +797,7 @@ _rtx() {
             return 0
             ;;
         rtx__alias__ls)
-            opts="-q -v -y -h --debug --log-level --trace --quiet --verbose --yes --help [PLUGIN]"
+            opts="-q -v -y -h --no-header --debug --log-level --trace --quiet --verbose --yes --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

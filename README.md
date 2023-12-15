@@ -131,7 +131,7 @@ v20.0.0
 - [Commands](#commands)
   - [`rtx activate [OPTIONS] [SHELL_TYPE]`](#rtx-activate-options-shell_type)
   - [`rtx alias get <PLUGIN> <ALIAS>`](#rtx-alias-get-plugin-alias)
-  - [`rtx alias ls [PLUGIN]`](#rtx-alias-ls-plugin)
+  - [`rtx alias ls [OPTIONS] [PLUGIN]`](#rtx-alias-ls-options-plugin)
   - [`rtx alias set <PLUGIN> <ALIAS> <VALUE>`](#rtx-alias-set-plugin-alias-value)
   - [`rtx alias unset <PLUGIN> <ALIAS>`](#rtx-alias-unset-plugin-alias)
   - [`rtx bin-paths`](#rtx-bin-paths)
@@ -1702,7 +1702,7 @@ Examples:
  20.0.0
 ```
 
-### `rtx alias ls [PLUGIN]`
+### `rtx alias ls [OPTIONS] [PLUGIN]`
 
 ```text
 List aliases
@@ -1714,11 +1714,15 @@ For user config, aliases are defined like the following in `~/.config/rtx/config
   [alias.node]
   lts = "20.0.0"
 
-Usage: alias ls [PLUGIN]
+Usage: alias ls [OPTIONS] [PLUGIN]
 
 Arguments:
   [PLUGIN]
           Show aliases for <PLUGIN>
+
+Options:
+      --no-header
+          Don't show table header
 
 Examples:
   $ rtx aliases

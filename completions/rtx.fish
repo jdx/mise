@@ -45,6 +45,7 @@ complete -kxc rtx -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type
 complete -kxc rtx -n "$fssf activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 
 # alias
+complete -kxc rtx -n "$fssf alias" -l no-header -d 'Don'\''t show table header'
 complete -kxc rtx -n "$fssf alias" -s p -l plugin -a "(__rtx_plugins)" -d 'filter aliases by plugin'
 set -l others get ls set unset
 complete -xc rtx -n "$fssf alias; and not $fssf $others" -a get -d 'Show an alias for a plugin'
@@ -57,6 +58,7 @@ complete -kxc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_aliases)" -d 'The a
 complete -kxc rtx -n "$fssf alias; and $fssf get" -a "(__rtx_plugins)" -d 'The plugin to show the alias for'
 
 # alias ls
+complete -kxc rtx -n "$fssf alias; and $fssf ls" -l no-header -d 'Don'\''t show table header'
 complete -kxc rtx -n "$fssf alias; and $fssf ls" -a "(__rtx_plugins)" -d 'Show aliases for <PLUGIN>'
 
 # alias set

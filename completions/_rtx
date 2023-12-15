@@ -34,7 +34,7 @@ _rtx() {
         (implode) __rtx_implode_cmd && ret=0 ;;
         (i|install) __rtx_install_cmd && ret=0 ;;
         (latest) __rtx_latest_cmd && ret=0 ;;
-        (link) __rtx_link_cmd && ret=0 ;;
+        (ln|link) __rtx_link_cmd && ret=0 ;;
         (l|local) __rtx_local_cmd && ret=0 ;;
         (list|ls) __rtx_ls_cmd && ret=0 ;;
         (list-all|list-remote|ls-remote) __rtx_ls_remote_cmd && ret=0 ;;
@@ -44,7 +44,7 @@ _rtx() {
         (reshim) __rtx_reshim_cmd && ret=0 ;;
         (self-update) __rtx_self_update_cmd && ret=0 ;;
         (settings) __rtx_settings_cmd && ret=0 ;;
-        (s|shell) __rtx_shell_cmd && ret=0 ;;
+        (sh|shell) __rtx_shell_cmd && ret=0 ;;
         (sync) __rtx_sync_cmd && ret=0 ;;
         (trust) __rtx_trust_cmd && ret=0 ;;
         (remove|rm|uninstall) __rtx_uninstall_cmd && ret=0 ;;
@@ -72,6 +72,7 @@ __rtx_activate_cmd() {
 __rtx_alias_cmd() {
   _arguments -s -S \
     '(-p --plugin)'{-p,--plugin}'=[filter aliases by plugin]:plugin:__rtx_plugins' \
+    '--no-header[Don'\''t show table header]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
@@ -105,6 +106,7 @@ __rtx_alias_get_cmd() {
 __rtx_alias_ls_cmd() {
   _arguments -s -S \
     '::plugin:__rtx_plugins' \
+    '--no-header[Don'\''t show table header]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
@@ -440,7 +442,7 @@ __rtx_plugins_cmd() {
       curcontext="${curcontext%:*:*}:rtx-cmd-$words[1]:"
       case $words[1] in
         (a|add|i|install) __rtx_plugins_install_cmd && ret=0 ;;
-        (l|link) __rtx_plugins_link_cmd && ret=0 ;;
+        (ln|link) __rtx_plugins_link_cmd && ret=0 ;;
         (list|ls) __rtx_plugins_ls_cmd && ret=0 ;;
         (list-all|list-remote|ls-remote) __rtx_plugins_ls_remote_cmd && ret=0 ;;
         (remove|rm|uninstall) __rtx_plugins_uninstall_cmd && ret=0 ;;
@@ -734,7 +736,7 @@ __rtx_cmds() {
     'implode:Removes rtx CLI and all related data'
     {i,install}':Install a tool version'
     'latest:Gets the latest available version for a plugin'
-    'link:Symlinks a tool version into rtx'
+    {ln,link}':Symlinks a tool version into rtx'
     {list,ls}':List installed and/or currently selected tool versions'
     'ls-remote:List runtime versions available for install'
     'outdated:Shows outdated tool versions'
@@ -743,10 +745,10 @@ __rtx_cmds() {
     'reshim:rebuilds the shim farm'
     'self-update:Updates rtx itself'
     'settings:Manage settings'
-    'shell:Sets a tool version for the current shell session'
+    {sh,shell}':Sets a tool version for the current shell session'
     'sync:Add tool versions from external tools to rtx'
     'trust:Marks a config file as trusted'
-    'uninstall:Removes runtime versions'
+    {remove,rm,uninstall}':Removes runtime versions'
     'upgrade:Upgrades outdated tool versions'
     {u,use}':Change the active version of a tool locally or globally.'
     'version:Show rtx version'
@@ -790,12 +792,12 @@ __rtx_direnv_cmds() {
 (( $+functions[__rtx_plugins_cmds] )) ||
 __rtx_plugins_cmds() {
   local commands; commands=(
-    {a,i,install}':Install a plugin'
-    'link:Symlinks a plugin into rtx'
+    {a,add,i,install}':Install a plugin'
+    {ln,link}':Symlinks a plugin into rtx'
     {list,ls}':List installed plugins'
-    {list-remote,ls-remote}':List all available remote plugins'
-    'uninstall:Removes a plugin'
-    'update:Updates a plugin to the latest version'
+    {list-all,list-remote,ls-remote}':List all available remote plugins'
+    {remove,rm,uninstall}':Removes a plugin'
+    {upgrade,update}':Updates a plugin to the latest version'
   )
   _describe -t commands 'command' commands "$@"
 }
