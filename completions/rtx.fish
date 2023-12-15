@@ -85,6 +85,8 @@ complete -kxc rtx -n "$fssf cache; and $fssf clear" -a "(__rtx_plugins)" -d 'Plu
 complete -kxc rtx -n "$fssf completion" -a "bash fish zsh" -d 'Shell type to generate completions for'
 
 # config
+complete -kxc rtx -n "$fssf config" -l directories -d 'List all possible config directories'
+complete -kxc rtx -n "$fssf config" -l filenames -d 'List all possible config filenames'
 complete -kxc rtx -n "$fssf config" -l no-header -d 'Do not print table header'
 set -l others generate ls
 complete -xc rtx -n "$fssf config; and not $fssf $others" -a generate -d '[experimental] Generate an .rtx.toml file'
@@ -94,6 +96,8 @@ complete -xc rtx -n "$fssf config; and not $fssf $others" -a ls -d '[experimenta
 complete -kxc rtx -n "$fssf config; and $fssf generate" -s o -l output -a "(__fish_complete_path)" -d 'Output to file instead of stdout'
 
 # config ls
+complete -kxc rtx -n "$fssf config; and $fssf ls" -l directories -d 'List all possible config directories'
+complete -kxc rtx -n "$fssf config; and $fssf ls" -l filenames -d 'List all possible config filenames'
 complete -kxc rtx -n "$fssf config; and $fssf ls" -l no-header -d 'Do not print table header'
 
 

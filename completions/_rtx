@@ -185,6 +185,8 @@ __rtx_completion_cmd() {
 __rtx_config_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '--filenames[List all possible config filenames]' \
+    '--directories[List all possible config directories]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
@@ -215,6 +217,8 @@ __rtx_config_generate_cmd() {
 __rtx_config_ls_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '--filenames[List all possible config filenames]' \
+    '--directories[List all possible config directories]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'

@@ -991,7 +991,7 @@ _rtx() {
             return 0
             ;;
         rtx__config)
-            opts="-q -v -y -h --no-header --debug --log-level --trace --quiet --verbose --yes --help ls generate help"
+            opts="-q -v -y -h --no-header --filenames --directories --debug --log-level --trace --quiet --verbose --yes --help ls generate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1091,7 +1091,7 @@ _rtx() {
             return 0
             ;;
         rtx__config__ls)
-            opts="-q -v -y -h --no-header --debug --log-level --trace --quiet --verbose --yes --help"
+            opts="-q -v -y -h --no-header --filenames --directories --debug --log-level --trace --quiet --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

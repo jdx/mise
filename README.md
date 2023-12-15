@@ -1822,6 +1822,12 @@ Options:
       --no-header
           Do not print table header
 
+      --filenames
+          List all possible config filenames
+
+      --directories
+          List all possible config directories
+
 Examples:
   $ rtx config ls
 ```
