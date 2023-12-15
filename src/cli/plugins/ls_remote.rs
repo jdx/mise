@@ -8,7 +8,7 @@ use crate::config::Config;
 
 /// List all available remote plugins
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list-remote", long_about = LONG_ABOUT, verbatim_doc_comment, alias = "list-all")]
+#[clap(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
 pub struct PluginsLsRemote {
     /// Show the git url for each plugin
     /// e.g.: https://github.com/rtx-plugins/rtx-nodejs.git
