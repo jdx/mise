@@ -1,4 +1,2 @@
 test:
   auto_review: true
-review:
-  warn_undiscovered: true

@@ -14,3 +14,4 @@ rtx use golang@prefix:1.20
 assert_contains "rtx x -- go version" "go version go1.20"
 
 rm "$RTX_GO_DEFAULT_PACKAGES_FILE"
+chmod -R u+w "$RTX_DATA_DIR/installs/go"

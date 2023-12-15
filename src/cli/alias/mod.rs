@@ -17,6 +17,10 @@ pub struct Alias {
     /// filter aliases by plugin
     #[clap(short, long)]
     pub plugin: Option<PluginName>,
+
+    /// Don't show table header
+    #[clap(long)]
+    pub no_header: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -42,6 +46,7 @@ impl Alias {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::AliasLs {
             plugin: self.plugin,
+            no_header: self.no_header,
         }));
 
         cmd.run()
