@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::ValueHint;
 use color_eyre::eyre::Result;
 
 use crate::config;
-use crate::config::config_file;
+use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
 
 /// Marks a config file as trusted
 ///
@@ -62,12 +61,12 @@ impl Trust {
     }
 
     fn get_next_trusted(&self) -> Option<PathBuf> {
-        config::load_config_filenames(&BTreeMap::new())
+        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
             .into_iter()
             .find(|p| config_file::is_trusted(p))
     }
     fn get_next_untrusted(&self) -> Option<PathBuf> {
-        config::load_config_filenames(&BTreeMap::new())
+        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
             .into_iter()
             .find(|p| !config_file::is_trusted(p))
     }
