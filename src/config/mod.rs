@@ -43,7 +43,6 @@ pub struct Config {
     pub all_aliases: OnceCell<AliasMap>,
     pub should_exit_early: bool,
     pub project_root: Option<PathBuf>,
-    pub config_filenames: Vec<String>,
     plugins: RwLock<ToolMap>,
     shorthands: OnceCell<HashMap<String, String>>,
     repo_urls: HashMap<PluginName, String>,
@@ -69,7 +68,7 @@ impl Config {
         let global_config = load_rtxrc()?;
         Settings::add_partial(global_config.settings()?);
 
-        let config_paths = load_config_paths(&*DEFAULT_CONFIG_FILENAMES);
+        let config_paths = load_config_paths(&DEFAULT_CONFIG_FILENAMES);
         let settings = Settings::try_get()?;
         let plugins = load_plugins(&settings)?;
         let config_files =
@@ -121,7 +120,6 @@ impl Config {
             plugins: RwLock::new(plugins),
             should_exit_early,
             repo_urls,
-            config_filenames,
         };
 
         debug!("{}", &config);

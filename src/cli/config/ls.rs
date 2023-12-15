@@ -18,31 +18,12 @@ pub struct ConfigLs {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
-
-    /// List all possible config filenames
-    #[clap(long, verbatim_doc_comment, conflicts_with = "directories")]
-    pub filenames: bool,
-
-    /// List all possible config directories
-    #[clap(long, verbatim_doc_comment, conflicts_with = "filenames")]
-    pub directories: bool,
 }
 
 impl ConfigLs {
     pub fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
-
-        if self.filenames {
-            self.list_filenames()
-        } else if self.directories {
-            self.list_directories()
-        } else {
-            self.list_active_configs()
-        }
-    }
-
-    fn list_active_configs(&self) -> Result<()> {
         let config = Config::try_get()?;
         let rows = config
             .config_files
@@ -54,17 +35,6 @@ impl ConfigLs {
         table.with(Modify::new(Columns::last()).with(Width::truncate(40).suffix("…")));
         rtxprintln!("{table}");
 
-        Ok(())
-    }
-
-    fn list_filenames(&self) -> Result<()> {
-        let config = Config::try_get()?;
-        config.config_filenames.iter().rev().for_each(|p| {
-            rtxprintln!("{}", p);
-        });
-        Ok(())
-    }
-    fn list_directories(&self) -> Result<()> {
         Ok(())
     }
 }

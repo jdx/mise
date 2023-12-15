@@ -14,14 +14,6 @@ pub struct Config {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     no_header: bool,
-
-    /// List all possible config filenames
-    #[clap(long, verbatim_doc_comment, conflicts_with = "directories")]
-    pub filenames: bool,
-
-    /// List all possible config directories
-    #[clap(long, verbatim_doc_comment, conflicts_with = "filenames")]
-    pub directories: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -43,8 +35,6 @@ impl Config {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ConfigLs {
             no_header: self.no_header,
-            filenames: self.filenames,
-            directories: self.directories,
         }));
 
         cmd.run()
