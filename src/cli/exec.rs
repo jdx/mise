@@ -144,8 +144,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, assert_cli_err};
-    use insta::assert_display_snapshot;
 
     #[test]
     fn test_exec_ok() {

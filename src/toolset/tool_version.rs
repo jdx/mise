@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use versions::{Chunk, Version};
@@ -25,7 +24,7 @@ pub struct ToolVersion {
 
 impl ToolVersion {
     pub fn new(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         version: String,
@@ -39,7 +38,7 @@ impl ToolVersion {
     }
 
     pub fn resolve(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         latest_versions: bool,
@@ -93,7 +92,7 @@ impl ToolVersion {
             .join(&self.plugin_name)
             .join(self.tv_pathname())
     }
-    pub fn latest_version(&self, tool: Arc<dyn Plugin>) -> Result<String> {
+    pub fn latest_version(&self, tool: &dyn Plugin) -> Result<String> {
         let tv = self.request.resolve(tool, self.opts.clone(), true)?;
         Ok(tv.version)
     }
@@ -115,7 +114,7 @@ impl ToolVersion {
     }
 
     fn resolve_version(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         request: ToolVersionRequest,
         latest_versions: bool,
         v: &str,
@@ -140,7 +139,7 @@ impl ToolVersion {
             _ => (),
         }
 
-        let build = |v| Ok(Self::new(tool.clone(), request.clone(), opts.clone(), v));
+        let build = |v| Ok(Self::new(tool, request.clone(), opts.clone(), v));
         if !tool.is_installed() {
             return build(v);
         }
@@ -179,7 +178,7 @@ impl ToolVersion {
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
     fn resolve_sub(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         request: ToolVersionRequest,
         latest_versions: bool,
         sub: &str,
@@ -195,7 +194,7 @@ impl ToolVersion {
     }
 
     fn resolve_prefix(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         request: ToolVersionRequest,
         prefix: &str,
         opts: ToolVersionOptions,
@@ -209,14 +208,14 @@ impl ToolVersion {
         Ok(Self::new(tool, request, opts, v.to_string()))
     }
 
-    fn resolve_ref(tool: Arc<dyn Plugin>, r: String, opts: ToolVersionOptions) -> Self {
+    fn resolve_ref(tool: &dyn Plugin, r: String, opts: ToolVersionOptions) -> Self {
         let request = ToolVersionRequest::Ref(tool.name().into(), r);
         let version = request.version();
         Self::new(tool, request, opts, version)
     }
 
     fn resolve_path(
-        tool: Arc<dyn Plugin>,
+        tool: &dyn Plugin,
         path: PathBuf,
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {

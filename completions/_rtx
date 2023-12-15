@@ -21,6 +21,7 @@ _rtx() {
         (bin-paths) __rtx_bin_paths_cmd && ret=0 ;;
         (cache) __rtx_cache_cmd && ret=0 ;;
         (complete|completions|completion) __rtx_completion_cmd && ret=0 ;;
+        (cfg|config) __rtx_config_cmd && ret=0 ;;
         (current) __rtx_current_cmd && ret=0 ;;
         (deactivate) __rtx_deactivate_cmd && ret=0 ;;
         (direnv) __rtx_direnv_cmd && ret=0 ;;
@@ -174,6 +175,44 @@ __rtx_cache_clear_cmd() {
 __rtx_completion_cmd() {
   _arguments -s -S \
     '::shell:(bash fish zsh)' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
+(( $+functions[__rtx_config_cmd] )) ||
+__rtx_config_cmd() {
+  _arguments -s -S \
+    '--no-header[Do not print table header]' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '1: :__rtx_config_cmds' \
+    '*::arg:->args' && ret=0
+
+      case "$state" in
+    (args)
+      curcontext="${curcontext%:*:*}:rtx-cmd-$words[1]:"
+      case $words[1] in
+        (g|generate) __rtx_config_generate_cmd && ret=0 ;;
+        (ls) __rtx_config_ls_cmd && ret=0 ;;
+      esac
+    ;;
+  esac
+
+return ret
+}
+(( $+functions[__rtx_config_generate_cmd] )) ||
+__rtx_config_generate_cmd() {
+  _arguments -s -S \
+    '(-o --output)'{-o,--output}'=[Output to file instead of stdout]:output:_files' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
+(( $+functions[__rtx_config_ls_cmd] )) ||
+__rtx_config_ls_cmd() {
+  _arguments -s -S \
+    '--no-header[Do not print table header]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
@@ -360,6 +399,7 @@ __rtx_ls_cmd() {
     '(-J --json)'{-J,--json}'[Output in json format]' \
     '(-m --missing)'{-m,--missing}'[Display missing tool versions]' \
     '--prefix=[Display versions matching this prefix]:prefix:__rtx_prefixes' \
+    '--no-header[Don'\''t display headers]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
@@ -683,6 +723,7 @@ __rtx_cmds() {
     'bin-paths:List all the active runtime bin paths'
     'cache:Manage the rtx cache'
     'completion:Generate shell completions'
+    {cfg,config}':\[experimental\] Manage config files'
     'current:Shows current active and installed runtime versions'
     'deactivate:Disable rtx for current shell session'
     'direnv:Output direnv function to use rtx inside direnv'
@@ -728,6 +769,14 @@ __rtx_alias_cmds() {
 __rtx_cache_cmds() {
   local commands; commands=(
     {c,clear}':Deletes all cache files in rtx'
+  )
+  _describe -t commands 'command' commands "$@"
+}
+(( $+functions[__rtx_config_cmds] )) ||
+__rtx_config_cmds() {
+  local commands; commands=(
+    {g,generate}':\[experimental\] Generate an .rtx.toml file'
+    'ls:\[experimental\] List config files currently in use'
   )
   _describe -t commands 'command' commands "$@"
 }

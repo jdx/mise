@@ -1,10 +1,16 @@
+use color_eyre::{Help, SectionExt};
 use std::env::{join_paths, set_current_dir};
 use std::path::PathBuf;
 
-use crate::{env, file};
+use crate::cli::Cli;
+use crate::config::Config;
+use crate::output::tests::{STDERR, STDOUT};
+use crate::{dirs, env, file};
 
 #[ctor::ctor]
 fn init() {
+    console::set_colors_enabled(false);
+    console::set_colors_enabled_stderr(false);
     if env::var("__RTX_DIFF").is_ok() {
         // TODO: fix this
         panic!("cannot run tests when rtx is activated");
@@ -74,4 +80,71 @@ pub fn replace_path(input: &str) -> String {
         .replace(&path, "$PATH")
         .replace(&home, "~")
         .replace(&*env::RTX_EXE.to_string_lossy(), "rtx")
+}
+
+pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
+    Config::reset();
+    *env::ARGS.write().unwrap() = args.clone();
+    STDOUT.lock().unwrap().clear();
+    STDERR.lock().unwrap().clear();
+    let config = Config::try_get()?;
+    Cli::new_with_external_commands(&config)
+        .run(args)
+        .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
+    let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
+    let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
+
+    Ok((stdout, stderr))
+}
+
+fn clean_output(output: String) -> String {
+    let output = output.trim().to_string();
+    let output = console::strip_ansi_codes(&output).to_string();
+    let output = output.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
+    let output = replace_path(&output);
+    output.trim().to_string()
+}
+
+#[macro_export]
+macro_rules! with_settings {
+    ($body:block) => {{
+        let home = $crate::env::HOME.to_string_lossy().to_string();
+        insta::with_settings!({sort_maps => true, filters => vec![
+            (home.as_str(), "~"),
+        ]}, {$body})
+    }}
+}
+
+#[macro_export]
+macro_rules! assert_cli_snapshot {
+    ($($args:expr),+, @$snapshot:literal) => {
+        let args = &vec!["rtx".into(), $($args.into()),+];
+        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let output = [stdout, stderr].join("\n").trim().to_string();
+        insta::assert_snapshot!(output, @$snapshot);
+    };
+    ($($args:expr),+) => {
+        let args = &vec!["rtx".into(), $($args.into()),+];
+        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let output = [stdout, stderr].join("\n").trim().to_string();
+        insta::assert_snapshot!(output);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_cli {
+    ($($args:expr),+) => {{
+        let args = &vec!["rtx".into(), $($args.into()),+];
+        $crate::test::cli_run(args).unwrap();
+        let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
+        console::strip_ansi_codes(&output).trim().to_string()
+    }};
+}
+
+#[macro_export]
+macro_rules! assert_cli_err {
+    ($($args:expr),+) => {{
+        let args = &vec!["rtx".into(), $($args.into()),+];
+        $crate::test::cli_run(args).unwrap_err()
+    }};
 }

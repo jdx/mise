@@ -58,11 +58,8 @@ impl Envrc {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_display_snapshot;
-
-    use crate::{assert_cli, file};
-
     use super::*;
+    use crate::file;
 
     #[test]
     fn test_direnv_envrc() {

@@ -5,16 +5,18 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use console::style;
-use console::Alignment::Left;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::Serialize;
+
+use tabled::{Table, Tabled};
 use versions::Versioning;
 
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
 use crate::plugins::{unalias_plugin, Plugin, PluginName};
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
+use crate::ui::table;
 
 /// List installed and/or currently selected tool versions
 #[derive(Debug, clap::Args)]
@@ -55,6 +57,10 @@ pub struct Ls {
     /// Display versions matching this prefix
     #[clap(long, requires = "plugin")]
     prefix: Option<String>,
+
+    /// Don't display headers
+    #[clap(long, alias="no-headers", verbatim_doc_comment, conflicts_with_all = &["json", "parseable"])]
+    no_header: bool,
 }
 
 impl Ls {
@@ -147,57 +153,22 @@ impl Ls {
     }
 
     fn display_user(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        let output = runtimes
-            .into_iter()
-            .map(|(p, tv, source)| {
-                let plugin = p.name().to_string();
-                let version = if let Some(symlink_path) = p.symlink_path(&tv) {
-                    VersionStatus::Symlink(tv.version, symlink_path, source.is_some())
-                } else if !p.is_version_installed(&tv) {
-                    VersionStatus::Missing(tv.version)
-                } else if source.is_some() {
-                    VersionStatus::Active(tv.version.clone(), p.is_version_outdated(&tv, p.clone()))
-                } else {
-                    VersionStatus::Inactive(tv.version)
-                };
-                let request = source.map(|source| (source.to_string(), tv.request.version()));
-                (plugin, version, request)
-            })
-            .collect::<Vec<_>>();
-        let (max_plugin_len, max_version_len, max_source_len) = output.iter().fold(
-            (0, 0, 0),
-            |(max_plugin, max_version, max_source), (plugin, version, request)| {
-                let plugin = max_plugin.max(plugin.len());
-                let version = max_version.max(version.to_plain_string().len());
-                let source = match request {
-                    Some((source, _)) => max_source.max(source.len()),
-                    None => max_source,
-                };
-                (plugin.min(10), version.min(15), source.min(30))
+        // let data = runtimes
+        //     .into_iter()
+        //     .map(|(plugin, tv, source)| (plugin.to_string(), tv.to_string()))
+        //     .collect_vec();
+        let rows = runtimes.into_iter().map(|(p, tv, source)| Row {
+            plugin: p.clone(),
+            version: (p.as_ref(), &tv, &source).into(),
+            requested: match source.is_some() {
+                true => Some(tv.request.version()),
+                false => None,
             },
-        );
-        for (plugin, version, request) in output {
-            let pad = |s, len| console::pad_str(s, len, Left, None);
-            let plugin_extra =
-                ((plugin.len() as i8 - max_plugin_len as i8).max(0) as usize).min(max_version_len);
-            let plugin = pad(&plugin, max_plugin_len);
-            let plugin = style(plugin).cyan();
-            let version_extra = (version.to_plain_string().len() as i8 - max_version_len as i8
-                + plugin_extra as i8)
-                .max(0) as usize;
-            let version = version.to_string();
-            let version = pad(&version, max_version_len - plugin_extra);
-            let line = match &request {
-                Some((source, requested)) => {
-                    let source = pad(source, max_source_len - version_extra);
-                    format!("{} {} {} {}", plugin, version, source, requested)
-                }
-                None => {
-                    format!("{} {}", plugin, version)
-                }
-            };
-            rtxprintln!("{}", line.trim_end());
-        }
+            source,
+        });
+        let mut table = Table::new(rows);
+        table::default_style(&mut table, self.no_header);
+        rtxprintln!("{}", table.to_string());
         Ok(())
     }
 
@@ -267,6 +238,36 @@ struct JSONToolVersion {
 
 type RuntimeRow = (Arc<dyn Plugin>, ToolVersion, Option<ToolSource>);
 
+#[derive(Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct Row {
+    #[tabled(display_with = "Self::display_plugin")]
+    plugin: Arc<dyn Plugin>,
+    version: VersionStatus,
+    #[tabled(rename = "Config Source", display_with = "Self::display_source")]
+    source: Option<ToolSource>,
+    #[tabled(display_with = "Self::display_option")]
+    requested: Option<String>,
+}
+
+impl Row {
+    fn display_option(arg: &Option<String>) -> String {
+        match arg {
+            Some(s) => s.clone(),
+            None => String::new(),
+        }
+    }
+    fn display_plugin(plugin: &Arc<dyn Plugin>) -> String {
+        style(plugin).blue().to_string()
+    }
+    fn display_source(source: &Option<ToolSource>) -> String {
+        match source {
+            Some(source) => source.to_string(),
+            None => String::new(),
+        }
+    }
+}
+
 impl From<RuntimeRow> for JSONToolVersion {
     fn from(row: RuntimeRow) -> Self {
         let (p, tv, source) = row;
@@ -287,19 +288,16 @@ enum VersionStatus {
     Symlink(String, PathBuf, bool),
 }
 
-impl VersionStatus {
-    fn to_plain_string(&self) -> String {
-        match self {
-            VersionStatus::Active(version, outdated) => {
-                if *outdated {
-                    format!("{} (outdated)", version)
-                } else {
-                    version.to_string()
-                }
-            }
-            VersionStatus::Inactive(version) => version.to_string(),
-            VersionStatus::Missing(version) => format!("{} (missing)", version),
-            VersionStatus::Symlink(version, _, _) => format!("{} (symlink)", version),
+impl From<(&dyn Plugin, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
+    fn from((p, tv, source): (&dyn Plugin, &ToolVersion, &Option<ToolSource>)) -> Self {
+        if let Some(symlink_path) = p.symlink_path(tv) {
+            VersionStatus::Symlink(tv.version.clone(), symlink_path, source.is_some())
+        } else if !p.is_version_installed(tv) {
+            VersionStatus::Missing(tv.version.clone())
+        } else if source.is_some() {
+            VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p))
+        } else {
+            VersionStatus::Inactive(tv.version.clone())
         }
     }
 }
@@ -323,11 +321,7 @@ impl Display for VersionStatus {
             VersionStatus::Missing(version) => write!(
                 f,
                 "{} {}",
-                if console::colors_enabled() {
-                    style(version).strikethrough().red().to_string()
-                } else {
-                    version.to_string()
-                },
+                style(version).strikethrough().red(),
                 style("(missing)").red()
             ),
             VersionStatus::Symlink(version, _, active) => {
@@ -378,31 +372,51 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use pretty_assertions::assert_str_eq;
 
+    use crate::dirs;
     use crate::file::remove_all;
-    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_ls() {
         let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
-        assert_cli_snapshot!("list");
+        assert_cli_snapshot!("list", @r###"
+        dummy  ref:master  ~/.test-tool-versions     ref:master
+        tiny   3.1.0       ~/cwd/.test-tool-versions 3
+        "###);
 
         assert_cli!("install", "tiny@2.0.0");
-        assert_cli_snapshot!("list");
+        assert_cli_snapshot!("list", @r###"
+        dummy  ref:master  ~/.test-tool-versions     ref:master
+        tiny   2.0.0                                           
+        tiny   3.1.0       ~/cwd/.test-tool-versions 3
+        "###);
 
         assert_cli!("uninstall", "tiny@3.1.0");
-        assert_cli_snapshot!("list");
+        assert_cli_snapshot!("list", @r###"
+        dummy  ref:master       ~/.test-tool-versions     ref:master
+        tiny   2.0.0                                                
+        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
+        "###);
 
         assert_cli!("uninstall", "tiny@2.0.0");
-        assert_cli_snapshot!("list");
+        assert_cli_snapshot!("list", @r###"
+        dummy  ref:master       ~/.test-tool-versions     ref:master
+        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
+        "###);
 
         assert_cli!("install");
-        assert_cli_snapshot!("list");
+        assert_cli_snapshot!("list", @r###"
+        dummy  ref:master  ~/.test-tool-versions     ref:master
+        tiny   3.1.0       ~/cwd/.test-tool-versions 3
+        "###);
     }
 
     #[test]
     fn test_ls_current() {
-        assert_cli_snapshot!("ls", "-c");
+        assert_cli_snapshot!("ls", "-c", @r###"
+        dummy  ref:master  ~/.test-tool-versions     ref:master
+        tiny   3.1.0       ~/cwd/.test-tool-versions 3
+        "###);
     }
 
     #[test]
@@ -417,14 +431,17 @@ mod tests {
     fn test_ls_parseable() {
         let _ = remove_all(dirs::INSTALLS.as_path());
         assert_cli!("install");
-        assert_cli_snapshot!("ls", "--parseable");
-        assert_cli_snapshot!("ls", "--parseable", "tiny");
+        assert_cli_snapshot!("ls", "--parseable", @r###"
+        dummy ref:master
+        tiny 3.1.0
+        "###);
+        assert_cli_snapshot!("ls", "--parseable", "tiny", @"3.1.0");
     }
 
     #[test]
     fn test_ls_missing() {
         assert_cli!("install");
-        assert_cli_snapshot!("ls", "--missing");
+        assert_cli_snapshot!("ls", "--missing", @"");
     }
 
     #[test]
@@ -436,6 +453,6 @@ mod tests {
     #[test]
     fn test_ls_prefix() {
         assert_cli!("install");
-        assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3");
+        assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
     }
 }

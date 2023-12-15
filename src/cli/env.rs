@@ -88,7 +88,6 @@ mod tests {
 
     use crate::cli::tests::grep;
     use crate::dirs;
-    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_env() {

@@ -54,7 +54,6 @@ fn env_cmd() -> Expression {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::assert_cli;
     use crate::cli::tests::grep;
 
     #[test]

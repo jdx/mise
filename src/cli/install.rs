@@ -111,8 +111,8 @@ impl Install {
         let mut tool_versions = vec![];
         for (plugin_name, tvr, opts) in requests {
             let plugin = config.get_or_create_plugin(&plugin_name);
-            plugin.ensure_installed(Some(mpr), false)?;
-            let tv = tvr.resolve(plugin, opts, ts.latest_versions)?;
+            plugin.ensure_installed(mpr, false)?;
+            let tv = tvr.resolve(plugin.as_ref(), opts, ts.latest_versions)?;
             tool_versions.push(tv);
         }
         Ok(tool_versions)
@@ -142,9 +142,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::dirs;
     use pretty_assertions::assert_str_eq;
-
-    use crate::{assert_cli, assert_cli_snapshot, dirs};
 
     #[test]
     fn test_install_force() {

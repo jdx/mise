@@ -89,9 +89,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::{dirs, file};
     use pretty_assertions::assert_str_eq;
-
-    use crate::{assert_cli, assert_cli_err, assert_cli_snapshot, dirs, file};
 
     #[test]
     fn test_global() {

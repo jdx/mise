@@ -21,11 +21,13 @@ impl BinPaths {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_bin_paths() {
         assert_cli!("i");
-        assert_cli_snapshot!("bin-paths");
+        assert_cli_snapshot!("bin-paths", @r###"
+        ~/data/installs/tiny/3.1.0/bin
+        ~/data/installs/dummy/ref-master/bin
+        "###);
     }
 }

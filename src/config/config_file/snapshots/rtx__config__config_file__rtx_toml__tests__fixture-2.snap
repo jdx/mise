@@ -1,34 +1,27 @@
 ---
 source: src/config/config_file/rtx_toml.rs
-expression: cf.settings()
+expression: cf.settings().unwrap()
 ---
-Ok(
-    PartialSettings {
-        experimental: None,
-        always_keep_download: None,
-        always_keep_install: None,
-        legacy_version_file: None,
-        legacy_version_file_disable_tools: Some(
-            {
-                "disabled_tool_from_legacy_file",
-            },
-        ),
-        plugin_autoupdate_last_check_duration: None,
-        trusted_config_paths: None,
-        verbose: Some(
-            true,
-        ),
-        quiet: None,
-        asdf_compat: None,
-        jobs: None,
-        shorthands_file: None,
-        disable_default_shorthands: None,
-        disable_tools: Some(
-            {
-                "disabled_tool",
-            },
-        ),
-        raw: None,
-        yes: None,
-    },
-)
+{
+  "experimental": null,
+  "color": null,
+  "always_keep_download": null,
+  "always_keep_install": null,
+  "legacy_version_file": null,
+  "legacy_version_file_disable_tools": [
+    "disabled_tool_from_legacy_file"
+  ],
+  "plugin_autoupdate_last_check_duration": null,
+  "trusted_config_paths": null,
+  "verbose": true,
+  "quiet": null,
+  "asdf_compat": null,
+  "jobs": null,
+  "shorthands_file": null,
+  "disable_default_shorthands": null,
+  "disable_tools": [
+    "disabled_tool"
+  ],
+  "raw": null,
+  "yes": null
+}

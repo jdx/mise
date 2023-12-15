@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
@@ -73,7 +72,7 @@ impl ToolVersionRequest {
 
     pub fn resolve(
         &self,
-        plugin: Arc<dyn Plugin>,
+        plugin: &dyn Plugin,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<ToolVersion> {

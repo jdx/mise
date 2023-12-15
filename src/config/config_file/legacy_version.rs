@@ -1,5 +1,4 @@
 use std::default::Default;
-use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -60,11 +59,5 @@ impl ConfigFile for LegacyVersionFile {
 
     fn to_toolset(&self) -> &Toolset {
         &self.toolset
-    }
-}
-
-impl Display for LegacyVersionFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "LegacyVersionFile({})", self.path.display())
     }
 }

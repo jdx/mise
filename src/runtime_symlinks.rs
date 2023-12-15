@@ -104,8 +104,6 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
-
     use crate::config::Config;
     use crate::plugins::{ExternalPlugin, PluginName};
 

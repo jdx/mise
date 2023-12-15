@@ -132,7 +132,7 @@ impl Toolset {
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
-                t.ensure_installed(Some(mpr), false)?;
+                t.ensure_installed(mpr, false)?;
             }
         }
         let queue = Arc::new(Mutex::new(queue));
@@ -153,7 +153,7 @@ impl Toolset {
                                 let prefix = format!("{}", style(&tv).cyan().for_stderr());
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.request.resolve(t.clone(), tv.opts.clone(), true)?,
+                                    tv: tv.request.resolve(t.as_ref(), tv.opts.clone(), true)?,
                                     pr: mpr.add(&prefix),
                                     raw,
                                     force: opts.force,
@@ -201,7 +201,7 @@ impl Toolset {
                             Some((p, tv)) => (p.clone(), tv.clone()),
                             None => {
                                 let tv = ToolVersionRequest::new(p.name().into(), &v)
-                                    .resolve(p.clone(), Default::default(), false)
+                                    .resolve(p.as_ref(), Default::default(), false)
                                     .unwrap();
                                 (p.clone(), tv)
                             }
@@ -215,6 +215,12 @@ impl Toolset {
             .collect();
 
         Ok(versions)
+    }
+    pub fn list_plugins(&self) -> Vec<Arc<dyn Plugin>> {
+        self.list_versions_by_plugin()
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
     }
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Plugin>, &Vec<ToolVersion>)> {
         let config = Config::get();
@@ -243,7 +249,7 @@ impl Toolset {
                     // do not consider symlinked versions to be outdated
                     return None;
                 }
-                let latest = match tv.latest_version(t.clone()) {
+                let latest = match tv.latest_version(t.as_ref()) {
                     Ok(latest) => latest,
                     Err(e) => {
                         warn!("Error getting latest version for {t}: {e:#}");

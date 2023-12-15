@@ -72,18 +72,23 @@ fn list_versions(config: &Config, args: &Vec<String>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_cli, assert_cli_snapshot};
 
     #[test]
     fn test_fake_asdf_list() {
         assert_cli!("install", "tiny@1", "tiny@2");
         assert_cli!("asdf", "install", "tiny");
-        assert_cli_snapshot!("asdf", "list", "tiny");
+        assert_cli_snapshot!("asdf", "list", "tiny", @r###"
+        1.0.1
+        2.1.0
+        3.1.0
+        "###);
     }
 
     #[test]
     fn test_fake_asdf_other() {
-        assert_cli_snapshot!("asdf", "current", "tiny");
+        assert_cli_snapshot!("asdf", "current", "tiny", @r###"
+        3.1.0
+        "###);
     }
 
     #[test]
