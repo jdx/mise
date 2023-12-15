@@ -42,11 +42,11 @@ static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
     Config::get()
         .list_plugins()
         .into_iter()
-        .map(|p| p.name().len() + 12)
+        .map(|p| p.name().len() + 15)
         .max()
         .unwrap_or_default()
-        .max(20)
-        .min(40)
+        .max(15)
+        .min(35)
 });
 
 fn pad_prefix(w: usize, s: &str) -> String {
@@ -71,7 +71,7 @@ fn success_prefix(pad: usize, prefix: &str) -> String {
 
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
-        let pad = *LONGEST_PLUGIN_NAME + 2;
+        let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(100)
             .with_style(PROG_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
@@ -122,7 +122,7 @@ impl QuietReport {
     pub fn new(prefix: String) -> QuietReport {
         QuietReport {
             prefix,
-            pad: *LONGEST_PLUGIN_NAME + 2,
+            pad: *LONGEST_PLUGIN_NAME,
         }
     }
 }
@@ -149,7 +149,7 @@ impl VerboseReport {
     pub fn new(prefix: String) -> VerboseReport {
         VerboseReport {
             prefix,
-            pad: *LONGEST_PLUGIN_NAME + 2,
+            pad: *LONGEST_PLUGIN_NAME,
         }
     }
 }
