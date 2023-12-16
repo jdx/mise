@@ -118,7 +118,7 @@ impl PythonPlugin {
             let settings = Settings::try_get()?;
             if !settings.experimental {
                 warn!(
-                    "please enable experimental mode with `rtx config set experimental true` \
+                    "please enable experimental mode with `rtx settings set experimental true` \
                     to use python virtualenv activation"
                 );
             }
