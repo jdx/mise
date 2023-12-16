@@ -21,11 +21,12 @@ use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::hash::hash_to_str;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::rtx_plugin_toml::RtxPluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager, HTTP};
+use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -140,10 +141,11 @@ impl ExternalPlugin {
         {
             return Ok(None);
         }
-        let versions = match HTTP.get_text(format!("http://rtx-versions.jdx.dev/{}", self.name)) {
-            Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
-            res => res?,
-        };
+        let versions =
+            match HTTP_FETCH.get_text(format!("http://rtx-versions.jdx.dev/{}", self.name)) {
+                Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
+                res => res?,
+            };
         let versions = versions
             .lines()
             .map(|v| v.trim().to_string())
