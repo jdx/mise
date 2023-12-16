@@ -12,6 +12,7 @@ pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
 use crate::env::RTX_NODE_BUILD;
+use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::erlang::ErlangPlugin;
@@ -20,7 +21,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
-use crate::plugins::{Plugin, HTTP};
+use crate::plugins::Plugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
@@ -101,7 +102,7 @@ impl CorePlugin {
         if !*env::RTX_USE_VERSIONS_HOST {
             return Ok(None);
         }
-        let versions = HTTP
+        let versions = HTTP_FETCH
             .get_text(format!("http://rtx-versions.jdx.dev/{}", &self.name))?
             .lines()
             .map(|v| v.trim().to_string())

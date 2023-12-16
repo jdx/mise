@@ -8,12 +8,13 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{create_dir_all, display_path};
 use crate::git::Git;
+use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, http};
+use crate::{cmd, env, file};
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -206,8 +207,7 @@ impl Plugin for PythonPlugin {
         if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
-            let http = http::Client::new()?;
-            let patch = http.get_text(patch_url)?;
+            let patch = HTTP.get_text(patch_url)?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {

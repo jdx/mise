@@ -9,7 +9,8 @@ use url::Url;
 use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
-use crate::env::{RTX_FETCH_REMOTE_VERSIONS_TIMEOUT, RTX_NODE_MIRROR_URL};
+use crate::env::RTX_NODE_MIRROR_URL;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
@@ -20,14 +21,12 @@ use crate::{env, file, hash, http};
 #[derive(Debug)]
 pub struct NodePlugin {
     core: CorePlugin,
-    http: http::Client,
 }
 
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
             core: CorePlugin::new("node"),
-            http: http::Client::new_with_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap(),
         }
     }
 
@@ -45,8 +44,7 @@ impl NodePlugin {
         self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
     }
     fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
-        let versions = self
-            .http
+        let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
             .into_iter()
             .map(|v| {
@@ -113,7 +111,7 @@ impl NodePlugin {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
             pr.set_message(format!("downloading {tarball_name}"));
-            self.http.download_file(url.clone(), local)?;
+            HTTP.download_file(url.clone(), local)?;
         }
         if *env::RTX_NODE_VERIFY {
             pr.set_message(format!("verifying {tarball_name}"));
@@ -150,7 +148,7 @@ impl NodePlugin {
     fn verify(&self, tarball: &Path, version: &str) -> Result<()> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         // TODO: verify gpg signature
-        let shasums = self.http.get_text(self.shasums_url(version)?)?;
+        let shasums = HTTP.get_text(self.shasums_url(version)?)?;
         let shasums = hash::parse_shasums(&shasums);
         let shasum = shasums.get(&tarball_name).unwrap();
         hash::ensure_checksum_sha256(tarball, shasum)

@@ -1,10 +1,22 @@
 use std::fs::File;
+
+#[cfg(not(test))]
+pub static HTTP_VERSION_CHECK: Lazy<Client> =
+    Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
+
+pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Duration::from_secs(30)).unwrap());
+
+pub static HTTP_FETCH: Lazy<Client> =
+    Lazy::new(|| Client::new(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap());
+
 use std::path::Path;
 use std::time::Duration;
 
+use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
 use crate::{env, file};
 use eyre::{Report, Result};
+use once_cell::sync::Lazy;
 use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
 
@@ -14,15 +26,12 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new() -> Result<Self> {
+    fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
-            reqwest: Self::_new().build()?,
-        })
-    }
-
-    pub fn new_with_timeout(timeout: Duration) -> Result<Self> {
-        Ok(Self {
-            reqwest: Self::_new().timeout(timeout).build()?,
+            reqwest: Self::_new()
+                .timeout(timeout)
+                .connect_timeout(timeout)
+                .build()?,
         })
     }
 
