@@ -44,6 +44,7 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: just render-all lint-fix
+      - run: git diff HEAD
       - if: github.event_name == 'pull_request'
         uses: EndBug/add-and-commit@v9
         with:

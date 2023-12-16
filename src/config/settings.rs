@@ -122,7 +122,8 @@ impl Settings {
     }
 
     pub fn ensure_experimental(&self) -> Result<()> {
-        let msg = "This command is experimental. Enable it with `rtx settings set experimental true`";
+        let msg =
+            "This command is experimental. Enable it with `rtx settings set experimental true`";
         ensure!(self.experimental, msg);
         Ok(())
     }
