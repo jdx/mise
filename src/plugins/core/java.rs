@@ -13,17 +13,17 @@ use crate::cache::CacheManager;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, hash, http};
+use crate::{env, file, hash};
 
 #[derive(Debug)]
 pub struct JavaPlugin {
     core: CorePlugin,
-    http: http::Client,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
 }
@@ -45,7 +45,6 @@ impl JavaPlugin {
             )
             .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
             core,
-            http: http::Client::new_with_timeout(*env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap(),
         }
     }
 
@@ -130,12 +129,11 @@ impl JavaPlugin {
         pr: &dyn SingleReport,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
-        let http = http::Client::new()?;
         let filename = m.url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &m.url));
-        http.download_file(&m.url, &tarball_path)?;
+        HTTP.download_file(&m.url, &tarball_path)?;
 
         hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
 
@@ -257,8 +255,7 @@ impl JavaPlugin {
             arch()
         );
 
-        let metadata = self
-            .http
+        let metadata = HTTP_FETCH
             .json::<Vec<JavaMetadata>, _>(url)?
             .into_iter()
             .filter(|m| {

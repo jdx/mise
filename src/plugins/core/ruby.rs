@@ -10,13 +10,14 @@ use crate::duration::DAILY;
 
 use crate::git::Git;
 use crate::github::GithubRelease;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, http};
+use crate::{cmd, env, file};
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -224,9 +225,8 @@ impl RubyPlugin {
     }
 
     fn latest_ruby_build_version(&self) -> Result<String> {
-        let http = http::Client::new()?;
         let release: GithubRelease =
-            http.json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")?;
+            HTTP_FETCH.json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
@@ -306,8 +306,7 @@ impl RubyPlugin {
         let mut patches = vec![];
         for f in &self.fetch_patch_sources() {
             if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
-                let http = http::Client::new()?;
-                patches.push(http.get_text(f)?);
+                patches.push(HTTP.get_text(f)?);
             } else {
                 patches.push(file::read_to_string(f)?);
             }

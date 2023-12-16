@@ -8,12 +8,13 @@ use versions::Versioning;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, hash, http};
+use crate::{cmd, env, file, hash};
 
 #[derive(Debug)]
 pub struct GoPlugin {
@@ -96,13 +97,12 @@ impl GoPlugin {
     }
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let http = http::Client::new()?;
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
         let tarball_url = format!("{}/{}", &*env::RTX_GO_DOWNLOAD_MIRROR, &filename);
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &tarball_url));
-        http.download_file(&tarball_url, &tarball_path)?;
+        HTTP.download_file(&tarball_url, &tarball_path)?;
 
         self.verify_tarball_checksum(&tarball_url, &tarball_path)?;
 
@@ -112,7 +112,7 @@ impl GoPlugin {
     fn verify_tarball_checksum(&self, tarball_url: &str, tarball_path: &Path) -> Result<()> {
         if !*env::RTX_GO_SKIP_CHECKSUM {
             let checksum_url = format!("{}.sha256", tarball_url);
-            let checksum = http::Client::new()?.get_text(checksum_url)?;
+            let checksum = HTTP.get_text(checksum_url)?;
             hash::ensure_checksum_sha256(tarball_path, &checksum)?;
         }
         Ok(())

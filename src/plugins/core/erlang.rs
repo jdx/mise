@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 
 use crate::file::display_path;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, HTTP};
+use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 use crate::{cmd, file};
 
@@ -50,7 +51,7 @@ impl ErlangPlugin {
 
     fn install_kerl(&self) -> Result<()> {
         debug!("Installing kerl to {}", display_path(&self.kerl_path()));
-        HTTP.download_file(
+        HTTP_FETCH.download_file(
             format!("https://raw.githubusercontent.com/kerl/kerl/{KERL_VERSION}/kerl"),
             &self.kerl_path(),
         )?;
