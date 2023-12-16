@@ -9,7 +9,6 @@ use color_eyre::eyre::Result;
 use console::style;
 use eyre::WrapErr;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
@@ -17,7 +16,6 @@ pub use external_plugin::ExternalPlugin;
 pub use script_manager::{Script, ScriptManager};
 
 use crate::config::{Config, Settings};
-use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -25,7 +23,7 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file, http};
+use crate::{dirs, file};
 
 pub mod core;
 mod external_plugin;
@@ -34,9 +32,6 @@ mod rtx_plugin_toml;
 mod script_manager;
 
 pub type PluginName = String;
-
-pub static HTTP: Lazy<http::Client> =
-    Lazy::new(|| http::Client::new_with_timeout(*RTX_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap());
 
 pub trait Plugin: Debug + Send + Sync {
     fn name(&self) -> &str;

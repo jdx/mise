@@ -6,13 +6,14 @@ use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
+use crate::file;
 use crate::github::GithubRelease;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::{Plugin, HTTP};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, http};
 
 #[derive(Debug)]
 pub struct BunPlugin {
@@ -32,7 +33,7 @@ impl BunPlugin {
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         let releases: Vec<GithubRelease> =
-            HTTP.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
+            HTTP_FETCH.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
@@ -56,7 +57,6 @@ impl BunPlugin {
     }
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let http = http::Client::new()?;
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
             tv.version,
@@ -67,7 +67,7 @@ impl BunPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &url));
-        http.download_file(&url, &tarball_path)?;
+        HTTP.download_file(&url, &tarball_path)?;
 
         Ok(tarball_path)
     }
