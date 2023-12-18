@@ -39,18 +39,19 @@ mod tests {
 
         assert_cli!("alias", "unset", "tiny", "my/alias");
         assert_cli_snapshot!("aliases", @r###"
-        java  lts          21   
-        node  lts          20   
-        node  lts-argon    4    
-        node  lts-boron    6    
-        node  lts-carbon   8    
-        node  lts-dubnium  10   
-        node  lts-erbium   12   
-        node  lts-fermium  14   
-        node  lts-gallium  16   
-        node  lts-hydrogen 18   
-        node  lts-iron     20   
-        tiny  lts          3.1.0
+        java  lts          21    
+        node  lts          20    
+        node  lts-argon    4     
+        node  lts-boron    6     
+        node  lts-carbon   8     
+        node  lts-dubnium  10    
+        node  lts-erbium   12    
+        node  lts-fermium  14    
+        node  lts-gallium  16    
+        node  lts-hydrogen 18    
+        node  lts-iron     20    
+        rust  stable       latest
+        tiny  lts          3.1.0 
         tiny  lts-prev     2.0.0
         "###);
 

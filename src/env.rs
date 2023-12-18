@@ -231,6 +231,18 @@ pub static RTX_GO_SET_GOROOT: Lazy<Option<bool>> =
 pub static RTX_GO_SET_GOPATH: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("RTX_GO_SET_GOPATH"));
 
+// rust
+pub static RTX_RUST_REPO: Lazy<String> = Lazy::new(|| {
+    var("RTX_RUST_REPO").unwrap_or_else(|_| "https://github.com/rust-lang/rust".into())
+});
+pub static RTX_RUST_WITHOUT: Lazy<Vec<String>> = Lazy::new(|| {
+    var("RTX_RUST_WITHOUT")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect()
+});
+
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__RTX_DIFF") {

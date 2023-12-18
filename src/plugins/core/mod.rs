@@ -21,6 +21,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
+use crate::plugins::core::rust::RustPlugin;
 use crate::plugins::Plugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
@@ -35,6 +36,7 @@ mod node;
 mod node_build;
 mod python;
 mod ruby;
+mod rust;
 
 pub type PluginMap = BTreeMap<String, Arc<dyn Plugin>>;
 
@@ -59,7 +61,8 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 });
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Plugin>> = vec![Arc::new(ErlangPlugin::new())];
+    let plugins: Vec<Arc<dyn Plugin>> =
+        vec![Arc::new(ErlangPlugin::new()), Arc::new(RustPlugin::new())];
     plugins
         .into_iter()
         .map(|plugin| (plugin.name().to_string(), plugin))
