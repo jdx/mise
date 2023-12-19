@@ -42,7 +42,7 @@ static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
     Config::get()
         .list_plugins()
         .into_iter()
-        .map(|p| p.name().len() + 15)
+        .map(|p| p.name().len() + 10)
         .max()
         .unwrap_or_default()
         .max(15)
