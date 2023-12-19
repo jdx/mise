@@ -68,7 +68,7 @@ impl NodePlugin {
         ) {
             Err(e) if matches!(http::error_code(&e), Some(404)) => {
                 debug!("precompiled node not found");
-                self.install_compiled(ctx, opts)
+                return self.install_compiled(ctx, opts);
             }
             e => e,
         }?;
