@@ -5,8 +5,8 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
 use clap::Command;
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use eyre::WrapErr;
 use itertools::Itertools;
 use regex::Regex;

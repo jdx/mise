@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::config;
 use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};

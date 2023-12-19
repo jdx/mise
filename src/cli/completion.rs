@@ -1,6 +1,6 @@
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
-use color_eyre::eyre::Result;
+use eyre::Result;
 use std::fmt::Display;
 
 /// Generate shell completions

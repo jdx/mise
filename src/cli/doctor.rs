@@ -1,8 +1,8 @@
 use std::fmt::Write;
 use std::process::exit;
 
-use color_eyre::eyre::Result;
 use console::{pad_str, style, Alignment};
+use eyre::Result;
 use indenter::indented;
 
 use crate::build_time::built_info;

@@ -4,7 +4,7 @@ use crate::config::Settings;
 use crate::file;
 use crate::file::display_path;
 use clap::ValueHint;
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 /// [experimental] Generate an .rtx.toml file
 #[derive(Debug, clap::Args)]

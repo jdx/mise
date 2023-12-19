@@ -4,7 +4,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use versions::{Chunk, Version};
 
 use crate::config::Config;

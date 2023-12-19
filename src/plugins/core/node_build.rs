@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use clap::Command;
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};

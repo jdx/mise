@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-use color_eyre::eyre::Result;
+use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::Config;

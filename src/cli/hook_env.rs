@@ -2,7 +2,7 @@ use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use itertools::Itertools;
 
 use crate::config::Config;

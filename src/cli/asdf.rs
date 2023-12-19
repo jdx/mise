@@ -1,5 +1,5 @@
 use clap::ValueHint::CommandWithArguments;
-use color_eyre::eyre::Result;
+use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::Cli;

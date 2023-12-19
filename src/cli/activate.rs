@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::dirs;
 use crate::env::RTX_EXE;

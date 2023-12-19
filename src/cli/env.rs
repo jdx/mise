@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;

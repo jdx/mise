@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use eyre::WrapErr;
 
 use crate::cmd::CmdLineRunner;

@@ -14,9 +14,9 @@ mod test;
 
 use std::process::exit;
 
-use color_eyre::eyre::Result;
 use color_eyre::{Help, Report, SectionExt};
 use console::{style, Term};
+use eyre::Result;
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
