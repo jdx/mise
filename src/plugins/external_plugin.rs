@@ -273,7 +273,7 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
             Vec::new()
@@ -293,10 +293,6 @@ impl ExternalPlugin {
         } else {
             vec!["bin".into()]
         };
-        let bin_paths = bin_paths
-            .into_iter()
-            .map(|path| tv.install_path().join(path))
-            .collect();
         Ok(bin_paths)
     }
     fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<HashMap<String, String>> {
@@ -667,8 +663,12 @@ impl Plugin for ExternalPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        self.cache
-            .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))
+        Ok(self
+            .cache
+            .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))?
+            .into_iter()
+            .map(|path| tv.install_short_path().join(path))
+            .collect())
     }
 
     fn exec_env(

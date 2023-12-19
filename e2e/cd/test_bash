@@ -33,7 +33,7 @@ assert_path() {
 
 NODE_18="INSTALLS/node/18.0.0/bin"
 NODE_20="INSTALLS/node/20.0.0/bin"
-TINY="INSTALLS/tiny/3.1.0/bin"
+TINY="INSTALLS/tiny/latest/bin"
 SHELLCHECK="INSTALLS/shellcheck/0.9.0/bin"
 SHFMT="INSTALLS/shfmt/3.6.0/bin"
 
