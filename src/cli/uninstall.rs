@@ -93,13 +93,20 @@ impl Uninstall {
             .map(|a| {
                 let tool = config.get_or_create_plugin(&a.plugin);
                 let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-                let mut tvs = tool
-                    .list_installed_versions()?
+                let installed_versions = tool.list_installed_versions()?;
+                let exact_match = installed_versions.iter().find(|v| v == &&query);
+                let matches = match exact_match {
+                    Some(m) => vec![m],
+                    None => installed_versions
+                        .iter()
+                        .filter(|v| v.starts_with(&query))
+                        .collect_vec(),
+                };
+                let mut tvs = matches
                     .into_iter()
-                    .filter(|v| v.starts_with(&query))
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.name().into(), &v);
-                        let tv = ToolVersion::new(tool.as_ref(), tvr, Default::default(), v);
+                        let tvr = ToolVersionRequest::new(tool.name().into(), v);
+                        let tv = ToolVersion::new(tool.as_ref(), tvr, Default::default(), v.into());
                         (tool.clone(), tv)
                     })
                     .collect::<Vec<_>>();
