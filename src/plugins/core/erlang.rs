@@ -45,7 +45,7 @@ impl ErlangPlugin {
         let _lock = self.lock_build_tool();
         if self.kerl_path().exists() {
             // TODO: find a way to not have to do this #1209
-            file::remove_all(self.kerl_path())?;
+            file::remove_all(self.kerl_base_dir())?;
             return Ok(());
         }
         self.install_kerl()?;
