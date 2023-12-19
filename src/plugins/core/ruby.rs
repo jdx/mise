@@ -3,6 +3,7 @@ use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::Result;
+use eyre::WrapErr;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -61,9 +62,11 @@ impl RubyPlugin {
 
     fn update_build_tool(&self) -> Result<()> {
         if *env::RTX_RUBY_INSTALL {
-            self.update_ruby_install()?;
+            self.update_ruby_install()
+                .wrap_err("failed to update ruby-install")?;
         }
         self.update_ruby_build()
+            .wrap_err("failed to update ruby-build")
     }
 
     fn install_ruby_build(&self) -> Result<()> {
@@ -147,7 +150,9 @@ impl RubyPlugin {
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
-        self.update_build_tool()?;
+        if let Err(err) = self.update_build_tool() {
+            warn!("{err}");
+        }
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(ruby_build_bin, "--definitions").read()?;
@@ -347,7 +352,9 @@ impl Plugin for RubyPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        self.update_build_tool()?;
+        if let Err(err) = self.update_build_tool() {
+            warn!("{err}");
+        }
         assert!(matches!(
             &ctx.tv.request,
             ToolVersionRequest::Version { .. }
