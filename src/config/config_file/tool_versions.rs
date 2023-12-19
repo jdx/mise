@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
 use crate::config::config_file;
-use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use tera::Context;

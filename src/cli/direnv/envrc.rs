@@ -2,7 +2,7 @@ use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::ops::Deref;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::config::Config;
 use crate::hash::hash_to_str;

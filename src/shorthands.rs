@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use toml::Table;
 
 use crate::config::Settings;

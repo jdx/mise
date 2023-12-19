@@ -3,8 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::Serialize;

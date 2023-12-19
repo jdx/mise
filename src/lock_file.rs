@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::dirs;
 use crate::file::create_dir_all;

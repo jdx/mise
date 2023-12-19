@@ -1,5 +1,5 @@
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
