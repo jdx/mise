@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::RwLock;
 
 use eyre::WrapErr;
@@ -15,7 +14,7 @@ use crate::{dirs, env};
 
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {
-    list_bin_paths: RwLock<HashMap<ToolVersionRequest, CacheManager<Vec<PathBuf>>>>,
+    list_bin_paths: RwLock<HashMap<ToolVersionRequest, CacheManager<Vec<String>>>>,
     exec_env: RwLock<HashMap<ToolVersionRequest, CacheManager<HashMap<String, String>>>>,
 }
 
@@ -25,9 +24,9 @@ impl ExternalPluginCache {
         plugin: &ExternalPlugin,
         tv: &ToolVersion,
         fetch: F,
-    ) -> Result<Vec<PathBuf>>
+    ) -> Result<Vec<String>>
     where
-        F: FnOnce() -> Result<Vec<PathBuf>>,
+        F: FnOnce() -> Result<Vec<String>>,
     {
         let mut w = self.list_bin_paths.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
