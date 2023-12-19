@@ -29,6 +29,10 @@ impl ErlangPlugin {
         self.core.cache_path.join(format!("kerl-{}", KERL_VERSION))
     }
 
+    fn kerl_base_dir(&self) -> PathBuf {
+        self.core.cache_path.join("kerl")
+    }
+
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
         LockFile::new(&self.kerl_path())
             .with_callback(|l| {
@@ -40,11 +44,13 @@ impl ErlangPlugin {
     fn update_kerl(&self) -> Result<()> {
         let _lock = self.lock_build_tool();
         if self.kerl_path().exists() {
+            // TODO: find a way to not have to do this #1209
+            file::remove_all(self.kerl_path())?;
             return Ok(());
         }
         self.install_kerl()?;
         cmd!(self.kerl_path(), "update", "releases")
-            .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
+            .env("KERL_BASE_DIR", self.kerl_base_dir())
             .run()?;
         Ok(())
     }
