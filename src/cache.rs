@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;

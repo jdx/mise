@@ -1,8 +1,8 @@
 use std::string::ToString;
 use std::time::Duration;
 
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 

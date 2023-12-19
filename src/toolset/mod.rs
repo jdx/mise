@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::file::display_path;
 use crate::http::HTTP_FETCH;

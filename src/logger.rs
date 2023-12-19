@@ -4,7 +4,7 @@ use std::env;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use simplelog::*;
 
 pub fn init(log_level: LevelFilter, log_file_level: LevelFilter) {

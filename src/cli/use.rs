@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};

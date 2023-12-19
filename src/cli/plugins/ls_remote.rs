@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use color_eyre::eyre::Result;
 use console::{measure_text_width, pad_str, Alignment};
+use eyre::Result;
 use itertools::Itertools;
 
 use crate::config::Config;

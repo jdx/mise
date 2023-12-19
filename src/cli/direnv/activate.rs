@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 /// Output direnv function to use rtx inside direnv
 ///

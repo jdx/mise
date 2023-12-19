@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 

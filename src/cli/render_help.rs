@@ -1,6 +1,6 @@
 use clap::builder::StyledStr;
-use color_eyre::eyre::Result;
 use console::strip_ansi_codes;
+use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::self_update::SelfUpdate;

@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
-use color_eyre::eyre::Result;
+use eyre::Result;
 use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
