@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use eyre::Result;
 use rayon::prelude::*;
+use tabled::settings::object::Columns;
+use tabled::settings::{Margin, Modify, Padding, Style};
 use tabled::Tabled;
 
 use crate::config::Config;
 use crate::plugins::{ExternalPlugin, PluginType};
-use crate::ui::table;
 
 /// List installed plugins
 ///
@@ -64,17 +65,25 @@ impl PluginsLs {
             let data = tools
                 .into_par_iter()
                 .map(|p| {
-                    let row = Row {
+                    let mut row = Row {
                         plugin: p.name().to_string(),
                         url: p.get_remote_url().unwrap_or_default(),
-                        ref_: p.current_abbrev_ref()?,
-                        sha: p.current_sha_short()?,
+                        ref_: String::new(),
+                        sha: String::new(),
                     };
-                    Ok(row)
+                    if p.is_installed() {
+                        row.ref_ = p.current_abbrev_ref().unwrap_or_default();
+                        row.sha = p.current_sha_short().unwrap_or_default();
+                    }
+                    row
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Vec<_>>();
             let mut table = tabled::Table::new(data);
-            table::default_style(&mut table, true);
+            table
+                .with(Style::empty())
+                .with(Margin::new(0, 0, 0, 0))
+                .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
+                .with(Modify::new(Columns::last()).with(Padding::zero()));
             rtxprintln!("{table}");
         } else {
             for tool in tools {
@@ -108,8 +117,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
-
     use crate::cli::tests::grep;
 
     #[test]
@@ -126,10 +133,7 @@ mod tests {
     #[test]
     fn test_plugin_list_all() {
         let stdout = assert_cli!("plugin", "list", "--all", "--urls");
-        assert_str_eq!(
-            grep(stdout, "zephyr"),
-            "zephyr                        https://github.com/nsaunders/asdf-zephyr.git"
-        );
+        assert_snapshot!(grep(stdout, "zephyr"));
     }
 
     #[test]

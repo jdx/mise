@@ -429,8 +429,7 @@ __rtx_plugins_cmd() {
   _arguments -s -S \
     '(-c --core)'{-c,--core}'[The built-in plugins only]' \
     '--user[List installed plugins]' \
-    '(-u --urls)'{-u,--urls}'[show the git url for each plugin]' \
-    '--refs[show the git refs for each plugin]' \
+    '(-u --urls)'{-u,--urls}'[Show the git url for each plugin]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
@@ -480,7 +479,6 @@ __rtx_plugins_ls_cmd() {
     '(-c --core)'{-c,--core}'[The built-in plugins only]' \
     '--user[List installed plugins]' \
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin]' \
-    '--refs[Show the git refs for each plugin]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
