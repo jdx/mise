@@ -34,16 +34,14 @@ pub struct Plugins {
     #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
     pub user: bool,
 
-    /// show the git url for each plugin
-    ///
+    /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
-    #[clap(short, long)]
+    #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
-    /// show the git refs for each plugin
-    ///
+    /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[clap(long)]
+    #[clap(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 }
 

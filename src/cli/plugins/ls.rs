@@ -2,9 +2,12 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use eyre::Result;
+use rayon::prelude::*;
+use tabled::settings::object::Columns;
+use tabled::settings::{Margin, Modify, Padding, Style};
+use tabled::Tabled;
 
 use crate::config::Config;
-
 use crate::plugins::{ExternalPlugin, PluginType};
 
 /// List installed plugins
@@ -32,12 +35,12 @@ pub struct PluginsLs {
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
-    #[clap(short, long, verbatim_doc_comment)]
+    #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
     /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 }
 
@@ -59,23 +62,29 @@ impl PluginsLs {
         }
 
         if self.urls || self.refs {
-            for tool in tools {
-                rtxprint!("{:29}", tool.name());
-                if self.urls {
-                    if let Some(url) = tool.get_remote_url() {
-                        rtxprint!(" {}", url);
+            let data = tools
+                .into_par_iter()
+                .map(|p| {
+                    let mut row = Row {
+                        plugin: p.name().to_string(),
+                        url: p.get_remote_url().unwrap_or_default(),
+                        ref_: String::new(),
+                        sha: String::new(),
+                    };
+                    if p.is_installed() {
+                        row.ref_ = p.current_abbrev_ref().unwrap_or_default();
+                        row.sha = p.current_sha_short().unwrap_or_default();
                     }
-                }
-                if self.refs {
-                    if let Ok(aref) = tool.current_abbrev_ref() {
-                        rtxprint!(" {}", aref);
-                    }
-                    if let Ok(sha) = tool.current_sha_short() {
-                        rtxprint!(" {}", sha);
-                    }
-                }
-                rtxprint!("\n");
-            }
+                    row
+                })
+                .collect::<Vec<_>>();
+            let mut table = tabled::Table::new(data);
+            table
+                .with(Style::empty())
+                .with(Margin::new(0, 0, 0, 0))
+                .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
+                .with(Modify::new(Columns::last()).with(Padding::zero()));
+            rtxprintln!("{table}");
         } else {
             for tool in tools {
                 rtxprintln!("{tool}");
@@ -85,6 +94,15 @@ impl PluginsLs {
     }
 }
 
+#[derive(Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct Row {
+    plugin: String,
+    url: String,
+    ref_: String,
+    sha: String,
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx plugins ls</bold>
@@ -92,15 +110,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   ruby
 
   $ <bold>rtx plugins ls --urls</bold>
-  node                        https://github.com/asdf-vm/asdf-node.git
-  ruby                          https://github.com/asdf-vm/asdf-ruby.git
+  node    https://github.com/asdf-vm/asdf-node.git
+  ruby    https://github.com/asdf-vm/asdf-ruby.git
 "#
 );
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
-
     use crate::cli::tests::grep;
 
     #[test]
@@ -117,10 +133,7 @@ mod tests {
     #[test]
     fn test_plugin_list_all() {
         let stdout = assert_cli!("plugin", "list", "--all", "--urls");
-        assert_str_eq!(
-            grep(stdout, "zephyr"),
-            "zephyr                        https://github.com/nsaunders/asdf-zephyr.git"
-        );
+        assert_snapshot!(grep(stdout, "zephyr"));
     }
 
     #[test]

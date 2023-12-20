@@ -10,6 +10,7 @@ assert() {
 	fi
 }
 
+rtx uninstall --all tiny
 rtx i tiny
 rtx local tiny@sub-1:latest
 assert "rtx current tiny" "2.1.0"
