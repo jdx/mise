@@ -860,6 +860,8 @@ a quick way for rtx to query for new versions. This host regularly grabs all the
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
+See [FAQ](#new-version-of-a-tool-is-not-available) for more information.
+
 #### `RTX_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use <node@20.x> regardless
@@ -1323,6 +1325,17 @@ doesn't work, try running `asdf install python latest` to see if it's an issue w
 
 Lastly, there is `rtx doctor` which will show diagnostic information and any warnings about issues
 detected with your setup. If you submit a bug report, please include the output of `rtx doctor`.
+
+### New version of a tool is not available
+
+There are 2 places that versions are cached so a brand new release might not appear right away.
+
+The first is that the rtx CLI caches versions for 24 hours. This can be cleared with `rtx cache clear`.
+
+The second uses the [rtx-versions](https://github.com/jdx/rtx-versions) repo as a centralized
+place to list all of the versions of most plugins. This is intended to speed up rtx and also
+get around GitHub rate limits when querying for new versions. Check that repo for your plugin to
+see if it has an updated version. This service can be disabled by setting `RTX_USE_VERSIONS_HOST=0`.
 
 ### Windows support?
 
