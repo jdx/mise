@@ -171,8 +171,7 @@ complete -kxc rtx -n "$fssf outdated" -a "(__rtx_tool_versions)" -d 'Tool(s) to 
 
 # plugins
 complete -kxc rtx -n "$fssf plugins" -s c -l core -d 'The built-in plugins only'
-complete -kxc rtx -n "$fssf plugins" -l refs -d 'show the git refs for each plugin'
-complete -kxc rtx -n "$fssf plugins" -s u -l urls -d 'show the git url for each plugin'
+complete -kxc rtx -n "$fssf plugins" -s u -l urls -d 'Show the git url for each plugin'
 complete -kxc rtx -n "$fssf plugins" -l user -d 'List installed plugins'
 set -l others install link ls ls-remote uninstall update
 complete -xc rtx -n "$fssf plugins; and not $fssf $others" -a install -d 'Install a plugin'
@@ -196,7 +195,6 @@ complete -kxc rtx -n "$fssf plugins; and $fssf link" -a "(__fish_complete_direct
 
 # plugins ls
 complete -kxc rtx -n "$fssf plugins; and $fssf ls" -s c -l core -d 'The built-in plugins only'
-complete -kxc rtx -n "$fssf plugins; and $fssf ls" -l refs -d 'Show the git refs for each plugin'
 complete -kxc rtx -n "$fssf plugins; and $fssf ls" -s u -l urls -d 'Show the git url for each plugin'
 complete -kxc rtx -n "$fssf plugins; and $fssf ls" -l user -d 'List installed plugins'
 

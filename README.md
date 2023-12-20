@@ -2389,18 +2389,14 @@ Options:
           Show the git url for each plugin
           e.g.: https://github.com/asdf-vm/asdf-node.git
 
-      --refs
-          Show the git refs for each plugin
-          e.g.: main 1234abc
-
 Examples:
   $ rtx plugins ls
   node
   ruby
 
   $ rtx plugins ls --urls
-  node                        https://github.com/asdf-vm/asdf-node.git
-  ruby                          https://github.com/asdf-vm/asdf-ruby.git
+  node    https://github.com/asdf-vm/asdf-node.git
+  ruby    https://github.com/asdf-vm/asdf-ruby.git
 ```
 
 ### `rtx plugins ls-remote [OPTIONS]`
