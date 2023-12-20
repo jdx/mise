@@ -108,6 +108,7 @@ v20.0.0
   - [What does `rtx activate` do?](#what-does-rtx-activate-do)
   - [`rtx activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`](#rtx-activate-doesnt-work-in-profile-bash_profile-zprofile)
   - [rtx is failing or not working right](#rtx-is-failing-or-not-working-right)
+  - [New version of a tool is not available](#new-version-of-a-tool-is-not-available)
   - [Windows support?](#windows-support)
   - [How do I use rtx with http proxies?](#how-do-i-use-rtx-with-http-proxies)
   - [How do the shorthand plugin names map to repositories?](#how-do-the-shorthand-plugin-names-map-to-repositories)
