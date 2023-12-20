@@ -153,7 +153,7 @@ impl Toolset {
                                 let prefix = format!("{}", style(&tv).cyan().for_stderr());
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.request.resolve(t.as_ref(), tv.opts.clone(), true)?,
+                                    tv: tv.clone(),
                                     pr: mpr.add(&prefix),
                                     raw,
                                     force: opts.force,
