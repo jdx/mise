@@ -92,6 +92,7 @@ impl Upgrade {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
+            latest_versions: true,
         };
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {

@@ -101,6 +101,7 @@ impl Use {
                 force: self.force,
                 jobs: self.jobs,
                 raw: self.raw,
+                latest_versions: false,
             },
         )?;
 
