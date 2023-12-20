@@ -43,6 +43,7 @@ impl Shell {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
+            latest_versions: false,
         };
         ts.install_arg_versions(&config, &opts)?;
 

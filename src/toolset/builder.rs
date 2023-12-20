@@ -11,7 +11,6 @@ use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
-    latest_versions: bool,
     global_only: bool,
     tool_filter: Option<Vec<String>>,
 }
@@ -23,11 +22,6 @@ impl ToolsetBuilder {
 
     pub fn with_args(mut self, args: &[ToolArg]) -> Self {
         self.args = args.to_vec();
-        self
-    }
-
-    pub fn with_latest_versions(mut self) -> Self {
-        self.latest_versions = true;
         self
     }
 
@@ -44,7 +38,6 @@ impl ToolsetBuilder {
     pub fn build(self, config: &Config) -> Result<Toolset> {
         let settings = Settings::try_get()?;
         let mut toolset = Toolset {
-            latest_versions: self.latest_versions,
             disable_tools: settings.disable_tools.clone(),
             ..Default::default()
         };
