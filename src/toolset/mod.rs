@@ -123,7 +123,6 @@ impl Toolset {
             return Ok(());
         }
         let settings = Settings::try_get()?;
-        self.latest_versions = true;
         let queue: Vec<_> = versions
             .into_iter()
             .group_by(|v| v.plugin_name.clone())
@@ -153,7 +152,11 @@ impl Toolset {
                                 let prefix = format!("{}", style(&tv).cyan().for_stderr());
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.clone(),
+                                    tv: tv.request.resolve(
+                                        t.as_ref(),
+                                        tv.opts.clone(),
+                                        self.latest_versions,
+                                    )?,
                                     pr: mpr.add(&prefix),
                                     raw,
                                     force: opts.force,
