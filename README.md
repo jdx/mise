@@ -298,7 +298,7 @@ If you need something else, compile it with `cargo install rtx-cli` (see below).
 brew install rtx
 ```
 
-Alternatively, use the custom tap (which is updated immediately after a release)):
+Alternatively, use the custom tap (which is updated immediately after a release):
 
 ```
 brew install jdx/tap/rtx
