@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use eyre::Result;
 use serde_json::Value;
 use std::collections::BTreeMap;
 

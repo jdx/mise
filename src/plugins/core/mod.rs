@@ -4,7 +4,7 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 

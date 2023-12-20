@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 mod node;
 mod python;

@@ -5,8 +5,8 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
 use clap::Command;
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 use eyre::WrapErr;
 use itertools::Itertools;
 use regex::Regex;
@@ -183,6 +183,7 @@ pub trait Plugin: Debug + Send + Sync {
         if self.is_version_installed(&ctx.tv) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
+                ctx.pr.set_message("installing".into());
             } else {
                 return Ok(());
             }

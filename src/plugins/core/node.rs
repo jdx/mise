@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
@@ -68,7 +68,7 @@ impl NodePlugin {
         ) {
             Err(e) if matches!(http::error_code(&e), Some(404)) => {
                 debug!("precompiled node not found");
-                self.install_compiled(ctx, opts)
+                return self.install_compiled(ctx, opts);
             }
             e => e,
         }?;

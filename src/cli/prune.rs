@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
 use console::style;
+use eyre::Result;
 
 use crate::config::{Config, Settings};
 

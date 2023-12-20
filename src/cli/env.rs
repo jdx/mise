@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
@@ -94,7 +94,7 @@ mod tests {
         let stdout = assert_cli!("env", "-s", "bash");
         assert!(stdout.contains(
             dirs::DATA
-                .join("installs/tiny/3.1.0/bin")
+                .join("installs/tiny/3/bin")
                 .to_string_lossy()
                 .as_ref()
         ));
@@ -107,7 +107,7 @@ mod tests {
 
         assert!(stdout.contains(
             dirs::DATA
-                .join("installs/tiny/3.0.1/bin")
+                .join("installs/tiny/3.0/bin")
                 .to_string_lossy()
                 .as_ref()
         ));

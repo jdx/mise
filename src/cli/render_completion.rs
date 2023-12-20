@@ -2,7 +2,7 @@ use clap::Args;
 use std::io::Cursor;
 
 use clap_complete::generate;
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::cli::self_update::SelfUpdate;
 use crate::shell::completions;

@@ -272,9 +272,11 @@ pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
     debug!("tar -xzf {} -C {}", archive.display(), dest.display());
     let f = File::open(archive)?;
     let tar = GzDecoder::new(f);
-    let mut archive = Archive::new(tar);
-    archive.unpack(dest)?;
-    Ok(())
+    Archive::new(tar).unpack(dest).wrap_err_with(|| {
+        let archive = display_path(archive);
+        let dest = display_path(dest);
+        format!("failed to extract tar: {archive} to {dest}")
+    })
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {

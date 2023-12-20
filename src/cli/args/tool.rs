@@ -2,7 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
 
 use clap::{Arg, Command, Error};
-use color_eyre::eyre::Result;
+use eyre::Result;
 use regex::Regex;
 
 use crate::plugins::{unalias_plugin, PluginName};

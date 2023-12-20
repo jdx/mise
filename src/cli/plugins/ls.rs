@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use eyre::Result;
 
 use crate::config::Config;
 
