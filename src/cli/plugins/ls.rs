@@ -2,10 +2,12 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use eyre::Result;
+use rayon::prelude::*;
+use tabled::Tabled;
 
 use crate::config::Config;
-
 use crate::plugins::{ExternalPlugin, PluginType};
+use crate::ui::table;
 
 /// List installed plugins
 ///
@@ -32,12 +34,12 @@ pub struct PluginsLs {
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
-    #[clap(short, long, verbatim_doc_comment)]
+    #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
     /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 }
 
@@ -59,23 +61,21 @@ impl PluginsLs {
         }
 
         if self.urls || self.refs {
-            for tool in tools {
-                rtxprint!("{:29}", tool.name());
-                if self.urls {
-                    if let Some(url) = tool.get_remote_url() {
-                        rtxprint!(" {}", url);
-                    }
-                }
-                if self.refs {
-                    if let Ok(aref) = tool.current_abbrev_ref() {
-                        rtxprint!(" {}", aref);
-                    }
-                    if let Ok(sha) = tool.current_sha_short() {
-                        rtxprint!(" {}", sha);
-                    }
-                }
-                rtxprint!("\n");
-            }
+            let data = tools
+                .into_par_iter()
+                .map(|p| {
+                    let row = Row {
+                        plugin: p.name().to_string(),
+                        url: p.get_remote_url().unwrap_or_default(),
+                        ref_: p.current_abbrev_ref()?,
+                        sha: p.current_sha_short()?,
+                    };
+                    Ok(row)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let mut table = tabled::Table::new(data);
+            table::default_style(&mut table, true);
+            rtxprintln!("{table}");
         } else {
             for tool in tools {
                 rtxprintln!("{tool}");
@@ -85,6 +85,15 @@ impl PluginsLs {
     }
 }
 
+#[derive(Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct Row {
+    plugin: String,
+    url: String,
+    ref_: String,
+    sha: String,
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>rtx plugins ls</bold>
@@ -92,8 +101,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   ruby
 
   $ <bold>rtx plugins ls --urls</bold>
-  node                        https://github.com/asdf-vm/asdf-node.git
-  ruby                          https://github.com/asdf-vm/asdf-ruby.git
+  node    https://github.com/asdf-vm/asdf-node.git
+  ruby    https://github.com/asdf-vm/asdf-ruby.git
 "#
 );
 
