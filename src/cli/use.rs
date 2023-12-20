@@ -10,7 +10,8 @@ use crate::config::{config_file, Config, Settings};
 use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::plugins::PluginName;
-use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -78,25 +79,38 @@ pub struct Use {
 
 impl Use {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-
-        let opts = InstallOptions {
-            force: self.force,
-            jobs: self.jobs,
-            raw: self.raw,
-        };
-        ts.install_arg_versions(config, &opts)?;
-
-        ts.versions
-            .retain(|_, tvl| self.tool.iter().any(|t| t.plugin == tvl.plugin_name));
+        let mut ts = ToolsetBuilder::new().build(config)?;
+        let mpr = MultiProgressReport::new();
+        let versions = self
+            .tool
+            .iter()
+            .map(|t| {
+                let tvr = match &t.tvr {
+                    Some(ref tvr) => tvr.clone(),
+                    None => ToolVersionRequest::new(t.plugin.to_string(), "latest"),
+                };
+                let plugin = config.get_or_create_plugin(&t.plugin);
+                ToolVersion::resolve(plugin.as_ref(), tvr, Default::default(), false)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        ts.install_versions(
+            config,
+            versions.clone(),
+            &mpr,
+            &InstallOptions {
+                force: self.force,
+                jobs: self.jobs,
+                raw: self.raw,
+                latest_versions: false,
+            },
+        )?;
 
         let mut cf = self.get_config_file()?;
         let settings = Settings::try_get()?;
         let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
-        for (plugin_name, tvl) in ts.versions {
+        for (plugin_name, tvl) in &versions.into_iter().group_by(|tv| tv.plugin_name.clone()) {
             let versions: Vec<String> = tvl
-                .versions
                 .into_iter()
                 .map(|tv| {
                     if pin {
@@ -226,7 +240,7 @@ mod tests {
         assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
-        tiny = "2.1.0"
+        tiny = "3.1.0"
         "###);
 
         assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny@2");

@@ -5,6 +5,16 @@ source "$(dirname "$0")/assert.sh"
 
 rtx rm --all tiny
 rtx i tiny@1.0.0
+rtx use tiny@1
+assert "rtx current tiny" "1.0.0"
+
 rtx use --env local tiny@1
 assert "rtx current tiny" "1.0.0"
+assert "cat .rtx.local.toml" '[tools]
+tiny = "1"'
 rm .rtx.local.toml
+
+rtx use --rm tiny
+assert "rtx current tiny" ""
+rtx use tiny
+assert_contains "rtx current tiny" "1.0.0"

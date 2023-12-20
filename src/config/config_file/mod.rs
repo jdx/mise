@@ -70,7 +70,6 @@ impl dyn ConfigFile {
     pub fn add_runtimes(&mut self, config: &Config, runtimes: &[ToolArg], pin: bool) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset().to_owned();
-        ts.latest_versions = true;
         ts.resolve(config);
         let mut plugins_to_update = HashMap::new();
         for runtime in runtimes {
@@ -96,8 +95,7 @@ impl dyn ConfigFile {
                 .map(|tvr| {
                     if pin {
                         let plugin = config.get_or_create_plugin(&plugin);
-                        let tv =
-                            tvr.resolve(plugin.as_ref(), Default::default(), ts.latest_versions)?;
+                        let tv = tvr.resolve(plugin.as_ref(), Default::default(), false)?;
                         Ok(tv.version)
                     } else {
                         Ok(tvr.version())

@@ -54,7 +54,7 @@ impl Install {
     }
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::new();
-        let mut ts = ToolsetBuilder::new().with_latest_versions().build(config)?;
+        let mut ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = self.get_requested_tool_versions(config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
@@ -69,6 +69,7 @@ impl Install {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
+            latest_versions: true,
         }
     }
 
@@ -112,14 +113,14 @@ impl Install {
         for (plugin_name, tvr, opts) in requests {
             let plugin = config.get_or_create_plugin(&plugin_name);
             plugin.ensure_installed(mpr, false)?;
-            let tv = tvr.resolve(plugin.as_ref(), opts, ts.latest_versions)?;
+            let tv = tvr.resolve(plugin.as_ref(), opts, true)?;
             tool_versions.push(tv);
         }
         Ok(tool_versions)
     }
 
     fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_latest_versions().build(config)?;
+        let mut ts = ToolsetBuilder::new().build(config)?;
         let versions = ts.list_missing_versions();
         if versions.is_empty() {
             info!("all runtimes are installed");

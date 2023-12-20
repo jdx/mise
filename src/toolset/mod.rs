@@ -38,6 +38,7 @@ pub struct InstallOptions {
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
+    pub latest_versions: bool,
 }
 
 /// a toolset is a collection of tools for various plugins
@@ -49,7 +50,6 @@ pub struct InstallOptions {
 pub struct Toolset {
     pub versions: IndexMap<PluginName, ToolVersionList>,
     pub source: Option<ToolSource>,
-    pub latest_versions: bool,
     pub disable_tools: BTreeSet<PluginName>,
 }
 
@@ -89,7 +89,7 @@ impl Toolset {
             .iter_mut()
             .collect::<Vec<_>>()
             .par_iter_mut()
-            .for_each(|(_, v)| v.resolve(config, self.latest_versions));
+            .for_each(|(_, v)| v.resolve(config, false));
     }
     pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
         let mpr = MultiProgressReport::new();
@@ -123,7 +123,6 @@ impl Toolset {
             return Ok(());
         }
         let settings = Settings::try_get()?;
-        self.latest_versions = true;
         let queue: Vec<_> = versions
             .into_iter()
             .group_by(|v| v.plugin_name.clone())
@@ -153,7 +152,11 @@ impl Toolset {
                                 let prefix = format!("{}", style(&tv).cyan().for_stderr());
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.request.resolve(t.as_ref(), tv.opts.clone(), true)?,
+                                    tv: tv.request.resolve(
+                                        t.as_ref(),
+                                        tv.opts.clone(),
+                                        opts.latest_versions,
+                                    )?,
                                     pr: mpr.add(&prefix),
                                     raw,
                                     force: opts.force,
