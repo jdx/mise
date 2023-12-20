@@ -198,7 +198,10 @@ impl ExternalPlugin {
             display_stderr();
         }
 
-        Ok(stdout.split_whitespace().map(|v| v.into()).collect())
+        Ok(stdout
+            .split_whitespace()
+            .map(|v| regex!(r"^v(\d+)").replace(v, "$1").to_string())
+            .collect())
     }
 
     fn fetch_legacy_filenames(&self) -> Result<Vec<String>> {
