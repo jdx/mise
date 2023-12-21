@@ -59,6 +59,7 @@ pub fn print_version_if_requested() {
             std::process::exit(0);
         }
     }
+    debug!("{}", *VERSION);
 }
 
 fn show_version() {
