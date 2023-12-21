@@ -532,6 +532,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "demand"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c76b3984ede3301048a4b6d4693a59cf22700ab6636e62776602f2065e52973e"
+dependencies = [
+ "console",
+ "termcolor",
+]
+
+[[package]]
 name = "der"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1875,6 +1885,7 @@ dependencies = [
  "console",
  "ctor",
  "ctrlc",
+ "demand",
  "dialoguer",
  "dirs-next",
  "dotenvy",
