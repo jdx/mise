@@ -2764,6 +2764,9 @@ Arguments:
           The config file to trust
 
 Options:
+  -a, --all
+          Trust all config files in the current directory and its parents
+
       --untrust
           No longer trust this config
 
