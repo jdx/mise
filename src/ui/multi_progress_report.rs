@@ -19,23 +19,31 @@ impl MultiProgressReport {
         }
     }
     pub fn get() -> Arc<Self> {
-        Self::try_get().unwrap_or_else(|| {
-            let settings = Settings::get();
-            let mp = match settings.raw
-                || settings.quiet
-                || settings.verbose
-                || !console::user_attended_stderr()
-            {
-                true => None,
-                false => Some(MultiProgress::new()),
-            };
-            let mpr = Arc::new(MultiProgressReport {
-                mp,
-                quiet: settings.quiet,
-            });
-            *INSTANCE.lock().unwrap() = Some(Arc::downgrade(&mpr));
-            mpr
-        })
+        let mut mutex = INSTANCE.lock().unwrap();
+        if let Some(w) = &*mutex {
+            if let Some(mpr) = w.upgrade() {
+                return mpr;
+            }
+        }
+
+        let mpr = Arc::new(Self::new());
+        *mutex = Some(Arc::downgrade(&mpr));
+        mpr
+    }
+    fn new() -> Self {
+        let settings = Settings::get();
+        let mp = match settings.raw
+            || settings.quiet
+            || settings.verbose
+            || !console::user_attended_stderr()
+        {
+            true => None,
+            false => Some(MultiProgress::new()),
+        };
+        MultiProgressReport {
+            mp,
+            quiet: settings.quiet,
+        }
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         match &self.mp {
