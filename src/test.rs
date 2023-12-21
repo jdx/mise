@@ -79,7 +79,7 @@ pub fn replace_path(input: &str) -> String {
     input
         .replace(&path, "$PATH")
         .replace(&home, "~")
-        .replace(&*env::RTX_EXE.to_string_lossy(), "rtx")
+        .replace(&*env::RTX_BIN.to_string_lossy(), "rtx")
 }
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {

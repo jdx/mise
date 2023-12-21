@@ -43,7 +43,7 @@ impl SelfUpdate {
             rtxprintln!("rtx is already up to date");
         }
         if !self.no_plugins {
-            cmd!(&*env::RTX_EXE, "plugins", "update").run()?;
+            cmd!(&*env::RTX_BIN, "plugins", "update").run()?;
         }
 
         Ok(())
@@ -98,7 +98,7 @@ impl SelfUpdate {
     }
 
     pub fn is_available() -> bool {
-        !std::fs::canonicalize(&*env::RTX_EXE)
+        !std::fs::canonicalize(&*env::RTX_BIN)
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
