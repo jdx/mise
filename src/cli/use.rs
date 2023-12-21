@@ -80,7 +80,7 @@ pub struct Use {
 impl Use {
     pub fn run(self, config: &Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().build(config)?;
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         let versions = self
             .tool
             .iter()
@@ -153,7 +153,7 @@ impl Use {
             let plugin = &targ.plugin;
             let p = display_path(p);
             let global = display_path(global);
-            warn!("{plugin} is is defined in {p} which overrides the global config ({global})");
+            rtxwarn!("{plugin} is is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.plugin) {
@@ -273,7 +273,10 @@ mod tests {
         let orig = file::read_to_string(&cf_path).unwrap();
         let _ = file::remove_file(&cf_path);
 
-        assert_cli_snapshot!("use", "-g", "tiny@2", @"rtx ~/config/config.toml updated with tools: tiny@2");
+        assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
+        rtx ~/config/config.toml updated with tools: tiny@2
+        rtx tiny is is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
+        "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"

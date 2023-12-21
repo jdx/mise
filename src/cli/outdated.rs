@@ -32,7 +32,7 @@ impl Outdated {
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
         let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
-            info!("All tools are up to date");
+            rtxstatusln!("All tools are up to date");
         } else {
             self.display(outdated);
         }

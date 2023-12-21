@@ -6,7 +6,6 @@ use std::time::Duration;
 
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
-    fn warn(&self, _message: String);
     fn error(&self, _message: String);
     fn set_message(&self, _message: String) {}
     fn finish(&self) {}
@@ -60,10 +59,6 @@ fn error_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style("rtx").red().for_stderr());
     pad_prefix(pad, &prefix)
 }
-fn warn_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style("rtx").yellow().for_stderr());
-    pad_prefix(pad, &prefix)
-}
 fn success_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style("rtx").green().for_stderr());
     pad_prefix(pad, &prefix)
@@ -85,11 +80,6 @@ impl SingleReport for ProgressReport {
         self.pb.suspend(|| {
             eprintln!("{message}");
         });
-    }
-    fn warn(&self, message: String) {
-        let msg = format!("{} {message}", style("[WARN]").yellow().for_stderr());
-        self.pb.set_prefix(warn_prefix(self.pad, &self.prefix));
-        self.pb.println(msg);
     }
     fn error(&self, message: String) {
         let msg = format!("{} {message}", style("[ERROR]").red().for_stderr());
@@ -130,11 +120,6 @@ impl QuietReport {
 }
 
 impl SingleReport for QuietReport {
-    fn warn(&self, message: String) {
-        let prefix = warn_prefix(self.pad - 2, &self.prefix);
-        let x = style("⚠").yellow().for_stderr();
-        warn!("{prefix} {x} {message}");
-    }
     fn error(&self, message: String) {
         let prefix = error_prefix(self.pad - 2, &self.prefix);
         let x = style("✗").red().for_stderr();
@@ -159,11 +144,6 @@ impl VerboseReport {
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         eprintln!("{message}");
-    }
-    fn warn(&self, message: String) {
-        let prefix = warn_prefix(self.pad - 2, &self.prefix);
-        let x = style("⚠").yellow().for_stderr();
-        warn!("{prefix} {x} {message}");
     }
     fn error(&self, message: String) {
         let prefix = error_prefix(self.pad - 2, &self.prefix);

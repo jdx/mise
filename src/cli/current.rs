@@ -36,7 +36,7 @@ impl Current {
 
     fn one(&self, ts: Toolset, tool: &dyn Plugin) -> Result<()> {
         if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.name());
+            rtxwarn!("Plugin {} is not installed", tool.name());
             return Ok(());
         }
         match ts
@@ -55,7 +55,7 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", tool.name());
+                rtxwarn!("Plugin {} does not have a version set", tool.name());
             }
         };
         Ok(())
@@ -69,9 +69,11 @@ impl Current {
             for tv in versions {
                 if !plugin.is_version_installed(tv) {
                     let source = ts.versions.get(&tv.plugin_name).unwrap().source.clone();
-                    warn!(
+                    rtxwarn!(
                         "{}@{} is specified in {}, but not installed",
-                        tv.plugin_name, &tv.version, &source
+                        tv.plugin_name,
+                        &tv.version,
+                        &source
                     );
                 }
             }
@@ -132,6 +134,7 @@ mod tests {
         assert_cli_snapshot!("current", @r###"
         dummy 1.1.0
         tiny 3.1.0
+        rtx dummy@1.1.0 is specified in RTX_DUMMY_VERSION=1.1.0, but not installed
         "###);
 
         env::remove_var("RTX_DUMMY_VERSION");

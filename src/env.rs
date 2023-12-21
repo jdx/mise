@@ -247,7 +247,7 @@ fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__RTX_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
-            warn!("Failed to deserialize __RTX_DIFF: {:#}", err);
+            rtxwarn!("Failed to deserialize __RTX_DIFF: {:#}", err);
             EnvDiff::default()
         }),
         None => EnvDiff::default(),
@@ -279,7 +279,7 @@ fn var_option_bool(key: &str) -> Option<bool> {
         Ok(_) if var_is_true(key) => Some(true),
         Ok(_) if var_is_false(key) => Some(false),
         Ok(v) => {
-            warn!("Invalid value for env var {}={}", key, v);
+            rtxwarn!("Invalid value for env var {}={}", key, v);
             None
         }
         _ => None,

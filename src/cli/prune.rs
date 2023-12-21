@@ -55,7 +55,7 @@ impl Prune {
 
     fn delete(&self, to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>) -> Result<()> {
         let settings = Settings::try_get()?;
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {
             let mut prefix = format!("{}", style(&tv).cyan().for_stderr());
             if self.dry_run {
