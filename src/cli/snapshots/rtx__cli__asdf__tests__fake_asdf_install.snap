@@ -1,5 +1,5 @@
 ---
 source: src/cli/asdf.rs
-expression: output
+expression: "assert_cli!(\"asdf\", \"install\", \"tiny\")"
 ---
 

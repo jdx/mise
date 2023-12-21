@@ -1,6 +1,6 @@
 ---
 source: src/shell/fish.rs
-expression: "fish.activate(exe, true)"
+expression: "fish.activate(exe, \" --status\".into())"
 ---
 set -gx RTX_SHELL fish
 set -gx __RTX_ORIG_PATH $PATH

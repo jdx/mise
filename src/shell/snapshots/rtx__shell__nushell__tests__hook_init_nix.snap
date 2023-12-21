@@ -1,6 +1,6 @@
 ---
 source: src/shell/nushell.rs
-expression: "nushell.activate(exe, true)"
+expression: "nushell.activate(exe, \" --status\".into())"
 ---
 export-env {
   $env.RTX_SHELL = "nu"

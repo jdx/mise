@@ -99,6 +99,7 @@ mod tests {
 
     #[test]
     fn test_fake_asdf_install() {
-        assert_cli_snapshot!("asdf", "install", "tiny");
+        // on alpine this shows a warning, use assert_cli! to just get stdout
+        assert_snapshot!(assert_cli!("asdf", "install", "tiny"));
     }
 }
