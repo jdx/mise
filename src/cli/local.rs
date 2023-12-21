@@ -10,7 +10,6 @@ use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME
 use crate::file::display_path;
 
 use crate::plugins::PluginName;
-use crate::ui::style::style_tool;
 use crate::{dirs, env, file};
 
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
@@ -126,7 +125,7 @@ pub fn local(
         }
         let pin = pin || (settings.asdf_compat && !fuzzy);
         cf.add_runtimes(config, &runtimes, pin)?;
-        let tools = runtimes.iter().map(style_tool).join(" ");
+        let tools = runtimes.iter().map(|t| t.style()).join(" ");
         rtxprintln!("{} {} {tools}", style("rtx").dim(), display_path(path));
     }
 

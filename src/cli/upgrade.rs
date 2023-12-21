@@ -14,7 +14,6 @@ use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::ui::style::style_tv;
 
 /// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
@@ -105,7 +104,7 @@ impl Upgrade {
         };
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
-            let pr = mpr.add(&style_tv(&tv));
+            let pr = mpr.add(&tv.style());
             self.uninstall_old_version(tool.clone(), &tv, pr.as_ref())?;
         }
 

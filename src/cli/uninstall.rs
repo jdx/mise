@@ -10,7 +10,6 @@ use crate::config::Config;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::style::style_tv;
 use crate::{runtime_symlinks, shims};
 
 /// Removes runtime versions
@@ -49,11 +48,11 @@ impl Uninstall {
         let mpr = MultiProgressReport::get();
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
-                warn!("{} is not installed", style_tv(&tv));
+                warn!("{} is not installed", tv.style());
                 continue;
             }
 
-            let pr = mpr.add(&style_tv(&tv));
+            let pr = mpr.add(&tv.style());
             if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));

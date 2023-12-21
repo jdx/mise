@@ -12,7 +12,6 @@ use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::style::style_tv;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -169,7 +168,7 @@ impl Use {
 
     fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) {
         let path = display_path(cf.get_path());
-        let tools = versions.iter().map(style_tv).join(", ");
+        let tools = versions.iter().map(|t| t.style()).join(", ");
         rtxprintln!(
             "{} {} tools: {tools}",
             style("rtx").green(),

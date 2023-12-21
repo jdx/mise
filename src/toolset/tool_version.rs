@@ -1,3 +1,4 @@
+use console::style;
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::fs;
@@ -95,6 +96,13 @@ impl ToolVersion {
     pub fn latest_version(&self, tool: &dyn Plugin) -> Result<String> {
         let tv = self.request.resolve(tool, self.opts.clone(), true)?;
         Ok(tv.version)
+    }
+    pub fn style(&self) -> String {
+        format!(
+            "{}{}",
+            style(&self.plugin_name).blue().for_stderr(),
+            style(&format!("@{}", &self.version)).dim().for_stderr()
+        )
     }
     fn tv_pathname(&self) -> String {
         match &self.request {
