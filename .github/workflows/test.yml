@@ -89,11 +89,11 @@ jobs:
           timeout_minutes: 30
           max_attempts: 2
           command: just test-coverage
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          fail_ci_if_error: false
-          files: lcov.info
+      # - name: Upload to codecov.io
+      #   uses: codecov/codecov-action@v3
+      #   with:
+      #     fail_ci_if_error: false
+      #     files: lcov.info
 
   # super-linter:
   #   runs-on: ubuntu-latest
