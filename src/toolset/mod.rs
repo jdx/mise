@@ -25,6 +25,7 @@ use crate::plugins::{Plugin, PluginName};
 use crate::runtime_symlinks;
 use crate::shims;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style::style_tv;
 
 mod builder;
 mod tool_source;
@@ -150,15 +151,15 @@ impl Toolset {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
                             for tv in versions {
-                                let prefix = format!("{}", style(&tv).cyan().for_stderr());
+                                let tv = tv.request.resolve(
+                                    t.as_ref(),
+                                    tv.opts.clone(),
+                                    opts.latest_versions,
+                                )?;
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.request.resolve(
-                                        t.as_ref(),
-                                        tv.opts.clone(),
-                                        opts.latest_versions,
-                                    )?,
-                                    pr: mpr.add(&prefix),
+                                    pr: mpr.add(&style_tv(&tv)),
+                                    tv,
                                     raw,
                                     force: opts.force,
                                 };

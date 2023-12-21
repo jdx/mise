@@ -10,6 +10,7 @@ use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME
 use crate::file::display_path;
 
 use crate::plugins::PluginName;
+use crate::ui::style::style_tool;
 use crate::{dirs, env, file};
 
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
@@ -111,13 +112,11 @@ pub fn local(
         for plugin in plugins {
             cf.remove_plugin(plugin);
         }
-        let tools = plugins.iter().map(|r| r.to_string()).join(" ");
-        rtxprintln!(
-            "{} {} {}",
-            style("rtx").dim(),
-            display_path(path),
-            style(tools).cyan().strikethrough()
-        );
+        let tools = plugins
+            .iter()
+            .map(|r| style(r).blue().for_stderr().to_string())
+            .join(" ");
+        rtxprintln!("{} {} {tools}", style("rtx").dim(), display_path(path));
     }
 
     if !runtime.is_empty() {
@@ -127,13 +126,8 @@ pub fn local(
         }
         let pin = pin || (settings.asdf_compat && !fuzzy);
         cf.add_runtimes(config, &runtimes, pin)?;
-        let tools = runtimes.iter().map(|r| r.to_string()).join(" ");
-        rtxprintln!(
-            "{} {} {}",
-            style("rtx").dim(),
-            display_path(path),
-            style(tools).cyan()
-        );
+        let tools = runtimes.iter().map(style_tool).join(" ");
+        rtxprintln!("{} {} {tools}", style("rtx").dim(), display_path(path));
     }
 
     if !runtime.is_empty() || remove.is_some() {
