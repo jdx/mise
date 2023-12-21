@@ -89,29 +89,13 @@ jobs:
           timeout_minutes: 30
           max_attempts: 2
           command: just test-coverage
+      - name: Run codacy-coverage-reporter
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: lcov.info
       # - name: Upload to codecov.io
       #   uses: codecov/codecov-action@v3
       #   with:
       #     fail_ci_if_error: false
       #     files: lcov.info
-
-  # super-linter:
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: read
-  #     statuses: write
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v3
-  #       with:
-  #         # Full git history is needed to get a proper
-  #         # list of changed files within `super-linter`
-  #         fetch-depth: 0
-  #
-  #     - name: Lint Code Base
-  #       uses: super-linter/super-linter@v5
-  #       env:
-  #         VALIDATE_ALL_CODEBASE: false
-  #         DEFAULT_BRANCH: main
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
