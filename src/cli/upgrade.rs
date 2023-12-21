@@ -49,7 +49,7 @@ impl Upgrade {
     pub fn run(self, config: &Config) -> Result<()> {
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let mut outdated = ts.list_outdated_versions();
-        if self.interactive {
+        if self.interactive && !outdated.is_empty() {
             let tvs = self.get_interactive_tool_set(&outdated)?;
             outdated.retain(|(_, tv, _)| tvs.contains(tv));
         } else {
@@ -89,11 +89,11 @@ impl Upgrade {
             .collect::<Vec<_>>();
 
         if self.dry_run {
-            for (tool, tv) in &to_remove {
-                rtxprintln!("Would uninstall {} {}", tool, tv);
+            for (_, tv) in &to_remove {
+                info!("Would uninstall {tv}");
             }
             for tv in &new_versions {
-                rtxprintln!("Would install {}", tv);
+                info!("Would install {tv}");
             }
             return Ok(());
         }
