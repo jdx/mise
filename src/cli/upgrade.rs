@@ -122,16 +122,10 @@ impl Upgrade {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        match tool.uninstall_version(tv, pr, self.dry_run) {
-            Ok(_) => {
-                pr.finish();
-                Ok(())
-            }
-            Err(err) => {
-                pr.error(err.to_string());
-                Err(err.wrap_err(format!("failed to uninstall {tv}")))
-            }
-        }
+        tool.uninstall_version(tv, pr, self.dry_run)
+            .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
+        pr.finish();
+        Ok(())
     }
 
     fn get_interactive_tool_set(&self, outdated: &OutputVec) -> Result<HashSet<ToolVersion>> {

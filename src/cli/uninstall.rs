@@ -55,7 +55,7 @@ impl Uninstall {
             let prefix = format!("{}", style(&tv).cyan().for_stderr());
             let pr = mpr.add(&prefix);
             if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
-                pr.error(err.to_string());
+                rtxerror!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             if self.dry_run {
