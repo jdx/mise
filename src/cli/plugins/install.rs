@@ -89,7 +89,7 @@ impl PluginsInstall {
             .install(|| -> Result<()> {
                 plugins
                     .into_par_iter()
-                    .map(|plugin| self.install_one(plugin, None, &mpr))
+                    .map(|plugin| self.install_one(plugin, None, mpr))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(())
             })
