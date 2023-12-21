@@ -48,7 +48,7 @@ _rtx() {
         (sync) __rtx_sync_cmd && ret=0 ;;
         (trust) __rtx_trust_cmd && ret=0 ;;
         (remove|rm|uninstall) __rtx_uninstall_cmd && ret=0 ;;
-        (upgrade) __rtx_upgrade_cmd && ret=0 ;;
+        (up|upgrade) __rtx_upgrade_cmd && ret=0 ;;
         (u|use) __rtx_use_cmd && ret=0 ;;
         (v|version) __rtx_version_cmd && ret=0 ;;
         (where) __rtx_where_cmd && ret=0 ;;
@@ -748,7 +748,7 @@ __rtx_cmds() {
     'sync:Add tool versions from external tools to rtx'
     'trust:Marks a config file as trusted'
     {remove,rm,uninstall}':Removes runtime versions'
-    'upgrade:Upgrades outdated tool versions'
+    {up,upgrade}':Upgrades outdated tool versions'
     {u,use}':Change the active version of a tool locally or globally.'
     'version:Show rtx version'
     'where:Display the installation path for a runtime'

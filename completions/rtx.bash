@@ -156,6 +156,9 @@ _rtx() {
             rtx,uninstall)
                 cmd="rtx__uninstall"
                 ;;
+            rtx,up)
+                cmd="rtx__upgrade"
+                ;;
             rtx,upgrade)
                 cmd="rtx__upgrade"
                 ;;
