@@ -18,7 +18,7 @@ use crate::ui::progress_report::SingleReport;
 
 /// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(visible_alias = "up", verbatim_doc_comment)]
 pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
