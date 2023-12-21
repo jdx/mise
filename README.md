@@ -2779,6 +2779,9 @@ Options:
 
           [env: RTX_JOBS=]
 
+  -i, --interactive
+          Display multiselect menu to choose which tools to upgrade
+
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 ```

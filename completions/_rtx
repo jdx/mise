@@ -667,6 +667,7 @@ __rtx_upgrade_cmd() {
     '*::tool:__rtx_tool_versions' \
     '(-n --dry-run)'{-n,--dry-run}'[Just print what would be done, don'\''t actually do it]' \
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
+    '(-i --interactive)'{-i,--interactive}'[Display multiselect menu to choose which tools to upgrade]' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
