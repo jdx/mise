@@ -1,6 +1,6 @@
 ---
 source: src/shell/bash.rs
-expression: "bash.activate(exe, true)"
+expression: "bash.activate(exe, \" --status\".into())"
 ---
 export PATH="/some/dir:$PATH"
 export RTX_SHELL=bash

@@ -1,6 +1,6 @@
 ---
 source: src/shell/xonsh.rs
-expression: "xonsh.activate(exe, true)"
+expression: "xonsh.activate(exe, \" --status\".into())"
 ---
 from os               import environ
 from xonsh.built_ins  import XSH
