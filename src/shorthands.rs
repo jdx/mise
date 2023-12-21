@@ -26,7 +26,7 @@ pub fn get_shorthands() -> Shorthands {
                 shorthands.extend(custom);
             }
             Err(err) => {
-                rtxwarn!("Failed to read shorthands file: {} {:#}", &f.display(), err);
+                warn!("Failed to read shorthands file: {} {:#}", &f.display(), err);
             }
         }
     }

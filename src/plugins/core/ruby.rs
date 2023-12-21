@@ -148,10 +148,10 @@ impl RubyPlugin {
         match self.core.fetch_remote_versions_from_rtx() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
-            Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         if let Err(err) = self.update_build_tool() {
-            rtxwarn!("{err}");
+            warn!("{err}");
         }
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
@@ -353,7 +353,7 @@ impl Plugin for RubyPlugin {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         if let Err(err) = self.update_build_tool() {
-            rtxwarn!("{err}");
+            warn!("{err}");
         }
         assert!(matches!(
             &ctx.tv.request,

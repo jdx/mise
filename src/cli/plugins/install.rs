@@ -76,7 +76,7 @@ impl PluginsInstall {
         let ts = ToolsetBuilder::new().build(config)?;
         let missing_plugins = ts.list_missing_plugins(config);
         if missing_plugins.is_empty() {
-            rtxwarn!("all plugins already installed");
+            warn!("all plugins already installed");
         }
         self.install_many(missing_plugins, mpr)?;
         Ok(())
@@ -104,8 +104,8 @@ impl PluginsInstall {
         let mut plugin = ExternalPlugin::new(name.clone());
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
-            rtxwarn!("Plugin {name} already installed");
-            rtxwarn!("Use --force to install anyway");
+            warn!("Plugin {name} already installed");
+            warn!("Use --force to install anyway");
         } else {
             plugin.ensure_installed(mpr, true)?;
         }

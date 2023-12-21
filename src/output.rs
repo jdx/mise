@@ -41,7 +41,7 @@ macro_rules! rtxprint {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! rtxstatusln {
+macro_rules! info {
         ($($arg:tt)*) => {{
             let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
             let rtx = console::style("rtx ").dim().for_stderr();
@@ -51,7 +51,7 @@ macro_rules! rtxstatusln {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! rtxwarn {
+macro_rules! warn {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
@@ -63,7 +63,7 @@ macro_rules! rtxwarn {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! rtxerror {
+macro_rules! error {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
@@ -73,11 +73,27 @@ macro_rules! rtxerror {
         }
     }
 
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => {{
+        log::trace!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {{
+        log::debug!($($arg)*);
+    }};
+}
+
 #[cfg(not(test))]
 #[macro_export]
-macro_rules! rtxstatusln {
+macro_rules! info {
     ($($arg:tt)*) => {{
-        if log_enabled!(log::Level::Info) {
+        if log::log_enabled!(log::Level::Debug) {
+           log::info!($($arg)*);
+        } else if log::log_enabled!(log::Level::Info) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let rtx = console::style("rtx ").dim().for_stderr();
                 eprintln!("{}{}", rtx, format!($($arg)*));
@@ -88,9 +104,11 @@ macro_rules! rtxstatusln {
 
 #[cfg(not(test))]
 #[macro_export]
-macro_rules! rtxwarn {
+macro_rules! warn {
     ($($arg:tt)*) => {{
-        if log_enabled!(log::Level::Warn) {
+        if log::log_enabled!(log::Level::Debug) {
+           log::warn!($($arg)*);
+        } else if log::log_enabled!(log::Level::Warn) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let rtx = console::style("rtx ").yellow().for_stderr();
                 eprintln!("{}{}", rtx, format!($($arg)*));
@@ -101,9 +119,11 @@ macro_rules! rtxwarn {
 
 #[cfg(not(test))]
 #[macro_export]
-macro_rules! rtxerror {
+macro_rules! error {
     ($($arg:tt)*) => {{
-        if log_enabled!(log::Level::Error) {
+        if log::log_enabled!(log::Level::Debug) {
+           log::error!($($arg)*);
+        } else if log::log_enabled!(log::Level::Error) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let rtx = console::style("rtx ").red().for_stderr();
                 eprintln!("{}{}", rtx, format!($($arg)*));

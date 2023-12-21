@@ -256,7 +256,7 @@ impl Toolset {
                 let latest = match tv.latest_version(t.as_ref()) {
                     Ok(latest) => latest,
                     Err(e) => {
-                        rtxwarn!("Error getting latest version for {t}: {e:#}");
+                        warn!("Error getting latest version for {t}: {e:#}");
                         return None;
                     }
                 };
@@ -290,7 +290,7 @@ impl Toolset {
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
-                    rtxwarn!("Error running exec-env: {:#}", e);
+                    warn!("Error running exec-env: {:#}", e);
                     Vec::new()
                 }
             })
@@ -317,7 +317,7 @@ impl Toolset {
             .into_par_iter()
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
-                    rtxwarn!("Error listing bin paths for {tv}: {e:#}");
+                    warn!("Error listing bin paths for {tv}: {e:#}");
                     Vec::new()
                 })
             })
@@ -342,7 +342,7 @@ impl Toolset {
             .filter(|(p, tv)| match p.which(tv, bin_name) {
                 Ok(x) => x.is_some(),
                 Err(e) => {
-                    rtxwarn!("Error running which: {:#}", e);
+                    warn!("Error running which: {:#}", e);
                     false
                 }
             })
@@ -360,7 +360,7 @@ impl Toolset {
             .map(|tv| tv.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        rtxwarn!(
+        warn!(
             "missing: {}. Install with {}",
             truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
             style("rtx install").yellow().for_stderr(),

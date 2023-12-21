@@ -75,12 +75,12 @@ impl HookEnv {
             .collect_vec();
         if !installed_versions.is_empty() {
             let status = installed_versions.into_iter().rev().join(" ");
-            rtxstatusln!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+            info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
         }
         let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
         if !env_diff.is_empty() {
             let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-            rtxstatusln!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
+            info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
         }
     }
 
@@ -113,7 +113,7 @@ impl HookEnv {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
-                Err(err) => rtxwarn!("failed to update DIRENV_DIFF: {:#}", err),
+                Err(err) => warn!("failed to update DIRENV_DIFF: {:#}", err),
                 _ => {}
             }
         }

@@ -11,7 +11,7 @@ pub fn commands(config: &Config) -> Vec<Command> {
         .flat_map(|p| {
             p.external_commands().unwrap_or_else(|e| {
                 let p = p.name();
-                rtxwarn!("failed to load external commands for plugin {p}: {e:#}");
+                warn!("failed to load external commands for plugin {p}: {e:#}");
                 vec![]
             })
         })

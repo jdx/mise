@@ -238,7 +238,7 @@ fn normalize_escape_sequences(input: &str) -> String {
                     }
                 },
                 None => {
-                    rtxwarn!("Invalid escape sequence: {}", input);
+                    warn!("Invalid escape sequence: {}", input);
                 }
             }
         } else {
