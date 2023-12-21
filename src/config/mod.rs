@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -30,7 +30,7 @@ type AliasMap = BTreeMap<PluginName, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 type ToolMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Config {
     pub global_config: RtxToml,
     pub config_files: ConfigMap,
@@ -127,7 +127,7 @@ impl Config {
             repo_urls,
         };
 
-        debug!("{}", &config);
+        debug!("{config:#?}");
 
         Ok(config)
     }
@@ -496,7 +496,7 @@ fn track_config_files(config_filenames: &[PathBuf]) {
     }
 }
 
-impl Display for Config {
+impl Debug for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let plugins = self
             .list_plugins()
@@ -509,8 +509,20 @@ impl Display for Config {
             .iter()
             .map(|(p, _)| display_path(p))
             .collect::<Vec<_>>();
-        writeln!(f, "Files: {}", config_files.join(", "))?;
-        write!(f, "Installed Plugins: {}", plugins.join(", "))
+        let mut s = f.debug_struct("Config");
+        s.field("Config Files", &config_files);
+        s.field("Installed Plugins", &plugins);
+        if !self.env.is_empty() {
+            s.field("Env", &self.env);
+            s.field("Env Sources", &self.env_sources);
+        }
+        if !self.path_dirs.is_empty() {
+            s.field("Path Dirs", &self.path_dirs);
+        }
+        if !self.aliases.is_empty() {
+            s.field("Aliases", &self.aliases);
+        }
+        s.finish()
     }
 }
 
@@ -522,6 +534,6 @@ mod tests {
     #[test]
     fn test_load() {
         let config = Config::load().unwrap();
-        assert_display_snapshot!(config);
+        assert_debug_snapshot!(config);
     }
 }

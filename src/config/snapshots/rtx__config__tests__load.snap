@@ -2,5 +2,25 @@
 source: src/config/mod.rs
 expression: config
 ---
-Files: ~/cwd/.test-tool-versions, ~/.test-tool-versions, ~/config/config.toml
-Installed Plugins: dummy, tiny
+Config {
+    Config Files: [
+        "~/cwd/.test-tool-versions",
+        "~/.test-tool-versions",
+        "~/config/config.toml",
+    ],
+    Installed Plugins: [
+        "dummy",
+        "tiny",
+    ],
+    Env: {
+        "TEST_ENV_VAR": "test-123",
+    },
+    Env Sources: {
+        "TEST_ENV_VAR": "/Users/jdx/src/rtx/test/config/config.toml",
+    },
+    Aliases: {
+        "tiny": {
+            "my/alias": "3.0",
+        },
+    },
+}
