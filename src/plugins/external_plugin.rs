@@ -452,7 +452,7 @@ impl Plugin for ExternalPlugin {
                 return Ok(());
             }
             if !settings.yes && self.repo_url.is_none() {
-                let url = self.get_repo_url(&config)?;
+                let url = self.get_repo_url(&config).unwrap_or_default();
                 if !url.starts_with("https://github.com/rtx-plugins/") {
                     eprintln!(
                         "⚠️  {name} is a community-developed plugin: {url}",
@@ -472,7 +472,6 @@ impl Plugin for ExternalPlugin {
     }
 
     fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
-        let config = Config::get();
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             rtxwarn!(
@@ -492,7 +491,7 @@ impl Plugin for ExternalPlugin {
         pr.set_message("updating git repo".into());
         let (_pre, _post) = git.update(gitref)?;
         let sha = git.current_sha_short()?;
-        let repo_url = self.get_repo_url(&config)?;
+        let repo_url = self.get_remote_url().unwrap_or_default();
         self.exec_hook(pr, "post-plugin-update")?;
         pr.finish_with_message(format!(
             "{repo_url}#{}",
