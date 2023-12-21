@@ -51,6 +51,7 @@ color-print = "0.3"
 confique = { version = "0.2", default-features = false }
 console = "0.15"
 ctrlc = "3.4"
+demand = "0.1"
 dialoguer = { version = "0.11", features = [] }
 dirs-next = "2.0"
 dotenvy = "0.15"
@@ -92,7 +93,7 @@ shell-escape = "0.1"
 shell-words = "1.1"
 simplelog = { version = "0.12" }
 sys-info = "0.9"
-tabled = { version = "0.14", features = ["color"] }
+tabled = { version = "0.15", features = ["ansi"] }
 tar = "0.4"
 tempfile = "3.8.1"
 tera = { version = "1.19", default-features = false }

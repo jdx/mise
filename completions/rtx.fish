@@ -275,6 +275,7 @@ complete -kxc rtx -n "$fssf uninstall" -a "(__rtx_installed_tool_versions)" -d '
 
 # upgrade
 complete -kxc rtx -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
+complete -kxc rtx -n "$fssf upgrade" -s i -l interactive -d 'Display multiselect menu to choose which tools to upgrade'
 complete -kxc rtx -n "$fssf upgrade" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf upgrade" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf upgrade" -a "(__rtx_tool_versions)" -d 'Tool(s) to upgrade'

@@ -1,4 +1,5 @@
 use console::style;
+use demand::DemandOption;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -34,6 +35,10 @@ pub struct Upgrade {
     #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
+    /// Display multiselect menu to choose which tools to upgrade
+    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
+    interactive: bool,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -42,15 +47,19 @@ pub struct Upgrade {
 
 impl Upgrade {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-        let tool_set = self
-            .tool
-            .iter()
-            .map(|t| t.plugin.clone())
-            .collect::<HashSet<_>>();
-        ts.versions
-            .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
-        let outdated = ts.list_outdated_versions();
+        let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+        let mut outdated = ts.list_outdated_versions();
+        if self.interactive {
+            let tvs = self.get_interactive_tool_set(&outdated)?;
+            outdated.retain(|(_, tv, _)| tvs.contains(tv));
+        } else {
+            let tool_set = self
+                .tool
+                .iter()
+                .map(|t| t.plugin.clone())
+                .collect::<HashSet<_>>();
+            outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.name()));
+        }
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
@@ -123,6 +132,18 @@ impl Upgrade {
                 Err(err.wrap_err(format!("failed to uninstall {tv}")))
             }
         }
+    }
+
+    fn get_interactive_tool_set(&self, outdated: &OutputVec) -> Result<HashSet<ToolVersion>> {
+        let mut ms = demand::MultiSelect::new("rtx upgrade")
+            .description("Select tools to upgrade")
+            .filterable(true)
+            .min(1);
+        for (_, tv, latest) in outdated {
+            let label = format!("{tv} -> {latest}");
+            ms = ms.option(DemandOption::new(tv).label(&label));
+        }
+        Ok(ms.run()?.into_iter().cloned().collect())
     }
 }
 
