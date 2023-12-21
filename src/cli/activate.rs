@@ -1,9 +1,10 @@
+use std::path::PathBuf;
+
 use eyre::Result;
 
-use crate::dirs;
-use crate::env::RTX_EXE;
 use crate::file::touch_dir;
 use crate::shell::{get_shell, ShellType};
+use crate::{dirs, env};
 
 /// Initializes rtx in the current shell session
 ///
@@ -46,12 +47,18 @@ pub struct Activate {
 impl Activate {
     pub fn run(self) -> Result<()> {
         let shell = get_shell(self.shell_type.or(self.shell))
-            .expect("no shell provided, use `--shell=zsh`");
+            .expect("no shell provided. Run `rtx activate zsh` or similar");
 
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);
 
-        let output = shell.activate(&RTX_EXE, self.status);
+        let rtx_bin = if cfg!(target_os = "linux") {
+            // linux dereferences symlinks, so use argv0 instead
+            PathBuf::from(&*env::ARGV0)
+        } else {
+            env::RTX_BIN.clone()
+        };
+        let output = shell.activate(&rtx_bin, self.status);
         rtxprint!("{output}");
 
         Ok(())

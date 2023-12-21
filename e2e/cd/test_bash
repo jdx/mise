@@ -21,7 +21,8 @@ assert() {
 assert_path() {
   local expected="$1"
   local actual="${PATH/%$orig_path/}"
-  actual="${actual/%:/}"
+  actual="${actual%:}"
+  actual="${actual%:}"
   actual="${actual//$ROOT/ROOT}"
   actual="${actual//$RTX_DATA_DIR\/installs/INSTALLS}"
   if [[ "$actual" != "$expected" ]]; then
