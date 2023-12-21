@@ -75,7 +75,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         })
         .lock();
 
-    let rtx_bin = file::which("rtx").unwrap_or(env::RTX_EXE.clone());
+    let rtx_bin = file::which("rtx").unwrap_or(env::RTX_BIN.clone());
 
     create_dir_all(&*dirs::SHIMS)?;
 

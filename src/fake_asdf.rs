@@ -17,7 +17,6 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
             file::create_dir_all(&path)?;
             file::write(
                 &asdf_bin,
-                // rtx="${{RTX_EXE:-rtx}}"
                 formatdoc! {r#"
                 #!/bin/sh
                 rtx asdf "$@"

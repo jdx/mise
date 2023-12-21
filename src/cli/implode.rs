@@ -25,7 +25,7 @@ pub struct Implode {
 
 impl Implode {
     pub fn run(self) -> Result<()> {
-        let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_EXE];
+        let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_BIN];
         if self.config {
             files.push(&*dirs::CONFIG);
         }

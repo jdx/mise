@@ -45,15 +45,13 @@ pub static RTX_ENV: Lazy<Option<String>> =
     Lazy::new(|| var("RTX_ENV").or_else(|_| var("RTX_ENVIRONMENT")).ok());
 pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
 pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
-pub static RTX_EXE: Lazy<PathBuf> = Lazy::new(|| {
+pub static RTX_BIN: Lazy<PathBuf> = Lazy::new(|| {
     var_path("RTX_EXE")
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "rtx".into())
 });
-pub static RTX_BIN_NAME: Lazy<String> = Lazy::new(|| {
-    let arg0 = &ARGS.read().unwrap()[0];
-    arg0.rsplit_once('/').unwrap_or(("", &arg0)).1.to_string()
-});
+pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
+pub static RTX_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
 pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
@@ -365,7 +363,7 @@ fn log_level() -> LevelFilter {
     let args = ARGS.read().unwrap();
     for (i, arg) in args.iter().enumerate() {
         // stop parsing after "--" or if we're executing as a shim
-        if arg == "--" || &*RTX_BIN_NAME != "rtx" {
+        if arg == "--" || *RTX_BIN_NAME != "rtx" {
             break;
         }
         if let Some(("--log-level", level)) = arg.split_once('=') {
@@ -418,6 +416,10 @@ fn linux_distro() -> Option<String> {
         Ok(release) => release.id,
         _ => None,
     }
+}
+
+fn filename(path: &str) -> &str {
+    path.rsplit_once('/').map(|(_, file)| file).unwrap_or(path)
 }
 
 fn is_ninja_on_path() -> bool {
