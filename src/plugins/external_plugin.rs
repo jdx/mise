@@ -87,10 +87,10 @@ impl ExternalPlugin {
         Arc::new(Self::new(name))
     }
 
-    pub fn list() -> Result<Vec<Arc<dyn Plugin>>> {
+    pub fn list() -> Result<Vec<(String, Arc<dyn Plugin>)>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_iter()
-            .map(Self::newa)
+            .map(|name| (name.clone(), Self::newa(name)))
             .collect())
     }
 
