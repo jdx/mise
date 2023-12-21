@@ -72,10 +72,10 @@ fn show_latest() {
         return;
     }
     if let Some(latest) = check_for_new_version(duration::DAILY) {
-        rtxwarn!("rtx version {} available", latest);
+        warn!("rtx version {} available", latest);
         if SelfUpdate::is_available() {
             let cmd = style("rtx self-update").bright().yellow().for_stderr();
-            rtxwarn!("To update, run {}", cmd);
+            warn!("To update, run {}", cmd);
         }
     }
 }

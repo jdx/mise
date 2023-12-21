@@ -198,7 +198,7 @@ impl Config {
             .into_par_iter()
             .map(|plugin| {
                 let aliases = plugin.get_aliases().unwrap_or_else(|err| {
-                    rtxwarn!("get_aliases: {err}");
+                    warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
                 (plugin.name().to_string(), aliases)
@@ -233,7 +233,7 @@ impl Config {
             .map(|path| match config_file::parse(&path) {
                 Ok(cf) => Some((path, cf)),
                 Err(err) => {
-                    rtxerror!("Error loading config file: {:#}", err);
+                    error!("Error loading config file: {:#}", err);
                     None
                 }
             })
@@ -495,7 +495,7 @@ fn track_config_files(config_filenames: &[PathBuf]) {
         Ok(())
     };
     if let Err(err) = track() {
-        rtxwarn!("tracking config files: {:#}", err);
+        warn!("tracking config files: {:#}", err);
     }
 }
 

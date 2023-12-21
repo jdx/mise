@@ -38,7 +38,7 @@ impl PluginsLsRemote {
             .unwrap_or(0);
 
         if shorthands.is_empty() {
-            rtxwarn!("default shorthands are disabled");
+            warn!("default shorthands are disabled");
         }
 
         for (plugin, repo) in shorthands {

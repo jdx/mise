@@ -59,7 +59,7 @@ impl PluginsUninstall {
                 }
                 pr.finish_with_message("uninstalled".into());
             }
-            _ => rtxwarn!(
+            _ => warn!(
                 "{} is not installed",
                 style(plugin_name).cyan().for_stderr()
             ),

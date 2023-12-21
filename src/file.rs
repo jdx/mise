@@ -49,7 +49,7 @@ pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 
 pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     remove_all(&path).map_err(|e| {
-        rtxwarn!("failed to remove {}: {}", path.as_ref().display(), e);
+        warn!("failed to remove {}: {}", path.as_ref().display(), e);
         e
     })
 }

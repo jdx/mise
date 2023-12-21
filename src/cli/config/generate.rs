@@ -79,7 +79,7 @@ impl ConfigGenerate {
 "#
         .trim();
         if let Some(output) = &self.output {
-            rtxstatusln!("writing to {}", display_path(output));
+            info!("writing to {}", display_path(output));
             file::write(output, doc)?;
         } else {
             rtxprintln!("{doc}");

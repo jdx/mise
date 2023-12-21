@@ -135,10 +135,8 @@ impl Ls {
     }
 
     fn display_parseable(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        rtxwarn!(
-            "The parseable output format is deprecated and will be removed in a future release."
-        );
-        rtxwarn!("Please use the regular output format instead which has been modified to be more easily parseable.");
+        warn!("The parseable output format is deprecated and will be removed in a future release.");
+        warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
         runtimes
             .into_iter()
             .map(|(p, tv, _)| (p, tv))
