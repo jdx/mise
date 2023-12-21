@@ -35,10 +35,9 @@ fn xonsh_escape_char(ch: char) -> Option<&'static str> {
 }
 
 impl Shell for Xonsh {
-    fn activate(&self, exe: &Path, status: bool) -> String {
+    fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
-        let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
         // todo: xonsh doesn't update the environment that rtx relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
@@ -63,7 +62,7 @@ impl Shell for Xonsh {
         // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
         out.push_str(&formatdoc! {r#"
             def listen_prompt(): # Hook Events
-              execx($({exe} hook-env{status} -s xonsh))
+              execx($({exe} hook-env{flags} -s xonsh))
 
             XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
             "#});

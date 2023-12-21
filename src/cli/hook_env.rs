@@ -1,3 +1,4 @@
+use console::{style, truncate_str};
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -28,6 +29,10 @@ pub struct HookEnv {
     /// Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
     #[clap(long)]
     status: bool,
+
+    /// Hide the warning when a tool is not installed
+    #[clap(long, short)]
+    quiet: bool,
 }
 
 impl HookEnv {
@@ -57,6 +62,7 @@ impl HookEnv {
         if self.status {
             self.display_status(config, &ts);
         }
+        self.missing_versions_warning(&ts);
 
         Ok(())
     }
@@ -160,6 +166,22 @@ impl HookEnv {
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
         ))
+    }
+    fn missing_versions_warning(&self, ts: &Toolset) {
+        let missing = ts.list_missing_versions();
+        if missing.is_empty() || self.quiet {
+            return;
+        }
+        let versions = missing
+            .iter()
+            .map(|tv| tv.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        rtxwarn!(
+            "missing: {}. Install with {}",
+            truncate_str(&versions, 40, "…"),
+            style("rtx install").yellow().for_stderr(),
+        );
     }
 }
 
