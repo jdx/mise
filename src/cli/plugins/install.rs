@@ -1,7 +1,9 @@
 use color_eyre::eyre::{eyre, Result};
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use url::Url;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 
 use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
 use crate::toolset::ToolsetBuilder;
@@ -77,21 +79,16 @@ impl PluginsInstall {
     }
 
     fn install_many(&self, plugins: Vec<PluginName>, mpr: MultiProgressReport) -> Result<()> {
-        for plugin in plugins {
-            self.install_one(plugin, None, &mpr)?;
-        }
-        Ok(())
-        // TODO: run in parallel
-        // ThreadPoolBuilder::new()
-        //     .num_threads(config.settings.jobs)
-        //     .build()?
-        //     .install(|| -> Result<()> {
-        //         plugins
-        //             .into_par_iter()
-        //             .map(|plugin| self.install_one(&config, plugin, None, &mpr))
-        //             .collect::<Result<Vec<_>>>()?;
-        //         Ok(())
-        //     })
+        ThreadPoolBuilder::new()
+            .num_threads(Settings::get().jobs)
+            .build()?
+            .install(|| -> Result<()> {
+                plugins
+                    .into_par_iter()
+                    .map(|plugin| self.install_one(plugin, None, &mpr))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(())
+            })
     }
 
     fn install_one(
