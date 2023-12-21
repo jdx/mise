@@ -46,6 +46,7 @@ impl Env {
             latest_versions: false,
         };
         ts.install_arg_versions(config, &opts)?;
+        ts.warn_if_versions_missing();
 
         if self.json {
             self.output_json(config, ts)

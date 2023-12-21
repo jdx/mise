@@ -64,6 +64,7 @@ impl Exec {
             latest_versions: false,
         };
         ts.install_arg_versions(config, &opts)?;
+        ts.warn_if_versions_missing();
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
         let env = ts.env_with_path(config);
