@@ -12,7 +12,6 @@ use rayon::prelude::*;
 
 pub use settings::{Settings, SettingsPartial};
 
-use crate::cli::Cli;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
@@ -62,8 +61,6 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
-        let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
-        Settings::add_partial(cli_settings);
         let global_config = load_rtxrc()?;
         Settings::add_partial(global_config.settings()?);
 

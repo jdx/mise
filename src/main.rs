@@ -18,7 +18,7 @@ use eyre::Result;
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 
 #[macro_use]
 mod output;
@@ -70,8 +70,9 @@ fn main() -> Result<()> {
     });
     *env::ARGS.write().unwrap() = env::args().collect();
     color_eyre::install()?;
-    let log_level = *env::RTX_LOG_LEVEL;
-    logger::init(log_level, *env::RTX_LOG_FILE_LEVEL);
+    let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
+    Settings::add_partial(cli_settings);
+    let log_level = logger::init();
     handle_ctrlc();
 
     match run().with_section(|| VERSION.to_string().header("Version:")) {
