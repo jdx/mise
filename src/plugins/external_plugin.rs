@@ -163,7 +163,7 @@ impl ExternalPlugin {
             Ok(Some(versions)) => return Ok(versions),
             Err(err) => warn!(
                 "Failed to fetch remote versions for plugin {}: {}",
-                style(&self.name).cyan().for_stderr(),
+                style(&self.name).blue().for_stderr(),
                 err
             ),
             _ => {}
@@ -404,7 +404,7 @@ impl Plugin for ExternalPlugin {
             .wrap_err_with(|| {
                 eyre!(
                     "Failed listing remote versions for plugin {}",
-                    style(&self.name).cyan().for_stderr(),
+                    style(&self.name).blue().for_stderr(),
                 )
             })
             .cloned()
@@ -419,7 +419,7 @@ impl Plugin for ExternalPlugin {
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching latest stable version for plugin {}",
-                    style(&self.name).cyan().for_stderr(),
+                    style(&self.name).blue().for_stderr(),
                 )
             })
             .cloned()
@@ -456,7 +456,7 @@ impl Plugin for ExternalPlugin {
                 if !url.starts_with("https://github.com/rtx-plugins/") {
                     eprintln!(
                         "⚠️  {name} is a community-developed plugin: {url}",
-                        name = style(&self.name).cyan(),
+                        name = style(&self.name).blue(),
                         url = style(url.trim_end_matches(".git")).yellow(),
                     );
                     if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
@@ -476,7 +476,7 @@ impl Plugin for ExternalPlugin {
         if plugin_path.is_symlink() {
             warn!(
                 "Plugin: {} is a symlink, not updating",
-                style(&self.name).cyan().for_stderr()
+                style(&self.name).blue().for_stderr()
             );
             return Ok(());
         }
@@ -484,7 +484,7 @@ impl Plugin for ExternalPlugin {
         if !git.is_repo() {
             warn!(
                 "Plugin {} is not a git repository, not updating",
-                style(&self.name).cyan().for_stderr()
+                style(&self.name).blue().for_stderr()
             );
             return Ok(());
         }
@@ -538,7 +538,7 @@ impl Plugin for ExternalPlugin {
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching aliases for plugin {}",
-                    style(&self.name).cyan().for_stderr(),
+                    style(&self.name).blue().for_stderr(),
                 )
             })?
             .iter()
@@ -559,7 +559,7 @@ impl Plugin for ExternalPlugin {
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching legacy filenames for plugin {}",
-                    style(&self.name).cyan().for_stderr(),
+                    style(&self.name).blue().for_stderr(),
                 )
             })
             .cloned()

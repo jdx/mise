@@ -82,14 +82,14 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
     }
     env.extend(
         (indexmap! {
-            "__RTX_SCRIPT" => "1".to_string(),
             "ASDF_CONCURRENCY" => num_cpus::get().to_string(),
             "PATH" => get_path_with_fake_asdf(),
+            "RTX_BIN" => env::RTX_BIN.to_string_lossy().to_string(),
             "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy().to_string(),
             "RTX_CONCURRENCY" => num_cpus::get().to_string(),
             "RTX_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
-            "RTX_BIN" => env::RTX_BIN.to_string_lossy().to_string(),
             "RTX_LOG_LEVEL" => settings.log_level.to_string(),
+            "__RTX_SCRIPT" => "1".to_string(),
         })
         .into_iter()
         .map(|(k, v)| (k.into(), v.into())),

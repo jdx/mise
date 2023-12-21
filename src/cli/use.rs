@@ -12,6 +12,7 @@ use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style::style_tv;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -109,12 +110,12 @@ impl Use {
         let settings = Settings::try_get()?;
         let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
-        for (plugin_name, tvl) in &versions.into_iter().group_by(|tv| tv.plugin_name.clone()) {
+        for (plugin_name, tvl) in &versions.iter().group_by(|tv| tv.plugin_name.clone()) {
             let versions: Vec<String> = tvl
                 .into_iter()
                 .map(|tv| {
                     if pin {
-                        tv.version
+                        tv.version.clone()
                     } else {
                         tv.request.version()
                     }
@@ -130,7 +131,7 @@ impl Use {
             cf.remove_plugin(plugin_name);
         }
         cf.save()?;
-        self.render_success_message(cf.as_ref());
+        self.render_success_message(cf.as_ref(), &versions);
         Ok(())
     }
 
@@ -166,16 +167,13 @@ impl Use {
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile) {
+    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) {
         let path = display_path(cf.get_path());
-        let (dir, file) = path.rsplit_once('/').unwrap_or(("", &path));
-        let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
+        let tools = versions.iter().map(style_tv).join(", ");
         rtxprintln!(
-            "\n{} {}{} updated with tools: {}\n",
+            "{} {} tools: {tools}",
             style("rtx").green(),
-            style(dir.to_owned() + "/").dim(),
-            file,
-            style(tools).cyan()
+            style(path).cyan().for_stderr(),
         );
     }
 }
@@ -231,26 +229,26 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test.rtx.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny@2");
+        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny");
+        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "3.1.0"
         "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml updated with tools: tiny@2");
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml updated with tools:");
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml tools:");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
@@ -261,7 +259,7 @@ mod tests {
         let cf_path = dirs::CURRENT.join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions updated with tools: tiny@3");
+        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
@@ -274,7 +272,7 @@ mod tests {
         let _ = file::remove_file(&cf_path);
 
         assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
-        rtx ~/config/config.toml updated with tools: tiny@2
+        rtx ~/config/config.toml tools: tiny@2.1.0
         rtx tiny is is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
