@@ -514,7 +514,7 @@ impl Debug for Config {
         s.field("Installed Plugins", &plugins);
         if !self.env.is_empty() {
             s.field("Env", &self.env);
-            s.field("Env Sources", &self.env_sources);
+            // s.field("Env Sources", &self.env_sources);
         }
         if !self.path_dirs.is_empty() {
             s.field("Path Dirs", &self.path_dirs);
