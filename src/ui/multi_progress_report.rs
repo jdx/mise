@@ -39,7 +39,7 @@ impl MultiProgressReport {
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         match &self.mp {
-            _ if self.quiet => Box::new(QuietReport::new(prefix.to_string())),
+            _ if self.quiet => Box::new(QuietReport::new()),
             Some(mp) => {
                 let mut pr = ProgressReport::new(prefix.into());
                 pr.pb = mp.add(pr.pb);
