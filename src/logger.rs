@@ -1,25 +1,31 @@
 extern crate simplelog;
 
-use std::env;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
 
+use crate::config::Settings;
+use crate::env;
 use eyre::Result;
 use simplelog::*;
 
-pub fn init(log_level: LevelFilter, log_file_level: LevelFilter) {
+pub fn init() -> LevelFilter {
+    let settings = Settings::get();
     let mut loggers: Vec<Box<dyn SharedLogger>> = vec![];
-    loggers.push(init_term_logger(log_level));
+    let level = settings.log_level.parse().unwrap();
+    loggers.push(init_term_logger(level));
 
     if let Ok(log) = env::var("RTX_LOG_FILE") {
         let log_file = PathBuf::from(log);
-        if let Some(logger) = init_write_logger(log_file_level, log_file) {
+        let file_level = env::RTX_LOG_FILE_LEVEL.unwrap_or(level);
+        if let Some(logger) = init_write_logger(file_level, log_file) {
             loggers.push(logger)
         }
     }
     CombinedLogger::init(loggers).unwrap_or_else(|err| {
         eprintln!("rtx: could not initialize logger: {err}");
     });
+
+    level
 }
 
 fn init_log_file(log_file: PathBuf) -> Result<File> {
@@ -74,6 +80,6 @@ mod tests {
 
     #[test]
     fn test_init() {
-        init(LevelFilter::Debug, LevelFilter::Debug);
+        init();
     }
 }

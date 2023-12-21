@@ -13,6 +13,9 @@ expression: cf.settings().unwrap()
   ],
   "plugin_autoupdate_last_check_duration": null,
   "trusted_config_paths": null,
+  "log_level": null,
+  "trace": null,
+  "debug": null,
   "verbose": true,
   "quiet": null,
   "asdf_compat": null,
@@ -23,5 +26,6 @@ expression: cf.settings().unwrap()
     "disabled_tool"
   ],
   "raw": null,
-  "yes": null
+  "yes": null,
+  "ci": null
 }
