@@ -436,8 +436,14 @@ mod tests {
         assert_cli_snapshot!("ls", "--parseable", @r###"
         dummy ref:master
         tiny 3.1.0
+        rtx The parseable output format is deprecated and will be removed in a future release.
+        rtx Please use the regular output format instead which has been modified to be more easily parseable.
         "###);
-        assert_cli_snapshot!("ls", "--parseable", "tiny", @"3.1.0");
+        assert_cli_snapshot!("ls", "--parseable", "tiny", @r###"
+        3.1.0
+        rtx The parseable output format is deprecated and will be removed in a future release.
+        rtx Please use the regular output format instead which has been modified to be more easily parseable.
+        "###);
     }
 
     #[test]

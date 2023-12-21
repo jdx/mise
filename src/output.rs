@@ -52,11 +52,13 @@ macro_rules! rtxstatusln {
 #[cfg(test)]
 #[macro_export]
 macro_rules! rtxwarn {
-        ($($arg:tt)*) => {{
-            let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-            let rtx = console::style("rtx ").yellow().for_stderr();
-            stderr.push(format!("{}{}", rtx, format!($($arg)*)));
-        }};
+        ($($arg:tt)*) => {
+            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
+                let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+                let rtx = console::style("rtx ").yellow().for_stderr();
+                stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+            })
+        }
     }
 
 #[cfg(not(test))]
@@ -81,17 +83,6 @@ macro_rules! rtxwarn {
                 let rtx = console::style("rtx ").yellow().for_stderr();
                 eprintln!("{}{}", rtx, format!($($arg)*));
             });
-        }
-    }};
-}
-
-#[cfg(not(test))]
-#[macro_export]
-macro_rules! rtxwarn {
-    ($($arg:tt)*) => {{
-        if log_enabled!(log::Level::Warn) {
-            let rtx = console::style("rtx ").yellow().for_stderr();
-            eprintln!("{}{}", rtx, format!($($arg)*));
         }
     }};
 }

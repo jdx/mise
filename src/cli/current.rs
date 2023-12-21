@@ -134,6 +134,7 @@ mod tests {
         assert_cli_snapshot!("current", @r###"
         dummy 1.1.0
         tiny 3.1.0
+        rtx dummy@1.1.0 is specified in RTX_DUMMY_VERSION=1.1.0, but not installed
         "###);
 
         env::remove_var("RTX_DUMMY_VERSION");
