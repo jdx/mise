@@ -30,7 +30,7 @@ pub struct HookEnv {
     #[clap(long)]
     status: bool,
 
-    /// Hide the warning when a tool is not installed
+    /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
 }
@@ -169,7 +169,7 @@ impl HookEnv {
     }
     fn missing_versions_warning(&self, ts: &Toolset) {
         let missing = ts.list_missing_versions();
-        if missing.is_empty() || self.quiet {
+        if missing.is_empty() {
             return;
         }
         let versions = missing

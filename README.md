@@ -1701,7 +1701,7 @@ Options:
           Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
   -q, --quiet
-          Hide the warning when a tool is not installed
+          Hide warnings such as when a tool is not installed
 
 Examples:
   $ eval "$(rtx activate bash)"

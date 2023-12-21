@@ -359,7 +359,7 @@ fn prefer_stale(args: &[String]) -> bool {
 
 fn log_level() -> LevelFilter {
     if var_is_true("RTX_QUIET") {
-        set_var("RTX_LOG_LEVEL", "warn");
+        set_var("RTX_LOG_LEVEL", "error");
     }
     if var_is_true("RTX_DEBUG") || var_is_true("RTX_VERBOSE") {
         set_var("RTX_LOG_LEVEL", "debug");
@@ -388,7 +388,7 @@ fn log_level() -> LevelFilter {
             set_var("RTX_LOG_LEVEL", "trace");
         }
         if arg == "--quiet" || arg == "-q" {
-            set_var("RTX_LOG_LEVEL", "warn");
+            set_var("RTX_LOG_LEVEL", "error");
         }
     }
     let log_level = var("RTX_LOG_LEVEL")

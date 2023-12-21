@@ -72,8 +72,10 @@ macro_rules! rtxstatusln {
 #[macro_export]
 macro_rules! rtxwarn {
     ($($arg:tt)*) => {{
-        let rtx = console::style("rtx ").yellow().for_stderr();
-        eprintln!("{}{}", rtx, format!($($arg)*));
+        if log_enabled!(log::Level::Warn) {
+            let rtx = console::style("rtx ").yellow().for_stderr();
+            eprintln!("{}{}", rtx, format!($($arg)*));
+        }
     }};
 }
 

@@ -39,7 +39,7 @@ pub struct Activate {
     #[clap(long)]
     status: bool,
 
-    /// Hide the warning when a tool is not installed
+    /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
 }
