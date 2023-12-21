@@ -98,12 +98,7 @@ impl Config {
             .collect_vec();
         let should_exit_early = hook_env::should_exit_early(&watch_files);
 
-        let mut repo_urls = HashMap::new();
-        for cf in config_files.values() {
-            for (plugin_name, repo_url) in cf.plugins() {
-                repo_urls.insert(plugin_name, repo_url);
-            }
-        }
+        let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
         config_track.join().unwrap();
 
         let (env, env_sources) = load_env(&config_files);

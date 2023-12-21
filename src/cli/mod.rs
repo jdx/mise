@@ -1,6 +1,7 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 use confique::Partial;
+use once_cell::sync::Lazy;
 
 use crate::cli::self_update::SelfUpdate;
 use crate::config::{Config, SettingsPartial};
@@ -180,22 +181,25 @@ impl Cli {
     }
 
     pub fn command() -> clap::Command {
-        Commands::augment_subcommands(
-            clap::Command::new("rtx")
-                .version(version::VERSION.to_string())
-                .about(env!("CARGO_PKG_DESCRIPTION"))
-                .author("Jeff Dickey <@jdx>")
-                .long_about(LONG_ABOUT)
-                .arg_required_else_help(true)
-                .subcommand_required(true)
-                .after_long_help(AFTER_LONG_HELP)
-                .arg(args::log_level::Debug::arg())
-                .arg(args::log_level::LogLevel::arg())
-                .arg(args::log_level::Trace::arg())
-                .arg(args::quiet::Quiet::arg())
-                .arg(args::verbose::Verbose::arg())
-                .arg(args::yes::Yes::arg()),
-        )
+        static COMMAND: Lazy<clap::Command> = Lazy::new(|| {
+            Commands::augment_subcommands(
+                clap::Command::new("rtx")
+                    .version(version::VERSION.to_string())
+                    .about(env!("CARGO_PKG_DESCRIPTION"))
+                    .author("Jeff Dickey <@jdx>")
+                    .long_about(LONG_ABOUT)
+                    .arg_required_else_help(true)
+                    .subcommand_required(true)
+                    .after_long_help(AFTER_LONG_HELP)
+                    .arg(args::log_level::Debug::arg())
+                    .arg(args::log_level::LogLevel::arg())
+                    .arg(args::log_level::Trace::arg())
+                    .arg(args::quiet::Quiet::arg())
+                    .arg(args::verbose::Verbose::arg())
+                    .arg(args::yes::Yes::arg()),
+            )
+        });
+        COMMAND.clone()
     }
 
     pub fn run(self, args: &Vec<String>) -> Result<()> {

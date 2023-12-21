@@ -67,6 +67,9 @@ mod toolset;
 mod ui;
 
 fn main() -> Result<()> {
+    rayon::spawn(|| {
+        Cli::new(); // this is slow so we memoize it in the background
+    });
     *env::ARGS.write().unwrap() = env::args().collect();
     color_eyre::install()?;
     let log_level = *env::RTX_LOG_LEVEL;
