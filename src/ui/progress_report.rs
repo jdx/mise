@@ -6,7 +6,6 @@ use std::time::Duration;
 
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
-    fn error(&self, _message: String);
     fn set_message(&self, _message: String) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
@@ -22,11 +21,6 @@ static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
         "{{prefix}} {} {{wide_msg}}",
         style("✓").bright().green().for_stderr()
     );
-    ProgressStyle::with_template(tmpl.as_str()).unwrap()
-});
-
-static ERROR_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let tmpl = format!("{{prefix}} {} {{wide_msg}}", style("✗").red().for_stderr());
     ProgressStyle::with_template(tmpl.as_str()).unwrap()
 });
 
@@ -55,10 +49,6 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style("rtx").dim().for_stderr());
     pad_prefix(pad, &prefix)
 }
-fn error_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style("rtx").red().for_stderr());
-    pad_prefix(pad, &prefix)
-}
 fn success_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style("rtx").green().for_stderr());
     pad_prefix(pad, &prefix)
@@ -81,13 +71,6 @@ impl SingleReport for ProgressReport {
             eprintln!("{message}");
         });
     }
-    fn error(&self, message: String) {
-        let msg = format!("{} {message}", style("[ERROR]").red().for_stderr());
-        self.set_message(msg);
-        self.pb.set_style(ERROR_TEMPLATE.clone());
-        self.pb.set_prefix(error_prefix(self.pad - 2, &self.prefix));
-        self.pb.finish();
-    }
     fn set_message(&self, message: String) {
         self.pb.set_message(message.replace('\r', ""));
     }
@@ -105,27 +88,15 @@ impl SingleReport for ProgressReport {
     }
 }
 
-pub struct QuietReport {
-    prefix: String,
-    pad: usize,
-}
+pub struct QuietReport {}
 
 impl QuietReport {
-    pub fn new(prefix: String) -> QuietReport {
-        QuietReport {
-            prefix,
-            pad: *LONGEST_PLUGIN_NAME,
-        }
+    pub fn new() -> QuietReport {
+        QuietReport {}
     }
 }
 
-impl SingleReport for QuietReport {
-    fn error(&self, message: String) {
-        let prefix = error_prefix(self.pad - 2, &self.prefix);
-        let x = style("✗").red().for_stderr();
-        error!("{prefix} {x} {message}");
-    }
-}
+impl SingleReport for QuietReport {}
 
 pub struct VerboseReport {
     prefix: String,
@@ -144,11 +115,6 @@ impl VerboseReport {
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         eprintln!("{message}");
-    }
-    fn error(&self, message: String) {
-        let prefix = error_prefix(self.pad - 2, &self.prefix);
-        let x = style("✗").red().for_stderr();
-        error!("{prefix} {x} {message}");
     }
     fn set_message(&self, message: String) {
         // let prefix = normal_prefix(self.pad, &self.prefix);
@@ -185,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_progress_report_quiet() {
-        let pr = QuietReport::new("PREFIX".to_string());
+        let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
