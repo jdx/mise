@@ -1733,6 +1733,8 @@ Examples:
 
 ### `rtx alias ls [OPTIONS] [PLUGIN]`
 
+**Aliases:** `list`
+
 ```text
 List aliases
 Shows the aliases that can be specified.
@@ -1760,6 +1762,8 @@ Examples:
 
 ### `rtx alias set <PLUGIN> <ALIAS> <VALUE>`
 
+**Aliases:** `add, create`
+
 ```text
 Add/update an alias for a plugin
 
@@ -1782,6 +1786,8 @@ Examples:
 ```
 
 ### `rtx alias unset <PLUGIN> <ALIAS>`
+
+**Aliases:** `del, delete, remove, rm`
 
 ```text
 Clears an alias for a plugin
@@ -1810,6 +1816,8 @@ Usage: bin-paths
 ```
 
 ### `rtx cache clear [PLUGIN]...`
+
+**Aliases:** `c`
 
 ```text
 Deletes all cache files in rtx
@@ -1856,6 +1864,8 @@ Examples:
 ```
 
 ### `rtx config generate [OPTIONS]`
+
+**Aliases:** `g`
 
 ```text
 [experimental] Generate an .rtx.toml file
@@ -1950,6 +1960,8 @@ Examples:
 
 ### `rtx env [OPTIONS] [TOOL@VERSION]...`
 
+**Aliases:** `e`
+
 ```text
 Exports env vars to activate rtx a single time
 
@@ -2015,6 +2027,8 @@ Options:
 ```
 
 ### `rtx exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
+
+**Aliases:** `x`
 
 ```text
 Execute a command with tool(s) set
@@ -2082,6 +2096,8 @@ Options:
 
 ### `rtx install [OPTIONS] [TOOL@VERSION]...`
 
+**Aliases:** `i`
+
 ```text
 Install a tool version
 
@@ -2146,6 +2162,8 @@ Examples:
 
 ### `rtx link [OPTIONS] <TOOL@VERSION> <PATH>`
 
+**Aliases:** `ln`
+
 ```text
 Symlinks a tool version into rtx
 
@@ -2178,6 +2196,8 @@ Examples:
 ```
 
 ### `rtx ls [OPTIONS] [PLUGIN]...`
+
+**Aliases:** `list`
 
 ```text
 List installed and/or currently selected tool versions
@@ -2298,6 +2318,8 @@ Examples:
 
 ### `rtx plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
 
+**Aliases:** `a, add, i`
+
 ```text
 Install a plugin
 
@@ -2346,6 +2368,8 @@ Examples:
 
 ### `rtx plugins link [OPTIONS] <NAME> [PATH]`
 
+**Aliases:** `ln`
+
 ```text
 Symlinks a plugin into rtx
 
@@ -2375,6 +2399,8 @@ Examples:
 ```
 
 ### `rtx plugins ls [OPTIONS]`
+
+**Aliases:** `list`
 
 ```text
 List installed plugins
@@ -2410,6 +2436,8 @@ Examples:
 
 ### `rtx plugins ls-remote [OPTIONS]`
 
+**Aliases:** `list-all, list-remote`
+
 ```text
 List all available remote plugins
 
@@ -2430,6 +2458,8 @@ Options:
 ```
 
 ### `rtx plugins uninstall [OPTIONS] [PLUGIN]...`
+
+**Aliases:** `remove, rm`
 
 ```text
 Removes a plugin
@@ -2452,6 +2482,8 @@ Examples:
 ```
 
 ### `rtx plugins update [OPTIONS] [PLUGIN]...`
+
+**Aliases:** `upgrade`
 
 ```text
 Updates a plugin to the latest version
@@ -2576,6 +2608,8 @@ Examples:
 
 ### `rtx settings ls`
 
+**Aliases:** `list`
+
 ```text
 Show current settings
 
@@ -2592,6 +2626,8 @@ Examples:
 ```
 
 ### `rtx settings set <SETTING> <VALUE>`
+
+**Aliases:** `add, create`
 
 ```text
 Add/update a setting
@@ -2613,6 +2649,8 @@ Examples:
 
 ### `rtx settings unset <SETTING>`
 
+**Aliases:** `del, delete, remove, rm`
+
 ```text
 Clears a setting
 
@@ -2629,6 +2667,8 @@ Examples:
 ```
 
 ### `rtx shell [OPTIONS] [TOOL@VERSION]...`
+
+**Aliases:** `sh`
 
 ```text
 Sets a tool version for the current shell session
@@ -2737,6 +2777,8 @@ Examples:
 
 ### `rtx uninstall [OPTIONS] [TOOL@VERSION]...`
 
+**Aliases:** `remove, rm`
+
 ```text
 Removes runtime versions
 
@@ -2760,6 +2802,8 @@ Examples:
 ```
 
 ### `rtx upgrade [OPTIONS] [TOOL@VERSION]...`
+
+**Aliases:** `up`
 
 ```text
 Upgrades outdated tool versions
@@ -2790,6 +2834,8 @@ Options:
 ```
 
 ### `rtx use [OPTIONS] [TOOL@VERSION]...`
+
+**Aliases:** `u`
 
 ```text
 Change the active version of a tool locally or globally.
