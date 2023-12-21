@@ -80,7 +80,7 @@ pub struct Use {
 impl Use {
     pub fn run(self, config: &Config) -> Result<()> {
         let mut ts = ToolsetBuilder::new().build(config)?;
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         let versions = self
             .tool
             .iter()
@@ -153,7 +153,7 @@ impl Use {
             let plugin = &targ.plugin;
             let p = display_path(p);
             let global = display_path(global);
-            warn!("{plugin} is is defined in {p} which overrides the global config ({global})");
+            rtxwarn!("{plugin} is is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.plugin) {

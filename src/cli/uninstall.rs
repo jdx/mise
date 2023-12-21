@@ -45,10 +45,10 @@ impl Uninstall {
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
 
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
-                warn!("{} is not installed", style(&tv).cyan().for_stderr());
+                rtxwarn!("{} is not installed", style(&tv).cyan().for_stderr());
                 continue;
             }
 
@@ -117,7 +117,7 @@ impl Uninstall {
                     ));
                 }
                 if tvs.is_empty() {
-                    warn!("no versions found for {}", style(&tool).cyan().for_stderr());
+                    rtxwarn!("no versions found for {}", style(&tool).cyan().for_stderr());
                 }
                 Ok(tvs)
             })

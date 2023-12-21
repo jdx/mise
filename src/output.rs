@@ -63,8 +63,25 @@ macro_rules! rtxwarn {
 #[macro_export]
 macro_rules! rtxstatusln {
     ($($arg:tt)*) => {{
-        let rtx = console::style("rtx ").dim().for_stderr();
-        eprintln!("{}{}", rtx, format!($($arg)*));
+        if log_enabled!(log::Level::Info) {
+            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
+                let rtx = console::style("rtx ").dim().for_stderr();
+                eprintln!("{}{}", rtx, format!($($arg)*));
+            });
+        }
+    }};
+}
+
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! rtxwarn {
+    ($($arg:tt)*) => {{
+        if log_enabled!(log::Level::Warn) {
+            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
+                let rtx = console::style("rtx ").yellow().for_stderr();
+                eprintln!("{}{}", rtx, format!($($arg)*));
+            });
+        }
     }};
 }
 

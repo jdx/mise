@@ -61,7 +61,7 @@ impl Upgrade {
             outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.name()));
         }
         if outdated.is_empty() {
-            info!("All tools are up to date");
+            rtxstatusln!("All tools are up to date");
         } else {
             self.upgrade(config, outdated)?;
         }
@@ -70,7 +70,7 @@ impl Upgrade {
     }
 
     fn upgrade(&self, config: &Config, outdated: OutputVec) -> Result<()> {
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
         let new_versions = outdated

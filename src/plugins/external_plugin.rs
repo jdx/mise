@@ -161,7 +161,7 @@ impl ExternalPlugin {
         let settings = Settings::try_get()?;
         match self.fetch_versions() {
             Ok(Some(versions)) => return Ok(versions),
-            Err(err) => warn!(
+            Err(err) => rtxwarn!(
                 "Failed to fetch remote versions for plugin {}: {}",
                 style(&self.name).cyan().for_stderr(),
                 err

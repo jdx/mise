@@ -45,7 +45,7 @@ impl Link {
         };
         let path = self.path.absolutize()?;
         if !path.exists() {
-            warn!(
+            rtxwarn!(
                 "Target path {} does not exist",
                 style(path.to_string_lossy()).cyan().for_stderr()
             );

@@ -38,7 +38,7 @@ impl Latest {
         };
 
         let plugin = config.get_or_create_plugin(&self.tool.plugin);
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(plugin.name(), &v)?);

@@ -133,7 +133,7 @@ impl SingleReport for QuietReport {
     fn warn(&self, message: String) {
         let prefix = warn_prefix(self.pad - 2, &self.prefix);
         let x = style("⚠").yellow().for_stderr();
-        warn!("{prefix} {x} {message}");
+        rtxwarn!("{prefix} {x} {message}");
     }
     fn error(&self, message: String) {
         let prefix = error_prefix(self.pad - 2, &self.prefix);
@@ -163,7 +163,7 @@ impl SingleReport for VerboseReport {
     fn warn(&self, message: String) {
         let prefix = warn_prefix(self.pad - 2, &self.prefix);
         let x = style("⚠").yellow().for_stderr();
-        warn!("{prefix} {x} {message}");
+        rtxwarn!("{prefix} {x} {message}");
     }
     fn error(&self, message: String) {
         let prefix = error_prefix(self.pad - 2, &self.prefix);

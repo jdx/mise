@@ -36,7 +36,7 @@ impl Current {
 
     fn one(&self, ts: Toolset, tool: &dyn Plugin) -> Result<()> {
         if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.name());
+            rtxwarn!("Plugin {} is not installed", tool.name());
             return Ok(());
         }
         match ts
@@ -55,7 +55,7 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", tool.name());
+                rtxwarn!("Plugin {} does not have a version set", tool.name());
             }
         };
         Ok(())
@@ -69,9 +69,11 @@ impl Current {
             for tv in versions {
                 if !plugin.is_version_installed(tv) {
                     let source = ts.versions.get(&tv.plugin_name).unwrap().source.clone();
-                    warn!(
+                    rtxwarn!(
                         "{}@{} is specified in {}, but not installed",
-                        tv.plugin_name, &tv.version, &source
+                        tv.plugin_name,
+                        &tv.version,
+                        &source
                     );
                 }
             }

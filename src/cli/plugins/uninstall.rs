@@ -25,7 +25,7 @@ pub struct PluginsUninstall {
 
 impl PluginsUninstall {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {
             true => config
@@ -60,7 +60,7 @@ impl PluginsUninstall {
                 pr.finish_with_message("uninstalled".into());
             }
             _ => mpr.suspend(|| {
-                warn!(
+                rtxwarn!(
                     "{} is not installed",
                     style(plugin_name).cyan().for_stderr()
                 );

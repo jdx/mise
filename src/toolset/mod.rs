@@ -92,7 +92,7 @@ impl Toolset {
             .for_each(|(_, v)| v.resolve(config, false));
     }
     pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         let versions = self
             .list_current_versions()
             .into_iter()
@@ -255,7 +255,7 @@ impl Toolset {
                 let latest = match tv.latest_version(t.as_ref()) {
                     Ok(latest) => latest,
                     Err(e) => {
-                        warn!("Error getting latest version for {t}: {e:#}");
+                        rtxwarn!("Error getting latest version for {t}: {e:#}");
                         return None;
                     }
                 };
@@ -289,7 +289,7 @@ impl Toolset {
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
-                    warn!("Error running exec-env: {:#}", e);
+                    rtxwarn!("Error running exec-env: {:#}", e);
                     Vec::new()
                 }
             })
@@ -316,7 +316,7 @@ impl Toolset {
             .into_par_iter()
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
-                    warn!("Error listing bin paths for {tv}: {e:#}");
+                    rtxwarn!("Error listing bin paths for {tv}: {e:#}");
                     Vec::new()
                 })
             })
@@ -341,7 +341,7 @@ impl Toolset {
             .filter(|(p, tv)| match p.which(tv, bin_name) {
                 Ok(x) => x.is_some(),
                 Err(e) => {
-                    warn!("Error running which: {:#}", e);
+                    rtxwarn!("Error running which: {:#}", e);
                     false
                 }
             })

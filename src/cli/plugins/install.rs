@@ -49,9 +49,9 @@ pub struct PluginsInstall {
 
 impl PluginsInstall {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         if self.all {
-            return self.install_all_missing_plugins(config, mpr);
+            return self.install_all_missing_plugins(config, &mpr);
         }
         let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
         if git_url.is_some() {
@@ -62,23 +62,27 @@ impl PluginsInstall {
                 plugins.push(second);
             };
             plugins.extend(self.rest.clone());
-            self.install_many(plugins, mpr)?;
+            self.install_many(plugins, &mpr)?;
         }
 
         Ok(())
     }
 
-    fn install_all_missing_plugins(&self, config: &Config, mpr: MultiProgressReport) -> Result<()> {
+    fn install_all_missing_plugins(
+        &self,
+        config: &Config,
+        mpr: &MultiProgressReport,
+    ) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config)?;
         let missing_plugins = ts.list_missing_plugins(config);
         if missing_plugins.is_empty() {
-            warn!("all plugins already installed");
+            rtxwarn!("all plugins already installed");
         }
         self.install_many(missing_plugins, mpr)?;
         Ok(())
     }
 
-    fn install_many(&self, plugins: Vec<PluginName>, mpr: MultiProgressReport) -> Result<()> {
+    fn install_many(&self, plugins: Vec<PluginName>, mpr: &MultiProgressReport) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(Settings::get().jobs)
             .build()?
