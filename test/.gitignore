@@ -1,5 +1,5 @@
 data/
 !data/plugins
 cache/
-config/trusted-configs
+state/
 cwd/man/

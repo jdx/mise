@@ -25,6 +25,7 @@ fn init() {
     env::set_var("RTX_YES", "1");
     env::set_var("RTX_USE_TOML", "0");
     env::set_var("RTX_DATA_DIR", env::HOME.join("data"));
+    env::set_var("RTX_STATE_DIR", env::HOME.join("state"));
     env::set_var("RTX_CONFIG_DIR", env::HOME.join("config"));
     env::set_var("RTX_CACHE_DIR", env::HOME.join("data/cache"));
     env::set_var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");

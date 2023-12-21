@@ -40,7 +40,7 @@ impl ExternalPluginCache {
                 None => tv.cache_path().join("list_bin_paths.msgpack.z"),
             };
             CacheManager::new(list_bin_paths_filename)
-                .with_fresh_file(dirs::DATA.clone())
+                .with_fresh_file(dirs::DATA.to_path_buf())
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
         });
@@ -68,7 +68,7 @@ impl ExternalPluginCache {
                 None => tv.cache_path().join("exec_env.msgpack.z"),
             };
             CacheManager::new(exec_env_filename)
-                .with_fresh_file(dirs::DATA.clone())
+                .with_fresh_file(dirs::DATA.to_path_buf())
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
         });
