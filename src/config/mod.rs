@@ -233,7 +233,7 @@ impl Config {
             .map(|path| match config_file::parse(&path) {
                 Ok(cf) => Some((path, cf)),
                 Err(err) => {
-                    error!("Error loading config file: {:#}", err);
+                    rtxerror!("Error loading config file: {:#}", err);
                     None
                 }
             })
