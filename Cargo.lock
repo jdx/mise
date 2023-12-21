@@ -533,9 +533,9 @@ dependencies = [
 
 [[package]]
 name = "demand"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c76b3984ede3301048a4b6d4693a59cf22700ab6636e62776602f2065e52973e"
+checksum = "a5c77b6a21b2b5964fb382eeeb9941000ef6f08b32684d5cef0fddb67c644931"
 dependencies = [
  "console",
  "termcolor",
@@ -558,19 +558,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eb30d70a07a3b04884d2677f06bec33509dc67ca60d92949e5535352d3191dc"
 dependencies = [
  "powerfmt",
-]
-
-[[package]]
-name = "dialoguer"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
-dependencies = [
- "console",
- "shell-words",
- "tempfile",
- "thiserror",
- "zeroize",
 ]
 
 [[package]]
@@ -1886,7 +1873,6 @@ dependencies = [
  "ctor",
  "ctrlc",
  "demand",
- "dialoguer",
  "dirs-next",
  "dotenvy",
  "duct",
