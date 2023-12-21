@@ -1,6 +1,6 @@
 ---
 source: src/shell/zsh.rs
-expression: "zsh.activate(exe, true)"
+expression: "zsh.activate(exe, \" --status\".into())"
 ---
 export PATH="/some/dir:$PATH"
 export RTX_SHELL=zsh
