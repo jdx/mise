@@ -829,6 +829,12 @@ Default: [`std::env::temp_dir()`](https://doc.rust-lang.org/std/env/fn.temp_dir.
 
 This is used for temporary storage such as when installing tools.
 
+#### `RTX_SYSTEM_DIR`
+
+Default: `/etc/rtx`
+
+This is the directory where rtx stores system-wide configuration.
+
 #### `RTX_CONFIG_FILE`
 
 Default: `$RTX_CONFIG_DIR/config.toml` (Usually ~/.config/rtx/config.toml)

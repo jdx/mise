@@ -10,7 +10,7 @@ pub static DATA: Lazy<&Path> = Lazy::new(|| &env::RTX_DATA_DIR);
 pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::RTX_CACHE_DIR);
 pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::RTX_CONFIG_DIR);
 pub static STATE: Lazy<&Path> = Lazy::new(|| &env::RTX_STATE_DIR);
-pub static SYSTEM: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("/etc/rtx"));
+pub static SYSTEM: Lazy<&Path> = Lazy::new(|| &env::RTX_SYSTEM_DIR);
 
 pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| DATA.join("plugins"));
 pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| DATA.join("downloads"));
