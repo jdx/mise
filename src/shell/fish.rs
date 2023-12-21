@@ -6,10 +6,9 @@ use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 pub struct Fish {}
 
 impl Shell for Fish {
-    fn activate(&self, exe: &Path, status: bool) -> String {
+    fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
-        let status = if status { " --status" } else { "" };
         let description = "'Update rtx environment when changing directories'";
         let mut out = String::new();
 
@@ -53,14 +52,14 @@ impl Shell for Fish {
             end
 
             function __rtx_env_eval --on-event fish_prompt --description {description};
-                {exe} hook-env{status} -s fish | source;
+                {exe} hook-env{flags} -s fish | source;
 
                 if test "$rtx_fish_mode" != "disable_arrow";
                     function __rtx_cd_hook --on-variable PWD --description {description};
                         if test "$rtx_fish_mode" = "eval_after_arrow";
                             set -g __rtx_env_again 0;
                         else;
-                            {exe} hook-env{status} -s fish | source;
+                            {exe} hook-env{flags} -s fish | source;
                         end;
                     end;
                 end;
@@ -69,7 +68,7 @@ impl Shell for Fish {
             function __rtx_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __rtx_env_again;
                     set -e __rtx_env_again;
-                    {exe} hook-env{status} -s fish | source;
+                    {exe} hook-env{flags} -s fish | source;
                     echo;
                 end;
 
@@ -113,14 +112,14 @@ mod tests {
     fn test_hook_init() {
         let fish = Fish::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(fish.activate(exe, true));
+        assert_snapshot!(fish.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let fish = Fish::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(fish.activate(exe, true));
+        assert_snapshot!(fish.activate(exe, " --status".into()));
     }
 
     #[test]

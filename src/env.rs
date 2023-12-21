@@ -12,6 +12,7 @@ use url::Url;
 use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
+use crate::hook_env::{deserialize_watches, HookEnvWatches};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
@@ -93,6 +94,12 @@ pub static RTX_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|
 pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
 pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __RTX_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__RTX_ORIG_PATH").ok());
+pub static __RTX_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__RTX_WATCH") {
+    Ok(raw) => deserialize_watches(raw)
+        .map_err(|e| rtxwarn!("Failed to deserialize __RTX_WATCH {e}"))
+        .ok(),
+    _ => None,
+});
 pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
@@ -359,7 +366,7 @@ fn prefer_stale(args: &[String]) -> bool {
 
 fn log_level() -> LevelFilter {
     if var_is_true("RTX_QUIET") {
-        set_var("RTX_LOG_LEVEL", "warn");
+        set_var("RTX_LOG_LEVEL", "error");
     }
     if var_is_true("RTX_DEBUG") || var_is_true("RTX_VERBOSE") {
         set_var("RTX_LOG_LEVEL", "debug");
@@ -388,7 +395,7 @@ fn log_level() -> LevelFilter {
             set_var("RTX_LOG_LEVEL", "trace");
         }
         if arg == "--quiet" || arg == "-q" {
-            set_var("RTX_LOG_LEVEL", "warn");
+            set_var("RTX_LOG_LEVEL", "error");
         }
     }
     let log_level = var("RTX_LOG_LEVEL")

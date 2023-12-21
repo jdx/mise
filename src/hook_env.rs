@@ -25,25 +25,16 @@ pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
         return false;
     }
     let watch_files = get_watch_files(watch_files);
-    match env::var("__RTX_WATCH") {
-        Ok(raw) => {
-            match deserialize_watches(raw) {
-                Ok(watches) => {
-                    if have_config_files_been_modified(&watches, watch_files) {
-                        return false;
-                    }
-                    if have_rtx_env_vars_been_modified(&watches) {
-                        return false;
-                    }
-                }
-                Err(e) => {
-                    debug!("error deserializing watches: {:?}", e);
-                    return false;
-                }
-            };
+    match &*env::__RTX_WATCH {
+        Some(watches) => {
+            if have_config_files_been_modified(watches, watch_files) {
+                return false;
+            }
+            if have_rtx_env_vars_been_modified(watches) {
+                return false;
+            }
         }
-        Err(_) => {
-            // __RTX_WATCH is not set
+        None => {
             return false;
         }
     };

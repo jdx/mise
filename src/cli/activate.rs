@@ -39,8 +39,8 @@ pub struct Activate {
     #[clap(long)]
     status: bool,
 
-    /// noop
-    #[clap(long, short, hide = true)]
+    /// Hide warnings such as when a tool is not installed
+    #[clap(long, short)]
     quiet: bool,
 }
 
@@ -58,7 +58,14 @@ impl Activate {
         } else {
             env::RTX_BIN.clone()
         };
-        let output = shell.activate(&rtx_bin, self.status);
+        let mut flags = vec![];
+        if self.quiet {
+            flags.push(" --quiet");
+        }
+        if self.status {
+            flags.push(" --status");
+        }
+        let output = shell.activate(&rtx_bin, flags.join(""));
         rtxprint!("{output}");
 
         Ok(())
