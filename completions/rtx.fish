@@ -1,7 +1,7 @@
 set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
-complete -kxc rtx -s q -l quiet -d 'Suppress output'
+complete -kxc rtx -s q -l quiet -d 'Suppress warnings and other non-error messages'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
