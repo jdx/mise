@@ -1,16 +1,21 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
 
 use crate::env;
 
-pub static CURRENT: Lazy<PathBuf> = Lazy::new(|| env::PWD.clone());
-pub static HOME: Lazy<PathBuf> = Lazy::new(|| env::HOME.clone());
-pub static DATA: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.clone());
-pub static CACHE: Lazy<PathBuf> = Lazy::new(|| env::RTX_CACHE_DIR.clone());
-pub static CONFIG: Lazy<PathBuf> = Lazy::new(|| env::RTX_CONFIG_DIR.clone());
-pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("plugins"));
-pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("downloads"));
-pub static INSTALLS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("installs"));
-pub static SHIMS: Lazy<PathBuf> = Lazy::new(|| env::RTX_DATA_DIR.join("shims"));
+pub static CURRENT: Lazy<&Path> = Lazy::new(|| &env::PWD);
+pub static HOME: Lazy<&Path> = Lazy::new(|| &env::HOME);
+pub static DATA: Lazy<&Path> = Lazy::new(|| &env::RTX_DATA_DIR);
+pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::RTX_CACHE_DIR);
+pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::RTX_CONFIG_DIR);
+pub static STATE: Lazy<&Path> = Lazy::new(|| &env::RTX_STATE_DIR);
 pub static SYSTEM: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("/etc/rtx"));
+
+pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| DATA.join("plugins"));
+pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| DATA.join("downloads"));
+pub static INSTALLS: Lazy<PathBuf> = Lazy::new(|| DATA.join("installs"));
+pub static SHIMS: Lazy<PathBuf> = Lazy::new(|| DATA.join("shims"));
+
+pub static TRACKED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("tracked-configs"));
+pub static TRUSTED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("trusted-configs"));
