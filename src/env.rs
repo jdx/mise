@@ -7,7 +7,6 @@ use std::time::Duration;
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
-
 use url::Url;
 
 use crate::duration::HOURLY;
@@ -360,10 +359,10 @@ fn log_level() -> LevelFilter {
     if var_is_true("RTX_QUIET") {
         set_var("RTX_LOG_LEVEL", "warn");
     }
-    if var_is_true("RTX_DEBUG") {
+    if var_is_true("RTX_DEBUG") || var_is_true("RTX_VERBOSE") {
         set_var("RTX_LOG_LEVEL", "debug");
     }
-    if var_is_true("RTX_TRACE") {
+    if var_is_true("RTX_TRACE") || var("RTX_VERBOSE").is_ok_and(|v| v == "2") {
         set_var("RTX_LOG_LEVEL", "trace");
     }
     let args = ARGS.read().unwrap();
@@ -380,7 +379,7 @@ fn log_level() -> LevelFilter {
                 set_var("RTX_LOG_LEVEL", level);
             }
         }
-        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && args.len() > 1) {
+        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && args.len() > 2) {
             set_var("RTX_LOG_LEVEL", "debug");
         }
         if arg == "--trace" || arg == "-vv" {

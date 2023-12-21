@@ -75,6 +75,7 @@ mod tests {
 
     #[test]
     fn test_fake_asdf_list() {
+        assert_cli!("uninstall", "--all", "tiny");
         assert_cli!("install", "tiny@1", "tiny@2");
         assert_cli!("asdf", "install", "tiny");
         assert_cli_snapshot!("asdf", "list", "tiny", @r###"
