@@ -203,7 +203,7 @@ impl Cli {
     }
 
     pub fn run(self, args: &Vec<String>) -> Result<()> {
-        debug!("{}", &args.join(" "));
+        debug!("ARGS: {}", &args.join(" "));
         let config = Config::try_get()?;
         if args[1..] == ["-v"] {
             // normally this would be considered --verbose

@@ -15,9 +15,6 @@ Config {
     Env: {
         "TEST_ENV_VAR": "test-123",
     },
-    Env Sources: {
-        "TEST_ENV_VAR": "/Users/jdx/src/rtx/test/config/config.toml",
-    },
     Aliases: {
         "tiny": {
             "my/alias": "3.0",

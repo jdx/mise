@@ -49,7 +49,7 @@ impl ToolsetBuilder {
         }
         toolset.resolve(config);
 
-        debug!("{}", toolset);
+        debug!("Toolset: {}", toolset);
         Ok(toolset)
     }
 
