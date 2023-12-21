@@ -1,8 +1,5 @@
 use clap::{Arg, ArgAction};
 use log::LevelFilter;
-use once_cell::sync::Lazy;
-
-use crate::env;
 
 #[derive(Clone)]
 pub struct LogLevel(pub LevelFilter);
@@ -13,15 +10,11 @@ impl LogLevel {
             .long("log-level")
             .value_name("LEVEL")
             .help("Set the log output verbosity")
-            .default_value(DEFAULT_LOG_LEVEL.as_str())
             .global(true)
             .hide(true)
             .value_parser(["error", "warn", "info", "debug", "trace"])
     }
 }
-
-pub static DEFAULT_LOG_LEVEL: Lazy<String> =
-    Lazy::new(|| env::RTX_LOG_LEVEL.to_string().to_lowercase());
 
 pub struct Debug;
 

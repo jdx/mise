@@ -20,6 +20,9 @@ impl SettingsLs {
         let json = settings.to_string();
         let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
         for (key, value) in doc {
+            if Settings::hidden_configs().contains(key.as_str()) {
+                continue;
+            }
             rtxprintln!("{} = {}", key, value);
         }
         Ok(())

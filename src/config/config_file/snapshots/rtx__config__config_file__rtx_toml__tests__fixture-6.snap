@@ -7,7 +7,9 @@ RtxToml(~/fixtures/.rtx.toml): terraform@1.0.0, node@18 node@prefix:20 node@ref:
         "always_keep_download": Null,
         "always_keep_install": Null,
         "asdf_compat": Null,
+        "ci": Null,
         "color": Null,
+        "debug": Null,
         "disable_default_shorthands": Null,
         "disable_tools": Array [
             String("disabled_tool"),
@@ -18,10 +20,12 @@ RtxToml(~/fixtures/.rtx.toml): terraform@1.0.0, node@18 node@prefix:20 node@ref:
         "legacy_version_file_disable_tools": Array [
             String("disabled_tool_from_legacy_file"),
         ],
+        "log_level": Null,
         "plugin_autoupdate_last_check_duration": Null,
         "quiet": Null,
         "raw": Null,
         "shorthands_file": Null,
+        "trace": Null,
         "trusted_config_paths": Null,
         "verbose": Bool(true),
         "yes": Null,

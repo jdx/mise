@@ -229,14 +229,22 @@ impl Cli {
             if let Some(true) = m.get_one::<bool>("quiet") {
                 s.quiet = Some(true);
             }
+            if let Some(true) = m.get_one::<bool>("trace") {
+                s.log_level = Some("trace".to_string());
+            }
+            if let Some(true) = m.get_one::<bool>("debug") {
+                s.log_level = Some("debug".to_string());
+            }
+            if let Some(log_level) = m.get_one::<String>("log-level") {
+                s.log_level = Some(log_level.to_string());
+            }
             if *m.get_one::<u8>("verbose").unwrap() > 0 {
                 s.verbose = Some(true);
             }
+            if *m.get_one::<u8>("verbose").unwrap() > 1 {
+                s.log_level = Some("trace".to_string());
+            }
         }
-        // if let Some(true) = m.get_one::<bool>("trace") {
-        //     s.log_level = Some(true);
-        // }
-        // TODO: log_level/debug/trace
 
         s
     }
