@@ -218,8 +218,7 @@ impl Plugin for PythonPlugin {
                 let contents = file::read_to_string(&patch_file)?;
                 cmd = cmd.arg("--patch").stdin_string(contents);
             } else {
-                ctx.pr
-                    .warn(format!("patch file not found: {}", patch_file.display()));
+                rtxwarn!("patch file not found: {}", patch_file.display());
             }
         }
         cmd.execute()?;

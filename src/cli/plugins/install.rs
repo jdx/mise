@@ -104,8 +104,8 @@ impl PluginsInstall {
         let mut plugin = ExternalPlugin::new(name.clone());
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
-            mpr.warn(format!("Plugin {} already installed", name));
-            mpr.warn("Use --force to install anyway".to_string());
+            rtxwarn!("Plugin {name} already installed");
+            rtxwarn!("Use --force to install anyway");
         } else {
             plugin.ensure_installed(mpr, true)?;
         }
