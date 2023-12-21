@@ -61,7 +61,7 @@ impl PluginsUninstall {
             }
             _ => warn!(
                 "{} is not installed",
-                style(plugin_name).cyan().for_stderr()
+                style(plugin_name).blue().for_stderr()
             ),
         }
         Ok(())

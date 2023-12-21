@@ -10,6 +10,7 @@ use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
+use crate::ui::style::style_tv;
 
 /// Delete unused versions of tools
 ///
@@ -57,7 +58,7 @@ impl Prune {
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {
-            let mut prefix = format!("{}", style(&tv).cyan().for_stderr());
+            let mut prefix = style_tv(&tv);
             if self.dry_run {
                 prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
             }

@@ -1,11 +1,11 @@
 use color_eyre::eyre::{eyre, Result};
-use console::style;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style::style_tool;
 
 /// Gets the latest available version for a plugin
 #[derive(Debug, clap::Args)]
@@ -31,10 +31,7 @@ impl Latest {
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolVersionRequest::Version(_, version)) => Some(version),
-            _ => Err(eyre!(
-                "invalid version: {}",
-                style(&self.tool).cyan().for_stderr()
-            ))?,
+            _ => Err(eyre!("invalid version: {}", style_tool(&self.tool)))?,
         };
 
         let plugin = config.get_or_create_plugin(&self.tool.plugin);

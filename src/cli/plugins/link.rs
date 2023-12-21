@@ -50,7 +50,7 @@ impl PluginsLink {
             } else {
                 return Err(eyre!(
                     "plugin {} already exists, use --force to overwrite",
-                    style(&name).cyan().for_stderr()
+                    style(&name).blue().for_stderr()
                 ));
             }
         }
