@@ -533,6 +533,7 @@ Use `rtx implode` to uninstall rtx. This will remove the rtx binary and all of i
 Alternatively, manually remove the following directories to fully clean up:
 
 - `~/.local/share/rtx` (can also be `RTX_DATA_DIR` or `XDG_DATA_HOME/rtx`)
+- `~/.local/state/rtx` (can also be `RTX_STATE_DIR` or `XDG_STATE_HOME/rtx`)
 - `~/.config/rtx` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/rtx`)
 - on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
 - on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
