@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::thread;
 
 use eyre::Context;
 use eyre::Result;
@@ -88,24 +87,37 @@ impl Config {
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
-        let config_track = track_config_files(&config_paths);
-
         let config_files =
             load_all_config_files(&config_paths, &plugins, &legacy_files, config_files)?;
-        let watch_files = config_files
-            .values()
-            .flat_map(|cf| cf.watch_files())
-            .collect_vec();
-        let should_exit_early = hook_env::should_exit_early(&watch_files);
 
-        let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
-        config_track.join().unwrap();
-
-        let (env, env_sources) = load_env(&config_files);
+        let mut env: Option<_> = None;
+        let mut env_sources: Option<_> = None;
+        let mut should_exit_early = false;
+        let mut repo_urls = HashMap::new();
+        rayon::scope(|s| {
+            s.spawn(|_| {
+                track_config_files(&config_paths);
+            });
+            s.spawn(|_| {
+                let (a, b) = load_env(&config_files);
+                env = Some(a);
+                env_sources = Some(b);
+            });
+            s.spawn(|_| {
+                let watch_files = config_files
+                    .values()
+                    .flat_map(|cf| cf.watch_files())
+                    .collect_vec();
+                should_exit_early = hook_env::should_exit_early(&watch_files);
+            });
+            s.spawn(|_| {
+                repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
+            })
+        });
 
         let config = Self {
-            env,
-            env_sources,
+            env: env.unwrap(),
+            env_sources: env_sources.unwrap(),
             path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
@@ -473,7 +485,7 @@ fn load_aliases(config_files: &ConfigMap) -> AliasMap {
     aliases
 }
 
-fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
+fn track_config_files(config_filenames: &[PathBuf]) {
     let config_filenames = config_filenames.to_vec();
     let track = move || -> Result<()> {
         let mut tracker = Tracker::new();
@@ -482,11 +494,9 @@ fn track_config_files(config_filenames: &[PathBuf]) -> thread::JoinHandle<()> {
         }
         Ok(())
     };
-    thread::spawn(move || {
-        if let Err(err) = track() {
-            warn!("tracking config files: {:#}", err);
-        }
-    })
+    if let Err(err) = track() {
+        warn!("tracking config files: {:#}", err);
+    }
 }
 
 impl Display for Config {
