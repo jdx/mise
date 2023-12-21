@@ -85,13 +85,20 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
     };
     let mut c = c.override_usage(&usage);
 
+    let aliases = c.get_visible_aliases().sorted().collect_vec();
+    let aliases = if !aliases.is_empty() {
+        format!("\n**Aliases:** `{}`\n", aliases.join(", "))
+    } else {
+        String::new()
+    };
+
     let about = strip_ansi_codes(&c.render_long_help().to_string())
         .trim()
         .to_string();
     Some(formatdoc!(
         "
         ### `rtx {usage}`
-
+        {aliases}
         ```text
         {about}
         ```
