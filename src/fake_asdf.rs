@@ -39,7 +39,7 @@ pub fn get_path_with_fake_asdf() -> String {
             path.insert(0, fake_asdf_path);
         }
         Err(e) => {
-            rtxwarn!("Failed to setup fake asdf: {:#}", e);
+            warn!("Failed to setup fake asdf: {:#}", e);
         }
     };
     join_paths(path).unwrap().to_string_lossy().to_string()

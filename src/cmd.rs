@@ -288,7 +288,7 @@ impl<'a> CmdLineRunner<'a> {
         let settings = Settings::try_get()?;
         match self.pr {
             Some(pr) => {
-                rtxerror!("{} failed", self.get_program());
+                error!("{} failed", self.get_program());
                 if !settings.verbose && !output.trim().is_empty() {
                     pr.println(output);
                 }

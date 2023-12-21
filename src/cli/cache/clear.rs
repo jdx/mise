@@ -25,8 +25,8 @@ impl CacheClear {
             }
         }
         match &self.plugin {
-            Some(plugins) => rtxstatusln!("cache cleared for {}", plugins.join(", ")),
-            None => rtxstatusln!("cache cleared"),
+            Some(plugins) => info!("cache cleared for {}", plugins.join(", ")),
+            None => info!("cache cleared"),
         }
         Ok(())
     }

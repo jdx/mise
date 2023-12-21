@@ -32,7 +32,7 @@ impl GoPlugin {
         match self.core.fetch_remote_versions_from_rtx() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
-            Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         CorePlugin::run_fetch_task_with_timeout(move || {
             let repo = &*env::RTX_GO_REPO;

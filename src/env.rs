@@ -96,7 +96,7 @@ pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __RTX_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__RTX_ORIG_PATH").ok());
 pub static __RTX_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__RTX_WATCH") {
     Ok(raw) => deserialize_watches(raw)
-        .map_err(|e| rtxwarn!("Failed to deserialize __RTX_WATCH {e}"))
+        .map_err(|e| warn!("Failed to deserialize __RTX_WATCH {e}"))
         .ok(),
     _ => None,
 });
@@ -247,7 +247,7 @@ fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__RTX_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
-            rtxwarn!("Failed to deserialize __RTX_DIFF: {:#}", err);
+            warn!("Failed to deserialize __RTX_DIFF: {:#}", err);
             EnvDiff::default()
         }),
         None => EnvDiff::default(),
@@ -279,7 +279,7 @@ fn var_option_bool(key: &str) -> Option<bool> {
         Ok(_) if var_is_true(key) => Some(true),
         Ok(_) if var_is_false(key) => Some(false),
         Ok(v) => {
-            rtxwarn!("Invalid value for env var {}={}", key, v);
+            warn!("Invalid value for env var {}={}", key, v);
             None
         }
         _ => None,
