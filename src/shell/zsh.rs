@@ -7,10 +7,9 @@ use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 pub struct Zsh {}
 
 impl Shell for Zsh {
-    fn activate(&self, exe: &Path, status: bool) -> String {
+    fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
-        let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
         // much of this is from direnv
@@ -44,7 +43,7 @@ impl Shell for Zsh {
             }}
 
             _rtx_hook() {{
-              eval "$({exe} hook-env{status} -s zsh)";
+              eval "$({exe} hook-env{flags} -s zsh)";
             }}
             typeset -ag precmd_functions;
             if [[ -z "${{precmd_functions[(r)_rtx_hook]+1}}" ]]; then
@@ -89,14 +88,14 @@ mod tests {
     fn test_hook_init() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(zsh.activate(exe, true));
+        assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let zsh = Zsh::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(zsh.activate(exe, true));
+        assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]

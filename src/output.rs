@@ -49,12 +49,33 @@ macro_rules! rtxstatusln {
         }};
     }
 
+#[cfg(test)]
+#[macro_export]
+macro_rules! rtxwarn {
+        ($($arg:tt)*) => {{
+            let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+            let rtx = console::style("rtx ").yellow().for_stderr();
+            stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+        }};
+    }
+
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! rtxstatusln {
     ($($arg:tt)*) => {{
         let rtx = console::style("rtx ").dim().for_stderr();
         eprintln!("{}{}", rtx, format!($($arg)*));
+    }};
+}
+
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! rtxwarn {
+    ($($arg:tt)*) => {{
+        if log_enabled!(log::Level::Warn) {
+            let rtx = console::style("rtx ").yellow().for_stderr();
+            eprintln!("{}{}", rtx, format!($($arg)*));
+        }
     }};
 }
 

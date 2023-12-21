@@ -21,10 +21,9 @@ impl<'a> Display for EnvOp<'a> {
 }
 
 impl Shell for Nushell {
-    fn activate(&self, exe: &Path, status: bool) -> String {
+    fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.display();
-        let status = if status { " --status" } else { "" };
         let mut out = String::new();
 
         if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
@@ -85,7 +84,7 @@ impl Shell for Nushell {
           }}
             
           def --env rtx_hook [] {{
-            ^"{exe}" hook-env{status} -s nu
+            ^"{exe}" hook-env{flags} -s nu
               | parse vars
               | update-env
           }}
@@ -125,14 +124,14 @@ mod tests {
     fn test_hook_init() {
         let nushell = Nushell::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(nushell.activate(exe, true));
+        assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let nushell = Nushell::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(nushell.activate(exe, true));
+        assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
     #[test]

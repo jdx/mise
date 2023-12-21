@@ -1,3 +1,4 @@
+use console::{style, truncate_str};
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -9,12 +10,11 @@ use crate::config::Config;
 
 use crate::config::Settings;
 use crate::direnv::DirenvDiff;
-use crate::env::__RTX_DIFF;
+use crate::env::{TERM_WIDTH, __RTX_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
-use crate::ui::truncate::screen_trunc;
 use crate::{env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
@@ -28,6 +28,10 @@ pub struct HookEnv {
     /// Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
     #[clap(long)]
     status: bool,
+
+    /// Hide warnings such as when a tool is not installed
+    #[clap(long, short)]
+    quiet: bool,
 }
 
 impl HookEnv {
@@ -57,6 +61,7 @@ impl HookEnv {
         if self.status {
             self.display_status(config, &ts);
         }
+        self.missing_versions_warning(&ts);
 
         Ok(())
     }
@@ -70,12 +75,12 @@ impl HookEnv {
             .collect_vec();
         if !installed_versions.is_empty() {
             let status = installed_versions.into_iter().rev().join(" ");
-            rtxstatusln!("{}", screen_trunc(&status));
+            rtxstatusln!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
         }
         let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
         if !env_diff.is_empty() {
             let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-            rtxstatusln!("{env_diff}");
+            rtxstatusln!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
         }
     }
 
@@ -160,6 +165,22 @@ impl HookEnv {
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
         ))
+    }
+    fn missing_versions_warning(&self, ts: &Toolset) {
+        let missing = ts.list_missing_versions();
+        if missing.is_empty() {
+            return;
+        }
+        let versions = missing
+            .iter()
+            .map(|tv| tv.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        rtxwarn!(
+            "missing: {}. Install with {}",
+            truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
+            style("rtx install").yellow().for_stderr(),
+        );
     }
 }
 

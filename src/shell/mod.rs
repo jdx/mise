@@ -53,7 +53,7 @@ impl Display for ShellType {
 }
 
 pub trait Shell {
-    fn activate(&self, exe: &Path, status: bool) -> String;
+    fn activate(&self, exe: &Path, flags: String) -> String;
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
