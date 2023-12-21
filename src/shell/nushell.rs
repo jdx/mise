@@ -124,14 +124,14 @@ mod tests {
     fn test_hook_init() {
         let nushell = Nushell::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(nushell.activate(exe, true));
+        assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let nushell = Nushell::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(nushell.activate(exe, true));
+        assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
     #[test]

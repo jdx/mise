@@ -41,6 +41,7 @@ complete -xc rtx -n "not $fssf $others" -a where -d 'Display the installation pa
 complete -xc rtx -n "not $fssf $others" -a which -d 'Shows the path that a bin name points to'
 
 # activate
+complete -kxc rtx -n "$fssf activate" -s q -l quiet -d 'Hide the warning when a tool is not installed'
 complete -kxc rtx -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type to generate the script for'
 complete -kxc rtx -n "$fssf activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 

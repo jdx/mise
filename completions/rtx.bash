@@ -2339,7 +2339,7 @@ _rtx() {
             return 0
             ;;
         rtx__hook__env)
-            opts="-s -q -v -y -h --shell --status --debug --log-level --trace --quiet --verbose --yes --help"
+            opts="-s -q -v -y -h --shell --status --quiet --debug --log-level --trace --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

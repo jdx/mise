@@ -64,7 +64,7 @@ __rtx_activate_cmd() {
   _arguments -s -S \
     '::shell_type:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
-    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
+    '(-q --quiet)'{-q,--quiet}'[Hide the warning when a tool is not installed]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
@@ -335,7 +335,7 @@ __rtx_hook_env_cmd() {
   _arguments -s -S \
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
-    '(-q --quiet)'{-q,--quiet}'[Suppress output]' \
+    '(-q --quiet)'{-q,--quiet}'[Hide the warning when a tool is not installed]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }

@@ -88,14 +88,14 @@ mod tests {
     fn test_hook_init() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(zsh.activate(exe, true));
+        assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let zsh = Zsh::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(zsh.activate(exe, true));
+        assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]

@@ -130,14 +130,14 @@ mod tests {
     fn test_hook_init() {
         let xonsh = Xonsh::default();
         let exe = Path::new("/some/dir/rtx");
-        insta::assert_snapshot!(xonsh.activate(exe, true));
+        insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let xonsh = Xonsh::default();
         let exe = Path::new("/nix/store/rtx");
-        insta::assert_snapshot!(xonsh.activate(exe, true));
+        insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
     }
 
     #[test]
