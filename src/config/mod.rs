@@ -68,9 +68,11 @@ impl Config {
         let global_config = load_rtxrc()?;
         Settings::add_partial(global_config.settings()?);
 
-        let config_paths = load_config_paths(&DEFAULT_CONFIG_FILENAMES);
-        let settings = Settings::try_get()?;
-        let plugins = load_plugins(&settings)?;
+        let (config_paths, plugins) = rayon::join(
+            || load_config_paths(&DEFAULT_CONFIG_FILENAMES),
+            load_plugins,
+        );
+        let plugins = plugins?;
         let config_files =
             load_all_config_files(&config_paths, &plugins, &BTreeMap::new(), ConfigMap::new())?;
         for cf in config_files.values() {
@@ -89,8 +91,7 @@ impl Config {
         let config_track = track_config_files(&config_paths);
 
         let config_files =
-            load_all_config_files(&config_paths, &plugins, &legacy_files, config_files);
-        let config_files = config_files?;
+            load_all_config_files(&config_paths, &plugins, &legacy_files, config_files)?;
         let watch_files = config_files
             .values()
             .flat_map(|cf| cf.watch_files())
@@ -280,16 +281,13 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins(settings: &Settings) -> Result<PluginMap> {
+fn load_plugins() -> Result<PluginMap> {
     let mut tools = CORE_PLUGINS.clone();
+    let settings = Settings::try_get()?;
     if settings.experimental {
         tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
     }
-    let external = ExternalPlugin::list()?
-        .into_iter()
-        .map(|e| (e.name().into(), e))
-        .collect::<Vec<(PluginName, Arc<dyn Plugin>)>>();
-    tools.extend(external);
+    tools.extend(ExternalPlugin::list()?);
     for tool in &settings.disable_tools {
         tools.remove(tool);
     }
