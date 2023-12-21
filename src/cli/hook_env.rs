@@ -10,12 +10,11 @@ use crate::config::Config;
 
 use crate::config::Settings;
 use crate::direnv::DirenvDiff;
-use crate::env::__RTX_DIFF;
+use crate::env::{TERM_WIDTH, __RTX_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
-use crate::ui::truncate::screen_trunc;
 use crate::{env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
@@ -76,12 +75,12 @@ impl HookEnv {
             .collect_vec();
         if !installed_versions.is_empty() {
             let status = installed_versions.into_iter().rev().join(" ");
-            rtxstatusln!("{}", screen_trunc(&status));
+            rtxstatusln!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
         }
         let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
         if !env_diff.is_empty() {
             let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-            rtxstatusln!("{env_diff}");
+            rtxstatusln!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
         }
     }
 
@@ -179,7 +178,7 @@ impl HookEnv {
             .join(", ");
         rtxwarn!(
             "missing: {}. Install with {}",
-            truncate_str(&versions, 40, "…"),
+            truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
             style("rtx install").yellow().for_stderr(),
         );
     }
