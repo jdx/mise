@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use console::style;
+use console::{style, truncate_str};
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -18,6 +18,7 @@ pub use tool_version_request::ToolVersionRequest;
 
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::env::TERM_WIDTH;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::plugins::{Plugin, PluginName};
@@ -347,6 +348,23 @@ impl Toolset {
             })
             .map(|(_, tv)| tv)
             .collect())
+    }
+
+    pub fn warn_if_versions_missing(&self) {
+        let missing = self.list_missing_versions();
+        if missing.is_empty() {
+            return;
+        }
+        let versions = missing
+            .iter()
+            .map(|tv| tv.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        rtxwarn!(
+            "missing: {}. Install with {}",
+            truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
+            style("rtx install").yellow().for_stderr(),
+        );
     }
 }
 

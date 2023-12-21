@@ -30,6 +30,7 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
+        ts.warn_if_versions_missing();
         let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
             rtxstatusln!("All tools are up to date");

@@ -1,4 +1,4 @@
-use console::{style, truncate_str};
+use console::truncate_str;
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ impl HookEnv {
         if self.status {
             self.display_status(config, &ts);
         }
-        self.missing_versions_warning(&ts);
+        ts.warn_if_versions_missing();
 
         Ok(())
     }
@@ -165,22 +165,6 @@ impl HookEnv {
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
         ))
-    }
-    fn missing_versions_warning(&self, ts: &Toolset) {
-        let missing = ts.list_missing_versions();
-        if missing.is_empty() {
-            return;
-        }
-        let versions = missing
-            .iter()
-            .map(|tv| tv.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        rtxwarn!(
-            "missing: {}. Install with {}",
-            truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
-            style("rtx install").yellow().for_stderr(),
-        );
     }
 }
 
