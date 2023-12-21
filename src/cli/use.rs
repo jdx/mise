@@ -153,7 +153,7 @@ impl Use {
             let plugin = &targ.plugin;
             let p = display_path(p);
             let global = display_path(global);
-            rtxwarn!("{plugin} is is defined in {p} which overrides the global config ({global})");
+            warn!("{plugin} is is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.plugin) {

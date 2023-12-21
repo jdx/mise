@@ -1,7 +1,5 @@
 extern crate core;
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate eyre;
 #[macro_use]
 extern crate indoc;

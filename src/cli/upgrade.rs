@@ -61,7 +61,7 @@ impl Upgrade {
             outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.name()));
         }
         if outdated.is_empty() {
-            rtxstatusln!("All tools are up to date");
+            info!("All tools are up to date");
         } else {
             self.upgrade(config, outdated)?;
         }

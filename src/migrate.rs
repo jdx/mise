@@ -24,14 +24,14 @@ pub fn run() {
 fn task(s: &Scope, job: impl FnOnce() -> Result<()> + Send + 'static) {
     s.spawn(|_| {
         if let Err(err) = job() {
-            rtxwarn!("migrate: {}", err);
+            warn!("migrate: {}", err);
         }
     });
 }
 
 fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
     if from.exists() {
-        rtxstatusln!("migrating {} to {}", from.display(), to.display());
+        info!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to)?;
         for f in from.read_dir()? {
             let f = f?.file_name();
@@ -69,7 +69,7 @@ fn migrate_trusted_configs() -> Result<()> {
 
 fn move_dirs(from: &Path, to: &Path) -> Result<()> {
     if from.exists() && !to.exists() {
-        rtxstatusln!("migrating {} to {}", from.display(), to.display());
+        info!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to.parent().unwrap())?;
         file::rename(from, to)?;
     }
@@ -83,9 +83,7 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
     if !gitconfig_body.contains(&format!("github.com/rtx-plugins/{plugin_name}")) {
         return Ok(());
     }
-    rtxstatusln!(
-        "removing deprecated plugin {plugin_name}, will use core {name} plugin from now on"
-    );
+    info!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
     file::remove_all(plugin_root)?;
     Ok(())
 }

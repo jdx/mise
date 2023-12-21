@@ -48,14 +48,14 @@ impl Uninstall {
         let mpr = MultiProgressReport::get();
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&tv) {
-                rtxwarn!("{} is not installed", style(&tv).cyan().for_stderr());
+                warn!("{} is not installed", style(&tv).cyan().for_stderr());
                 continue;
             }
 
             let prefix = format!("{}", style(&tv).cyan().for_stderr());
             let pr = mpr.add(&prefix);
             if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
-                rtxerror!("{err}");
+                error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             if self.dry_run {
@@ -117,7 +117,7 @@ impl Uninstall {
                     ));
                 }
                 if tvs.is_empty() {
-                    rtxwarn!("no versions found for {}", style(&tool).cyan().for_stderr());
+                    warn!("no versions found for {}", style(&tool).cyan().for_stderr());
                 }
                 Ok(tvs)
             })

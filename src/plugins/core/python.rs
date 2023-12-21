@@ -68,7 +68,7 @@ impl PythonPlugin {
         match self.core.fetch_remote_versions_from_rtx() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
-            Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
+            Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         self.install_or_update_python_build()?;
         let python_build_bin = self.python_build_bin();
@@ -118,7 +118,7 @@ impl PythonPlugin {
         if let Some(virtualenv) = tv.opts.get("virtualenv") {
             let settings = Settings::try_get()?;
             if !settings.experimental {
-                rtxwarn!(
+                warn!(
                     "please enable experimental mode with `rtx settings set experimental true` \
                     to use python virtualenv activation"
                 );
@@ -131,7 +131,7 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() {
-                rtxstatusln!("setting up virtualenv at: {}", virtualenv.display());
+                info!("setting up virtualenv at: {}", virtualenv.display());
                 let mut cmd = CmdLineRunner::new(self.python_path(tv))
                     .arg("-m")
                     .arg("venv")
@@ -218,13 +218,13 @@ impl Plugin for PythonPlugin {
                 let contents = file::read_to_string(&patch_file)?;
                 cmd = cmd.arg("--patch").stdin_string(contents);
             } else {
-                rtxwarn!("patch file not found: {}", patch_file.display());
+                warn!("patch file not found: {}", patch_file.display());
             }
         }
         cmd.execute()?;
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
-            rtxwarn!("failed to get virtualenv: {e}");
+            warn!("failed to get virtualenv: {e}");
         }
         self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
         Ok(())
@@ -238,7 +238,7 @@ impl Plugin for PythonPlugin {
     ) -> Result<HashMap<String, String>> {
         let mut hm = HashMap::new();
         match self.get_virtualenv(config, tv, None) {
-            Err(e) => rtxwarn!("failed to get virtualenv: {e}"),
+            Err(e) => warn!("failed to get virtualenv: {e}"),
             Ok(Some(virtualenv)) => {
                 let bin = virtualenv.join("bin");
                 hm.insert("VIRTUAL_ENV".into(), virtualenv.to_string_lossy().into());
