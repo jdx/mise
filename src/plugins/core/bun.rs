@@ -30,7 +30,7 @@ impl BunPlugin {
         match self.core.fetch_remote_versions_from_rtx() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
+            Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
         }
         let releases: Vec<GithubRelease> =
             HTTP_FETCH.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;

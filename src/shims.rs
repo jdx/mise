@@ -94,7 +94,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         .into_par_iter()
         .flat_map(|(t, tv)| {
             list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
-                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                rtxwarn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             })
         })

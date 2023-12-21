@@ -198,7 +198,7 @@ impl Config {
             .into_par_iter()
             .map(|plugin| {
                 let aliases = plugin.get_aliases().unwrap_or_else(|err| {
-                    warn!("get_aliases: {err}");
+                    rtxwarn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
                 (plugin.name().to_string(), aliases)
@@ -495,7 +495,7 @@ fn track_config_files(config_filenames: &[PathBuf]) {
         Ok(())
     };
     if let Err(err) = track() {
-        warn!("tracking config files: {:#}", err);
+        rtxwarn!("tracking config files: {:#}", err);
     }
 }
 

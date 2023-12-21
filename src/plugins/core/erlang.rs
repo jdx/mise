@@ -69,7 +69,7 @@ impl ErlangPlugin {
         match self.core.fetch_remote_versions_from_rtx() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
+            Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
         }
         self.update_kerl()?;
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {

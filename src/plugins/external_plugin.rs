@@ -161,7 +161,7 @@ impl ExternalPlugin {
         let settings = Settings::try_get()?;
         match self.fetch_versions() {
             Ok(Some(versions)) => return Ok(versions),
-            Err(err) => warn!(
+            Err(err) => rtxwarn!(
                 "Failed to fetch remote versions for plugin {}: {}",
                 style(&self.name).cyan().for_stderr(),
                 err
@@ -475,18 +475,18 @@ impl Plugin for ExternalPlugin {
         let config = Config::get();
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
-            pr.warn(format!(
+            rtxwarn!(
                 "Plugin: {} is a symlink, not updating",
                 style(&self.name).cyan().for_stderr()
-            ));
+            );
             return Ok(());
         }
         let git = Git::new(plugin_path);
         if !git.is_repo() {
-            pr.warn(format!(
+            rtxwarn!(
                 "Plugin {} is not a git repository, not updating",
                 style(&self.name).cyan().for_stderr()
-            ));
+            );
             return Ok(());
         }
         pr.set_message("updating git repo".into());
