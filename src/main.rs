@@ -79,7 +79,9 @@ fn main() -> Result<()> {
             display_friendly_err(err);
             exit(1);
         }
-        Err(err) => Err(err).suggestion("Run with RTX_DEBUG=1 for more information."),
+        Err(err) => {
+            Err(err).suggestion("Run with --verbose or RTX_VERBOSE=1 for more information.")
+        }
     }
 }
 
