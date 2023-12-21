@@ -62,6 +62,7 @@ impl Config {
         *CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
+    #[tracing::instrument]
     pub fn load() -> Result<Self> {
         let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
         Settings::add_partial(cli_settings);

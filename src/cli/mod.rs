@@ -168,6 +168,7 @@ impl Cli {
         }
     }
 
+    #[tracing::instrument(skip(config))]
     pub fn new_with_external_commands(config: &Config) -> Self {
         let mut external_commands = external::commands(config);
         if SelfUpdate::is_available() {
@@ -198,6 +199,7 @@ impl Cli {
         )
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn run(self, args: &Vec<String>) -> Result<()> {
         debug!("{}", &args.join(" "));
         let config = Config::try_get()?;

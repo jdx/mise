@@ -35,6 +35,7 @@ impl ToolsetBuilder {
         self
     }
 
+    #[tracing::instrument(skip(self, config))]
     pub fn build(self, config: &Config) -> Result<Toolset> {
         let settings = Settings::try_get()?;
         let mut toolset = Toolset {

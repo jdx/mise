@@ -22,6 +22,7 @@ use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
+#[tracing::instrument(skip(config))]
 pub fn handle_shim(config: &Config) -> Result<()> {
     if *env::RTX_BIN_NAME == "rtx" {
         return Ok(());

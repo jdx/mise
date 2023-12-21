@@ -1,12 +1,16 @@
 extern crate simplelog;
 
-use std::env;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
 
 use eyre::Result;
 use simplelog::*;
+use tracing_log::LogTracer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Registry;
+use tracing_tree::HierarchicalLayer;
 
+#[cfg(not(feature = "tracing"))]
 pub fn init(log_level: LevelFilter, log_file_level: LevelFilter) {
     let mut loggers: Vec<Box<dyn SharedLogger>> = vec![];
     loggers.push(init_term_logger(log_level));
@@ -20,6 +24,20 @@ pub fn init(log_level: LevelFilter, log_file_level: LevelFilter) {
     CombinedLogger::init(loggers).unwrap_or_else(|err| {
         eprintln!("rtx: could not initialize logger: {err}");
     });
+}
+
+#[cfg(feature = "tracing")]
+pub fn init(_log_level: LevelFilter, _log_file_level: LevelFilter) {
+    LogTracer::init().unwrap();
+
+    let sub = Registry::default().with(
+        HierarchicalLayer::default()
+            .with_indent_lines(true)
+            .with_targets(true)
+            .with_thread_ids(true)
+            .with_thread_names(true),
+    );
+    tracing::subscriber::set_global_default(sub).unwrap();
 }
 
 fn init_log_file(log_file: PathBuf) -> Result<File> {

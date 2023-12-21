@@ -7,6 +7,7 @@ use rayon::Scope;
 use crate::dirs::*;
 use crate::file;
 
+#[tracing::instrument]
 pub fn run() {
     rayon::scope(|s| {
         task(s, || rename_plugin("nodejs", "node"));
