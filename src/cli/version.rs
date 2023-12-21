@@ -98,7 +98,7 @@ fn get_latest_version(duration: Duration) -> Option<String> {
             }
         }
     }
-    let _ = file::create_dir_all(&*dirs::CACHE);
+    let _ = file::create_dir_all(*dirs::CACHE);
     let version = get_latest_version_call();
     let _ = file::write(version_file_path, version.clone().unwrap_or_default());
     version

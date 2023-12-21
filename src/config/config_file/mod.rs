@@ -201,7 +201,7 @@ pub fn untrust(path: &Path) -> Result<()> {
 }
 
 fn trust_path(path: &Path) -> PathBuf {
-    dirs::DATA.join("trusted-configs").join(hash_to_str(&path))
+    dirs::TRUSTED_CONFIGS.join(hash_to_str(&path))
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {

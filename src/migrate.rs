@@ -4,7 +4,7 @@ use std::path::Path;
 use eyre::Result;
 use rayon::Scope;
 
-use crate::dirs::{CACHE, CONFIG, DATA, INSTALLS, PLUGINS};
+use crate::dirs::*;
 use crate::file;
 
 pub fn run() {
@@ -55,18 +55,15 @@ fn rename_plugin(from: &str, to: &str) -> Result<()> {
 }
 
 fn migrate_tracked_configs() -> Result<()> {
-    let from = DATA.join("tracked_config_files");
-    let to = DATA.join("tracked-config-files");
-    move_dirs(&from, &to)?;
+    move_dirs(&DATA.join("tracked_config_files"), &TRACKED_CONFIGS)?;
+    move_dirs(&DATA.join("tracked-config-files"), &TRACKED_CONFIGS)?;
     Ok(())
 }
 
 fn migrate_trusted_configs() -> Result<()> {
-    let cache_trusted_configs = CACHE.join("trusted-configs");
-    let config_trusted_configs = CONFIG.join("trusted-configs");
-    let root_trusted_configs = DATA.join("trusted-configs");
-    move_dirs(&cache_trusted_configs, &root_trusted_configs)?;
-    move_dirs(&config_trusted_configs, &root_trusted_configs)?;
+    move_dirs(&CACHE.join("trusted-configs"), &TRUSTED_CONFIGS)?;
+    move_dirs(&CONFIG.join("trusted-configs"), &TRUSTED_CONFIGS)?;
+    move_dirs(&DATA.join("trusted-configs"), &TRUSTED_CONFIGS)?;
     Ok(())
 }
 
