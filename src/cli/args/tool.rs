@@ -2,6 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
 
 use clap::{Arg, Command, Error};
+use console::style;
 use eyre::Result;
 use regex::Regex;
 
@@ -58,6 +59,19 @@ impl ToolArg {
             tvr: Some(ToolVersionRequest::new(self.plugin.clone(), version)),
             ..self
         }
+    }
+
+    pub fn style(&self) -> String {
+        let version = self
+            .tvr
+            .as_ref()
+            .map(|t| t.version())
+            .unwrap_or(String::from("latest"));
+        format!(
+            "{}{}",
+            style(&self.plugin).blue().for_stderr(),
+            style(&format!("@{version}",)).dim().for_stderr()
+        )
     }
 }
 
