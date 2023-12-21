@@ -151,14 +151,15 @@ impl Toolset {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
                             for tv in versions {
+                                let tv = tv.request.resolve(
+                                    t.as_ref(),
+                                    tv.opts.clone(),
+                                    opts.latest_versions,
+                                )?;
                                 let ctx = InstallContext {
                                     ts,
-                                    tv: tv.request.resolve(
-                                        t.as_ref(),
-                                        tv.opts.clone(),
-                                        opts.latest_versions,
-                                    )?,
                                     pr: mpr.add(&style_tv(&tv)),
+                                    tv,
                                     raw,
                                     force: opts.force,
                                 };
