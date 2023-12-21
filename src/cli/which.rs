@@ -1,7 +1,8 @@
-use color_eyre::eyre::{eyre, Result};
+use eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
+use crate::dirs::SHIMS;
 
 use crate::toolset::{Toolset, ToolsetBuilder};
 
@@ -43,7 +44,16 @@ impl Which {
                 }
                 Ok(())
             }
-            None => Err(eyre!("{} not found", self.bin_name)),
+            None => {
+                if self.has_shim(&self.bin_name) {
+                    bail!("{} is an rtx bin however it is not currently active. Use `rtx use` to activate it in this directory.", self.bin_name)
+                } else {
+                    bail!(
+                        "{} is not an rtx bin. Perhaps you need to install it first.",
+                        self.bin_name
+                    )
+                }
+            }
         }
     }
     fn get_toolset(&self) -> Result<Toolset> {
@@ -54,6 +64,9 @@ impl Which {
         }
         let ts = tsb.build(&config)?;
         Ok(ts)
+    }
+    fn has_shim(&self, shim: &str) -> bool {
+        SHIMS.join(shim).exists()
     }
 }
 
