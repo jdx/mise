@@ -9,7 +9,6 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
 
-use crate::ui::style::style_tool;
 use crate::{dirs, file};
 
 /// Symlinks a tool version into rtx
@@ -37,12 +36,7 @@ impl Link {
     pub fn run(self, config: &Config) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
-            None => {
-                return Err(eyre!(
-                    "must provide a version for {}",
-                    style_tool(&self.tool)
-                ));
-            }
+            None => bail!("must provide a version for {}", self.tool.style()),
         };
         let path = self.path.absolutize()?;
         if !path.exists() {
@@ -58,7 +52,7 @@ impl Link {
             } else {
                 return Err(eyre!(
                     "Tool version {} already exists, use {} to overwrite",
-                    style_tool(&self.tool),
+                    self.tool.style(),
                     style("--force").yellow().for_stderr()
                 ));
             }

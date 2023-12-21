@@ -25,7 +25,6 @@ use crate::plugins::{Plugin, PluginName};
 use crate::runtime_symlinks;
 use crate::shims;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::style::style_tv;
 
 mod builder;
 mod tool_source;
@@ -158,7 +157,7 @@ impl Toolset {
                                 )?;
                                 let ctx = InstallContext {
                                     ts,
-                                    pr: mpr.add(&style_tv(&tv)),
+                                    pr: mpr.add(&tv.style()),
                                     tv,
                                     raw,
                                     force: opts.force,
