@@ -2,4 +2,4 @@
 source: src/cli/trust.rs
 expression: output
 ---
-untrusted ~/cwd/.test-tool-versions
+rtx untrusted ~/cwd/.test-tool-versions

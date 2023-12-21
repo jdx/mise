@@ -3208,7 +3208,7 @@ _rtx() {
             return 0
             ;;
         rtx__trust)
-            opts="-q -v -y -h --untrust --debug --log-level --trace --quiet --verbose --yes --help [CONFIG_FILE]"
+            opts="-a -q -v -y -h --all --untrust --debug --log-level --trace --quiet --verbose --yes --help [CONFIG_FILE]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

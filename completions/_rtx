@@ -646,6 +646,7 @@ __rtx_sync_python_cmd() {
 __rtx_trust_cmd() {
   _arguments -s -S \
     '::config_file:_files' \
+    '(-a --all)'{-a,--all}'[Trust all config files in the current directory and its parents]' \
     '--untrust[No longer trust this config]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress warnings and other non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
