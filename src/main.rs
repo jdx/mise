@@ -118,6 +118,6 @@ fn display_friendly_err(err: Report) {
     eprintln!(
         "{} {}",
         dim_red("rtx"),
-        dim("Run with RTX_DEBUG=1 for more information")
+        dim("Run with --verbose or RTX_VERBOSE=1 for more information")
     );
 }
