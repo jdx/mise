@@ -6,10 +6,9 @@ use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 pub struct Bash {}
 
 impl Shell for Bash {
-    fn activate(&self, exe: &Path, status: bool) -> String {
+    fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
-        let status = if status { " --status" } else { "" };
         let mut out = String::new();
         if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
@@ -41,7 +40,7 @@ impl Shell for Bash {
 
             _rtx_hook() {{
               local previous_exit_status=$?;
-              eval "$(rtx hook-env{status} -s bash)";
+              eval "$(rtx hook-env{flags} -s bash)";
               return $previous_exit_status;
             }};
             if [[ ";${{PROMPT_COMMAND:-}};" != *";_rtx_hook;"* ]]; then
@@ -85,14 +84,14 @@ mod tests {
     fn test_hook_init() {
         let bash = Bash::default();
         let exe = Path::new("/some/dir/rtx");
-        assert_snapshot!(bash.activate(exe, true));
+        assert_snapshot!(bash.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let bash = Bash::default();
         let exe = Path::new("/nix/store/rtx");
-        assert_snapshot!(bash.activate(exe, true));
+        assert_snapshot!(bash.activate(exe, " --status".into()));
     }
 
     #[test]

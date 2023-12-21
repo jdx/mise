@@ -1700,6 +1700,9 @@ Options:
       --status
           Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
 
+  -q, --quiet
+          Hide warnings such as when a tool is not installed
+
 Examples:
   $ eval "$(rtx activate bash)"
   $ eval "$(rtx activate zsh)"

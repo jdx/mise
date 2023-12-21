@@ -8,7 +8,7 @@ impl Quiet {
         Arg::new("quiet")
             .short('q')
             .long("quiet")
-            .help("Suppress output")
+            .help("Suppress warnings and other non-error messages")
             .global(true)
             .overrides_with("verbose")
             .action(ArgAction::SetTrue)
