@@ -1,3 +1,4 @@
+use console::style;
 use eyre::Result;
 
 use crate::config::Config;
@@ -55,7 +56,10 @@ impl Current {
                 );
             }
             None => {
-                warn!("Plugin {} does not have a version set", tool.name());
+                warn!(
+                    "Plugin {} does not have a version set",
+                    style(tool.name()).blue().for_stderr()
+                );
             }
         };
         Ok(())

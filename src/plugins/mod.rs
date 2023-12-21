@@ -54,10 +54,10 @@ pub trait Plugin: Debug + Send + Sync {
     fn list_installed_versions(&self) -> Result<Vec<String>> {
         Ok(match self.installs_path().exists() {
             true => file::dir_subdirs(&self.installs_path())?
-                .iter()
+                .into_iter()
+                .filter(|v| !v.starts_with('.'))
                 .filter(|v| !is_runtime_symlink(&self.installs_path().join(v)))
                 .filter(|v| !self.installs_path().join(v).join("incomplete").exists())
-                .cloned()
                 .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                 .collect(),
             false => vec![],
