@@ -12,6 +12,7 @@ use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style::style_tool;
 use crate::{dirs, env, file};
 
 /// Change the active version of a tool locally or globally.
@@ -169,13 +170,13 @@ impl Use {
     fn render_success_message(&self, cf: &dyn ConfigFile) {
         let path = display_path(cf.get_path());
         let (dir, file) = path.rsplit_once('/').unwrap_or(("", &path));
-        let tools = self.tool.iter().map(|t| t.to_string()).join(" ");
+        let tools = self.tool.iter().map(style_tool).join(" ");
         rtxprintln!(
             "\n{} {}{} updated with tools: {}\n",
             style("rtx").green(),
             style(dir.to_owned() + "/").dim(),
             file,
-            style(tools).cyan()
+            tools,
         );
     }
 }
