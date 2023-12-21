@@ -60,8 +60,7 @@ pub static RTX_BIN: Lazy<PathBuf> = Lazy::new(|| {
 });
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static RTX_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
-pub static RTX_LOG_LEVEL: Lazy<LevelFilter> = Lazy::new(log_level);
-pub static RTX_LOG_FILE_LEVEL: Lazy<LevelFilter> = Lazy::new(log_file_level);
+pub static RTX_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
@@ -364,65 +363,9 @@ fn prefer_stale(args: &[String]) -> bool {
     .contains(&c.as_str());
 }
 
-fn log_level() -> LevelFilter {
-    if var_is_true("RTX_QUIET") {
-        set_var("RTX_LOG_LEVEL", "error");
-    }
-    if var_is_true("RTX_DEBUG") || var_is_true("RTX_VERBOSE") {
-        set_var("RTX_LOG_LEVEL", "debug");
-    }
-    if var_is_true("RTX_TRACE") || var("RTX_VERBOSE").is_ok_and(|v| v == "2") {
-        set_var("RTX_LOG_LEVEL", "trace");
-    }
-    let args = ARGS.read().unwrap();
-    for (i, arg) in args.iter().enumerate() {
-        // stop parsing after "--" or if we're executing as a shim
-        if arg == "--" || *RTX_BIN_NAME != "rtx" {
-            break;
-        }
-        if let Some(("--log-level", level)) = arg.split_once('=') {
-            set_var("RTX_LOG_LEVEL", level);
-        }
-        if arg == "--log-level" {
-            if let Some(level) = args.get(i + 1) {
-                set_var("RTX_LOG_LEVEL", level);
-            }
-        }
-        if arg == "--debug" || arg == "--verbose" || (arg == "-v" && args.len() > 2) {
-            set_var("RTX_LOG_LEVEL", "debug");
-        }
-        if arg == "--trace" || arg == "-vv" {
-            set_var("RTX_LOG_LEVEL", "trace");
-        }
-        if arg == "--quiet" || arg == "-q" {
-            set_var("RTX_LOG_LEVEL", "error");
-        }
-    }
-    let log_level = var("RTX_LOG_LEVEL")
-        .unwrap_or_default()
-        .parse::<LevelFilter>()
-        .unwrap_or(LevelFilter::Info);
-    // set RTX_DEBUG/RTX_TRACE for plugins to use
-    match log_level {
-        LevelFilter::Trace => {
-            set_var("RTX_TRACE", "1");
-            set_var("RTX_DEBUG", "1");
-        }
-        LevelFilter::Debug => {
-            set_var("RTX_DEBUG", "1");
-        }
-        _ => {}
-    }
-
-    log_level
-}
-
-fn log_file_level() -> LevelFilter {
+fn log_file_level() -> Option<LevelFilter> {
     let log_level = var("RTX_LOG_FILE_LEVEL").unwrap_or_default();
-    match log_level.parse::<LevelFilter>() {
-        Ok(level) => level,
-        _ => *RTX_LOG_LEVEL,
-    }
+    log_level.parse::<LevelFilter>().ok()
 }
 
 fn linux_distro() -> Option<String> {

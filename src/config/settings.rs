@@ -1,17 +1,17 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
 use eyre::Result;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Once, RwLock};
 
 use confique::{Builder, Config, Partial};
-use log::LevelFilter;
-use serde::ser::Error;
-use serde_derive::Serialize;
+use once_cell::sync::Lazy;
 
 use crate::env;
+use serde::ser::Error;
+use serde_derive::Serialize;
 
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize)))]
@@ -32,6 +32,12 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "RTX_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
     pub trusted_config_paths: BTreeSet<PathBuf>,
+    #[config(env = "RTX_LOG_LEVEL", default = "info")]
+    pub log_level: String,
+    #[config(env = "RTX_TRACE", default = false)]
+    pub trace: bool,
+    #[config(env = "RTX_DEBUG", default = false)]
+    pub debug: bool,
     #[config(env = "RTX_VERBOSE", default = false)]
     pub verbose: bool,
     #[config(env = "RTX_QUIET", default = false)]
@@ -50,6 +56,8 @@ pub struct Settings {
     pub raw: bool,
     #[config(env = "RTX_YES", default = false)]
     pub yes: bool,
+    #[config(env = "CI", default = false)]
+    pub ci: bool,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
@@ -76,11 +84,33 @@ impl Settings {
             settings.verbose = true;
             settings.jobs = 1;
         }
+        if settings.debug {
+            settings.log_level = "debug".to_string();
+        }
+        if settings.trace {
+            settings.log_level = "trace".to_string();
+        }
+        if settings.log_level == "trace" || settings.log_level == "debug" {
+            settings.verbose = true;
+            settings.debug = true;
+            if settings.log_level == "trace" {
+                settings.trace = true;
+            }
+        }
+        if settings.verbose {
+            settings.quiet = false;
+            if settings.log_level != "trace" {
+                settings.log_level = "debug".to_string();
+            }
+        }
         if !settings.color {
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
         }
-        let settings = Arc::new(Self::default_builder().load()?);
+        if settings.ci {
+            settings.yes = true;
+        }
+        let settings = Arc::new(settings);
         *SETTINGS.write().unwrap() = Some(settings.clone());
         Ok(settings)
     }
@@ -88,12 +118,6 @@ impl Settings {
         static ONCE: Once = Once::new();
         ONCE.call_once(|| {
             let mut p = SettingsPartial::empty();
-            if *env::CI {
-                p.yes = Some(true);
-            }
-            if *env::RTX_LOG_LEVEL > LevelFilter::Info {
-                p.verbose = Some(true);
-            }
             for arg in &*env::ARGS.read().unwrap() {
                 if arg == "--" {
                     break;
@@ -113,6 +137,11 @@ impl Settings {
             b = b.preloaded(partial.clone());
         }
         b
+    }
+    pub fn hidden_configs() -> HashSet<&'static str> {
+        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
+            Lazy::new(|| ["ci", "debug", "trace", "log_level"].into());
+        HIDDEN_CONFIGS.clone()
     }
 
     #[cfg(test)]
