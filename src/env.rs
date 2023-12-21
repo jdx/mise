@@ -54,7 +54,7 @@ pub static RTX_ENV: Lazy<Option<String>> =
 pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
 pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
 pub static RTX_BIN: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_EXE")
+    var_path("RTX_BIN")
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "rtx".into())
 });
