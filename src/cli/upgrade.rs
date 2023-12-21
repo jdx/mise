@@ -140,7 +140,11 @@ impl Upgrade {
             .filterable(true)
             .min(1);
         for (_, tv, latest) in outdated {
-            let label = format!("{tv} -> {latest}");
+            let label = if &tv.version == latest {
+                tv.to_string()
+            } else {
+                format!("{tv} -> {latest}")
+            };
             ms = ms.option(DemandOption::new(tv).label(&label));
         }
         Ok(ms.run()?.into_iter().cloned().collect())
