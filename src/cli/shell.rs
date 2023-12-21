@@ -46,6 +46,7 @@ impl Shell {
             latest_versions: false,
         };
         ts.install_arg_versions(&config, &opts)?;
+        ts.warn_if_versions_missing();
 
         let shell = get_shell(None).expect("no shell detected");
 
