@@ -21,18 +21,24 @@ pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "s
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/")));
 pub static PWD: Lazy<PathBuf> = Lazy::new(|| current_dir().unwrap_or_else(|_| PathBuf::new()));
+
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache")));
-pub static XDG_DATA_HOME: Lazy<PathBuf> =
-    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share")));
 pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
+pub static XDG_DATA_HOME: Lazy<PathBuf> =
+    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share")));
+pub static XDG_STATE_HOME: Lazy<PathBuf> =
+    Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local/state")));
+
 pub static RTX_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("rtx")));
 pub static RTX_CONFIG_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx")));
 pub static RTX_DATA_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx")));
+pub static RTX_STATE_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("RTX_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("rtx")));
 pub static RTX_TMP_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("RTX_TMP_DIR").unwrap_or_else(|| temp_dir().join("rtx")));
 

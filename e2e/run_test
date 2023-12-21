@@ -10,6 +10,7 @@ setup_env() {
 	export PATH="$ROOT/target/debug:$PATH"
 	export RTX_USE_TOML="0"
 	export RTX_DATA_DIR="$HOME/.rtx/e2e"
+	export RTX_STATE_DIR="$HOME/.rtx/e2e"
 	export RTX_CACHE_DIR="$HOME/.rtx/e2e/cache"
 	export RTX_CONFIG_DIR="$HOME/.rtx/e2e/config"
 	export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions

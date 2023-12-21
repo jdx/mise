@@ -25,9 +25,9 @@ pub struct Implode {
 
 impl Implode {
     pub fn run(self) -> Result<()> {
-        let mut files = vec![&*dirs::DATA, &*dirs::CACHE, &*env::RTX_BIN];
+        let mut files = vec![*dirs::DATA, *dirs::CACHE, &*env::RTX_BIN];
         if self.config {
-            files.push(&*dirs::CONFIG);
+            files.push(&dirs::CONFIG);
         }
         for f in files.into_iter().filter(|d| d.exists()) {
             if self.dry_run {

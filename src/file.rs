@@ -248,7 +248,7 @@ impl Iterator for FindUp {
             }
         }
         self.current_dir_filenames = self.filenames.clone();
-        if cfg!(test) && self.current_dir == dirs::HOME.as_path() {
+        if cfg!(test) && self.current_dir == *dirs::HOME {
             return None; // in tests, do not recurse further than ./test
         }
         if !self.current_dir.pop() {
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_dir_subdirs() {
-        let subdirs = dir_subdirs(dirs::HOME.as_path()).unwrap();
+        let subdirs = dir_subdirs(&dirs::HOME).unwrap();
         assert!(subdirs.contains(&"cwd".to_string()));
     }
 
