@@ -68,10 +68,18 @@ impl Display for Script {
 }
 
 static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
+    let settings = Settings::get();
     let mut env: HashMap<OsString, OsString> = env::PRISTINE_ENV
         .iter()
         .map(|(k, v)| (k.into(), v.into()))
         .collect();
+    if settings.trace {
+        env.insert("RTX_TRACE".into(), "1".into());
+    }
+    if settings.debug {
+        env.insert("RTX_DEBUG".into(), "1".into());
+        env.insert("RTX_VERBOSE".into(), "1".into());
+    }
     env.extend(
         (indexmap! {
             "__RTX_SCRIPT" => "1".to_string(),
@@ -80,7 +88,8 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
             "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy().to_string(),
             "RTX_CONCURRENCY" => num_cpus::get().to_string(),
             "RTX_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
-            "RTX_EXE" => env::RTX_BIN.to_string_lossy().to_string(),
+            "RTX_BIN" => env::RTX_BIN.to_string_lossy().to_string(),
+            "RTX_LOG_LEVEL" => settings.log_level.to_string(),
         })
         .into_iter()
         .map(|(k, v)| (k.into(), v.into())),
