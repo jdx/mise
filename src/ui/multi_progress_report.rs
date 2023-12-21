@@ -10,11 +10,14 @@ pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
 }
-static INSTANCE: Mutex<Weak<MultiProgressReport>> = Mutex::new(Weak::new());
+static INSTANCE: Mutex<Option<Weak<MultiProgressReport>>> = Mutex::new(None);
 
 impl MultiProgressReport {
     pub fn try_get() -> Option<Arc<Self>> {
-        INSTANCE.lock().unwrap().upgrade()
+        match &*INSTANCE.lock().unwrap() {
+            Some(w) => w.upgrade(),
+            None => None,
+        }
     }
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap_or_else(|| {
@@ -31,7 +34,7 @@ impl MultiProgressReport {
                 mp,
                 quiet: settings.quiet,
             });
-            *INSTANCE.lock().unwrap() = Arc::downgrade(&mpr);
+            *INSTANCE.lock().unwrap() = Some(Arc::downgrade(&mpr));
             mpr
         })
     }
