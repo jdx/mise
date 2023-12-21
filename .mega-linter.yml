@@ -6,6 +6,8 @@
 # all, none, or list of linter keys
 APPLY_FIXES: all
 
+GITHUB_COMMENT_REPORTER: false
+
 # If you use ENABLE variable, all other languages/formats/tooling-formats will
 # be disabled by default
 # ENABLE:
