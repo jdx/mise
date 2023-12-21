@@ -20,17 +20,26 @@ use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
 pub struct Trust {
     /// The config file to trust
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
-    pub config_file: Option<String>,
+    config_file: Option<String>,
+
+    /// Trust all config files in the current directory and its parents
+    #[clap(long, short, verbatim_doc_comment)]
+    all: bool,
 
     /// No longer trust this config
     #[clap(long)]
-    pub untrust: bool,
+    untrust: bool,
 }
 
 impl Trust {
     pub fn run(self) -> Result<()> {
         if self.untrust {
             self.untrust()
+        } else if self.all {
+            while self.get_next_untrusted().is_some() {
+                self.trust()?;
+            }
+            Ok(())
         } else {
             self.trust()
         }
@@ -44,7 +53,8 @@ impl Trust {
             },
         };
         config_file::untrust(&path)?;
-        rtxprintln!("untrusted {}", &path.canonicalize()?.display());
+        let path = path.canonicalize()?;
+        info!("untrusted {}", path.display());
         Ok(())
     }
     fn trust(&self) -> Result<()> {
@@ -56,7 +66,8 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
-        rtxprintln!("trusted {}", &path.canonicalize()?.display());
+        let path = path.canonicalize()?;
+        info!("trusted {}", path.display());
         Ok(())
     }
 

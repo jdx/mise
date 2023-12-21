@@ -266,6 +266,7 @@ complete -kxc rtx -n "$fssf sync; and $fssf python" -l pyenv -d 'Get tool versio
 
 
 # trust
+complete -kxc rtx -n "$fssf trust" -s a -l all -d 'Trust all config files in the current directory and its parents'
 complete -kxc rtx -n "$fssf trust" -a "(__fish_complete_path)" -d 'The config file to trust'
 complete -kxc rtx -n "$fssf trust" -l untrust -d 'No longer trust this config'
 
