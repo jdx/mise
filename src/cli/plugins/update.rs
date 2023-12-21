@@ -47,7 +47,7 @@ impl Update {
 
         // let queue = Mutex::new(plugins);
         let settings = Settings::try_get()?;
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs.unwrap_or(settings.jobs))
             .build()?

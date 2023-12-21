@@ -81,7 +81,7 @@ impl JavaPlugin {
         // match self.core.fetch_remote_versions_from_rtx() {
         //     Ok(Some(versions)) => return Ok(versions),
         //     Ok(None) => {}
-        //     Err(e) => warn!("failed to fetch remote versions: {}", e),
+        //     Err(e) => rtxwarn!("failed to fetch remote versions: {}", e),
         // }
         let versions = self
             .fetch_java_metadata("ga")?
@@ -195,7 +195,7 @@ impl JavaPlugin {
                 tv.install_path().as_path(),
                 &tv.install_path().join("Contents").join("Home"),
             )?;
-            info!(
+            rtxstatusln!(
                 "{}",
                 formatdoc! {r#"
                 To enable macOS integration, run the following commands:

@@ -53,12 +53,12 @@ impl Install {
         Ok(())
     }
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = self.get_requested_tool_versions(config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
-            warn!("no runtimes to install");
-            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            rtxwarn!("no runtimes to install");
+            rtxwarn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
             return Ok(());
         }
         ts.install_versions(config, tool_versions, &mpr, &self.install_opts())
@@ -123,10 +123,10 @@ impl Install {
         let mut ts = ToolsetBuilder::new().build(config)?;
         let versions = ts.list_missing_versions();
         if versions.is_empty() {
-            info!("all runtimes are installed");
+            rtxstatusln!("all runtimes are installed");
             return Ok(());
         }
-        let mpr = MultiProgressReport::new();
+        let mpr = MultiProgressReport::get();
         ts.install_versions(config, versions, &mpr, &self.install_opts())?;
         Ok(())
     }
