@@ -51,8 +51,7 @@ color-print = "0.3"
 confique = { version = "0.2", default-features = false }
 console = "0.15"
 ctrlc = "3.4"
-demand = "0.1"
-dialoguer = { version = "0.11", features = [] }
+demand = "0.2"
 dirs-next = "2.0"
 dotenvy = "0.15"
 duct = "0.13"
