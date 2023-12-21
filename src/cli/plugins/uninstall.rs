@@ -59,12 +59,10 @@ impl PluginsUninstall {
                 }
                 pr.finish_with_message("uninstalled".into());
             }
-            _ => mpr.suspend(|| {
-                rtxwarn!(
-                    "{} is not installed",
-                    style(plugin_name).cyan().for_stderr()
-                );
-            }),
+            _ => rtxwarn!(
+                "{} is not installed",
+                style(plugin_name).cyan().for_stderr()
+            ),
         }
         Ok(())
     }
