@@ -70,7 +70,7 @@ impl ToolArg {
         format!(
             "{}{}",
             style(&self.plugin).blue().for_stderr(),
-            style(&format!("@{version}",)).dim().for_stderr()
+            style(&format!("@{version}",)).for_stderr()
         )
     }
 }

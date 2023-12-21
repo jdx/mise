@@ -101,7 +101,7 @@ impl ToolVersion {
         format!(
             "{}{}",
             style(&self.plugin_name).blue().for_stderr(),
-            style(&format!("@{}", &self.version)).dim().for_stderr()
+            style(&format!("@{}", &self.version)).for_stderr()
         )
     }
     fn tv_pathname(&self) -> String {
