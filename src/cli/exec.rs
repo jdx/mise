@@ -11,8 +11,7 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
-
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolVersionRequest, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -55,7 +54,18 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(mut self, config: &Config) -> Result<()> {
+        // if no version is specified, default to "latest"
+        self.tool
+            .iter_mut()
+            .filter(|t| t.tvr.is_none())
+            .for_each(|t| {
+                t.tvr = Some(ToolVersionRequest::Version(
+                    t.plugin.clone(),
+                    "latest".into(),
+                ))
+            });
+
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         let opts = InstallOptions {
             force: false,
@@ -146,7 +156,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_exec_ok() {
         assert_cli!("exec", "--", "echo");
