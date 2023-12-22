@@ -1043,6 +1043,14 @@ See <https://github.com/asdf-vm/asdf-plugins> for the list of built-in plugins s
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
+### Plugin Authors
+
+https://github.com/rtx-plugins is a GitHub organization for community-developed plugins.
+See [SECURITY.md](./SECURITY.md) for more details on how plugins here are treated differently.
+
+If you'd like your plugin to be hosted here please let me know (GH discussion or discord is fine)
+and I'd be happy to host it for you.
+
 ### Plugin Options
 
 rtx has support for "plugin options" which is configuration specified in `.rtx.toml` to change behavior
