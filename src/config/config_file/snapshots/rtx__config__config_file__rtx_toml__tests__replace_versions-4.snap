@@ -21,6 +21,7 @@ RtxToml(/tmp/.rtx.toml): node@16.0.1 node@18.0.1 {
         "quiet": Null,
         "raw": Null,
         "shorthands_file": Null,
+        "task_output": Null,
         "trace": Null,
         "trusted_config_paths": Null,
         "verbose": Null,

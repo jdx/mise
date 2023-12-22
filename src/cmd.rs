@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
+use std::sync::{Mutex, RwLock};
 use std::thread;
 
 use crate::config::Settings;
@@ -92,7 +93,11 @@ pub struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
     stdin: Option<String>,
+    prefix: String,
+    raw: bool,
 }
+
+static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
@@ -105,7 +110,24 @@ impl<'a> CmdLineRunner<'a> {
             cmd,
             pr: None,
             stdin: None,
+            prefix: String::new(),
+            raw: false,
         }
+    }
+
+    pub fn stdout<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+        self.cmd.stdout(cfg);
+        self
+    }
+
+    pub fn stderr<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+        self.cmd.stderr(cfg);
+        self
+    }
+
+    pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.prefix = prefix.into();
+        self
     }
 
     pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
@@ -175,6 +197,10 @@ impl<'a> CmdLineRunner<'a> {
         self.pr = Some(pr);
         self
     }
+    pub fn with_raw(&mut self) -> &mut Self {
+        self.raw = true;
+        self
+    }
 
     pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
         self.cmd.stdin(Stdio::piped());
@@ -183,38 +209,44 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn execute(mut self) -> Result<()> {
+        static RAW_LOCK: RwLock<()> = RwLock::new(());
+        let read_lock = RAW_LOCK.read().unwrap();
         let settings = &Settings::try_get()?;
         debug!("$ {}", self);
-        if settings.raw {
+        if settings.raw || self.raw {
+            drop(read_lock);
+            let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
         }
         let mut cp = self
             .cmd
             .spawn()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
-        let stdout = BufReader::new(cp.stdout.take().unwrap());
-        let stderr = BufReader::new(cp.stderr.take().unwrap());
         let (tx, rx) = channel();
-        thread::spawn({
-            let tx = tx.clone();
-            move || {
-                for line in stdout.lines() {
-                    let line = line.unwrap();
-                    tx.send(ChildProcessOutput::Stdout(line)).unwrap();
+        if let Some(stdout) = cp.stdout.take() {
+            thread::spawn({
+                let tx = tx.clone();
+                move || {
+                    for line in BufReader::new(stdout).lines() {
+                        let line = line.unwrap();
+                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
+                    }
+                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
-                tx.send(ChildProcessOutput::Done).unwrap();
-            }
-        });
-        thread::spawn({
-            let tx = tx.clone();
-            move || {
-                for line in stderr.lines() {
-                    let line = line.unwrap();
-                    tx.send(ChildProcessOutput::Stderr(line)).unwrap();
+            });
+        }
+        if let Some(stderr) = cp.stderr.take() {
+            thread::spawn({
+                let tx = tx.clone();
+                move || {
+                    for line in BufReader::new(stderr).lines() {
+                        let line = line.unwrap();
+                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
+                    }
+                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
-                tx.send(ChildProcessOutput::Done).unwrap();
-            }
-        });
+            });
+        }
         if let Some(text) = self.stdin.take() {
             let mut stdin = cp.stdin.take().unwrap();
             thread::spawn(move || {
@@ -268,19 +300,25 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn on_stdout(&self, line: &str) {
-        if !line.trim().is_empty() {
-            if let Some(pr) = self.pr {
+        let _lock = OUTPUT_LOCK.lock().unwrap();
+        if let Some(pr) = self.pr {
+            if !line.trim().is_empty() {
                 pr.set_message(line.into())
             }
+        } else {
+            println!("{}{}", self.prefix, line);
         }
     }
 
     fn on_stderr(&self, line: &str) {
-        if !line.trim().is_empty() {
-            match self.pr {
-                Some(pr) => pr.println(line.into()),
-                None => eprintln!("{}", line),
+        let _lock = OUTPUT_LOCK.lock().unwrap();
+        match self.pr {
+            Some(pr) => {
+                if !line.trim().is_empty() {
+                    pr.println(line.into())
+                }
             }
+            None => eprintln!("{}{}", self.prefix, line),
         }
     }
 
@@ -294,7 +332,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
             None => {
-                eprintln!("{}", output);
+                // eprintln!("{}", output);
             }
         }
         Err(ScriptFailed(self.get_program(), Some(status)))?

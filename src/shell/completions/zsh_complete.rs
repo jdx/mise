@@ -65,6 +65,11 @@ pub fn render(cmd: &Command) -> String {
           local -a settings; settings=($(rtx settings ls | awk '{{print $1}}'))
           _describe -t settings 'setting' settings "$@"
         }}
+        (( $+functions[__rtx_tasks] )) ||
+        __rtx_tasks() {{
+          local -a tasks; tasks=($(rtx tasks ls --no-header | awk '{{print $1}}'))
+          _describe -t tasks 'task' tasks "$@"
+        }}
         (( $+functions[__rtx_prefixes] )) ||
         __rtx_prefixes() {{
           if [[ CURRENT -gt 2 ]]; then
@@ -234,6 +239,7 @@ fn render_completion(arg: &Arg) -> String {
             "new_plugin" => "__rtx_all_plugins".to_string(),
             "alias" => "__rtx_aliases".to_string(),
             "setting" => "__rtx_settings".to_string(),
+            "task" => "__rtx_tasks".to_string(),
             "prefix" => "__rtx_prefixes".to_string(),
             _ => String::new(),
         },

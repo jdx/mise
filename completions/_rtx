@@ -42,10 +42,12 @@ _rtx() {
         (p|plugin|plugin-list|plugins) __rtx_plugins_cmd && ret=0 ;;
         (prune) __rtx_prune_cmd && ret=0 ;;
         (reshim) __rtx_reshim_cmd && ret=0 ;;
+        (r|run) __rtx_run_cmd && ret=0 ;;
         (self-update) __rtx_self_update_cmd && ret=0 ;;
         (settings) __rtx_settings_cmd && ret=0 ;;
         (sh|shell) __rtx_shell_cmd && ret=0 ;;
         (sync) __rtx_sync_cmd && ret=0 ;;
+        (t|tasks|task) __rtx_task_cmd && ret=0 ;;
         (trust) __rtx_trust_cmd && ret=0 ;;
         (remove|rm|uninstall) __rtx_uninstall_cmd && ret=0 ;;
         (up|upgrade) __rtx_upgrade_cmd && ret=0 ;;
@@ -525,6 +527,23 @@ __rtx_reshim_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
+(( $+functions[__rtx_run_cmd] )) ||
+__rtx_run_cmd() {
+  _arguments -s -S \
+    ':task:__rtx_tasks' \
+    '*::args:' \
+    '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
+    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
+    '(-f --force)'{-f,--force}'[Force the task to run even if outputs are up to date]' \
+    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the task'\''s label]' \
+    '(-i --interleave)'{-i,--interleave}'[Print directly to stdout/stderr instead of by line]' \
+    '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__rtx_tool_versions' \
+    '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
+    '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
 (( $+functions[__rtx_self_update_cmd] )) ||
 __rtx_self_update_cmd() {
   _arguments -s -S \
@@ -640,6 +659,64 @@ __rtx_sync_python_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
+(( $+functions[__rtx_task_cmd] )) ||
+__rtx_task_cmd() {
+  _arguments -s -S \
+    '--no-header[Do not print table header]' \
+    '--hidden[Show hidden tasks]' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '1: :__rtx_task_cmds' \
+    '*::arg:->args' && ret=0
+
+      case "$state" in
+    (args)
+      curcontext="${curcontext%:*:*}:rtx-cmd-$words[1]:"
+      case $words[1] in
+        (edit) __rtx_task_edit_cmd && ret=0 ;;
+        (ls) __rtx_task_ls_cmd && ret=0 ;;
+        (r|run) __rtx_task_run_cmd && ret=0 ;;
+      esac
+    ;;
+  esac
+
+return ret
+}
+(( $+functions[__rtx_task_edit_cmd] )) ||
+__rtx_task_edit_cmd() {
+  _arguments -s -S \
+    ':task:__rtx_tasks' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
+(( $+functions[__rtx_task_ls_cmd] )) ||
+__rtx_task_ls_cmd() {
+  _arguments -s -S \
+    '--no-header[Do not print table header]' \
+    '--hidden[Show hidden tasks]' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
+(( $+functions[__rtx_task_run_cmd] )) ||
+__rtx_task_run_cmd() {
+  _arguments -s -S \
+    ':task:__rtx_tasks' \
+    '*::args:' \
+    '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
+    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
+    '(-f --force)'{-f,--force}'[Force the task to run even if outputs are up to date]' \
+    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the task'\''s label]' \
+    '(-i --interleave)'{-i,--interleave}'[Print directly to stdout/stderr instead of by line]' \
+    '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__rtx_tool_versions' \
+    '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
+    '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
 (( $+functions[__rtx_trust_cmd] )) ||
 __rtx_trust_cmd() {
   _arguments -s -S \
@@ -741,10 +818,12 @@ __rtx_cmds() {
     {p,plugins}':Manage plugins'
     'prune:Delete unused versions of tools'
     'reshim:rebuilds the shim farm'
+    {r,run}':\[experimental\] Run a task'
     'self-update:Updates rtx itself'
     'settings:Manage settings'
     {sh,shell}':Sets a tool version for the current shell session'
     'sync:Add tool versions from external tools to rtx'
+    {t,task}':\[experimental\] Manage tasks'
     'trust:Marks a config file as trusted'
     {remove,rm,uninstall}':Removes runtime versions'
     {up,upgrade}':Upgrades outdated tool versions'
@@ -817,6 +896,15 @@ __rtx_sync_cmds() {
   )
   _describe -t commands 'command' commands "$@"
 }
+(( $+functions[__rtx_task_cmds] )) ||
+__rtx_task_cmds() {
+  local commands; commands=(
+    'edit:\[experimental\] Edit a task with \$EDITOR'
+    'ls:\[experimental\] List config files currently in use'
+    {r,run}':\[experimental\] Run a task'
+  )
+  _describe -t commands 'command' commands "$@"
+}
 
 (( $+functions[__rtx_tool_versions] )) ||
 __rtx_tool_versions() {
@@ -862,6 +950,11 @@ __rtx_aliases() {
 __rtx_settings() {
   local -a settings; settings=($(rtx settings ls | awk '{print $1}'))
   _describe -t settings 'setting' settings "$@"
+}
+(( $+functions[__rtx_tasks] )) ||
+__rtx_tasks() {
+  local -a tasks; tasks=($(rtx tasks ls --no-header | awk '{print $1}'))
+  _describe -t tasks 'task' tasks "$@"
 }
 (( $+functions[__rtx_prefixes] )) ||
 __rtx_prefixes() {

@@ -1,10 +1,9 @@
-use console::style;
 use eyre::Result;
 
 use crate::config::Config;
-
 use crate::plugins::unalias_plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style;
 
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
@@ -51,7 +50,7 @@ impl PluginsUninstall {
     ) -> Result<()> {
         match config.get_or_create_plugin(plugin_name) {
             plugin if plugin.is_installed() => {
-                let prefix = format!("plugin:{}", style(&plugin.name()).blue().for_stderr());
+                let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
                 let pr = mpr.add(&prefix);
                 plugin.uninstall(pr.as_ref())?;
                 if self.purge {
@@ -59,10 +58,7 @@ impl PluginsUninstall {
                 }
                 pr.finish_with_message("uninstalled".into());
             }
-            _ => warn!(
-                "{} is not installed",
-                style(plugin_name).blue().for_stderr()
-            ),
+            _ => warn!("{} is not installed", style::eblue(plugin_name)),
         }
         Ok(())
     }

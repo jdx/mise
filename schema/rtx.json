@@ -6,6 +6,11 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "min_version": {
+      "description": "minimum version of rtx required to use this config",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
     "env_file": {
       "description": "path to .env file",
       "type": "string"
@@ -49,6 +54,11 @@
         ]
       }
     },
+    "tasks": {
+      "description": "task runner tasks",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
     "plugins": {
       "description": "plugins to use",
       "type": "object",
@@ -89,6 +99,101 @@
             }
           },
           "required": ["version"]
+        }
+      ]
+    },
+    "task": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "script to run"
+        },
+        {
+          "description": "script to run",
+          "type": "array",
+          "items": {
+            "description": "script to run",
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "oneOf": [
+                {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run",
+                  "type": "array",
+                  "items": {
+                    "description": "script to run",
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "depends": {
+              "description": "other tasks to run before this task",
+              "type": "array",
+              "items": {
+                "description": "task to run before this task",
+                "type": "string"
+              }
+            },
+            "alias": {
+              "oneOf": [
+                {
+                  "description": "alias for this task",
+                  "type": "string"
+                },
+                {
+                  "description": "alias for this task",
+                  "type": "array",
+                  "items": {
+                    "description": "alias for this task",
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "dir": {
+              "description": "directory to run script in, default is current working directory",
+              "type": "string"
+            },
+            "env": {
+              "description": "environment variables",
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "quiet": {
+              "description": "do not display rtx information for this task",
+              "type": "boolean"
+            },
+            "raw": {
+              "description": "directly connect task to stdin/stdout/stderr",
+              "type": "boolean"
+            },
+            "sources": {
+              "description": "files that this task depends on",
+              "type": "array",
+              "items": {
+                "description": "glob pattern for files that this task depends on",
+                "type": "string"
+              }
+            },
+            "outputs": {
+              "description": "files created by this task",
+              "type": "array",
+              "items": {
+                "description": "glob pattern for files created by this task",
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -176,6 +281,12 @@
         "yes": {
           "description": "assume yes for all prompts",
           "type": "boolean"
+        },
+        "task_output": {
+          "description": "how to display task output",
+          "type": "string",
+          "default": "prefix",
+          "enum": ["prefix", "interleave"]
         }
       }
     }

@@ -91,14 +91,31 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {{
+        let rtx = console::style("rtx").dim().for_stderr();
+        info_unprefix!("{} {}", rtx, format!($($arg)*));
+    }};
+}
+
+#[macro_export]
+macro_rules! info_unprefix {
+    ($($arg:tt)*) => {{
         if log::log_enabled!(log::Level::Debug) {
            log::info!($($arg)*);
         } else if log::log_enabled!(log::Level::Info) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let rtx = console::style("rtx ").dim().for_stderr();
-                eprintln!("{}{}", rtx, format!($($arg)*));
+                eprintln!("{}", format!($($arg)*));
             });
         }
+    }};
+}
+
+#[macro_export]
+macro_rules! info_unprefix_trunc {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        let msg = msg.lines().next().unwrap_or_default();
+        let msg = console::truncate_str(&msg, *$crate::env::TERM_WIDTH, "…");
+        info_unprefix!("{msg}");
     }};
 }
 
