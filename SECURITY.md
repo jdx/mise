@@ -34,11 +34,9 @@ There are 3 types of plugins:
 
 - [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI.
   These are official plugins for the most common languages written in Rust.
-- community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. For now these will
-  only have @jdx as the sole contributor, however this may change in the future for particular plugins with
-  dedicated owners/collaborators. If you'd like your plugin to be moved here, ask me about it.
+- community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. [See below](#rtx-plugins-github-org) for details.
 - external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
-  secure than installing any random tool from the internet.
+  secure than installing any random tool from the internet. These receive a warning dialog when installed in rtx.
 
 Just because a plugin is inside of the shorthand registry (so you can run `rtx install foo@`, does not mean
 I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the rtx-plugins
@@ -46,7 +44,18 @@ GitHub org, you can have more trust in it. (See the owners with `rtx plugins ls-
 
 Over time we should be able to move more plugins into being fully maintained by rtx. I plan to add an
 `RTX_PARANOID=1` env var that, when set, will make changes to make rtx behave as securely as possible
-(e.g.: only using core plugins, only allowing plugins that use GPG verification of assets).
+(e.g.: only using core/rtx-plugins plugins, only allowing plugins that use GPG verification of assets).
+
+## rtx-plugins GitHub org
+
+This is similar to https://github.com/asdf-community but with the advantage of being a bit more secure by keeping the
+contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
+organization will not receive a confirmation warning dialog when installed with rtx as they've been vetted by a
+trusted source.
+
+If you're a plugin maintainer that would like to move your repo to this org please let me know. Plugins can either
+retain compatibility with asdf or use rtx specific functionality—that's up to you. asdf-compatible plugins should
+use "asdf-" as the prefix and "rtx-" prefixed-plugins denote rtx-only compatibility.
 
 ## Supported Versions
 
@@ -54,7 +63,7 @@ The only supported version is the most recent one.
 
 ## Reporting a Vulnerability
 
-Send an email to security@<RTX_DOMAIN_IN_README>.pub
+Send an email to security@<RTX_JDX_DOMAIN_IN_README>
 
 If you want, you may encrypt the message with GPG:
 
@@ -118,4 +127,3 @@ MFPobhR7zlCShd7TdY1a41uxTGB+Wmn4DO0s/wzSgdgxIzG+TM1X47owe7l5RiI1
 ```
 
 </details>
-```
