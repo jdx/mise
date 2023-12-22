@@ -3,8 +3,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use color_eyre::eyre::{eyre, Result};
 use duct::IntoExecutablePath;
+use eyre::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 #[cfg(test)]
@@ -40,7 +40,7 @@ pub struct Exec {
     pub c: Option<OsString>,
 
     /// Change to this directory before executing the command
-    #[clap(short = 'C', value_hint = ValueHint::DirPath, long)]
+    #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
 
     /// Number of jobs to run in parallel
@@ -89,7 +89,7 @@ impl Exec {
             env::set_current_dir(cd)?;
         }
         let err = exec::Command::new(program.clone()).args(&args).exec();
-        Err(eyre!("{:?} {}", program.to_string_lossy(), err.to_string()))
+        bail!("{:?} {err}", program.to_string_lossy())
     }
 
     #[cfg(test)]
