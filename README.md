@@ -92,6 +92,7 @@ v20.0.0
   - [Environment variables](#environment-variables)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
+  - [Plugin Authors](#plugin-authors)
   - [Plugin Options](#plugin-options)
 - [Versioning](#versioning)
 - [Directories](#directories)
@@ -1045,7 +1046,7 @@ more about how they work.
 
 ### Plugin Authors
 
-https://github.com/rtx-plugins is a GitHub organization for community-developed plugins.
+<https://github.com/rtx-plugins> is a GitHub organization for community-developed plugins.
 See [SECURITY.md](./SECURITY.md) for more details on how plugins here are treated differently.
 
 If you'd like your plugin to be hosted here please let me know (GH discussion or discord is fine)

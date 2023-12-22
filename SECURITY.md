@@ -48,7 +48,7 @@ Over time we should be able to move more plugins into being fully maintained by 
 
 ## [rtx-plugins](https://github.com/rtx-plugins) GitHub org
 
-This is similar to https://github.com/asdf-community but with the advantage of being more secure by keeping the
+This is similar to <https://github.com/asdf-community> but with the advantage of being more secure by keeping the
 contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
 organization will not receive a confirmation warning dialog when installed with rtx as they've been vetted by a
 trusted source.
