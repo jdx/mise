@@ -46,7 +46,7 @@ Over time we should be able to move more plugins into being fully maintained by 
 `RTX_PARANOID=1` env var that, when set, will make changes to make rtx behave as securely as possible
 (e.g.: only using core/rtx-plugins plugins, only allowing plugins that use GPG verification of assets).
 
-## rtx-plugins GitHub org
+## [rtx-plugins](https://github.com/rtx-plugins) GitHub org
 
 This is similar to https://github.com/asdf-community but with the advantage of being more secure by keeping the
 contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
