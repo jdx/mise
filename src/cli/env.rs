@@ -37,21 +37,22 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
             latest_versions: false,
         };
-        ts.install_arg_versions(config, &opts)?;
+        ts.install_arg_versions(&config, &opts)?;
         ts.warn_if_versions_missing();
 
         if self.json {
-            self.output_json(config, ts)
+            self.output_json(&config, ts)
         } else {
-            self.output_shell(config, ts)
+            self.output_shell(&config, ts)
         }
     }
 

@@ -22,9 +22,9 @@ pub struct ConfigLs {
 
 impl ConfigLs {
     pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
-        let config = Config::try_get()?;
         let rows = config
             .config_files
             .values()

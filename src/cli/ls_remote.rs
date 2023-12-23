@@ -21,24 +21,25 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
-    plugin: Option<ToolArg>,
+    pub(crate) plugin: Option<ToolArg>,
 
     /// Show all installed plugins and versions
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
-    all: bool,
+    pub(crate) all: bool,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     #[clap(verbatim_doc_comment)]
-    prefix: Option<String>,
+    pub(crate) prefix: Option<String>,
 }
 
 impl LsRemote {
-    pub fn run(self, config: &Config) -> Result<()> {
-        if let Some(plugin) = self.get_plugin(config)? {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
+        if let Some(plugin) = self.get_plugin(&config)? {
             self.run_single(plugin)
         } else {
-            self.run_all(config)
+            self.run_all(&config)
         }
     }
 

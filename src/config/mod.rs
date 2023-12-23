@@ -10,7 +10,7 @@ use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
 
-pub use settings::{Settings, SettingsPartial};
+pub use settings::Settings;
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
@@ -23,7 +23,7 @@ use crate::shorthands::{get_shorthands, Shorthands};
 use crate::{dirs, env, file, hook_env};
 
 pub mod config_file;
-mod settings;
+pub mod settings;
 mod tracking;
 
 type AliasMap = BTreeMap<PluginName, BTreeMap<String, String>>;

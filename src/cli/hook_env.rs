@@ -35,11 +35,15 @@ pub struct HookEnv {
 }
 
 impl HookEnv {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
+        if config.should_exit_early {
+            return Ok(());
+        }
+        let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         rtxprint!("{}", hook_env::clear_old_env(&*shell));
-        let mut env = ts.env(config);
+        let mut env = ts.env(&config);
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
@@ -54,12 +58,12 @@ impl HookEnv {
         let settings = Settings::try_get()?;
         patches.extend(self.build_path_operations(&settings, &paths, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
-        patches.push(self.build_watch_operation(config)?);
+        patches.push(self.build_watch_operation(&config)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         rtxprint!("{output}");
         if self.status {
-            self.display_status(config, &ts);
+            self.display_status(&config, &ts);
         }
         ts.warn_if_versions_missing();
 

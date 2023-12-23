@@ -22,29 +22,53 @@ use crate::{duration, env};
 pub struct Doctor {}
 
 impl Doctor {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let settings = Settings::try_get()?;
-        let ts = ToolsetBuilder::new().build(config)?;
+    pub fn run(self) -> Result<()> {
+        let mut checks = Vec::new();
+
         rtxprintln!("{}", rtx_version());
         rtxprintln!("{}", build_info());
         rtxprintln!("{}", shell());
         rtxprintln!("{}", rtx_data_dir());
         rtxprintln!("{}", rtx_env_vars());
-        rtxprintln!(
-            "{}\n{}\n",
-            style("settings:").bold(),
-            indent(settings.to_string())
-        );
-        rtxprintln!("{}", render_config_files(config));
-        rtxprintln!("{}", render_plugins(config));
-        rtxprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()));
-
-        let mut checks = Vec::new();
-        for plugin in config.list_plugins() {
-            if !plugin.is_installed() {
-                checks.push(format!("plugin {} is not installed", &plugin.name()));
-                continue;
+        match Settings::try_get() {
+            Ok(settings) => {
+                rtxprintln!(
+                    "{}\n{}\n",
+                    style("settings:").bold(),
+                    indent(settings.to_string())
+                );
             }
+            Err(err) => warn!("failed to load settings: {}", err),
+        }
+        match Config::try_get() {
+            Ok(config) => {
+                rtxprintln!("{}", render_config_files(&config));
+                rtxprintln!("{}", render_plugins(&config));
+                for plugin in config.list_plugins() {
+                    if !plugin.is_installed() {
+                        checks.push(format!("plugin {} is not installed", &plugin.name()));
+                        continue;
+                    }
+                }
+                if !config.is_activated() && !shims_on_path() {
+                    let cmd = style("rtx help activate").yellow().for_stderr();
+                    let url = style("https://rtx.jdx.dev").underlined().for_stderr();
+                    let shims = style(dirs::SHIMS.display()).cyan().for_stderr();
+                    checks.push(formatdoc!(
+                        r#"rtx is not activated, run {cmd} or
+                           read documentation at {url} for activation instructions.
+                           Alternatively, add the shims directory {shims} to PATH.
+                           Using the shims directory is preferred for non-interactive setups."#
+                    ));
+                }
+                match ToolsetBuilder::new().build(&config) {
+                    Ok(ts) => {
+                        rtxprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))
+                    }
+                    Err(err) => warn!("failed to load toolset: {}", err),
+                }
+            }
+            Err(err) => warn!("failed to load config: {}", err),
         }
 
         if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
@@ -52,18 +76,6 @@ impl Doctor {
                 "new rtx version {} available, currently on {}",
                 latest,
                 env!("CARGO_PKG_VERSION")
-            ));
-        }
-
-        if !config.is_activated() && !shims_on_path() {
-            let cmd = style("rtx help activate").yellow().for_stderr();
-            let url = style("https://rtx.jdx.dev").underlined().for_stderr();
-            let shims = style(dirs::SHIMS.display()).cyan().for_stderr();
-            checks.push(formatdoc!(
-                r#"rtx is not activated, run {cmd} or
-                   read documentation at {url} for activation instructions.
-                   Alternatively, add the shims directory {shims} to PATH.
-                   Using the shims directory is preferred for non-interactive setups."#
             ));
         }
 

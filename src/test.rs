@@ -88,10 +88,7 @@ pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     *env::ARGS.write().unwrap() = args.clone();
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
-    let config = Config::try_get()?;
-    Cli::new_with_external_commands(&config)
-        .run(args)
-        .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
+    Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
     let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
     let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
 

@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::cli::self_update::SelfUpdate;
 use crate::cli::{version, Cli};
 
 /// internal command to generate markdown from help
@@ -15,7 +14,6 @@ pub struct RenderMangen {}
 impl RenderMangen {
     pub fn run(self) -> Result<()> {
         let cli = Cli::command()
-            .subcommand(SelfUpdate::command())
             .version(&*version::RAW_VERSION)
             .disable_colored_help(true);
 

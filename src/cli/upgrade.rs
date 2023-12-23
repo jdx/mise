@@ -45,8 +45,9 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
+        let ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let mut outdated = ts.list_outdated_versions();
         if self.interactive && !outdated.is_empty() {
             let tvs = self.get_interactive_tool_set(&outdated)?;
@@ -62,7 +63,7 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.upgrade(config, outdated)?;
+            self.upgrade(&config, outdated)?;
         }
 
         Ok(())

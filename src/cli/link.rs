@@ -33,7 +33,8 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => bail!("must provide a version for {}", self.tool.style()),

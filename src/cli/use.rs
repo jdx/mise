@@ -78,8 +78,9 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().build(config)?;
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
+        let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
         let versions = self
             .tool
@@ -94,7 +95,7 @@ impl Use {
             })
             .collect::<Result<Vec<_>>>()?;
         ts.install_versions(
-            config,
+            &config,
             versions.clone(),
             &mpr,
             &InstallOptions {
@@ -124,7 +125,7 @@ impl Use {
         }
 
         if self.global {
-            self.warn_if_hidden(config, cf.get_path());
+            self.warn_if_hidden(&config, cf.get_path());
         }
         for plugin_name in &self.remove {
             cf.remove_plugin(plugin_name);
