@@ -50,9 +50,8 @@ impl Version {
     }
 }
 
-pub fn print_version_if_requested() {
-    let args = env::ARGS.read().unwrap();
-    if args.len() == 2 && (args[0] == "rtx" || args[0].ends_with("/rtx")) {
+pub fn print_version_if_requested(args: &[String]) {
+    if args.len() == 2 && *env::RTX_BIN_NAME == "rtx" {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version();
