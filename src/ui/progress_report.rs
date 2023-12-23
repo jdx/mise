@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::ui;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
@@ -56,6 +57,7 @@ fn success_prefix(pad: usize, prefix: &str) -> String {
 
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
+        ui::handle_ctrlc();
         let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(100)
             .with_style(PROG_TEMPLATE.clone())

@@ -9,11 +9,11 @@ use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
 
 use crate::plugins::Plugin;
-use crate::runtime_symlinks;
 use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use crate::{runtime_symlinks, ui};
 
 /// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
@@ -128,6 +128,7 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &OutputVec) -> Result<HashSet<ToolVersion>> {
+        ui::handle_ctrlc();
         let mut ms = demand::MultiSelect::new("rtx upgrade")
             .description("Select tools to upgrade")
             .filterable(true)
