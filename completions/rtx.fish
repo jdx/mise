@@ -1,7 +1,7 @@
 set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
-complete -kxc rtx -s q -l quiet -d 'Suppress warnings and other non-error messages'
+complete -kxc rtx -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
 set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim self-update settings shell sync trust uninstall upgrade use version where which
@@ -41,7 +41,7 @@ complete -xc rtx -n "not $fssf $others" -a where -d 'Display the installation pa
 complete -xc rtx -n "not $fssf $others" -a which -d 'Shows the path that a bin name points to'
 
 # activate
-complete -kxc rtx -n "$fssf activate" -s q -l quiet -d 'Hide warnings such as when a tool is not installed'
+complete -kxc rtx -n "$fssf activate" -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc rtx -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type to generate the script for'
 complete -kxc rtx -n "$fssf activate" -l status -d 'Show "rtx: <PLUGIN>@<VERSION>" message when changing directories'
 
