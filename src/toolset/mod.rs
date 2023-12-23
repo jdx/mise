@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use console::{style, truncate_str};
+use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -361,20 +361,19 @@ impl Toolset {
             .collect())
     }
 
-    pub fn warn_if_versions_missing(&self) {
+    pub fn notify_if_versions_missing(&self) {
         let missing = self.list_missing_versions();
         if missing.is_empty() {
             return;
         }
         let versions = missing
             .iter()
-            .map(|tv| tv.to_string())
+            .map(|tv| tv.style())
             .collect::<Vec<_>>()
-            .join(", ");
-        warn!(
-            "missing: {}. Install with {}",
-            truncate_str(&versions, TERM_WIDTH.max(60) - 39, "…"),
-            style("rtx install").yellow().for_stderr(),
+            .join(" ");
+        info!(
+            "missing: {}",
+            truncate_str(&versions, *TERM_WIDTH - 13, "…"),
         );
     }
 }
