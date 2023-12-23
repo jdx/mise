@@ -179,9 +179,9 @@ impl Cli {
     }
 
     pub fn run(args: &Vec<String>) -> Result<()> {
-        *crate::env::ARGS.write().unwrap() = crate::env::args().collect();
+        *crate::env::ARGS.write().unwrap() = args.clone();
         shims::handle_shim()?;
-        version::print_version_if_requested();
+        version::print_version_if_requested(args);
 
         let matches = Self::command()
             .try_get_matches_from(args)
