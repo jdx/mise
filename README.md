@@ -12,7 +12,7 @@
 <p><em>Polyglot runtime manager (asdf rust clone)</em></p>
 </div>
 
-## Features
+##✨Features✨
 
 - **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement. [See below for migration instructions](#how-do-i-migrate-from-asdf)
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
@@ -51,7 +51,7 @@ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Warning**
+> **⚠️Warning⚠️**
 >
 > If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
 > of an `.envrc`, see the [direnv section](#direnv) below.
@@ -64,7 +64,7 @@ $ node -v
 v20.0.0
 ```
 
-## Table of Contents
+## Table of Contents✨
 
 <!-- AUTO-GENERATED-CONTENT:START (TOC:collapse=true&collapseText=Click to expand&maxDepth=3) -->
 <details>
@@ -183,7 +183,7 @@ v20.0.0
 </details>
 <!-- AUTO-GENERATED-CONTENT:END -->
 
-## About
+## About 🤔
 
 _New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction._
 
@@ -200,7 +200,7 @@ rtx can be configured in many ways. The most typical is by `.rtx.toml`, but it's
 with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
 `.ruby-version`. See [Configuration](#configuration) for more.
 
-### How it works
+### How it works🚀
 
 rtx hooks into your shell (with `rtx activate zsh`) and sets the `PATH`
 environment variable to point your shell to the correct runtime binaries. When you `cd` into a
@@ -214,7 +214,7 @@ This should be very fast. It exits early if the directory wasn't changed or `.to
 Unlike asdf which uses shim files to dynamically locate runtimes when they're called, rtx modifies
 `PATH` ahead of time so the runtimes are called directly. This is not only faster since it avoids
 any overhead, but it also makes it so commands like `which node` work as expected. This also
-means there isn't any need to run `asdf reshim` after installing new runtime binaries.
+means there isn't any need to run `asdf reshim` after installing new runtime binaries.🚀
 
 You should note that rtx does not directly install these tools.
 Instead, it leverages plugins to install runtimes.
@@ -239,7 +239,7 @@ rtx use -g node@system   Use system node as global default
 rtx x node@20 -- node app.js  Run `node app.js` node-20.x on PATH
 ```
 
-## Installation
+## Installation👩‍🏭⚙️
 
 Installing rtx consists of two steps.
 
