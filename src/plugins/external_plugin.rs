@@ -11,6 +11,7 @@ use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
@@ -89,7 +90,7 @@ impl ExternalPlugin {
 
     pub fn list() -> Result<Vec<(String, Arc<dyn Plugin>)>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .into_iter()
+            .into_par_iter()
             .map(|name| (name.clone(), Self::newa(name)))
             .collect())
     }

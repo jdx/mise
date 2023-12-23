@@ -61,21 +61,12 @@ impl Config {
     }
     pub fn load() -> Result<Self> {
         let global_config = load_rtxrc()?;
+        // TODO: read system config settings
         Settings::add_partial(global_config.settings()?);
-
-        let (config_paths, plugins) = rayon::join(
-            || load_config_paths(&DEFAULT_CONFIG_FILENAMES),
-            load_plugins,
-        );
-        let plugins = plugins?;
-        let config_files =
-            load_all_config_files(&config_paths, &plugins, &BTreeMap::new(), ConfigMap::new())?;
-        for cf in config_files.values() {
-            Settings::add_partial(cf.settings()?);
-        }
         let settings = Settings::try_get()?;
         trace!("Settings: {:#?}", settings);
 
+        let plugins = load_plugins(&settings)?;
         let legacy_files = load_legacy_files(&settings, &plugins);
         let config_filenames = legacy_files
             .keys()
@@ -83,8 +74,7 @@ impl Config {
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
-        let config_files =
-            load_all_config_files(&config_paths, &plugins, &legacy_files, config_files)?;
+        let config_files = load_all_config_files(&config_paths, &plugins, &legacy_files)?;
 
         let (env, env_sources) = load_env(&config_files);
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
@@ -259,9 +249,8 @@ fn load_rtxrc() -> Result<RtxToml> {
     }
 }
 
-fn load_plugins() -> Result<PluginMap> {
+fn load_plugins(settings: &Settings) -> Result<PluginMap> {
     let mut tools = CORE_PLUGINS.clone();
-    let settings = Settings::try_get()?;
     if settings.experimental {
         tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
     }
@@ -375,26 +364,19 @@ fn load_all_config_files(
     config_filenames: &[PathBuf],
     tools: &PluginMap,
     legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
-    mut existing: ConfigMap,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
         .iter()
         .unique()
-        .map(|f| (f.clone(), existing.shift_remove(f)))
         .collect_vec()
         .into_par_iter()
-        .map(|(f, existing)| match existing {
-            // already parsed so just return it
-            Some(cf) => Ok((f, cf)),
-            // need to parse this config file
-            None => {
-                let cf = parse_config_file(&f, legacy_filenames, tools)
-                    .wrap_err_with(|| format!("error parsing config file: {}", display_path(&f)))?;
-                if let Err(err) = Tracker::track(&f) {
-                    warn!("tracking config: {err:#}");
-                }
-                Ok((f, cf))
+        .map(|f| {
+            let cf = parse_config_file(f, legacy_filenames, tools)
+                .wrap_err_with(|| format!("error parsing config file: {}", display_path(f)))?;
+            if let Err(err) = Tracker::track(f) {
+                warn!("tracking config: {err:#}");
             }
+            Ok((f.clone(), cf))
         })
         .collect::<Vec<Result<_>>>()
         .into_iter()
