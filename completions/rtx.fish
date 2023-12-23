@@ -113,9 +113,7 @@ complete -xc rtx -n "$fssf direnv; and not $fssf $others" -a activate -d 'Output
 # doctor
 
 # env
-complete -kxc rtx -n "$fssf env" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf env" -s J -l json -d 'Output in JSON format'
-complete -kxc rtx -n "$fssf env" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc rtx -n "$fssf env" -s s -l shell -a "bash fish nu xonsh zsh" -d 'Shell type to generate environment variables for'
 complete -kxc rtx -n "$fssf env" -a "(__rtx_tool_versions)" -d 'Tool(s) to use'
 

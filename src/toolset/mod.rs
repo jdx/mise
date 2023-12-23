@@ -42,6 +42,17 @@ pub struct InstallOptions {
     pub latest_versions: bool,
 }
 
+impl InstallOptions {
+    pub fn new() -> Self {
+        let settings = Settings::get();
+        InstallOptions {
+            jobs: Some(settings.jobs),
+            raw: settings.raw,
+            ..Default::default()
+        }
+    }
+}
+
 /// a toolset is a collection of tools for various plugins
 ///
 /// one example is a .tool-versions file

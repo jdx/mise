@@ -21,32 +21,16 @@ pub struct Env {
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
     tool: Vec<ToolArg>,
 
-    /// Number of jobs to run in parallel
-    /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
-    jobs: Option<usize>,
-
     /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
-
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
 }
 
 impl Env {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        let opts = InstallOptions {
-            force: false,
-            jobs: self.jobs,
-            raw: self.raw,
-            latest_versions: false,
-        };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(&config, &InstallOptions::new())?;
         ts.warn_if_versions_missing();
 
         if self.json {

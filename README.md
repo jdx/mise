@@ -1987,17 +1987,8 @@ Options:
 
           [possible values: bash, fish, nu, xonsh, zsh]
 
-  -j, --jobs <JOBS>
-          Number of jobs to run in parallel
-          [default: 4]
-
-          [env: RTX_JOBS=]
-
   -J, --json
           Output in JSON format
-
-      --raw
-          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
   $ eval "$(rtx env -s bash)"

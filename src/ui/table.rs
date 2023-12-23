@@ -28,9 +28,11 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
     } else {
         table.with(Modify::new(Rows::first()).with(Format::content(header)));
     }
+    table.with(Style::empty());
+    if console::user_attended() {
+        table.with(term_size_settings());
+    }
     table
-        .with(Style::empty())
-        .with(term_size_settings())
         .with(Margin::new(0, 0, 0, 0))
         .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
         .with(Modify::new(Columns::last()).with(Padding::zero()));
