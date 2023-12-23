@@ -54,14 +54,15 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let path = if self.parent {
             get_parent_path()?
         } else {
             get_path()
         };
         local(
-            config,
+            &config,
             &path,
             self.tool,
             self.remove,

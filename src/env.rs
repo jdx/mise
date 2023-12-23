@@ -60,6 +60,7 @@ pub static RTX_BIN: Lazy<PathBuf> = Lazy::new(|| {
 });
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static RTX_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
+pub static RTX_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_LOG_FILE"));
 pub static RTX_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))

@@ -22,13 +22,14 @@ use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
-pub fn handle_shim(config: &Config) -> Result<()> {
-    if *env::RTX_BIN_NAME == "rtx" {
+pub fn handle_shim() -> Result<()> {
+    // TODO: instead, check if bin is in shims dir
+    if *env::RTX_BIN_NAME == "rtx" || cfg!(test) {
         return Ok(());
     }
     let args = env::ARGS.read().unwrap();
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(config, &env::RTX_BIN_NAME)?.into();
+    args[0] = which_shim(&env::RTX_BIN_NAME)?.into();
     let exec = Exec {
         tool: vec![],
         c: None,
@@ -37,14 +38,15 @@ pub fn handle_shim(config: &Config) -> Result<()> {
         jobs: None,
         raw: false,
     };
-    exec.run(config)?;
+    exec.run()?;
     exit(0);
 }
 
-fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
+fn which_shim(bin_name: &str) -> Result<PathBuf> {
     let shim = dirs::SHIMS.join(bin_name);
     if shim.exists() {
-        let ts = ToolsetBuilder::new().build(config)?;
+        let config = Config::try_get()?;
+        let ts = ToolsetBuilder::new().build(&config)?;
         if let Some((p, tv)) = ts.which(bin_name) {
             if let Some(bin) = p.which(&tv, bin_name)? {
                 return Ok(bin);
@@ -62,10 +64,10 @@ fn which_shim(config: &Config, bin_name: &str) -> Result<PathBuf> {
                 return Ok(bin);
             }
         }
-        let tvs = ts.list_rtvs_with_bin(config, bin_name)?;
+        let tvs = ts.list_rtvs_with_bin(&config, bin_name)?;
         err_no_version_set(ts, bin_name, tvs)?;
     }
-    Err(eyre!("{} is not a valid shim", bin_name))
+    bail!("{} is not a valid shim", bin_name)
 }
 
 pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {

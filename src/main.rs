@@ -15,10 +15,10 @@ use std::process::exit;
 use color_eyre::{Help, Report, SectionExt};
 use console::{style, Term};
 use eyre::Result;
+use itertools::Itertools;
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
-use crate::config::{Config, Settings};
 
 #[macro_use]
 mod output;
@@ -65,19 +65,15 @@ mod toolset;
 mod ui;
 
 fn main() -> Result<()> {
-    rayon::spawn(|| {
-        Cli::new(); // this is slow so we memoize it in the background
-    });
-    *env::ARGS.write().unwrap() = env::args().collect();
+    let args = env::args().collect_vec();
+    *env::ARGS.write().unwrap() = args.clone();
     color_eyre::install()?;
-    let cli_settings = Cli::new().settings(&env::ARGS.read().unwrap());
-    Settings::add_partial(cli_settings);
-    let log_level = logger::init();
     handle_ctrlc();
+    migrate::run();
 
-    match run().with_section(|| VERSION.to_string().header("Version:")) {
+    match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
-        Err(err) if log_level < log::LevelFilter::Debug => {
+        Err(err) if log::max_level() < log::LevelFilter::Debug => {
             display_friendly_err(err);
             exit(1);
         }
@@ -85,20 +81,6 @@ fn main() -> Result<()> {
             Err(err).suggestion("Run with --verbose or RTX_VERBOSE=1 for more information.")
         }
     }
-}
-
-fn run() -> Result<()> {
-    // show version before loading config in case of error
-    cli::version::print_version_if_requested();
-    migrate::run();
-
-    let config = Config::try_get()?;
-    shims::handle_shim(&config)?;
-    if config.should_exit_early {
-        return Ok(());
-    }
-    let cli = Cli::new_with_external_commands(&config);
-    cli.run(&env::ARGS.read().unwrap())
 }
 
 fn handle_ctrlc() {

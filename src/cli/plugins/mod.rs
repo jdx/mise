@@ -69,7 +69,8 @@ impl Commands {
 }
 
 impl Plugins {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,
@@ -78,6 +79,6 @@ impl Plugins {
             user: self.user,
         }));
 
-        cmd.run(config)
+        cmd.run(&config)
     }
 }

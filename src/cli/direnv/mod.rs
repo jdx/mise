@@ -39,10 +39,11 @@ impl Commands {
 }
 
 impl Direnv {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));
-        cmd.run(config)
+        cmd.run(&config)
     }
 }

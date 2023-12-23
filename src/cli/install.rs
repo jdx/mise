@@ -44,10 +44,11 @@ pub struct Install {
 }
 
 impl Install {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         match &self.tool {
-            Some(runtime) => self.install_runtimes(config, runtime)?,
-            None => self.install_missing_runtimes(config)?,
+            Some(runtime) => self.install_runtimes(&config, runtime)?,
+            None => self.install_missing_runtimes(&config)?,
         }
 
         Ok(())
