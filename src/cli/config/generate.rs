@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
 use clap::ValueHint;
@@ -17,6 +17,7 @@ pub struct ConfigGenerate {
 
 impl ConfigGenerate {
     pub fn run(self) -> Result<()> {
+        let _ = Config::try_get()?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
         let doc = r#"

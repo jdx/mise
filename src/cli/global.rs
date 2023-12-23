@@ -48,9 +48,10 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         local(
-            config,
+            &config,
             &global_file(),
             self.tool,
             self.remove,

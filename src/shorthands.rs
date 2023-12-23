@@ -51,7 +51,7 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::SettingsPartial;
+    use crate::config::settings::SettingsPartial;
     use confique::Partial;
     use pretty_assertions::assert_str_eq;
 

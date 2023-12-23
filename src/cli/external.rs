@@ -18,13 +18,9 @@ pub fn commands(config: &Config) -> Vec<Command> {
         .collect()
 }
 
-pub fn execute(
-    config: &Config,
-    plugin: &str,
-    args: &ArgMatches,
-    external_commands: Vec<Command>,
-) -> Result<()> {
-    if let Some(mut cmd) = external_commands
+pub fn execute(plugin: &str, args: &ArgMatches) -> Result<()> {
+    let config = Config::try_get()?;
+    if let Some(mut cmd) = commands(&config)
         .into_iter()
         .find(|c| c.get_name() == plugin)
     {

@@ -1,10 +1,8 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
-use confique::Partial;
-use once_cell::sync::Lazy;
 
-use crate::cli::self_update::SelfUpdate;
-use crate::config::{Config, SettingsPartial};
+use crate::config::{Config, Settings};
+use crate::{logger, shims};
 
 mod activate;
 mod alias;
@@ -53,10 +51,7 @@ pub mod version;
 mod r#where;
 mod r#which;
 
-pub struct Cli {
-    command: clap::Command,
-    external_commands: Vec<clap::Command>,
-}
+pub struct Cli {}
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
@@ -87,6 +82,7 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
+    SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Sync(sync::Sync),
@@ -109,44 +105,45 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
             Self::Alias(cmd) => cmd.run(),
-            Self::Asdf(cmd) => cmd.run(config),
-            Self::BinPaths(cmd) => cmd.run(config),
+            Self::Asdf(cmd) => cmd.run(),
+            Self::BinPaths(cmd) => cmd.run(),
             Self::Cache(cmd) => cmd.run(),
             Self::Completion(cmd) => cmd.run(),
             Self::Config(cmd) => cmd.run(),
-            Self::Current(cmd) => cmd.run(config),
-            Self::Deactivate(cmd) => cmd.run(config),
-            Self::Direnv(cmd) => cmd.run(config),
-            Self::Doctor(cmd) => cmd.run(config),
-            Self::Env(cmd) => cmd.run(config),
-            Self::EnvVars(cmd) => cmd.run(config),
-            Self::Exec(cmd) => cmd.run(config),
-            Self::Global(cmd) => cmd.run(config),
-            Self::HookEnv(cmd) => cmd.run(config),
+            Self::Current(cmd) => cmd.run(),
+            Self::Deactivate(cmd) => cmd.run(),
+            Self::Direnv(cmd) => cmd.run(),
+            Self::Doctor(cmd) => cmd.run(),
+            Self::Env(cmd) => cmd.run(),
+            Self::EnvVars(cmd) => cmd.run(),
+            Self::Exec(cmd) => cmd.run(),
+            Self::Global(cmd) => cmd.run(),
+            Self::HookEnv(cmd) => cmd.run(),
             Self::Implode(cmd) => cmd.run(),
-            Self::Install(cmd) => cmd.run(config),
-            Self::Latest(cmd) => cmd.run(config),
-            Self::Link(cmd) => cmd.run(config),
-            Self::Local(cmd) => cmd.run(config),
-            Self::Ls(cmd) => cmd.run(config),
-            Self::LsRemote(cmd) => cmd.run(config),
-            Self::Outdated(cmd) => cmd.run(config),
-            Self::Plugins(cmd) => cmd.run(config),
-            Self::Prune(cmd) => cmd.run(config),
-            Self::Reshim(cmd) => cmd.run(config),
+            Self::Install(cmd) => cmd.run(),
+            Self::Latest(cmd) => cmd.run(),
+            Self::Link(cmd) => cmd.run(),
+            Self::Local(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run(),
+            Self::LsRemote(cmd) => cmd.run(),
+            Self::Outdated(cmd) => cmd.run(),
+            Self::Plugins(cmd) => cmd.run(),
+            Self::Prune(cmd) => cmd.run(),
+            Self::Reshim(cmd) => cmd.run(),
+            Self::SelfUpdate(cmd) => cmd.run(),
             Self::Settings(cmd) => cmd.run(),
             Self::Shell(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
-            Self::Uninstall(cmd) => cmd.run(config),
-            Self::Upgrade(cmd) => cmd.run(config),
-            Self::Use(cmd) => cmd.run(config),
+            Self::Uninstall(cmd) => cmd.run(),
+            Self::Upgrade(cmd) => cmd.run(),
+            Self::Use(cmd) => cmd.run(),
             Self::Version(cmd) => cmd.run(),
-            Self::Where(cmd) => cmd.run(config),
+            Self::Where(cmd) => cmd.run(),
             Self::Which(cmd) => cmd.run(),
 
             #[cfg(feature = "clap_complete")]
@@ -162,97 +159,49 @@ impl Commands {
 }
 
 impl Cli {
-    pub fn new() -> Self {
-        Self {
-            command: Self::command(),
-            external_commands: vec![],
-        }
-    }
-
-    pub fn new_with_external_commands(config: &Config) -> Self {
-        let mut external_commands = external::commands(config);
-        if SelfUpdate::is_available() {
-            external_commands.push(SelfUpdate::command());
-        }
-        Self {
-            command: Self::command().subcommands(external_commands.clone()),
-            external_commands,
-        }
-    }
-
     pub fn command() -> clap::Command {
-        static COMMAND: Lazy<clap::Command> = Lazy::new(|| {
-            Commands::augment_subcommands(
-                clap::Command::new("rtx")
-                    .version(version::VERSION.to_string())
-                    .about(env!("CARGO_PKG_DESCRIPTION"))
-                    .author("Jeff Dickey <@jdx>")
-                    .long_about(LONG_ABOUT)
-                    .arg_required_else_help(true)
-                    .subcommand_required(true)
-                    .after_long_help(AFTER_LONG_HELP)
-                    .arg(args::log_level::Debug::arg())
-                    .arg(args::log_level::LogLevel::arg())
-                    .arg(args::log_level::Trace::arg())
-                    .arg(args::quiet::Quiet::arg())
-                    .arg(args::verbose::Verbose::arg())
-                    .arg(args::yes::Yes::arg()),
-            )
-        });
-        COMMAND.clone()
+        Commands::augment_subcommands(
+            clap::Command::new("rtx")
+                .version(version::VERSION.to_string())
+                .about(env!("CARGO_PKG_DESCRIPTION"))
+                .author("Jeff Dickey <@jdx>")
+                .long_about(LONG_ABOUT)
+                .arg_required_else_help(true)
+                .subcommand_required(true)
+                .after_long_help(AFTER_LONG_HELP)
+                .arg(args::log_level::Debug::arg())
+                .arg(args::log_level::LogLevel::arg())
+                .arg(args::log_level::Trace::arg())
+                .arg(args::quiet::Quiet::arg())
+                .arg(args::verbose::Verbose::arg())
+                .arg(args::yes::Yes::arg()),
+        )
     }
 
-    pub fn run(self, args: &Vec<String>) -> Result<()> {
+    pub fn run(args: &Vec<String>) -> Result<()> {
+        *crate::env::ARGS.write().unwrap() = crate::env::args().collect();
+        shims::handle_shim()?;
+        version::print_version_if_requested();
+
+        let matches = Self::command()
+            .try_get_matches_from(args)
+            .unwrap_or_else(|_| {
+                Self::command()
+                    .subcommands(external::commands(Config::get().as_ref()))
+                    .get_matches_from(args)
+            });
+        Settings::add_cli_matches(&matches);
+        if let Ok(settings) = Settings::try_get() {
+            logger::init(&settings);
+        }
         debug!("ARGS: {}", &args.join(" "));
-        let config = Config::try_get()?;
-        if args[1..] == ["-v"] {
-            // normally this would be considered --verbose
-            return version::Version {}.run();
+        match Commands::from_arg_matches(&matches) {
+            Ok(cmd) => cmd.run(),
+            Err(err) => matches
+                .subcommand()
+                .ok_or(err)
+                .map(|(command, sub_m)| external::execute(command, sub_m))?,
         }
-        let matches = self.command.get_matches_from(args);
-        if let Some((command, sub_m)) = matches.subcommand() {
-            if command == "self-update" {
-                return SelfUpdate::from_arg_matches(sub_m)?.run();
-            }
-            external::execute(&config, command, sub_m, self.external_commands)?;
-        }
-        let cmd = Commands::from_arg_matches(&matches)?;
-        cmd.run(&config)
-    }
-
-    pub fn settings(self, args: &Vec<String>) -> SettingsPartial {
-        let mut s = SettingsPartial::empty();
-        if let Ok(m) = self.command.try_get_matches_from(args) {
-            if let Some(true) = m.get_one::<bool>("yes") {
-                s.yes = Some(true);
-            }
-            if let Some(true) = m.get_one::<bool>("quiet") {
-                s.quiet = Some(true);
-            }
-            if let Some(true) = m.get_one::<bool>("trace") {
-                s.log_level = Some("trace".to_string());
-            }
-            if let Some(true) = m.get_one::<bool>("debug") {
-                s.log_level = Some("debug".to_string());
-            }
-            if let Some(log_level) = m.get_one::<String>("log-level") {
-                s.log_level = Some(log_level.to_string());
-            }
-            if *m.get_one::<u8>("verbose").unwrap() > 0 {
-                s.verbose = Some(true);
-            }
-            if *m.get_one::<u8>("verbose").unwrap() > 1 {
-                s.log_level = Some("trace".to_string());
-            }
-        }
-
-        s
-    }
-}
-
-impl Default for Cli {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -64,14 +64,15 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self, config: &Config) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
+        let config = Config::try_get()?;
         self.plugin = self
             .plugin
             .or_else(|| self.plugin_flag.clone().map(|p| vec![p]))
             .map(|p| p.into_iter().map(|p| unalias_plugin(&p).into()).collect());
-        self.verify_plugin(config)?;
+        self.verify_plugin(&config)?;
 
-        let mut runtimes = self.get_runtime_list(config)?;
+        let mut runtimes = self.get_runtime_list(&config)?;
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally

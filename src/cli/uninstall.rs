@@ -30,11 +30,12 @@ pub struct Uninstall {
 }
 
 impl Uninstall {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
-            self.get_all_tool_versions(config)?
+            self.get_all_tool_versions(&config)?
         } else {
-            self.get_requested_tool_versions(config)?
+            self.get_requested_tool_versions(&config)?
         };
         let tool_versions = tool_versions
             .into_iter()
@@ -64,9 +65,9 @@ impl Uninstall {
             }
         }
 
-        let ts = ToolsetBuilder::new().build(config)?;
-        shims::reshim(config, &ts).wrap_err("failed to reshim")?;
-        runtime_symlinks::rebuild(config)?;
+        let ts = ToolsetBuilder::new().build(&config)?;
+        shims::reshim(&config, &ts).wrap_err("failed to reshim")?;
+        runtime_symlinks::rebuild(&config)?;
 
         Ok(())
     }

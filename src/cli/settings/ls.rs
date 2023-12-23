@@ -2,7 +2,7 @@ use eyre::Result;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 
 /// Show current settings
 ///
@@ -16,6 +16,7 @@ pub struct SettingsLs {}
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
+        Config::try_get()?;
         let settings = Settings::try_get()?;
         let json = settings.to_string();
         let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;

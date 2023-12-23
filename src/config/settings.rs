@@ -131,6 +131,32 @@ impl Settings {
         PARTIALS.write().unwrap().push(partial);
         *SETTINGS.write().unwrap() = None;
     }
+    pub fn add_cli_matches(m: &clap::ArgMatches) {
+        let mut s = SettingsPartial::empty();
+        if let Some(true) = m.get_one::<bool>("yes") {
+            s.yes = Some(true);
+        }
+        if let Some(true) = m.get_one::<bool>("quiet") {
+            s.quiet = Some(true);
+        }
+        if let Some(true) = m.get_one::<bool>("trace") {
+            s.log_level = Some("trace".to_string());
+        }
+        if let Some(true) = m.get_one::<bool>("debug") {
+            s.log_level = Some("debug".to_string());
+        }
+        if let Some(log_level) = m.get_one::<String>("log-level") {
+            s.log_level = Some(log_level.to_string());
+        }
+        if *m.get_one::<u8>("verbose").unwrap() > 0 {
+            s.verbose = Some(true);
+        }
+        if *m.get_one::<u8>("verbose").unwrap() > 1 {
+            s.log_level = Some("trace".to_string());
+        }
+        Self::add_partial(s);
+    }
+
     pub fn default_builder() -> Builder<Self> {
         let mut b = Self::builder().env();
         for partial in PARTIALS.read().unwrap().iter() {

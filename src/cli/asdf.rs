@@ -1,7 +1,9 @@
+use crate::cli::args::tool::ToolArg;
 use clap::ValueHint::CommandWithArguments;
 use eyre::Result;
 use itertools::Itertools;
 
+use crate::cli::ls_remote::LsRemote;
 use crate::cli::Cli;
 use crate::config::Config;
 
@@ -17,32 +19,34 @@ pub struct Asdf {
 }
 
 impl Asdf {
-    pub fn run(mut self, config: &Config) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
+        let config = Config::try_get()?;
         let mut args = vec![String::from("rtx")];
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Cli::new().run(&args),
-            Some("list") => list_versions(config, &args),
+            Some("reshim") => Cli::run(&args),
+            Some("list") => list_versions(&config, &args),
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
                     args[2] = format!("{}@{}", args[2], version);
                 }
-                Cli::new().run(&args)
+                Cli::run(&args)
             }
-            _ => Cli::new().run(&args),
+            _ => Cli::run(&args),
         }
     }
 }
 
-fn list_versions(config: &Config, args: &Vec<String>) -> Result<()> {
+fn list_versions(config: &Config, args: &[String]) -> Result<()> {
     if args[2] == "all" {
-        let mut new_args: Vec<String> = vec!["rtx".into(), "ls-remote".into()];
-        if args.len() >= 3 {
-            new_args.push(args[3].clone());
+        return LsRemote {
+            prefix: None,
+            all: false,
+            plugin: args.get(3).map(|s| ToolArg::parse(s)),
         }
-        return Cli::new().run(&new_args);
+        .run();
     }
     let ts = ToolsetBuilder::new().build(config)?;
     let mut versions = ts.list_installed_versions(config)?;
