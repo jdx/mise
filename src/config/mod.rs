@@ -32,17 +32,17 @@ type ToolMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
 
 #[derive(Default)]
 pub struct Config {
-    pub global_config: RtxToml,
+    pub aliases: AliasMap,
     pub config_files: ConfigMap,
     pub env: BTreeMap<String, String>,
     pub env_sources: HashMap<String, PathBuf>,
+    pub global_config: RtxToml,
     pub path_dirs: Vec<PathBuf>,
-    pub aliases: AliasMap,
-    pub all_aliases: OnceCell<AliasMap>,
     pub project_root: Option<PathBuf>,
+    all_aliases: OnceCell<AliasMap>,
     plugins: RwLock<ToolMap>,
-    shorthands: OnceCell<HashMap<String, String>>,
     repo_urls: HashMap<PluginName, String>,
+    shorthands: OnceCell<HashMap<String, String>>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);

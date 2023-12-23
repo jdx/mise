@@ -289,9 +289,7 @@ __rtx_env_cmd() {
   _arguments -s -S \
     '(-s --shell)'{-s,--shell}'=[Shell type to generate environment variables for]:shell:(bash fish nu xonsh zsh)' \
     '*::tool:__rtx_tool_versions' \
-    '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '(-J --json)'{-J,--json}'[Output in JSON format]' \
-    '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress warnings and other non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'

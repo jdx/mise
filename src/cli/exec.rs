@@ -40,7 +40,7 @@ pub struct Exec {
     pub c: Option<OsString>,
 
     /// Change to this directory before executing the command
-    #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
+    #[clap(short = 'C', long, value_hint = ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
 
     /// Number of jobs to run in parallel

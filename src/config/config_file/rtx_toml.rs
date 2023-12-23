@@ -77,7 +77,7 @@ impl RtxToml {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
-                _ => Err(eyre!("unknown key: {}", k))?,
+                _ => bail!("unknown key: {}", style(k).red().for_stderr()),
             }
         }
         self.doc = doc;
@@ -98,7 +98,7 @@ impl RtxToml {
                 }
                 self.env_file = Some(path);
             }
-            _ => parse_error!(k, v, "string")?,
+            _ => parse_error!(k, v, "string"),
         }
         Ok(())
     }
@@ -124,11 +124,11 @@ impl RtxToml {
                             self.env_remove.push(k);
                         }
                     } else {
-                        parse_error!(key, v, "string or bool")?;
+                        parse_error!(key, v, "string or bool")
                     }
                 }
             }
-            _ => parse_error!(key, v, "table")?,
+            _ => parse_error!(key, v, "table"),
         }
         Ok(())
     }
@@ -152,12 +152,12 @@ impl RtxToml {
                             };
                             path.push(s);
                         }
-                        _ => parse_error!(k, v, "string")?,
+                        _ => parse_error!(k, v, "string"),
                     }
                 }
                 Ok(path)
             }
-            _ => parse_error!(k, v, "array")?,
+            _ => parse_error!(k, v, "array"),
         }
     }
 
@@ -177,16 +177,16 @@ impl RtxToml {
                                         let s = self.parse_template(&k, s)?;
                                         plugin_aliases.insert(from, s);
                                     }
-                                    _ => parse_error!(format!("{}.{}", k, from), to, "string")?,
+                                    _ => parse_error!(format!("{}.{}", k, from), to, "string"),
                                 }
                             }
                         }
-                        _ => parse_error!(k, v, "table")?,
+                        _ => parse_error!(k, v, "table"),
                     }
                 }
                 Ok(aliases)
             }
-            _ => parse_error!(k, v, "table")?,
+            _ => parse_error!(k, v, "table"),
         }
     }
 
@@ -206,7 +206,7 @@ impl RtxToml {
                             let s = self.parse_template(key, s)?;
                             env.insert(k, s);
                         }
-                        _ => parse_error!(key, v, "string")?,
+                        _ => parse_error!(key, v, "string"),
                     }
                 }
                 Ok(env)
@@ -228,7 +228,7 @@ impl RtxToml {
                 }
                 Ok(toolset)
             }
-            _ => parse_error!(key, v, "table")?,
+            _ => parse_error!(key, v, "table"),
         }
     }
 
@@ -285,45 +285,41 @@ impl RtxToml {
         v: &Item,
         plugin_name: &PluginName,
     ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
-        let mut tv = ToolVersionRequest::new(plugin_name.clone(), "system");
-        let mut opts = ToolVersionOptions::default();
-
         match v.as_table_like() {
             Some(table) => {
-                if let Some(v) = table.get("version") {
+                let tv = if let Some(v) = table.get("version") {
                     match v {
-                        Item::Value(v) => {
-                            tv = self.parse_tool_version_request(key, v, plugin_name)?;
-                        }
-                        _ => parse_error!(format!("{}.version", key), v, "string")?,
+                        Item::Value(v) => self.parse_tool_version_request(key, v, plugin_name)?,
+                        _ => parse_error!(format!("{}.version", key), v, "string"),
                     }
                 } else if let Some(path) = table.get("path") {
                     match path.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            tv = ToolVersionRequest::Path(plugin_name.clone(), s.into());
+                            ToolVersionRequest::Path(plugin_name.clone(), s.into())
                         }
-                        _ => parse_error!(format!("{}.path", key), v, "string")?,
+                        _ => parse_error!(format!("{}.path", key), v, "string"),
                     }
                 } else if let Some(prefix) = table.get("prefix") {
                     match prefix.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            tv = ToolVersionRequest::Prefix(plugin_name.clone(), s);
+                            ToolVersionRequest::Prefix(plugin_name.clone(), s)
                         }
-                        _ => parse_error!(format!("{}.prefix", key), v, "string")?,
+                        _ => parse_error!(format!("{}.prefix", key), v, "string"),
                     }
                 } else if let Some(r) = table.get("ref") {
                     match r.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            tv = ToolVersionRequest::Ref(plugin_name.clone(), s);
+                            ToolVersionRequest::Ref(plugin_name.clone(), s)
                         }
-                        _ => parse_error!(format!("{}.ref", key), v, "string")?,
+                        _ => parse_error!(format!("{}.ref", key), v, "string"),
                     }
                 } else {
-                    parse_error!(key, v, "version, path, or prefix")?
-                }
+                    parse_error!(key, v, "version, path, or prefix");
+                };
+                let mut opts = ToolVersionOptions::default();
                 for (k, v) in table.iter() {
                     if k == "version" || k == "path" || k == "prefix" || k == "ref" {
                         continue;
@@ -333,20 +329,20 @@ impl RtxToml {
                     } else if let Some(b) = v.as_bool() {
                         b.to_string()
                     } else {
-                        parse_error!(key, v, "string or bool")?
+                        parse_error!(key, v, "string or bool");
                     };
                     opts.insert(k.into(), s);
                 }
+                Ok((tv, opts))
             }
             _ => match v {
                 Item::Value(v) => {
-                    tv = self.parse_tool_version_request(key, v, plugin_name)?;
+                    let tv = self.parse_tool_version_request(key, v, plugin_name)?;
+                    Ok((tv, Default::default()))
                 }
-                _ => parse_error!(key, v, "value")?,
+                _ => parse_error!(key, v, "value"),
             },
         }
-
-        Ok((tv, opts))
     }
 
     fn parse_tool_version_request(
@@ -360,7 +356,7 @@ impl RtxToml {
                 let s = self.parse_template(key, s)?;
                 Ok(ToolVersionRequest::new(plugin_name.clone(), &s))
             }
-            _ => parse_error!(key, v, "string")?,
+            _ => parse_error!(key, v, "string"),
         }
     }
 
@@ -407,21 +403,21 @@ impl RtxToml {
     fn parse_bool(&self, k: &str, v: &Item) -> Result<bool> {
         match v.as_value().map(|v| v.as_bool()) {
             Some(Some(v)) => Ok(v),
-            _ => parse_error!(k, v, "boolean")?,
+            _ => parse_error!(k, v, "boolean"),
         }
     }
 
     fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => Ok(v.to_string()),
-            _ => parse_error!(k, v, "string")?,
+            _ => parse_error!(k, v, "string"),
         }
     }
 
     fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
         match v.as_value().map(|v| v.as_integer()) {
             Some(Some(v)) => Ok(v as usize),
-            _ => parse_error!(k, v, "usize")?,
+            _ => parse_error!(k, v, "usize"),
         }
     }
 
@@ -431,7 +427,7 @@ impl RtxToml {
                 let v = self.parse_template(k, v)?;
                 Ok(v.into())
             }
-            _ => parse_error!(k, v, "path")?,
+            _ => parse_error!(k, v, "path"),
         }
     }
 
@@ -446,12 +442,12 @@ impl RtxToml {
                             let v = self.parse_template(&k, v)?;
                             paths.push(v.into());
                         }
-                        _ => parse_error!(k, v, "path")?,
+                        _ => parse_error!(k, v, "path"),
                     }
                 }
                 Ok(paths)
             }
-            _ => parse_error!(k, v, "array of paths")?,
+            _ => parse_error!(k, v, "array of paths"),
         }
     }
 
@@ -461,7 +457,7 @@ impl RtxToml {
             .map(|v| v.iter().map(|v| v.as_str().unwrap().to_string()).collect())
         {
             Some(v) => Ok(v),
-            _ => parse_error!(k, v, "array of strings")?,
+            _ => parse_error!(k, v, "array of strings"),
         }
     }
 
