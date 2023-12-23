@@ -13,7 +13,7 @@ mod test;
 use std::process::exit;
 
 use color_eyre::{Help, Report, SectionExt};
-use console::{style, Term};
+use console::style;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -67,8 +67,6 @@ mod ui;
 fn main() -> Result<()> {
     let args = env::args().collect_vec();
     color_eyre::install()?;
-    handle_ctrlc();
-    migrate::run();
 
     match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
@@ -80,14 +78,6 @@ fn main() -> Result<()> {
             Err(err).suggestion("Run with --verbose or RTX_VERBOSE=1 for more information.")
         }
     }
-}
-
-fn handle_ctrlc() {
-    let _ = ctrlc::set_handler(move || {
-        let _ = Term::stderr().show_cursor();
-        debug!("Ctrl-C pressed, exiting...");
-        exit(1);
-    });
 }
 
 fn display_friendly_err(err: Report) {
