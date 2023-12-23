@@ -66,7 +66,6 @@ mod ui;
 
 fn main() -> Result<()> {
     let args = env::args().collect_vec();
-    *env::ARGS.write().unwrap() = args.clone();
     color_eyre::install()?;
     handle_ctrlc();
     migrate::run();
@@ -92,14 +91,12 @@ fn handle_ctrlc() {
 }
 
 fn display_friendly_err(err: Report) {
-    let dim = |s| style(s).dim().for_stderr();
-    let dim_red = |s| style(s).dim().red().for_stderr();
     for err in err.chain() {
-        eprintln!("{} {}", dim_red("rtx"), err);
+        error!("{err}");
     }
-    eprintln!(
-        "{} {}",
-        dim_red("rtx"),
+    let dim = |s| style(s).dim().for_stderr();
+    error!(
+        "{}",
         dim("Run with --verbose or RTX_VERBOSE=1 for more information")
     );
 }

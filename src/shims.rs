@@ -11,11 +11,11 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::cli::exec::Exec;
-use crate::config::Config;
-use crate::env;
+use crate::config::{Config, Settings};
 use crate::fake_asdf;
 use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
+use crate::{env, logger};
 
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -24,9 +24,11 @@ use crate::{dirs, file};
 // executes as if it was a shim if the command is not "rtx", e.g.: "node"
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
-    if *env::RTX_BIN_NAME == "rtx" || cfg!(test) {
+    let bin_name = *env::RTX_BIN_NAME;
+    if bin_name == "rtx" || !dirs::SHIMS.join(bin_name).exists() || cfg!(test) {
         return Ok(());
     }
+    logger::init(&Settings::get());
     let args = env::ARGS.read().unwrap();
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
     args[0] = which_shim(&env::RTX_BIN_NAME)?.into();
@@ -43,31 +45,27 @@ pub fn handle_shim() -> Result<()> {
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let shim = dirs::SHIMS.join(bin_name);
-    if shim.exists() {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
-        if let Some((p, tv)) = ts.which(bin_name) {
-            if let Some(bin) = p.which(&tv, bin_name)? {
-                return Ok(bin);
-            }
+    let config = Config::try_get()?;
+    let ts = ToolsetBuilder::new().build(&config)?;
+    if let Some((p, tv)) = ts.which(bin_name) {
+        if let Some(bin) = p.which(&tv, bin_name)? {
+            return Ok(bin);
         }
-        // fallback for "system"
-        for path in &*env::PATH {
-            if fs::canonicalize(path).unwrap_or_default()
-                == fs::canonicalize(&*dirs::SHIMS).unwrap_or_default()
-            {
-                continue;
-            }
-            let bin = path.join(bin_name);
-            if bin.exists() {
-                return Ok(bin);
-            }
-        }
-        let tvs = ts.list_rtvs_with_bin(&config, bin_name)?;
-        err_no_version_set(ts, bin_name, tvs)?;
     }
-    bail!("{} is not a valid shim", bin_name)
+    // fallback for "system"
+    for path in &*env::PATH {
+        if fs::canonicalize(path).unwrap_or_default()
+            == fs::canonicalize(&*dirs::SHIMS).unwrap_or_default()
+        {
+            continue;
+        }
+        let bin = path.join(bin_name);
+        if bin.exists() {
+            return Ok(bin);
+        }
+    }
+    let tvs = ts.list_rtvs_with_bin(&config, bin_name)?;
+    err_no_version_set(ts, bin_name, tvs)
 }
 
 pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
@@ -191,9 +189,9 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<()> {
+fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
     if tvs.is_empty() {
-        return Ok(());
+        bail!("{} is not a valid shim", bin_name);
     }
     let missing_plugins = tvs.iter().map(|tv| &tv.plugin_name).collect::<HashSet<_>>();
     let mut missing_tools = ts

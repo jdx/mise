@@ -44,8 +44,8 @@ macro_rules! rtxprint {
 macro_rules! info {
         ($($arg:tt)*) => {{
             let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-            let rtx = console::style("rtx ").dim().for_stderr();
-            stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+            let rtx = console::style("rtx").dim().for_stderr();
+            stderr.push(format!("{} {}", rtx, format!($($arg)*)));
         }};
     }
 
@@ -55,8 +55,8 @@ macro_rules! warn {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let rtx = console::style("rtx ").yellow().for_stderr();
-                stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+                let rtx = console::style("rtx").yellow().for_stderr();
+                stderr.push(format!("{} {}", rtx, format!($($arg)*)));
             })
         }
     }
@@ -67,8 +67,8 @@ macro_rules! error {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let rtx = console::style("rtx ").red().for_stderr();
-                stderr.push(format!("{}{}", rtx, format!($($arg)*)));
+                let rtx = console::style("rtx").red().for_stderr();
+                stderr.push(format!("{} {}", rtx, format!($($arg)*)));
             })
         }
     }
