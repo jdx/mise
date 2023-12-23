@@ -20,7 +20,7 @@ use crate::file::display_path;
 use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
-use crate::{dirs, env, file, hook_env};
+use crate::{dirs, env, file};
 
 pub mod config_file;
 pub mod settings;
@@ -39,7 +39,6 @@ pub struct Config {
     pub path_dirs: Vec<PathBuf>,
     pub aliases: AliasMap,
     pub all_aliases: OnceCell<AliasMap>,
-    pub should_exit_early: bool,
     pub project_root: Option<PathBuf>,
     plugins: RwLock<ToolMap>,
     shorthands: OnceCell<HashMap<String, String>>,
@@ -84,37 +83,16 @@ impl Config {
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
+        track_config_files(&config_paths);
         let config_files =
             load_all_config_files(&config_paths, &plugins, &legacy_files, config_files)?;
 
-        let mut env: Option<_> = None;
-        let mut env_sources: Option<_> = None;
-        let mut should_exit_early = false;
-        let mut repo_urls = HashMap::new();
-        rayon::scope(|s| {
-            s.spawn(|_| {
-                track_config_files(&config_paths);
-            });
-            s.spawn(|_| {
-                let (a, b) = load_env(&config_files);
-                env = Some(a);
-                env_sources = Some(b);
-            });
-            s.spawn(|_| {
-                let watch_files = config_files
-                    .values()
-                    .flat_map(|cf| cf.watch_files())
-                    .collect_vec();
-                should_exit_early = hook_env::should_exit_early(&watch_files);
-            });
-            s.spawn(|_| {
-                repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
-            })
-        });
+        let (env, env_sources) = load_env(&config_files);
+        let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
 
         let config = Self {
-            env: env.unwrap(),
-            env_sources: env_sources.unwrap(),
+            env,
+            env_sources,
             path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
@@ -123,7 +101,6 @@ impl Config {
             config_files,
             global_config,
             plugins: RwLock::new(plugins),
-            should_exit_early,
             repo_urls,
         };
 
