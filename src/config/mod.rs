@@ -83,7 +83,6 @@ impl Config {
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
-        track_config_files(&config_paths);
         let config_files =
             load_all_config_files(&config_paths, &plugins, &legacy_files, config_files)?;
 
@@ -200,9 +199,7 @@ impl Config {
     }
 
     pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
-        let tracker = Tracker::new();
-        let config_files = tracker
-            .list_all()?
+        let config_files = Tracker::list_all()?
             .into_par_iter()
             .map(|path| match config_file::parse(&path) {
                 Ok(cf) => Some((path, cf)),
@@ -393,6 +390,9 @@ fn load_all_config_files(
             None => {
                 let cf = parse_config_file(&f, legacy_filenames, tools)
                     .wrap_err_with(|| format!("error parsing config file: {}", display_path(&f)))?;
+                if let Err(err) = Tracker::track(&f) {
+                    warn!("tracking config: {err:#}");
+                }
                 Ok((f, cf))
             }
         })
@@ -457,20 +457,6 @@ fn load_aliases(config_files: &ConfigMap) -> AliasMap {
     }
 
     aliases
-}
-
-fn track_config_files(config_filenames: &[PathBuf]) {
-    let config_filenames = config_filenames.to_vec();
-    let track = move || -> Result<()> {
-        let mut tracker = Tracker::new();
-        for config_file in &config_filenames {
-            tracker.track(config_file)?;
-        }
-        Ok(())
-    };
-    if let Err(err) = track() {
-        warn!("tracking config files: {:#}", err);
-    }
 }
 
 impl Debug for Config {
