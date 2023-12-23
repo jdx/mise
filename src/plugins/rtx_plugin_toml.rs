@@ -67,14 +67,14 @@ impl RtxPluginToml {
                         "cache-key" => config.cache_key = Some(self.parse_string_array(k, v)?),
                         "data" => match v.as_value() {
                             Some(v) => config.data = Some(self.parse_string(k, v)?),
-                            _ => parse_error!(key, v, "string")?,
+                            _ => parse_error!(key, v, "string"),
                         },
-                        _ => parse_error!(key, v, "one of: cache-key")?,
+                        _ => parse_error!(key, v, "one of: cache-key"),
                     }
                 }
                 Ok(config)
             }
-            _ => parse_error!(key, v, "table")?,
+            _ => parse_error!(key, v, "table"),
         }
     }
 
@@ -87,14 +87,14 @@ impl RtxPluginToml {
                 }
                 Ok(out)
             }
-            _ => parse_error!(k, v, "array")?,
+            _ => parse_error!(k, v, "array"),
         }
     }
 
     fn parse_string(&mut self, k: &str, v: &Value) -> Result<String> {
         match v.as_str() {
             Some(v) => Ok(v.to_string()),
-            _ => parse_error!(k, v, "string")?,
+            _ => parse_error!(k, v, "string"),
         }
     }
 }

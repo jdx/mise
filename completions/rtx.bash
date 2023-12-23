@@ -1308,7 +1308,7 @@ _rtx() {
             return 0
             ;;
         rtx__env)
-            opts="-s -j -J -q -v -y -h --shell --jobs --json --raw --debug --log-level --trace --quiet --verbose --yes --help [TOOL@VERSION]..."
+            opts="-s -J -q -v -y -h --shell --json --debug --log-level --trace --quiet --verbose --yes --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1320,14 +1320,6 @@ _rtx() {
                     ;;
                 -s)
                     COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
-                    return 0
-                    ;;
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --log-level)
