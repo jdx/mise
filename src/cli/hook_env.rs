@@ -37,7 +37,12 @@ pub struct HookEnv {
 impl HookEnv {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        if config.should_exit_early {
+        let watch_files: Vec<_> = config
+            .config_files
+            .values()
+            .flat_map(|p| p.watch_files())
+            .collect();
+        if hook_env::should_exit_early(&watch_files) {
             return Ok(());
         }
         let ts = ToolsetBuilder::new().build(&config)?;
@@ -58,7 +63,7 @@ impl HookEnv {
         let settings = Settings::try_get()?;
         patches.extend(self.build_path_operations(&settings, &paths, &__RTX_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
-        patches.push(self.build_watch_operation(&config)?);
+        patches.push(self.build_watch_operation(&watch_files)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         rtxprint!("{output}");
@@ -158,13 +163,8 @@ impl HookEnv {
         ))
     }
 
-    fn build_watch_operation(&self, config: &Config) -> Result<EnvDiffOperation> {
-        let watch_files: Vec<_> = config
-            .config_files
-            .values()
-            .flat_map(|p| p.watch_files())
-            .collect();
-        let watches = hook_env::build_watches(&watch_files)?;
+    fn build_watch_operation(&self, watch_files: &[PathBuf]) -> Result<EnvDiffOperation> {
+        let watches = hook_env::build_watches(watch_files)?;
         Ok(EnvDiffOperation::Add(
             "__RTX_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
