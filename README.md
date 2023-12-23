@@ -588,9 +588,6 @@ python = {version='3.10', virtualenv='.venv'}
 # note this will only be used if the plugin does not already exist
 python = 'https://github.com/asdf-community/asdf-python'
 
-[settings] # project-local settings
-verbose = true
-
 [alias.node] # project-local aliases
 my_custom_node = '20'
 ```
