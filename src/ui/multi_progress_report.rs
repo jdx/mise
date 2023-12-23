@@ -1,4 +1,5 @@
 use crate::config::Settings;
+
 use indicatif::MultiProgress;
 use std::sync::{Arc, Mutex, Weak};
 

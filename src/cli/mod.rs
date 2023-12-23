@@ -2,7 +2,7 @@ use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 
 use crate::config::{Config, Settings};
-use crate::{logger, shims};
+use crate::{logger, migrate, shims};
 
 mod activate;
 mod alias;
@@ -194,6 +194,7 @@ impl Cli {
         if let Ok(settings) = Settings::try_get() {
             logger::init(&settings);
         }
+        migrate::run();
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),
