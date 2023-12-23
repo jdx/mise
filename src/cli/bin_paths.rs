@@ -13,7 +13,7 @@ impl BinPaths {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
-        ts.warn_if_versions_missing();
+        ts.notify_if_versions_missing();
         for p in ts.list_paths() {
             rtxprintln!("{}", p.display());
         }

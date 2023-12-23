@@ -70,7 +70,7 @@ impl HookEnv {
         if self.status {
             self.display_status(&config, &ts);
         }
-        ts.warn_if_versions_missing();
+        ts.notify_if_versions_missing();
 
         Ok(())
     }

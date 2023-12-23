@@ -74,6 +74,7 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
+        .max(60)
 });
 
 /// duration that remote version cache is kept for

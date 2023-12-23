@@ -31,7 +31,7 @@ impl Env {
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         ts.install_arg_versions(&config, &InstallOptions::new())?;
-        ts.warn_if_versions_missing();
+        ts.notify_if_versions_missing();
 
         if self.json {
             self.output_json(&config, ts)
