@@ -35,7 +35,8 @@ pub struct EnvVars {
 }
 
 impl EnvVars {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
+        let config = Config::try_get()?;
         if self.remove.is_none() && self.env_vars.is_none() {
             for (key, value) in &config.env {
                 let source = config.env_sources.get(key).unwrap();

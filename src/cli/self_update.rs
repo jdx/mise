@@ -1,4 +1,3 @@
-use clap::Args;
 use color_eyre::Result;
 use console::style;
 use self_update::backends::github::{ReleaseList, Update};
@@ -34,6 +33,9 @@ pub struct SelfUpdate {
 
 impl SelfUpdate {
     pub fn run(self) -> Result<()> {
+        if !Self::is_available() && !self.force {
+            bail!("rtx is installed via a package manager, cannot update");
+        }
         let status = self.do_update()?;
 
         if status.updated() {
@@ -104,9 +106,5 @@ impl SelfUpdate {
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .map(|p| p.join("lib").join(".disable-self-update").exists())
             .unwrap_or_default()
-    }
-
-    pub fn command() -> clap::Command {
-        Self::augment_args(clap::Command::new("self-update"))
     }
 }

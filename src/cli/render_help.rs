@@ -3,7 +3,6 @@ use console::strip_ansi_codes;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::self_update::SelfUpdate;
 use crate::cli::Cli;
 
 use crate::file;
@@ -31,7 +30,6 @@ impl RenderHelp {
 
 fn render_commands() -> String {
     let mut cli = Cli::command()
-        .subcommand(SelfUpdate::command())
         .term_width(80)
         .max_term_width(80)
         .disable_help_subcommand(true)
