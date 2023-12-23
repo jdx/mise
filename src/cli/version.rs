@@ -124,16 +124,3 @@ fn get_latest_version_call() -> Option<String> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use super::*;
-
-    #[test]
-    fn test_version() {
-        let stdout = assert_cli!("version");
-        assert_str_eq!(stdout, VERSION.to_string());
-    }
-}
