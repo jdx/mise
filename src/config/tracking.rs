@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::fs::{read_dir, remove_file};
 use std::path::{Path, PathBuf};
@@ -9,32 +8,20 @@ use crate::dirs::TRACKED_CONFIGS;
 use crate::file::{create_dir_all, make_symlink};
 use crate::hash::hash_to_str;
 
-#[derive(Debug, Default)]
-pub struct Tracker {
-    config_files: HashSet<PathBuf>,
-}
+pub struct Tracker {}
 
 impl Tracker {
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub fn track(&mut self, path: &Path) -> Result<()> {
-        if !self.config_files.contains(path) {
-            let tracking_path = TRACKED_CONFIGS.join(hash_to_str(&path));
-            if !tracking_path.exists() {
-                create_dir_all(&*TRACKED_CONFIGS)?;
-                make_symlink(path, &tracking_path)?;
-            }
-            self.config_files.insert(path.to_path_buf());
+    pub fn track(path: &Path) -> Result<()> {
+        let tracking_path = TRACKED_CONFIGS.join(hash_to_str(&path));
+        if !tracking_path.exists() {
+            create_dir_all(&*TRACKED_CONFIGS)?;
+            make_symlink(path, &tracking_path)?;
         }
         Ok(())
     }
 
-    pub fn list_all(&self) -> Result<Vec<PathBuf>> {
-        self.clean()?;
+    pub fn list_all() -> Result<Vec<PathBuf>> {
+        Self::clean()?;
         let mut output = vec![];
         for path in read_dir(&*TRACKED_CONFIGS)? {
             let path = path?.path();
@@ -49,7 +36,7 @@ impl Tracker {
         Ok(output)
     }
 
-    pub fn clean(&self) -> Result<()> {
+    pub fn clean() -> Result<()> {
         for path in read_dir(&*TRACKED_CONFIGS)? {
             let path = path?.path();
             if !path.exists() {
