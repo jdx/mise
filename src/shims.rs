@@ -46,10 +46,19 @@ pub fn handle_shim() -> Result<()> {
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
     let config = Config::try_get()?;
-    let ts = ToolsetBuilder::new().build(&config)?;
+    let mut ts = ToolsetBuilder::new().build(&config)?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
             return Ok(bin);
+        }
+    }
+    let settings = Settings::try_get()?;
+    if settings.not_found_auto_install {
+        for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
+            let p = config.get_or_create_plugin(&tv.plugin_name);
+            if let Some(bin) = p.which(&tv, bin_name)? {
+                return Ok(bin);
+            }
         }
     }
     // fallback for "system"

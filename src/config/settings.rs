@@ -58,6 +58,8 @@ pub struct Settings {
     pub yes: bool,
     #[config(env = "RTX_TASK_OUTPUT")]
     pub task_output: Option<String>,
+    #[config(env = "RTX_NOT_FOUND_AUTO_INSTALL", default = true)]
+    pub not_found_auto_install: bool,
     #[config(env = "CI", default = false)]
     pub ci: bool,
 }

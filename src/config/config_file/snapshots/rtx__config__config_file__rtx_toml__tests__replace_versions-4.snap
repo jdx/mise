@@ -17,6 +17,7 @@ RtxToml(/tmp/.rtx.toml): node@16.0.1 node@18.0.1 {
         "legacy_version_file": Null,
         "legacy_version_file_disable_tools": Null,
         "log_level": Null,
+        "not_found_auto_install": Null,
         "plugin_autoupdate_last_check_duration": Null,
         "quiet": Null,
         "raw": Null,
