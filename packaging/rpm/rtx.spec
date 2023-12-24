@@ -1,6 +1,6 @@
 Summary: Polyglot runtime manager
 Name: rtx
-Version: 2023.12.37
+Version: 2023.12.38
 Release: 1
 URL: https://github.com/jdx/rtx/
 Group: System
