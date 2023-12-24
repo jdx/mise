@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+rtx settings set experimental true
+rtx r configtask arg1 arg2 ::: filetask arg1 arg2
+assert "cat test-e2e/test-build-output.txt" "TEST_BUILDSCRIPT_ENV_VAR: VALID
+ARGS: arg1 arg2"
