@@ -14,10 +14,12 @@
 
 ## Features
 
-- [**Polyglot**](#plugins) - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
-- [**Fast**](#performance) - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
-- [**No shims**](#shims) - shims cause problems, they break `which`, and add overhead. By default, rtx
-  does not use them—however you can if you want to.
+rtx is 3 tools in one. Like [asdf](https://asdf-vm.com) it manages dev tools like node, python, cmake, terraform, and hundreds more. Like [direnv](https://github.com/direnv/direnv) it manages environment variables in different directories. Like [make](https://www.gnu.org/software/make/manual/make.html) it manages tasks used to build and test projects. You can use it for one of these use-cases or all 3.
+
+- [**Polyglot**](#plugins) - Manage toolchains for any language. Have specific versions for specific projects. No more figuring out how nvm, nodenv, pyenv, etc work individually—just use this 1 tool.
+- [**Fast**](#performance) - rtx is written in Rust and is very fast. 20x-200x faster than asdf which is what it originally set out to replace.
+- [**No shims**](#shims) - most dev tool managers like rtx use shims, but they cause problems, they break `which`, and add overhead. By default, rtx
+  does not use them—however they are available for some use-cases.
 - [**Arbitrary env vars**](#env---arbitrary-environment-variables) - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
 - [**Task runner**](#experimental-task-runner) - Define project-specific tasks like `test` or `lint`. Supports parallel execution and "watch" support to rerun on source changes.
 - [**asdf-compatible**](#how-do-i-migrate-from-asdf) - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
