@@ -50,6 +50,7 @@ mod uninstall;
 mod upgrade;
 mod r#use;
 pub mod version;
+mod watch;
 mod r#where;
 mod r#which;
 
@@ -95,6 +96,7 @@ pub enum Commands {
     Upgrade(upgrade::Upgrade),
     Use(r#use::Use),
     Version(version::Version),
+    Watch(watch::Watch),
     Where(r#where::Where),
     Which(which::Which),
 
@@ -149,6 +151,7 @@ impl Commands {
             Self::Upgrade(cmd) => cmd.run(),
             Self::Use(cmd) => cmd.run(),
             Self::Version(cmd) => cmd.run(),
+            Self::Watch(cmd) => cmd.run(),
             Self::Where(cmd) => cmd.run(),
             Self::Which(cmd) => cmd.run(),
 

@@ -97,7 +97,7 @@ v20.0.0
   - [Task Environment Variables](#task-environment-variables)
   - [Running Tasks](#running-tasks)
   - [Running on file changes](#running-on-file-changes)
-  - [Watching files (coming soon)](#watching-files-coming-soon)
+  - [Watching files](#watching-files)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
   - [Core Plugins](#core-plugins)
@@ -173,7 +173,7 @@ v20.0.0
   - [`rtx plugins update [OPTIONS] [PLUGIN]...`](#rtx-plugins-update-options-plugin)
   - [`rtx prune [OPTIONS] [PLUGIN]...`](#rtx-prune-options-plugin)
   - [`rtx reshim`](#rtx-reshim)
-  - [`rtx run [OPTIONS] <TASK> [ARGS]...`](#rtx-run-options-task-args)
+  - [`rtx run [OPTIONS] [TASK] [ARGS]...`](#rtx-run-options-task-args)
   - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
   - [`rtx settings get <SETTING>`](#rtx-settings-get-setting)
   - [`rtx settings ls`](#rtx-settings-ls)
@@ -182,14 +182,15 @@ v20.0.0
   - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
   - [`rtx sync node <--brew|--nvm|--nodenv>`](#rtx-sync-node---brew--nvm--nodenv)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
-  - [`rtx task edit <TASK>`](#rtx-task-edit-task)
+  - [`rtx task edit [OPTIONS] <TASK>`](#rtx-task-edit-options-task)
   - [`rtx task ls [OPTIONS]`](#rtx-task-ls-options)
-  - [`rtx task run [OPTIONS] <TASK> [ARGS]...`](#rtx-task-run-options-task-args)
+  - [`rtx task run [OPTIONS] [TASK] [ARGS]...`](#rtx-task-run-options-task-args)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall [OPTIONS] [TOOL@VERSION]...`](#rtx-uninstall-options-toolversion)
   - [`rtx upgrade [OPTIONS] [TOOL@VERSION]...`](#rtx-upgrade-options-toolversion)
   - [`rtx use [OPTIONS] [TOOL@VERSION]...`](#rtx-use-options-toolversion)
   - [`rtx version`](#rtx-version)
+  - [`rtx watch [OPTIONS] [ARGS]...`](#rtx-watch-options-args)
   - [`rtx where <TOOL@VERSION>`](#rtx-where-toolversion)
   - [`rtx which [OPTIONS] <BIN_NAME>`](#rtx-which-options-bin_name)
 
@@ -1139,7 +1140,7 @@ it running in parallel with any other task-a RWMutex will get a write lock in th
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
 ```bash
-rtx r build --release
+rtx run build --release
 ```
 
 If there are multiple commands, the args are only passed to the last command.
@@ -1147,7 +1148,13 @@ If there are multiple commands, the args are only passed to the last command.
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
 ```bash
-rtx r build arg1 arg2 ::: test arg3 arg4
+rtx run build arg1 arg2 ::: test arg3 arg4
+```
+
+rtx will run the "default" task if no task is specified.
+
+```bash
+rtx run
 ```
 
 ### Running on file changes
@@ -1165,7 +1172,7 @@ outputs = ['target/debug/mycli']
 
 Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped.
 
-### Watching files (coming soon)
+### Watching files
 
 Run a task when the source changes with `rtx watch`:
 
@@ -1173,11 +1180,17 @@ Run a task when the source changes with `rtx watch`:
 rtx watch -t build
 ```
 
-Define specific files to watch with `--glob`:
+Currently this just shells out to watchexec-which you can install however you want including with rtx: `rtx use -g watchexec@latest`.
+This may change in the future.
+
+Arguments to `rtx watch` will be forwarded onto watchexec. For example, to print diagnostic info:
 
 ```bash
-rtx watch -t build --glob '*.rs'
+rtx watch -t build -- --print-events --verbose
 ```
+
+See watchexec's help with `watchexec --help` or `rtx watch -- --help` to see
+all of the options.
 
 ## Aliases
 
@@ -2752,21 +2765,48 @@ Examples:
   v20.0.0
 ```
 
-### `rtx run [OPTIONS] <TASK> [ARGS]...`
+### `rtx run [OPTIONS] [TASK] [ARGS]...`
 
 **Aliases:** `r`
 
 ```text
 [experimental] Run a task
 
-Usage: run [OPTIONS] <TASK> [ARGS]...
+This command will run a task, or multiple tasks in parallel.
+Tasks may have dependencies on other tasks or on source files.
+If source is configured on a task, it will only run if the source
+files have changed.
+
+Tasks can be defined in .rtx.toml or as standalone scripts.
+In .rtx.toml, tasks take this form:
+
+    [tasks.build]
+    run = "npm run build"
+    sources = ["src/**/*.ts"]
+    outputs = ["dist/**/*.js"]
+
+Alternatively, tasks can be defined as standalone scripts.
+These must be located in the `.rtx/tasks` directory.
+The name of the script will be the name of the task.
+
+    $ cat .rtx/tasks/build<<EOF
+    #!/usr/bin/env bash
+    npm run build
+    EOF
+    $ rtx run build
+
+Usage: run [OPTIONS] [TASK] [ARGS]...
 
 Arguments:
-  <TASK>
-          Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+  [TASK]
+          Task to run
+          Can specify multiple tasks by separating with `:::`
+          e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+
+          [default: default]
 
   [ARGS]...
-          Arguments to pass to the task
+          Arguments to pass to the task. Use ":::" to separate tasks
 
 Options:
   -C, --cd <CD>
@@ -2803,8 +2843,22 @@ Options:
           Configure with `raw` config or `RTX_RAW` env var
 
 Examples:
+  $ rtx run lint
+  Runs the "lint" task. This needs to either be defined in .rtx.toml
+  or as a standalone script. See the project README for more information.
+
+  $ rtx run build --force
+  Forces the "build" task to run even if its sources are up-to-date.
+
+  $ rtx run test --raw
+  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
+  This forces `--jobs=1` to prevent interleaving of output.
+
+  $ rtx run lint ::: test ::: check
+  Runs the "lint", "test", and "check" tasks in parallel.
+
   $ rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-  TODO
+  Execute multiple tasks each with their own arguments.
 ```
 
 ### `rtx self-update [OPTIONS] [VERSION]`
@@ -2991,22 +3045,38 @@ Examples:
   $ rtx use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-### `rtx task edit <TASK>`
+### `rtx task edit [OPTIONS] <TASK>`
 
 ```text
 [experimental] Edit a task with $EDITOR
 
-Usage: task edit <TASK>
+The task will be created as a standalone script if it does not already exist.
+
+Usage: task edit [OPTIONS] <TASK>
 
 Arguments:
   <TASK>
           Task to edit
+
+Options:
+  -p, --path
+          Display the path to the task instead of editing it
+
+Examples:
+  $ rtx task edit build
+  $ rtx task edit test
 ```
 
 ### `rtx task ls [OPTIONS]`
 
 ```text
-[experimental] List config files currently in use
+[experimental] List available tasks to execute
+These may be included from the config file or from the project's .rtx/tasks directory
+rtx will merge all tasks from all parent directories into this list.
+
+So if you have global tasks in ~/.config/rtx/tasks/* and project-specific tasks in
+~/myproject/.rtx/tasks/*, then they'll both be available but the project-specific
+tasks will override the global ones if they have the same name.
 
 Usage: task ls [OPTIONS]
 
@@ -3021,21 +3091,48 @@ Examples:
   $ rtx task ls
 ```
 
-### `rtx task run [OPTIONS] <TASK> [ARGS]...`
+### `rtx task run [OPTIONS] [TASK] [ARGS]...`
 
 **Aliases:** `r`
 
 ```text
 [experimental] Run a task
 
-Usage: task run [OPTIONS] <TASK> [ARGS]...
+This command will run a task, or multiple tasks in parallel.
+Tasks may have dependencies on other tasks or on source files.
+If source is configured on a task, it will only run if the source
+files have changed.
+
+Tasks can be defined in .rtx.toml or as standalone scripts.
+In .rtx.toml, tasks take this form:
+
+    [tasks.build]
+    run = "npm run build"
+    sources = ["src/**/*.ts"]
+    outputs = ["dist/**/*.js"]
+
+Alternatively, tasks can be defined as standalone scripts.
+These must be located in the `.rtx/tasks` directory.
+The name of the script will be the name of the task.
+
+    $ cat .rtx/tasks/build<<EOF
+    #!/usr/bin/env bash
+    npm run build
+    EOF
+    $ rtx run build
+
+Usage: task run [OPTIONS] [TASK] [ARGS]...
 
 Arguments:
-  <TASK>
-          Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+  [TASK]
+          Task to run
+          Can specify multiple tasks by separating with `:::`
+          e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+
+          [default: default]
 
   [ARGS]...
-          Arguments to pass to the task
+          Arguments to pass to the task. Use ":::" to separate tasks
 
 Options:
   -C, --cd <CD>
@@ -3072,8 +3169,22 @@ Options:
           Configure with `raw` config or `RTX_RAW` env var
 
 Examples:
+  $ rtx run lint
+  Runs the "lint" task. This needs to either be defined in .rtx.toml
+  or as a standalone script. See the project README for more information.
+
+  $ rtx run build --force
+  Forces the "build" task to run even if its sources are up-to-date.
+
+  $ rtx run test --raw
+  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
+  This forces `--jobs=1` to prevent interleaving of output.
+
+  $ rtx run lint ::: test ::: check
+  Runs the "lint", "test", and "check" tasks in parallel.
+
   $ rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-  TODO
+  Execute multiple tasks each with their own arguments.
 ```
 
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
@@ -3246,6 +3357,42 @@ Examples:
 Show rtx version
 
 Usage: version
+```
+
+### `rtx watch [OPTIONS] [ARGS]...`
+
+**Aliases:** `w`
+
+```text
+[experimental] Run a task watching for changes
+
+Usage: watch [OPTIONS] [ARGS]...
+
+Arguments:
+  [ARGS]...
+          Extra arguments
+
+Options:
+  -t, --task <TASK>
+          Task to run
+
+          [default: default]
+
+  -g, --glob <GLOB>
+          Files to watch
+          Defaults to sources from the task(s)
+
+Examples:
+  $ rtx watch -t build
+  Runs the "build" task. Will re-run the task when any of its sources change.
+  Uses "sources" from the task definition to determine which files to watch.
+
+  $ rtx watch -t build --glob src/**/*.rs
+  Runs the "build" task but specify the files to watch with a glob pattern.
+  This overrides the "sources" from the task definition.
+
+  $ rtx run -t build --clear
+  Extra arguments are passed to watchexec. See `watchexec --help` for details.
 ```
 
 ### `rtx where <TOOL@VERSION>`

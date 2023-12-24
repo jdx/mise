@@ -9,7 +9,13 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::ui::{style, table};
 
-/// [experimental] List config files currently in use
+/// [experimental] List available tasks to execute
+/// These may be included from the config file or from the project's .rtx/tasks directory
+/// rtx will merge all tasks from all parent directories into this list.
+///
+/// So if you have global tasks in ~/.config/rtx/tasks/* and project-specific tasks in
+/// ~/myproject/.rtx/tasks/*, then they'll both be available but the project-specific
+/// tasks will override the global ones if they have the same name.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskLs {
