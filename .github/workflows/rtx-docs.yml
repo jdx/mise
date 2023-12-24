@@ -1,0 +1,21 @@
+name: rtx-docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: {}
+
+concurrency:
+  group: rtx-docs-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: jdx/rtx-action@v1
+      - run: pnpm install
+      - run: pnpm run docs:build
