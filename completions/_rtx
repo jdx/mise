@@ -53,6 +53,7 @@ _rtx() {
         (up|upgrade) __rtx_upgrade_cmd && ret=0 ;;
         (u|use) __rtx_use_cmd && ret=0 ;;
         (v|version) __rtx_version_cmd && ret=0 ;;
+        (w|watch) __rtx_watch_cmd && ret=0 ;;
         (where) __rtx_where_cmd && ret=0 ;;
         (which) __rtx_which_cmd && ret=0 ;;
       esac
@@ -530,7 +531,7 @@ __rtx_reshim_cmd() {
 (( $+functions[__rtx_run_cmd] )) ||
 __rtx_run_cmd() {
   _arguments -s -S \
-    ':task:__rtx_tasks' \
+    '::task:__rtx_tasks' \
     '*::args:' \
     '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
     '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
@@ -687,6 +688,7 @@ return ret
 __rtx_task_edit_cmd() {
   _arguments -s -S \
     ':task:__rtx_tasks' \
+    '(-p --path)'{-p,--path}'[Display the path to the task instead of editing it]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
@@ -703,7 +705,7 @@ __rtx_task_ls_cmd() {
 (( $+functions[__rtx_task_run_cmd] )) ||
 __rtx_task_run_cmd() {
   _arguments -s -S \
-    ':task:__rtx_tasks' \
+    '::task:__rtx_tasks' \
     '*::args:' \
     '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
     '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
@@ -773,6 +775,16 @@ __rtx_version_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }
+(( $+functions[__rtx_watch_cmd] )) ||
+__rtx_watch_cmd() {
+  _arguments -s -S \
+    '*'{-t,--task}'=[Task to run]:task:__rtx_tasks' \
+    '*::args:' \
+    '*'{-g,--glob}'=[Files to watch]:glob:' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
 (( $+functions[__rtx_where_cmd] )) ||
 __rtx_where_cmd() {
   _arguments -s -S \
@@ -829,6 +841,7 @@ __rtx_cmds() {
     {up,upgrade}':Upgrades outdated tool versions'
     {u,use}':Change the active version of a tool locally or globally.'
     'version:Show rtx version'
+    {w,watch}':\[experimental\] Run a task watching for changes'
     'where:Display the installation path for a runtime'
     'which:Shows the path that a bin name points to'
   )
@@ -900,7 +913,7 @@ __rtx_sync_cmds() {
 __rtx_task_cmds() {
   local commands; commands=(
     'edit:\[experimental\] Edit a task with \$EDITOR'
-    'ls:\[experimental\] List config files currently in use'
+    'ls:\[experimental\] List available tasks to execute'
     {r,run}':\[experimental\] Run a task'
   )
   _describe -t commands 'command' commands "$@"

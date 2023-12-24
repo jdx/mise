@@ -5,12 +5,18 @@ use crate::task::Task;
 use crate::{env, file};
 
 /// [experimental] Edit a task with $EDITOR
+///
+/// The task will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskEdit {
     /// Task to edit
     #[clap()]
     task: String,
+
+    /// Display the path to the task instead of editing it
+    #[clap(long, short, verbatim_doc_comment)]
+    path: bool,
 }
 
 impl TaskEdit {
@@ -37,8 +43,19 @@ impl TaskEdit {
             file::create(file)?;
             file::make_executable(file)?;
         }
-        cmd!(&*env::EDITOR, &file).run()?;
+        if self.path {
+            rtxprintln!("{}", file.display());
+        } else {
+            cmd!(&*env::EDITOR, &file).run()?;
+        }
 
         Ok(())
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx task edit build</bold>
+  $ <bold>rtx task edit test</bold>
+"#
+);

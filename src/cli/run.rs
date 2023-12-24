@@ -31,15 +31,39 @@ use crate::ui::style;
 use crate::{env, file, ui};
 
 /// [experimental] Run a task
+///
+/// This command will run a task, or multiple tasks in parallel.
+/// Tasks may have dependencies on other tasks or on source files.
+/// If source is configured on a task, it will only run if the source
+/// files have changed.
+///
+/// Tasks can be defined in .rtx.toml or as standalone scripts.
+/// In .rtx.toml, tasks take this form:
+///
+///     [tasks.build]
+///     run = "npm run build"
+///     sources = ["src/**/*.ts"]
+///     outputs = ["dist/**/*.js"]
+///
+/// Alternatively, tasks can be defined as standalone scripts.
+/// These must be located in the `.rtx/tasks` directory.
+/// The name of the script will be the name of the task.
+///
+///     $ cat .rtx/tasks/build<<EOF
+///     #!/usr/bin/env bash
+///     npm run build
+///     EOF
+///     $ rtx run build
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Task to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+    #[clap(verbatim_doc_comment, default_value = "default")]
     pub task: String,
 
-    /// Arguments to pass to the task
+    /// Arguments to pass to the task. Use ":::" to separate tasks.
     #[clap()]
     pub args: Vec<String>,
 
@@ -156,9 +180,6 @@ impl Run {
     }
 
     fn run_task(&self, config: &Config, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
-        if self.dry_run {
-            return Ok(());
-        }
         let prefix = style::estyle(task.prefix()).fg(get_color()).to_string();
         if !self.force && self.sources_are_fresh(config, task) {
             info_unprefix_trunc!("{prefix} sources up-to-date, skipping");
@@ -249,6 +270,9 @@ impl Run {
         }
         if let Some(cd) = &self.cd.as_ref().or(task.dir.as_ref()) {
             cmd = cmd.current_dir(cd);
+        }
+        if self.dry_run {
+            return Ok(());
         }
         if let Err(err) = cmd.execute() {
             if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
@@ -370,8 +394,22 @@ impl Run {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+  $ <bold>rtx run lint</bold>
+  Runs the "lint" task. This needs to either be defined in .rtx.toml
+  or as a standalone script. See the project README for more information.
+
+  $ <bold>rtx run build --force</bold>
+  Forces the "build" task to run even if its sources are up-to-date.
+
+  $ <bold>rtx run test --raw</bold>
+  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
+  This forces `--jobs=1` to prevent interleaving of output.
+
+  $ <bold>rtx run lint ::: test ::: check</bold>
+  Runs the "lint", "test", and "check" tasks in parallel.
+
   $ <bold>rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
-  TODO
+  Execute multiple tasks each with their own arguments.
 "#
 );
 
