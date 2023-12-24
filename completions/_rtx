@@ -31,6 +31,7 @@ _rtx() {
         (x|exec) __rtx_exec_cmd && ret=0 ;;
         (g|global) __rtx_global_cmd && ret=0 ;;
         (hook-env) __rtx_hook_env_cmd && ret=0 ;;
+        (hook-not-found) __rtx_hook_not_found_cmd && ret=0 ;;
         (implode) __rtx_implode_cmd && ret=0 ;;
         (i|install) __rtx_install_cmd && ret=0 ;;
         (latest) __rtx_latest_cmd && ret=0 ;;
@@ -337,6 +338,15 @@ __rtx_hook_env_cmd() {
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-q --quiet)'{-q,--quiet}'[Hide warnings such as when a tool is not installed]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+}
+(( $+functions[__rtx_hook_not_found_cmd] )) ||
+__rtx_hook_not_found_cmd() {
+  _arguments -s -S \
+    '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
+    ':bin:' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
 }

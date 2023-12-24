@@ -22,6 +22,7 @@ pub mod exec;
 mod external;
 mod global;
 mod hook_env;
+mod hook_not_found;
 mod implode;
 mod install;
 mod latest;
@@ -74,6 +75,7 @@ pub enum Commands {
     Exec(exec::Exec),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
+    HookNotFound(hook_not_found::HookNotFound),
     Implode(implode::Implode),
     Install(install::Install),
     Latest(latest::Latest),
@@ -129,6 +131,7 @@ impl Commands {
             Self::Exec(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run(),
             Self::HookEnv(cmd) => cmd.run(),
+            Self::HookNotFound(cmd) => cmd.run(),
             Self::Implode(cmd) => cmd.run(),
             Self::Install(cmd) => cmd.run(),
             Self::Latest(cmd) => cmd.run(),

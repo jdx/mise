@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use std::path::Path;
 
 use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
@@ -47,6 +48,22 @@ impl Shell for Bash {
               PROMPT_COMMAND="_rtx_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
             "#});
+        if Settings::get().not_found_auto_install {
+            out.push_str(&formatdoc! {r#"
+            eval 'command_not_found_handle() {{
+            local ret
+              if (( ! IN_CNFH++)) && {exe} hook-not-found -s bash "$1"; then
+                _rtx_hook
+                "$@"
+                ret=$?
+                (( IN_CNFH-- ))
+                return "$ret"
+              fi
+              (( IN_CNFH-- ))
+              '"$(typeset -f command_not_found_handle | tail -n +2)"'
+            }}'
+            "#});
+        }
 
         out
     }

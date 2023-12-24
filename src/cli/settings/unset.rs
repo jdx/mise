@@ -50,6 +50,7 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        not_found_auto_install = true
         plugin_autoupdate_last_check_duration = "20m"
         quiet = false
         raw = false
