@@ -1,6 +1,5 @@
 .e2e.rtx.toml
 .local
-.rtx
 .cache
 .config
 .asdf
@@ -10,3 +9,4 @@ ruby/.ruby-version
 Library
 /pyproject.toml
 /poetry.lock
+/test-e2e/

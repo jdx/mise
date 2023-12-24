@@ -219,6 +219,7 @@ impl Config {
             })
             .collect::<Vec<Either<&Box<dyn ConfigFile>, PathBuf>>>()
             .into_iter()
+            .rev()
             .unique()
             .collect_vec()
             .into_par_iter()

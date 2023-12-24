@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# rtx description="This is a test build script" 
+# rtx depends=["lint", "test"]
+# rtx sources=[".test-tool-versions"]
+# rtx outputs=["$RTX_PROJECT_ROOT/test-e2e/test-build-output.txt"]
+# rtx env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+
+set -euxo pipefail
+cd "$RTX_PROJECT_ROOT" || exit 1
+echo "running test-build script"
+mkdir -p test-e2e
+echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-e2e/test-build-output.txt
+echo "ARGS: $*" >> test-e2e/test-build-output.txt
