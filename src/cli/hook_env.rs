@@ -69,8 +69,8 @@ impl HookEnv {
         rtxprint!("{output}");
         if self.status {
             self.display_status(&config, &ts);
+            ts.notify_if_versions_missing();
         }
-        ts.notify_if_versions_missing();
 
         Ok(())
     }

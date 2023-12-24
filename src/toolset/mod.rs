@@ -345,6 +345,33 @@ impl Toolset {
                 }
             })
     }
+    pub fn install_missing_bin(&mut self, bin_name: &str) -> Result<Option<Vec<ToolVersion>>> {
+        let config = Config::try_get()?;
+        let plugins = self
+            .list_installed_versions(&config)?
+            .into_iter()
+            .filter(|(p, tv)| {
+                if let Ok(x) = p.which(tv, bin_name) {
+                    x.is_some()
+                } else {
+                    false
+                }
+            })
+            .collect_vec();
+        for (plugin, _) in plugins {
+            let versions = self
+                .list_missing_versions()
+                .into_iter()
+                .filter(|tv| tv.plugin_name == plugin.name())
+                .collect_vec();
+            if !versions.is_empty() {
+                let mpr = MultiProgressReport::get();
+                self.install_versions(&config, versions.clone(), &mpr, &InstallOptions::new())?;
+                return Ok(Some(versions));
+            }
+        }
+        Ok(None)
+    }
 
     pub fn list_rtvs_with_bin(&self, config: &Config, bin_name: &str) -> Result<Vec<ToolVersion>> {
         Ok(self

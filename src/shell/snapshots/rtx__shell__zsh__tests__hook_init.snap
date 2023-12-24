@@ -39,3 +39,12 @@ if [[ -z "${chpwd_functions[(r)_rtx_hook]+1}" ]]; then
   chpwd_functions=( _rtx_hook ${chpwd_functions[@]} )
 fi
 
+function command_not_found_handler() {
+    /some/dir/rtx hook-not-found -s zsh "$1"
+    if (( $? == 0 )); then
+      _rtx_hook
+      "$@"
+      return $?
+    fi
+}
+
