@@ -1039,10 +1039,9 @@ This can also be useful in environments where rtx isn't activated
 
 ## [experimental] Task Runner
 
-You can define tasks in `.rtx.toml` files or as standalone files. These are useful for things like
+You can define tasks in `.rtx.toml` files or as standalone shell scripts. These are useful for things like
 running linters, tests, builders, servers, and other tasks that are specific to a project. Of course,
-tasks launched with rtx will include the tool environment (tools and env vars) even if rtx has not been otherwise
-activated.
+tasks launched with rtx will include the rtx environment—your tools and env vars defined in `.rtx.toml`.
 
 Here's my favorite features about rtx's task runner:
 
@@ -1057,7 +1056,7 @@ Here's my favorite features about rtx's task runner:
 > may not be implemented, may be implemented incorrectly, or the docs may need to be updated.
 > Please give feedback early since while it's experimental it's much easier to change.
 
-### Script-based Tasks
+### Script Tasks
 
 Tasks can be defined in 2 ways, either as standalone script files in `.rtx/tasks/:task_name` such as the following build script
 for cargo:
@@ -1088,7 +1087,7 @@ These are convenient for quickly making new scripts. Having the code in a bash f
 better in editors since they can do syntax highlighting and linting more easily. They also still work great for non-rtx users—though
 of course they'll need to find a different way to install their dev tools the tasks might use.
 
-### Config-based Tasks
+### TOML-based Tasks
 
 Tasks can also be defined in `.rtx.toml` files in different ways. This is a more "traditional" method of defining tasks:
 
