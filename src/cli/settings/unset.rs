@@ -54,6 +54,7 @@ mod tests {
         quiet = false
         raw = false
         shorthands_file = null
+        task_output = null
         trusted_config_paths = []
         verbose = true
         yes = true

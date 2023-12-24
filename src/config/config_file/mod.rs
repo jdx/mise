@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
@@ -15,11 +16,13 @@ use crate::file::{display_path, replace_path};
 use crate::hash::hash_to_str;
 
 use crate::plugins::PluginName;
+use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
 use crate::{dirs, env, file};
 
 pub mod legacy_version;
 pub mod rtx_toml;
+pub mod toml;
 pub mod tool_versions;
 
 #[derive(Debug, PartialEq)]
@@ -32,6 +35,25 @@ pub enum ConfigFileType {
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
+    /// gets the project directory for the config
+    /// if it's a global/system config, returns None
+    /// files like ~/src/foo/.rtx/config.toml will return ~/src/foo
+    /// and ~/src/foo/.rtx.config.toml will return None
+    fn project_root(&self) -> Option<&Path> {
+        let p = self.get_path();
+        if env::RTX_CONFIG_FILE.as_ref().is_some_and(|f| f == p) {
+            return None;
+        }
+        match p.parent() {
+            Some(dir) => match dir {
+                dir if dir.starts_with(*dirs::CONFIG) => None,
+                dir if dir.starts_with(*dirs::SYSTEM) => None,
+                dir if dir == *dirs::HOME => None,
+                dir => Some(dir),
+            },
+            None => None,
+        }
+    }
     fn plugins(&self) -> HashMap<PluginName, String> {
         Default::default()
     }
@@ -41,7 +63,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn env_remove(&self) -> Vec<String> {
         Default::default()
     }
-    fn path_dirs(&self) -> Vec<PathBuf> {
+    fn env_path(&self) -> Vec<PathBuf> {
+        Default::default()
+    }
+    fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
     fn remove_plugin(&mut self, _plugin_name: &PluginName);
@@ -219,6 +244,18 @@ impl Display for dyn ConfigFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let toolset = self.to_toolset().to_string();
         write!(f, "{}: {toolset}", &display_path(self.get_path()))
+    }
+}
+
+impl PartialEq for dyn ConfigFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_path() == other.get_path()
+    }
+}
+impl Eq for dyn ConfigFile {}
+impl Hash for dyn ConfigFile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.get_path().hash(state);
     }
 }
 

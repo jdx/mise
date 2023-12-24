@@ -27,5 +27,6 @@ expression: cf.settings().unwrap()
   ],
   "raw": null,
   "yes": null,
+  "task_output": null,
   "ci": null
 }

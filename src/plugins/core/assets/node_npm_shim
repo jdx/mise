@@ -16,7 +16,7 @@ should_reshim() {
     return 1
   fi
 
-  local is_global= cmd= cmd_needs_reshim=
+  local is_global='' cmd='' cmd_needs_reshim=''
   local additional_bare_cmds=()
 
   for arg; do
