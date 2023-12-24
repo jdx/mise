@@ -492,7 +492,7 @@ echo 'eval "$(rtx activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Note:**
+> [!TIP]
 >
 > For homebrew and possibly other installs rtx is automatically activated so
 > this is not necessary.
@@ -1076,7 +1076,7 @@ for cargo:
 cargo build
 ```
 
-> **Note:**
+> [!IMPORTANT]
 >
 > The `rtx:description` comment is optional but recommended. It will be used in the output of `rtx tasks`.
 > The other configuration for "script" tasks is supported in this format so you can specify things like the
@@ -1152,6 +1152,21 @@ To just print stdout/stderr directly, use `--interleave`, the `task_output` sett
 
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
 it running in parallel with any other task-a RWMutex will get a write lock in this case.
+
+There is partial support for wildcards, for example, this makes a "lint" task that runs everything that begins with "lint:".
+
+```
+[tasks."lint:eslint"] # using a ":" means we need to add quotes
+run = "eslint ."
+[tasks."lint:prettier"]
+run = "prettier --check ."
+[tasks.lint]
+depends = ["lint:*"]
+```
+
+> [!NOTE]
+> As of this writing these wildcards only function at the right side and only work for dependencies.
+> It should be possible to also run `rtx run lint:*` but that is not yet implemented.
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
