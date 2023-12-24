@@ -39,10 +39,7 @@ lto = true
 
 [dependencies]
 base64 = "<0.22"
-chrono = { version = "0.4", default-features = false, features = [
-    "std",
-    "clock",
-] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.4", features = ["env", "derive", "string"] }
 clap_complete = { version = "4", optional = true }
 clap_mangen = { version = "0.2", optional = true }
@@ -55,10 +52,12 @@ demand = "0.3"
 dirs-next = "2.0"
 dotenvy = "0.15"
 duct = "0.13"
+either = "1.9.0"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1.0"
 fslock = "0.2"
+globwalk = "0.9.0"
 humantime = "2.1"
 indenter = "0.3"
 indexmap = { version = "2.0", features = ["serde"] }
@@ -73,12 +72,9 @@ path-absolutize = "3.1"
 rand = "0.8"
 rayon = "1.8"
 regex = "1.9"
-reqwest = { version = "0.11.17", default-features = false, features = [
-    "blocking",
-    "json",
-    "gzip",
-] }
+reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
+petgraph = "0.6.4"
 self_update = { version = "<1", default-features = false, features = [
     "archive-tar",
     "compression-flate2",
@@ -91,6 +87,7 @@ sha2 = "0.10"
 shell-escape = "0.1"
 shell-words = "1.1"
 simplelog = { version = "0.12" }
+strum = { version = "0.25.0", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.15", features = ["ansi"] }
 tar = "0.4"
@@ -146,7 +143,4 @@ pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-arm64{ a
 pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-x64{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = [
-    "built",
-    "openssl",
-]
+ignored = ["built", "openssl"]

@@ -70,7 +70,8 @@ test-coverage:
         rtx implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         echo "::group::Self update"
-        rtx self-update -fy
+        # TODO: remove this once the task runnner is shipped
+        rtx self-update -fy || true
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info

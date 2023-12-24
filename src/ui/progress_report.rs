@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::ui;
-use console::style;
+use crate::ui::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 use std::time::Duration;
@@ -18,10 +18,7 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 });
 
 static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let tmpl = format!(
-        "{{prefix}} {} {{wide_msg}}",
-        style("✓").bright().green().for_stderr()
-    );
+    let tmpl = format!("{{prefix}} {} {{wide_msg}}", style::egreen("✓").bright());
     ProgressStyle::with_template(tmpl.as_str()).unwrap()
 });
 
@@ -47,11 +44,11 @@ fn pad_prefix(w: usize, s: &str) -> String {
     console::pad_str(s, w, console::Alignment::Left, None).to_string()
 }
 fn normal_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style("rtx").dim().for_stderr());
+    let prefix = format!("{} {prefix}", style::edim("rtx"));
     pad_prefix(pad, &prefix)
 }
 fn success_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style("rtx").green().for_stderr());
+    let prefix = format!("{} {prefix}", style::egreen("rtx"));
     pad_prefix(pad, &prefix)
 }
 
@@ -124,11 +121,11 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn finish(&self) {
-        self.finish_with_message(style("done").green().for_stderr().to_string());
+        self.finish_with_message(style::egreen("done").to_string());
     }
     fn finish_with_message(&self, message: String) {
         let prefix = success_prefix(self.pad - 2, &self.prefix);
-        let ico = style("✓").bright().green().for_stderr();
+        let ico = style::egreen("✓").bright();
         eprintln!("{prefix} {ico} {message}");
     }
 }

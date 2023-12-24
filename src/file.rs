@@ -80,11 +80,22 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .wrap_err_with(|| format!("failed read_to_string: {}", display_path(path)))
 }
 
+pub fn create(path: &Path) -> Result<File> {
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    trace!("touch {}", display_path(path));
+    File::create(path).wrap_err_with(|| format!("failed create: {}", display_path(path)))
+}
+
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    trace!("mkdir -p {}", display_path(path));
-    fs::create_dir_all(path)
-        .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))
+    if !path.exists() {
+        trace!("mkdir -p {}", display_path(path));
+        fs::create_dir_all(path)
+            .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))?;
+    }
+    Ok(())
 }
 
 pub fn basename(path: &Path) -> Option<String> {
@@ -156,7 +167,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
     Ok(output)
 }
 
-pub fn dir_files(dir: &Path) -> Result<Vec<String>> {
+pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut output = vec![];
 
     if !dir.is_dir() {
@@ -166,7 +177,7 @@ pub fn dir_files(dir: &Path) -> Result<Vec<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         if entry.file_type()?.is_file() {
-            output.push(entry.file_name().into_string().unwrap());
+            output.push(entry.path());
         }
     }
 

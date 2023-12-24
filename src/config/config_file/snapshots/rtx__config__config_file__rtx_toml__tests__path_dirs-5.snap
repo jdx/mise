@@ -21,6 +21,7 @@ RtxToml(~/fixtures/.rtx.toml):  {
         "quiet": Null,
         "raw": Null,
         "shorthands_file": Null,
+        "task_output": Null,
         "trace": Null,
         "trusted_config_paths": Null,
         "verbose": Null,

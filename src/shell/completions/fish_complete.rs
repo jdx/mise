@@ -38,10 +38,7 @@ function __rtx_tool_versions
     end
 end
 function __rtx_installed_tool_versions
-    if test -z "$__rtx_installed_tool_versions_cache"
-        set -g __rtx_installed_tool_versions_cache (rtx ls --installed | awk '{{print $1 "@" $2}}')
-    end
-    for tv in $__rtx_installed_tool_versions_cache
+    for tv in (rtx ls --installed | awk '{{print $1 "@" $2}}')
         echo $tv
     end
 end
@@ -51,6 +48,11 @@ function __rtx_aliases
     end
     for a in $__rtx_aliases_cache
         echo $a
+    end
+end
+function __rtx_tasks
+    for tv in (rtx task ls --no-header | awk '{{print $1}}')
+        echo $tv
     end
 end
 function __rtx_settings
@@ -121,6 +123,7 @@ fn render_completer(a: &Arg) -> Option<String> {
             "new_plugin" => Some("(__rtx_all_plugins)".to_string()),
             "alias" => Some("(__rtx_aliases)".to_string()),
             "setting" => Some("(__rtx_settings)".to_string()),
+            "task" => Some("(__rtx_tasks)".to_string()),
             //"prefix" => Some("(__rtx_prefixes)".to_string()),
             _ => None,
         },

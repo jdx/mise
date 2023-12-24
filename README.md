@@ -22,6 +22,7 @@
 - **Fuzzy matching and aliases** - It's enough to just say you want "v20" of node, or the "lts"
   version. rtx will figure out the right version without you needing to specify an exact version.
 - **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
+- **Task runner** - Define project-specific tasks like `test` or `lint`. Supports parallel execution and file watching.
 
 ## 30 Second Demo
 
@@ -81,7 +82,6 @@ v20.0.0
   - [Register shell hook](#register-shell-hook)
   - [Migrate from asdf](#migrate-from-asdf)
 - [Uninstalling](#uninstalling)
-- [Shebang](#shebang)
 - [Configuration](#configuration)
   - [`.rtx.toml`](#rtxtoml)
   - [Legacy version files](#legacy-version-files)
@@ -90,8 +90,17 @@ v20.0.0
   - [Global config: `~/.config/rtx/config.toml`](#global-config-configrtxconfigtoml)
   - [System config: `/etc/rtx/config.toml`](#system-config-etcrtxconfigtoml)
   - [Environment variables](#environment-variables)
+- [Shebang](#shebang)
+- [&#91;experimental&#93; Task Runner](#experimental-task-runner)
+  - [Script-based Tasks](#script-based-tasks)
+  - [Config-based Tasks](#config-based-tasks)
+  - [Task Environment Variables](#task-environment-variables)
+  - [Running Tasks](#running-tasks)
+  - [Running on file changes](#running-on-file-changes)
+  - [Watching files (coming soon)](#watching-files-coming-soon)
 - [Aliases](#aliases)
 - [Plugins](#plugins)
+  - [Core Plugins](#core-plugins)
   - [Plugin Authors](#plugin-authors)
   - [Plugin Options](#plugin-options)
 - [Versioning](#versioning)
@@ -102,7 +111,6 @@ v20.0.0
 - [Templates](#templates)
 - [Config Environments](#config-environments)
 - [IDE Integration](#ide-integration)
-- [Core Plugins](#core-plugins)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [What is the difference between "nodejs" and "node" (or "golang" and "go")?](#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
@@ -164,6 +172,7 @@ v20.0.0
   - [`rtx plugins update [OPTIONS] [PLUGIN]...`](#rtx-plugins-update-options-plugin)
   - [`rtx prune [OPTIONS] [PLUGIN]...`](#rtx-prune-options-plugin)
   - [`rtx reshim`](#rtx-reshim)
+  - [`rtx run [OPTIONS] <TASK> [ARGS]...`](#rtx-run-options-task-args)
   - [`rtx self-update [OPTIONS] [VERSION]`](#rtx-self-update-options-version)
   - [`rtx settings get <SETTING>`](#rtx-settings-get-setting)
   - [`rtx settings ls`](#rtx-settings-ls)
@@ -172,6 +181,9 @@ v20.0.0
   - [`rtx shell [OPTIONS] [TOOL@VERSION]...`](#rtx-shell-options-toolversion)
   - [`rtx sync node <--brew|--nvm|--nodenv>`](#rtx-sync-node---brew--nvm--nodenv)
   - [`rtx sync python --pyenv`](#rtx-sync-python---pyenv)
+  - [`rtx task edit <TASK>`](#rtx-task-edit-task)
+  - [`rtx task ls [OPTIONS]`](#rtx-task-ls-options)
+  - [`rtx task run [OPTIONS] <TASK> [ARGS]...`](#rtx-task-run-options-task-args)
   - [`rtx trust [OPTIONS] [CONFIG_FILE]`](#rtx-trust-options-config_file)
   - [`rtx uninstall [OPTIONS] [TOOL@VERSION]...`](#rtx-uninstall-options-toolversion)
   - [`rtx upgrade [OPTIONS] [TOOL@VERSION]...`](#rtx-upgrade-options-toolversion)
@@ -539,20 +551,6 @@ Alternatively, manually remove the following directories to fully clean up:
 - on Linux: `~/.cache/rtx` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/rtx`)
 - on macOS: `~/Library/Caches/rtx` (can also be `RTX_CACHE_DIR`)
 
-## Shebang
-
-You can specify a tool and its version in a shebang without needing to first
-setup `.tool-versions`/`.rtx.toml` config:
-
-```typescript
-#!/usr/bin/env -S rtx x node@20 -- node
-// "env -S" allows multiple arguments in a shebang
-console.log(`Running node: ${process.version}`);
-```
-
-This can also be useful in environments where rtx isn't activated
-(such as a non-interactive session).
-
 ## Configuration
 
 ### `.rtx.toml`
@@ -563,6 +561,17 @@ that has lot more flexibility. It supports functionality that is not possible wi
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
+
+They can use any of the following project locations (in order of precedence, top is highest):
+
+- `.rtx.toml`
+- `.rtx/config.toml`
+- `.config/rtx.toml`
+- `.config/rtx/rtx.toml`
+
+They can also be named `.rtx.local.toml` and environment-specific files like `.rtx.production.toml`.
+Can also be opted-in. See [Config Environments](#config-environments) for more details.
+Run `rtx config` to see the order of precedence on your system.
 
 Here is what an `.rtx.toml` looks like:
 
@@ -785,6 +794,8 @@ jobs = 4            # number of plugins or runtimes to install in parallel. The 
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 yes = false         # set to true to automatically answer yes to all prompts
 
+task_output = "prefix" # see Task Runner for more information
+
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
@@ -981,6 +992,13 @@ all.
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
 
+#### `RTX_TASK_OUTPUT=prefix`
+
+This controls the output of `rtx run`. It can be one of:
+
+- `prefix` - (default if jobs > 1) print by line with the prefix of the task name
+- `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
+
 #### `RTX_EXPERIMENTAL=1`
 
 Enables experimental features.
@@ -989,7 +1007,7 @@ Enables experimental features.
 
 Default: false unless running NixOS or Alpine (let me know if others should be added)
 
-Do not use precompiled binaries for all languages. Useful if running on a Linux distrobution
+Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
 like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
 
 Note that this needs to be setup for each language. File a ticket if you notice a language that is not
@@ -1002,6 +1020,163 @@ This file is automatically used in homebrew and potentially other installs to
 automatically activate rtx without configuring.
 
 Defaults to enabled, set to "0" to disable.
+
+## Shebang
+
+You can specify a tool and its version in a shebang without needing to first
+setup `.tool-versions`/`.rtx.toml` config:
+
+```typescript
+#!/usr/bin/env -S rtx x node@20 -- node
+// "env -S" allows multiple arguments in a shebang
+console.log(`Running node: ${process.version}`);
+```
+
+This can also be useful in environments where rtx isn't activated
+(such as a non-interactive session).
+
+## [experimental] Task Runner
+
+You can define tasks in `.rtx.toml` files or as standalone files. These are useful for things like
+running linters, tests, builders, servers, and other tasks that are specific to a project. Of course,
+tasks launched with rtx will include the tool environment (tools and env vars) even if rtx has not been otherwise
+activated.
+
+> **Warning**
+>
+> This is an experimental feature. It is not yet stable and will likely change. Some of the docs
+> may not be implemented, may be implemented incorrectly, or the docs may need to be updated.
+> Please give feedback early since while it's experimental it's much easier to change.
+
+### Script-based Tasks
+
+Tasks can be defined in 2 ways, either as standalone script files in `.rtx/tasks` such as the following build script
+for cargo:
+
+```bash
+#!/usr/bin/env bash
+# rtx:description "Build the CLI"
+cargo build
+```
+
+> **Note:**
+>
+> The `rtx:description` comment is optional but recommended. It will be used in the output of `rtx tasks`.
+> The other configuration for "script" tasks is supported in this format so you can specify things like the
+> following-note that this is parsed a TOML table:
+>
+> ```bash
+> # rtx alias="b"
+> # rtx sources=["Cargo.toml", "src/**/*.rs"]
+> # rtx outputs=["target/debug/mycli"]
+> # rtx env={RUST_BACKTRACE = "1"}
+> # rtx depends=["lint", "test"]
+> ```
+
+Assuming that file was located in `.rtx/tasks/build`, it could be run with `rtx run build`.
+This script can also be edited with $EDITOR by running `rtx task edit build`, if it doesn't exist it will be created.
+These are convenient for quickly making new scripts. Having the code in a bash file and not TOML helps make it work
+better in editors since they can do syntax highlighting and linting more easily.
+
+### Config-based Tasks
+
+Tasks can also be defined in `.rtx.toml` files in different ways:
+
+```toml
+task.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
+
+[task.build]
+description = 'Build the CLI'
+run = "cargo build"
+alias = 'b' # `rtx run b`
+
+[task.test]
+description = 'Run automated tests'
+run = [ # multiple commands are run in series
+    'cargo test',
+    './scripts/test-e2e.sh',
+]
+dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
+
+[task.lint]
+description = 'Lint with clippy'
+env = {RUST_BACKTRACE = '1'} # env vars for the script
+# you can specify a multiline script instead of individual commands
+run = """
+#!/usr/bin/env bash
+cargo clippy
+"""
+
+[task.ci] # only dependencies to be run
+description = 'Run CI tasks'
+depends = ['build', 'lint', 'test']
+
+[task.release]
+description = 'Cut a new release'
+file = 'scripts/release.sh' # execute an external script
+```
+
+### Task Environment Variables
+
+- `RTX_PROJECT_ROOT` - the root of the project, defaults to the directory of the `.rtx.toml` file
+
+### Running Tasks
+
+See available tasks with `rtx tasks`. Run a task with `rtx task run`, `rtx run`, or just `rtx r`.
+You might even want to make a shell alias like `alias r='rtx r'` since this is likely a common command.
+
+By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
+`jobs` setting or `RTX_JOBS` environment variable. The output normally will be by line, prefixed with the task
+label. By printing line-by-line we avoid interleaving output from parallel executions. However, if
+--jobs == 1, the output will be set to `interleave`.
+
+To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `RTX_TASK_OUTPUT=interleave`.
+
+Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
+it running in parallel with any other task-a RWMutex will get a write lock in this case.
+
+Extra arguments will be passed to the task, for example, if we want to run in release mode:
+
+```bash
+rtx r build --release
+```
+
+If there are multiple commands, the args are only passed to the last command.
+
+Multiple tasks/arguments can be separated with this `:::` delimiter:
+
+```bash
+rtx r build arg1 arg2 ::: test arg3 arg4
+```
+
+### Running on file changes
+
+It's often handy to only execute a task if the files it uses changes. For example, we might only want
+to run `cargo build` if a ".rs" file changes. This can be done with the following task config:
+
+```toml
+[task.build]
+description = 'Build the CLI'
+run = "cargo build"
+sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't changed
+outputs = ['target/debug/mycli']
+```
+
+Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped.
+
+### Watching files (coming soon)
+
+Run a task when the source changes with `rtx watch`:
+
+```bash
+rtx watch -t build
+```
+
+Define specific files to watch with `--glob`:
+
+```bash
+rtx watch -t build --glob '*.rs'
+```
 
 ## Aliases
 
@@ -1040,6 +1215,21 @@ rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scr
 See <https://github.com/asdf-vm/asdf-plugins> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
+
+### Core Plugins
+
+rtx comes with some plugins built into the CLI written in Rust. These are new and will improve over
+time. They can be easily overridden by installing a plugin with the same name, e.g.: `rtx plugin install python https://github.com/asdf-community/asdf-python`.
+
+You can see the core plugins with `rtx plugin ls --core`.
+
+- [Python](./docs/python.md)
+- [NodeJS](./docs/node.md)
+- [Ruby](./docs/ruby.md)
+- [Go](./docs/go.md)
+- [Java](./docs/java.md)
+- [Deno](./docs/deno.md)
+- [Bun](./docs/bun.md)
 
 ### Plugin Authors
 
@@ -1189,9 +1379,17 @@ the current directory. These are intended to not be committed to version control
 
 The priority of these files goes in this order (bottom overrides top):
 
+- `.config/rtx/config.toml`
+- `.rtx/config.toml`
 - `.rtx.toml`
+- `.config/rtx/config.local.toml`
+- `.rtx/config.local.toml`
 - `.rtx.local.toml`
+- `.config/rtx/config.{RTX_ENV}.toml`
+- `.rtx/config.{RTX_ENV}.toml`
 - `.rtx.{RTX_ENV}.toml`
+- `.config/rtx/config.{RTX_ENV}.local.toml`
+- `.rtx/config.{RTX_ENV}.local.toml`
 - `.rtx.{RTX_ENV}.local.toml`
 
 Use `rtx doctor` to see which files are being used.
@@ -1219,21 +1417,6 @@ Direnv and rtx work similarly and there should be a direnv extension that can be
 
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_rtx`](#direnv) direnv function.
-
-## Core Plugins
-
-rtx comes with some plugins built into the CLI written in Rust. These are new and will improve over
-time. They can be easily overridden by installing a plugin with the same name, e.g.: `rtx plugin install python https://github.com/asdf-community/asdf-python`.
-
-You can see the core plugins with `rtx plugin ls --core`.
-
-- [Python](./docs/python.md)
-- [NodeJS](./docs/node.md)
-- [Ruby](./docs/ruby.md)
-- [Go](./docs/go.md)
-- [Java](./docs/java.md)
-- [Deno](./docs/deno.md)
-- [Bun](./docs/bun.md)
 
 ## FAQs
 
@@ -2558,6 +2741,61 @@ Examples:
   v20.0.0
 ```
 
+### `rtx run [OPTIONS] <TASK> [ARGS]...`
+
+**Aliases:** `r`
+
+```text
+[experimental] Run a task
+
+Usage: run [OPTIONS] <TASK> [ARGS]...
+
+Arguments:
+  <TASK>
+          Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+
+  [ARGS]...
+          Arguments to pass to the task
+
+Options:
+  -C, --cd <CD>
+          Change to this directory before executing the command
+
+  -n, --dry-run
+          Don't actually run the task(s), just print them in order of execution
+
+  -f, --force
+          Force the task to run even if outputs are up to date
+
+  -p, --prefix
+          Print stdout/stderr by line, prefixed with the task's label
+          Defaults to true if --jobs > 1
+          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+
+  -i, --interleave
+          Print directly to stdout/stderr instead of by line
+          Defaults to true if --jobs == 1
+          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+
+  -t, --tool <TOOL@VERSION>
+          Tool(s) to also add e.g.: node@20 python@3.10
+
+  -j, --jobs <JOBS>
+          Number of tasks to run in parallel
+          [default: 4]
+          Configure with `jobs` config or `RTX_JOBS` env var
+
+          [env: RTX_JOBS=]
+
+  -r, --raw
+          Read/write directly to stdin/stdout/stderr instead of by line
+          Configure with `raw` config or `RTX_RAW` env var
+
+Examples:
+  $ rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+  TODO
+```
+
 ### `rtx self-update [OPTIONS] [VERSION]`
 
 ```text
@@ -2740,6 +2978,91 @@ Examples:
   $ pyenv install 3.11.0
   $ rtx sync python --pyenv
   $ rtx use -g python@3.11.0 - uses pyenv-provided python
+```
+
+### `rtx task edit <TASK>`
+
+```text
+[experimental] Edit a task with $EDITOR
+
+Usage: task edit <TASK>
+
+Arguments:
+  <TASK>
+          Task to edit
+```
+
+### `rtx task ls [OPTIONS]`
+
+```text
+[experimental] List config files currently in use
+
+Usage: task ls [OPTIONS]
+
+Options:
+      --no-header
+          Do not print table header
+
+      --hidden
+          Show hidden tasks
+
+Examples:
+  $ rtx task ls
+```
+
+### `rtx task run [OPTIONS] <TASK> [ARGS]...`
+
+**Aliases:** `r`
+
+```text
+[experimental] Run a task
+
+Usage: task run [OPTIONS] <TASK> [ARGS]...
+
+Arguments:
+  <TASK>
+          Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+
+  [ARGS]...
+          Arguments to pass to the task
+
+Options:
+  -C, --cd <CD>
+          Change to this directory before executing the command
+
+  -n, --dry-run
+          Don't actually run the task(s), just print them in order of execution
+
+  -f, --force
+          Force the task to run even if outputs are up to date
+
+  -p, --prefix
+          Print stdout/stderr by line, prefixed with the task's label
+          Defaults to true if --jobs > 1
+          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+
+  -i, --interleave
+          Print directly to stdout/stderr instead of by line
+          Defaults to true if --jobs == 1
+          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+
+  -t, --tool <TOOL@VERSION>
+          Tool(s) to also add e.g.: node@20 python@3.10
+
+  -j, --jobs <JOBS>
+          Number of tasks to run in parallel
+          [default: 4]
+          Configure with `jobs` config or `RTX_JOBS` env var
+
+          [env: RTX_JOBS=]
+
+  -r, --raw
+          Read/write directly to stdin/stdout/stderr instead of by line
+          Configure with `raw` config or `RTX_RAW` env var
+
+Examples:
+  $ rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+  TODO
 ```
 
 ### `rtx trust [OPTIONS] [CONFIG_FILE]`
