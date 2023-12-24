@@ -14,15 +14,15 @@
 
 ## Features
 
-- **asdf-compatible** - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement. [See below for migration instructions](#how-do-i-migrate-from-asdf)
 - **Polyglot** - compatible with any language, so no more figuring out how nvm, nodenv, pyenv, etc work individually—just use 1 tool.
 - **Fast** - rtx is written in Rust and is very fast. 20x-200x faster than asdf.
 - **No shims** - shims cause problems, they break `which`, and add overhead. By default, rtx
   does not use them—however you can if you want to.
-- **Fuzzy matching and aliases** - It's enough to just say you want "v20" of node, or the "lts"
+- [**Arbitrary env vars**](#env---arbitrary-environment-variables) - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
+- [**Task runner**](#experimental-task-runner) - Define project-specific tasks like `test` or `lint`. Supports parallel execution and file watching.
+- [**asdf-compatible**](#how-do-i-migrate-from-asdf) - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
+- [**Fuzzy matching and aliases**](#plugins) - It's enough to just say you want "v20" of node, or the "lts"
   version. rtx will figure out the right version without you needing to specify an exact version.
-- **Arbitrary env vars** - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
-- **Task runner** - Define project-specific tasks like `test` or `lint`. Supports parallel execution and file watching.
 
 ## 30 Second Demo
 
