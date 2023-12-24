@@ -1097,14 +1097,14 @@ of course they'll need to find a different way to install their dev tools the ta
 Tasks can also be defined in `.rtx.toml` files in different ways. This is a more "traditional" method of defining tasks:
 
 ```toml
-task.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
+tasks.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
 
-[task.build]
+[tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
 alias = 'b' # `rtx run b`
 
-[task.test]
+[tasks.test]
 description = 'Run automated tests'
 run = [ # multiple commands are run in series
     'cargo test',
@@ -1112,7 +1112,7 @@ run = [ # multiple commands are run in series
 ]
 dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
 
-[task.lint]
+[tasks.lint]
 description = 'Lint with clippy'
 env = {RUST_BACKTRACE = '1'} # env vars for the script
 # you can specify a multiline script instead of individual commands
@@ -1125,7 +1125,7 @@ cargo clippy
 description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
-[task.release]
+[tasks.release]
 description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
@@ -1175,7 +1175,7 @@ It's often handy to only execute a task if the files it uses changes. For exampl
 to run `cargo build` if an ".rs" file changes. This can be done with the following config:
 
 ```toml
-[task.build]
+[tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
 sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't changed
