@@ -1139,7 +1139,7 @@ it running in parallel with any other task-a RWMutex will get a write lock in th
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
 ```bash
-rtx r build --release
+rtx run build --release
 ```
 
 If there are multiple commands, the args are only passed to the last command.
@@ -1147,7 +1147,13 @@ If there are multiple commands, the args are only passed to the last command.
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
 ```bash
-rtx r build arg1 arg2 ::: test arg3 arg4
+rtx run build arg1 arg2 ::: test arg3 arg4
+```
+
+rtx will run the "default" task if no task is specified.
+
+```bash
+rtx run
 ```
 
 ### Running on file changes
@@ -1165,7 +1171,7 @@ outputs = ['target/debug/mycli']
 
 Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped.
 
-### Watching files (coming soon)
+### Watching files
 
 Run a task when the source changes with `rtx watch`:
 
@@ -1173,11 +1179,17 @@ Run a task when the source changes with `rtx watch`:
 rtx watch -t build
 ```
 
-Define specific files to watch with `--glob`:
+Currently this just shells out to watchexec-which you can install however you want including with rtx: `rtx use -g watchexec@latest`.
+This may change in the future.
+
+Arguments to `rtx watch` will be forwarded onto watchexec. For example, to print diagnostic info:
 
 ```bash
-rtx watch -t build --glob '*.rs'
+rtx watch -t build -- --print-events --verbose
 ```
+
+See watchexec's help with `watchexec --help` or `rtx watch -- --help` to see
+all of the options.
 
 ## Aliases
 
