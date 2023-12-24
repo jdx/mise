@@ -34,4 +34,16 @@ _rtx_hook() {
 if [[ ";${PROMPT_COMMAND:-};" != *";_rtx_hook;"* ]]; then
   PROMPT_COMMAND="_rtx_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
+eval 'command_not_found_handle() {
+local ret
+  if (( ! IN_CNFH++)) && /nix/store/rtx hook-not-found -s bash "$1"; then
+    _rtx_hook
+    "$@"
+    ret=$?
+    (( IN_CNFH-- ))
+    return "$ret"
+  fi
+  (( IN_CNFH-- ))
+  '"$(typeset -f command_not_found_handle | tail -n +2)"'
+}'
 

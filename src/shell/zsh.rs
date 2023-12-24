@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use std::path::Path;
 
 use crate::shell::bash::Bash;
@@ -53,7 +54,25 @@ impl Shell for Zsh {
             if [[ -z "${{chpwd_functions[(r)_rtx_hook]+1}}" ]]; then
               chpwd_functions=( _rtx_hook ${{chpwd_functions[@]}} )
             fi
+
             "#});
+        if Settings::get().not_found_auto_install {
+            out.push_str(&formatdoc! {r#"
+            functions[command_not_found_handler]='
+              {{
+                if (( ! IN_CNFH++)) && {exe} hook-not-found -s zsh "$1"; then
+                  _rtx_hook
+                  "$@"
+                else
+                  print -ru2 -- "$functrace[1]: command not found: $1"
+                  return 127
+                fi
+              }} always {{
+                (( IN_CNFH-- ))
+              }}
+              '$functions[command_not_found_handler]
+            "#});
+        }
 
         out
     }

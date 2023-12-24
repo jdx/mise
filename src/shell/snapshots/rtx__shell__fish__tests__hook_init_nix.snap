@@ -57,4 +57,11 @@ function __rtx_env_eval_2 --on-event fish_preexec --description 'Update rtx envi
 
     functions --erase __rtx_cd_hook;
 end;
+function fish_command_not_found
+    if /nix/store/rtx hook-not-found -s fish $argv[1]
+        /nix/store/rtx hook-env --status -s fish | source
+    else
+        __fish_default_command_not_found_handler $argv
+    end
+end
 

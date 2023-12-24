@@ -21,6 +21,7 @@ RtxToml(~/fixtures/.rtx.toml): terraform@1.0.0, node@18 node@prefix:20 node@ref:
             String("disabled_tool_from_legacy_file"),
         ],
         "log_level": Null,
+        "not_found_auto_install": Null,
         "plugin_autoupdate_last_check_duration": Null,
         "quiet": Null,
         "raw": Null,
