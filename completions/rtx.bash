@@ -72,6 +72,9 @@ _rtx() {
             rtx,hook-env)
                 cmd="rtx__hook__env"
                 ;;
+            rtx,hook-not-found)
+                cmd="rtx__hook__not__found"
+                ;;
             rtx,i)
                 cmd="rtx__install"
                 ;;
@@ -356,6 +359,9 @@ _rtx() {
                 ;;
             rtx__help,hook-env)
                 cmd="rtx__help__hook__env"
+                ;;
+            rtx__help,hook-not-found)
+                cmd="rtx__help__hook__not__found"
                 ;;
             rtx__help,implode)
                 cmd="rtx__help__implode"
@@ -691,7 +697,7 @@ _rtx() {
 
     case "${cmd}" in
         rtx)
-            opts="-q -v -y -h -V --debug --log-level --trace --quiet --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
+            opts="-q -v -y -h -V --debug --log-level --trace --quiet --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1487,7 +1493,7 @@ _rtx() {
             return 0
             ;;
         rtx__help)
-            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
+            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1865,6 +1871,20 @@ _rtx() {
             return 0
             ;;
         rtx__help__hook__env)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__help__hook__not__found)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2482,6 +2502,32 @@ _rtx() {
             ;;
         rtx__hook__env)
             opts="-s -q -v -y -h --shell --status --quiet --debug --log-level --trace --verbose --yes --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --shell)
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -W "bash fish nu xonsh zsh" -- "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtx__hook__not__found)
+            opts="-s -q -v -y -h --shell --debug --log-level --trace --quiet --verbose --yes --help <BIN>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

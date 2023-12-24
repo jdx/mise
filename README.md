@@ -92,8 +92,8 @@ v20.0.0
   - [Environment variables](#environment-variables)
 - [Shebang](#shebang)
 - [&#91;experimental&#93; Task Runner](#experimental-task-runner)
-  - [Script-based Tasks](#script-based-tasks)
-  - [Config-based Tasks](#config-based-tasks)
+  - [Script Tasks](#script-tasks)
+  - [TOML-based Tasks](#toml-based-tasks)
   - [Task Environment Variables](#task-environment-variables)
   - [Running Tasks](#running-tasks)
   - [Running on file changes](#running-on-file-changes)
@@ -1045,10 +1045,10 @@ tasks launched with rtx will include the rtx environment—your tools and env va
 
 Here's my favorite features about rtx's task runner:
 
-* building dependencies in parallel—by default with no configuration required
-* last-modified checking to avoid rebuilding when there are no changes—requires minimal config
-* `rtx watch` to automatically rebuild on changes—no configuration required, but it helps
-* ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
+- building dependencies in parallel—by default with no configuration required
+- last-modified checking to avoid rebuilding when there are no changes—requires minimal config
+- `rtx watch` to automatically rebuild on changes—no configuration required, but it helps
+- ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
 
 > **Warning**
 >
