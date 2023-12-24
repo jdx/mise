@@ -796,6 +796,7 @@ jobs = 4            # number of plugins or runtimes to install in parallel. The 
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 yes = false         # set to true to automatically answer yes to all prompts
 
+not_found_auto_install = true
 task_output = "prefix" # see Task Runner for more information
 
 shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
@@ -993,6 +994,10 @@ all.
 #### `RTX_YES=1`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
+
+#### `RTX_NOT_FOUND_AUTO_INSTALL=true`
+
+Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 
 #### `RTX_TASK_OUTPUT=prefix`
 
