@@ -3,3 +3,4 @@ data/
 cache/
 state/
 cwd/man/
+test-build-output.txt

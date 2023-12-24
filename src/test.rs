@@ -66,6 +66,13 @@ pub fn reset_config() {
 
             [alias.tiny]
             "my/alias" = '3.0'
+
+            [tasks.configtask]
+            run = 'echo "configtask:"'
+            [tasks.lint]
+            run = 'echo "linting!"'
+            [tasks.test]
+            run = 'echo "testing!"'
             "#},
     )
     .unwrap();

@@ -1,5 +1,7 @@
+use either::Either;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
+use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -14,12 +16,14 @@ pub use settings::Settings;
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::rtx_toml::RtxToml;
-use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
 use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
+use crate::task::Task;
+use crate::ui::style;
 use crate::{dirs, env, file};
 
 pub mod config_file;
@@ -43,6 +47,7 @@ pub struct Config {
     plugins: RwLock<ToolMap>,
     repo_urls: HashMap<PluginName, String>,
     shorthands: OnceCell<HashMap<String, String>>,
+    tasks: OnceCell<HashMap<String, Task>>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -86,6 +91,7 @@ impl Config {
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
+            tasks: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
             global_config,
@@ -111,6 +117,10 @@ impl Config {
 
     pub fn get_all_aliases(&self) -> &AliasMap {
         self.all_aliases.get_or_init(|| self.load_all_aliases())
+    }
+
+    pub fn tasks(&self) -> &HashMap<String, Task> {
+        self.tasks.get_or_init(|| self.load_all_tasks())
     }
 
     pub fn is_activated(&self) -> bool {
@@ -188,6 +198,50 @@ impl Config {
         aliases
     }
 
+    pub fn load_all_tasks(&self) -> HashMap<String, Task> {
+        self.config_files
+            .values()
+            .collect_vec()
+            .into_par_iter()
+            .flat_map(|cf| {
+                match cf.project_root() {
+                    Some(pr) => vec![
+                        pr.join(".rtx").join("tasks"),
+                        pr.join(".config").join("rtx").join("tasks"),
+                    ],
+                    None => vec![],
+                }
+                .into_par_iter()
+                .flat_map(|dir| file::ls(&dir).map_err(|err| warn!("load_all_tasks: {err}")))
+                .flatten()
+                .map(Either::Right)
+                .chain(rayon::iter::once(Either::Left(cf)))
+            })
+            .collect::<Vec<Either<&Box<dyn ConfigFile>, PathBuf>>>()
+            .into_iter()
+            .unique()
+            .collect_vec()
+            .into_par_iter()
+            .flat_map(|either| match either {
+                Either::Left(cf) => cf.tasks().into_iter().cloned().collect(),
+                Either::Right(path) => match Task::from_path(path) {
+                    Ok(task) => vec![task],
+                    Err(err) => {
+                        warn!("Error loading task: {:#}", err);
+                        vec![]
+                    }
+                },
+            })
+            .flat_map(|t| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let config_files = Tracker::list_all()?
             .into_par_iter()
@@ -220,19 +274,10 @@ impl Config {
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    for (p, cf) in config_files.into_iter() {
-        if p == &get_global_rtx_toml() {
-            // ~/.config/rtx/config.toml is not a project config file
-            continue;
-        }
-        match cf.get_type() {
-            ConfigFileType::RtxToml | ConfigFileType::ToolVersions => {
-                return Some(p.parent()?.to_path_buf());
-            }
-            _ => {}
-        }
-    }
-    None
+    config_files
+        .values()
+        .find_map(|cf| cf.project_root())
+        .map(|pr| pr.to_path_buf())
 }
 
 fn load_rtxrc() -> Result<RtxToml> {
@@ -302,14 +347,27 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
 }
 
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    let mut filenames = vec![];
-    filenames.push(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone());
-    filenames.push(env::RTX_DEFAULT_CONFIG_FILENAME.clone());
+    let mut filenames = vec![
+        env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone(),
+        env::RTX_DEFAULT_CONFIG_FILENAME.clone(),
+    ];
     if *env::RTX_DEFAULT_CONFIG_FILENAME == ".rtx.toml" {
-        filenames.push(".rtx.local.toml".to_string());
+        filenames.insert(0, ".rtx/config.toml".into());
+        filenames.insert(0, ".config/rtx.toml".into());
+        filenames.insert(0, ".config/rtx/config.toml".into());
+        filenames.push(".config/rtx/config.local.toml".into());
+        filenames.push(".config/rtx.local.toml".into());
+        filenames.push(".rtx/config.local.toml".into());
+        filenames.push(".rtx.local.toml".into());
         if let Some(env) = &*env::RTX_ENV {
-            filenames.push(format!(".rtx.{}.toml", env));
-            filenames.push(format!(".rtx.{}.local.toml", env));
+            filenames.push(format!(".config/rtx/config.{env}.toml"));
+            filenames.push(format!(".config/rtx.{env}.toml"));
+            filenames.push(format!(".rtx/config.{env}.local.toml"));
+            filenames.push(format!(".rtx.{env}.toml"));
+            filenames.push(format!(".config/rtx/config.{env}.local.toml"));
+            filenames.push(format!(".config/rtx.{env}.local.toml"));
+            filenames.push(format!(".rtx/config.{env}.local.toml"));
+            filenames.push(format!(".rtx.{env}.local.toml"));
         }
     }
     filenames
@@ -371,8 +429,12 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
-            let cf = parse_config_file(f, legacy_filenames, tools)
-                .wrap_err_with(|| format!("error parsing config file: {}", display_path(f)))?;
+            let cf = parse_config_file(f, legacy_filenames, tools).wrap_err_with(|| {
+                format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )
+            })?;
             if let Err(err) = Tracker::track(f) {
                 warn!("tracking config: {err:#}");
             }
@@ -422,7 +484,7 @@ fn load_env(config_files: &ConfigMap) -> (BTreeMap<String, String>, HashMap<Stri
 fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
     let mut path_dirs = vec![];
     for cf in config_files.values().rev() {
-        path_dirs.extend(cf.path_dirs());
+        path_dirs.extend(cf.env_path());
     }
     path_dirs
 }
@@ -457,6 +519,12 @@ impl Debug for Config {
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
         s.field("Installed Plugins", &plugins);
+        if let Some(tasks) = self.tasks.get() {
+            s.field(
+                "Tasks",
+                &tasks.values().map(|t| t.to_string()).collect_vec(),
+            );
+        }
         if !self.env.is_empty() {
             s.field("Env", &self.env);
             // s.field("Env Sources", &self.env_sources);

@@ -460,7 +460,7 @@ impl Plugin for ExternalPlugin {
                         name = style(&self.name).blue(),
                         url = style(url.trim_end_matches(".git")).yellow(),
                     );
-                    if !prompt::confirm(&format!("Would you like to install {}?", self.name))? {
+                    if !prompt::confirm(format!("Would you like to install {}?", self.name))? {
                         Err(PluginNotInstalled(self.name.clone()))?
                     }
                 }
@@ -590,7 +590,8 @@ impl Plugin for ExternalPlugin {
             return Ok(vec![]);
         }
         let mut commands = vec![];
-        for command in file::dir_files(&command_path)? {
+        for p in file::ls(&command_path)? {
+            let command = p.file_name().unwrap().to_string_lossy().to_string();
             if !command.starts_with("command-") || !command.ends_with(".bash") {
                 continue;
             }

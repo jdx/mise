@@ -1,10 +1,9 @@
-use color_eyre::eyre::{eyre, Result};
-use console::style;
+use eyre::Result;
 
 use crate::config::Config;
 use crate::hook_env;
-
 use crate::shell::get_shell;
+use crate::ui::style;
 
 /// Disable rtx for current shell session
 ///
@@ -36,7 +35,7 @@ fn err_inactive() -> Result<()> {
                 rtx is not activated in this shell session.
                 Please run `{}` first in your shell rc file.
                 "#,
-        style("rtx activate").yellow()
+        style::eyellow("rtx activate")
     )))
 }
 

@@ -56,6 +56,8 @@ pub struct Settings {
     pub raw: bool,
     #[config(env = "RTX_YES", default = false)]
     pub yes: bool,
+    #[config(env = "RTX_TASK_OUTPUT")]
+    pub task_output: Option<String>,
     #[config(env = "CI", default = false)]
     pub ci: bool,
 }

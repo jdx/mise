@@ -21,6 +21,8 @@ pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "s
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/")));
 pub static PWD: Lazy<PathBuf> = Lazy::new(|| current_dir().unwrap_or_else(|_| PathBuf::new()));
+pub static EDITOR: Lazy<String> =
+    Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache")));
@@ -74,7 +76,7 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
-        .max(60)
+        .max(80)
 });
 
 /// duration that remote version cache is kept for

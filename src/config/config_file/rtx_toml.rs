@@ -6,7 +6,6 @@ use std::sync::Mutex;
 use color_eyre::eyre::eyre;
 use color_eyre::{Result, Section};
 use confique::Partial;
-use console::style;
 use eyre::WrapErr;
 use tera::Context;
 use toml_edit::{table, value, Array, Document, Item, Table, Value};
@@ -17,11 +16,12 @@ use crate::config::{config_file, AliasMap};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
+use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
-use crate::ui::prompt;
+use crate::ui::{prompt, style};
 use crate::{dirs, env, file, parse_error};
 
 #[derive(Default)]
@@ -37,6 +37,7 @@ pub struct RtxToml {
     alias: AliasMap,
     doc: Document,
     plugins: HashMap<String, String>,
+    tasks: Vec<Task>,
     is_trusted: Mutex<Option<bool>>,
 }
 
@@ -77,7 +78,8 @@ impl RtxToml {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => self.settings = self.parse_settings(k, v)?,
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
-                _ => bail!("unknown key: {}", style(k).red().for_stderr()),
+                "tasks" => self.tasks = self.parse_tasks(k, v)?,
+                _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
         self.doc = doc;
@@ -193,6 +195,57 @@ impl RtxToml {
     fn parse_plugins(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
         self.trust_check()?;
         self.parse_hashmap(key, v)
+    }
+
+    fn parse_tasks(&self, key: &str, v: &Item) -> Result<Vec<Task>> {
+        match v.as_table_like() {
+            Some(table) => {
+                let mut tasks = Vec::new();
+                for (name, v) in table.iter() {
+                    let k = format!("{}.{}", key, name);
+                    let name = self.parse_template(&k, name)?;
+                    let task = self.parse_task(&k, v, &name)?;
+                    tasks.push(task);
+                }
+                Ok(tasks)
+            }
+            _ => parse_error!(key, v, "table"),
+        }
+    }
+
+    fn parse_task(&self, key: &str, v: &Item, name: &str) -> Result<Task> {
+        let mut task = Task::new(name.into(), self.path.clone());
+        if v.as_str().is_some() {
+            task.run = self.parse_string_or_array(key, v)?;
+            return Ok(task);
+        }
+        match v.as_table_like() {
+            Some(table) => {
+                let mut task = Task::new(name.into(), self.path.clone());
+                for (k, v) in table.iter() {
+                    let key = format!("{key}.{k}");
+                    match k {
+                        "alias" => task.aliases = self.parse_string_or_array(&key, v)?,
+                        // "args" => task.args = self.parse_string_array(&key, v)?,
+                        "run" => task.run = self.parse_string_or_array(&key, v)?,
+                        // "command" => task.command = Some(self.parse_string_tmpl(&key, v)?),
+                        "depends" => task.depends = self.parse_string_array(&key, v)?,
+                        "description" => task.description = self.parse_string(&key, v)?,
+                        "env" => task.env = self.parse_hashmap(&key, v)?,
+                        "file" => task.file = Some(self.parse_path(&key, v)?),
+                        "hide" => task.hide = self.parse_bool(&key, v)?,
+                        "dir" => task.dir = Some(self.parse_path(&key, v)?),
+                        "outputs" => task.outputs = self.parse_string_array(&key, v)?,
+                        "raw" => task.raw = self.parse_bool(&key, v)?,
+                        // "script" => task.script = Some(self.parse_string_tmpl(&key, v)?),
+                        "sources" => task.sources = self.parse_string_array(&key, v)?,
+                        _ => parse_error!(key, v, "task property"),
+                    }
+                }
+                Ok(task)
+            }
+            _ => parse_error!(key, v, "table"),
+        }
     }
 
     fn parse_hashmap(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
@@ -451,7 +504,17 @@ impl RtxToml {
         }
     }
 
-    fn parse_string_array(&self, k: &String, v: &Item) -> Result<Vec<String>> {
+    fn parse_string_or_array(&self, k: &str, v: &Item) -> Result<Vec<String>> {
+        match v.as_value().map(|v| v.as_str()) {
+            Some(Some(v)) => {
+                let v = self.parse_template(k, v)?;
+                Ok(vec![v])
+            }
+            _ => self.parse_string_array(k, v),
+        }
+    }
+
+    fn parse_string_array(&self, k: &str, v: &Item) -> Result<Vec<String>> {
         match v
             .as_array()
             .map(|v| v.iter().map(|v| v.as_str().unwrap().to_string()).collect())
@@ -548,10 +611,10 @@ impl RtxToml {
             return Ok(());
         }
         if cmd != "hook-env" {
-            let ans = prompt::confirm(&format!(
+            let ans = prompt::confirm(format!(
                 "{} {} is not trusted. Trust it?",
-                style("rtx").yellow().for_stderr(),
-                display_path(&self.path)
+                style::eyellow("rtx"),
+                style::epath(&self.path)
             ))?;
             if ans {
                 config_file::trust(self.path.as_path())?;
@@ -581,6 +644,24 @@ impl ConfigFile for RtxToml {
         self.path.as_path()
     }
 
+    fn project_root(&self) -> Option<&Path> {
+        let fp = self.get_path();
+        let filename = fp.file_name().unwrap_or_default().to_string_lossy();
+        match fp.parent() {
+            Some(dir) => match dir {
+                dir if dir.starts_with(*dirs::CONFIG) => None,
+                dir if dir.starts_with(*dirs::SYSTEM) => None,
+                dir if dir == *dirs::HOME => None,
+                dir if !filename.starts_with('.') && dir.ends_with("/.rtx") => dir.parent(),
+                dir if !filename.starts_with('.') && dir.ends_with("/.config/rtx") => {
+                    dir.parent().unwrap().parent()
+                }
+                dir => Some(dir),
+            },
+            None => None,
+        }
+    }
+
     fn plugins(&self) -> HashMap<PluginName, String> {
         self.plugins.clone()
     }
@@ -593,8 +674,12 @@ impl ConfigFile for RtxToml {
         self.env_remove.clone()
     }
 
-    fn path_dirs(&self) -> Vec<PathBuf> {
+    fn env_path(&self) -> Vec<PathBuf> {
         self.path_dirs.clone()
+    }
+
+    fn tasks(&self) -> Vec<&Task> {
+        self.tasks.iter().collect()
     }
 
     fn remove_plugin(&mut self, plugin: &PluginName) {
@@ -755,6 +840,7 @@ impl Clone for RtxToml {
             alias: self.alias.clone(),
             doc: self.doc.clone(),
             plugins: self.plugins.clone(),
+            tasks: self.tasks.clone(),
             is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
         }
     }
@@ -794,7 +880,7 @@ mod tests {
             "foo": "bar",
         }
         "###);
-        assert_debug_snapshot!(cf.path_dirs(), @"[]");
+        assert_debug_snapshot!(cf.env_path(), @"[]");
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(cf.dump());
@@ -820,7 +906,7 @@ mod tests {
                 "foo": "bar",
             }
             "###);
-            assert_snapshot!(replace_path(&format!("{:?}", cf.path_dirs())), @r###"["/foo", "~/fixtures/bar"]"###);
+            assert_snapshot!(replace_path(&format!("{:?}", cf.env_path())), @r###"["/foo", "~/fixtures/bar"]"###);
             let cf: Box<dyn ConfigFile> = Box::new(cf);
             assert_snapshot!(cf.dump());
             assert_display_snapshot!(cf);

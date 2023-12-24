@@ -3,6 +3,8 @@ extern crate core;
 extern crate eyre;
 #[macro_use]
 extern crate indoc;
+#[macro_use]
+extern crate strum;
 #[cfg(test)]
 #[macro_use]
 extern crate insta;
@@ -58,6 +60,7 @@ mod runtime_symlinks;
 mod shell;
 mod shims;
 mod shorthands;
+mod task;
 pub mod tera;
 pub mod timeout;
 mod toml;

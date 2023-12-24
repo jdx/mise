@@ -39,10 +39,12 @@ mod render_help;
 #[cfg(feature = "clap_mangen")]
 mod render_mangen;
 mod reshim;
+mod run;
 mod self_update;
 mod settings;
 mod shell;
 mod sync;
+mod task;
 mod trust;
 mod uninstall;
 mod upgrade;
@@ -82,10 +84,12 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Reshim(reshim::Reshim),
+    Run(run::Run),
     SelfUpdate(self_update::SelfUpdate),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Sync(sync::Sync),
+    Task(task::Task),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Upgrade(upgrade::Upgrade),
@@ -134,10 +138,12 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run(),
             Self::Prune(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run(),
+            Self::Run(cmd) => cmd.run(),
             Self::SelfUpdate(cmd) => cmd.run(),
             Self::Settings(cmd) => cmd.run(),
             Self::Shell(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run(),
+            Self::Task(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Upgrade(cmd) => cmd.run(),
