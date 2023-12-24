@@ -1044,6 +1044,13 @@ running linters, tests, builders, servers, and other tasks that are specific to 
 tasks launched with rtx will include the tool environment (tools and env vars) even if rtx has not been otherwise
 activated.
 
+Here's my favorite features about rtx's task runner:
+
+* building dependencies in parallel—by default with no configuration required
+* last-modified checking to avoid rebuilding when there are no changes—requires minimal config
+* `rtx watch` to automatically rebuild on changes—no configuration required, but it helps
+* ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
+
 > **Warning**
 >
 > This is an experimental feature. It is not yet stable and will likely change. Some of the docs
@@ -1052,7 +1059,7 @@ activated.
 
 ### Script-based Tasks
 
-Tasks can be defined in 2 ways, either as standalone script files in `.rtx/tasks` such as the following build script
+Tasks can be defined in 2 ways, either as standalone script files in `.rtx/tasks/:task_name` such as the following build script
 for cargo:
 
 ```bash
@@ -1075,14 +1082,15 @@ cargo build
 > # rtx depends=["lint", "test"]
 > ```
 
-Assuming that file was located in `.rtx/tasks/build`, it could be run with `rtx run build`.
-This script can also be edited with $EDITOR by running `rtx task edit build`, if it doesn't exist it will be created.
+Assuming that file was located in `.rtx/tasks/build`, it can then be run with `rtx run build` (or with its alias: `rtx run b`).
+This script can be edited with by running `rtx task edit build` (using $EDITOR). If it doesn't exist it will be created.
 These are convenient for quickly making new scripts. Having the code in a bash file and not TOML helps make it work
-better in editors since they can do syntax highlighting and linting more easily.
+better in editors since they can do syntax highlighting and linting more easily. They also still work great for non-rtx users—though
+of course they'll need to find a different way to install their dev tools the tasks might use.
 
 ### Config-based Tasks
 
-Tasks can also be defined in `.rtx.toml` files in different ways:
+Tasks can also be defined in `.rtx.toml` files in different ways. This is a more "traditional" method of defining tasks:
 
 ```toml
 task.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
@@ -1151,7 +1159,7 @@ Multiple tasks/arguments can be separated with this `:::` delimiter:
 rtx run build arg1 arg2 ::: test arg3 arg4
 ```
 
-rtx will run the "default" task if no task is specified.
+rtx will run the task named "default" if no task is specified—and you've created one named "default". You can also alias a different task to "default".
 
 ```bash
 rtx run
@@ -1160,7 +1168,7 @@ rtx run
 ### Running on file changes
 
 It's often handy to only execute a task if the files it uses changes. For example, we might only want
-to run `cargo build` if a ".rs" file changes. This can be done with the following task config:
+to run `cargo build` if an ".rs" file changes. This can be done with the following config:
 
 ```toml
 [task.build]
@@ -1170,7 +1178,8 @@ sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't ch
 outputs = ['target/debug/mycli']
 ```
 
-Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped.
+Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped. This uses last modified timestamps.
+It wouldn't be hard to add checksum support.
 
 ### Watching files
 
