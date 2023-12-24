@@ -52,7 +52,7 @@ echo 'eval "$(~/bin/rtx activate zsh)"' >> ~/.zshrc
 echo '~/bin/rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> **Warning**
+> ![TIP]
 >
 > If you use direnv with `layout python` or other logic that needs to reference rtx runtimes inside
 > of an `.envrc`, see the [direnv section](#direnv) below.
@@ -199,7 +199,9 @@ v20.0.0
 
 ## About
 
-_New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction._
+> ![TIP]
+> 
+> New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction.
 
 rtx is a tool for managing programming language and tool versions. For example, use this to install
 a particular version of Node.js and ruby for a project. Using `rtx activate`, you can have your
@@ -392,7 +394,7 @@ sudo apt update
 sudo apt install -y rtx
 ```
 
-> **Warning**
+> ![IMPORTANT]
 >
 > If you're on arm64 you'll need to run the following:
 >
@@ -714,7 +716,7 @@ There is a performance cost to having these when they're parsed as it's performe
 `bin/parse-version-file`. However these are [cached](#cache-behavior) so it's not a huge deal.
 You may not even notice.
 
-> **Note**
+> ![NOTE]
 >
 > asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
 > that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
@@ -810,7 +812,9 @@ my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20
                        # this can also be specified in a plugin (see below in "Aliases")
 ```
 
-These settings can also be managed with `rtx settings ls|get|set|unset`.
+> ![TIP]
+> 
+> These settings can also be managed with `rtx settings ls|get|set|unset`.
 
 ### System config: `/etc/rtx/config.toml`
 
@@ -1055,7 +1059,7 @@ Here's my favorite features about rtx's task runner:
 - `rtx watch` to automatically rebuild on changes—no configuration required, but it helps
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
 
-> **Warning**
+> ![WARNING]
 >
 > This is an experimental feature. It is not yet stable and will likely change. Some of the docs
 > may not be implemented, may be implemented incorrectly, or the docs may need to be updated.
@@ -1229,7 +1233,7 @@ echo "lts-gallium 16"
 echo "lts-fermium 14"
 ```
 
-> **Note:**
+> ![NOTE]
 >
 > Because this is rtx-specific functionality not currently used by asdf it isn't likely to be in any
 > plugin currently, but plugin authors can add this script without impacting asdf users.
@@ -1431,9 +1435,11 @@ The priority of these files goes in this order (bottom overrides top):
 
 Use `rtx doctor` to see which files are being used.
 
-_Note that currently modifying `RTX_DEFAULT_CONFIG_FILENAME` to something other than `.rtx.toml`
-will not work with this feature. For now, it will disable it entirely. This may change in the
-future._
+> ![IMPORTANT]
+>
+> Note that currently modifying `RTX_DEFAULT_CONFIG_FILENAME` to something other than `.rtx.toml`
+> will not work with this feature. For now, it will disable it entirely. This may change in the
+> future.
 
 ## IDE Integration
 
