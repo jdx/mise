@@ -107,6 +107,7 @@ v20.0.0
 - [Directories](#directories)
   - [`~/.config/rtx`](#configrtx)
   - [`~/.cache/rtx`](#cachertx)
+  - [`~/.local/state/rtx`](#localstatertx)
   - [`~/.local/share/rtx`](#localsharertx)
 - [Templates](#templates)
 - [Config Environments](#config-environments)
