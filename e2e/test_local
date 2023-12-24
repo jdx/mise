@@ -30,6 +30,13 @@ tiny = \"latest\"
 
 [plugins]
 tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
+
+[tasks.configtask]
+run = 'echo \"configtask:\"'
+[tasks.lint]
+run = 'echo \"linting!\"'
+[tasks.test]
+run = 'echo \"testing!\"'
 "
 
 rtx local shfmt@3.5.0
@@ -46,6 +53,13 @@ shfmt = \"3.5.0\"
 
 [plugins]
 tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
+
+[tasks.configtask]
+run = 'echo \"configtask:\"'
+[tasks.lint]
+run = 'echo \"linting!\"'
+[tasks.test]
+run = 'echo \"testing!\"'
 "
 
 rtx exec -- shfmt --version >&2
@@ -67,6 +81,13 @@ shfmt = \"3.6.0\"
 
 [plugins]
 tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
+
+[tasks.configtask]
+run = 'echo \"configtask:\"'
+[tasks.lint]
+run = 'echo \"linting!\"'
+[tasks.test]
+run = 'echo \"testing!\"'
 "
 
 rtx exec -- shfmt --version >&2
@@ -87,6 +108,13 @@ tiny = \"latest\"
 
 [plugins]
 tiny-ref = \"https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c\"
+
+[tasks.configtask]
+run = 'echo \"configtask:\"'
+[tasks.lint]
+run = 'echo \"linting!\"'
+[tasks.test]
+run = 'echo \"testing!\"'
 "
 
 export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
