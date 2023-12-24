@@ -12,9 +12,15 @@
 <p><em>Install dev tools, manage your local environment, run tasks on your projects.</em></p>
 </div>
 
-## Features
+## What is it?
 
-rtx is 3 tools in one. Like [asdf](https://asdf-vm.com) it manages dev tools like node, python, cmake, terraform, and hundreds more. Like [direnv](https://github.com/direnv/direnv) it manages environment variables in different directories. Like [make](https://www.gnu.org/software/make/manual/make.html) it manages tasks used to build and test projects. You can use it for one of these use-cases or all 3.
+rtx solves 3 related use-cases:
+
+* Like [asdf](https://asdf-vm.com) it manages dev tools like node, python, cmake, terraform, and hundreds more.
+* Like [direnv](https://github.com/direnv/direnv) it manages environment variables in different directories.
+* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages tasks used to build and test projects.
+
+## Features
 
 - [**Polyglot**](#plugins) - Manage toolchains for any language. Have specific versions for specific projects. No more figuring out how nvm, nodenv, pyenv, etc work individually—just use this 1 tool.
 - [**Fast**](#performance) - rtx is written in Rust and is very fast. 20x-200x faster than asdf which is what it originally set out to replace.
@@ -1477,6 +1483,17 @@ Direnv and rtx work similarly and there should be a direnv extension that can be
 
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_rtx`](#direnv) direnv function.
+
+## Project Roadmap
+
+Issues marked ["enhancements"](https://github.com/jdx/rtx/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) are the best way to read about ideas for future
+functionality. As far as general scope however, these are likely going to be focuses for 2024:
+
+* Tasks - this is the newest headline feature of rtx and needs to be refined, tested, and iterated on before it can come out of experimental
+* Documentation website - we've outgrown what is mostly a single README
+* Supply chain hardening - securing rtx is very important and this topic has had a lot of interest from the community. We plan to make several improvements on this front
+* Improved python development - better virtualenv integration, precompiled python binaries, and other areas are topics that frequently come up to improve
+* Improved plugin development - it's unclear what we'll do exactly but in general we want to make the experience of vending tools for asdf/rtx to be better and safer.
 
 ## FAQs
 
