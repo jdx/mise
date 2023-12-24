@@ -1,0 +1,13 @@
+{
+  "name": "@rtx/docs",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitepress": "1.0.0-rc.32"
+  },
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  }
+}
