@@ -4,7 +4,7 @@ set -l fssf "__fish_seen_subcommand_from"
 complete -kxc rtx -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
-set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version where which
+set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which
 complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell session'
 complete -xc rtx -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc rtx -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
@@ -39,6 +39,7 @@ complete -xc rtx -n "not $fssf $others" -a uninstall -d 'Removes runtime version
 complete -xc rtx -n "not $fssf $others" -a upgrade -d 'Upgrades outdated tool versions'
 complete -xc rtx -n "not $fssf $others" -a use -d 'Change the active version of a tool locally or globally.'
 complete -xc rtx -n "not $fssf $others" -a version -d 'Show rtx version'
+complete -xc rtx -n "not $fssf $others" -a watch -d '[experimental] Run a task watching for changes'
 complete -xc rtx -n "not $fssf $others" -a where -d 'Display the installation path for a runtime'
 complete -xc rtx -n "not $fssf $others" -a which -d 'Shows the path that a bin name points to'
 
@@ -220,7 +221,7 @@ complete -kxc rtx -n "$fssf prune" -a "(__rtx_plugins)" -d 'Prune only versions 
 # reshim
 
 # run
-complete -kxc rtx -n "$fssf run" -d 'Arguments to pass to the task'
+complete -kxc rtx -n "$fssf run" -d 'Arguments to pass to the task. Use ":::" to separate tasks'
 complete -kxc rtx -n "$fssf run" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
 complete -kxc rtx -n "$fssf run" -s n -l dry-run -d 'Don'\''t actually run the task(s), just print them in order of execution'
 complete -kxc rtx -n "$fssf run" -s f -l force -d 'Force the task to run even if outputs are up to date'
@@ -228,7 +229,7 @@ complete -kxc rtx -n "$fssf run" -s i -l interleave -d 'Print directly to stdout
 complete -kxc rtx -n "$fssf run" -s j -l jobs -d 'Number of tasks to run in parallel'
 complete -kxc rtx -n "$fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
 complete -kxc rtx -n "$fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
-complete -kxc rtx -n "$fssf run" -a "(__rtx_tasks)" -d 'Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2'
+complete -kxc rtx -n "$fssf run" -a "(__rtx_tasks)" -d 'Task to run'
 complete -kxc rtx -n "$fssf run" -s t -l tool -a "(__rtx_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 # self-update
@@ -282,10 +283,11 @@ complete -kxc rtx -n "$fssf task" -l hidden -d 'Show hidden tasks'
 complete -kxc rtx -n "$fssf task" -l no-header -d 'Do not print table header'
 set -l others edit ls run
 complete -xc rtx -n "$fssf task; and not $fssf $others" -a edit -d '[experimental] Edit a task with $EDITOR'
-complete -xc rtx -n "$fssf task; and not $fssf $others" -a ls -d '[experimental] List config files currently in use'
+complete -xc rtx -n "$fssf task; and not $fssf $others" -a ls -d '[experimental] List available tasks to execute'
 complete -xc rtx -n "$fssf task; and not $fssf $others" -a run -d '[experimental] Run a task'
 
 # task edit
+complete -kxc rtx -n "$fssf task; and $fssf edit" -s p -l path -d 'Display the path to the task instead of editing it'
 complete -kxc rtx -n "$fssf task; and $fssf edit" -a "(__rtx_tasks)" -d 'Task to edit'
 
 # task ls
@@ -293,7 +295,7 @@ complete -kxc rtx -n "$fssf task; and $fssf ls" -l hidden -d 'Show hidden tasks'
 complete -kxc rtx -n "$fssf task; and $fssf ls" -l no-header -d 'Do not print table header'
 
 # task run
-complete -kxc rtx -n "$fssf task; and $fssf run" -d 'Arguments to pass to the task'
+complete -kxc rtx -n "$fssf task; and $fssf run" -d 'Arguments to pass to the task. Use ":::" to separate tasks'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s n -l dry-run -d 'Don'\''t actually run the task(s), just print them in order of execution'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s f -l force -d 'Force the task to run even if outputs are up to date'
@@ -301,7 +303,7 @@ complete -kxc rtx -n "$fssf task; and $fssf run" -s i -l interleave -d 'Print di
 complete -kxc rtx -n "$fssf task; and $fssf run" -s j -l jobs -d 'Number of tasks to run in parallel'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
-complete -kxc rtx -n "$fssf task; and $fssf run" -a "(__rtx_tasks)" -d 'Task to run Can specify multiple tasks by separating with `:::` e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2'
+complete -kxc rtx -n "$fssf task; and $fssf run" -a "(__rtx_tasks)" -d 'Task to run'
 complete -kxc rtx -n "$fssf task; and $fssf run" -s t -l tool -a "(__rtx_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 
@@ -335,6 +337,11 @@ complete -kxc rtx -n "$fssf use" -l remove -d 'Remove the tool(s) from config fi
 complete -kxc rtx -n "$fssf use" -a "(__rtx_tool_versions)" -d 'Tool(s) to add to config file'
 
 # version
+
+# watch
+complete -kxc rtx -n "$fssf watch" -d 'Extra arguments'
+complete -kxc rtx -n "$fssf watch" -s g -l glob -d 'Files to watch'
+complete -kxc rtx -n "$fssf watch" -s t -l task -a "(__rtx_tasks)" -d 'Task to run'
 
 # where
 complete -kxc rtx -n "$fssf where" -a "(__rtx_tool_versions)" -d 'Tool(s) to look up'

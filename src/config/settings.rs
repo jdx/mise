@@ -83,7 +83,6 @@ impl Settings {
         }
         let mut settings = Self::default_builder().load()?;
         if settings.raw {
-            settings.verbose = true;
             settings.jobs = 1;
         }
         if settings.debug {
