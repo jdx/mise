@@ -13,21 +13,9 @@
 
 ## What is it?
 
-* Like [asdf](https://asdf-vm.com) it manages dev tools like node, python, cmake, terraform, and [hundreds more](https://github.com/asdf-vm/asdf-plugins).
-* Like [direnv](https://github.com/direnv/direnv) it manages environment variables for different project directories.
-* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages tasks used to build and test projects.
-
-## Features
-
-- [**Polyglot**](#plugins) - Manage toolchains for any language. Have specific versions for specific projects. No more figuring out how nvm, nodenv, pyenv, etc work individually—just use this 1 tool.
-- [**Fast**](#performance) - rtx is written in Rust and is very fast. 20x-200x faster than asdf which is what it originally set out to replace.
-- [**No shims**](#shims) - most dev tool managers like rtx use shims, but they cause problems, they break `which`, and add overhead. By default, rtx
-  does not use them—however they are available for some use-cases.
-- [**Arbitrary env vars**](#env---arbitrary-environment-variables) - Set custom env vars when in a project directory like `NODE_ENV=production` or `AWS_PROFILE=staging`.
-- [**Task runner**](#experimental-task-runner) - Define project-specific tasks like `test` or `lint`. Supports parallel execution and "watch" support to rerun on source changes.
-- [**asdf-compatible**](#how-do-i-migrate-from-asdf) - rtx is compatible with asdf plugins and `.tool-versions` files. It can be used as a drop-in replacement.
-- [**Fuzzy matching and aliases**](#aliases) - It's enough to just say you want "v20" of node, or the "lts"
-  version. rtx will figure out the right version without you needing to specify an exact version.
+* Like [asdf](https://asdf-vm.com) (or [nvm]([https://nvm.sh](https://github.com/nvm-sh/nvm)) or [pyenv](https://github.com/pyenv/pyenv) for any language) it manages dev tools like node, python, cmake, terraform, and [hundreds more](#plugins).
+* Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](env---arbitrary-environment-variables) for different project directories.
+* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](#experimental-task-runner) used to build and test projects.
 
 ## 30 Second Demo
 
@@ -1732,7 +1720,7 @@ asdf made (what I consider) a poor design decision to use shims that go between 
 and the runtime itself. e.g.: when you call `node` it will call an asdf shim file `~/.asdf/shims/node`,
 which then calls `asdf exec`, which then calls the correct version of node.
 
-These shims have terrible performance, adding ~120ms to every runtime call. rtx does not use shims and instead
+These shims have terrible performance, adding ~120ms to every runtime call. `rtx activate` does not use shims and instead
 updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo GIF at the top of this README
 that `rtx` isn't actually used when calling `node -v` for this reason. The performance is
 identical to running node without using rtx.
@@ -1746,7 +1734,7 @@ rtx does call an internal command `rtx hook-env` every time the directory has ch
 it's written in Rust, this is very quick—taking ~10ms on my machine. 4ms if there are no changes, 14ms if it's
 a full reload.
 
-tl;dr: asdf adds overhead (~120ms) when calling a runtime, rtx adds a small amount of overhead (~10ms)
+tl;dr: asdf adds overhead (~120ms) when calling a runtime, rtx adds a small amount of overhead (~5ms)
 when the prompt loads.
 
 ### Environment variables in rtx
