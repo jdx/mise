@@ -13,8 +13,6 @@
 
 ## What is it?
 
-rtx solves 3 related use-cases:
-
 * Like [asdf](https://asdf-vm.com) it manages dev tools like node, python, cmake, terraform, and [hundreds more](https://github.com/asdf-vm/asdf-plugins).
 * Like [direnv](https://github.com/direnv/direnv) it manages environment variables for different project directories.
 * Like [make](https://www.gnu.org/software/make/manual/make.html) it manages tasks used to build and test projects.
