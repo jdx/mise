@@ -1493,6 +1493,14 @@ functionality. As far as general scope however, these are likely going to be foc
 * Supply chain hardening - securing rtx is very important and this topic has had a lot of interest from the community. We plan to make several improvements on this front
 * Improved python development - better virtualenv integration, precompiled python binaries, and other areas are topics that frequently come up to improve
 * Improved plugin development - it's unclear what we'll do exactly but in general we want to make the experience of vending tools for asdf/rtx to be better and safer.
+* GUI/TUI - While we're all big CLI fans, it still would be great to better visualize what tools are available, what your configuration is, and other things via some kind of UI.
+
+### Anti-goals
+
+* Dependency management - rtx expects you to have system dependencies (like openssl or readline) already setup and configured. This makes it different than tools like nix which manage all dependencies for you. While this seems like an obvious downside, it actually ends up making rtx far easier to use than nix. That said, we would like to make managing system dependencies easier where we can but this is likely going to be simply via better docs and error messages.
+* DevOps tooling - rtx is designed with local development in mind. While there are certainly many devs using it for production/server roles which we support and encourage, that will never be the our focus on the roadmap. Building a better ansible/terraform/kubernetes just isn't the goal.
+* Remote task caching - turbopack, moonrepo, and many others are trying to solve this (major) problem. rtx's task runner will likely always just be a simple convenience around executing scripts.
+* Windows support - I don't have a Windows machine and I think asdf/rtx's focus on Unix tools will make supporting (non-WSL) Windows challenging if not impossible. Unless someone else wants to take on the challenge of building a Windows port I would not expect to see it happen.
 
 ## FAQs
 
