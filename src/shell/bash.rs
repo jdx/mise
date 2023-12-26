@@ -50,18 +50,22 @@ impl Shell for Bash {
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            eval 'command_not_found_handle() {{
-            local ret
-              if (( ! IN_CNFH++)) && {exe} hook-not-found -s bash "$1"; then
-                _rtx_hook
-                "$@"
-                ret=$?
-                (( IN_CNFH-- ))
-                return "$ret"
-              fi
-              (( IN_CNFH-- ))
-              '"$(typeset -f command_not_found_handle | tail -n +2)"'
-            }}'
+            if [ -z "$_rtx_cmd_not_found" ]; then
+                _rtx_cmd_not_found=1
+                test -n "$(declare -f command_not_found_handle)" && eval "${{_/command_not_found_handle/_command_not_found_handle}}"
+
+                command_not_found_handle() {{
+                    if {exe} hook-not-found -s bash "$1"; then
+                      _rtx_hook
+                      "$@"
+                    elif [ -n "$(declare -f _command_not_found_handle)" ]; then
+                        _command_not_found_handle "$@"
+                    else
+                        echo "zsh: command not found: $1" >&2
+                        return 127
+                    fi
+                }}
+            fi
             "#});
         }
 
