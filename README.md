@@ -64,7 +64,7 @@ v20.0.0
 <details>
 <summary>Click to expand</summary>
 
-- [Features](#features)
+- [What is it?](#what-is-it)
 - [30 Second Demo](#30-second-demo)
 - [Quickstart](#quickstart)
 - [About](#about)
@@ -105,6 +105,8 @@ v20.0.0
 - [Templates](#templates)
 - [Config Environments](#config-environments)
 - [IDE Integration](#ide-integration)
+- [Project Roadmap](#project-roadmap)
+  - [Anti-goals](#anti-goals)
 - [FAQs](#faqs)
   - [I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file](#i-dont-want-to-put-a-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file)
   - [What is the difference between "nodejs" and "node" (or "golang" and "go")?](#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
@@ -193,7 +195,7 @@ v20.0.0
 ## About
 
 > [!TIP]
-> 
+>
 > New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction.
 
 rtx is a tool for managing programming language and tool versions. For example, use this to install
@@ -806,7 +808,7 @@ my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20
 ```
 
 > [!TIP]
-> 
+>
 > These settings can also be managed with `rtx settings ls|get|set|unset`.
 
 ### System config: `/etc/rtx/config.toml`
