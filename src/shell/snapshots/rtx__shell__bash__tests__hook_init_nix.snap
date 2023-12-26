@@ -34,7 +34,7 @@ _rtx_hook() {
 if [[ ";${PROMPT_COMMAND:-};" != *";_rtx_hook;"* ]]; then
   PROMPT_COMMAND="_rtx_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
-if [ -z "$_rtx_cmd_not_found" ]; then
+if [ -z "${_rtx_cmd_not_found:-}" ]; then
     _rtx_cmd_not_found=1
     test -n "$(declare -f command_not_found_handle)" && eval "${_/command_not_found_handle/_command_not_found_handle}"
 
