@@ -39,7 +39,7 @@ if [[ -z "${chpwd_functions[(r)_rtx_hook]+1}" ]]; then
   chpwd_functions=( _rtx_hook ${chpwd_functions[@]} )
 fi
 
-if [ -z "$_rtx_cmd_not_found" ]; then
+if [ -z "${_rtx_cmd_not_found:-}" ]; then
     _rtx_cmd_not_found=1
     test -n "$(declare -f command_not_found_handler)" && eval "${_/command_not_found_handler/_command_not_found_handler}"
 
