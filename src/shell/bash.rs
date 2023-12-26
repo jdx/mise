@@ -61,7 +61,7 @@ impl Shell for Bash {
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
                         _command_not_found_handle "$@"
                     else
-                        echo "zsh: command not found: $1" >&2
+                        echo "bash: command not found: $1" >&2
                         return 127
                     fi
                 }}
