@@ -58,7 +58,7 @@ impl Shell for Zsh {
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            if [ -z "$_rtx_cmd_not_found" ]; then
+            if [ -z "${{_rtx_cmd_not_found:-}}" ]; then
                 _rtx_cmd_not_found=1
                 test -n "$(declare -f command_not_found_handler)" && eval "${{_/command_not_found_handler/_command_not_found_handler}}"
 
