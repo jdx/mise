@@ -58,14 +58,22 @@ impl Shell for Zsh {
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            function command_not_found_handler() {{
-                {exe} hook-not-found -s zsh "$1"
-                if (( $? == 0 )); then
-                  _rtx_hook
-                  "$@"
-                  return $?
-                fi
-            }}
+            if [ -z "$_rtx_cmd_not_found" ]; then
+                _rtx_cmd_not_found=1
+                test -n "$(declare -f command_not_found_handler)" && eval "${{_/command_not_found_handler/_command_not_found_handler}}"
+
+                function command_not_found_handler() {{
+                    if {exe} hook-not-found -s zsh "$1"; then
+                      _rtx_hook
+                      "$@"
+                    elif [ -n "$(declare -f _command_not_found_handler)" ]; then
+                        _command_not_found_handler "$@"
+                    else
+                        echo "zsh: command not found: $1" >&2
+                        return 127
+                    fi
+                }}
+            fi
             "#});
         }
 
