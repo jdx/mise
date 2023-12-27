@@ -16,7 +16,7 @@ if test -d /tmp/asdf-plugins
     git pull /tmp/asdf-plugins
     cd $current_dir
 else
-    git clone --depth=1 git@github.com:asdf-vm/asdf-plugins.git /tmp/asdf-plugins
+    git clone --depth=1 git@github.com:rtx-plugins/registry.git /tmp/asdf-plugins
 end
 
 if test -e stargazer_count.txt

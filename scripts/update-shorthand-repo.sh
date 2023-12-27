@@ -2,12 +2,11 @@
 set -euo pipefail
 
 rm -rf asdf-plugins
-git clone --depth 1 https://github.com/asdf-vm/asdf-plugins
+git clone --depth 1 https://github.com/rtx-plugins/registry asdf-plugins
 rm -f src/default_shorthands.rs
 
 custom_plugins=(
   '("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
-  '("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),'
   '("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
 )
 
@@ -53,11 +52,11 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
 const DEFAULT_SHORTHAND_LIST: [(&str, &str); $num_plugins] = [
-    // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
+    // shorthands from https://github.com/rtx-plugins/registry
 EOF
 for file in $asdf_plugins; do
   plugin=$(basename "$file")
-  repository=$(cat "$file")
+  repository=$(grep -e '^repository = ' "$file")
   repository="${repository/#repository = /}"
   echo "    (\"$plugin\", \"$repository\")," >>src/default_shorthands.rs
 done
