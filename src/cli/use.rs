@@ -154,7 +154,7 @@ impl Use {
             let plugin = &targ.plugin;
             let p = display_path(p);
             let global = display_path(global);
-            warn!("{plugin} is is defined in {p} which overrides the global config ({global})");
+            warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.plugin) {
@@ -273,7 +273,7 @@ mod tests {
 
         assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
         rtx ~/config/config.toml tools: tiny@2.1.0
-        rtx tiny is is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
+        rtx tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
