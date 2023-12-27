@@ -204,7 +204,7 @@ a particular version of Node.js and ruby for a project. Using `rtx activate`, yo
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
 directory[^cd]. Other projects on your machine can use a different set of versions.
 
-rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/asdf-vm/asdf-plugins)
+rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
 For more on how rtx compares to asdf, [see below](#comparison-to-asdf).
 
@@ -1254,7 +1254,7 @@ echo "lts-fermium 14"
 rtx uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See <https://github.com/asdf-vm/asdf-plugins> for the list of built-in plugins shorthands. See asdf's
+See <https://github.com/rtx-plugins/registry> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
@@ -1628,10 +1628,9 @@ you should post an issue on the plugin's repository.
 
 e.g.: how does `rtx plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
-asdf maintains [an index](https://github.com/asdf-vm/asdf-plugins) of shorthands that rtx uses as a base.
+We maintain [an index](https://github.com/rtx-plugins/registry) of shorthands that rtx uses as a base.
 This is regularly updated every time that rtx has a release. This repository is stored directly into
-the codebase [here](./src/default_shorthands.rs). The bottom of that file contains modifications that
-rtx makes on top of asdf.
+the codebase [here](./src/default_shorthands.rs).
 
 ### Does "node@20" mean the newest available version of node?
 

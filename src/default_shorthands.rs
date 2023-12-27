@@ -23,8 +23,8 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 
 #[rustfmt::skip]
 #[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 712] = [
-    // asdf original shorthands from https://github.com/asdf-vm/asdf-plugins
+const DEFAULT_SHORTHAND_LIST: [(&str, &str); 711] = [
+    // shorthands from https://github.com/rtx-plugins/registry
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
     ("act", "https://github.com/grimoh/asdf-act.git"),
@@ -508,7 +508,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 712] = [
     ("please", "https://github.com/asdf-community/asdf-please.git"),
     ("pluto", "https://github.com/FairwindsOps/asdf-pluto.git"),
     ("pnpm", "https://github.com/jonathanmorley/asdf-pnpm.git"),
-    ("poetry", "https://github.com/asdf-community/asdf-poetry.git"),
+    ("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),
     ("polaris", "https://github.com/particledecay/asdf-polaris.git"),
     ("popeye", "https://github.com/nlamirault/asdf-popeye.git"),
     ("postgres", "https://github.com/smashedtoatoms/asdf-postgres.git"),
@@ -736,6 +736,5 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 712] = [
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
     // rtx custom shorthands
     ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
-    ("poetry", "https://github.com/rtx-plugins/rtx-poetry.git"),
     ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
 ];
