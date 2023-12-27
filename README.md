@@ -1006,7 +1006,7 @@ This controls the output of `rtx run`. It can be one of:
 - `prefix` - (default if jobs > 1) print by line with the prefix of the task name
 - `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
 
-#### `RTX_EXPERIMENTAL=1`
+#### `RTX_EXPERIMENTAL=true`
 
 Enables experimental features.
 
