@@ -9,6 +9,7 @@
 <a href="https://github.com/jdx/rtx/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/rtx/test.yml?color=%2320A920&style=for-the-badge"></a>
 <!-- <a href="https://codecov.io/gh/jdx/rtx"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdx/rtx?color=%2320A920&style=for-the-badge"></a> -->
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
+<em>The front-end to your dev env.</em>
 </div>
 
 ## What is it?
