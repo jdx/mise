@@ -1,6 +1,3 @@
 [tools]
-node = '20.10.0'
-pnpm = '8.12.1'
-
-[plugins]
-pnpm = 'https://github.com/jonathanmorley/asdf-pnpm'
+node = '20'
+pnpm = '8'

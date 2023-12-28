@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -xeuo pipefail
+
+export AWS_REGION=auto
+export AWS_ENDPOINT_URL=https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
+
+pnpm run docs:build
+aws s3 cp --recursive ./docs/.vitepress/dist s3://rtx/
