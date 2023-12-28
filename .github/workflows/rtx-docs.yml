@@ -25,6 +25,7 @@ jobs:
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    needs: [build]
     steps:
       - uses: actions/checkout@v3
       - uses: jdx/rtx-action@v1
