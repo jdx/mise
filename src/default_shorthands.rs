@@ -304,7 +304,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("hey", "https://github.com/raimon49/asdf-hey.git"),
     ("hostctl", "https://github.com/svenluijten/asdf-hostctl.git"),
     ("httpie-go", "https://github.com/abatilo/asdf-httpie-go.git"),
-    ("hub", "https://github.com/vixus0/asdf-hub.git"),
+    ("hub", "https://github.com/rtx-plugins/asdf-hub.git"),
     ("hugo", "https://github.com/NeoHsu/asdf-hugo.git"),
     ("hurl", "https://github.com/raimon49/asdf-hurl.git"),
     ("hwatch", "https://github.com/chessmango/asdf-hwatch.git"),
@@ -738,6 +738,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
     Lazy::new(|| HashSet::from([
     "dt",
+    "hub",
     "pipenv",
     "poetry",
     "tiny",
