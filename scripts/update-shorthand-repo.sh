@@ -5,25 +5,9 @@ rm -rf asdf-plugins
 git clone --depth 1 https://github.com/rtx-plugins/registry asdf-plugins
 rm -f src/default_shorthands.rs
 
-custom_plugins=(
-  '("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),'
-  '("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),'
-)
-
-asdf_plugins=$(find asdf-plugins/plugins -maxdepth 1 |
-  sort |
-  grep -v '/bun$' |
-  grep -v '/deno$' |
-  grep -v '/go$' |
-  grep -v '/golang$' |
-  grep -v '/java$' |
-  grep -v '/nodejs$' |
-  grep -v '/plugins$' |
-  grep -v '/python$' |
-  grep -v '/ruby$')
-
+asdf_plugins=$(ls asdf-plugins/plugins)
 num_plugins=$(echo "$asdf_plugins" | wc -l | tr -d ' ')
-num_plugins=$((num_plugins + ${#custom_plugins[@]}))
+trusted=()
 
 cat >src/default_shorthands.rs <<EOF
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -44,25 +28,55 @@ cat >src/default_shorthands.rs <<EOF
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
-
-pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
-    Lazy::new(|| HashMap::from(DEFAULT_SHORTHAND_LIST));
+use std::collections::{HashSet, HashMap};
 
 #[rustfmt::skip]
-#[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); $num_plugins] = [
-    // shorthands from https://github.com/rtx-plugins/registry
+pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
+    Lazy::new(|| HashMap::from([
 EOF
-for file in $asdf_plugins; do
-  plugin=$(basename "$file")
+count=0
+for plugin in $asdf_plugins; do
+  file="asdf-plugins/plugins/$plugin"
   repository=$(grep -e '^repository = ' "$file")
   repository="${repository/#repository = /}"
+  printf "[%03d/%d] %s\n" $((++count)) "$num_plugins" "$repository"
+  if [[ $repository == "https://github.com/rtx-plugins/"* ]]; then
+    trusted+=("$plugin")
+  elif grep -qe '^first-party = true' "$file"; then
+    trusted+=("$plugin")
+  fi
+  #  if [[ $repository == "https://github.com/"* ]]; then
+  #    owner=${repository#*github.com/}
+  #    owner=${owner%/*}
+  #    repo=${repository#*github.com/*/}
+  #    repo=${repo%.git}
+  #    stars["$owner/$repo"]="$plugin"
+  #  fi
   echo "    (\"$plugin\", \"$repository\")," >>src/default_shorthands.rs
 done
-echo "    // rtx custom shorthands" >>src/default_shorthands.rs
-for plugin in "${custom_plugins[@]}"; do
-  echo "    $plugin" >>src/default_shorthands.rs
+echo "]));" >>src/default_shorthands.rs
+
+cat <<EOF >>src/default_shorthands.rs
+
+#[rustfmt::skip]
+pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
+    Lazy::new(|| HashSet::from([
+EOF
+for plugin in "${trusted[@]}"; do
+  echo "    \"$plugin\"," >>src/default_shorthands.rs
 done
-echo "];" >>src/default_shorthands.rs
+echo "]));" >>src/default_shorthands.rs
+
+#cat <<EOF >>src/default_shorthands.rs
+##[rustfmt::skip]
+#pub static GITHUB_STARS: Lazy<HashMap<&'static str, usize>> =
+#    Lazy::new(|| HashMap::from([
+#EOF
+#for plugin in "${!stars[@]}"; do
+#  echo "    (\"$plugin\", ${stars[$plugin]})," >>src/default_shorthands.rs
+#done
+#echo "]));" >>src/default_shorthands.rs
+
+rustfmt src/default_shorthands.rs
+
 rm -rf asdf-plugins

@@ -15,7 +15,7 @@ use rayon::prelude::*;
 
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
-use crate::default_shorthands::DEFAULT_SHORTHANDS;
+use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
@@ -454,7 +454,11 @@ impl Plugin for ExternalPlugin {
             }
             if !settings.yes && self.repo_url.is_none() {
                 let url = self.get_repo_url(&config).unwrap_or_default();
-                if !url.starts_with("https://github.com/rtx-plugins/") {
+                let is_shorthand = DEFAULT_SHORTHANDS
+                    .get(self.name.as_str())
+                    .is_some_and(|s| s == &url);
+                let is_trusted = !is_shorthand || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
+                if !is_trusted {
                     eprintln!(
                         "⚠️  {name} is a community-developed plugin: {url}",
                         name = style(&self.name).blue(),
