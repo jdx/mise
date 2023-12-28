@@ -4,7 +4,7 @@ use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
-use std::str::FromStr;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::time::SystemTime;
@@ -261,7 +261,7 @@ impl Run {
     ) -> Result<()> {
         let program = program.to_executable();
         let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
-        match &self.output(task) {
+        match &self.output(task)? {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
             TaskOutput::Interleave => cmd = cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit()),
         }
@@ -291,18 +291,18 @@ impl Run {
         Ok(())
     }
 
-    fn output(&self, task: &Task) -> TaskOutput {
+    fn output(&self, task: &Task) -> Result<TaskOutput> {
         let settings = Settings::get();
         if self.prefix {
-            TaskOutput::Prefix
+            Ok(TaskOutput::Prefix)
         } else if self.interleave {
-            TaskOutput::Interleave
+            Ok(TaskOutput::Interleave)
         } else if let Some(output) = &settings.task_output {
-            TaskOutput::from_str(output).unwrap()
+            Ok(output.parse()?)
         } else if self.raw(task) || self.jobs() == 1 {
-            TaskOutput::Interleave
+            Ok(TaskOutput::Interleave)
         } else {
-            TaskOutput::Prefix
+            Ok(TaskOutput::Prefix)
         }
     }
 
@@ -503,6 +503,7 @@ impl Deps {
 }
 
 #[derive(Debug, PartialEq, EnumString)]
+#[strum(serialize_all = "snake_case")]
 enum TaskOutput {
     Prefix,
     Interleave,
