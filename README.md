@@ -999,12 +999,12 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 
-#### `RTX_TASK_OUTPUT=prefix`
+#### `RTX_TASK_OUTPUT=Prefix`
 
 This controls the output of `rtx run`. It can be one of:
 
-- `prefix` - (default if jobs > 1) print by line with the prefix of the task name
-- `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
+- `Prefix` - (default if jobs > 1) print by line with the prefix of the task name
+- `Interleave` - (default if jobs == 1) display stdout/stderr as it comes in
 
 #### `RTX_EXPERIMENTAL=true`
 
