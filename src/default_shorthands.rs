@@ -16,15 +16,11 @@
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
-
-pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
-    Lazy::new(|| HashMap::from(DEFAULT_SHORTHAND_LIST));
+use std::collections::{HashMap, HashSet};
 
 #[rustfmt::skip]
-#[cfg_attr(coverage_nightly, no_coverage)]
-const DEFAULT_SHORTHAND_LIST: [(&str, &str); 711] = [
-    // shorthands from https://github.com/rtx-plugins/registry
+pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
+    Lazy::new(|| HashMap::from([
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
     ("R", "https://github.com/asdf-community/asdf-r.git"),
     ("act", "https://github.com/grimoh/asdf-act.git"),
@@ -503,6 +499,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 711] = [
     ("php", "https://github.com/asdf-community/asdf-php.git"),
     ("pint", "https://github.com/sam-burrell/asdf-pint.git"),
     ("pipectl", "https://github.com/pipe-cd/asdf-pipectl.git"),
+    ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
     ("pipx", "https://github.com/yozachar/asdf-pipx.git"),
     ("pivnet", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
     ("please", "https://github.com/asdf-community/asdf-please.git"),
@@ -661,6 +658,7 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 711] = [
     ("thrift", "https://github.com/alisaifee/asdf-thrift.git"),
     ("tilt", "https://github.com/eaceaser/asdf-tilt.git"),
     ("timoni", "https://github.com/Smana/asdf-timoni.git"),
+    ("tiny", "https://github.com/rtx-plugins/rtx-tiny.git"),
     ("titan", "https://github.com/gabitchov/asdf-titan.git"),
     ("tlsg-cli", "https://github.com/0ghny/asdf-tlsgcli.git"),
     ("tmux", "https://github.com/aphecetche/asdf-tmux.git"),
@@ -734,7 +732,13 @@ const DEFAULT_SHORTHAND_LIST: [(&str, &str); 711] = [
     ("zola", "https://github.com/salasrod/asdf-zola.git"),
     ("zoxide", "https://github.com/nyrst/asdf-zoxide"),
     ("zprint", "https://github.com/carlduevel/asdf-zprint.git"),
-    // rtx custom shorthands
-    ("pipenv", "https://github.com/rtx-plugins/rtx-pipenv.git"),
-    ("tiny",   "https://github.com/rtx-plugins/rtx-tiny.git"),
-];
+]));
+
+#[rustfmt::skip]
+pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
+    Lazy::new(|| HashSet::from([
+    "dt",
+    "pipenv",
+    "poetry",
+    "tiny",
+]));
