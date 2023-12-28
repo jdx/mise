@@ -65,7 +65,8 @@ impl From<&dyn ConfigFile> for Row {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise config ls</bold>
+
+    $ <bold>mise config ls</bold>
 "#
 );
 

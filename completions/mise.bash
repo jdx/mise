@@ -183,6 +183,9 @@ _mise() {
             mise,upgrade)
                 cmd="mise__upgrade"
                 ;;
+            mise,usage)
+                cmd="mise__usage"
+                ;;
             mise,use)
                 cmd="mise__use"
                 ;;
@@ -440,6 +443,9 @@ _mise() {
                 ;;
             mise__help,upgrade)
                 cmd="mise__help__upgrade"
+                ;;
+            mise__help,usage)
+                cmd="mise__help__usage"
                 ;;
             mise__help,use)
                 cmd="mise__help__use"
@@ -718,7 +724,7 @@ _mise() {
 
     case "${cmd}" in
         mise)
-            opts="-C -q -v -y -h -V --cd --debug --log-level --quiet --trace --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
+            opts="-C -q -v -y -h -V --cd --debug --log-level --quiet --trace --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall unset upgrade usage use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1212,7 +1218,7 @@ _mise() {
             return 0
             ;;
         mise__completion)
-            opts="-s -C -q -v -y -h --shell --cd --debug --log-level --quiet --trace --verbose --yes --help bash fish zsh"
+            opts="-s -C -q -v -y -h --shell --usage --cd --debug --log-level --quiet --trace --verbose --yes --help bash fish zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1852,7 +1858,7 @@ _mise() {
             return 0
             ;;
         mise__help)
-            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
+            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall unset upgrade usage use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2817,6 +2823,20 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mise__help__usage)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mise__help__use)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -3624,7 +3644,7 @@ _mise() {
             return 0
             ;;
         mise__render__completion)
-            opts="-s -C -q -v -y -h --shell --cd --debug --log-level --quiet --trace --verbose --yes --help bash elvish fish powershell zsh"
+            opts="-s -C -q -v -y -h --shell --usage --cd --debug --log-level --quiet --trace --verbose --yes --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3891,7 +3911,7 @@ _mise() {
             return 0
             ;;
         mise__settings)
-            opts="-C -q -v -y -h --cd --debug --log-level --quiet --trace --verbose --yes --help get ls set unset help"
+            opts="-C -q -v -y -h --keys --cd --debug --log-level --quiet --trace --verbose --yes --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4039,7 +4059,7 @@ _mise() {
             return 0
             ;;
         mise__settings__ls)
-            opts="-C -q -v -y -h --cd --debug --log-level --quiet --trace --verbose --yes --help"
+            opts="-C -q -v -y -h --keys --cd --debug --log-level --quiet --trace --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4727,6 +4747,38 @@ _mise() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --cd)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__usage)
+            opts="-C -q -v -y -h --cd --debug --log-level --quiet --trace --verbose --yes --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 --cd)
                     COMPREPLY=()
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then

@@ -69,15 +69,15 @@ impl Where {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # Show the latest installed version of node
-  # If it is is not installed, errors
-  $ <bold>mise where node@20</bold>
-  /home/jdx/.local/share/mise/installs/node/20.0.0
+    # Show the latest installed version of node
+    # If it is is not installed, errors
+    $ <bold>mise where node@20</bold>
+    /home/jdx/.local/share/mise/installs/node/20.0.0
 
-  # Show the current, active install directory of node
-  # Errors if node is not referenced in any .tool-version file
-  $ <bold>mise where node</bold>
-  /home/jdx/.local/share/mise/installs/node/20.0.0
+    # Show the current, active install directory of node
+    # Errors if node is not referenced in any .tool-version file
+    $ <bold>mise where node</bold>
+    /home/jdx/.local/share/mise/installs/node/20.0.0
 "#
 );
 

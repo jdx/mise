@@ -110,14 +110,15 @@ type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise outdated</bold>
-  Plugin  Requested  Current  Latest
-  python  3.11       3.11.0   3.11.1
-  node    20         20.0.0   20.1.0
 
-  $ <bold>mise outdated node</bold>
-  Plugin  Requested  Current  Latest
-  node    20         20.0.0   20.1.0
+    $ <bold>mise outdated</bold>
+    Plugin  Requested  Current  Latest
+    python  3.11       3.11.0   3.11.1
+    node    20         20.0.0   20.1.0
+
+    $ <bold>mise outdated node</bold>
+    Plugin  Requested  Current  Latest
+    node    20         20.0.0   20.1.0
 "#
 );
 

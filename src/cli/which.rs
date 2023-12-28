@@ -71,12 +71,13 @@ impl Which {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise which node</bold>
-  /home/username/.local/share/mise/installs/node/20.0.0/bin/node
-  $ <bold>mise which node --plugin</bold>
-  node
-  $ <bold>mise which node --version</bold>
-  20.0.0
+
+    $ <bold>mise which node</bold>
+    /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+    $ <bold>mise which node --plugin</bold>
+    node
+    $ <bold>mise which node --version</bold>
+    20.0.0
 "#
 );
 

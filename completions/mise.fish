@@ -5,7 +5,7 @@ complete -kxc mise -s C -l cd -a "(__fish_complete_directories)" -d 'Change dire
 complete -kxc mise -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc mise -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc mise -s y -l yes -d 'Answer yes to all confirmation prompts'
-set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall unset upgrade use version watch where which
+set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall unset upgrade usage use version watch where which
 complete -xc mise -n "not $fssf $others" -a activate -d 'Initializes mise in the current shell session'
 complete -xc mise -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc mise -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
@@ -39,6 +39,7 @@ complete -xc mise -n "not $fssf $others" -a trust -d 'Marks a config file as tru
 complete -xc mise -n "not $fssf $others" -a uninstall -d 'Removes runtime versions'
 complete -xc mise -n "not $fssf $others" -a unset -d 'Remove environment variable(s) from the config file'
 complete -xc mise -n "not $fssf $others" -a upgrade -d 'Upgrades outdated tool versions'
+complete -xc mise -n "not $fssf $others" -a usage -d 'Generate a usage CLI spec'
 complete -xc mise -n "not $fssf $others" -a use -d 'Install tool version and add it to config'
 complete -xc mise -n "not $fssf $others" -a version -d 'Show mise version'
 complete -xc mise -n "not $fssf $others" -a watch -d '[experimental] Run a tasks watching for changes'
@@ -89,6 +90,7 @@ complete -kxc mise -n "$fssf cache; and $fssf clear" -a "(__mise_plugins)" -d 'P
 
 # completion
 complete -kxc mise -n "$fssf completion" -a "bash fish zsh" -d 'Shell type to generate completions for'
+complete -kxc mise -n "$fssf completion" -l usage -d 'Use usage for completions'
 
 # config
 complete -kxc mise -n "$fssf config" -l no-header -d 'Do not print table header'
@@ -241,6 +243,7 @@ complete -kxc mise -n "$fssf set" -l file -a "(__fish_complete_path)" -d 'The TO
 complete -kxc mise -n "$fssf set" -s g -l global -d 'Set the environment variable in the global config file'
 
 # settings
+complete -kxc mise -n "$fssf settings" -l keys -d 'Only display key names for each setting'
 set -l others get ls set unset
 complete -xc mise -n "$fssf settings; and not $fssf $others" -a get -d 'Show a current setting'
 complete -xc mise -n "$fssf settings; and not $fssf $others" -a ls -d 'Show current settings'
@@ -251,6 +254,7 @@ complete -xc mise -n "$fssf settings; and not $fssf $others" -a unset -d 'Clears
 complete -kxc mise -n "$fssf settings; and $fssf get" -a "(__mise_settings)" -d 'The setting to show'
 
 # settings ls
+complete -kxc mise -n "$fssf settings; and $fssf ls" -l keys -d 'Only display key names for each setting'
 
 # settings set
 complete -kxc mise -n "$fssf settings; and $fssf set" -a "(__mise_settings)" -d 'The setting to set'
@@ -336,6 +340,8 @@ complete -kxc mise -n "$fssf upgrade" -s i -l interactive -d 'Display multiselec
 complete -kxc mise -n "$fssf upgrade" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc mise -n "$fssf upgrade" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
 complete -kxc mise -n "$fssf upgrade" -a "(__mise_tool_versions)" -d 'Tool(s) to upgrade'
+
+# usage
 
 # use
 complete -kxc mise -n "$fssf use" -s e -l env -d 'Modify an environment-specific config file like .mise.<env>.toml'

@@ -101,7 +101,8 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise settings set legacy_version_file true</bold>
+
+    $ <bold>mise settings set legacy_version_file true</bold>
 "#
 );
 

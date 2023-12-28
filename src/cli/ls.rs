@@ -352,29 +352,30 @@ impl Display for VersionStatus {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise ls</bold>
-  node    20.0.0 ~/src/myapp/.tool-versions latest
-  python  3.11.0 ~/.tool-versions           3.10
-  python  3.10.0
 
-  $ <bold>mise ls --current</bold>
-  node    20.0.0 ~/src/myapp/.tool-versions 20
-  python  3.11.0 ~/.tool-versions           3.11.0
+    $ <bold>mise ls</bold>
+    node    20.0.0 ~/src/myapp/.tool-versions latest
+    python  3.11.0 ~/.tool-versions           3.10
+    python  3.10.0
 
-  $ <bold>mise ls --json</bold>
-  {
-    "node": [
-      {
-        "version": "20.0.0",
-        "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-        "source": {
-          "type": ".mise.toml",
-          "path": "/Users/jdx/.mise.toml"
+    $ <bold>mise ls --current</bold>
+    node    20.0.0 ~/src/myapp/.tool-versions 20
+    python  3.11.0 ~/.tool-versions           3.11.0
+
+    $ <bold>mise ls --json</bold>
+    {
+      "node": [
+        {
+          "version": "20.0.0",
+          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
+          "source": {
+            "type": ".mise.toml",
+            "path": "/Users/jdx/.mise.toml"
+          }
         }
-      }
-    ],
-    "python": [...]
-  }
+      ],
+      "python": [...]
+    }
 "#
 );
 

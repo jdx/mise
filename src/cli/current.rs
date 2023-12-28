@@ -96,19 +96,19 @@ impl Current {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # outputs `.tool-versions` compatible format
-  $ <bold>mise current</bold>
-  python 3.11.0 3.10.0
-  shfmt 3.6.0
-  shellcheck 0.9.0
-  node 20.0.0
-
-  $ <bold>mise current node</bold>
-  20.0.0
-
-  # can output multiple versions
-  $ <bold>mise current python</bold>
-  3.11.0 3.10.0
+    # outputs `.tool-versions` compatible format
+    $ <bold>mise current</bold>
+    python 3.11.0 3.10.0
+    shfmt 3.6.0
+    shellcheck 0.9.0
+    node 20.0.0
+  
+    $ <bold>mise current node</bold>
+    20.0.0
+  
+    # can output multiple versions
+    $ <bold>mise current python</bold>
+    3.11.0 3.10.0
 "#
 );
 
