@@ -1,0 +1,36 @@
+name: rtx-docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: {}
+
+concurrency:
+  group: rtx-docs-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  RTX_EXPERIMENTAL: 1
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: jdx/rtx-action@v1
+      - run: pnpm install
+      - run: pnpm run docs:build
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: jdx/rtx-action@v1
+      - run: pnpm install
+      - run: pnpm run docs:build
+      - run: rtx run release
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
