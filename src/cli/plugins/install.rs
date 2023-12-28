@@ -107,7 +107,7 @@ impl PluginsInstall {
             warn!("Plugin {name} already installed");
             warn!("Use --force to install anyway");
         } else {
-            plugin.ensure_installed(mpr, true)?;
+            plugin.ensure_installed(mpr, self.force)?;
         }
         Ok(())
     }
