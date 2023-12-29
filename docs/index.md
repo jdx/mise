@@ -5,21 +5,17 @@ layout: home
 hero:
   name: "rtx"
   text: "rtx documentation"
-  tagline: My great project tagline
+  tagline: "The front-end to your dev env"
   actions:
     - theme: brand
-      text: Markdown Examples
-      link: /markdown-examples
-    - theme: alt
-      text: API Examples
-      link: /api-examples
+      text: Getting Started
+      link: /getting-started/
 
 features:
-  - title: Feature A
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - title: Feature B
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - title: Feature C
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
+  - title: Tools
+    details: rtx is a polyglot tool version manager. It replaces tools like <a href="https://asdf-vm.com">asdf</a>, nvm, pyenv, rbenv, etc.
+  - title: Environments
+    details: rtx allows you to switch sets of env vars in different project directories. It can replace [direnv](https://direnv.sh).
+  - title: Tasks
+    details: rtx is a task runner that can replace [make](https://www.gnu.org/software/make), or [npm scripts](https://docs.npmjs.com/cli/v10/using-npm/scripts).
 ---
-
