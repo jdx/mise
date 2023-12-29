@@ -15,7 +15,7 @@ features:
   - title: Tools
     details: rtx is a polyglot tool version manager. It replaces tools like <a href="https://asdf-vm.com">asdf</a>, nvm, pyenv, rbenv, etc.
   - title: Environments
-    details: rtx allows you to switch sets of env vars in different project directories. It can replace <a href="https://direnv.sh">direnv</a>.
+    details: rtx allows you to switch sets of env vars in different project directories. It can replace <a href="https://github.com/direnv/direnv">direnv</a>.
   - title: Tasks
     details: rtx is a task runner that can replace <a href="https://www.gnu.org/software/make">make</a>, or <a href="https://docs.npmjs.com/cli/v10/using-npm/scripts">npm scripts</a>.
 ---
