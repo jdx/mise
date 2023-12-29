@@ -1,10 +1,10 @@
 ---
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
+title: Home
 
 hero:
-  name: "rtx"
-  text: "rtx documentation"
+  name: "rtx documentation"
   tagline: "The front-end to your dev env"
   actions:
     - theme: brand
@@ -15,7 +15,7 @@ features:
   - title: Tools
     details: rtx is a polyglot tool version manager. It replaces tools like <a href="https://asdf-vm.com">asdf</a>, nvm, pyenv, rbenv, etc.
   - title: Environments
-    details: rtx allows you to switch sets of env vars in different project directories. It can replace [direnv](https://direnv.sh).
+    details: rtx allows you to switch sets of env vars in different project directories. It can replace <a href="https://direnv.sh">direnv</a>.
   - title: Tasks
-    details: rtx is a task runner that can replace [make](https://www.gnu.org/software/make), or [npm scripts](https://docs.npmjs.com/cli/v10/using-npm/scripts).
+    details: rtx is a task runner that can replace <a href="https://www.gnu.org/software/make">make</a>, or <a href="https://docs.npmjs.com/cli/v10/using-npm/scripts">npm scripts</a>.
 ---
