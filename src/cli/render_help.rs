@@ -14,7 +14,7 @@ pub struct RenderHelp {}
 
 impl RenderHelp {
     pub fn run(self) -> Result<()> {
-        let readme = file::read_to_string("README.md")?;
+        let readme = file::read_to_string("docs/cli-reference.md")?;
         let mut current_readme = readme.split("<!-- RTX:COMMANDS -->");
 
         let mut doc = String::new();
@@ -23,7 +23,7 @@ impl RenderHelp {
         doc.push_str(render_commands().as_str());
         doc.push_str(current_readme.next().unwrap());
         doc = remove_trailing_spaces(&doc) + "\n";
-        file::write("README.md", &doc)?;
+        file::write("docs/cli-reference.md", &doc)?;
         Ok(())
     }
 }
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_render_help() {
         file::write(
-            "README.md",
+            "docs/cli-reference.md",
             indoc! {r#"
             <!-- RTX:COMMANDS -->
             <!-- RTX:COMMANDS -->
@@ -128,8 +128,8 @@ mod tests {
         )
         .unwrap();
         assert_cli!("render-help");
-        let readme = fs::read_to_string("README.md").unwrap();
+        let readme = fs::read_to_string("docs/cli-reference.md").unwrap();
         assert!(readme.contains("## Commands"));
-        file::remove_file("README.md").unwrap();
+        file::remove_file("docs/cli-reference.md").unwrap();
     }
 }

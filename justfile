@@ -109,7 +109,7 @@ lint-fix:
 
 render-all: render-help render-completions render-mangen
 
-# regenerate README.md
+# regenerate docs/cli-reference.md
 render-help: build
     NO_COLOR=1 rtx render-help
     #npx markdown-magic
@@ -128,6 +128,7 @@ render-mangen: build
 # called by lefthook precommit hook
 pre-commit: render-all lint
     git add README.md
+    git add docs/cli-reference.md
     git add completions
     git add man
 
