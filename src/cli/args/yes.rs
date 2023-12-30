@@ -7,7 +7,7 @@ impl Yes {
         Arg::new("yes")
             .short('y')
             .long("yes")
-            .help("Answer yes to all prompts")
+            .help("Answer yes to all confirmation prompts")
             .action(ArgAction::SetTrue)
             .global(true)
     }

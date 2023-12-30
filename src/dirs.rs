@@ -4,7 +4,6 @@ use once_cell::sync::Lazy;
 
 use crate::env;
 
-pub static CURRENT: Lazy<&Path> = Lazy::new(|| &env::PWD);
 pub static HOME: Lazy<&Path> = Lazy::new(|| &env::HOME);
 pub static DATA: Lazy<&Path> = Lazy::new(|| &env::RTX_DATA_DIR);
 pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::RTX_CACHE_DIR);

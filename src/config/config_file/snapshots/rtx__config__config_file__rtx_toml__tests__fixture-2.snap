@@ -29,5 +29,6 @@ expression: cf.settings().unwrap()
   "yes": null,
   "task_output": null,
   "not_found_auto_install": null,
-  "ci": null
+  "ci": null,
+  "cd": null
 }
