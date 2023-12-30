@@ -16,4 +16,4 @@ ambitious, take a look at existing direnv extensions for your IDE and see if you
 Direnv and rtx work similarly and there should be a direnv extension that can be used as a starting point.
 
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
-[`use_rtx`](#direnv) direnv function.
+[`use_rtx`](/direnv) direnv function.

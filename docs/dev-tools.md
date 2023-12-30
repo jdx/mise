@@ -3,7 +3,7 @@
 
 # Dev Tools
 
-_Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages dev tools like node, python, cmake, terraform, and [hundreds more](#plugins)._
+_Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages dev tools like node, python, cmake, terraform, and [hundreds more](/plugins)._
 
 ::: tip
 New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction.
@@ -16,7 +16,7 @@ directory[^cd]. Other projects on your machine can use a different set of versio
 
 rtx is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
-For more on how rtx compares to asdf, [see below](#comparison-to-asdf).
+For more on how rtx compares to asdf, [see below](/comparison-to-asdf).
 
 rtx can be configured in many ways. The most typical is by `.rtx.toml`, but it's also compatible
 with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
@@ -24,10 +24,10 @@ with asdf `.tool-versions` files. It can also use idiomatic version files like `
 
 [^cd]:
     Note that rtx does not modify "cd". It actually runs every time the prompt is _displayed_.
-    See the [What does RTX activate do?](#what-does-rtx-activate-do).
+    See the [What does RTX activate do?](/faq#what-does-rtx-activate-do).
 
-* Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](#env---arbitrary-environment-variables) for different project directories.
-* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](#experimental-task-runner) used to build and test projects.
+* Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](/configuration#env---arbitrary-environment-variables) for different project directories.
+* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used to build and test projects.
 
 ### How it works
 

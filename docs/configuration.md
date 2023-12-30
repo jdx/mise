@@ -17,7 +17,7 @@ They can use any of the following project locations (in order of precedence, top
 - `.config/rtx/rtx.toml`
 
 They can also be named `.rtx.local.toml` and environment-specific files like `.rtx.production.toml`.
-Can also be opted-in. See [Config Environments](#config-environments) for more details.
+Can also be opted-in. See [Config Environments](/profiles) for more details.
 Run `rtx config` to see the order of precedence on your system.
 
 Here is what an `.rtx.toml` looks like:
@@ -70,7 +70,7 @@ Then when inside of `~/src/myproj/backend`, `node` will be `18`, `python` will b
 will be `3.1`. You can check the active versions with `rtx ls --current`.
 
 You can also have environment specific config files like `.rtx.production.toml`, see
-[Config Environments](#config-environments) for more details.
+[Profiles](/profiles) for more details.
 
 ### `[env]` - Arbitrary Environment Variables
 
@@ -95,7 +95,7 @@ env_path = [
 
 _Note: `env_path` is a top-level key, it does not go inside of `[env]`._
 
-Environment variable values can be templates, see [Templates](#templates) for details.
+Environment variable values can be templates, see [Templates](/templates) for details.
 
 ```toml
 [env]
@@ -156,7 +156,7 @@ in rtx and nvm. Here are some of the supported legacy version files:
 
 In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
-`bin/parse-version-file`. However these are [cached](#cache-behavior) so it's not a huge deal.
+`bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
 
 > [!NOTE]
@@ -315,7 +315,7 @@ Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config 
 Enables environment-specific config files such as `.rtx.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
-[Config Environments](#config-environments) for more on how
+[Profiles](/profiles) for more on how
 to use this feature.
 
 ### `RTX_USE_VERSIONS_HOST`
@@ -327,7 +327,7 @@ a quick way for rtx to query for new versions. This host regularly grabs all the
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
-See [FAQ](#new-version-of-a-tool-is-not-available) for more information.
+See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
 
 ### `RTX_${PLUGIN}_VERSION`
 
@@ -419,7 +419,7 @@ an organization.
 Shorthands make it so when a user runs something like `rtx install elixir` rtx will
 automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
 default, it uses the shorthands in
-[`src/default_shorthands.rs`](./src/default_shorthands.rs).
+[`src/default_shorthands.rs`](https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs).
 
 The file should be in this toml format:
 

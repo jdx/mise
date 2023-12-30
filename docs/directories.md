@@ -2,7 +2,7 @@
 
 The following are the directories that rtx uses.
 These are the default directories, see
-[Configuration](#configuration) for information on changing the locations.
+[Configuration](/configuration) for information on changing the locations.
 
 > **Tip**
 >
@@ -20,7 +20,7 @@ _On macOS this is `~/Library/Caches/rtx`._
 Stores internal cache that rtx uses for things like the list of all available versions of a
 plugin. Do not share this across machines. You may delete this directory any time rtx isn't actively installing something.
 Do this with `rtx cache clear`.
-See [Cache Behavior](#cache-behavior) for more information.
+See [Cache Behavior](/cache-behavior) for more information.
 
 ## `~/.local/state/rtx`
 

@@ -298,7 +298,7 @@ echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 > For homebrew and possibly other installs rtx is automatically activated so
 > this is not necessary.
 >
-> See [`RTX_FISH_AUTO_ACTIVATE=1`](#rtx_fish_auto_activate1) for more information.
+> See [`RTX_FISH_AUTO_ACTIVATE=1`](/configuration#rtx_fish_auto_activate1) for more information.
 
 #### Nushell
 

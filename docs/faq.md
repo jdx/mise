@@ -51,9 +51,9 @@ situations where it needs to run without the directory changing, for example if 
 Because it runs on prompt display, if you attempt to use `rtx activate` in a
 non-interactive session (like a bash script), it will never call `rtx hook-env` and in effect will
 never modify PATH because it never displays a prompt. For this type of setup, you can either call
-`rtx hook-env` manually every time you wish to update PATH, or use [shims](#shims) instead (preferred).
+`rtx hook-env` manually every time you wish to update PATH, or use [shims](/shims) instead (preferred).
 Or if you only need to use rtx for certain commands, just prefix the commands with
-[`rtx x --`](#rtx-exec-options-toolversion----command).
+[`rtx x --`](./cli/#cli/#rtx-exec-options-tool-version-command).
 For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
@@ -76,7 +76,7 @@ expecting things to be directly on PATH. You can also run `rtx env` in a non-int
 will only setup the global tools. It won't modify the environment variables when entering into a
 different project.
 
-Also see the [shebang](#shebang) example for a way to make scripts call rtx to get the runtime.
+Also see the [shebang](/shebang) example for a way to make scripts call rtx to get the runtime.
 That is another way to use rtx without activation.
 
 ### rtx is failing or not working right
@@ -86,7 +86,7 @@ You can also set `RTX_LOG_FILE_LEVEL=debug RTX_LOG_FILE=/path/to/logfile` to wri
 
 If something is happening with the activate hook, you can try disabling it and calling `eval "$(rtx hook-env)"` manually.
 It can also be helpful to use `rtx env` which will just output environment variables that would be set.
-Also consider using [shims](#shims) which can be more compatible.
+Also consider using [shims](/shims) which can be more compatible.
 
 If runtime installation isn't working right, try using the `--raw` flag which will install things in
 series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
@@ -137,7 +137,7 @@ e.g.: how does `rtx plugin install elixir` know to fetch <https://github.com/asd
 
 We maintain [an index](https://github.com/rtx-plugins/registry) of shorthands that rtx uses as a base.
 This is regularly updated every time that rtx has a release. This repository is stored directly into
-the codebase [here](./src/default_shorthands.rs).
+the codebase [here](https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs).
 
 ### Does "node@20" mean the newest available version of node?
 
@@ -188,7 +188,7 @@ This isn't important for usability reasons so much as making it so plugins conti
 call asdf commands.
 
 If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`RTX_ASDF_COMPAT=1`](#rtx_asdf_compat1). That prevents
+[`RTX_ASDF_COMPAT=1`](/configuration#rtx_asdf_compat1). That prevents
 rtx from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.rtx.toml` instead which won't conflict with asdf setups.
 

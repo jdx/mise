@@ -24,7 +24,6 @@ required system dependencies.
 
 ## Configuration
 
-- `RTX_NODE_BUILD` [bool]: See [Moving away from node-build](#moving-away-from-node-build) below.
 - `RTX_NODE_BUILD_REPO` [string]: the default is `https://github.com/nodenv/node-build.git`
 - `RTX_NODE_VERIFY` [bool]: Verify the downloaded assets using GPG. Defaults to `true`.
 - `RTX_NODE_NINJA` [bool]: Use ninja instead of make to compile node. Defaults to `true` if installed.
