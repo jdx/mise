@@ -4,7 +4,7 @@ Installing rtx consists of two steps.
 
 1. Download the binary.
    This depends on the device and operating system you are running rtx in.
-1. Register a shell hook.
+2. Register a shell hook.
    This depends on the shell you are using.
    Read more about this step in the [FAQ](#what-does-rtx-activate-do).
 

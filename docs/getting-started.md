@@ -16,15 +16,11 @@ Using rtx involves 3 steps:
 First we need to download the rtx CLI. See the sidebar for alternate methods such as [homebrew](./installation/homebrew).
 This directory is simply a suggestion. rtx can be installed anywhere.
 
-::: code-group
-```sh [macos-arm64]
-$ mkdir -p ~/.local/share/rtx/bin
-$ curl https://rtx.jdx.dev/rtx-latest-macos-arm64 > ~/.local/share/rtx/bin/rtx
-$ chmod +x ~/.local/share/rtx/bin/rtx
+```sh
+$ curl https://rtx.jdx.dev/install.sh | sh
 $ ~/.local/share/rtx/bin/rtx --version
 rtx 2024.x.x
 ```
-:::
 
 ::: tip
 "~/.local/share/rtx/bin" does not need to be in PATH. rtx will automatically add its own directory to PATH when activated.
