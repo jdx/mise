@@ -201,16 +201,24 @@ impl ConfigFile for ToolVersions {
 #[cfg(test)]
 pub(crate) mod tests {
 
-    use crate::dirs;
+    use crate::env;
     use pretty_assertions::assert_eq;
 
     use super::*;
 
     #[test]
     fn test_parse() {
-        let tv =
-            ToolVersions::from_file(dirs::CURRENT.join(".test-tool-versions").as_path()).unwrap();
-        assert_eq!(tv.path, dirs::CURRENT.join(".test-tool-versions"));
+        let tv = ToolVersions::from_file(
+            env::current_dir()
+                .unwrap()
+                .join(".test-tool-versions")
+                .as_path(),
+        )
+        .unwrap();
+        assert_eq!(
+            tv.path,
+            env::current_dir().unwrap().join(".test-tool-versions")
+        );
         assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
     }
 
@@ -223,7 +231,7 @@ pub(crate) mod tests {
         shfmt  3.6.0
         # tail comment
         "};
-        let path = dirs::CURRENT.join(".test-tool-versions");
+        let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_eq!(tv.dump(), orig);
     }
@@ -233,7 +241,7 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5
         "};
-        let path = dirs::CURRENT.join(".test-tool-versions");
+        let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_snapshot!(tv.dump(), @r###"
         ruby 3.0.5
@@ -246,7 +254,7 @@ pub(crate) mod tests {
         ruby {{'3.0.5'}}
         python {{exec(command='echo 3.11.0')}}
         "};
-        let path = dirs::CURRENT.join(".test-tool-versions");
+        let path = env::current_dir().unwrap().join(".test-tool-versions");
         assert_cli!("trust", path.to_string_lossy());
         let tv = ToolVersions::parse_str(orig, path.clone()).unwrap();
         assert_cli!("trust", "--untrust", path.to_string_lossy());
@@ -261,7 +269,7 @@ pub(crate) mod tests {
         let orig = indoc! {"
         ruby: 3.0.5 3.1
         "};
-        let path = dirs::CURRENT.join(".test-tool-versions");
+        let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
         assert_display_snapshot!(tv.to_toolset(), @"ruby@3.0.5 ruby@3.1");
     }

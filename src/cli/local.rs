@@ -10,7 +10,7 @@ use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME
 use crate::file::display_path;
 
 use crate::plugins::PluginName;
-use crate::{dirs, env, file};
+use crate::{env, file};
 
 /// Sets/gets tool version in local .tool-versions or .rtx.toml
 ///
@@ -59,7 +59,7 @@ impl Local {
         let path = if self.parent {
             get_parent_path()?
         } else {
-            get_path()
+            get_path()?
         };
         local(
             &config,
@@ -73,12 +73,12 @@ impl Local {
     }
 }
 
-fn get_path() -> PathBuf {
-    let rtx_toml = dirs::CURRENT.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
+fn get_path() -> Result<PathBuf> {
+    let rtx_toml = env::current_dir()?.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
     if *env::RTX_USE_TOML || rtx_toml.exists() {
-        rtx_toml
+        Ok(rtx_toml)
     } else {
-        dirs::CURRENT.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+        Ok(env::current_dir()?.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
     }
 }
 
@@ -87,7 +87,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
     if !*env::RTX_USE_TOML {
         filenames.push(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
-    file::find_up(&dirs::CURRENT, &filenames)
+    file::find_up(&env::current_dir()?, &filenames)
         .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
 }
 
@@ -170,7 +170,7 @@ mod tests {
 
     use crate::cli::tests::grep;
     use crate::test::reset_config;
-    use crate::{dirs, file};
+    use crate::{dirs, env, file};
 
     #[test]
     fn test_local_remove() {
@@ -312,8 +312,8 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        let _ = file::remove_file(dirs::CURRENT.join(".test.rtx.toml"));
-        let cf_path = dirs::CURRENT.join(".test-tool-versions");
+        let _ = file::remove_file(env::current_dir().unwrap().join(".test.rtx.toml"));
+        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         let orig = file::read_to_string(&cf_path).unwrap();
 
         let result = panic::catch_unwind(test);

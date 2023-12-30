@@ -62,6 +62,7 @@ pub struct Settings {
     pub not_found_auto_install: bool,
     #[config(env = "CI", default = false)]
     pub ci: bool,
+    pub cd: Option<String>,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
@@ -84,6 +85,14 @@ impl Settings {
             return Ok(settings.clone());
         }
         let mut settings = Self::default_builder().load()?;
+        if let Some(cd) = &settings.cd {
+            static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
+            let mut cd = PathBuf::from(cd);
+            if cd.is_relative() {
+                cd = ORIG_PATH.as_ref()?.join(cd);
+            }
+            env::set_current_dir(cd)?;
+        }
         if settings.raw {
             settings.jobs = 1;
         }
@@ -139,6 +148,9 @@ impl Settings {
     }
     pub fn add_cli_matches(m: &clap::ArgMatches) {
         let mut s = SettingsPartial::empty();
+        if let Some(cd) = m.get_one::<String>("cd") {
+            s.cd = Some(cd.to_string());
+        }
         if let Some(true) = m.get_one::<bool>("yes") {
             s.yes = Some(true);
         }
@@ -172,7 +184,7 @@ impl Settings {
     }
     pub fn hidden_configs() -> HashSet<&'static str> {
         static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
-            Lazy::new(|| ["ci", "debug", "trace", "log_level"].into());
+            Lazy::new(|| ["ci", "cd", "debug", "trace", "log_level"].into());
         HIDDEN_CONFIGS.clone()
     }
 

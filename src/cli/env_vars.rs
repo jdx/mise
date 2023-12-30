@@ -3,7 +3,7 @@ use color_eyre::Result;
 use crate::config::config_file::rtx_toml::RtxToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
-use crate::dirs;
+use crate::env;
 use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
 use crate::file::display_path;
 
@@ -67,7 +67,7 @@ impl EnvVars {
 }
 
 fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
-    let path = dirs::CURRENT.join(filename);
+    let path = env::current_dir()?.join(filename);
     let rtx_toml = if path.exists() {
         RtxToml::from_file(&path)?
     } else {
@@ -79,11 +79,11 @@ fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{dirs, file};
+    use crate::{env, file};
     use std::path::PathBuf;
 
     fn remove_config_file(filename: &str) -> PathBuf {
-        let cf_path = dirs::CURRENT.join(filename);
+        let cf_path = env::current_dir().unwrap().join(filename);
         let _ = file::remove_file(&cf_path);
         cf_path
     }

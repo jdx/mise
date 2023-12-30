@@ -30,7 +30,7 @@ impl TaskEdit {
                 let path = config
                     .project_root
                     .as_ref()
-                    .unwrap_or(&env::PWD)
+                    .unwrap_or(&env::current_dir()?)
                     .join(".rtx")
                     .join("tasks")
                     .join(&self.task);

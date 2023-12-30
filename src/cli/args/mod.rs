@@ -1,3 +1,4 @@
+pub mod cd;
 pub mod env_var;
 pub mod log_level;
 pub mod quiet;

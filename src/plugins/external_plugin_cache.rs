@@ -95,7 +95,12 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<Strin
     let mut ctx = BASE_CONTEXT.clone();
     ctx.insert("project_root", &config.project_root);
     ctx.insert("opts", &tv.opts);
-    get_tera(config.project_root.as_ref().unwrap_or(&*env::PWD))
-        .render_str(tmpl, &ctx)
-        .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+    get_tera(
+        config
+            .project_root
+            .as_ref()
+            .unwrap_or(&env::current_dir().unwrap()),
+    )
+    .render_str(tmpl, &ctx)
+    .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
 }

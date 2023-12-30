@@ -36,7 +36,6 @@ pub fn handle_shim() -> Result<()> {
         tool: vec![],
         c: None,
         command: Some(args),
-        cd: None,
         jobs: None,
         raw: false,
     };

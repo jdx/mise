@@ -1,9 +1,10 @@
 set -l fssf "__fish_seen_subcommand_from"
 
 # rtx
+complete -kxc rtx -s C -l cd -a "(__fish_complete_directories)" -d 'Change directory before running command'
 complete -kxc rtx -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc rtx -s v -l verbose -d 'Show extra output (use -vv for even more)'
-complete -kxc rtx -s y -l yes -d 'Answer yes to all prompts'
+complete -kxc rtx -s y -l yes -d 'Answer yes to all confirmation prompts'
 set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which
 complete -xc rtx -n "not $fssf $others" -a activate -d 'Initializes rtx in the current shell session'
 complete -xc rtx -n "not $fssf $others" -a alias -d 'Manage aliases'
@@ -127,7 +128,6 @@ complete -kxc rtx -n "$fssf env-vars" -l remove -d 'Remove the environment varia
 
 # exec
 complete -kxc rtx -n "$fssf exec" -s c -l command -d 'Command string to execute'
-complete -kxc rtx -n "$fssf exec" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
 complete -kxc rtx -n "$fssf exec" -d 'Command string to execute (same as --command)'
 complete -kxc rtx -n "$fssf exec" -s j -l jobs -d 'Number of jobs to run in parallel'
 complete -kxc rtx -n "$fssf exec" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
