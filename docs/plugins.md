@@ -14,18 +14,18 @@ time. They can be easily overridden by installing a plugin with the same name, e
 
 You can see the core plugins with `rtx plugin ls --core`.
 
-- [Python](./docs/python.md)
-- [NodeJS](./docs/node.md)
-- [Ruby](./docs/ruby.md)
-- [Go](./docs/go.md)
-- [Java](./docs/java.md)
-- [Deno](./docs/deno.md)
-- [Bun](./docs/bun.md)
+- [Bun](./lang/bun)
+- [Deno](./lang/deno)
+- [Go](./lang/go)
+- [Java](./lang/java)
+- [NodeJS](./lang/node)
+- [Python](./lang/python)
+- [Ruby](./lang/ruby)
 
 ## Plugin Authors
 
 <https://github.com/rtx-plugins> is a GitHub organization for community-developed plugins.
-See [SECURITY.md](./SECURITY.md) for more details on how plugins here are treated differently.
+See [SECURITY.md](https://github.com/jdx/rtx/blob/main/SECURITY.md) for more details on how plugins here are treated differently.
 
 If you'd like your plugin to be hosted here please let me know (GH discussion or discord is fine)
 and I'd be happy to host it for you.

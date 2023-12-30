@@ -15,7 +15,7 @@ The code for this is inside the rtx repository at
 The following installs the latest version of go-1.20.x (if some version of 1.20.x is not already
 installed) and makes it the global default:
 
-```sh-session
+```sh
 rtx use -g go@1.20
 ```
 

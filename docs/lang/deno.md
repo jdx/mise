@@ -13,7 +13,7 @@ The code for this is inside the rtx repository at
 
 The following installs deno and makes it the global default:
 
-```sh-session
+```sh
 rtx use -g deno@1       # install deno 1.x
 rtx use -g deno@latest  # install latest deno
 ```

@@ -10,13 +10,13 @@ The code for this is inside of the rtx repository at [`./src/plugins/core/python
 The following installs the latest version of python-3.11.x and makes it the global
 default:
 
-```sh-session
+```sh
 rtx use -g python@3.11
 ```
 
 You can also use multiple versions of python at the same time:
 
-```sh-session
+```sh
 $ rtx use -g python@3.10 python@3.11
 $ python -V
 3.10.0

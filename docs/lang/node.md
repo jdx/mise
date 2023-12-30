@@ -13,7 +13,7 @@ The code for this is inside the rtx repository at [`./src/plugins/core/node.rs`]
 The following installs the latest version of node-20.x and makes it the global
 default:
 
-```sh-session
+```sh
 rtx use -g node@20
 ```
 

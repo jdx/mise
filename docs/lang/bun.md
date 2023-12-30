@@ -10,7 +10,7 @@ The code for this is inside the rtx repository at
 
 The following installs bun and makes it the global default:
 
-```sh-session
+```sh
 rtx use -g bun@0.7     # install bun 0.7.x
 rtx use -g bun@latest  # install latest bun
 ```

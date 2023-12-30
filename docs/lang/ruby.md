@@ -15,7 +15,7 @@ The code for this is inside the rtx repository at
 The following installs the latest version of ruby-3.2.x (if some version of 3.2.x is not already
 installed) and makes it the global default:
 
-```sh-session
+```sh
 rtx use -g ruby@3.2
 ```
 
@@ -58,7 +58,7 @@ However it can also read ruby-specific version files `.ruby-version` or `Gemfile
 
 Create a `.ruby-version` file for the current version of ruby:
 
-```sh-session
+```sh
 ruby -v > .ruby-version
 ```
 
