@@ -15,6 +15,13 @@ export default defineConfig({
     sidebar: [
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
+      { text: 'Configuration', link: '/configuration' },
+      { text: 'Versioning', link: '/versioning' },
+      { text: 'Directory Structure', link: '/directories' },
+      { text: 'IDE Integration', link: '/ide-integration' },
+      { text: 'Project Roadmap', link: '/project-roadmap' },
+      { text: 'Cache behavior', link: '/cache-behavior' },
+      { text: 'FAQs', link: '/faq' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',
@@ -30,21 +37,22 @@ export default defineConfig({
         text: 'Environments',
         link: '/environments',
         items: [
-          { text: 'Config Environments', link: '/config-environments' },
+          { text: 'Profiles', link: '/profiles' },
           { text: 'Shebang', link: '/shebang' },
           { text: 'direnv', link: '/direnv' },
           { text: 'Templates', link: '/templates' },
           { text: 'CI/CD', link: '/ci-cd' },
         ],
       },
-      { text: 'Tasks', link: '/tasks' },
-      { text: 'Configuration', link: '/configuration' },
-      { text: 'Versioning', link: '/versioning' },
-      { text: 'Directory Structure', link: '/directories' },
-      { text: 'IDE Integration', link: '/ide-integration' },
-      { text: 'Project Roadmap', link: '/project-roadmap' },
-      { text: 'Cache behavior', link: '/cache-behavior' },
-      { text: 'FAQs', link: '/faq' },
+      {
+        text: 'Tasks',
+        link: '/tasks/',
+        items: [
+          {text: 'Script Tasks', link: '/tasks/script-tasks'},
+          {text: 'TOML Tasks', link: '/tasks/toml-tasks'},
+          {text: 'Running Tasks', link: '/tasks/running-tasks'},
+        ],
+      },
       {
         text: 'Languages',
         items: [

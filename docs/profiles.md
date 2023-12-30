@@ -1,4 +1,4 @@
-# Config Environments
+# Profiles
 
 It's possible to have separate `.rtx.toml` files in the same directory for different
 environments like `development` and `production`. To enable, set `RTX_ENV` to an environment like
