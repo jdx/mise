@@ -36,13 +36,6 @@ export default defineConfig({
       { text: 'CI/CD', link: '/ci-cd' },
       { text: 'Cache behavior', link: '/cache-behavior' },
       {
-        text: 'Installation',
-        link: '/installation/',
-        items: [
-          { text: 'Homebrew', link: '/installation/homebrew' }
-        ]
-      },
-      {
         text: 'Languages',
         items: [
           { text: 'Bun', link: '/lang/bun' },
