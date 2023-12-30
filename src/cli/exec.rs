@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::path::PathBuf;
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
@@ -38,10 +37,6 @@ pub struct Exec {
     /// Command string to execute
     #[clap(short, long = "command", value_hint = ValueHint::CommandString, conflicts_with = "command")]
     pub c: Option<OsString>,
-
-    /// Change to this directory before executing the command
-    #[clap(short = 'C', long, value_hint = ValueHint::DirPath)]
-    pub cd: Option<PathBuf>,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
@@ -86,9 +81,6 @@ impl Exec {
         }
         let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
         let program = program.to_executable();
-        if let Some(cd) = &self.cd {
-            env::set_current_dir(cd)?;
-        }
         let err = exec::Command::new(program.clone()).args(&args).exec();
         bail!("{:?} {err}", program.to_string_lossy())
     }
@@ -102,9 +94,6 @@ impl Exec {
         E: AsRef<OsStr>,
     {
         let mut cmd = cmd::cmd(program, args);
-        if let Some(cd) = &self.cd {
-            cmd = cmd.dir(cd);
-        }
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
@@ -147,6 +136,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use std::env;
 
     #[test]
     fn test_exec_ok() {
@@ -161,6 +151,8 @@ mod tests {
 
     #[test]
     fn test_exec_cd() {
+        let cwd = env::current_dir().unwrap();
         assert_cli!("exec", "-C", "/tmp", "--", "pwd");
+        env::set_current_dir(cwd).unwrap();
     }
 }

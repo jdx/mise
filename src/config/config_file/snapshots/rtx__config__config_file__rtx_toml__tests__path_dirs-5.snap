@@ -7,6 +7,7 @@ RtxToml(~/fixtures/.rtx.toml):  {
         "always_keep_download": Null,
         "always_keep_install": Null,
         "asdf_compat": Null,
+        "cd": Null,
         "ci": Null,
         "color": Null,
         "debug": Null,

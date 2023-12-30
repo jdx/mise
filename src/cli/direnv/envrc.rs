@@ -1,14 +1,13 @@
 use std::fs::{create_dir_all, File};
 use std::io::Write;
-use std::ops::Deref;
 
 use eyre::Result;
 
 use crate::config::Config;
 use crate::hash::hash_to_str;
 
+use crate::env;
 use crate::toolset::ToolsetBuilder;
-use crate::{dirs, env};
 
 /// [internal] This is an internal command that writes an envrc file
 /// for direnv to consume.
@@ -22,7 +21,7 @@ impl Envrc {
 
         let envrc_path = env::RTX_TMP_DIR
             .join("direnv")
-            .join(hash_to_str(dirs::CURRENT.deref()) + ".envrc");
+            .join(hash_to_str(&env::current_dir()?) + ".envrc");
 
         // TODO: exit early if envrc_path exists and is up to date
         create_dir_all(envrc_path.parent().unwrap())?;
@@ -58,8 +57,8 @@ impl Envrc {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::file;
+
+    use crate::{dirs, file};
 
     #[test]
     fn test_direnv_envrc() {

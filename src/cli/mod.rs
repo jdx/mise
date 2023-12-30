@@ -184,6 +184,7 @@ impl Cli {
                 .arg(args::log_level::Debug::arg())
                 .arg(args::log_level::LogLevel::arg())
                 .arg(args::log_level::Trace::arg())
+                .arg(args::cd::Cd::arg())
                 .arg(args::quiet::Quiet::arg())
                 .arg(args::verbose::Verbose::arg())
                 .arg(args::yes::Yes::arg()),

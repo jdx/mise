@@ -20,7 +20,6 @@ pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "s
 // paths and directories
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/")));
-pub static PWD: Lazy<PathBuf> = Lazy::new(|| current_dir().unwrap_or_else(|_| PathBuf::new()));
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 

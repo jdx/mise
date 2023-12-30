@@ -2307,9 +2307,6 @@ Options:
   -c, --command <C>
           Command string to execute
 
-  -C, --cd <CD>
-          Change to this directory before executing the command
-
   -j, --jobs <JOBS>
           Number of jobs to run in parallel
           [default: 4]

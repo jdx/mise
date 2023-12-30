@@ -5,9 +5,10 @@ _rtx() {
   local ret=1
 
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_cmds' \
     '*::arg:->args' && ret=0
 
@@ -69,17 +70,19 @@ __rtx_activate_cmd() {
     '::shell_type:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_alias_cmd] )) ||
 __rtx_alias_cmd() {
   _arguments -s -S \
     '(-p --plugin)'{-p,--plugin}'=[filter aliases by plugin]:plugin:__rtx_plugins' \
     '--no-header[Don'\''t show table header]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_alias_cmds' \
     '*::arg:->args' && ret=0
 
@@ -102,18 +105,20 @@ __rtx_alias_get_cmd() {
   _arguments -s -S \
     ':plugin:__rtx_plugins' \
     ':alias:__rtx_aliases' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_alias_ls_cmd] )) ||
 __rtx_alias_ls_cmd() {
   _arguments -s -S \
     '::plugin:__rtx_plugins' \
     '--no-header[Don'\''t show table header]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_alias_set_cmd] )) ||
 __rtx_alias_set_cmd() {
@@ -121,40 +126,45 @@ __rtx_alias_set_cmd() {
     ':plugin:__rtx_plugins' \
     ':alias:__rtx_aliases' \
     ':value:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_alias_unset_cmd] )) ||
 __rtx_alias_unset_cmd() {
   _arguments -s -S \
     ':plugin:__rtx_plugins' \
     ':alias:__rtx_aliases' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_asdf_cmd] )) ||
 __rtx_asdf_cmd() {
   _arguments -s -S \
     '*::args:_cmdambivalent' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_bin_paths_cmd] )) ||
 __rtx_bin_paths_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_cache_cmd] )) ||
 __rtx_cache_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_cache_cmds' \
     '*::arg:->args' && ret=0
 
@@ -173,25 +183,28 @@ return ret
 __rtx_cache_clear_cmd() {
   _arguments -s -S \
     '*::plugin:__rtx_plugins' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_completion_cmd] )) ||
 __rtx_completion_cmd() {
   _arguments -s -S \
     '::shell:(bash fish zsh)' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_config_cmd] )) ||
 __rtx_config_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_config_cmds' \
     '*::arg:->args' && ret=0
 
@@ -211,39 +224,44 @@ return ret
 __rtx_config_generate_cmd() {
   _arguments -s -S \
     '(-o --output)'{-o,--output}'=[Output to file instead of stdout]:output:_files' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_config_ls_cmd] )) ||
 __rtx_config_ls_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_current_cmd] )) ||
 __rtx_current_cmd() {
   _arguments -s -S \
     '::plugin:__rtx_plugins' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_deactivate_cmd] )) ||
 __rtx_deactivate_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_direnv_cmd] )) ||
 __rtx_direnv_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_direnv_cmds' \
     '*::arg:->args' && ret=0
 
@@ -263,30 +281,34 @@ return ret
 (( $+functions[__rtx_direnv_activate_cmd] )) ||
 __rtx_direnv_activate_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_direnv_envrc_cmd] )) ||
 __rtx_direnv_envrc_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_direnv_exec_cmd] )) ||
 __rtx_direnv_exec_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_doctor_cmd] )) ||
 __rtx_doctor_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_env_cmd] )) ||
 __rtx_env_cmd() {
@@ -294,9 +316,10 @@ __rtx_env_cmd() {
     '(-s --shell)'{-s,--shell}'=[Shell type to generate environment variables for]:shell:(bash fish nu xonsh zsh)' \
     '*::tool:__rtx_tool_versions' \
     '(-J --json)'{-J,--json}'[Output in JSON format]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_env_vars_cmd] )) ||
 __rtx_env_vars_cmd() {
@@ -304,21 +327,22 @@ __rtx_env_vars_cmd() {
     '--file=[The TOML file to update]:file:_files' \
     '*--remove=[Remove the environment variable from config file]:remove:' \
     '*::env_vars:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_exec_cmd] )) ||
 __rtx_exec_cmd() {
   _arguments -s -S \
     '*::tool:__rtx_tool_versions' \
     '(-c --command)'{-c,--command}'=[Command string to execute]:c:_cmdstring' \
-    '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_global_cmd] )) ||
 __rtx_global_cmd() {
@@ -328,9 +352,10 @@ __rtx_global_cmd() {
     '--fuzzy[Save fuzzy version to \`~/.tool-versions\`]' \
     '*--remove=[Remove the plugin(s) from ~/.tool-versions]:remove:' \
     '--path[Get the path of the global config file]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_hook_env_cmd] )) ||
 __rtx_hook_env_cmd() {
@@ -338,26 +363,29 @@ __rtx_hook_env_cmd() {
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
     '--status[Show "rtx\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-q --quiet)'{-q,--quiet}'[Hide warnings such as when a tool is not installed]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_hook_not_found_cmd] )) ||
 __rtx_hook_not_found_cmd() {
   _arguments -s -S \
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
     ':bin:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_implode_cmd] )) ||
 __rtx_implode_cmd() {
   _arguments -s -S \
     '--config[Also remove config directory]' \
     '(-n --dry-run)'{-n,--dry-run}'[List directories that would be removed without actually removing them]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_install_cmd] )) ||
 __rtx_install_cmd() {
@@ -367,17 +395,19 @@ __rtx_install_cmd() {
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
     '*'{-v,--verbose}'[Show installation output]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_latest_cmd] )) ||
 __rtx_latest_cmd() {
   _arguments -s -S \
     ':tool:__rtx_tool_versions' \
     '(-i --installed)'{-i,--installed}'[Show latest installed instead of available version]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_link_cmd] )) ||
 __rtx_link_cmd() {
@@ -385,9 +415,10 @@ __rtx_link_cmd() {
     ':tool:__rtx_tool_versions' \
     ':path:_directories' \
     '(-f --force)'{-f,--force}'[Overwrite an existing tool version if it exists]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_local_cmd] )) ||
 __rtx_local_cmd() {
@@ -398,9 +429,10 @@ __rtx_local_cmd() {
     '--fuzzy[Save fuzzy version to \`.tool-versions\` e.g.\: \`rtx local --fuzzy node@20\` will save \`node 20\` to .tool-versions This is the default behavior unless RTX_ASDF_COMPAT=1]' \
     '*--remove=[Remove the plugin(s) from .tool-versions]:remove:' \
     '--path[Get the path of the config file]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_ls_cmd] )) ||
 __rtx_ls_cmd() {
@@ -413,9 +445,10 @@ __rtx_ls_cmd() {
     '(-m --missing)'{-m,--missing}'[Display missing tool versions]' \
     '--prefix=[Display versions matching this prefix]:prefix:__rtx_prefixes' \
     '--no-header[Don'\''t display headers]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_ls_remote_cmd] )) ||
 __rtx_ls_remote_cmd() {
@@ -423,17 +456,19 @@ __rtx_ls_remote_cmd() {
     '::plugin:__rtx_plugins' \
     '--all[Show all installed plugins and versions]' \
     '::prefix:__rtx_prefixes' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_outdated_cmd] )) ||
 __rtx_outdated_cmd() {
   _arguments -s -S \
     '*::tool:__rtx_tool_versions' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_cmd] )) ||
 __rtx_plugins_cmd() {
@@ -441,9 +476,10 @@ __rtx_plugins_cmd() {
     '(-c --core)'{-c,--core}'[The built-in plugins only]' \
     '--user[List installed plugins]' \
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_plugins_cmds' \
     '*::arg:->args' && ret=0
 
@@ -471,8 +507,9 @@ __rtx_plugins_install_cmd() {
     '(-f --force)'{-f,--force}'[Reinstall even if plugin exists]' \
     '(-a --all)'{-a,--all}'[Install all missing plugins]' \
     '*'{-v,--verbose}'[Show installation output]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_link_cmd] )) ||
 __rtx_plugins_link_cmd() {
@@ -480,9 +517,10 @@ __rtx_plugins_link_cmd() {
     ':name:' \
     '::path:_directories' \
     '(-f --force)'{-f,--force}'[Overwrite existing plugin]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_ls_cmd] )) ||
 __rtx_plugins_ls_cmd() {
@@ -490,18 +528,20 @@ __rtx_plugins_ls_cmd() {
     '(-c --core)'{-c,--core}'[The built-in plugins only]' \
     '--user[List installed plugins]' \
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_ls_remote_cmd] )) ||
 __rtx_plugins_ls_remote_cmd() {
   _arguments -s -S \
     '(-u --urls)'{-u,--urls}'[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
     '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_uninstall_cmd] )) ||
 __rtx_plugins_uninstall_cmd() {
@@ -509,34 +549,38 @@ __rtx_plugins_uninstall_cmd() {
     '*::plugin:__rtx_plugins' \
     '(-p --purge)'{-p,--purge}'[Also remove the plugin'\''s installs, downloads, and cache]' \
     '(-a --all)'{-a,--all}'[Remove all plugins]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_plugins_update_cmd] )) ||
 __rtx_plugins_update_cmd() {
   _arguments -s -S \
     '*::plugin:__rtx_plugins' \
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_prune_cmd] )) ||
 __rtx_prune_cmd() {
   _arguments -s -S \
     '*::plugin:__rtx_plugins' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_reshim_cmd] )) ||
 __rtx_reshim_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_run_cmd] )) ||
 __rtx_run_cmd() {
@@ -553,7 +597,7 @@ __rtx_run_cmd() {
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_self_update_cmd] )) ||
 __rtx_self_update_cmd() {
@@ -562,15 +606,17 @@ __rtx_self_update_cmd() {
     '--no-plugins[Disable auto-updating plugins]' \
     '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]' \
     '::version:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]'
 }
 (( $+functions[__rtx_settings_cmd] )) ||
 __rtx_settings_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_settings_cmds' \
     '*::arg:->args' && ret=0
 
@@ -592,33 +638,37 @@ return ret
 __rtx_settings_get_cmd() {
   _arguments -s -S \
     ':setting:__rtx_settings' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_settings_ls_cmd] )) ||
 __rtx_settings_ls_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_settings_set_cmd] )) ||
 __rtx_settings_set_cmd() {
   _arguments -s -S \
     ':setting:__rtx_settings' \
     ':value:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_settings_unset_cmd] )) ||
 __rtx_settings_unset_cmd() {
   _arguments -s -S \
     ':setting:__rtx_settings' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_shell_cmd] )) ||
 __rtx_shell_cmd() {
@@ -627,16 +677,18 @@ __rtx_shell_cmd() {
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
     '(-u --unset)'{-u,--unset}'[Removes a previously set version]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_sync_cmd] )) ||
 __rtx_sync_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_sync_cmds' \
     '*::arg:->args' && ret=0
 
@@ -658,26 +710,29 @@ __rtx_sync_node_cmd() {
     '--brew[Get tool versions from Homebrew]' \
     '--nvm[Get tool versions from nvm]' \
     '--nodenv[Get tool versions from nodenv]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_sync_python_cmd] )) ||
 __rtx_sync_python_cmd() {
   _arguments -s -S \
     '--pyenv[Get tool versions from pyenv]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_task_cmd] )) ||
 __rtx_task_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
     '--hidden[Show hidden tasks]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
     '1: :__rtx_task_cmds' \
     '*::arg:->args' && ret=0
 
@@ -699,18 +754,20 @@ __rtx_task_edit_cmd() {
   _arguments -s -S \
     ':task:__rtx_tasks' \
     '(-p --path)'{-p,--path}'[Display the path to the task instead of editing it]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_task_ls_cmd] )) ||
 __rtx_task_ls_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
     '--hidden[Show hidden tasks]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_task_run_cmd] )) ||
 __rtx_task_run_cmd() {
@@ -727,7 +784,7 @@ __rtx_task_run_cmd() {
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_trust_cmd] )) ||
 __rtx_trust_cmd() {
@@ -735,9 +792,10 @@ __rtx_trust_cmd() {
     '::config_file:_files' \
     '(-a --all)'{-a,--all}'[Trust all config files in the current directory and its parents]' \
     '--untrust[No longer trust this config]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_uninstall_cmd] )) ||
 __rtx_uninstall_cmd() {
@@ -745,9 +803,10 @@ __rtx_uninstall_cmd() {
     '*::installed_tool:__rtx_installed_tool_versions' \
     '(-a --all)'{-a,--all}'[Delete all installed versions]' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_upgrade_cmd] )) ||
 __rtx_upgrade_cmd() {
@@ -757,9 +816,10 @@ __rtx_upgrade_cmd() {
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '(-i --interactive)'{-i,--interactive}'[Display multiselect menu to choose which tools to upgrade]' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_use_cmd] )) ||
 __rtx_use_cmd() {
@@ -774,16 +834,18 @@ __rtx_use_cmd() {
     '*--remove=[Remove the tool(s) from config file]:remove:' \
     '(-p --path)'{-p,--path}'=[Specify a path to a config file or directory If a directory is specified, it will look for .rtx.toml (default) or .tool-versions]:path:_files' \
     '--pin[Save exact version to config file]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_version_cmd] )) ||
 __rtx_version_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_watch_cmd] )) ||
 __rtx_watch_cmd() {
@@ -791,17 +853,19 @@ __rtx_watch_cmd() {
     '*'{-t,--task}'=[Task to run]:task:__rtx_tasks' \
     '*::args:' \
     '*'{-g,--glob}'=[Files to watch]:glob:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_where_cmd] )) ||
 __rtx_where_cmd() {
   _arguments -s -S \
     ':tool:__rtx_tool_versions' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_which_cmd] )) ||
 __rtx_which_cmd() {
@@ -810,9 +874,10 @@ __rtx_which_cmd() {
     '--plugin[Show the plugin name instead of the path]' \
     '--version[Show the version instead of the path]' \
     '(-t --tool)'{-t,--tool}'=[Use a specific tool@version]:tool:__rtx_tool_versions' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__rtx_cmds] )) ||
 __rtx_cmds() {
