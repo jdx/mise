@@ -4,6 +4,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "rtx",
   description: "rtx documentation",
+  lastUpdated: true,
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
@@ -13,14 +14,17 @@ export default defineConfig({
 
     sidebar: [
       { text: 'Getting Started', link: '/getting-started.html' },
+      { text: 'Dev Tools', link: '/dev-tools' },
+      { text: 'Environments', link: '/environments' },
+      { text: 'Tasks', link: '/tasks' },
+      { text: 'Shims', link: '/shims.html' },
+      { text: 'Direnv', link: '/direnv.html' },
       {
         text: 'Installation',
         items: [
           { text: 'Homebrew', link: '/installation/homebrew.html' }
         ]
       },
-      { text: 'Shims', link: '/shims.html' },
-      { text: 'Direnv', link: '/direnv.html' },
       {
         text: 'CLI Reference',
         items: [
@@ -31,6 +35,15 @@ export default defineConfig({
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/jdx/rtx' }
-    ]
-  }
+    ],
+
+    editLink: {
+      pattern: 'https://github.com/jdx/rtx-docs/edit/main/docs/:path',
+    },
+
+    footer: {
+      message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and friends.',
+      copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
+    },
+  },
 })
