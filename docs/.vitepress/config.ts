@@ -19,6 +19,7 @@ export default defineConfig({
       { text: 'Tasks', link: '/tasks' },
       { text: 'Shims', link: '/shims.html' },
       { text: 'Direnv', link: '/direnv.html' },
+      { text: 'macOS Rosetta', link: '/macos-rosetta.html' },
       {
         text: 'Installation',
         items: [
@@ -42,7 +43,7 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and friends.',
+      message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/rtx/graphs/contributors">friends</a>.',
       copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
     },
   },
