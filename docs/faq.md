@@ -53,7 +53,7 @@ non-interactive session (like a bash script), it will never call `rtx hook-env` 
 never modify PATH because it never displays a prompt. For this type of setup, you can either call
 `rtx hook-env` manually every time you wish to update PATH, or use [shims](/shims) instead (preferred).
 Or if you only need to use rtx for certain commands, just prefix the commands with
-[`rtx x --`](./cli/#cli/#rtx-exec-options-tool-version-command).
+[`rtx x --`](./cli/#rtx-exec-options-tool-version-command).
 For example, `rtx x -- npm test` or `rtx x -- ./my_script.sh`.
 
 `rtx hook-env` will exit early in different situations if no changes have been made. This prevents
