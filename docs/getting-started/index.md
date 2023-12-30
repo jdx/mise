@@ -91,5 +91,5 @@ v20.x.x
 ```
 
 :::tip
-Use `rtx x -- node -v` or set a shell alias in your shell's rc file like `alias x="rtx x --"` to save some keystrokes.
+Use `rtx x -- node -v` or set a shell alias in your shell's rc file like `alias rx="rtx x --"` to save some keystrokes.
 :::
