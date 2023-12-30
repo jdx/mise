@@ -167,8 +167,6 @@ mod tests {
 
     use pretty_assertions::assert_str_eq;
 
-    use crate::dirs;
-
     use super::*;
 
     #[test]
@@ -180,7 +178,7 @@ mod tests {
         };
         assert!(!have_config_files_been_modified(&watches, files));
 
-        let fp = dirs::CURRENT.join(".test-tool-versions");
+        let fp = env::current_dir().unwrap().join(".test-tool-versions");
         let watches = HookEnvWatches {
             files: BTreeMap::from([(fp.clone(), UNIX_EPOCH)]),
             env_var_hash: "".into(),

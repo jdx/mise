@@ -44,7 +44,7 @@ pub fn reset_config() {
     )
     .unwrap();
     file::write(
-        env::PWD.join(".test-tool-versions"),
+        env::current_dir().unwrap().join(".test-tool-versions"),
         indoc! {r#"
             tiny 3
             "#},

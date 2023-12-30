@@ -375,7 +375,8 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 });
 
 pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
-    let mut config_files = file::FindUp::new(&dirs::CURRENT, config_filenames).collect::<Vec<_>>();
+    let mut config_files =
+        file::FindUp::new(&env::current_dir().unwrap(), config_filenames).collect::<Vec<_>>();
 
     for cf in global_config_files() {
         config_files.push(cf);

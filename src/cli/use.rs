@@ -139,11 +139,11 @@ impl Use {
         let path = if self.global {
             global_file()
         } else if let Some(env) = &self.env {
-            config_file_from_dir(&dirs::CURRENT.join(format!(".rtx.{}.toml", env)))
+            config_file_from_dir(&env::current_dir()?.join(format!(".rtx.{}.toml", env)))
         } else if let Some(p) = &self.path {
             config_file_from_dir(p)
         } else {
-            config_file_from_dir(&dirs::CURRENT)
+            config_file_from_dir(&env::current_dir()?)
         };
         config_file::parse_or_init(&path)
     }
@@ -222,11 +222,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{dirs, file};
+    use crate::{dirs, env, file};
 
     #[test]
     fn test_use_local() {
-        let cf_path = dirs::CURRENT.join(".test.rtx.toml");
+        let cf_path = env::current_dir().unwrap().join(".test.rtx.toml");
         file::write(&cf_path, "").unwrap();
 
         assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tools: tiny@2.1.0");
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_use_local_tool_versions() {
-        let cf_path = dirs::CURRENT.join(".test-tool-versions");
+        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
         assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions tools: tiny@3.1.0");

@@ -380,7 +380,7 @@ impl Run {
             .or(task.dir.as_ref())
             .cloned()
             .or_else(|| config.project_root.clone())
-            .unwrap_or_else(|| env::PWD.clone())
+            .unwrap_or_else(|| env::current_dir().unwrap().clone())
     }
 
     fn save_checksum(&self, task: &Task) -> Result<()> {
