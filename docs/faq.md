@@ -1,4 +1,4 @@
-## FAQs
+# FAQs
 
 ### I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file
 

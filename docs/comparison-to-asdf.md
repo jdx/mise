@@ -1,4 +1,4 @@
-## Comparison to asdf
+# Comparison to asdf
 
 rtx is mostly a clone of asdf, but there are notable areas where improvements have been made.
 
