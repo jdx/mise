@@ -13,7 +13,7 @@ Using rtx involves 3 steps:
 
 ### 1. Install rtx CLI:
 
-First we need to download the rtx CLI. See the sidebar for alternate methods such as [homebrew](./homebrew).
+First we need to download the rtx CLI. See the sidebar for alternate methods such as [homebrew](./installation/homebrew).
 This directory is simply a suggestion. rtx can be installed anywhere.
 
 ::: code-group
