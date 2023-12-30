@@ -3,10 +3,11 @@
 
 # Getting Started
 
-Installing rtx involves 2 steps:
+Using rtx involves 3 steps:
 
 1. Installing the CLI
 2. [optional] Activating rtx or adding its shims to PATH
+3. Adding tools to rtx
 
 ## Quickstart
 
@@ -71,9 +72,9 @@ fish_add_path ~/.local/share/rtx/shims
 rtx respects `RTX_DATA_DIR` and `XDG_DATA_HOME` if you'd like to change these locations.
 :::
 
-### Test it out
+### 3. Adding tools to rtx
 
-Install a tool and set it as the global default:
+Install node and set it as the global default:
 
 ```sh
 $ rtx use --global node@20
