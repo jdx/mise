@@ -28,7 +28,7 @@ Note that calling `which node` gives us a real path to node, not a shim.
 
 ## Quickstart
 
-Install rtx on macOS (other methods [here](https://rtx.jdx.dev/installation)):
+Install rtx on macOS (other methods [here](https://rtx.jdx.dev/getting-started.html)):
 
 ```sh-session
 $ curl https://rtx.jdx.dev/install.sh | sh
