@@ -30,7 +30,7 @@ rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
 
 Now in your `.envrc` file add the following:
 
-```sh-session
+```sh
 use rtx
 ```
 
