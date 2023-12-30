@@ -31,7 +31,7 @@ export default defineConfig({
       { text: 'Config Environments', link: '/config-environments' },
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Project Roadmap', link: '/project-roadmap' },
-      { text: 'FAQs', link: '/faqs' },
+      { text: 'FAQs', link: '/faq' },
       { text: 'Comparison to asdf', link: '/comparison-to-asdf' },
       { text: 'CI/CD', link: '/ci-cd' },
       { text: 'Cache behavior', link: '/cache-behavior' },
