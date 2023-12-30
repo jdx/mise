@@ -21,6 +21,12 @@ export default defineConfig({
       },
       { text: 'Shims', link: '/shims.html' },
       { text: 'Direnv', link: '/direnv.html' },
+      {
+        text: 'CLI Reference',
+        items: [
+          { text: 'Global Flags', link: '/cli/global-flags.html' }
+        ]
+      },
     ],
 
     socialLinks: [
