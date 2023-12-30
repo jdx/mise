@@ -119,6 +119,7 @@ mod tests {
 
     #[test]
     fn test_render_help() {
+        file::create_dir_all("docs").unwrap();
         file::write(
             "docs/cli-reference.md",
             indoc! {r#"
