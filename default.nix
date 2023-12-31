@@ -7,7 +7,7 @@ let
 in
 rustPlatform.buildRustPackage {
   pname = "rtx";
-  version = "2023.12.40";
+  version = "2024.0.0";
 
   src = lib.cleanSource ./.;
 
