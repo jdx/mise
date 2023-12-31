@@ -3,8 +3,8 @@
 The following are instructions for using the node rtx core plugin. This is used when there isn't a
 git plugin installed named "node".
 
-If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) or
-[rtx-node](https://github.com/rtx-plugins/rtx-nodejs) then run `rtx plugins install node GIT_URL`.
+If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) 
+then run `rtx plugins install node https://github.com/asdf-vm/asdf-nodejs`
 
 The code for this is inside the rtx repository at [`./src/plugins/core/node.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/node.rs).
 
@@ -24,7 +24,6 @@ required system dependencies.
 
 ## Configuration
 
-- `RTX_NODE_BUILD_REPO` [string]: the default is `https://github.com/nodenv/node-build.git`
 - `RTX_NODE_VERIFY` [bool]: Verify the downloaded assets using GPG. Defaults to `true`.
 - `RTX_NODE_NINJA` [bool]: Use ninja instead of make to compile node. Defaults to `true` if installed.
 - `RTX_NODE_COMPILE` [bool]: Forces compilation from source instead of preferring pre-compiled binaries. Can also be set across all languages with [`RTX_NODE__COMPILE`](https://github.com/jdx/rtx#rtx_node_compile1)
@@ -58,12 +57,3 @@ rtx uses a `.tool-versions` or `.rtx.toml` file for auto-switching between softw
 You cannot install/use a plugin named "nodejs". If you attempt this, rtx will just renamed it to
 "node". See the [FAQ](https://github.com/jdx/rtx#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
 for an explanation.
-
-## Moving away from node-build
-
-This project is in the process of migrating away from using [node-build](https://github.com/nodenv/node-build) for fetching/compiling node.
-The main reason for this is just to reduce the # of moving parts but it has some other advantages like not relying on new node-build releases to
-get the latest node releases.
-
-Currently, you can opt into using the pure-rtx node fetching with `RTX_NODE_BUILD=0` this will be the default
-behavior in a few weeks from this writing.

@@ -27,7 +27,7 @@ for additional settings and some troubleshooting.
 ## Configuration
 
 `ruby-build` already has a
-[handful of settings](https://github.com/nodenv/node-build#custom-build-configuration),
+[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
 in additional to that rtx has a few extra configuration variables:
 
 - `RTX_RUBY_INSTALL` [bool]: Build with ruby-install instead of ruby-build
