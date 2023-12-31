@@ -18,6 +18,7 @@ export default defineConfig({
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
+      { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'FAQs', link: '/faq' },
       {
         text: 'Dev Tools',
@@ -66,7 +67,6 @@ export default defineConfig({
         text: 'Internals',
         items: [
           { text: 'Directory Structure', link: '/directories' },
-          { text: 'IDE Integration', link: '/ide-integration' },
           { text: 'Cache behavior', link: '/cache-behavior' },
           { text: 'Project Roadmap', link: '/project-roadmap' },
         ],
