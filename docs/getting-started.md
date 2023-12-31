@@ -4,10 +4,10 @@ outline: 'deep'
 
 # Getting Started
 
-Using rtx involves 3 steps:
+Using rtx typically involves 3 steps:
 
 1. Installing the CLI
-2. [optional] Activating rtx or adding its shims to PATH
+2. Activating rtx or adding its shims to PATH <Badge type="tip" text="optional" />
 3. Adding tools to rtx
 
 ## Quickstart
@@ -29,7 +29,7 @@ rtx 2024.x.x
 "~/.local/share/rtx/bin" does not need to be in PATH. rtx will automatically add its own directory to PATH when activated.
 :::
 
-### 2. Activate rtx
+### 2. Activate rtx <Badge type="tip" text="optional" />
 
 `rtx activate` is one way to setup rtx but alternatively you can use [shims](./shims), [direnv](./direnv), or skip
 this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
@@ -49,7 +49,7 @@ echo '~/.local/share/rtx/bin/rtx activate fish | source' >> ~/.config/fish/confi
 ```
 :::
 
-### 2. (alternate) Add rtx shims to PATH
+### 2. Add rtx shims to PATH <Badge type="tip" text="Alternate" />
 
 If you prefer to use shims, you can run the following to use rtx without activating it.
 You can use .bashrc/.zshrc instead of .bash_profile/.zprofile if you prefer to only use
@@ -68,10 +68,15 @@ fish_add_path ~/.local/share/rtx/shims
 ```
 
 :::info
-rtx respects `RTX_DATA_DIR` and `XDG_DATA_HOME` if you'd like to change these locations.
+rtx respects [`RTX_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like to change these locations.
 :::
 
 ### 3. Adding tools to rtx
+
+:::info
+Of course, if using rtx solely for [environment management](/environments) or [running tasks](/tasks/)
+this step is not necessary.
+:::
 
 Install node and set it as the global default:
 
