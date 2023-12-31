@@ -1,4 +1,5 @@
 ---
+outline: 'deep'
 ---
 
 # Getting Started
@@ -273,7 +274,7 @@ docker run jdxcode/rtx x node@20 -- node -v
 ```
 
 
-### Register shell hook
+## Shells
 
 #### Bash
 
