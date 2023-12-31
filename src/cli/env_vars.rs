@@ -14,7 +14,7 @@ use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 /// By default this command modifies ".rtx.toml" in the current directory.
 /// You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(visible_alias = "ev", verbatim_doc_comment)]
 pub struct EnvVars {
     /// The TOML file to update
     ///
