@@ -11,7 +11,6 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
-use crate::env::RTX_NODE_BUILD;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -19,7 +18,6 @@ use crate::plugins::core::erlang::ErlangPlugin;
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
-use crate::plugins::core::node_build::NodeBuildPlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::Plugin;
 use crate::timeout::run_with_timeout;
@@ -32,7 +30,6 @@ mod erlang;
 mod go;
 mod java;
 mod node;
-mod node_build;
 mod python;
 mod ruby;
 
@@ -44,11 +41,7 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
         Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
-        if *RTX_NODE_BUILD == Some(true) {
-            Arc::new(NodeBuildPlugin::new())
-        } else {
-            Arc::new(NodePlugin::new())
-        },
+        Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
     ];

@@ -141,10 +141,6 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
-pub static RTX_NODE_BUILD: Lazy<Option<bool>> = Lazy::new(|| var_option_bool("RTX_NODE_BUILD"));
-pub static RTX_NODE_BUILD_REPO: Lazy<String> = Lazy::new(|| {
-    var("RTX_NODE_BUILD_REPO").unwrap_or_else(|_| "https://github.com/nodenv/node-build.git".into())
-});
 pub static RTX_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
     var_url("RTX_NODE_MIRROR_URL")
         .or_else(|| var_url("NODE_BUILD_MIRROR_URL"))
@@ -163,8 +159,6 @@ pub static RTX_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
             }
         })
 });
-pub static RTX_NODE_VERBOSE_INSTALL: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_NODE_VERBOSE_INSTALL"));
 pub static RTX_NODE_MAKE: Lazy<String> =
     Lazy::new(|| var("RTX_NODE_MAKE").unwrap_or_else(|_| "make".into()));
 pub static RTX_NODE_NINJA: Lazy<bool> =
