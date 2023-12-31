@@ -10,6 +10,21 @@ functionality. As far as general scope however, these are likely going to be foc
 * Improved plugin development - it's unclear what we'll do exactly but in general we want to make the experience of vending tools for asdf/rtx to be better and safer.
 * GUI/TUI - While we're all big CLI fans, it still would be great to better visualize what tools are available, what your configuration is, and other things via some kind of UI.
 
+## Versioning
+
+rtx uses [Calver](https://calver.org/) versioning (`2023.6.1`).
+Breaking changes will be few but when they do happen,
+they will be communicated in the CLI with plenty of notice whenever possible.
+
+Rather than have SemVer major releases to communicate change in large releases,
+new functionality and changes can be opted-into with settings like `experimental = true`.
+This way plugin authors and users can
+test out new functionality immediately without waiting for a major release.
+
+The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release—not compatibility
+or how many new features were added.
+Each release will be small and incremental.
+
 ## Anti-goals
 
 * Dependency management - rtx expects you to have system dependencies (like openssl or readline) already setup and configured. This makes it different than tools like nix which manage all dependencies for you. While this seems like an obvious downside, it actually ends up making rtx far easier to use than nix. That said, we would like to make managing system dependencies easier where we can but this is likely going to be simply via better docs and error messages.

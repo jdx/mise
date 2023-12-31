@@ -18,11 +18,6 @@ export default defineConfig({
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
-      { text: 'Versioning', link: '/versioning' },
-      { text: 'Directory Structure', link: '/directories' },
-      { text: 'IDE Integration', link: '/ide-integration' },
-      { text: 'Project Roadmap', link: '/project-roadmap' },
-      { text: 'Cache behavior', link: '/cache-behavior' },
       { text: 'FAQs', link: '/faq' },
       {
         text: 'Dev Tools',
@@ -66,6 +61,15 @@ export default defineConfig({
           { text: 'Python', link: '/lang/python' },
           { text: 'Ruby', link: '/lang/ruby' },
         ]
+      },
+      {
+        text: 'Internals',
+        items: [
+          { text: 'Directory Structure', link: '/directories' },
+          { text: 'IDE Integration', link: '/ide-integration' },
+          { text: 'Cache behavior', link: '/cache-behavior' },
+          { text: 'Project Roadmap', link: '/project-roadmap' },
+        ],
       },
       {
         text: 'CLI Reference',
