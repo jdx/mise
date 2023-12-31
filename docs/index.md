@@ -5,7 +5,7 @@ title: Home
 
 hero:
   name: "rtx documentation"
-  tagline: "The front-end to your dev env"
+  tagline: "The front-end to your dev env."
   actions:
     - theme: brand
       text: Getting Started
