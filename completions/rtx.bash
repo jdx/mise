@@ -60,6 +60,9 @@ _rtx() {
             rtx,env-vars)
                 cmd="rtx__env__vars"
                 ;;
+            rtx,ev)
+                cmd="rtx__env__vars"
+                ;;
             rtx,exec)
                 cmd="rtx__exec"
                 ;;

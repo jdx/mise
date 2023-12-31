@@ -28,7 +28,7 @@ _rtx() {
         (direnv) __rtx_direnv_cmd && ret=0 ;;
         (doctor) __rtx_doctor_cmd && ret=0 ;;
         (e|env) __rtx_env_cmd && ret=0 ;;
-        (env-vars) __rtx_env_vars_cmd && ret=0 ;;
+        (ev|env-vars) __rtx_env_vars_cmd && ret=0 ;;
         (x|exec) __rtx_exec_cmd && ret=0 ;;
         (g|global) __rtx_global_cmd && ret=0 ;;
         (hook-env) __rtx_hook_env_cmd && ret=0 ;;
@@ -893,7 +893,7 @@ __rtx_cmds() {
     'direnv:Output direnv function to use rtx inside direnv'
     'doctor:Check rtx installation for possible problems.'
     {e,env}':Exports env vars to activate rtx a single time'
-    'env-vars:Manage environment variables'
+    {ev,env-vars}':Manage environment variables'
     {x,exec}':Execute a command with tool(s) set'
     'implode:Removes rtx CLI and all related data'
     {i,install}':Install a tool version'
