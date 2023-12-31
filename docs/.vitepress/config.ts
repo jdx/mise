@@ -83,7 +83,9 @@ export default defineConfig({
     editLink: {
       pattern: 'https://github.com/jdx/rtx-docs/edit/main/docs/:path',
     },
-
+    search: {
+      provider: 'local',
+    },
     footer: {
       message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/rtx/graphs/contributors">friends</a>.',
       copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
