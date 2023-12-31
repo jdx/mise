@@ -4,7 +4,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "rtx",
   description: "rtx documentation",
-  lastUpdated: true,
+  lastUpdated: false,
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
