@@ -24,7 +24,7 @@ situations where rtx will override direnv's PATH. `use rtx` ensures that direnv 
 
 To do this, first use `rtx` to build a `use_rtx` function that you can use in `.envrc` files:
 
-```
+```sh
 rtx direnv activate > ~/.config/direnv/lib/use_rtx.sh
 ```
 
@@ -43,7 +43,7 @@ a `.envrc` file next to your `.tool-versions` for this reason. To make this a li
 easier to manage, I encourage _not_ actually using `.tool-versions` at all, and instead
 setting environment variables entirely in `.envrc`:
 
-```
+```sh
 export RTX_NODE_VERSION=20.0.0
 export RTX_PYTHON_VERSION=3.11
 ```

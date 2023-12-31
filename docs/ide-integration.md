@@ -6,7 +6,7 @@ to add the rtx shim directory to PATH.
 For IntelliJ and VSCode—and likely others, you can modify `~/.zprofile`
 with the following:
 
-```
+```sh
 export PATH="$HOME/.local/share/rtx/shims:$PATH"
 ```
 

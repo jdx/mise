@@ -15,7 +15,7 @@ it running in parallel with any other task-a RWMutex will get a write lock in th
 
 There is partial support for wildcards, for example, this makes a "lint" task that runs everything that begins with "lint:".
 
-```
+```toml
 [tasks."lint:eslint"] # using a ":" means we need to add quotes
 run = "eslint ."
 [tasks."lint:prettier"]

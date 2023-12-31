@@ -95,17 +95,25 @@ Use `rtx x -- node -v` or set a shell alias in your shell's rc file like `alias 
 
 ## Alternate Installation Methods
 
-### Standalone
-Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your rc
+### `install.sh`
+
+Note that it isn't necessary for `rtx` to be on `PATH`. If you run the activate script in your shell's rc
 file, rtx will automatically add itself to `PATH`.
 
-```
+```sh
 curl https://rtx.jdx.dev/install.sh | sh
 ```
 
+Options:
+- `RTX_DEBUG=1` – enable debug logging
+- `RTX_QUIET=1` – disable non-error output
+- `XDG_DATA_HOME=/some/path` – change the data directory (default: `~/.local/share`)
+- `RTX_DATA_DIR=/some/path` – change the rtx directory (default: `~/.local/share/rtx`)
+- `RTX_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/share/rtx/bin`)
+
 If you want to verify the install script hasn't been tampered with:
 
-```
+```sh
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x29DDE9E0
 curl https://rtx.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the rtx release key
@@ -114,41 +122,55 @@ sh ./install.sh
 
 or if you're allergic to `| sh`:
 
+::: code-group
+```sh [macos-arm64]
+curl https://rtx.jdx.dev/rtx-latest-macos-arm64 > ~/.local/share/rtx/bin/rtx
 ```
-curl https://rtx.jdx.dev/rtx-latest-macos-arm64 > /usr/local/bin/rtx
+```sh [macos-x64]
+curl https://rtx.jdx.dev/rtx-latest-macos-x64 > ~/.local/share/rtx/bin/rtx
 ```
+```sh [linux-x64]
+curl https://rtx.jdx.dev/rtx-latest-linux-x64 > ~/.local/share/rtx/bin/rtx
+```
+```sh [linux-arm64]
+curl https://rtx.jdx.dev/rtx-latest-linux-arm64 > ~/.local/share/rtx/bin/rtx
+```
+:::
 
 It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/rtx/bin/rtx`
 or whatever.
 
-Supported architectures:
+Supported os/arch:
 
-- `x64`
-- `arm64`
-
-Supported platforms:
-
-- `macos`
-- `linux`
+- `macos-x64`
+- `macos-arm64`
+- `linux-x64`
+- `linux-x64-musl`
+- `linux-arm64`
+- `linux-arm64-musl`
+- `linux-armv6`
+- `linux-armv6-musl`
+- `linux-armv7`
+- `linux-armv7-musl`
 
 If you need something else, compile it with `cargo install rtx-cli` (see below).
 [Windows isn't currently supported.](https://github.com/jdx/rtx/discussions/66)
 
 ### Homebrew
 
-```
+```sh
 brew install rtx
 ```
 
 Alternatively, use the custom tap (which is updated immediately after a release):
 
-```
+```sh
 brew install jdx/tap/rtx
 ```
 
 ### MacPorts
 
-```
+```sh
 sudo port install rtx
 ```
 
@@ -156,20 +178,20 @@ sudo port install rtx
 
 Build from source with Cargo:
 
-```
+```sh
 cargo install rtx-cli
 ```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
-```
+```sh
 cargo install cargo-binstall
 cargo binstall rtx-cli
 ```
 
 Build from the latest commit in main:
 
-```
+```sh
 cargo install rtx-cli --git https://github.com/jdx/rtx --branch main
 ```
 
@@ -178,13 +200,13 @@ cargo install rtx-cli --git https://github.com/jdx/rtx --branch main
 rtx is available on npm as a precompiled binary. This isn't a Node.js package—just distributed
 via npm. This is useful for JS projects that want to setup rtx via `package.json` or `npx`.
 
-```
+```sh
 npm install -g rtx-cli
 ```
 
 Use npx if you just want to test it out for a single command without fully installing:
 
-```
+```sh
 npx rtx-cli exec python@3.11 -- python some_script.py
 ```
 
@@ -192,7 +214,7 @@ npx rtx-cli exec python@3.11 -- python some_script.py
 
 Download the latest release from [GitHub](https://github.com/jdx/rtx/releases).
 
-```
+```sh
 curl https://github.com/jdx/rtx/releases/download/v2023.12.40/rtx-v2023.12.40-linux-x64 > /usr/local/bin/rtx
 chmod +x /usr/local/bin/rtx
 ```
@@ -201,7 +223,7 @@ chmod +x /usr/local/bin/rtx
 
 For installation on Ubuntu/Debian:
 
-```
+```sh
 sudo install -dm 755 /etc/apt/keyrings
 wget -qO - https://rtx.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=amd64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list

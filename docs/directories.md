@@ -48,7 +48,7 @@ rtx installs plugins to this directory when running `rtx plugins install`. If yo
 plugin, I suggest
 symlinking it manually by running:
 
-```
+```sh
 ln -s ~/src/rtx-my-tool ~/.local/share/rtx/plugins/my-tool
 ```
 
@@ -61,7 +61,7 @@ This will also create other symlinks to this directory for version prefixes ("20
 and matching aliases ("lts", "latest").
 For example:
 
-```
+```sh
 20 -> ./20.15.0
 20.15 -> ./20.15.0
 latest -> ./20.15.0

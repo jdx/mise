@@ -174,7 +174,7 @@ already have a lot of `.tool-versions` files or work on a team that uses asdf.
 
 Here is an example with all the supported syntax:
 
-```
+```text
 node        20.0.0       # comments are allowed
 ruby        3            # can be fuzzy version
 shellcheck  latest       # also supports "latest"
