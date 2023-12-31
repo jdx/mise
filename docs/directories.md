@@ -1,3 +1,7 @@
+---
+outline: 'deep'
+---
+
 # Directory Structure
 
 The following are the directories that rtx uses.
@@ -62,10 +66,11 @@ and matching aliases ("lts", "latest").
 For example:
 
 ```sh
+$ tree ~/.local/share/rtx/installs/node
 20 -> ./20.15.0
 20.15 -> ./20.15.0
-latest -> ./20.15.0
 lts -> ./20.15.0
+latest -> ./20.15.0
 ```
 
 ### `~/.local/share/rtx/shims`
