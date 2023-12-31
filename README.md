@@ -33,7 +33,7 @@ Install rtx on macOS (other methods [here](https://rtx.jdx.dev/getting-started.h
 ```sh-session
 $ curl https://rtx.jdx.dev/install.sh | sh
 $ ~/.local/share/rtx/bin/rtx --version
-rtx 2023.12.40
+rtx 2024.0.0
 ```
 
 Hook rtx into your shell (pick the right one for your shell):
