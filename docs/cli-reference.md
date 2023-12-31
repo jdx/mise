@@ -328,6 +328,8 @@ Examples:
 
 ### `rtx env-vars [OPTIONS] [ENV_VARS]...`
 
+**Aliases:** `ev`
+
 ```text
 Manage environment variables
 
