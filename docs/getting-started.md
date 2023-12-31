@@ -231,13 +231,13 @@ sudo apt update
 sudo apt install -y rtx
 ```
 
-> [!IMPORTANT]
->
-> If you're on arm64 you'll need to run the following:
->
-> ```
-> echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
-> ```
+::: warning
+If you're on arm64 you'll need to run the following:
+
+```
+echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+```
+:::
 
 ### dnf
 
@@ -316,12 +316,12 @@ echo 'eval "$(rtx activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 echo 'rtx activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-> [!TIP]
->
-> For homebrew and possibly other installs rtx is automatically activated so
-> this is not necessary.
->
-> See [`RTX_FISH_AUTO_ACTIVATE=1`](/configuration#rtx_fish_auto_activate1) for more information.
+::: tip
+For homebrew and possibly other installs rtx is automatically activated so
+this is not necessary.
+
+See [`RTX_FISH_AUTO_ACTIVATE=1`](/configuration#rtx_fish_auto_activate1) for more information.
+:::
 
 #### Nushell
 

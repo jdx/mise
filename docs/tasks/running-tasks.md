@@ -24,9 +24,10 @@ run = "prettier --check ."
 depends = ["lint:*"]
 ```
 
-> [!NOTE]
-> As of this writing these wildcards only function at the right side and only work for dependencies.
-> It should be possible to also run `rtx run lint:*` but that is not yet implemented.
+::: info
+As of this writing these wildcards only function at the right side and only work for dependencies.
+It should be possible to also run `rtx run lint:*` but that is not yet implemented.
+:::
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 

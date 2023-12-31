@@ -22,7 +22,7 @@ echo "lts-gallium 16"
 echo "lts-fermium 14"
 ```
 
-> [!NOTE]
->
-> Because this is rtx-specific functionality not currently used by asdf it isn't likely to be in any
-> plugin currently, but plugin authors can add this script without impacting asdf users.
+::: info
+Because this is rtx-specific functionality not currently used by asdf it isn't likely to be in any
+plugin currently, but plugin authors can add this script without impacting asdf users.
+:::

@@ -25,8 +25,8 @@ The priority of these files goes in this order (bottom overrides top):
 
 Use `rtx doctor` to see which files are being used.
 
-> [!IMPORTANT]
->
-> Note that currently modifying `RTX_DEFAULT_CONFIG_FILENAME` to something other than `.rtx.toml`
-> will not work with this feature. For now, it will disable it entirely. This may change in the
-> future.
+::: warning
+Note that currently modifying `RTX_DEFAULT_CONFIG_FILENAME` to something other than `.rtx.toml`
+will not work with this feature. For now, it will disable it entirely. This may change in the
+future.
+:::

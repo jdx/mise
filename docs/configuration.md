@@ -159,12 +159,12 @@ There is a performance cost to having these when they're parsed as it's performe
 `bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
 
-> [!NOTE]
->
-> asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
-> that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-> version files since they're version files not specific to asdf/rtx and can be used by other tools.
-> (`.nvmrc` being a notable exception, which is tied to a specific tool.)
+::: info
+asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
+that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
+version files since they're version files not specific to asdf/rtx and can be used by other tools.
+(`.nvmrc` being a notable exception, which is tied to a specific tool.)
+:::
 
 ## `.tool-versions`
 
@@ -255,9 +255,9 @@ my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20
                        # this can also be specified in a plugin (see below in "Aliases")
 ```
 
-> [!TIP]
->
-> These settings can also be managed with `rtx settings ls|get|set|unset`.
+::: tip
+These settings can also be managed with `rtx settings ls|get|set|unset`.
+:::
 
 ## System config: `/etc/rtx/config.toml`
 
