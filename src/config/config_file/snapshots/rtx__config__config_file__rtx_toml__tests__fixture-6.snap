@@ -15,6 +15,7 @@ RtxToml(~/fixtures/.rtx.toml): terraform@1.0.0, node@18 node@prefix:20 node@ref:
         "disable_tools": Array [
             String("disabled_tool"),
         ],
+        "env_file": Null,
         "experimental": Null,
         "jobs": Null,
         "legacy_version_file": Null,

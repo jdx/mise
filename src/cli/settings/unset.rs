@@ -46,6 +46,7 @@ mod tests {
         color = true
         disable_default_shorthands = false
         disable_tools = []
+        env_file = null
         experimental = true
         jobs = 2
         legacy_version_file = true

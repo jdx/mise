@@ -13,6 +13,7 @@ RtxToml(/tmp/.rtx.toml): node@16.0.1 node@18.0.1 {
         "debug": Null,
         "disable_default_shorthands": Null,
         "disable_tools": Null,
+        "env_file": Null,
         "experimental": Null,
         "jobs": Null,
         "legacy_version_file": Null,
