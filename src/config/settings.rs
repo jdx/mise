@@ -62,6 +62,8 @@ pub struct Settings {
     pub not_found_auto_install: bool,
     #[config(env = "CI", default = false)]
     pub ci: bool,
+    #[config(env = "RTX_ENV_FILE")]
+    pub env_file: Option<PathBuf>,
     pub cd: Option<String>,
 }
 

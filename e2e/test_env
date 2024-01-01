@@ -10,3 +10,4 @@ rtx i node@18.0.0
 eval "$(rtx env -s bash node@18.0.0)"
 assert "node -v" "v18.0.0"
 assert "rtx x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
+RTX_ENV_FILE=.test-env2 assert "rtx x -- env | grep TEST_ENV2" "TEST_ENV2=foo"

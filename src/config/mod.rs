@@ -81,7 +81,7 @@ impl Config {
         let config_paths = load_config_paths(&config_filenames);
         let config_files = load_all_config_files(&config_paths, &plugins, &legacy_files)?;
 
-        let (env, env_sources) = load_env(&config_files);
+        let (env, env_sources) = load_env(&settings, &config_files);
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
 
         let config = Self {
@@ -467,7 +467,10 @@ fn parse_config_file(
     }
 }
 
-fn load_env(config_files: &ConfigMap) -> (BTreeMap<String, String>, HashMap<String, PathBuf>) {
+fn load_env(
+    settings: &Settings,
+    config_files: &ConfigMap,
+) -> (BTreeMap<String, String>, HashMap<String, PathBuf>) {
     let mut env = BTreeMap::new();
     let mut env_sources = HashMap::new();
     for (source, cf) in config_files.iter().rev() {
@@ -478,6 +481,21 @@ fn load_env(config_files: &ConfigMap) -> (BTreeMap<String, String>, HashMap<Stri
         for k in cf.env_remove() {
             // remove values set to "false"
             env.remove(&k);
+        }
+    }
+    if let Some(env_file) = &settings.env_file {
+        match dotenvy::from_filename_iter(env_file) {
+            Ok(iter) => {
+                for item in iter {
+                    let (k, v) = item.unwrap_or_else(|err| {
+                        warn!("env_file: {err}");
+                        Default::default()
+                    });
+                    env.insert(k.clone(), v);
+                    env_sources.insert(k, env_file.clone());
+                }
+            }
+            Err(err) => trace!("env_file: {err}"),
         }
     }
     (env, env_sources)
