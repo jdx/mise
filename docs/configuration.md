@@ -252,7 +252,9 @@ shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file,
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
-experimental = false # enable experimental features
+env_file = '.env' # load env vars from a dotenv file, see `RTX_ENV_FILE`
+
+experimental = true # enable experimental features
 
 [alias.node]
 my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20.x
@@ -321,6 +323,11 @@ Use this for different env vars or different tool versions in
 development/staging/production environments. See
 [Profiles](/profiles) for more on how
 to use this feature.
+
+### `RTX_ENV_FILE`
+
+Set to a filename to read from env from a dotenv file. e.g.: `RTX_ENV_FILE=.env`.
+Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
 ### `RTX_USE_VERSIONS_HOST`
 
