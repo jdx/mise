@@ -1,5 +1,8 @@
 # Contributing
 
+Before submitting a PR, unless it's something obvious, consider filing an issue or simply mention what you plan to do in the [Discord](https://discord.gg/UBa7pJUN7Z).
+PRs are often either rejected or need to change significantly after submission so make sure before you start working on something it won't be a wasted effort.
+
 ## Development Container
 
 The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use a [GitHub Codespace](https://docs.github.com/codespaces), VSCode's remote container feature or a standalone container to develop rtx. To use it, you'll need to have Docker Desktop installed and running.
