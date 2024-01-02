@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RTX_EXPERIMENTAL: 1
+  MISE_EXPERIMENTAL: 1
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v1
+      - uses: jdx/mise-action@v2
       - run: pnpm install
       - run: pnpm run build
   release:
@@ -28,7 +28,7 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v1
+      - uses: jdx/mise-action@v2
       - run: pnpm install
       - run: pnpm run build
       - run: mise run release
