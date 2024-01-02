@@ -6,10 +6,10 @@ use crate::config::{Config, Settings};
 
 /// Show a current setting
 ///
-/// This is the contents of a single entry in ~/.config/rtx/config.toml
+/// This is the contents of a single entry in ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `rtx aliases get`
+/// but managed separately with `mise aliases get`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
@@ -24,7 +24,7 @@ impl SettingsGet {
         let json = settings.to_string();
         let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
         match doc.get(&self.setting) {
-            Some(value) => Ok(rtxprintln!("{}", value)),
+            Some(value) => Ok(miseprintln!("{}", value)),
             None => Err(eyre!("Unknown setting: {}", self.setting)),
         }
     }
@@ -32,7 +32,7 @@ impl SettingsGet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx settings get legacy_version_file</bold>
+  $ <bold>mise settings get legacy_version_file</bold>
   true
 "#
 );

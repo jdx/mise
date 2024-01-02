@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-rtx install node@20.0.0 node@18.0.0
+mise install node@20.0.0 node@18.0.0
 # shellcheck disable=SC1090
-eval "$(rtx activate -s bash --status)"
-_rtx_hook
+eval "$(mise activate -s bash --status)"
+_mise_hook
 
-#rtx install
+#mise install
 test "$(node -v)" = "v20.0.0"
 
-cd 18 && _rtx_hook
-#rtx install
+cd 18 && _mise_hook
+#mise install
 test "$(node -v)" = "v18.0.0"
 
-cd .. && _rtx_hook
+cd .. && _mise_hook
 test "$(node -v)" = "v20.0.0"

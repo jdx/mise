@@ -18,7 +18,7 @@ pub struct Plugins {
 
     /// list all available remote plugins
     ///
-    /// same as `rtx plugins ls-remote`
+    /// same as `mise plugins ls-remote`
     #[clap(short, long, hide = true)]
     pub all: bool,
 

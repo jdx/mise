@@ -1,0 +1,124 @@
+---
+source: src/config/config_file/mise_toml.rs
+expression: "replace_path(&format!(\"{:#?}\", cf.toolset))"
+---
+Toolset {
+    versions: {
+        "terraform": ToolVersionList {
+            plugin_name: "terraform",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "terraform",
+                        "1.0.0",
+                    ),
+                    {},
+                ),
+            ],
+            source: MiseToml(
+                "~/fixtures/.mise.toml",
+            ),
+        },
+        "node": ToolVersionList {
+            plugin_name: "node",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "node",
+                        "18",
+                    ),
+                    {},
+                ),
+                (
+                    Prefix(
+                        "node",
+                        "20",
+                    ),
+                    {},
+                ),
+                (
+                    Ref(
+                        "node",
+                        "master",
+                    ),
+                    {},
+                ),
+                (
+                    Path(
+                        "node",
+                        "~/.nodes/18",
+                    ),
+                    {},
+                ),
+            ],
+            source: MiseToml(
+                "~/fixtures/.mise.toml",
+            ),
+        },
+        "jq": ToolVersionList {
+            plugin_name: "jq",
+            versions: [],
+            requests: [
+                (
+                    Prefix(
+                        "jq",
+                        "1.6",
+                    ),
+                    {},
+                ),
+            ],
+            source: MiseToml(
+                "~/fixtures/.mise.toml",
+            ),
+        },
+        "shellcheck": ToolVersionList {
+            plugin_name: "shellcheck",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "shellcheck",
+                        "0.9.0",
+                    ),
+                    {},
+                ),
+            ],
+            source: MiseToml(
+                "~/fixtures/.mise.toml",
+            ),
+        },
+        "python": ToolVersionList {
+            plugin_name: "python",
+            versions: [],
+            requests: [
+                (
+                    Version(
+                        "python",
+                        "3.10.0",
+                    ),
+                    {
+                        "venv": ".venv",
+                    },
+                ),
+                (
+                    Version(
+                        "python",
+                        "3.9.0",
+                    ),
+                    {},
+                ),
+            ],
+            source: MiseToml(
+                "~/fixtures/.mise.toml",
+            ),
+        },
+    },
+    source: Some(
+        MiseToml(
+            "~/fixtures/.mise.toml",
+        ),
+    ),
+    disable_tools: {},
+}

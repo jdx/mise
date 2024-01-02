@@ -35,19 +35,19 @@ impl Shell for Nushell {
 
         out.push_str(&formatdoc! {r#"
           export-env {{
-            $env.RTX_SHELL = "nu"
+            $env.MISE_SHELL = "nu"
             
             $env.config = ($env.config | upsert hooks {{
                 pre_prompt: ($env.config.hooks.pre_prompt ++
                 [{{
-                condition: {{|| "RTX_SHELL" in $env }}
-                code: {{|| rtx_hook }}
+                condition: {{|| "MISE_SHELL" in $env }}
+                code: {{|| mise_hook }}
                 }}])
                 env_change: {{
                     PWD: ($env.config.hooks.env_change.PWD ++
                     [{{
-                    condition: {{|| "RTX_SHELL" in $env }}
-                    code: {{|| rtx_hook }}
+                    condition: {{|| "MISE_SHELL" in $env }}
+                    code: {{|| mise_hook }}
                     }}])
                 }}
             }})
@@ -57,13 +57,13 @@ impl Shell for Nushell {
             $in | lines | parse "{{op}},{{name}},{{value}}"
           }}
             
-          def --wrapped rtx [command?: string, --help, ...rest: string] {{
+          def --wrapped mise [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
             
             if ($command == null) {{
               ^"{exe}"
             }} else if ($command == "activate") {{
-              $env.RTX_SHELL = "nu"
+              $env.MISE_SHELL = "nu"
             }} else if ($command in $commands) {{
               ^"{exe}" $command $rest
               | parse vars
@@ -83,7 +83,7 @@ impl Shell for Nushell {
             }}
           }}
             
-          def --env rtx_hook [] {{
+          def --env mise_hook [] {{
             ^"{exe}" hook-env{flags} -s nu
               | parse vars
               | update-env
@@ -95,7 +95,7 @@ impl Shell for Nushell {
     }
 
     fn deactivate(&self) -> String {
-        self.unset_env("RTX_SHELL")
+        self.unset_env("MISE_SHELL")
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
@@ -123,14 +123,14 @@ mod tests {
     #[test]
     fn test_hook_init() {
         let nushell = Nushell::default();
-        let exe = Path::new("/some/dir/rtx");
+        let exe = Path::new("/some/dir/mise");
         assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let nushell = Nushell::default();
-        let exe = Path::new("/nix/store/rtx");
+        let exe = Path::new("/nix/store/mise");
         assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 

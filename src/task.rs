@@ -52,7 +52,7 @@ impl Task {
     pub fn from_path(path: PathBuf) -> Result<Task> {
         let info = file::read_to_string(&path)?
             .lines()
-            .filter_map(|line| regex!(r"^# rtx ([a-z]+=.+)$").captures(line))
+            .filter_map(|line| regex!(r"^# mise ([a-z]+=.+)$").captures(line))
             .map(|captures| captures.extract())
             .flat_map(|(_, [toml])| {
                 toml.parse::<toml::Value>()
@@ -146,8 +146,8 @@ impl Task {
     //         .parent()
     //         .expect("task source has no parent")
     //     {
-    //         dir if dir.ends_with(".rtx/tasks") => dir.parent().unwrap(),
-    //         dir if dir.ends_with(".config/rtx/tasks") => dir.parent().unwrap().parent().unwrap(),
+    //         dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap(),
+    //         dir if dir.ends_with(".config/mise/tasks") => dir.parent().unwrap().parent().unwrap(),
     //         dir => dir,
     //     }
     // }

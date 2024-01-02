@@ -57,23 +57,23 @@ exit 0 # disable for now for faster releases
 # 15 kustomize
 # 15 graalvm
 
-rtx exec node -- node -v
-rtx exec python -- python -V
-rtx exec direnv -- direnv --version
-rtx exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
-rtx exec elixir erlang -- elixir --version
-rtx exec golang -- go version
-rtx exec java -- java -version
-rtx exec terraform -- terraform -v
-rtx exec yarn -- yarn --version
-rtx exec deno -- deno --version
-rtx exec bun -- bun --version
-rtx exec kubectl -- kubectl version --client
-rtx exec dotnet-core -- dotnet --list-sdks
-rtx exec flutter -- flutter --version
-rtx exec crystal -- crystal -v
-rtx exec neovim -- nvim --version
+mise exec node -- node -v
+mise exec python -- python -V
+mise exec direnv -- direnv --version
+mise exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
+mise exec elixir erlang -- elixir --version
+mise exec golang -- go version
+mise exec java -- java -version
+mise exec terraform -- terraform -v
+mise exec yarn -- yarn --version
+mise exec deno -- deno --version
+mise exec bun -- bun --version
+mise exec kubectl -- kubectl version --client
+mise exec dotnet-core -- dotnet --list-sdks
+mise exec flutter -- flutter --version
+mise exec crystal -- crystal -v
+mise exec neovim -- nvim --version
 
-#rtx exec php -- php -v php is a bit slow to install, works fine though
-#rtx exec rust -- rustc -V # does not seem to work correctly
-#rtx exec postgres -- psql -v # hard one to install
+#mise exec php -- php -v php is a bit slow to install, works fine though
+#mise exec rust -- rustc -V # does not seem to work correctly
+#mise exec postgres -- psql -v # hard one to install

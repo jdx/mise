@@ -25,12 +25,12 @@ pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
         return false;
     }
     let watch_files = get_watch_files(watch_files);
-    match &*env::__RTX_WATCH {
+    match &*env::__MISE_WATCH {
         Some(watches) => {
             if have_config_files_been_modified(watches, watch_files) {
                 return false;
             }
-            if have_rtx_env_vars_been_modified(watches) {
+            if have_mise_env_vars_been_modified(watches) {
                 return false;
             }
         }
@@ -73,8 +73,8 @@ fn have_config_files_been_modified(
     false
 }
 
-fn have_rtx_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
-    if get_rtx_env_vars_hashed() != watches.env_var_hash {
+fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
+    if get_mise_env_vars_hashed() != watches.env_var_hash {
         return true;
     }
     false
@@ -109,7 +109,7 @@ pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
 
     Ok(HookEnvWatches {
         files: watches,
-        env_var_hash: get_rtx_env_vars_hashed(),
+        env_var_hash: get_mise_env_vars_hashed(),
     })
 }
 
@@ -125,19 +125,19 @@ pub fn get_watch_files(watch_files: &[PathBuf]) -> BTreeSet<PathBuf> {
     watches
 }
 
-/// gets a hash of all RTX_ environment variables
-fn get_rtx_env_vars_hashed() -> String {
+/// gets a hash of all MISE_ environment variables
+fn get_mise_env_vars_hashed() -> String {
     let env_vars: Vec<(&String, &String)> = env::PRISTINE_ENV
         .deref()
         .iter()
-        .filter(|(k, _)| k.starts_with("RTX_"))
+        .filter(|(k, _)| k.starts_with("MISE_"))
         .sorted()
         .collect();
     hash_to_str(&env_vars)
 }
 
 pub fn clear_old_env(shell: &dyn Shell) -> String {
-    let mut patches = env::__RTX_DIFF.reverse().to_patches();
+    let mut patches = env::__MISE_DIFF.reverse().to_patches();
     if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
         patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
     }

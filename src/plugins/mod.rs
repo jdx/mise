@@ -28,7 +28,7 @@ use crate::{dirs, file};
 pub mod core;
 mod external_plugin;
 mod external_plugin_cache;
-mod rtx_plugin_toml;
+mod mise_plugin_toml;
 mod script_manager;
 
 pub type PluginName = String;

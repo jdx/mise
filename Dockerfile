@@ -1,1 +1,1 @@
-packaging/rtx/Dockerfile
+./packaging/mise/Dockerfile

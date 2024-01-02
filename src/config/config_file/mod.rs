@@ -9,7 +9,7 @@ use confique::Partial;
 use tool_versions::ToolVersions;
 
 use crate::cli::args::tool::ToolArg;
-use crate::config::config_file::rtx_toml::RtxToml;
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
 use crate::file::{display_path, replace_path};
@@ -21,13 +21,13 @@ use crate::toolset::{ToolVersionList, Toolset};
 use crate::{dirs, env, file};
 
 pub mod legacy_version;
-pub mod rtx_toml;
+pub mod mise_toml;
 pub mod toml;
 pub mod tool_versions;
 
 #[derive(Debug, PartialEq)]
 pub enum ConfigFileType {
-    RtxToml,
+    MiseToml,
     ToolVersions,
     LegacyVersion,
 }
@@ -37,11 +37,11 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     /// gets the project directory for the config
     /// if it's a global/system config, returns None
-    /// files like ~/src/foo/.rtx/config.toml will return ~/src/foo
-    /// and ~/src/foo/.rtx.config.toml will return None
+    /// files like ~/src/foo/.mise/config.toml will return ~/src/foo
+    /// and ~/src/foo/.mise.config.toml will return None
     fn project_root(&self) -> Option<&Path> {
         let p = self.get_path();
-        if env::RTX_CONFIG_FILE.as_ref().is_some_and(|f| f == p) {
+        if env::MISE_CONFIG_FILE.as_ref().is_some_and(|f| f == p) {
             return None;
         }
         match p.parent() {
@@ -133,7 +133,7 @@ impl dyn ConfigFile {
         Ok(())
     }
 
-    /// this is for `rtx local|global TOOL` which will display the version instead of setting it
+    /// this is for `mise local|global TOOL` which will display the version instead of setting it
     /// it's only valid to use a single tool in this case
     /// returns "true" if the tool was displayed which means the CLI should exit
     pub fn display_runtime(&self, runtimes: &[ToolArg]) -> Result<bool> {
@@ -155,10 +155,10 @@ impl dyn ConfigFile {
                 .iter()
                 .map(|(tvr, _)| tvr.version())
                 .collect::<Vec<_>>();
-            rtxprintln!("{}", tvl.join(" "));
+            miseprintln!("{}", tvl.join(" "));
             return Ok(true);
         }
-        // check for something like `rtx local node python@latest` which is invalid
+        // check for something like `mise local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
             return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
         }
@@ -168,7 +168,7 @@ impl dyn ConfigFile {
 
 fn init(path: &Path) -> Box<dyn ConfigFile> {
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Box::new(RtxToml::init(path)),
+        Some(ConfigFileType::MiseToml) => Box::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path)),
         _ => panic!("Unknown config file type: {}", path.display()),
     }
@@ -184,10 +184,10 @@ pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
 
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
-        Some(ConfigFileType::RtxToml) => Ok(Box::new(RtxToml::from_file(path)?)),
+        Some(ConfigFileType::MiseToml) => Ok(Box::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
         #[allow(clippy::box_default)]
-        _ => Ok(Box::new(RtxToml::default())),
+        _ => Ok(Box::new(MiseToml::default())),
     }
 }
 
@@ -231,9 +231,9 @@ fn trust_path(path: &Path) -> PathBuf {
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
-        f if f.ends_with(".toml") => Some(ConfigFileType::RtxToml),
-        f if env::RTX_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::RtxToml),
-        f if env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
+        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
         _ => None,
@@ -271,7 +271,7 @@ mod tests {
         );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.tool-versions.toml")),
-            Some(ConfigFileType::RtxToml)
+            Some(ConfigFileType::MiseToml)
         );
     }
 }

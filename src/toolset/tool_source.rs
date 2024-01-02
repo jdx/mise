@@ -10,7 +10,7 @@ use crate::file::display_path;
 #[derive(Debug, Clone, Serialize)]
 pub enum ToolSource {
     ToolVersions(PathBuf),
-    RtxToml(PathBuf),
+    MiseToml(PathBuf),
     LegacyVersionFile(PathBuf),
     Argument,
     Environment(String, String),
@@ -20,7 +20,7 @@ impl Display for ToolSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             ToolSource::ToolVersions(path) => write!(f, "{}", display_path(path)),
-            ToolSource::RtxToml(path) => write!(f, "{}", display_path(path)),
+            ToolSource::MiseToml(path) => write!(f, "{}", display_path(path)),
             ToolSource::LegacyVersionFile(path) => write!(f, "{}", display_path(path)),
             ToolSource::Argument => write!(f, "--runtime"),
             ToolSource::Environment(k, v) => write!(f, "{k}={v}"),
@@ -35,8 +35,8 @@ impl ToolSource {
                 "type".to_string() => ".tool-versions".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
-            ToolSource::RtxToml(path) => indexmap! {
-                "type".to_string() => ".rtx.toml".to_string(),
+            ToolSource::MiseToml(path) => indexmap! {
+                "type".to_string() => ".mise.toml".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::LegacyVersionFile(path) => indexmap! {
@@ -68,8 +68,8 @@ mod tests {
         let ts = ToolSource::ToolVersions(path);
         assert_str_eq!(ts.to_string(), "/home/user/.test-tool-versions");
 
-        let ts = ToolSource::RtxToml(PathBuf::from("/home/user/.rtx.toml"));
-        assert_str_eq!(ts.to_string(), "/home/user/.rtx.toml");
+        let ts = ToolSource::MiseToml(PathBuf::from("/home/user/.mise.toml"));
+        assert_str_eq!(ts.to_string(), "/home/user/.mise.toml");
 
         let ts = ToolSource::LegacyVersionFile(PathBuf::from("/home/user/.node-version"));
         assert_str_eq!(ts.to_string(), "/home/user/.node-version");
@@ -77,8 +77,8 @@ mod tests {
         let ts = ToolSource::Argument;
         assert_str_eq!(ts.to_string(), "--runtime");
 
-        let ts = ToolSource::Environment("RTX_NODE_VERSION".to_string(), "18".to_string());
-        assert_str_eq!(ts.to_string(), "RTX_NODE_VERSION=18");
+        let ts = ToolSource::Environment("MISE_NODE_VERSION".to_string(), "18".to_string());
+        assert_str_eq!(ts.to_string(), "MISE_NODE_VERSION=18");
     }
 
     #[test]
@@ -92,12 +92,12 @@ mod tests {
             }
         );
 
-        let ts = ToolSource::RtxToml(PathBuf::from("/home/user/.rtx.toml"));
+        let ts = ToolSource::MiseToml(PathBuf::from("/home/user/.mise.toml"));
         assert_eq!(
             ts.as_json(),
             indexmap! {
-                "type".to_string() => ".rtx.toml".to_string(),
-                "path".to_string() => "/home/user/.rtx.toml".to_string(),
+                "type".to_string() => ".mise.toml".to_string(),
+                "path".to_string() => "/home/user/.mise.toml".to_string(),
             }
         );
 
@@ -118,12 +118,12 @@ mod tests {
             }
         );
 
-        let ts = ToolSource::Environment("RTX_NODE_VERSION".to_string(), "18".to_string());
+        let ts = ToolSource::Environment("MISE_NODE_VERSION".to_string(), "18".to_string());
         assert_eq!(
             ts.as_json(),
             indexmap! {
                 "type".to_string() => "environment".to_string(),
-                "key".to_string() => "RTX_NODE_VERSION".to_string(),
+                "key".to_string() => "MISE_NODE_VERSION".to_string(),
                 "value".to_string() => "18".to_string(),
             }
         );

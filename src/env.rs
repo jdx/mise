@@ -32,39 +32,39 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> =
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local/state")));
 
-pub static RTX_CACHE_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("rtx")));
-pub static RTX_CONFIG_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("rtx")));
-pub static RTX_DATA_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("rtx")));
-pub static RTX_STATE_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("rtx")));
-pub static RTX_TMP_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_TMP_DIR").unwrap_or_else(|| temp_dir().join("rtx")));
-pub static RTX_SYSTEM_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("RTX_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/rtx")));
+pub static MISE_CACHE_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
+pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("mise")));
+pub static MISE_DATA_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("mise")));
+pub static MISE_STATE_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
+pub static MISE_TMP_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
+pub static MISE_SYSTEM_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/mise")));
 
-pub static RTX_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
-    var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
+pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
+    var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
 });
-pub static RTX_DEFAULT_CONFIG_FILENAME: Lazy<String> =
-    Lazy::new(|| var("RTX_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".rtx.toml".into()));
-pub static RTX_ENV: Lazy<Option<String>> =
-    Lazy::new(|| var("RTX_ENV").or_else(|_| var("RTX_ENVIRONMENT")).ok());
-pub static RTX_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_CONFIG_FILE"));
-pub static RTX_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("RTX_USE_TOML"));
-pub static RTX_BIN: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_BIN")
+pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
+    Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".mise.toml".into()));
+pub static MISE_ENV: Lazy<Option<String>> =
+    Lazy::new(|| var("MISE_ENV").or_else(|_| var("MISE_ENVIRONMENT")).ok());
+pub static MISE_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_CONFIG_FILE"));
+pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("MISE_USE_TOML"));
+pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_BIN")
         .or_else(|| current_exe().ok())
-        .unwrap_or_else(|| "rtx".into())
+        .unwrap_or_else(|| "mise".into())
 });
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
-pub static RTX_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
-pub static RTX_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("RTX_LOG_FILE"));
-pub static RTX_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
-pub static RTX_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
-    var_duration("RTX_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
+pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
+pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
+pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
+pub static MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
+    var_duration("MISE_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
 
 #[cfg(test)]
@@ -80,25 +80,25 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
 
 /// duration that remote version cache is kept for
 /// for "fast" commands (represented by PREFER_STALE), these are always
-/// cached. For "slow" commands like `rtx ls-remote` or `rtx install`:
-/// - if RTX_FETCH_REMOTE_VERSIONS_CACHE is set, use that
-/// - if RTX_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
-pub static RTX_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|| {
+/// cached. For "slow" commands like `mise ls-remote` or `mise install`:
+/// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
+/// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
+pub static MISE_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|| {
     if *PREFER_STALE {
         None
     } else {
-        Some(var_duration("RTX_FETCH_REMOTE_VERSIONS_CACHE").unwrap_or(HOURLY))
+        Some(var_duration("MISE_FETCH_REMOTE_VERSIONS_CACHE").unwrap_or(HOURLY))
     }
 });
 
 /// true if inside a script like bin/exec-env or bin/install
 /// used to prevent infinite loops
-pub static __RTX_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__RTX_SCRIPT"));
-pub static __RTX_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
-pub static __RTX_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__RTX_ORIG_PATH").ok());
-pub static __RTX_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__RTX_WATCH") {
+pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
+pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
+pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
+pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__MISE_WATCH") {
     Ok(raw) => deserialize_watches(raw)
-        .map_err(|e| warn!("Failed to deserialize __RTX_WATCH {e}"))
+        .map_err(|e| warn!("Failed to deserialize __MISE_WATCH {e}"))
         .ok(),
     _ => None,
 });
@@ -106,14 +106,14 @@ pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
-    Lazy::new(|| get_pristine_env(&__RTX_DIFF, vars().collect()));
+    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
 pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH") {
     Some(path) => split_paths(path).collect(),
     None => vec![],
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
-pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| {
-    var_option_bool("RTX_ALL_COMPILE").unwrap_or_else(|| {
+pub static MISE_ALL_COMPILE: Lazy<bool> = Lazy::new(|| {
+    var_option_bool("MISE_ALL_COMPILE").unwrap_or_else(|| {
         matches!(
             linux_distro().unwrap_or_default().as_str(),
             "alpine" | "nixos"
@@ -123,69 +123,70 @@ pub static RTX_ALL_COMPILE: Lazy<bool> = Lazy::new(|| {
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
-pub static RTX_USE_VERSIONS_HOST: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_USE_VERSIONS_HOST"));
+pub static MISE_USE_VERSIONS_HOST: Lazy<bool> =
+    Lazy::new(|| !var_is_false("MISE_USE_VERSIONS_HOST"));
 
 // python
-pub static RTX_PYENV_REPO: Lazy<String> = Lazy::new(|| {
-    var("RTX_PYENV_REPO").unwrap_or_else(|_| "https://github.com/pyenv/pyenv.git".into())
+pub static MISE_PYENV_REPO: Lazy<String> = Lazy::new(|| {
+    var("MISE_PYENV_REPO").unwrap_or_else(|_| "https://github.com/pyenv/pyenv.git".into())
 });
-pub static RTX_PYTHON_PATCH_URL: Lazy<Option<String>> =
-    Lazy::new(|| var("RTX_PYTHON_PATCH_URL").ok());
-pub static RTX_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
-    Lazy::new(|| var_path("RTX_PYTHON_PATCHES_DIRECTORY"));
-pub static RTX_PYTHON_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_PYTHON_DEFAULT_PACKAGES_FILE")
+pub static MISE_PYTHON_PATCH_URL: Lazy<Option<String>> =
+    Lazy::new(|| var("MISE_PYTHON_PATCH_URL").ok());
+pub static MISE_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("MISE_PYTHON_PATCHES_DIRECTORY"));
+pub static MISE_PYTHON_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_PYTHON_DEFAULT_PACKAGES_FILE")
         .unwrap_or_else(|| HOME.join(".default-python-packages"))
 });
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
-pub static RTX_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
-    var_url("RTX_NODE_MIRROR_URL")
+pub static MISE_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
+    var_url("MISE_NODE_MIRROR_URL")
         .or_else(|| var_url("NODE_BUILD_MIRROR_URL"))
         .unwrap_or_else(|| Url::parse("https://nodejs.org/dist/").unwrap())
 });
-pub static RTX_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
-    var("RTX_NODE_CONCURRENCY")
+pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
+    var("MISE_NODE_CONCURRENCY")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .map(|v| v.max(1))
         .or_else(|| {
-            if *RTX_NODE_NINJA {
+            if *MISE_NODE_NINJA {
                 None
             } else {
                 Some(num_cpus::get_physical())
             }
         })
 });
-pub static RTX_NODE_MAKE: Lazy<String> =
-    Lazy::new(|| var("RTX_NODE_MAKE").unwrap_or_else(|_| "make".into()));
-pub static RTX_NODE_NINJA: Lazy<bool> =
-    Lazy::new(|| var_option_bool("RTX_NODE_NINJA").unwrap_or_else(is_ninja_on_path));
-pub static RTX_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("RTX_NODE_VERIFY"));
-pub static RTX_NODE_COMPILE: Lazy<bool> = Lazy::new(|| {
-    *RTX_ALL_COMPILE || var_is_true("RTX_NODE_COMPILE") || var_is_true("RTX_NODE_FORCE_COMPILE")
+pub static MISE_NODE_MAKE: Lazy<String> =
+    Lazy::new(|| var("MISE_NODE_MAKE").unwrap_or_else(|_| "make".into()));
+pub static MISE_NODE_NINJA: Lazy<bool> =
+    Lazy::new(|| var_option_bool("MISE_NODE_NINJA").unwrap_or_else(is_ninja_on_path));
+pub static MISE_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_NODE_VERIFY"));
+pub static MISE_NODE_COMPILE: Lazy<bool> = Lazy::new(|| {
+    *MISE_ALL_COMPILE || var_is_true("MISE_NODE_COMPILE") || var_is_true("MISE_NODE_FORCE_COMPILE")
 });
-pub static RTX_NODE_CFLAGS: Lazy<Option<String>> =
-    Lazy::new(|| var("RTX_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
-pub static RTX_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("RTX_NODE_CONFIGURE_OPTS")
+pub static MISE_NODE_CFLAGS: Lazy<Option<String>> =
+    Lazy::new(|| var("MISE_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
+pub static MISE_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("MISE_NODE_CONFIGURE_OPTS")
         .or_else(|_| var("NODE_CONFIGURE_OPTS"))
         .ok()
 });
-pub static RTX_NODE_MAKE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("RTX_NODE_MAKE_OPTS")
+pub static MISE_NODE_MAKE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("MISE_NODE_MAKE_OPTS")
         .or_else(|_| var("NODE_MAKE_OPTS"))
         .ok()
 });
-pub static RTX_NODE_MAKE_INSTALL_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("RTX_NODE_MAKE_INSTALL_OPTS")
+pub static MISE_NODE_MAKE_INSTALL_OPTS: Lazy<Option<String>> = Lazy::new(|| {
+    var("MISE_NODE_MAKE_INSTALL_OPTS")
         .or_else(|_| var("NODE_MAKE_INSTALL_OPTS"))
         .ok()
 });
-pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
+pub static MISE_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
         let p = HOME.join(".default-nodejs-packages");
         if p.exists() {
             return p;
@@ -197,53 +198,53 @@ pub static RTX_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
         HOME.join(".default-npm-packages")
     })
 });
-pub static RTX_NODE_COREPACK: Lazy<bool> = Lazy::new(|| var_is_true("RTX_NODE_COREPACK"));
+pub static MISE_NODE_COREPACK: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NODE_COREPACK"));
 pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
 
 // ruby
-pub static RTX_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| {
-    var("RTX_RUBY_BUILD_REPO").unwrap_or_else(|_| "https://github.com/rbenv/ruby-build.git".into())
+pub static MISE_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| {
+    var("MISE_RUBY_BUILD_REPO").unwrap_or_else(|_| "https://github.com/rbenv/ruby-build.git".into())
 });
-pub static RTX_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| {
-    var("RTX_RUBY_INSTALL_REPO")
+pub static MISE_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| {
+    var("MISE_RUBY_INSTALL_REPO")
         .unwrap_or_else(|_| "https://github.com/postmodern/ruby-install.git".into())
 });
-pub static RTX_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("RTX_RUBY_INSTALL"));
-pub static RTX_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
-    Lazy::new(|| var("RTX_RUBY_APPLY_PATCHES").ok());
-pub static RTX_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_RUBY_VERBOSE_INSTALL"));
-pub static RTX_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("RTX_RUBY_INSTALL_OPTS").unwrap_or_default()));
-pub static RTX_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("RTX_RUBY_BUILD_OPTS").unwrap_or_default()));
-pub static RTX_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
+pub static MISE_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("MISE_RUBY_INSTALL"));
+pub static MISE_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
+    Lazy::new(|| var("MISE_RUBY_APPLY_PATCHES").ok());
+pub static MISE_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("MISE_RUBY_VERBOSE_INSTALL"));
+pub static MISE_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
+    Lazy::new(|| shell_words::split(&var("MISE_RUBY_INSTALL_OPTS").unwrap_or_default()));
+pub static MISE_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
+    Lazy::new(|| shell_words::split(&var("MISE_RUBY_BUILD_OPTS").unwrap_or_default()));
+pub static MISE_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
 });
 
 // go
-pub static RTX_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("RTX_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
+pub static MISE_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
 });
-pub static RTX_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("RTX_GO_SKIP_CHECKSUM"));
-pub static RTX_GO_REPO: Lazy<String> =
-    Lazy::new(|| var("RTX_GO_REPO").unwrap_or_else(|_| "https://github.com/golang/go".into()));
-pub static RTX_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| {
-    var("RTX_GO_DOWNLOAD_MIRROR").unwrap_or_else(|_| "https://dl.google.com/go".into())
+pub static MISE_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("MISE_GO_SKIP_CHECKSUM"));
+pub static MISE_GO_REPO: Lazy<String> =
+    Lazy::new(|| var("MISE_GO_REPO").unwrap_or_else(|_| "https://github.com/golang/go".into()));
+pub static MISE_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| {
+    var("MISE_GO_DOWNLOAD_MIRROR").unwrap_or_else(|_| "https://dl.google.com/go".into())
 });
-pub static RTX_GO_SET_GOROOT: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_GO_SET_GOROOT"));
-pub static RTX_GO_SET_GOPATH: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("RTX_GO_SET_GOPATH"));
+pub static MISE_GO_SET_GOROOT: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("MISE_GO_SET_GOROOT"));
+pub static MISE_GO_SET_GOPATH: Lazy<Option<bool>> =
+    Lazy::new(|| var_option_bool("MISE_GO_SET_GOPATH"));
 
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
-    match env.get("__RTX_DIFF") {
+    match env.get("__MISE_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
-            warn!("Failed to deserialize __RTX_DIFF: {:#}", err);
+            warn!("Failed to deserialize __MISE_DIFF: {:#}", err);
             EnvDiff::default()
         }),
         None => EnvDiff::default(),
@@ -296,13 +297,13 @@ fn var_duration(key: &str) -> Option<Duration> {
         .map(|v| v.parse::<humantime::Duration>().unwrap().into())
 }
 
-/// this returns the environment as if __RTX_DIFF was reversed.
+/// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(
-    rtx_diff: &EnvDiff,
+    mise_diff: &EnvDiff,
     orig_env: HashMap<String, String>,
 ) -> HashMap<String, String> {
-    let patches = rtx_diff.reverse().to_patches();
+    let patches = mise_diff.reverse().to_patches();
     let mut env = apply_patches(&orig_env, &patches);
 
     // get the current path as a vector
@@ -310,10 +311,10 @@ fn get_pristine_env(
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
-    // get the paths that were removed by rtx as a hashset
-    let mut to_remove = rtx_diff.path.iter().collect::<HashSet<_>>();
+    // get the paths that were removed by mise as a hashset
+    let mut to_remove = mise_diff.path.iter().collect::<HashSet<_>>();
 
-    // remove those paths that were added by rtx, but only once (the first time)
+    // remove those paths that were added by mise, but only once (the first time)
     let path = path
         .into_iter()
         .filter(|p| !to_remove.remove(p))
@@ -361,7 +362,7 @@ fn prefer_stale(args: &[String]) -> bool {
 }
 
 fn log_file_level() -> Option<LevelFilter> {
-    let log_level = var("RTX_LOG_FILE_LEVEL").unwrap_or_default();
+    let log_level = var("MISE_LOG_FILE_LEVEL").unwrap_or_default();
     log_level.parse::<LevelFilter>().ok()
 }
 
@@ -407,11 +408,11 @@ mod tests {
 
     #[test]
     fn test_var_path() {
-        set_var("RTX_TEST_PATH", "/foo/bar");
+        set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
-            var_path("RTX_TEST_PATH").unwrap(),
+            var_path("MISE_TEST_PATH").unwrap(),
             PathBuf::from("/foo/bar")
         );
-        remove_var("RTX_TEST_PATH");
+        remove_var("MISE_TEST_PATH");
     }
 }

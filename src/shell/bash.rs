@@ -15,10 +15,10 @@ impl Shell for Bash {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
-            export RTX_SHELL=bash
-            export __RTX_ORIG_PATH="$PATH"
+            export MISE_SHELL=bash
+            export __MISE_ORIG_PATH="$PATH"
 
-            rtx() {{
+            mise() {{
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
@@ -39,24 +39,24 @@ impl Shell for Bash {
               command {exe} "$command" "$@"
             }}
 
-            _rtx_hook() {{
+            _mise_hook() {{
               local previous_exit_status=$?;
-              eval "$(rtx hook-env{flags} -s bash)";
+              eval "$(mise hook-env{flags} -s bash)";
               return $previous_exit_status;
             }};
-            if [[ ";${{PROMPT_COMMAND:-}};" != *";_rtx_hook;"* ]]; then
-              PROMPT_COMMAND="_rtx_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
+            if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
+              PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            if [ -z "${{_rtx_cmd_not_found:-}}" ]; then
-                _rtx_cmd_not_found=1
+            if [ -z "${{_mise_cmd_not_found:-}}" ]; then
+                _mise_cmd_not_found=1
                 test -n "$(declare -f command_not_found_handle)" && eval "${{_/command_not_found_handle/_command_not_found_handle}}"
 
                 command_not_found_handle() {{
                     if {exe} hook-not-found -s bash "$1"; then
-                      _rtx_hook
+                      _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
                         _command_not_found_handle "$@"
@@ -74,11 +74,11 @@ impl Shell for Bash {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_rtx_hook;/}}"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_rtx_hook/}}"
-            unset _rtx_hook
-            unset rtx
-            unset RTX_SHELL
+            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
+            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
+            unset _mise_hook
+            unset mise
+            unset MISE_SHELL
         "#}
     }
 
@@ -104,14 +104,14 @@ mod tests {
     #[test]
     fn test_hook_init() {
         let bash = Bash::default();
-        let exe = Path::new("/some/dir/rtx");
+        let exe = Path::new("/some/dir/mise");
         assert_snapshot!(bash.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let bash = Bash::default();
-        let exe = Path::new("/nix/store/rtx");
+        let exe = Path::new("/nix/store/mise");
         assert_snapshot!(bash.activate(exe, " --status".into()));
     }
 

@@ -11,16 +11,16 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a plugin
 ///
-/// note that rtx automatically can install plugins when you install a tool
-/// e.g.: `rtx install node@20` will autoinstall the node plugin
+/// note that mise automatically can install plugins when you install a tool
+/// e.g.: `mise install node@20` will autoinstall the node plugin
 ///
-/// This behavior can be modified in ~/.config/rtx/config.toml
+/// This behavior can be modified in ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: node, ruby
-    /// Can specify multiple plugins: `rtx plugins install node ruby python`
+    /// Can specify multiple plugins: `mise plugins install node ruby python`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
     new_plugin: Option<PluginName>,
 
@@ -133,6 +133,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);
             let name = name.strip_prefix("rtx-").unwrap_or(name);
+            let name = name.strip_prefix("mise-").unwrap_or(name);
             let name = name.strip_suffix(".git").unwrap_or(name);
             return Ok(unalias_plugin(name).to_string());
         }
@@ -143,17 +144,17 @@ fn get_name_from_url(url: &str) -> Result<String> {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   # install the node via shorthand
-  $ <bold>rtx plugins install node</bold>
+  $ <bold>mise plugins install node</bold>
 
   # install the node plugin using a specific git url
-  $ <bold>rtx plugins install node https://github.com/rtx-plugins/rtx-nodejs.git</bold>
+  $ <bold>mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git</bold>
 
   # install the node plugin using the git url only
   # (node is inferred from the url)
-  $ <bold>rtx plugins install https://github.com/rtx-plugins/rtx-nodejs.git</bold>
+  $ <bold>mise plugins install https://github.com/rtx-plugins/rtx-nodejs.git</bold>
 
   # install the node plugin using a specific ref
-  $ <bold>rtx plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0</bold>
+  $ <bold>mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0</bold>
 "#
 );
 

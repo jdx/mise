@@ -27,7 +27,7 @@ use crate::ui::progress_report::SingleReport;
 ///
 /// ```
 ///     use std::path::Path;
-///     use rtx::cmd;
+///     use mise::cmd;
 ///
 ///     let arg1 = "foo";
 ///     let arg2 = "bar".to_owned();
@@ -58,7 +58,7 @@ macro_rules! cmd {
 ///
 /// ```
 ///     use std::path::Path;
-///     use rtx::cmd;
+///     use mise::cmd;
 ///
 ///     let arg1 = "foo";
 ///     let arg2 = "bar".to_owned();

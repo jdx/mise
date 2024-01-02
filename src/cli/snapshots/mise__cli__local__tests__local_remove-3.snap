@@ -1,0 +1,5 @@
+---
+source: src/cli/local.rs
+expression: output
+---
+mise ~/cwd/.test-tool-versions tiny

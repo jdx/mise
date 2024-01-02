@@ -18,7 +18,7 @@ dist_tag_from_version() {
   IFS="." read -r -a version_split <<<"${version_split[1]:-latest}"
   echo "${version_split[0]}"
 }
-dist_tag="$(dist_tag_from_version "$RTX_VERSION")"
+dist_tag="$(dist_tag_from_version "$MISE_VERSION")"
 
 platforms=(
   linux-x64
@@ -42,22 +42,22 @@ for platform in "${platforms[@]}"; do
     os="darwin"
   fi
 
-  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
-  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
-  tar -xzvf "$RELEASE_DIR/rtx-latest-$platform.tar.gz" -C "$RELEASE_DIR"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+  tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
   rm -rf "$RELEASE_DIR/npm"
-  mv "$RELEASE_DIR/rtx" "$RELEASE_DIR/npm"
+  mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
   cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "$NPM_PREFIX-$os-$arch",
-  "version": "$RTX_VERSION",
+  "version": "$MISE_VERSION",
   "description": "polyglot runtime manager",
   "bin": {
-    "rtx": "bin/rtx"
+    "mise": "bin/mise"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdx/rtx"
+    "url": "https://github.com/jdx/mise"
   },
   "files": [
     "bin",
@@ -100,7 +100,7 @@ function installArchSpecificPackage(version) {
     cp.on('close', function(code) {
         var pkgJson = require.resolve(['$NPM_PREFIX', platform, arch].join('-') + '/package.json');
         var subpkg = JSON.parse(fs.readFileSync(pkgJson, 'utf8'));
-        var executable = subpkg.bin.rtx;
+        var executable = subpkg.bin.mise;
         var bin = path.resolve(path.dirname(pkgJson), executable);
 
         try {
@@ -115,8 +115,8 @@ function installArchSpecificPackage(version) {
 
         if (platform == 'win') {
             var pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json')));
-            fs.writeFileSync(path.resolve(process.cwd(), 'bin/rtx'), 'This file intentionally left blank');
-            pkg.bin.rtx = 'bin/rtx.exe';
+            fs.writeFileSync(path.resolve(process.cwd(), 'bin/mise'), 'This file intentionally left blank');
+            pkg.bin.mise = 'bin/mise.exe';
             fs.writeFileSync(path.resolve(process.cwd(), 'package.json'), JSON.stringify(pkg, null, 2));
         }
 
@@ -144,10 +144,10 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "$NPM_PREFIX",
   "description": "polyglot runtime manager",
-  "version": "$RTX_VERSION",
+  "version": "$MISE_VERSION",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdx/rtx"
+    "url": "https://github.com/jdx/mise"
   },
   "files": [
     "installArchSpecificPackage.js",
@@ -158,7 +158,7 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
     "preinstall": "node installArchSpecificPackage.js"
   },
   "bin": {
-    "rtx": "./bin/rtx"
+    "mise": "./bin/mise"
   },
   "license": "MIT",
   "engines": {

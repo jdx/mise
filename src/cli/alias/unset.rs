@@ -5,7 +5,7 @@ use crate::config::Config;
 
 /// Clears an alias for a plugin
 ///
-/// This modifies the contents of ~/.config/rtx/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasUnset {
@@ -25,7 +25,7 @@ impl AliasUnset {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx alias unset node lts-hydrogen</bold>
+  $ <bold>mise alias unset node lts-hydrogen</bold>
 "#
 );
 

@@ -11,4 +11,4 @@ if ! command -v zipsign >/dev/null 2>&1; then
 fi
 
 mkdir -p ~/.zipsign
-echo "$ZIPSIGN" | base64 -d >~/.zipsign/rtx.priv
+echo "$ZIPSIGN" | base64 -d >~/.zipsign/mise.priv

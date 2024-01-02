@@ -5,7 +5,7 @@ use crate::config::Config;
 
 /// Clears a setting
 ///
-/// This modifies the contents of ~/.config/rtx/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsUnset {
@@ -23,7 +23,7 @@ impl SettingsUnset {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx settings unset legacy_version_file</bold>
+  $ <bold>mise settings unset legacy_version_file</bold>
 "#
 );
 

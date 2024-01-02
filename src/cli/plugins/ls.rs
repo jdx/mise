@@ -17,7 +17,7 @@ use crate::plugins::{ExternalPlugin, PluginType};
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct PluginsLs {
     /// List all available remote plugins
-    /// Same as `rtx plugins ls-remote`
+    /// Same as `mise plugins ls-remote`
     #[clap(short, long, hide = true, verbatim_doc_comment)]
     pub all: bool,
 
@@ -84,10 +84,10 @@ impl PluginsLs {
                 .with(Margin::new(0, 0, 0, 0))
                 .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
                 .with(Modify::new(Columns::last()).with(Padding::zero()));
-            rtxprintln!("{table}");
+            miseprintln!("{table}");
         } else {
             for tool in tools {
-                rtxprintln!("{tool}");
+                miseprintln!("{tool}");
             }
         }
         Ok(())
@@ -105,11 +105,11 @@ struct Row {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx plugins ls</bold>
+  $ <bold>mise plugins ls</bold>
   node
   ruby
 
-  $ <bold>rtx plugins ls --urls</bold>
+  $ <bold>mise plugins ls --urls</bold>
   node    https://github.com/asdf-vm/asdf-node.git
   ruby    https://github.com/asdf-vm/asdf-ruby.git
 "#

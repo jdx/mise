@@ -11,12 +11,12 @@ use crate::{dirs, env};
 /// Sets/gets the global tool version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
-/// The file is `$HOME/.tool-versions` by default. It can be changed with `$RTX_CONFIG_FILE`.
-/// If `$RTX_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.rtx.toml`.
+/// The file is `$HOME/.tool-versions` by default. It can be changed with `$MISE_CONFIG_FILE`.
+/// If `$MISE_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.mise.toml`.
 /// Otherwise, it will be parsed as a `.tool-versions` file.
-/// A future v2 release of rtx will default to using `~/.config/rtx/config.toml` instead.
+/// A future v2 release of mise will default to using `~/.config/mise/config.toml` instead.
 ///
-/// Use `rtx local` to set a tool version locally in the current directory.
+/// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "g", after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
@@ -28,13 +28,13 @@ pub struct Global {
     tool: Vec<ToolArg>,
 
     /// Save exact version to `~/.tool-versions`
-    /// e.g.: `rtx global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+    /// e.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `~/.tool-versions`
-    /// e.g.: `rtx global --fuzzy node@20` will save `node 20` to ~/.tool-versions
-    /// this is the default behavior unless RTX_ASDF_COMPAT=1
+    /// e.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions
+    /// this is the default behavior unless MISE_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
@@ -63,11 +63,11 @@ impl Global {
 }
 
 fn global_file() -> PathBuf {
-    env::RTX_CONFIG_FILE.clone().unwrap_or_else(|| {
-        if *env::RTX_USE_TOML {
+    env::MISE_CONFIG_FILE.clone().unwrap_or_else(|| {
+        if *env::MISE_USE_TOML {
             dirs::CONFIG.join("config.toml")
         } else {
-            dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+            dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
         }
     })
 }
@@ -76,14 +76,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   # set the current version of node to 20.x
   # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ <bold>rtx global --fuzzy node@20</bold>
+  $ <bold>mise global --fuzzy node@20</bold>
 
   # set the current version of node to 20.x
   # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ <bold>rtx global --pin node@20</bold>
+  $ <bold>mise global --pin node@20</bold>
 
   # show the current version of node in ~/.tool-versions
-  $ <bold>rtx global node</bold>
+  $ <bold>mise global node</bold>
   20.0.0
 "#
 );

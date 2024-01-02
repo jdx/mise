@@ -7,8 +7,8 @@ if [ "${TEST_ALL:-}" != 1 ]; then
 	exit
 fi
 
-export RTX_EXPERIMENTAL=1
-export RTX_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
+export MISE_EXPERIMENTAL=1
+export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
 
-rtx i python@3.12.0
-assert_contains "rtx x python@3.12.0 -- python --version" "Python 3.12"
+mise i python@3.12.0
+assert_contains "mise x python@3.12.0 -- python --version" "Python 3.12"

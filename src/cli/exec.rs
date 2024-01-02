@@ -15,11 +15,11 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
-/// use this to avoid modifying the shell session or running ad-hoc commands with rtx tools set.
+/// use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 ///
-/// Tools will be loaded from .rtx.toml/.tool-versions, though they can be overridden with <RUNTIME> args
+/// Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME> args
 /// Note that only the plugin specified will be overridden, so if a `.tool-versions` file
-/// includes "node 20" but you run `rtx exec python@3.11`; it will still load node@20.
+/// includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
@@ -40,7 +40,7 @@ pub struct Exec {
 
     /// Number of jobs to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
@@ -123,14 +123,14 @@ fn parse_command(
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
-  $ <bold>rtx x node@20 -- node ./app.js</bold>     # shorter alias
+  $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
+  $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
 
   # Specify command as a string:
-  $ <bold>rtx exec node@20 python@3.11 --command "node -v && python -V"</bold>
+  $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
 
   # Run a command in a different directory:
-  $ <bold>rtx x -C /path/to/project node@20 -- node ./app.js</bold>
+  $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
 "#
 );
 

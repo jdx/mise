@@ -56,7 +56,7 @@ impl Where {
             .map(|tvr| tvr.resolve(plugin.as_ref(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
-                rtxprintln!("{}", tv.install_path().to_string_lossy());
+                miseprintln!("{}", tv.install_path().to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
@@ -71,13 +71,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   # Show the latest installed version of node
   # If it is is not installed, errors
-  $ <bold>rtx where node@20</bold>
-  /home/jdx/.local/share/rtx/installs/node/20.0.0
+  $ <bold>mise where node@20</bold>
+  /home/jdx/.local/share/mise/installs/node/20.0.0
 
   # Show the current, active install directory of node
   # Errors if node is not referenced in any .tool-version file
-  $ <bold>rtx where node</bold>
-  /home/jdx/.local/share/rtx/installs/node/20.0.0
+  $ <bold>mise where node</bold>
+  /home/jdx/.local/share/mise/installs/node/20.0.0
 "#
 );
 

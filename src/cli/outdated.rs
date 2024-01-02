@@ -89,7 +89,7 @@ impl Outdated {
         let pad_plugin = |s| pad_str(s, plugin_width, Alignment::Left, None);
         let pad_requested = |s| pad_str(s, requested_width, Alignment::Left, None);
         let pad_current = |s| pad_str(s, current_width, Alignment::Left, None);
-        rtxprintln!(
+        miseprintln!(
             "{} {} {} {}",
             style(pad_plugin("Tool")).dim(),
             style(pad_requested("Requested")).dim(),
@@ -97,7 +97,7 @@ impl Outdated {
             style("Latest").dim(),
         );
         for i in 0..outdated.len() {
-            rtxprintln!(
+            miseprintln!(
                 "{} {} {} {}",
                 pad_plugin(plugins[i]),
                 pad_requested(&requests[i]),
@@ -112,12 +112,12 @@ type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx outdated</bold>
+  $ <bold>mise outdated</bold>
   Plugin  Requested  Current  Latest
   python  3.11       3.11.0   3.11.1
   node    20         20.0.0   20.1.0
 
-  $ <bold>rtx outdated node</bold>
+  $ <bold>mise outdated node</bold>
   Plugin  Requested  Current  Latest
   node    20         20.0.0   20.1.0
 "#

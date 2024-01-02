@@ -1,0 +1,5 @@
+---
+source: src/cli/global.rs
+expression: output
+---
+mise ~/.test-tool-versions tiny

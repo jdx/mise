@@ -7,9 +7,9 @@ mod activate;
 mod envrc;
 mod exec;
 
-/// Output direnv function to use rtx inside direnv
+/// Output direnv function to use mise inside direnv
 ///
-/// See https://github.com/jdx/rtx#direnv for more information
+/// See https://mise.rtx.dev/direnv.html for more information
 ///
 /// Because this generates the legacy files based on currently installed plugins,
 /// you should run this command after installing new plugins. Otherwise

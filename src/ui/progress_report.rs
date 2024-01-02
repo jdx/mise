@@ -44,11 +44,11 @@ fn pad_prefix(w: usize, s: &str) -> String {
     console::pad_str(s, w, console::Alignment::Left, None).to_string()
 }
 fn normal_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style::edim("rtx"));
+    let prefix = format!("{} {prefix}", style::edim("mise"));
     pad_prefix(pad, &prefix)
 }
 fn success_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style::egreen("rtx"));
+    let prefix = format!("{} {prefix}", style::egreen("mise"));
     pad_prefix(pad, &prefix)
 }
 

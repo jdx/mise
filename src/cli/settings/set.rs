@@ -5,7 +5,7 @@ use crate::config::Config;
 
 /// Add/update a setting
 ///
-/// This modifies the contents of ~/.config/rtx/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsSet {
@@ -56,7 +56,7 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx settings set legacy_version_file true</bold>
+  $ <bold>mise settings set legacy_version_file true</bold>
 "#
 );
 

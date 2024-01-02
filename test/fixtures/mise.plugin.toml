@@ -1,0 +1,4 @@
+#:schema ../../schema/mise.plugin.json
+
+[exec-env]
+cache-key = ["{{'1234'}}"]

@@ -8,7 +8,7 @@ use crate::cli::version::{ARCH, OS};
 
 use crate::{cmd, env};
 
-/// Updates rtx itself
+/// Updates mise itself
 ///
 /// Uses the GitHub Releases API to find the latest release and binary
 /// By default, this will also update any installed plugins
@@ -34,18 +34,18 @@ pub struct SelfUpdate {
 impl SelfUpdate {
     pub fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
-            bail!("rtx is installed via a package manager, cannot update");
+            bail!("mise is installed via a package manager, cannot update");
         }
         let status = self.do_update()?;
 
         if status.updated() {
             let version = style(status.version()).bright().yellow();
-            rtxprintln!("Updated rtx to {version}");
+            miseprintln!("Updated mise to {version}");
         } else {
-            rtxprintln!("rtx is already up to date");
+            miseprintln!("mise is already up to date");
         }
         if !self.no_plugins {
-            cmd!(&*env::RTX_BIN, "plugins", "update").run()?;
+            cmd!(&*env::MISE_BIN, "plugins", "update").run()?;
         }
 
         Ok(())
@@ -58,7 +58,7 @@ impl SelfUpdate {
         }
         let releases = releases
             .repo_owner("jdx")
-            .repo_name("rtx")
+            .repo_name("mise")
             .build()?
             .fetch()?;
         Ok(releases)
@@ -85,14 +85,14 @@ impl SelfUpdate {
         }
         let status = update
             .repo_owner("jdx")
-            .repo_name("rtx")
-            .bin_name("rtx")
+            .repo_name("mise")
+            .bin_name("mise")
             .verifying_keys([*include_bytes!("../../zipsign.pub")])
             .show_download_progress(true)
             .current_version(cargo_crate_version!())
             .target(&target)
-            .bin_path_in_archive("rtx/bin/rtx")
-            .identifier(&format!("rtx-{v}-{target}.tar.gz"))
+            .bin_path_in_archive("mise/bin/mise")
+            .identifier(&format!("mise-{v}-{target}.tar.gz"))
             .no_confirm(self.yes)
             .build()?
             .update()?;
@@ -100,7 +100,7 @@ impl SelfUpdate {
     }
 
     pub fn is_available() -> bool {
-        !std::fs::canonicalize(&*env::RTX_BIN)
+        !std::fs::canonicalize(&*env::MISE_BIN)
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))

@@ -10,7 +10,7 @@ use crate::config::Config;
 
 use crate::config::Settings;
 use crate::direnv::DirenvDiff;
-use crate::env::{TERM_WIDTH, __RTX_DIFF};
+use crate::env::{TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 
 use crate::shell::{get_shell, ShellType};
@@ -25,7 +25,7 @@ pub struct HookEnv {
     #[clap(long, short)]
     shell: Option<ShellType>,
 
-    /// Show "rtx: <PLUGIN>@<VERSION>" message when changing directories
+    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
     #[clap(long)]
     status: bool,
 
@@ -47,7 +47,7 @@ impl HookEnv {
         }
         let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
-        rtxprint!("{}", hook_env::clear_old_env(&*shell));
+        miseprint!("{}", hook_env::clear_old_env(&*shell));
         let mut env = ts.env(&config);
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
@@ -58,15 +58,15 @@ impl HookEnv {
             paths.extend(split_paths(&p).collect_vec());
         }
         paths.extend(ts.list_paths()); // load the active runtime paths
-        diff.path = paths.clone(); // update __RTX_DIFF with the new paths for the next run
+        diff.path = paths.clone(); // update __MISE_DIFF with the new paths for the next run
 
         let settings = Settings::try_get()?;
-        patches.extend(self.build_path_operations(&settings, &paths, &__RTX_DIFF.path)?);
+        patches.extend(self.build_path_operations(&settings, &paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&watch_files)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
-        rtxprint!("{output}");
+        miseprint!("{output}");
         if self.status {
             self.display_status(&config, &ts);
             ts.notify_if_versions_missing();
@@ -101,7 +101,7 @@ impl HookEnv {
         to_remove: &Vec<PathBuf>,
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let (pre, post) = match &*env::__RTX_ORIG_PATH {
+        let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
                 Some((pre, post)) if settings.experimental => {
                     (pre.to_string(), (orig_path.to_string() + post))
@@ -158,7 +158,7 @@ impl HookEnv {
 
     fn build_diff_operation(&self, diff: &EnvDiff) -> Result<EnvDiffOperation> {
         Ok(EnvDiffOperation::Add(
-            "__RTX_DIFF".into(),
+            "__MISE_DIFF".into(),
             diff.serialize()?,
         ))
     }
@@ -166,7 +166,7 @@ impl HookEnv {
     fn build_watch_operation(&self, watch_files: &[PathBuf]) -> Result<EnvDiffOperation> {
         let watches = hook_env::build_watches(watch_files)?;
         Ok(EnvDiffOperation::Add(
-            "__RTX_WATCH".into(),
+            "__MISE_WATCH".into(),
             hook_env::serialize_watches(&watches)?,
         ))
     }

@@ -50,7 +50,7 @@ impl PythonPlugin {
         debug!("Installing python-build to {}", python_build_path.display());
         create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone(&env::RTX_PYENV_REPO)?;
+        git.clone(&env::MISE_PYENV_REPO)?;
         Ok(())
     }
     fn update_python_build(&self) -> Result<()> {
@@ -65,7 +65,7 @@ impl PythonPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_rtx() {
+        match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -93,7 +93,7 @@ impl PythonPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        if !env::RTX_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
+        if !env::MISE_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
             return Ok(());
         }
         pr.set_message("installing default packages".into());
@@ -104,7 +104,7 @@ impl PythonPlugin {
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
-            .arg(&*env::RTX_PYTHON_DEFAULT_PACKAGES_FILE)
+            .arg(&*env::MISE_PYTHON_DEFAULT_PACKAGES_FILE)
             .envs(&config.env)
             .execute()
     }
@@ -119,7 +119,7 @@ impl PythonPlugin {
             let settings = Settings::try_get()?;
             if !settings.experimental {
                 warn!(
-                    "please enable experimental mode with `rtx settings set experimental true` \
+                    "please enable experimental mode with `mise settings set experimental true` \
                     to use python virtualenv activation"
                 );
             }
@@ -204,13 +204,13 @@ impl Plugin for PythonPlugin {
         if settings.verbose {
             cmd = cmd.arg("--verbose");
         }
-        if let Some(patch_url) = &*env::RTX_PYTHON_PATCH_URL {
+        if let Some(patch_url) = &*env::MISE_PYTHON_PATCH_URL {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
             let patch = HTTP.get_text(patch_url)?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
-        if let Some(patches_dir) = &*env::RTX_PYTHON_PATCHES_DIRECTORY {
+        if let Some(patches_dir) = &*env::MISE_PYTHON_PATCHES_DIRECTORY {
             let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
             if patch_file.exists() {
                 ctx.pr
@@ -242,7 +242,7 @@ impl Plugin for PythonPlugin {
             Ok(Some(virtualenv)) => {
                 let bin = virtualenv.join("bin");
                 hm.insert("VIRTUAL_ENV".into(), virtualenv.to_string_lossy().into());
-                hm.insert("RTX_ADD_PATH".into(), bin.to_string_lossy().into());
+                hm.insert("MISE_ADD_PATH".into(), bin.to_string_lossy().into());
             }
             Ok(None) => {}
         };

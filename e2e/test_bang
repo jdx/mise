@@ -10,12 +10,12 @@ assert() {
 	fi
 }
 
-rtx uninstall --all tiny
-rtx i tiny
-rtx local tiny@sub-1:latest
-assert "rtx current tiny" "2.1.0"
-rtx local tiny@sub-1:lts
-assert "rtx current tiny" "2.1.0"
-rtx local tiny@sub-0.1:3.1
-assert "rtx current tiny" "3.0.1"
-rtx local tiny@latest
+mise uninstall --all tiny
+mise i tiny
+mise local tiny@sub-1:latest
+assert "mise current tiny" "2.1.0"
+mise local tiny@sub-1:lts
+assert "mise current tiny" "2.1.0"
+mise local tiny@sub-0.1:3.1
+assert "mise current tiny" "3.0.1"
+mise local tiny@latest

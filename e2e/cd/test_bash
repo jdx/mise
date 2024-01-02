@@ -2,11 +2,11 @@
 # shellcheck disable=SC2088
 set -euo pipefail
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 orig_path="$PATH"
 
 # shellcheck disable=SC1090
-eval "$(rtx activate bash --status)" && _rtx_hook
+eval "$(mise activate bash --status)" && _mise_hook
 
 assert() {
 	local actual="$1"
@@ -24,7 +24,7 @@ assert_path() {
   actual="${actual%:}"
   actual="${actual%:}"
   actual="${actual//$ROOT/ROOT}"
-  actual="${actual//$RTX_DATA_DIR\/installs/INSTALLS}"
+  actual="${actual//$MISE_DATA_DIR\/installs/INSTALLS}"
   if [[ "$actual" != "$expected" ]]; then
     echo "Invalid PATH:  $actual"
     echo "Expected PATH: $expected"
@@ -38,28 +38,28 @@ TINY="INSTALLS/tiny/latest/bin"
 SHELLCHECK="INSTALLS/shellcheck/0.9.0/bin"
 SHFMT="INSTALLS/shfmt/3.6.0/bin"
 
-rtx ls
-rtx i && _rtx_hook
+mise ls
+mise i && _mise_hook
 test "$(node -v)" = "v20.0.0"
 assert_path "/root:ROOT/e2e/cwd:$NODE_20:$TINY:$SHELLCHECK:$SHFMT"
 assert "$FOO" "cd"
 
-cd 18 && rtx i && _rtx_hook
+cd 18 && mise i && _mise_hook
 test "$(node -v)" = "v18.0.0"
 assert_path "/root:ROOT/e2e/cwd:$NODE_18:$TINY:$SHELLCHECK:$SHFMT"
 assert "$FOO" "18"
 
-cd .. && _rtx_hook
+cd .. && _mise_hook
 test "$(node -v)" = "v20.0.0"
 assert_path "/root:ROOT/e2e/cwd:$NODE_20:$TINY:$SHELLCHECK:$SHFMT"
 
 export PATH="PRE:$PATH"
-cd 18 && _rtx_hook
+cd 18 && _mise_hook
 test "$(node -v)" = "v18.0.0"
 assert_path "PRE:/root:ROOT/e2e/cwd:$NODE_18:$TINY:$SHELLCHECK:$SHFMT"
 
-rtx shell node@18.0.0 && _rtx_hook
+mise shell node@18.0.0 && _mise_hook
 test "$(node -v)" = "v18.0.0"
 
-rtx deactivate
+mise deactivate
 assert_path "PRE"

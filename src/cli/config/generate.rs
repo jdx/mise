@@ -6,7 +6,7 @@ use crate::file::display_path;
 use clap::ValueHint;
 use eyre::Result;
 
-/// [experimental] Generate an .rtx.toml file
+/// [experimental] Generate an .mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
@@ -21,14 +21,14 @@ impl ConfigGenerate {
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
         let doc = r#"
-# # rtx config files are hierarchical. rtx will find all of the config files
+# # mise config files are hierarchical. mise will find all of the config files
 # # in all parent directories and merge them together.
 # # You might have a structure like:
 #
-# * ~/work/project/.rtx.toml  # a config file for a specific work project
-# * ~/work/.rtx.toml          # a config file for projects related to work
-# * ~/.config/rtx/config.toml # the global config file
-# * /etc/rtx/config.toml      # the system config file
+# * ~/work/project/.mise.toml  # a config file for a specific work project
+# * ~/work/.mise.toml          # a config file for projects related to work
+# * ~/.config/mise/config.toml # the global config file
+# * /etc/mise/config.toml      # the system config file
 #
 # # This setup allows you to define default versions and configuration across
 # # all projects but override them for specific projects.
@@ -53,7 +53,7 @@ impl ConfigGenerate {
 # terraform = '1.0.0'       # specify a single version
 # erlang = '26'             # specify a major version only
 # node = 'ref:master'       # build from a git ref
-# node = 'path:~/.nodes/14' # BYO – specify a non-rtx managed installation
+# node = 'path:~/.nodes/14' # BYO – specify a non-mise managed installation
 #
 # # newest with this prefix (typically exact matches don't use the prefix)
 # go = 'prefix:1.16'
@@ -64,18 +64,18 @@ impl ConfigGenerate {
 # python = ['3.12', '3.11', '3.10']
 #
 # # some plugins can take options like python's virtualenv activation
-# # with these, rtx will automatically setup and activate vevs when entering
+# # with these, mise will automatically setup and activate vevs when entering
 # # the project directory
 # python = {version='3.12', virtualenv='.venv'}
 # poetry = {version='1.7.1', pyproject='pyproject.toml'}
 #
 # [plugins]
-# # specify a custom repo url so you can install with `rtx plugin add <name>`
+# # specify a custom repo url so you can install with `mise plugin add <name>`
 # # note this will only be used if the plugin is not already installed
 # python = 'https://github.com/asdf-community/asdf-python'
 #
 # [alias.node]
-# # setup a custom alias so you can run `rtx use -g node@work` for node-16.x
+# # setup a custom alias so you can run `mise use -g node@work` for node-16.x
 # work = '16'
 "#
         .trim();
@@ -83,7 +83,7 @@ impl ConfigGenerate {
             info!("writing to {}", display_path(output));
             file::write(output, doc)?;
         } else {
-            rtxprintln!("{doc}");
+            miseprintln!("{doc}");
         }
 
         Ok(())
@@ -93,8 +93,8 @@ impl ConfigGenerate {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx cf generate > .rtx.toml</bold>
-  $ <bold>rtx cf generate --output=.rtx.toml</bold>
+  $ <bold>mise cf generate > .mise.toml</bold>
+  $ <bold>mise cf generate --output=.mise.toml</bold>
 "#
 );
 

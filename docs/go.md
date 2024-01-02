@@ -1,1 +1,1 @@
-Moved to [rtx.jdx.dev/lang/go.html](https://rtx.jdx.dev/lang/go.html).
+Moved to [mise.jdx.dev/lang/go.html](https://mise.jdx.dev/lang/go.html).

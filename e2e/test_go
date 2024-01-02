@@ -3,15 +3,15 @@ set -e
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export RTX_EXPERIMENTAL=1
-export RTX_GO_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-go-packages"
+export MISE_EXPERIMENTAL=1
+export MISE_GO_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-go-packages"
 
-cat >"$RTX_GO_DEFAULT_PACKAGES_FILE" <<EOF
+cat >"$MISE_GO_DEFAULT_PACKAGES_FILE" <<EOF
 github.com/jdx/go-example # comment
 EOF
 
-rtx use golang@prefix:1.20
-assert_contains "rtx x -- go version" "go version go1.20"
+mise use golang@prefix:1.20
+assert_contains "mise x -- go version" "go version go1.20"
 
-rm "$RTX_GO_DEFAULT_PACKAGES_FILE"
-chmod -R u+w "$RTX_DATA_DIR/installs/go"
+rm "$MISE_GO_DEFAULT_PACKAGES_FILE"
+chmod -R u+w "$MISE_DATA_DIR/installs/go"

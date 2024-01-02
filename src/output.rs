@@ -1,8 +1,8 @@
 #[cfg(test)]
 #[macro_export]
-macro_rules! rtxprintln {
+macro_rules! miseprintln {
     () => {
-        rtxprint!("\n")
+        miseprint!("\n")
     };
     ($($arg:tt)*) => {{
         let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
@@ -12,9 +12,9 @@ macro_rules! rtxprintln {
 
 #[cfg(not(test))]
 #[macro_export]
-macro_rules! rtxprintln {
+macro_rules! miseprintln {
     () => {
-        rtxprint!("\n")
+        miseprint!("\n")
     };
     ($($arg:tt)*) => {{
         println!($($arg)*);
@@ -23,7 +23,7 @@ macro_rules! rtxprintln {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! rtxprint {
+macro_rules! miseprint {
     ($($arg:tt)*) => {{
         let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
         let cur = stdout.pop().unwrap_or_default();
@@ -33,7 +33,7 @@ macro_rules! rtxprint {
 
 #[cfg(not(test))]
 #[macro_export]
-macro_rules! rtxprint {
+macro_rules! miseprint {
     ($($arg:tt)*) => {{
         print!($($arg)*);
     }};
@@ -44,8 +44,8 @@ macro_rules! rtxprint {
 macro_rules! info {
         ($($arg:tt)*) => {{
             let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-            let rtx = console::style("rtx").dim().for_stderr();
-            stderr.push(format!("{} {}", rtx, format!($($arg)*)));
+            let mise = console::style("mise").dim().for_stderr();
+            stderr.push(format!("{} {}", mise, format!($($arg)*)));
         }};
     }
 
@@ -55,8 +55,8 @@ macro_rules! warn {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let rtx = console::style("rtx").yellow().for_stderr();
-                stderr.push(format!("{} {}", rtx, format!($($arg)*)));
+                let mise = console::style("mise").yellow().for_stderr();
+                stderr.push(format!("{} {}", mise, format!($($arg)*)));
             })
         }
     }
@@ -67,8 +67,8 @@ macro_rules! error {
         ($($arg:tt)*) => {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let rtx = console::style("rtx").red().for_stderr();
-                stderr.push(format!("{} {}", rtx, format!($($arg)*)));
+                let mise = console::style("mise").red().for_stderr();
+                stderr.push(format!("{} {}", mise, format!($($arg)*)));
             })
         }
     }
@@ -91,8 +91,8 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {{
-        let rtx = console::style("rtx").dim().for_stderr();
-        info_unprefix!("{} {}", rtx, format!($($arg)*));
+        let mise = console::style("mise").dim().for_stderr();
+        info_unprefix!("{} {}", mise, format!($($arg)*));
     }};
 }
 
@@ -127,8 +127,8 @@ macro_rules! warn {
            log::warn!($($arg)*);
         } else if log::log_enabled!(log::Level::Warn) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let rtx = console::style("rtx ").yellow().for_stderr();
-                eprintln!("{}{}", rtx, format!($($arg)*));
+                let mise = console::style("mise ").yellow().for_stderr();
+                eprintln!("{}{}", mise, format!($($arg)*));
             });
         }
     }};
@@ -142,8 +142,8 @@ macro_rules! error {
            log::error!($($arg)*);
         } else if log::log_enabled!(log::Level::Error) {
             $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let rtx = console::style("rtx ").red().for_stderr();
-                eprintln!("{}{}", rtx, format!($($arg)*));
+                let mise = console::style("mise ").red().for_stderr();
+                eprintln!("{}{}", mise, format!($($arg)*));
             });
         }
     }};

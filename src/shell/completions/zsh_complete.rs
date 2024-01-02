@@ -9,8 +9,8 @@ pub fn render(cmd: &Command) -> String {
     let args = render_args(&cmds);
 
     formatdoc! {r#"
-        #compdef rtx
-        _rtx() {{
+        #compdef mise
+        _mise() {{
           typeset -A opt_args
           local context state line curcontext=$curcontext
           local ret=1
@@ -20,68 +20,68 @@ pub fn render(cmd: &Command) -> String {
         {command_funcs}
         {command_descriptions}
 
-        (( $+functions[__rtx_tool_versions] )) ||
-        __rtx_tool_versions() {{
+        (( $+functions[__mise_tool_versions] )) ||
+        __mise_tool_versions() {{
           if compset -P '*@'; then
-            local -a tool_versions; tool_versions=($(rtx ls-remote ${{words[CURRENT]}}))
+            local -a tool_versions; tool_versions=($(mise ls-remote ${{words[CURRENT]}}))
             _wanted tool_version expl 'version of tool' \
               compadd -a tool_versions -o nosort
           else
-            local -a plugins; plugins=($(rtx plugins --core --user))
+            local -a plugins; plugins=($(mise plugins --core --user))
             _wanted plugin expl 'plugin name' \
               compadd -S '@' -a plugins
           fi
         }}
-        (( $+functions[__rtx_installed_tool_versions] )) ||
-        __rtx_installed_tool_versions() {{
+        (( $+functions[__mise_installed_tool_versions] )) ||
+        __mise_installed_tool_versions() {{
           if compset -P '*@'; then
             local plugin; plugin=${{words[CURRENT]%%@*}}
-            local -a installed_tool_versions; installed_tool_versions=($(rtx ls --installed $plugin | awk '{{print $2}}'))
+            local -a installed_tool_versions; installed_tool_versions=($(mise ls --installed $plugin | awk '{{print $2}}'))
             _wanted installed_tool_version expl 'version of tool' \
               compadd -a installed_tool_versions -o nosort
           else
-            local -a plugins; plugins=($(rtx plugins --core --user))
+            local -a plugins; plugins=($(mise plugins --core --user))
             _wanted plugin expl 'plugin name' \
               compadd -S '@' -a plugins
           fi
         }}
-        (( $+functions[__rtx_plugins] )) ||
-        __rtx_plugins() {{
-          local -a plugins; plugins=($(rtx plugins --core --user))
+        (( $+functions[__mise_plugins] )) ||
+        __mise_plugins() {{
+          local -a plugins; plugins=($(mise plugins --core --user))
           _describe -t plugins 'plugin' plugins "$@"
         }}
-        (( $+functions[__rtx_all_plugins] )) ||
-        __rtx_all_plugins() {{
-          local -a all_plugins; all_plugins=($(rtx plugins --all))
+        (( $+functions[__mise_all_plugins] )) ||
+        __mise_all_plugins() {{
+          local -a all_plugins; all_plugins=($(mise plugins --all))
           _describe -t all_plugins 'all_plugins' all_plugins "$@"
         }}
-        (( $+functions[__rtx_aliases] )) ||
-        __rtx_aliases() {{
-          local -a aliases; aliases=($(rtx aliases ls ${{words[CURRENT-1]}} | awk '{{print $2}}'))
+        (( $+functions[__mise_aliases] )) ||
+        __mise_aliases() {{
+          local -a aliases; aliases=($(mise aliases ls ${{words[CURRENT-1]}} | awk '{{print $2}}'))
           _describe -t aliases 'alias' aliases "$@"
         }}
-        (( $+functions[__rtx_settings] )) ||
-        __rtx_settings() {{
-          local -a settings; settings=($(rtx settings ls | awk '{{print $1}}'))
+        (( $+functions[__mise_settings] )) ||
+        __mise_settings() {{
+          local -a settings; settings=($(mise settings ls | awk '{{print $1}}'))
           _describe -t settings 'setting' settings "$@"
         }}
-        (( $+functions[__rtx_tasks] )) ||
-        __rtx_tasks() {{
-          local -a tasks; tasks=($(rtx tasks ls --no-header | awk '{{print $1}}'))
+        (( $+functions[__mise_tasks] )) ||
+        __mise_tasks() {{
+          local -a tasks; tasks=($(mise tasks ls --no-header | awk '{{print $1}}'))
           _describe -t tasks 'task' tasks "$@"
         }}
-        (( $+functions[__rtx_prefixes] )) ||
-        __rtx_prefixes() {{
+        (( $+functions[__mise_prefixes] )) ||
+        __mise_prefixes() {{
           if [[ CURRENT -gt 2 ]]; then
-              local -a prefixes; prefixes=($(rtx ls-remote ${{words[CURRENT-1]}}))
+              local -a prefixes; prefixes=($(mise ls-remote ${{words[CURRENT-1]}}))
               _describe -t prefixes 'prefix' prefixes "$@"
           fi
         }}
 
-        if [ "$funcstack[1]" = "_rtx" ]; then
-            _rtx "$@"
+        if [ "$funcstack[1]" = "_mise" ]; then
+            _mise "$@"
         else
-            compdef _rtx rtx
+            compdef _mise mise
         fi
 
         # vim: noet ci pi sts=0 sw=4 ts=4
@@ -143,7 +143,7 @@ fn render_subcommands(cmds: &[&Command]) -> String {
     formatdoc! {r#"
               case "$state" in
                 (args)
-                  curcontext="${{curcontext%:*:*}}:rtx-cmd-$words[1]:"
+                  curcontext="${{curcontext%:*:*}}:mise-cmd-$words[1]:"
                   case $words[1] in
             {cases}
                   esac
@@ -233,14 +233,14 @@ fn render_completion(arg: &Arg) -> String {
         ValueHint::EmailAddress => "_email_addresses".to_string(),
         ValueHint::Other => "( )".to_string(),
         _ => match arg.get_id().as_str() {
-            "tool" => "__rtx_tool_versions".to_string(),
-            "installed_tool" => "__rtx_installed_tool_versions".to_string(),
-            "plugin" => "__rtx_plugins".to_string(),
-            "new_plugin" => "__rtx_all_plugins".to_string(),
-            "alias" => "__rtx_aliases".to_string(),
-            "setting" => "__rtx_settings".to_string(),
-            "task" => "__rtx_tasks".to_string(),
-            "prefix" => "__rtx_prefixes".to_string(),
+            "tool" => "__mise_tool_versions".to_string(),
+            "installed_tool" => "__mise_installed_tool_versions".to_string(),
+            "plugin" => "__mise_plugins".to_string(),
+            "new_plugin" => "__mise_all_plugins".to_string(),
+            "alias" => "__mise_aliases".to_string(),
+            "setting" => "__mise_settings".to_string(),
+            "task" => "__mise_tasks".to_string(),
+            "prefix" => "__mise_prefixes".to_string(),
             _ => String::new(),
         },
     }

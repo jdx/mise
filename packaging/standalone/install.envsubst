@@ -2,7 +2,7 @@
 set -eu
 
 #region logging setup
-if [ "${RTX_DEBUG-}" = "true" ] || [ "${RTX_DEBUG-}" = "1" ]; then
+if [ "${MISE_DEBUG-}" = "true" ] || [ "${MISE_DEBUG-}" = "1" ]; then
 	debug() {
 		echo "$@" >&2
 	}
@@ -12,7 +12,7 @@ else
 	}
 fi
 
-if [ "${RTX_QUIET-}" = "1" ] || [ "${RTX_QUIET-}" = "true" ]; then
+if [ "${MISE_QUIET-}" = "1" ] || [ "${MISE_QUIET-}" = "true" ]; then
 	info() {
 		:
 	}
@@ -57,7 +57,7 @@ shasum_bin() {
 	elif command -v sha256sum >/dev/null 2>&1; then
 		echo "sha256sum"
 	else
-		error "rtx install requires shasum or sha256sum but neither is installed. Aborting."
+		error "mise install requires shasum or sha256sum but neither is installed. Aborting."
 	fi
 }
 
@@ -65,10 +65,10 @@ get_checksum() {
 	os="$(get_os)"
 	arch="$(get_arch)"
 
-	checksum_linux_x86_64="$RTX_CHECKSUM_LINUX_X86_64"
-	checksum_linux_arm64="$RTX_CHECKSUM_LINUX_ARM64"
-	checksum_macos_x86_64="$RTX_CHECKSUM_MACOS_X86_64"
-	checksum_macos_arm64="$RTX_CHECKSUM_MACOS_ARM64"
+	checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
+	checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
+	checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
+	checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
 
 	if [ "$os" = "linux" ] && [ "$arch" = "x64" ]; then
 		echo "$checksum_linux_x86_64"
@@ -91,7 +91,7 @@ download_file() {
 	cache_dir="$(mktemp -d)"
 	file="$cache_dir/$filename"
 
-	info "rtx: installing rtx..."
+	info "mise: installing mise..."
 
 	if command -v curl >/dev/null 2>&1; then
 		debug ">" curl -fLlSso "$file" "$url"
@@ -102,26 +102,26 @@ download_file() {
 			stderr=$(mktemp)
 			wget -O "$file" "$url" >"$stderr" 2>&1 || error "wget failed: $(cat "$stderr")"
 		else
-			error "rtx standalone install requires curl or wget but neither is installed. Aborting."
+			error "mise standalone install requires curl or wget but neither is installed. Aborting."
 		fi
 	fi
 
 	echo "$file"
 }
 
-install_rtx() {
+install_mise() {
 	# download the tarball
-	version="$RTX_VERSION"
+	version="$MISE_VERSION"
 	os="$(get_os)"
 	arch="$(get_arch)"
 	xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-	rtx_data_dir="${RTX_DATA_DIR:-$xdg_data_home/rtx}"
-	install_path="${RTX_INSTALL_PATH:-${rtx_data_dir}/bin/rtx}"
+	mise_data_dir="${MISE_DATA_DIR:-$xdg_data_home/mise}"
+	install_path="${MISE_INSTALL_PATH:-${mise_data_dir}/bin/mise}"
 	install_dir="$(dirname "$install_path")"
-	tarball_url="https://github.com/jdx/rtx/releases/download/${version}/rtx-${version}-${os}-${arch}.tar.gz"
+	tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}.tar.gz"
 
 	cache_file=$(download_file "$tarball_url")
-	debug "rtx-setup: tarball=$cache_file"
+	debug "mise-setup: tarball=$cache_file"
 
 	debug "validating checksum"
 	cd "$(dirname "$cache_file")" && get_checksum | "$(shasum_bin)" -c >/dev/null
@@ -131,38 +131,38 @@ install_rtx() {
 	rm -rf "$install_path"
 	cd "$(mktemp -d)"
 	tar -xzf "$cache_file"
-	mv rtx/bin/rtx "$install_path"
-	info "rtx: installed successfully to $install_path"
+	mv mise/bin/mise "$install_path"
+	info "mise: installed successfully to $install_path"
 }
 
 after_finish_help() {
 	case "${SHELL:-}" in
 	*/zsh)
-		info "rtx: run the following to activate rtx in your shell:"
+		info "mise: run the following to activate mise in your shell:"
 		info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> \"${ZDOTDIR-$HOME}/.zshrc\""
 		info ""
-		info "rtx: this must be run in order to use rtx in the terminal"
-		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
+		info "mise: this must be run in order to use mise in the terminal"
+		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*/bash)
-		info "rtx: run the following to activate rtx in your shell:"
+		info "mise: run the following to activate mise in your shell:"
 		info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc"
 		info ""
-		info "rtx: this must be run in order to use rtx in the terminal"
-		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
+		info "mise: this must be run in order to use mise in the terminal"
+		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*/fish)
-		info "rtx: run the following to activate rtx in your shell:"
+		info "mise: run the following to activate mise in your shell:"
 		info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish"
 		info ""
-		info "rtx: this must be run in order to use rtx in the terminal"
-		info "rtx: run \`rtx doctor\` to verify this is setup correctly"
+		info "mise: this must be run in order to use mise in the terminal"
+		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*)
-		info "rtx: run \`$install_path --help\` to get started"
+		info "mise: run \`$install_path --help\` to get started"
 		;;
 	esac
 }
 
-install_rtx
+install_mise
 after_finish_help

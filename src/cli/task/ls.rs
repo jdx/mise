@@ -10,11 +10,11 @@ use crate::file::display_path;
 use crate::ui::{style, table};
 
 /// [experimental] List available tasks to execute
-/// These may be included from the config file or from the project's .rtx/tasks directory
-/// rtx will merge all tasks from all parent directories into this list.
+/// These may be included from the config file or from the project's .mise/tasks directory
+/// mise will merge all tasks from all parent directories into this list.
 ///
-/// So if you have global tasks in ~/.config/rtx/tasks/* and project-specific tasks in
-/// ~/myproject/.rtx/tasks/*, then they'll both be available but the project-specific
+/// So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks in
+/// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -44,7 +44,7 @@ impl TaskLs {
             .collect::<Vec<Row>>();
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
-        rtxprintln!("{table}");
+        miseprintln!("{table}");
 
         Ok(())
     }
@@ -82,7 +82,7 @@ fn truncate(s: &str, len: usize) -> String {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx task ls</bold>
+  $ <bold>mise task ls</bold>
 "#
 );
 
@@ -93,9 +93,9 @@ mod tests {
     #[test]
     fn test_task_ls() {
         assert_cli_snapshot!("t", "--no-headers", @r###"
-        configtask                              ~/config/config.toml     
-        filetask    This is a test build script ~/cwd/.rtx/tasks/filetask
-        lint                                    ~/config/config.toml     
+        configtask                              ~/config/config.toml      
+        filetask    This is a test build script ~/cwd/.mise/tasks/filetask
+        lint                                    ~/config/config.toml      
         test                                    ~/config/config.toml
         "###);
     }

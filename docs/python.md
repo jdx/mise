@@ -1,1 +1,1 @@
-Moved to [rtx.jdx.dev/lang/python.html](https://rtx.jdx.dev/lang/python.html)
+Moved to [mise.jdx.dev/lang/python.html](https://mise.jdx.dev/lang/python.html)

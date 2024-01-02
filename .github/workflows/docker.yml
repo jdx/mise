@@ -25,7 +25,7 @@ jobs:
           - deb
           - github-actions
           - rpm
-          - rtx
+          - mise
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,12 +50,12 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/jdx/rtx:${{ matrix.flavor }}
+          tags: ghcr.io/jdx/mise:${{ matrix.flavor }}
           labels: ${{ steps.meta.outputs.labels }}
           file: packaging/${{ matrix.flavor }}/Dockerfile
   test:
     runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/rtx:github-actions
+    container: ghcr.io/jdx/mise:github-actions
     timeout-minutes: 10
     steps:
       - run: node -v
@@ -81,12 +81,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: jdxcode/rtx
+          images: jdxcode/mise
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: jdxcode/rtx:latest
+          tags: jdxcode/mise:latest
           labels: ${{ steps.meta.outputs.labels }}

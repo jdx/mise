@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script wraps npm so to run `rtx reshim` after global installs and uninstalls
+# This script wraps npm so to run `mise reshim` after global installs and uninstalls
 # Any other cases are passed-through to npm
 
 this_dir=$(dirname "${BASH_SOURCE[0]}")
@@ -12,7 +12,7 @@ this_dir=$(cd "$this_dir" && pwd -P) # Normalizes the directory
 plugin_dir="${this_dir}/.."
 
 should_reshim() {
-  if [ "${RTX_SKIP_RESHIM:-}" ]; then
+  if [ "${MISE_SKIP_RESHIM:-}" ]; then
     return 1
   fi
 
@@ -71,8 +71,8 @@ wrap_npm_if_reshim_is_needed() {
   local npm_cli="$plugin_dir/lib/node_modules/npm/bin/npm-cli.js"
   if should_reshim "$@"; then
     node "$npm_cli" "$@"
-    printf "Reshimming rtx %s...\n" "$plugin_name" >&2
-    rtx reshim
+    printf "Reshimming mise %s...\n" "$plugin_name" >&2
+    mise reshim
   else
     exec node "$npm_cli" "$@"
   fi

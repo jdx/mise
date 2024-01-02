@@ -5,9 +5,13 @@ use eyre::Result;
 use rayon::Scope;
 
 use crate::dirs::*;
+use crate::env::{XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME};
 use crate::file;
 
 pub fn run() {
+    if let Err(err) = migrate_rtx() {
+        warn!("migrate: {}", err);
+    }
     rayon::scope(|s| {
         task(s, || rename_plugin("nodejs", "node"));
         task(s, || rename_plugin("golang", "go"));
@@ -51,6 +55,13 @@ fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
 fn rename_plugin(from: &str, to: &str) -> Result<()> {
     move_subdirs(&INSTALLS.join(from), &INSTALLS.join(to))?;
     move_subdirs(&PLUGINS.join(from), &PLUGINS.join(to))?;
+    Ok(())
+}
+
+fn migrate_rtx() -> Result<()> {
+    move_dirs(&XDG_DATA_HOME.join("rtx"), &DATA)?;
+    move_dirs(&XDG_CONFIG_HOME.join("rtx"), &CONFIG)?;
+    move_dirs(&XDG_STATE_HOME.join("rtx"), &STATE)?;
     Ok(())
 }
 

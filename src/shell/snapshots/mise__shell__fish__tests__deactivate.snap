@@ -1,0 +1,10 @@
+---
+source: src/shell/fish.rs
+expression: replace_path(&deactivate)
+---
+functions --erase __mise_env_eval
+functions --erase __mise_env_eval_2
+functions --erase __mise_cd_hook
+functions --erase mise
+set -e MISE_SHELL
+

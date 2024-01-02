@@ -4,7 +4,7 @@ use crate::config::Config;
 
 /// Show an alias for a plugin
 ///
-/// This is the contents of an alias.<PLUGIN> entry in ~/.config/rtx/config.toml
+/// This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml
 ///
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
@@ -20,7 +20,7 @@ impl AliasGet {
         let config = Config::try_get()?;
         match config.get_all_aliases().get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
-                Some(alias) => Ok(rtxprintln!("{}", alias)),
+                Some(alias) => Ok(miseprintln!("{}", alias)),
                 None => Err(eyre!("Unknown alias: {}", &self.alias)),
             },
             None => Err(eyre!("Unknown plugin: {}", &self.plugin)),
@@ -30,7 +30,7 @@ impl AliasGet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
- $ <bold>rtx alias get node lts-hydrogen</bold>
+ $ <bold>mise alias get node lts-hydrogen</bold>
  20.0.0
 "#
 );
