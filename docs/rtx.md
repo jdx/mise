@@ -15,3 +15,5 @@ env vars so those will need to be changed to `MISE_*`. Anything using a local `.
 I apologize if this migration is not seamless however I think moving to a name that
 is easier to search for and avoids confusion is better for everyone.
 
+Users of the `rtx-action` GitHub action will need to switch to `mise-action` (and also
+bump the major version to v2).
