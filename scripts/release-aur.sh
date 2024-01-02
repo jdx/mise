@@ -11,7 +11,7 @@ fi
 git -C aur pull
 
 cat >aur/PKGBUILD <<EOF
-# Maintainer: Jeff Dickey <releases at mise dot pub>
+# Maintainer: Jeff Dickey <releases at mise dot jdx dot dev>
 
 pkgname=mise
 pkgver=${MISE_VERSION#v*}
