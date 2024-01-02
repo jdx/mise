@@ -1,4 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"]
+  "extends": ["config:recommended"],
+  "asdf": {
+    "enabled": false
+  },
+  "nodejs": {
+    "enabled": false
+  }
 }
