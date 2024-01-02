@@ -1,5 +1,5 @@
 <div align="center">
-<h1>[mise-en-place](https://mise.jdx.dev)</h1>
+<h1><a href="https://mise.jdx.dev">mise-en-place</a></h1>
 <!-- <a href="https://mise.jdx.dev"><picture> -->
 <!--   <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png"> -->
 <!--   <img alt="mise logo" width="617" src="./docs/logo-light@2x.png"> -->
