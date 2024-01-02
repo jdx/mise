@@ -60,7 +60,7 @@ fslock = "0.2"
 globwalk = "0.9.0"
 humantime = "2.1"
 indenter = "0.3"
-indexmap = { version = "2.0", features = ["serde"] }
+indexmap = { version = "2.1", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "<3"
 itertools = "0.12"
