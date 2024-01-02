@@ -3,6 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-rtx p list-remote | grep elixir
-rtx p uninstall tiny
-assert_contains "rtx ls-remote tiny" "1.1.0"
+mise p list-remote | grep elixir
+mise p uninstall tiny
+assert_contains "mise ls-remote tiny" "1.1.0"

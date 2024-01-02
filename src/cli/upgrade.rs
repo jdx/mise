@@ -31,7 +31,7 @@ pub struct Upgrade {
 
     /// Number of jobs to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Display multiselect menu to choose which tools to upgrade
@@ -129,7 +129,7 @@ impl Upgrade {
 
     fn get_interactive_tool_set(&self, outdated: &OutputVec) -> Result<HashSet<ToolVersion>> {
         ui::handle_ctrlc();
-        let mut ms = demand::MultiSelect::new("rtx upgrade")
+        let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
             .filterable(true)
             .min(1);

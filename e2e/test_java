@@ -3,17 +3,17 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 
 cat <<EOF >.sdkmanrc
 java=17.0.2
 EOF
-rtx i java
-assert_contains "rtx x java -- java -version 2>&1" "openjdk version \"17.0.2\""
+mise i java
+assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
 rm .sdkmanrc
 
 cat <<EOF >.java-version
 17.0.2
 EOF
-assert_contains "rtx x java -- java -version 2>&1" "openjdk version \"17.0.2\""
+assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
 rm .java-version

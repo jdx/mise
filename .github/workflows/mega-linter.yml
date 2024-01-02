@@ -13,6 +13,10 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
+      - mise
 
 # Comment env block if you do not want to apply fixes
 env:

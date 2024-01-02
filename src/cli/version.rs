@@ -15,7 +15,7 @@ use crate::file::modified_duration;
 use crate::{dirs, duration, file};
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Show rtx version", alias = "v")]
+#[clap(about = "Show mise version", alias = "v")]
 pub struct Version {}
 
 pub static OS: Lazy<String> = Lazy::new(|| std::env::consts::OS.into());
@@ -51,7 +51,7 @@ impl Version {
 }
 
 pub fn print_version_if_requested(args: &[String]) {
-    if args.len() == 2 && *env::RTX_BIN_NAME == "rtx" {
+    if args.len() == 2 && *env::MISE_BIN_NAME == "mise" {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version();
@@ -62,7 +62,7 @@ pub fn print_version_if_requested(args: &[String]) {
 }
 
 fn show_version() {
-    rtxprintln!("{}", *VERSION);
+    miseprintln!("{}", *VERSION);
     show_latest();
 }
 
@@ -71,9 +71,9 @@ fn show_latest() {
         return;
     }
     if let Some(latest) = check_for_new_version(duration::DAILY) {
-        warn!("rtx version {} available", latest);
+        warn!("mise version {} available", latest);
         if SelfUpdate::is_available() {
-            let cmd = style("rtx self-update").bright().yellow().for_stderr();
+            let cmd = style("mise self-update").bright().yellow().for_stderr();
             warn!("To update, run {}", cmd);
         }
     }
@@ -111,8 +111,8 @@ fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "http://rtx.jdx.dev/VERSION";
-    debug!("checking rtx version from {}", URL);
+    const URL: &str = "http://mise.jdx.dev/VERSION";
+    debug!("checking mise version from {}", URL);
     match crate::http::HTTP_VERSION_CHECK.get_text(URL) {
         Ok(text) => {
             debug!("got version {text}");

@@ -33,9 +33,9 @@ impl ToolArg {
     }
 
     /// this handles the case where the user typed in:
-    /// rtx local node 20.0.0
+    /// mise local node 20.0.0
     /// instead of
-    /// rtx local node@20.0.0
+    /// mise local node@20.0.0
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.

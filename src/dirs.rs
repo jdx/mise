@@ -5,11 +5,11 @@ use once_cell::sync::Lazy;
 use crate::env;
 
 pub static HOME: Lazy<&Path> = Lazy::new(|| &env::HOME);
-pub static DATA: Lazy<&Path> = Lazy::new(|| &env::RTX_DATA_DIR);
-pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::RTX_CACHE_DIR);
-pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::RTX_CONFIG_DIR);
-pub static STATE: Lazy<&Path> = Lazy::new(|| &env::RTX_STATE_DIR);
-pub static SYSTEM: Lazy<&Path> = Lazy::new(|| &env::RTX_SYSTEM_DIR);
+pub static DATA: Lazy<&Path> = Lazy::new(|| &env::MISE_DATA_DIR);
+pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::MISE_CACHE_DIR);
+pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::MISE_CONFIG_DIR);
+pub static STATE: Lazy<&Path> = Lazy::new(|| &env::MISE_STATE_DIR);
+pub static SYSTEM: Lazy<&Path> = Lazy::new(|| &env::MISE_SYSTEM_DIR);
 
 pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| DATA.join("plugins"));
 pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| DATA.join("downloads"));

@@ -13,10 +13,10 @@ use crate::ui::prompt;
 
 /// Delete unused versions of tools
 ///
-/// rtx tracks which config files have been used in ~/.local/share/rtx/tracked_config_files
+/// mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files
 /// Versions which are no longer the latest specified in any of those configs are deleted.
-/// Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
-/// as will versions only referenced on the command line (`rtx exec <PLUGIN>@<VERSION>`).
+/// Versions installed only with environment variables (`MISE_<PLUGIN>_VERSION`) will be deleted,
+/// as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSION>`).
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
@@ -74,9 +74,9 @@ impl Prune {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx prune --dry-run</bold>
-  rm -rf ~/.local/share/rtx/versions/node/20.0.0
-  rm -rf ~/.local/share/rtx/versions/node/20.0.1
+  $ <bold>mise prune --dry-run</bold>
+  rm -rf ~/.local/share/mise/versions/node/20.0.0
+  rm -rf ~/.local/share/mise/versions/node/20.0.1
 "#
 );
 

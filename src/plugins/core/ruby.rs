@@ -48,7 +48,7 @@ impl RubyPlugin {
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
-        let build_tool_path = if *env::RTX_RUBY_INSTALL {
+        let build_tool_path = if *env::MISE_RUBY_INSTALL {
             self.ruby_build_bin()
         } else {
             self.ruby_install_bin()
@@ -61,7 +61,7 @@ impl RubyPlugin {
     }
 
     fn update_build_tool(&self) -> Result<()> {
-        if *env::RTX_RUBY_INSTALL {
+        if *env::MISE_RUBY_INSTALL {
             self.update_ruby_install()
                 .wrap_err("failed to update ruby-install")?;
         }
@@ -74,11 +74,11 @@ impl RubyPlugin {
             "Installing ruby-build to {}",
             self.ruby_build_path().display()
         );
-        let tmp = temp_dir().join("rtx-ruby-build");
+        let tmp = temp_dir().join("mise-ruby-build");
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&env::RTX_RUBY_BUILD_REPO)?;
+        git.clone(&env::MISE_RUBY_BUILD_REPO)?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -108,11 +108,11 @@ impl RubyPlugin {
             "Installing ruby-install to {}",
             self.ruby_install_path().display()
         );
-        let tmp = temp_dir().join("rtx-ruby-install");
+        let tmp = temp_dir().join("mise-ruby-install");
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&env::RTX_RUBY_INSTALL_REPO)?;
+        git.clone(&env::MISE_RUBY_INSTALL_REPO)?;
 
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
@@ -145,7 +145,7 @@ impl RubyPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_rtx() {
+        match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -180,7 +180,7 @@ impl RubyPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::RTX_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::MISE_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -253,7 +253,7 @@ impl RubyPlugin {
         tv: &ToolVersion,
         pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner> {
-        let cmd = if *env::RTX_RUBY_INSTALL {
+        let cmd = if *env::MISE_RUBY_INSTALL {
             CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
         } else {
             CmdLineRunner::new(self.ruby_build_bin())
@@ -263,11 +263,11 @@ impl RubyPlugin {
         Ok(cmd.with_pr(pr).envs(&config.env))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
-        let mut args = env::RTX_RUBY_BUILD_OPTS.clone()?;
+        let mut args = env::MISE_RUBY_BUILD_OPTS.clone()?;
         if self.verbose_install() {
             args.push("--verbose".into());
         }
-        if env::RTX_RUBY_APPLY_PATCHES.is_some() {
+        if env::MISE_RUBY_APPLY_PATCHES.is_some() {
             args.push("--patch".into());
         }
         args.push(tv.version.clone());
@@ -288,18 +288,18 @@ impl RubyPlugin {
         args.push(version.into());
         args.push("--install-dir".into());
         args.push(tv.install_path().to_string_lossy().to_string());
-        args.extend(env::RTX_RUBY_INSTALL_OPTS.clone()?);
+        args.extend(env::MISE_RUBY_INSTALL_OPTS.clone()?);
         Ok(args)
     }
 
     fn verbose_install(&self) -> bool {
         let settings = Settings::get();
-        let verbose_env = *env::RTX_RUBY_VERBOSE_INSTALL;
+        let verbose_env = *env::MISE_RUBY_VERBOSE_INSTALL;
         verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
     }
 
     fn fetch_patch_sources(&self) -> Vec<String> {
-        let patch_sources = env::RTX_RUBY_APPLY_PATCHES.clone().unwrap_or_default();
+        let patch_sources = env::MISE_RUBY_APPLY_PATCHES.clone().unwrap_or_default();
         patch_sources
             .split('\n')
             .map(|s| s.to_string())

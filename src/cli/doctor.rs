@@ -16,7 +16,7 @@ use crate::toolset::ToolsetBuilder;
 use crate::{cli, cmd, dirs};
 use crate::{duration, env};
 
-/// Check rtx installation for possible problems.
+/// Check mise installation for possible problems.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {}
@@ -25,14 +25,14 @@ impl Doctor {
     pub fn run(self) -> Result<()> {
         let mut checks = Vec::new();
 
-        rtxprintln!("{}", rtx_version());
-        rtxprintln!("{}", build_info());
-        rtxprintln!("{}", shell());
-        rtxprintln!("{}", rtx_data_dir());
-        rtxprintln!("{}", rtx_env_vars());
+        miseprintln!("{}", mise_version());
+        miseprintln!("{}", build_info());
+        miseprintln!("{}", shell());
+        miseprintln!("{}", mise_data_dir());
+        miseprintln!("{}", mise_env_vars());
         match Settings::try_get() {
             Ok(settings) => {
-                rtxprintln!(
+                miseprintln!(
                     "{}\n{}\n",
                     style("settings:").bold(),
                     indent(settings.to_string())
@@ -42,8 +42,8 @@ impl Doctor {
         }
         match Config::try_get() {
             Ok(config) => {
-                rtxprintln!("{}", render_config_files(&config));
-                rtxprintln!("{}", render_plugins(&config));
+                miseprintln!("{}", render_config_files(&config));
+                miseprintln!("{}", render_plugins(&config));
                 for plugin in config.list_plugins() {
                     if !plugin.is_installed() {
                         checks.push(format!("plugin {} is not installed", &plugin.name()));
@@ -51,11 +51,11 @@ impl Doctor {
                     }
                 }
                 if !config.is_activated() && !shims_on_path() {
-                    let cmd = style("rtx help activate").yellow().for_stderr();
-                    let url = style("https://rtx.jdx.dev").underlined().for_stderr();
+                    let cmd = style("mise help activate").yellow().for_stderr();
+                    let url = style("https://mise.jdx.dev").underlined().for_stderr();
                     let shims = style(dirs::SHIMS.display()).cyan().for_stderr();
                     checks.push(formatdoc!(
-                        r#"rtx is not activated, run {cmd} or
+                        r#"mise is not activated, run {cmd} or
                            read documentation at {url} for activation instructions.
                            Alternatively, add the shims directory {shims} to PATH.
                            Using the shims directory is preferred for non-interactive setups."#
@@ -63,7 +63,7 @@ impl Doctor {
                 }
                 match ToolsetBuilder::new().build(&config) {
                     Ok(ts) => {
-                        rtxprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))
+                        miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))
                     }
                     Err(err) => warn!("failed to load toolset: {}", err),
                 }
@@ -73,20 +73,20 @@ impl Doctor {
 
         if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
             checks.push(format!(
-                "new rtx version {} available, currently on {}",
+                "new mise version {} available, currently on {}",
                 latest,
                 env!("CARGO_PKG_VERSION")
             ));
         }
 
         if checks.is_empty() {
-            rtxprintln!("No problems found");
+            miseprintln!("No problems found");
         } else {
             let checks_plural = if checks.len() == 1 { "" } else { "s" };
             let summary = format!("{} problem{checks_plural} found:", checks.len());
-            rtxprintln!("{}", style(summary).red().bold());
+            miseprintln!("{}", style(summary).red().bold());
             for check in &checks {
-                rtxprintln!("{}\n", check);
+                miseprintln!("{}\n", check);
             }
             exit(1);
         }
@@ -99,17 +99,17 @@ fn shims_on_path() -> bool {
     env::PATH.contains(&*dirs::SHIMS)
 }
 
-fn rtx_data_dir() -> String {
-    let mut s = style("rtx data directory:\n").bold().to_string();
-    s.push_str(&format!("  {}\n", env::RTX_DATA_DIR.to_string_lossy()));
+fn mise_data_dir() -> String {
+    let mut s = style("mise data directory:\n").bold().to_string();
+    s.push_str(&format!("  {}\n", env::MISE_DATA_DIR.to_string_lossy()));
     s
 }
 
-fn rtx_env_vars() -> String {
+fn mise_env_vars() -> String {
     let vars = env::vars()
-        .filter(|(k, _)| k.starts_with("RTX_"))
+        .filter(|(k, _)| k.starts_with("MISE_"))
         .collect::<Vec<(String, String)>>();
-    let mut s = style("rtx environment variables:\n").bold().to_string();
+    let mut s = style("mise environment variables:\n").bold().to_string();
     if vars.is_empty() {
         s.push_str("  (none)\n");
     }
@@ -157,8 +157,8 @@ fn render_plugins(config: &Config) -> String {
     s
 }
 
-fn rtx_version() -> String {
-    let mut s = style("rtx version:\n").bold().to_string();
+fn mise_version() -> String {
+    let mut s = style("mise version:\n").bold().to_string();
     s.push_str(&format!("  {}\n", *VERSION));
     s
 }
@@ -201,7 +201,7 @@ fn indent(s: String) -> String {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx doctor</bold>
+  $ <bold>mise doctor</bold>
   [WARN] plugin node is not installed
 "#
 );

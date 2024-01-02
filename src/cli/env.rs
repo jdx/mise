@@ -6,10 +6,10 @@ use crate::config::Config;
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
-/// Exports env vars to activate rtx a single time
+/// Exports env vars to activate mise a single time
 ///
-/// Use this if you don't want to permanently install rtx. It's not necessary to
-/// use this if you have `rtx activate` in your shell rc file.
+/// Use this if you don't want to permanently install mise. It's not necessary to
+/// use this if you have `mise activate` in your shell rc file.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Env {
@@ -42,7 +42,7 @@ impl Env {
 
     fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(config);
-        rtxprintln!("{}", serde_json::to_string_pretty(&env)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
@@ -52,7 +52,7 @@ impl Env {
         for (k, v) in ts.env_with_path(config) {
             let k = k.to_string();
             let v = v.to_string();
-            rtxprint!("{}", shell.set_env(&k, &v));
+            miseprint!("{}", shell.set_env(&k, &v));
         }
         Ok(())
     }
@@ -60,10 +60,10 @@ impl Env {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>eval "$(rtx env -s bash)"</bold>
-  $ <bold>eval "$(rtx env -s zsh)"</bold>
-  $ <bold>rtx env -s fish | source</bold>
-  $ <bold>execx($(rtx env -s xonsh))</bold>
+  $ <bold>eval "$(mise env -s bash)"</bold>
+  $ <bold>eval "$(mise env -s zsh)"</bold>
+  $ <bold>mise env -s fish | source</bold>
+  $ <bold>execx($(mise env -s xonsh))</bold>
 "#
 );
 

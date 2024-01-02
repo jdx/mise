@@ -79,7 +79,7 @@ impl Git {
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
             Err(err) => warn!(
-                "failed to get git version: {:#}\n Git is required to use rtx.",
+                "failed to get git version: {:#}\n Git is required to use mise.",
                 err
             ),
         }

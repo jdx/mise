@@ -3,6 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-eval "$(rtx activate bash)" && eval "$(rtx hook-env)"
-rtx plugin install https://github.com/kachick/asdf-zigmod
-rtx x zigmod@latest -- zigmod version
+eval "$(mise activate bash)" && eval "$(mise hook-env)"
+mise plugin install https://github.com/kachick/asdf-zigmod
+mise x zigmod@latest -- zigmod version

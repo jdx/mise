@@ -3,14 +3,14 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-rtx install tiny
-assert_contains "rtx ls --installed" "tiny"
+mise install tiny
+assert_contains "mise ls --installed" "tiny"
 
-rtx plugin uninstall tiny
-assert_contains "rtx ls --installed" "tiny"
+mise plugin uninstall tiny
+assert_contains "mise ls --installed" "tiny"
 
-rtx plugin install tiny
-assert_contains "rtx ls --installed" "tiny"
+mise plugin install tiny
+assert_contains "mise ls --installed" "tiny"
 
-rtx plugin uninstall tiny --purge
-assert_not_contains "rtx ls --installed" "tiny"
+mise plugin uninstall tiny --purge
+assert_not_contains "mise ls --installed" "tiny"

@@ -5,18 +5,18 @@ echo "::group::Setup"
 git config --global user.name rtx-vm
 git config --global user.email 123107610+rtx-vm@users.noreply.github.com
 
-BASE_DIR="$(cd rtx && pwd)"
-RTX_VERSION=$(cd rtx && ./scripts/get-version.sh)
+BASE_DIR="$(cd mise && pwd)"
+MISE_VERSION=$(cd mise && ./scripts/get-version.sh)
 RELEASE_DIR=releases
-export BASE_DIR RTX_VERSION RELEASE_DIR
-rm -rf "${RELEASE_DIR:?}/$RTX_VERSION"
-mkdir -p "$RELEASE_DIR/$RTX_VERSION"
+export BASE_DIR MISE_VERSION RELEASE_DIR
+rm -rf "${RELEASE_DIR:?}/$MISE_VERSION"
+mkdir -p "$RELEASE_DIR/$MISE_VERSION"
 
 echo "::group::Build"
 find artifacts -name 'tarball-*' -exec sh -c '
   target=${1#artifacts/tarball-}
-  cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$RTX_VERSION"
-  cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$RTX_VERSION"
+  cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$MISE_VERSION"
+  cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$MISE_VERSION"
   ' sh {} \;
 
 platforms=(
@@ -32,48 +32,48 @@ platforms=(
   macos-arm64
 )
 for platform in "${platforms[@]}"; do
-  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz" "$RELEASE_DIR/rtx-latest-$platform.tar.gz"
-  cp "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.xz" "$RELEASE_DIR/rtx-latest-$platform.tar.xz"
-  tar -xvzf "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform.tar.gz"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/rtx-latest-$platform"
-  cp -v rtx/bin/rtx "$RELEASE_DIR/$RTX_VERSION/rtx-$RTX_VERSION-$platform"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+  tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+  cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
+  cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
 done
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
-echo "$RTX_VERSION" | tr -d 'v' >VERSION
-cp rtx-latest-linux-x64 rtx-latest-linux-amd64
-cp rtx-latest-macos-x64 rtx-latest-macos-amd64
-sha256sum ./rtx-latest-* >SHASUMS256.txt
-sha512sum ./rtx-latest-* >SHASUMS512.txt
-gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
-gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
+echo "$MISE_VERSION" | tr -d 'v' >VERSION
+cp mise-latest-linux-x64 mise-latest-linux-amd64
+cp mise-latest-macos-x64 mise-latest-macos-amd64
+sha256sum ./mise-latest-* >SHASUMS256.txt
+sha512sum ./mise-latest-* >SHASUMS512.txt
+gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
+gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
 popd
 
-pushd "$RELEASE_DIR/$RTX_VERSION"
+pushd "$RELEASE_DIR/$MISE_VERSION"
 sha256sum ./* >SHASUMS256.txt
 sha512sum ./* >SHASUMS512.txt
-gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS256.txt >SHASUMS256.asc
-gpg --clearsign -u 408B88DB29DDE9E0 <SHASUMS512.txt >SHASUMS512.asc
+gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
+gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
 popd
 
 echo "::group::install.sh"
-./rtx/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
+./mise/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
-gpg -u 408B88DB29DDE9E0 --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
+gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 
 if [[ "$DRY_RUN" != 1 ]]; then
-  echo "::group::Publish npm @jdxcode/rtx"
-  NPM_PREFIX=@jdxcode/rtx ./rtx/scripts/release-npm.sh
-  echo "::group::Publish npm rtx-cli"
-  NPM_PREFIX=rtx-cli ./rtx/scripts/release-npm.sh
+  echo "::group::Publish npm @jdxcode/mise"
+  NPM_PREFIX=@jdxcode/mise ./mise/scripts/release-npm.sh
+  #  echo "::group::Publish npm mise-cli"
+  #  NPM_PREFIX=mise-cli ./mise/scripts/release-npm.sh
   echo "::group::Publish r2"
-  ./rtx/scripts/publish-r2.sh
+  ./mise/scripts/publish-r2.sh
 fi
 
-echo "::group::Publish homebrew"
-./rtx/scripts/render-homebrew.sh >homebrew-tap/rtx.rb
-pushd homebrew-tap
-git add . && git commit -m "rtx ${RTX_VERSION#v}"
-popd
+#echo "::group::Publish homebrew"
+#./mise/scripts/render-homebrew.sh >homebrew-tap/mise.rb
+#pushd homebrew-tap
+#git add . && git commit -m "mise ${MISE_VERSION#v}"
+#popd

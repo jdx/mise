@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings};
-use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
@@ -17,9 +17,9 @@ use crate::{dirs, env, file};
 /// Change the active version of a tool locally or globally.
 ///
 /// This will install the tool if it is not already installed.
-/// By default, this will use an `.rtx.toml` file in the current directory.
+/// By default, this will use an `.mise.toml` file in the current directory.
 /// Use the --global flag to use the global config file instead.
-/// This replaces asdf's `local` and `global` commands, however those are still available in rtx.
+/// This replaces asdf's `local` and `global` commands, however those are still available in mise.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
 pub struct Use {
@@ -34,22 +34,22 @@ pub struct Use {
     force: bool,
 
     /// Save fuzzy version to config file
-    /// e.g.: `rtx use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless RTX_ASDF_COMPAT=1
+    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
+    /// this is the default behavior unless MISE_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// Use the global config file (~/.config/rtx/config.toml) instead of the local one
+    /// Use the global config file (~/.config/mise/config.toml) instead of the local one
     #[clap(short, long, overrides_with_all = &["path", "env"])]
     global: bool,
 
-    /// Modify an environment-specific config file like .rtx.<env>.toml
+    /// Modify an environment-specific config file like .mise.<env>.toml
     #[clap(long, short, overrides_with_all = &["global", "path"])]
     env: Option<String>,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
@@ -62,15 +62,15 @@ pub struct Use {
     remove: Vec<PluginName>,
 
     /// Specify a path to a config file or directory
-    /// If a directory is specified, it will look for .rtx.toml (default) or .tool-versions
+    /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
     #[clap(short, long, overrides_with_all = &["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Save exact version to config file
-    /// e.g.: `rtx use --pin node@20` will save 20.0.0 as the version
+    /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
     #[clap(
         long,
-        env = "RTX_ASDF_COMPAT",
+        env = "MISE_ASDF_COMPAT",
         verbatim_doc_comment,
         overrides_with = "fuzzy"
     )]
@@ -139,7 +139,7 @@ impl Use {
         let path = if self.global {
             global_file()
         } else if let Some(env) = &self.env {
-            config_file_from_dir(&env::current_dir()?.join(format!(".rtx.{}.toml", env)))
+            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
         } else if let Some(p) = &self.path {
             config_file_from_dir(p)
         } else {
@@ -158,7 +158,7 @@ impl Use {
         };
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.plugin) {
-                if let ToolSource::RtxToml(p) | ToolSource::ToolVersions(p) = &tv.source {
+                if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if p != global {
                         warn(targ, p);
                     }
@@ -170,16 +170,16 @@ impl Use {
     fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) {
         let path = display_path(cf.get_path());
         let tools = versions.iter().map(|t| t.style()).join(", ");
-        rtxprintln!(
+        miseprintln!(
             "{} {} tools: {tools}",
-            style("rtx").green(),
+            style("mise").green(),
             style(path).cyan().for_stderr(),
         );
     }
 }
 
 fn global_file() -> PathBuf {
-    env::RTX_CONFIG_FILE
+    env::MISE_CONFIG_FILE
         .clone()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
@@ -188,35 +188,35 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    let rtx_toml = p.join(&*RTX_DEFAULT_CONFIG_FILENAME);
-    let tool_versions = p.join(&*RTX_DEFAULT_TOOL_VERSIONS_FILENAME);
-    if rtx_toml.exists() {
-        return rtx_toml;
+    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
+    let tool_versions = p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME);
+    if mise_toml.exists() {
+        return mise_toml;
     } else if tool_versions.exists() {
         return tool_versions;
     }
-    let filenames = vec![RTX_DEFAULT_CONFIG_FILENAME.as_str()];
+    let filenames = vec![MISE_DEFAULT_CONFIG_FILENAME.as_str()];
     if let Some(p) = file::find_up(p, &filenames) {
         return p;
     }
-    rtx_toml
+    mise_toml
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # set the current version of node to 20.x in .rtx.toml of current directory
+  # set the current version of node to 20.x in .mise.toml of current directory
   # will write the fuzzy version (e.g.: 20)
-  $ <bold>rtx use node@20</bold>
+  $ <bold>mise use node@20</bold>
 
-  # set the current version of node to 20.x in ~/.config/rtx/config.toml
+  # set the current version of node to 20.x in ~/.config/mise/config.toml
   # will write the precise version (e.g.: 20.0.0)
-  $ <bold>rtx use -g --pin node@20</bold>
+  $ <bold>mise use -g --pin node@20</bold>
 
-  # sets .rtx.local.toml (which is intended not to be committed to a project)
-  $ <bold>rtx use --env local node@20</bold>
+  # sets .mise.local.toml (which is intended not to be committed to a project)
+  $ <bold>mise use --env local node@20</bold>
 
-  # sets .rtx.staging.toml (which is used if RTX_ENV=staging)
-  $ <bold>rtx use --env staging node@20</bold>
+  # sets .mise.staging.toml (which is used if MISE_ENV=staging)
+  $ <bold>mise use --env staging node@20</bold>
 "#
 );
 
@@ -226,29 +226,29 @@ mod tests {
 
     #[test]
     fn test_use_local() {
-        let cf_path = env::current_dir().unwrap().join(".test.rtx.toml");
+        let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tools: tiny@2.1.0");
+        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny", @"rtx ~/cwd/.test.rtx.toml tools: tiny@3.1.0");
+        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "3.1.0"
         "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"rtx ~/cwd/.test.rtx.toml tools: tiny@2.1.0");
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"rtx ~/cwd/.test.rtx.toml tools:");
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
@@ -259,7 +259,7 @@ mod tests {
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@3", @"rtx ~/cwd/.test-tool-versions tools: tiny@3.1.0");
+        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
@@ -272,8 +272,8 @@ mod tests {
         let _ = file::remove_file(&cf_path);
 
         assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
-        rtx ~/config/config.toml tools: tiny@2.1.0
-        rtx tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
+        mise ~/config/config.toml tools: tiny@2.1.0
+        mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]

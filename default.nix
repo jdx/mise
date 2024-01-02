@@ -6,7 +6,7 @@ let
   };
 in
 rustPlatform.buildRustPackage {
-  pname = "rtx";
+  pname = "mise";
   version = "2024.0.0";
 
   src = lib.cleanSource ./.;
@@ -51,7 +51,7 @@ rustPlatform.buildRustPackage {
 
   meta = with lib; {
     description = "The front-end to your dev env";
-    homepage = "https://github.com/jdx/rtx";
+    homepage = "https://github.com/jdx/mise";
     license = licenses.mit;
   };
 }

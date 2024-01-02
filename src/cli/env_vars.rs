@@ -1,24 +1,24 @@
 use color_eyre::Result;
 
-use crate::config::config_file::rtx_toml::RtxToml;
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::env;
-use crate::env::RTX_DEFAULT_CONFIG_FILENAME;
+use crate::env::MISE_DEFAULT_CONFIG_FILENAME;
 use crate::file::display_path;
 
 use super::args::env_var::{EnvVarArg, EnvVarArgParser};
 
 /// Manage environment variables
 ///
-/// By default this command modifies ".rtx.toml" in the current directory.
-/// You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
+/// By default this command modifies ".mise.toml" in the current directory.
+/// You can specify the file name by either setting the MISE_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ev", verbatim_doc_comment)]
 pub struct EnvVars {
     /// The TOML file to update
     ///
-    /// Defaults to RTX_DEFAULT_CONFIG_FILENAME environment variable, or ".rtx.toml".
+    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
     file: Option<String>,
 
@@ -40,41 +40,41 @@ impl EnvVars {
         if self.remove.is_none() && self.env_vars.is_none() {
             for (key, value) in &config.env {
                 let source = config.env_sources.get(key).unwrap();
-                rtxprintln!("{key}={value} {}", display_path(source));
+                miseprintln!("{key}={value} {}", display_path(source));
             }
             return Ok(());
         }
 
         let filename = self
             .file
-            .unwrap_or_else(|| RTX_DEFAULT_CONFIG_FILENAME.to_string());
+            .unwrap_or_else(|| MISE_DEFAULT_CONFIG_FILENAME.to_string());
 
-        let mut rtx_toml = get_rtx_toml(filename.as_str())?;
+        let mut mise_toml = get_mise_toml(filename.as_str())?;
 
         if let Some(env_names) = &self.remove {
             for name in env_names {
-                rtx_toml.remove_env(name);
+                mise_toml.remove_env(name);
             }
         }
 
         if let Some(env_vars) = self.env_vars {
             for ev in env_vars {
-                rtx_toml.update_env(&ev.key, ev.value);
+                mise_toml.update_env(&ev.key, ev.value);
             }
         }
-        rtx_toml.save()
+        mise_toml.save()
     }
 }
 
-fn get_rtx_toml(filename: &str) -> Result<RtxToml> {
+fn get_mise_toml(filename: &str) -> Result<MiseToml> {
     let path = env::current_dir()?.join(filename);
-    let rtx_toml = if path.exists() {
-        RtxToml::from_file(&path)?
+    let mise_toml = if path.exists() {
+        MiseToml::from_file(&path)?
     } else {
-        RtxToml::init(&path)
+        MiseToml::init(&path)
     };
 
-    Ok(rtx_toml)
+    Ok(mise_toml)
 }
 
 #[cfg(test)]
@@ -96,14 +96,14 @@ mod tests {
     #[test]
     fn test_env_vars() {
         // Using the default file
-        let filename = ".test.rtx.toml";
+        let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "FOO=bar");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
 
         // Using a custom file
-        let filename = ".test-custom.rtx.toml";
+        let filename = ".test-custom.mise.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "--file", filename, "FOO=bar");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_env_vars_remove() {
         // Using the default file
-        let filename = ".test.rtx.toml";
+        let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "BAZ=quux");
         assert_cli!("env-vars", "--remove", "BAZ");
@@ -121,7 +121,7 @@ mod tests {
         remove_config_file(filename);
 
         // Using a custom file
-        let filename = ".test-custom.rtx.toml";
+        let filename = ".test-custom.mise.toml";
         let cf_path = remove_config_file(filename);
         assert_cli!("env-vars", "--file", filename, "BAZ=quux");
         assert_cli!("env-vars", "--file", filename, "--remove", "BAZ");

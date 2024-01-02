@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mise.jdx.dev/schema/mise.json",
+  "title": "mise",
+  "description": "config file for mise version manager (.mise.toml)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "min_version": {
+      "description": "minimum version of mise required to use this config",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "env_file": {
+      "description": "path to .env file",
+      "type": "string"
+    },
+    "env_path": {
+      "description": "PATH entries to add",
+      "type": "array",
+      "items": {
+        "description": "a path to add to PATH",
+        "type": "string"
+      }
+    },
+    "env": {
+      "description": "environment variables",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      }
+    },
+    "tools": {
+      "description": "dev tools to use",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/tool"
+            }
+          },
+          {
+            "$ref": "#/$defs/tool"
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "description": "task runner tasks",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
+    "plugins": {
+      "description": "plugins to use",
+      "type": "object",
+      "additionalProperties": {
+        "description": "url to plugin repository",
+        "type": "string"
+      }
+    },
+    "alias": {
+      "description": "custom shorthands for versions",
+      "type": "object",
+      "additionalProperties": {
+        "description": "plugin to set aliases for",
+        "type": "object",
+        "additionalProperties": {
+          "description": "version alias points to",
+          "type": "string"
+        }
+      }
+    },
+    "settings": {
+      "$ref": "#/$defs/settings"
+    }
+  },
+  "$defs": {
+    "tool": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "version of the tool to install"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "description": "version of the tool to install",
+              "type": "string"
+            }
+          },
+          "required": ["version"]
+        }
+      ]
+    },
+    "task": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "script to run"
+        },
+        {
+          "description": "script to run",
+          "type": "array",
+          "items": {
+            "description": "script to run",
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "oneOf": [
+                {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run",
+                  "type": "array",
+                  "items": {
+                    "description": "script to run",
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "depends": {
+              "description": "other tasks to run before this task",
+              "type": "array",
+              "items": {
+                "description": "task to run before this task",
+                "type": "string"
+              }
+            },
+            "alias": {
+              "oneOf": [
+                {
+                  "description": "alias for this task",
+                  "type": "string"
+                },
+                {
+                  "description": "alias for this task",
+                  "type": "array",
+                  "items": {
+                    "description": "alias for this task",
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "dir": {
+              "description": "directory to run script in, default is current working directory",
+              "type": "string"
+            },
+            "env": {
+              "description": "environment variables",
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "quiet": {
+              "description": "do not display mise information for this task",
+              "type": "boolean"
+            },
+            "raw": {
+              "description": "directly connect task to stdin/stdout/stderr",
+              "type": "boolean"
+            },
+            "sources": {
+              "description": "files that this task depends on",
+              "type": "array",
+              "items": {
+                "description": "glob pattern for files that this task depends on",
+                "type": "string"
+              }
+            },
+            "outputs": {
+              "description": "files created by this task",
+              "type": "array",
+              "items": {
+                "description": "glob pattern for files created by this task",
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "settings": {
+      "description": "settings for mise",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "legacy_version_file": {
+          "description": "should mise parse legacy version files (e.g. .node-version)",
+          "type": "boolean"
+        },
+        "legacy_version_file_disable_tools": {
+          "description": "tools that should not have their legacy version files parsed",
+          "type": "array",
+          "items": {
+            "description": "tool name",
+            "type": "string"
+          }
+        },
+        "always_keep_download": {
+          "description": "should mise keep downloaded files after installation",
+          "type": "boolean"
+        },
+        "always_keep_install": {
+          "description": "should mise keep install files after installation even if the installation fails",
+          "type": "boolean"
+        },
+        "plugin_autoupdate_last_check_duration": {
+          "oneOf": [
+            {
+              "description": "how often to check for plugin updates",
+              "type": "string"
+            },
+            {
+              "description": "how often to check for plugin updates",
+              "type": "integer"
+            }
+          ]
+        },
+        "asdf_compat": {
+          "description": "set to true to ensure .tool-versions will be compatible with asdf",
+          "type": "boolean"
+        },
+        "jobs": {
+          "description": "number of tools to install in parallel, default is 4",
+          "type": "integer"
+        },
+        "raw": {
+          "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",
+          "type": "boolean"
+        },
+        "shorthands_file": {
+          "description": "path to file containing shorthand mappings",
+          "type": "string"
+        },
+        "disable_default_shorthands": {
+          "description": "disables built-in shorthands",
+          "type": "boolean"
+        },
+        "disable_tools": {
+          "description": "tools that should not be used",
+          "type": "array",
+          "items": {
+            "description": "tool name",
+            "type": "string"
+          }
+        },
+        "trusted_config_paths": {
+          "description": "config files with these prefixes will be trusted by default",
+          "type": "array",
+          "items": {
+            "description": "a path to add to PATH",
+            "type": "string"
+          }
+        },
+        "experimental": {
+          "description": "enable experimental features",
+          "type": "boolean"
+        },
+        "verbose": {
+          "description": "display installation output",
+          "type": "boolean"
+        },
+        "yes": {
+          "description": "assume yes for all prompts",
+          "type": "boolean"
+        },
+        "task_output": {
+          "description": "how to display task output",
+          "type": "string",
+          "default": "prefix",
+          "enum": ["prefix", "interleave"]
+        }
+      }
+    }
+  }
+}

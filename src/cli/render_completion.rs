@@ -30,11 +30,11 @@ impl RenderCompletion {
             clap_complete::Shell::Fish => completions::fish_complete(&cmd)?,
             _ => {
                 let mut c = Cursor::new(Vec::new());
-                generate(shell, &mut cmd, "rtx", &mut c);
+                generate(shell, &mut cmd, "mise", &mut c);
                 String::from_utf8(c.into_inner()).unwrap()
             }
         };
-        rtxprintln!("{}", script.trim());
+        miseprintln!("{}", script.trim());
 
         Ok(())
     }

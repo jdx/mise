@@ -7,23 +7,23 @@
   outputs = { self, nixpkgs, flake-utils }:
     {
       overlay = final: prev: {
-        rtx = prev.callPackage ./default.nix { };
+        mise = prev.callPackage ./default.nix { };
       };
     } // flake-utils.lib.eachDefaultSystem(system:
       let
         pkgs = import nixpkgs { inherit system; };
-        rtx = pkgs.callPackage ./default.nix { };
+        mise = pkgs.callPackage ./default.nix { };
       in
         {
           packages = {
-            inherit rtx;
-            default = rtx;
+            inherit mise;
+            default = mise;
           };
 
           devShells.default = pkgs.mkShell {
-            name = "rtx-develop";
+            name = "mise-develop";
 
-            inputsFrom = [ rtx ];
+            inputsFrom = [ mise ];
 
             nativeBuildInputs = with pkgs; [
               just

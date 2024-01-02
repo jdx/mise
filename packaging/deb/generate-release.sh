@@ -19,14 +19,14 @@ do_hash() {
 }
 
 cat <<EOF
-Origin: RTX Repository
-Label: RTX
+Origin: mise repository
+Label: mise
 Suite: stable
 Codename: stable
 Version: 1.0
 Architectures: amd64 arm64
 Components: main
-Description: https://github.com/jdx/rtx
+Description: https://github.com/jdx/mise
 Date: $(date -Ru)
 EOF
 do_hash "MD5Sum" "md5sum"

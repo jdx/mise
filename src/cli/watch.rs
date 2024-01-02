@@ -39,13 +39,13 @@ pub struct Watch {
     //
     // /// Print stdout/stderr by line, prefixed with the task's label
     // /// Defaults to true if --jobs > 1
-    // /// Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     // pub prefix: bool,
     //
     // /// Print directly to stdout/stderr instead of by line
     // /// Defaults to true if --jobs == 1
-    // /// Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     // pub interleave: bool,
     //
@@ -56,12 +56,12 @@ pub struct Watch {
     //
     // /// Number of tasks to run in parallel
     // /// [default: 4]
-    // /// Configure with `jobs` config or `RTX_JOBS` env var
-    // #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    // /// Configure with `jobs` config or `MISE_JOBS` env var
+    // #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     // pub jobs: Option<usize>,
     //
     // /// Read/write directly to stdin/stdout/stderr instead of by line
-    // /// Configure with `raw` config or `RTX_RAW` env var
+    // /// Configure with `raw` config or `MISE_RAW` env var
     // #[clap(long, short, verbatim_doc_comment)]
     // pub raw: bool,
 }
@@ -76,7 +76,7 @@ impl Watch {
             if !ts.versions.contains_key("watchexec") {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());
-                eprintln!("  rtx use -g watchexec@latest");
+                eprintln!("  mise use -g watchexec@latest");
                 exit(1);
             }
         }
@@ -105,7 +105,7 @@ impl Watch {
             args.extend(itertools::intersperse(globs, "-f".to_string()).collect::<Vec<_>>());
         }
         args.extend(self.args.clone());
-        args.extend(["--".to_string(), "rtx".to_string(), "run".to_string()]);
+        args.extend(["--".to_string(), "mise".to_string(), "run".to_string()]);
         for arg in itertools::intersperse(tasks.iter().map(|t| t.name.as_str()), ":::") {
             args.push(arg.to_string());
         }
@@ -124,15 +124,15 @@ impl Watch {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx watch -t build</bold>
+  $ <bold>mise watch -t build</bold>
   Runs the "build" task. Will re-run the task when any of its sources change.
   Uses "sources" from the task definition to determine which files to watch.
 
-  $ <bold>rtx watch -t build --glob src/**/*.rs</bold>
+  $ <bold>mise watch -t build --glob src/**/*.rs</bold>
   Runs the "build" task but specify the files to watch with a glob pattern.
   This overrides the "sources" from the task definition.
 
-  $ <bold>rtx run -t build --clear</bold>
+  $ <bold>mise run -t build --clear</bold>
   Extra arguments are passed to watchexec. See `watchexec --help` for details.
 "#
 );

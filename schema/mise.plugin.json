@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mise.jdx.dev/schema/mise.plugin.json",
+  "title": "mise-plugin",
+  "description": "config file for a mise plugin",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "list-aliases": {
+      "description": "configuration for bin/list-aliases script",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of aliases to add",
+          "type": "string"
+        }
+      }
+    },
+    "list-legacy-filenames": {
+      "description": "configuration for bin/list-legacy-filenames script",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "list of legacy filenames to check for",
+          "type": "string"
+        }
+      }
+    },
+    "list-bin-paths": {
+      "description": "configuration for bin/list-bin-paths script",
+      "additionalProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the results of bin/exec-env separately based on these values",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "exec-env": {
+      "description": "configuration for bin/exec-env script",
+      "additionalProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the results of bin/exec-env separately based on these values",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -39,11 +39,11 @@ impl JavaPlugin {
             java_metadata_ea_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             java_metadata_ga_cache: CacheManager::new(
                 core.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             core,
         }
     }
@@ -64,7 +64,7 @@ impl JavaPlugin {
                     if m.version.contains('.') {
                         metadata.insert(m.version.to_string(), m.clone());
                     } else {
-                        // rtx expects full versions like ".0.0"
+                        // mise expects full versions like ".0.0"
                         metadata.insert(format!("{}.0.0", m.version), m.clone());
                     }
                 }
@@ -77,8 +77,8 @@ impl JavaPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
-        // See https://github.com/jdx/rtx/issues/1196
-        // match self.core.fetch_remote_versions_from_rtx() {
+        // See https://github.com/jdx/mise/issues/1196
+        // match self.core.fetch_remote_versions_from_mise() {
         //     Ok(Some(versions)) => return Ok(versions),
         //     Ok(None) => {}
         //     Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -227,7 +227,7 @@ impl JavaPlugin {
         if regex!(r"^\d").is_match(&tv.version) {
             // undo openjdk shorthand
             if tv.version.ends_with(".0.0") {
-                // undo rtx's full "*.0.0" version
+                // undo mise's full "*.0.0" version
                 format!("openjdk-{}", &tv.version[..tv.version.len() - 4])
             } else {
                 format!("openjdk-{}", tv.version)

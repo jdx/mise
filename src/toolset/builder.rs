@@ -67,10 +67,13 @@ impl ToolsetBuilder {
             return;
         }
         for (k, v) in env {
-            if k.starts_with("RTX_") && k.ends_with("_VERSION") && k != "RTX_VERSION" {
-                let plugin_name = k[4..k.len() - 8].to_lowercase();
+            if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
+                let plugin_name = k
+                    .trim_start_matches("MISE_")
+                    .trim_end_matches("_VERSION")
+                    .to_lowercase();
                 if plugin_name == "install" {
-                    // ignore RTX_INSTALL_VERSION
+                    // ignore MISE_INSTALL_VERSION
                     continue;
                 }
                 let source = ToolSource::Environment(k, v.clone());

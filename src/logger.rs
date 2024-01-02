@@ -16,14 +16,14 @@ pub fn init(settings: &Settings) {
     let level = settings.log_level.parse().unwrap();
     loggers.push(init_term_logger(level));
 
-    if let Some(log_file) = &*env::RTX_LOG_FILE {
-        let file_level = env::RTX_LOG_FILE_LEVEL.unwrap_or(level);
+    if let Some(log_file) = &*env::MISE_LOG_FILE {
+        let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(level);
         if let Some(logger) = init_write_logger(file_level, log_file) {
             loggers.push(logger)
         }
     }
     CombinedLogger::init(loggers).unwrap_or_else(|err| {
-        eprintln!("rtx: could not initialize logger: {err}");
+        eprintln!("mise: could not initialize logger: {err}");
     });
 }
 
@@ -66,7 +66,7 @@ fn init_write_logger(level: LevelFilter, log_path: &Path) -> Option<Box<dyn Shar
             log_file,
         )),
         Err(err) => {
-            eprintln!("rtx: could not write to log file: {err}");
+            eprintln!("mise: could not write to log file: {err}");
 
             None
         }

@@ -33,7 +33,7 @@ impl ConfigLs {
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
         table.with(Modify::new(Columns::last()).with(Width::truncate(40).suffix("…")));
-        rtxprintln!("{table}");
+        miseprintln!("{table}");
 
         Ok(())
     }
@@ -66,7 +66,7 @@ impl From<&dyn ConfigFile> for Row {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx config ls</bold>
+  $ <bold>mise config ls</bold>
 "#
 );
 

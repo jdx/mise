@@ -1,15 +1,15 @@
 [package]
-name = "rtx-cli"
+name = "mise"
 version = "2024.0.0"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
-homepage = "https://rtx.jdx.dev"
-documentation = "https://rtx.jdx.dev"
-repository = "https://github.com/jdx/rtx"
+homepage = "https://mise.jdx.dev"
+documentation = "https://mise.jdx.dev"
+repository = "https://github.com/jdx/mise"
 readme = "README.md"
 license = "MIT"
-keywords = ["rtx"]
+keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
     "src/**/*.rs",
@@ -27,7 +27,7 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "rtx"
+name = "mise"
 path = "src/main.rs"
 
 #[[bench]]
@@ -125,21 +125,21 @@ sign-tag = true
 sign-commit = true
 pre-release-hook = "./scripts/pre-release-hook.sh"
 pre-release-replacements = [
-    { file = "README.md", search = "^rtx [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "rtx {{version}}", exactly = 1 },
-    { file = "packaging/rpm/rtx.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
-    { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-alpha.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
+    { file = "README.md", search = "^mise [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "mise {{version}}", exactly = 1 },
+    { file = "packaging/rpm/mise.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
+    { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
 ]
 
 [package.metadata.binstall]
-bin-dir = "rtx/bin/rtx"
+bin-dir = "mise/bin/mise"
 [package.metadata.binstall.overrides.aarch64-apple-darwin]
-pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-macos-arm64{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-arm64{ archive-suffix }"
 [package.metadata.binstall.overrides.x86_64-apple-darwin]
-pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-macos-x64{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-x64{ archive-suffix }"
 [package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
-pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-arm64{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ archive-suffix }"
 [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
-pkg-url = "{ repo }/releases/download/v{ version }/rtx-v{version}-linux-x64{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ archive-suffix }"
 
 [package.metadata.cargo-machete]
 ignored = ["built", "openssl"]

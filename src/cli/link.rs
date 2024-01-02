@@ -11,10 +11,10 @@ use crate::file::{make_symlink, remove_all};
 
 use crate::{dirs, file};
 
-/// Symlinks a tool version into rtx
+/// Symlinks a tool version into mise
 ///
 /// Use this for adding installs either custom compiled outside
-/// rtx or built with a different tool.
+/// mise or built with a different tool.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Link {
@@ -67,14 +67,14 @@ impl Link {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # build node-20.0.0 with node-build and link it into rtx
+  # build node-20.0.0 with node-build and link it into mise
   $ <bold>node-build 20.0.0 ~/.nodes/20.0.0</bold>
-  $ <bold>rtx link node@20.0.0 ~/.nodes/20.0.0</bold>
+  $ <bold>mise link node@20.0.0 ~/.nodes/20.0.0</bold>
 
-  # have rtx use the python version provided by Homebrew
+  # have mise use the python version provided by Homebrew
   $ <bold>brew install node</bold>
-  $ <bold>rtx link node@brew $(brew --prefix node)</bold>
-  $ <bold>rtx use node@brew</bold>
+  $ <bold>mise link node@brew $(brew --prefix node)</bold>
+  $ <bold>mise use node@brew</bold>
 "#
 );
 

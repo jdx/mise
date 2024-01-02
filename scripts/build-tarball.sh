@@ -85,21 +85,21 @@ elif command -v zig >/dev/null; then
 else
   cargo build "$@"
 fi
-mkdir -p dist/rtx/bin
-mkdir -p dist/rtx/man/man1
-mkdir -p dist/rtx/share/fish/vendor_conf.d
-cp "target/$RUST_TRIPLE/release/rtx" dist/rtx/bin/rtx
-cp README.md dist/rtx/README.md
-cp LICENSE dist/rtx/LICENSE
-cp {,dist/rtx/}man/man1/rtx.1
-cp {,dist/rtx/}share/fish/vendor_conf.d/rtx-activate.fish
+mkdir -p dist/mise/bin
+mkdir -p dist/mise/man/man1
+mkdir -p dist/mise/share/fish/vendor_conf.d
+cp "target/$RUST_TRIPLE/release/mise" dist/mise/bin/mise
+cp README.md dist/mise/README.md
+cp LICENSE dist/mise/LICENSE
+cp {,dist/mise/}man/man1/mise.1
+cp {,dist/mise/}share/fish/vendor_conf.d/mise-activate.fish
 
 cd dist
-tar -cJf "$BASENAME.tar.xz" rtx
-tar -czf "$BASENAME.tar.gz" rtx
+tar -cJf "$BASENAME.tar.xz" mise
+tar -czf "$BASENAME.tar.gz" mise
 
-if [ -f ~/.zipsign/rtx.priv ]; then
-  zipsign sign tar "$BASENAME.tar.gz" ~/.zipsign/rtx.priv
+if [ -f ~/.zipsign/mise.priv ]; then
+  zipsign sign tar "$BASENAME.tar.gz" ~/.zipsign/mise.priv
   zipsign verify tar "$BASENAME.tar.gz" ../zipsign.pub
 fi
 

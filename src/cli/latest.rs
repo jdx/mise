@@ -47,7 +47,7 @@ impl Latest {
             plugin.latest_version(prefix)?
         };
         if let Some(version) = latest_version {
-            rtxprintln!("{}", version);
+            miseprintln!("{}", version);
         }
         Ok(())
     }
@@ -55,10 +55,10 @@ impl Latest {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx latest node@20</bold>  # get the latest version of node 20
+  $ <bold>mise latest node@20</bold>  # get the latest version of node 20
   20.0.0
 
-  $ <bold>rtx latest node</bold>     # get the latest stable version of node
+  $ <bold>mise latest node</bold>     # get the latest stable version of node
   20.0.0
 "#
 );

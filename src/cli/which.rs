@@ -23,7 +23,7 @@ pub struct Which {
     pub version: bool,
 
     /// Use a specific tool@version
-    /// e.g.: `rtx which npm --tool=node@20`
+    /// e.g.: `mise which npm --tool=node@20`
     #[clap(short, long, value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     pub tool: Option<ToolArg>,
 }
@@ -35,21 +35,21 @@ impl Which {
         match ts.which(&self.bin_name) {
             Some((p, tv)) => {
                 if self.version {
-                    rtxprintln!("{}", tv.version);
+                    miseprintln!("{}", tv.version);
                 } else if self.plugin {
-                    rtxprintln!("{p}");
+                    miseprintln!("{p}");
                 } else {
                     let path = p.which(&tv, &self.bin_name)?;
-                    rtxprintln!("{}", path.unwrap().display());
+                    miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
             }
             None => {
                 if self.has_shim(&self.bin_name) {
-                    bail!("{} is an rtx bin however it is not currently active. Use `rtx use` to activate it in this directory.", self.bin_name)
+                    bail!("{} is an mise bin however it is not currently active. Use `mise use` to activate it in this directory.", self.bin_name)
                 } else {
                     bail!(
-                        "{} is not an rtx bin. Perhaps you need to install it first.",
+                        "{} is not an mise bin. Perhaps you need to install it first.",
                         self.bin_name
                     )
                 }
@@ -72,11 +72,11 @@ impl Which {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx which node</bold>
-  /home/username/.local/share/rtx/installs/node/20.0.0/bin/node
-  $ <bold>rtx which node --plugin</bold>
+  $ <bold>mise which node</bold>
+  /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+  $ <bold>mise which node --plugin</bold>
   node
-  $ <bold>rtx which node --version</bold>
+  $ <bold>mise which node --version</bold>
   20.0.0
 "#
 );

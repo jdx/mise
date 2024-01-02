@@ -78,7 +78,7 @@ fn main() -> Result<()> {
             exit(1);
         }
         Err(err) => {
-            Err(err).suggestion("Run with --verbose or RTX_VERBOSE=1 for more information.")
+            Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
         }
     }
 }
@@ -90,6 +90,6 @@ fn display_friendly_err(err: Report) {
     let dim = |s| style(s).dim().for_stderr();
     error!(
         "{}",
-        dim("Run with --verbose or RTX_VERBOSE=1 for more information")
+        dim("Run with --verbose or MISE_VERBOSE=1 for more information")
     );
 }

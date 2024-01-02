@@ -1,55 +1,55 @@
 #!/usr/bin/env zsh
 set -e
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 
 eval "$(direnv hook zsh)"
-eval "$(rtx activate zsh --status)"
-_rtx_hook && _direnv_hook
+eval "$(mise activate zsh --status)"
+_mise_hook && _direnv_hook
 # prepare
 
 # use old node version on purpose to not conflict with unknown system node version
 custom_node_version="18.0.0"
-rtx_node_path_segment="${RTX_DATA_DIR}/installs/node"
+mise_node_path_segment="${MISE_DATA_DIR}/installs/node"
 
-# with node@system rtx should not add a node path segment
-if [[ $PATH == *"${rtx_node_path_segment}"* ]]; then
-  echo "Rtx node path segment: ${rtx_node_path_segment} must not be in PATH: ${PATH}"
+# with node@system mise should not add a node path segment
+if [[ $PATH == *"${mise_node_path_segment}"* ]]; then
+  echo "Mise node path segment: ${mise_node_path_segment} must not be in PATH: ${PATH}"
   exit 1
 fi
 
 system_node_version=$(node -v)
 # the test is only working, if system node version is not equal to custom node version
 if [[ $system_node_version == "v${custom_node_version}" ]]; then
-  echo "Equal system node version: ${system_node_version} and rtx custom version: v${custom_node_version}"
+  echo "Equal system node version: ${system_node_version} and mise custom version: v${custom_node_version}"
   exit 1
 fi
 
 # allow direnv to execute .envrc file
-direnv allow rtx-direnv-system-version-reset/load-first
+direnv allow mise-direnv-system-version-reset/load-first
 
 # test
 
 # install custom node version
-rtx i node@$custom_node_version && _rtx_hook
+mise i node@$custom_node_version && _mise_hook
 
-cd rtx-direnv-system-version-reset/load-first && _rtx_hook && _direnv_hook
+cd mise-direnv-system-version-reset/load-first && _mise_hook && _direnv_hook
 node_version=$(node -v)
 if [[ $node_version != "v${custom_node_version}" ]]; then
   echo "Invalid node version: ${node_version} Expected: v${custom_node_version}"
   exit 1
 fi
 
-if [[ ! $PATH == *"${rtx_node_path_segment}/${custom_node_version}"* ]]; then
-  echo "Rtx node path segment: ${rtx_node_path_segment}/${custom_node_version} must be in PATH: ${PATH}"
+if [[ ! $PATH == *"${mise_node_path_segment}/${custom_node_version}"* ]]; then
+  echo "Mise node path segment: ${mise_node_path_segment}/${custom_node_version} must be in PATH: ${PATH}"
   exit 1
 fi
 
-cd .. && _rtx_hook && _direnv_hook
+cd .. && _mise_hook && _direnv_hook
 
-# with node@system rtx should not add a node path segment
-if [[ $PATH == *"${rtx_node_path_segment}"* ]]; then
-  echo "Rtx node path segment: ${rtx_node_path_segment} must not be in PATH: ${PATH}"
+# with node@system mise should not add a node path segment
+if [[ $PATH == *"${mise_node_path_segment}"* ]]; then
+  echo "Mise node path segment: ${mise_node_path_segment} must not be in PATH: ${PATH}"
   exit 1
 fi
 

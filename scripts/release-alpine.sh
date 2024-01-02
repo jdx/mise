@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-RTX_VERSION=$(./scripts/get-version.sh)
+MISE_VERSION=$(./scripts/get-version.sh)
 
 export GITLAB_HOST=gitlab.alpinelinux.org
 
@@ -18,10 +18,10 @@ git clone https://gitlab.alpinelinux.org/alpine/aports /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git"
-git checkout -mb rtx
-cd community/rtx
+git checkout -mb mise
+cd community/mise
 
-sed -i "s/pkgver=.*/pkgver=${RTX_VERSION#v}/" APKBUILD
+sed -i "s/pkgver=.*/pkgver=${MISE_VERSION#v}/" APKBUILD
 
 abuild checksum
 cat /github/home/.abuild/abuild.conf
@@ -34,7 +34,7 @@ if git diff --cached --exit-code; then
   echo "No changes to commit"
   exit 0
 fi
-git commit -m "community/rtx: upgrade to ${RTX_VERSION#v}"
+git commit -m "community/mise: upgrade to ${MISE_VERSION#v}"
 
 if [ "$DRY_RUN" == 0 ]; then
   git push jdxcode

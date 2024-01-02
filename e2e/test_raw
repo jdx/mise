@@ -10,5 +10,5 @@ assert() {
 	fi
 }
 
-rtx i --raw -f tiny@1 tiny@2 tiny@3
-RTX_RAW=1 rtx i -f tiny@1 tiny@2 tiny@3
+mise i --raw -f tiny@1 tiny@2 tiny@3
+MISE_RAW=1 mise i -f tiny@1 tiny@2 tiny@3

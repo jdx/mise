@@ -1,11 +1,11 @@
 #!/usr/bin/env zsh
 set -e
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 
 eval "$(direnv hook zsh)"
-eval "$(rtx activate zsh --status)"
-_rtx_hook && direnv allow && _direnv_hook
+eval "$(mise activate zsh --status)"
+_mise_hook && direnv allow && _direnv_hook
 
 assert_go_version() {
   local expected="$1"
@@ -15,12 +15,12 @@ assert_go_version() {
   fi
 }
 
-rtx i golang@1.18.10 golang@1.19.5 && _rtx_hook
-#assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
-cd rtx-direnv-break-path-source && _rtx_hook
+mise i golang@1.18.10 golang@1.19.5 && _mise_hook
+#assert_gopath "$MISE_DATA_DIR/installs/golang/1.19.5/packages"
+cd mise-direnv-break-path-source && _mise_hook
 direnv allow && _direnv_hook
-#assert_gopath "$RTX_DATA_DIR/installs/golang/1.18.10/packages"
-cd ../rtx-direnv-break-path-target && _rtx_hook
+#assert_gopath "$MISE_DATA_DIR/installs/golang/1.18.10/packages"
+cd ../mise-direnv-break-path-target && _mise_hook
 direnv allow && _direnv_hook
-#assert_gopath "$RTX_DATA_DIR/installs/golang/1.19.5/packages"
-rtx -v # should not fail, the bug is that PATH gets set to a junk value and this does not work
+#assert_gopath "$MISE_DATA_DIR/installs/golang/1.19.5/packages"
+mise -v # should not fail, the bug is that PATH gets set to a junk value and this does not work

@@ -5,7 +5,7 @@ use crate::config::Config;
 
 /// Add/update an alias for a plugin
 ///
-/// This modifies the contents of ~/.config/rtx/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasSet {
@@ -27,7 +27,7 @@ impl AliasSet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx alias set node lts-hydrogen 18.0.0</bold>
+  $ <bold>mise alias set node lts-hydrogen 18.0.0</bold>
 "#
 );
 

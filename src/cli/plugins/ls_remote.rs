@@ -49,7 +49,7 @@ impl PluginsLsRemote {
             };
             let url = if self.urls { repo } else { "" };
             let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
-            rtxprintln!("{} {}{}", plugin, installed, url);
+            miseprintln!("{} {}{}", plugin, installed, url);
         }
 
         Ok(())
@@ -59,10 +59,10 @@ impl PluginsLsRemote {
 const LONG_ABOUT: &str = r#"
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs
+The full list is here: https://github.com/jdx/mise/blob/main/src/default_shorthands.rs
 
 Examples:
-  $ rtx plugins ls-remote
+  $ mise plugins ls-remote
 "#;
 
 #[cfg(test)]

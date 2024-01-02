@@ -15,7 +15,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// List runtime versions available for install
 ///
 /// note that the results are cached for 24 hours
-/// run `rtx cache clean` to clear the cache and get fresh results
+/// run `mise cache clean` to clear the cache and get fresh results
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
@@ -62,7 +62,7 @@ impl LsRemote {
         };
 
         for version in versions {
-            rtxprintln!("{}", version);
+            miseprintln!("{}", version);
         }
 
         Ok(())
@@ -82,7 +82,7 @@ impl LsRemote {
             .collect::<Vec<_>>();
         for (plugin, versions) in versions {
             for v in versions {
-                rtxprintln!("{}@{v}", plugin);
+                miseprintln!("{}@{v}", plugin);
             }
         }
         Ok(())
@@ -103,15 +103,15 @@ impl LsRemote {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx ls-remote node</bold>
+  $ <bold>mise ls-remote node</bold>
   18.0.0
   20.0.0
 
-  $ <bold>rtx ls-remote node@20</bold>
+  $ <bold>mise ls-remote node@20</bold>
   20.0.0
   20.1.0
 
-  $ <bold>rtx ls-remote node 20</bold>
+  $ <bold>mise ls-remote node 20</bold>
   20.0.0
   20.1.0
 "#

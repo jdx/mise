@@ -3,10 +3,10 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 
 system_node="$(which node)"
-rtx_node="$(rtx which node)"
+mise_node="$(mise which node)"
 
-assert "rtx x node@system nodejs@system -- which node" "$system_node"
-assert "rtx x node -- which node" "$rtx_node"
+assert "mise x node@system nodejs@system -- which node" "$system_node"
+assert "mise x node -- which node" "$mise_node"

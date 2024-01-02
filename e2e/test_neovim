@@ -5,5 +5,5 @@ source "$(dirname "$0")/assert.sh"
 
 # TODO: fix this in github actions CI
 exit 0
-rtx i neovim@ref:master
-assert_contains "rtx x neovim@ref:master -- nvim --version" "NVIM v0."
+mise i neovim@ref:master
+assert_contains "mise x neovim@ref:master -- nvim --version" "NVIM v0."

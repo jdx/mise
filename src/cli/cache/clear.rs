@@ -3,7 +3,7 @@ use eyre::Result;
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
 
-/// Deletes all cache files in rtx
+/// Deletes all cache files in mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
 pub struct CacheClear {
@@ -38,14 +38,14 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         assert_cli_snapshot!("cache", "clear", @r###"
-        rtx cache cleared
+        mise cache cleared
         "###);
     }
 
     #[test]
     fn test_cache_clear_plugin() {
         assert_cli_snapshot!("cache", "clear", "tiny", @r###"
-        rtx cache cleared for tiny
+        mise cache cleared for tiny
         "###);
     }
 }

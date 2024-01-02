@@ -10,7 +10,7 @@ impl Shell for Fish {
     fn activate(&self, exe: &Path, flags: String) -> String {
         let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
-        let description = "'Update rtx environment when changing directories'";
+        let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
         if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
@@ -20,10 +20,10 @@ impl Shell for Fish {
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
         out.push_str(&formatdoc! {r#"
-            set -gx RTX_SHELL fish
-            set -gx __RTX_ORIG_PATH $PATH
+            set -gx MISE_SHELL fish
+            set -gx __MISE_ORIG_PATH $PATH
 
-            function rtx
+            function mise
               if test (count $argv) -eq 0
                 command {exe}
                 return
@@ -52,13 +52,13 @@ impl Shell for Fish {
               end
             end
 
-            function __rtx_env_eval --on-event fish_prompt --description {description};
+            function __mise_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
-                if test "$rtx_fish_mode" != "disable_arrow";
-                    function __rtx_cd_hook --on-variable PWD --description {description};
-                        if test "$rtx_fish_mode" = "eval_after_arrow";
-                            set -g __rtx_env_again 0;
+                if test "$mise_fish_mode" != "disable_arrow";
+                    function __mise_cd_hook --on-variable PWD --description {description};
+                        if test "$mise_fish_mode" = "eval_after_arrow";
+                            set -g __mise_env_again 0;
                         else;
                             {exe} hook-env{flags} -s fish | source;
                         end;
@@ -66,14 +66,14 @@ impl Shell for Fish {
                 end;
             end;
 
-            function __rtx_env_eval_2 --on-event fish_preexec --description {description};
-                if set -q __rtx_env_again;
-                    set -e __rtx_env_again;
+            function __mise_env_eval_2 --on-event fish_preexec --description {description};
+                if set -q __mise_env_again;
+                    set -e __mise_env_again;
                     {exe} hook-env{flags} -s fish | source;
                     echo;
                 end;
 
-                functions --erase __rtx_cd_hook;
+                functions --erase __mise_cd_hook;
             end;
         "#});
         if Settings::get().not_found_auto_install {
@@ -93,11 +93,11 @@ impl Shell for Fish {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-          functions --erase __rtx_env_eval
-          functions --erase __rtx_env_eval_2
-          functions --erase __rtx_cd_hook
-          functions --erase rtx
-          set -e RTX_SHELL
+          functions --erase __mise_env_eval
+          functions --erase __mise_env_eval_2
+          functions --erase __mise_cd_hook
+          functions --erase mise
+          set -e MISE_SHELL
         "#}
     }
 
@@ -123,14 +123,14 @@ mod tests {
     #[test]
     fn test_hook_init() {
         let fish = Fish::default();
-        let exe = Path::new("/some/dir/rtx");
+        let exe = Path::new("/some/dir/mise");
         assert_snapshot!(fish.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let fish = Fish::default();
-        let exe = Path::new("/nix/store/rtx");
+        let exe = Path::new("/nix/store/mise");
         assert_snapshot!(fish.activate(exe, " --status".into()));
     }
 

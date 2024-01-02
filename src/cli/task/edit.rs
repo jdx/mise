@@ -31,7 +31,7 @@ impl TaskEdit {
                     .project_root
                     .as_ref()
                     .unwrap_or(&env::current_dir()?)
-                    .join(".rtx")
+                    .join(".mise")
                     .join("tasks")
                     .join(&self.task);
                 Task::from_path(path)
@@ -44,7 +44,7 @@ impl TaskEdit {
             file::make_executable(file)?;
         }
         if self.path {
-            rtxprintln!("{}", file.display());
+            miseprintln!("{}", file.display());
         } else {
             cmd!(&*env::EDITOR, &file).run()?;
         }
@@ -55,7 +55,7 @@ impl TaskEdit {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx task edit build</bold>
-  $ <bold>rtx task edit test</bold>
+  $ <bold>mise task edit build</bold>
+  $ <bold>mise task edit test</bold>
 "#
 );

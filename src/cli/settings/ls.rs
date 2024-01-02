@@ -6,10 +6,10 @@ use crate::config::{Config, Settings};
 
 /// Show current settings
 ///
-/// This is the contents of ~/.config/rtx/config.toml
+/// This is the contents of ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `rtx aliases`
+/// but managed separately with `mise aliases`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {}
@@ -24,7 +24,7 @@ impl SettingsLs {
             if Settings::hidden_configs().contains(key.as_str()) {
                 continue;
             }
-            rtxprintln!("{} = {}", key, value);
+            miseprintln!("{} = {}", key, value);
         }
         Ok(())
     }
@@ -32,7 +32,7 @@ impl SettingsLs {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx settings</bold>
+  $ <bold>mise settings</bold>
   legacy_version_file = false
 "#
 );

@@ -1,0 +1,33 @@
+---
+source: src/config/config_file/mise_toml.rs
+expression: cf
+---
+MiseToml(/tmp/.mise.toml):  {
+    settings: Object {
+        "always_keep_download": Null,
+        "always_keep_install": Null,
+        "asdf_compat": Null,
+        "cd": Null,
+        "ci": Null,
+        "color": Null,
+        "debug": Null,
+        "disable_default_shorthands": Null,
+        "disable_tools": Null,
+        "env_file": Null,
+        "experimental": Null,
+        "jobs": Null,
+        "legacy_version_file": Null,
+        "legacy_version_file_disable_tools": Null,
+        "log_level": Null,
+        "not_found_auto_install": Null,
+        "plugin_autoupdate_last_check_duration": Null,
+        "quiet": Null,
+        "raw": Null,
+        "shorthands_file": Null,
+        "task_output": Null,
+        "trace": Null,
+        "trusted_config_paths": Null,
+        "verbose": Null,
+        "yes": Null,
+    },
+}

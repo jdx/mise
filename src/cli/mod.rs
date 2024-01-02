@@ -173,7 +173,7 @@ impl Commands {
 impl Cli {
     pub fn command() -> clap::Command {
         Commands::augment_subcommands(
-            clap::Command::new("rtx")
+            clap::Command::new("mise")
                 .version(version::VERSION.to_string())
                 .about(env!("CARGO_PKG_DESCRIPTION"))
                 .author("Jeff Dickey <@jdx>")
@@ -220,7 +220,7 @@ impl Cli {
 }
 
 const LONG_ABOUT: &str = indoc! {"
-rtx is a tool for managing runtime versions. https://github.com/jdx/rtx
+mise is a tool for managing runtime versions. https://github.com/jdx/mise
 
 It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
 that works for any language. It's also great for managing linters/tools like
@@ -231,15 +231,15 @@ https://asdf-vm.com/"};
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx install node@20.0.0</bold>       Install a specific node version
-  $ <bold>rtx install node@20.0</bold>         Install a version matching a prefix
-  $ <bold>rtx install node</bold>              Install the node version defined in
-                                  .tool-versions or .rtx.toml
-  $ <bold>rtx use node@20</bold>               Use node-20.x in current project
-  $ <bold>rtx use -g node@20</bold>            Use node-20.x as default
-  $ <bold>rtx use node@latest</bold>           Use latest node in current directory
-  $ <bold>rtx use -g node@system</bold>        Use system node everywhere unless overridden
-  $ <bold>rtx x node@20 -- node app.js</bold>  Run `node app.js` with node-20.x on PATH
+  $ <bold>mise install node@20.0.0</bold>       Install a specific node version
+  $ <bold>mise install node@20.0</bold>         Install a version matching a prefix
+  $ <bold>mise install node</bold>              Install the node version defined in
+                                  .tool-versions or .mise.toml
+  $ <bold>mise use node@20</bold>               Use node-20.x in current project
+  $ <bold>mise use -g node@20</bold>            Use node-20.x as default
+  $ <bold>mise use node@latest</bold>           Use latest node in current directory
+  $ <bold>mise use -g node@system</bold>        Use system node everywhere unless overridden
+  $ <bold>mise x node@20 -- node app.js</bold>  Run `node app.js` with node-20.x on PATH
 "#
 );
 

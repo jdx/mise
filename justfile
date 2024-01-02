@@ -1,6 +1,6 @@
 set shell := ["bash", "-uc"]
 
-export RTX_DATA_DIR := "/tmp/rtx"
+export MISE_DATA_DIR := "/tmp/mise"
 export PATH := env_var_or_default("CARGO_TARGET_DIR", justfile_directory() / "target") / "debug:" + env_var("PATH")
 export RUST_TEST_THREADS := "1"
 
@@ -51,8 +51,8 @@ test-coverage:
     set -euxo pipefail
     source <(cargo llvm-cov show-env --export-prefix)
     cargo llvm-cov clean --workspace
-    if [[ -n "${RTX_GITHUB_BOT_TOKEN:-}" ]]; then
-    	export GITHUB_API_TOKEN="$RTX_GITHUB_BOT_TOKEN"
+    if [[ -n "${MISE_GITHUB_BOT_TOKEN:-}" ]]; then
+    	export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
     fi
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
     export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
@@ -67,11 +67,11 @@ test-coverage:
         echo "::group::render-help render-completions render-mangen"
         just render-help render-completions render-mangen
         echo "::group::Implode"
-        rtx implode
+        mise implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         echo "::group::Self update"
         # TODO: remove this once the task runnner is shipped
-        rtx self-update -fy || true
+        mise self-update -fy || true
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
@@ -80,7 +80,7 @@ test-coverage:
 clean:
     cargo clean
     rm -f lcov.info
-    rm -rf e2e/.{asdf,config,local,rtx}/
+    rm -rf e2e/.{asdf,config,local,mise}/
     rm -rf target
     rm -rf *.profraw
     rm -rf coverage
@@ -111,19 +111,19 @@ render-all: render-help render-completions render-mangen
 
 # regenerate docs/cli-reference.md
 render-help: build
-    NO_COLOR=1 rtx render-help
+    NO_COLOR=1 mise render-help
     #npx markdown-magic
     md-magic
 
 # regenerate shell completion files
 render-completions: build
-    NO_COLOR=1 rtx render-completion bash > completions/rtx.bash
-    NO_COLOR=1 rtx render-completion zsh > completions/_rtx
-    NO_COLOR=1 rtx render-completion fish > completions/rtx.fish
+    NO_COLOR=1 mise render-completion bash > completions/mise.bash
+    NO_COLOR=1 mise render-completion zsh > completions/_mise
+    NO_COLOR=1 mise render-completion fish > completions/mise.fish
 
 # regenerate manpages
 render-mangen: build
-    NO_COLOR=1 rtx render-mangen
+    NO_COLOR=1 mise render-mangen
 
 # called by lefthook precommit hook
 pre-commit: render-all lint
@@ -132,6 +132,6 @@ pre-commit: render-all lint
     git add completions
     git add man
 
-# create/publish a new version of rtx
+# create/publish a new version of mise
 release *args:
     cargo release {{ args }}

@@ -1,0 +1,9 @@
+---
+source: src/config/config_file/mise_toml.rs
+expression: cf.alias
+---
+{
+    "node": {
+        "my_custom_node": "18",
+    },
+}

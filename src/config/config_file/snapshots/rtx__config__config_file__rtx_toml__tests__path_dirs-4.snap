@@ -1,5 +1,0 @@
----
-source: src/config/config_file/rtx_toml.rs
-expression: cf
----
-~/fixtures/.rtx.toml: 

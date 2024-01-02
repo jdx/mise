@@ -37,8 +37,8 @@ use crate::{env, file, ui};
 /// If source is configured on a task, it will only run if the source
 /// files have changed.
 ///
-/// Tasks can be defined in .rtx.toml or as standalone scripts.
-/// In .rtx.toml, tasks take this form:
+/// Tasks can be defined in .mise.toml or as standalone scripts.
+/// In .mise.toml, tasks take this form:
 ///
 ///     [tasks.build]
 ///     run = "npm run build"
@@ -46,20 +46,20 @@ use crate::{env, file, ui};
 ///     outputs = ["dist/**/*.js"]
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in the `.rtx/tasks` directory.
+/// These must be located in the `.mise/tasks` directory.
 /// The name of the script will be the name of the task.
 ///
-///     $ cat .rtx/tasks/build<<EOF
+///     $ cat .mise/tasks/build<<EOF
 ///     #!/usr/bin/env bash
 ///     npm run build
 ///     EOF
-///     $ rtx run build
+///     $ mise run build
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Task to run
     /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: rtx run task1 arg1 arg2 ::: task2 arg1 arg2
+    /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
     #[clap(verbatim_doc_comment, default_value = "default")]
     pub task: String,
 
@@ -81,13 +81,13 @@ pub struct Run {
 
     /// Print stdout/stderr by line, prefixed with the task's label
     /// Defaults to true if --jobs > 1
-    /// Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     pub prefix: bool,
 
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
-    /// Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     pub interleave: bool,
 
@@ -98,12 +98,12 @@ pub struct Run {
 
     /// Number of tasks to run in parallel
     /// [default: 4]
-    /// Configure with `jobs` config or `RTX_JOBS` env var
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    /// Configure with `jobs` config or `MISE_JOBS` env var
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
-    /// Configure with `raw` config or `RTX_RAW` env var
+    /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 }
@@ -145,7 +145,7 @@ impl Run {
         ts.notify_if_versions_missing();
         let mut env = ts.env_with_path(config);
         if let Some(root) = &config.project_root {
-            env.insert("RTX_PROJECT_ROOT".into(), root.display().to_string());
+            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
 
         let tasks = Mutex::new(Deps::new(config, tasks)?);
@@ -221,7 +221,7 @@ impl Run {
         let cmd = style::ebold(format!("$ {script}")).bright().to_string();
         info_unprefix_trunc!("{prefix} {cmd}");
 
-        if env::var("RTX_TASK_SCRIPT_FILE").is_ok() {
+        if env::var("MISE_TASK_SCRIPT_FILE").is_ok() {
             let mut tmp = tempfile::NamedTempFile::new()?;
             let args = once(tmp.path().display().to_string())
                 .chain(args.iter().cloned())
@@ -394,21 +394,21 @@ impl Run {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx run lint</bold>
-  Runs the "lint" task. This needs to either be defined in .rtx.toml
+  $ <bold>mise run lint</bold>
+  Runs the "lint" task. This needs to either be defined in .mise.toml
   or as a standalone script. See the project README for more information.
 
-  $ <bold>rtx run build --force</bold>
+  $ <bold>mise run build --force</bold>
   Forces the "build" task to run even if its sources are up-to-date.
 
-  $ <bold>rtx run test --raw</bold>
+  $ <bold>mise run test --raw</bold>
   Runs "test" with stdin/stdout/stderr all connected to the current terminal.
   This forces `--jobs=1` to prevent interleaving of output.
 
-  $ <bold>rtx run lint ::: test ::: check</bold>
+  $ <bold>mise run lint ::: test ::: check</bold>
   Runs the "lint", "test", and "check" tasks in parallel.
 
-  $ <bold>rtx task cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
+  $ <bold>mise task cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
   Execute multiple tasks each with their own arguments.
 "#
 );

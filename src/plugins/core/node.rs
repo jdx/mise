@@ -9,7 +9,7 @@ use url::Url;
 use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
-use crate::env::RTX_NODE_MIRROR_URL;
+use crate::env::MISE_NODE_MIRROR_URL;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -31,17 +31,17 @@ impl NodePlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let node_url_overridden = env::var("RTX_NODE_MIRROR_URL")
+        let node_url_overridden = env::var("MISE_NODE_MIRROR_URL")
             .or(env::var("NODE_BUILD_MIRROR_URL"))
             .is_ok();
         if !node_url_overridden {
-            match self.core.fetch_remote_versions_from_rtx() {
+            match self.core.fetch_remote_versions_from_mise() {
                 Ok(Some(versions)) => return Ok(versions),
                 Ok(None) => {}
                 Err(e) => warn!("failed to fetch remote versions: {}", e),
             }
         }
-        self.fetch_remote_versions_from_node(&RTX_NODE_MIRROR_URL)
+        self.fetch_remote_versions_from_node(&MISE_NODE_MIRROR_URL)
     }
     fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
         let versions = HTTP_FETCH
@@ -113,7 +113,7 @@ impl NodePlugin {
             pr.set_message(format!("downloading {tarball_name}"));
             HTTP.download_file(url.clone(), local)?;
         }
-        if *env::RTX_NODE_VERIFY {
+        if *env::MISE_NODE_VERIFY {
             pr.set_message(format!("verifying {tarball_name}"));
             self.verify(local, version)?;
         }
@@ -129,7 +129,7 @@ impl NodePlugin {
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &*env::RTX_NODE_CFLAGS {
+        if let Some(cflags) = &*env::MISE_NODE_CFLAGS {
             cmd = cmd.env("CFLAGS", cflags);
         }
         cmd
@@ -172,7 +172,7 @@ impl NodePlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::RTX_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::MISE_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -230,8 +230,8 @@ impl NodePlugin {
     }
 
     fn shasums_url(&self, v: &str) -> Result<Url> {
-        // let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
-        let url = RTX_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
+        // let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
+        let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
         Ok(url)
     }
 }
@@ -293,7 +293,7 @@ impl Plugin for NodePlugin {
         let config = Config::get();
         let opts = BuildOpts::new(ctx)?;
         debug!("node build opts: {:#?}", opts);
-        if *env::RTX_NODE_COMPILE {
+        if *env::MISE_NODE_COMPILE {
             self.install_compiled(ctx, &opts)?;
         } else {
             self.install_precompiled(ctx, &opts)?;
@@ -302,7 +302,7 @@ impl Plugin for NodePlugin {
         self.install_npm_shim(&ctx.tv)?;
         self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if *env::RTX_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
+        if *env::MISE_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
             self.enable_default_corepack_shims(&ctx.tv, ctx.pr.as_ref())?;
         }
 
@@ -337,16 +337,16 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(),
-            build_dir: env::RTX_TMP_DIR.join(format!("node-v{v}")),
+            build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
             configure_cmd: configure_cmd(&install_path),
             make_cmd: make_cmd(),
             make_install_cmd: make_install_cmd(),
             source_tarball_path: ctx.tv.download_path().join(&source_tarball_name),
-            source_tarball_url: env::RTX_NODE_MIRROR_URL
+            source_tarball_url: env::MISE_NODE_MIRROR_URL
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: ctx.tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: env::RTX_NODE_MIRROR_URL
+            binary_tarball_url: env::MISE_NODE_MIRROR_URL
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
             binary_tarball_name,
             install_path,
@@ -356,29 +356,29 @@ impl BuildOpts {
 
 fn configure_cmd(install_path: &Path) -> String {
     let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
-    if *env::RTX_NODE_NINJA {
+    if *env::MISE_NODE_NINJA {
         configure_cmd.push_str(" --ninja");
     }
-    if let Some(opts) = &*env::RTX_NODE_CONFIGURE_OPTS {
+    if let Some(opts) = &*env::MISE_NODE_CONFIGURE_OPTS {
         configure_cmd.push_str(&format!(" {}", opts));
     }
     configure_cmd
 }
 
 fn make_cmd() -> String {
-    let mut make_cmd = env::RTX_NODE_MAKE.to_string();
-    if let Some(concurrency) = *env::RTX_NODE_CONCURRENCY {
+    let mut make_cmd = env::MISE_NODE_MAKE.to_string();
+    if let Some(concurrency) = *env::MISE_NODE_CONCURRENCY {
         make_cmd.push_str(&format!(" -j{concurrency}"));
     }
-    if let Some(opts) = &*env::RTX_NODE_MAKE_OPTS {
+    if let Some(opts) = &*env::MISE_NODE_MAKE_OPTS {
         make_cmd.push_str(&format!(" {opts}"));
     }
     make_cmd
 }
 
 fn make_install_cmd() -> String {
-    let mut make_install_cmd = format!("{} install", &*env::RTX_NODE_MAKE);
-    if let Some(opts) = &*env::RTX_NODE_MAKE_INSTALL_OPTS {
+    let mut make_install_cmd = format!("{} install", &*env::MISE_NODE_MAKE);
+    if let Some(opts) = &*env::MISE_NODE_MAKE_INSTALL_OPTS {
         make_install_cmd.push_str(&format!(" {opts}"));
     }
     make_install_cmd

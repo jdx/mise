@@ -10,7 +10,7 @@ use crate::file::{make_symlink, remove_all};
 use crate::plugins::unalias_plugin;
 use crate::{dirs, file};
 
-/// Symlinks a plugin into rtx
+/// Symlinks a plugin into mise
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, clap::Args)]
@@ -22,7 +22,7 @@ pub struct PluginsLink {
     name: String,
 
     /// The local path to the plugin
-    /// e.g.: ./rtx-node
+    /// e.g.: ./mise-node
     #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: Option<PathBuf>,
 
@@ -64,16 +64,17 @@ fn get_name_from_path(path: &Path) -> String {
     let name = path.file_name().unwrap().to_str().unwrap();
     let name = name.strip_prefix("asdf-").unwrap_or(name);
     let name = name.strip_prefix("rtx-").unwrap_or(name);
+    let name = name.strip_prefix("mise-").unwrap_or(name);
     unalias_plugin(name).to_string()
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # essentially just `ln -s ./rtx-node ~/.local/share/rtx/plugins/node`
-  $ <bold>rtx plugins link node ./rtx-node</bold>
+  # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
+  $ <bold>mise plugins link node ./mise-node</bold>
 
   # infer plugin name as "node"
-  $ <bold>rtx plugins link ./rtx-node</bold>
+  $ <bold>mise plugins link ./mise-node</bold>
 "#
 );
 

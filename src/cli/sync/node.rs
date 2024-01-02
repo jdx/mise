@@ -9,9 +9,9 @@ use crate::file;
 use crate::plugins::PluginName;
 use crate::{cmd, dirs};
 
-/// Symlinks all tool versions from an external tool into rtx
+/// Symlinks all tool versions from an external tool into mise
 ///
-/// For example, use this to import all Homebrew node installs into rtx
+/// For example, use this to import all Homebrew node installs into mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncNode {
@@ -63,7 +63,7 @@ impl SyncNode {
             }
             let v = entry.trim_start_matches("node@");
             tool.create_symlink(v, &brew_prefix.join(&entry))?;
-            rtxprintln!("Synced node@{} from Homebrew", v);
+            miseprintln!("Synced node@{} from Homebrew", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -81,7 +81,7 @@ impl SyncNode {
         for entry in sorted(subdirs) {
             let v = entry.trim_start_matches('v');
             tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
-            rtxprintln!("Synced node@{} from nvm", v);
+            miseprintln!("Synced node@{} from nvm", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -98,7 +98,7 @@ impl SyncNode {
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
         for v in sorted(subdirs) {
             tool.create_symlink(&v, &nodenv_versions_path.join(&v))?;
-            rtxprintln!("Synced node@{} from nodenv", v);
+            miseprintln!("Synced node@{} from nodenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -108,7 +108,7 @@ impl SyncNode {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>brew install node@18 node@20</bold>
-  $ <bold>rtx sync node --brew</bold>
-  $ <bold>rtx use -g node@18</bold> - uses Homebrew-provided node
+  $ <bold>mise sync node --brew</bold>
+  $ <bold>mise use -g node@18</bold> - uses Homebrew-provided node
 "#
 );

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
-export RTX_DEFAULT_CONFIG_FILENAME=.MISSING
+export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
+export MISE_DEFAULT_CONFIG_FILENAME=.MISSING
 
 git checkout .alternate-tool-versions
 
-rtx i shfmt
-rtx exec -- shfmt --version >&2
-if [[ "$(rtx exec -- shfmt --version)" != "v3.5.0" ]]; then
+mise i shfmt
+mise exec -- shfmt --version >&2
+if [[ "$(mise exec -- shfmt --version)" != "v3.5.0" ]]; then
 	exit 1
 fi
 
@@ -22,15 +22,15 @@ assert() {
 	fi
 }
 
-assert "rtx local" "shfmt 3.5.0"
+assert "mise local" "shfmt 3.5.0"
 
-rtx local -p shfmt@3.6.0
-assert "rtx local -p" "shfmt 3.6.0"
+mise local -p shfmt@3.6.0
+assert "mise local -p" "shfmt 3.6.0"
 
-rtx exec -- shfmt --version >&2
-if [[ "$(rtx exec -- shfmt --version)" != "v3.6.0" ]]; then
+mise exec -- shfmt --version >&2
+if [[ "$(mise exec -- shfmt --version)" != "v3.6.0" ]]; then
 	exit 1
 fi
 
-rtx local -p shfmt@3.5.0
-assert "rtx local shfmt" "3.5.0"
+mise local -p shfmt@3.5.0
+assert "mise local shfmt" "3.5.0"
