@@ -18,7 +18,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: jdx/rtx-action@v1
       - run: pnpm install
       - run: pnpm run docs:build
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: jdx/rtx-action@v1
       - run: pnpm install
       - run: pnpm run docs:build
