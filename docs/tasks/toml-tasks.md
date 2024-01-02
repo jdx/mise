@@ -1,6 +1,6 @@
 # TOML-based Tasks
 
-Tasks can also be defined in `.rtx.toml` files in different ways. This is a more "traditional" method of defining tasks:
+Tasks can also be defined in `.mise.toml` files in different ways. This is a more "traditional" method of defining tasks:
 
 ```toml
 tasks.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
@@ -8,7 +8,7 @@ tasks.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
 [tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
-alias = 'b' # `rtx run b`
+alias = 'b' # `mise run b`
 
 [tasks.test]
 description = 'Run automated tests'

@@ -1,7 +1,7 @@
 # Running Tasks
 
-See available tasks with `rtx tasks`. Run a task with `rtx task run`, `rtx run`, or just `rtx r`.
-You might even want to make a shell alias like `alias r='rtx r'` since this is likely a common command.
+See available tasks with `mise tasks`. Run a task with `mise task run`, `mise run`, or just `mise r`.
+You might even want to make a shell alias like `alias r='mise r'` since this is likely a common command.
 
 By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
 `jobs` setting or `RTX_JOBS` environment variable. The output normally will be by line, prefixed with the task
@@ -26,13 +26,13 @@ depends = ["lint:*"]
 
 ::: info
 As of this writing these wildcards only function at the right side and only work for dependencies.
-It should be possible to also run `rtx run lint:*` but that is not yet implemented.
+It should be possible to also run `mise run lint:*` but that is not yet implemented.
 :::
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
 ```bash
-rtx run build --release
+mise run build --release
 ```
 
 If there are multiple commands, the args are only passed to the last command.
@@ -40,13 +40,13 @@ If there are multiple commands, the args are only passed to the last command.
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
 ```bash
-rtx run build arg1 arg2 ::: test arg3 arg4
+mise run build arg1 arg2 ::: test arg3 arg4
 ```
 
-rtx will run the task named "default" if no task is specified—and you've created one named "default". You can also alias a different task to "default".
+mise will run the task named "default" if no task is specified—and you've created one named "default". You can also alias a different task to "default".
 
 ```bash
-rtx run
+mise run
 ```
 
 ## Running on file changes
@@ -67,20 +67,20 @@ It wouldn't be hard to add checksum support.
 
 ## Watching files
 
-Run a task when the source changes with `rtx watch`:
+Run a task when the source changes with `mise watch`:
 
 ```bash
-rtx watch -t build
+mise watch -t build
 ```
 
-Currently this just shells out to watchexec-which you can install however you want including with rtx: `rtx use -g watchexec@latest`.
+Currently this just shells out to watchexec-which you can install however you want including with mise: `mise use -g watchexec@latest`.
 This may change in the future.
 
-Arguments to `rtx watch` will be forwarded onto watchexec. For example, to print diagnostic info:
+Arguments to `mise watch` will be forwarded onto watchexec. For example, to print diagnostic info:
 
 ```bash
-rtx watch -t build -- --print-events --verbose
+mise watch -t build -- --print-events --verbose
 ```
 
-See watchexec's help with `watchexec --help` or `rtx watch -- --help` to see
+See watchexec's help with `watchexec --help` or `mise watch -- --help` to see
 all of the options.

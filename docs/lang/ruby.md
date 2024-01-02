@@ -1,14 +1,14 @@
-# Ruby in rtx
+# Ruby in mise
 
-The following are instructions for using the ruby rtx core plugin. This is used when there isn't a
+The following are instructions for using the ruby mise core plugin. This is used when there isn't a
 git plugin installed named "ruby".
 
 If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
-or [rtx-ruby](https://github.com/rtx-plugins/rtx-ruby)
-then use `rtx plugins install ruby GIT_URL`.
+or [mise-ruby](https://github.com/mise-plugins/mise-ruby)
+then use `mise plugins install ruby GIT_URL`.
 
-The code for this is inside the rtx repository at
-[`./src/plugins/core/ruby.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/ruby.rs).
+The code for this is inside the mise repository at
+[`./src/plugins/core/ruby.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/ruby.rs).
 
 ## Usage
 
@@ -16,10 +16,10 @@ The following installs the latest version of ruby-3.2.x (if some version of 3.2.
 installed) and makes it the global default:
 
 ```sh
-rtx use -g ruby@3.2
+mise use -g ruby@3.2
 ```
 
-Behind the scenes, rtx uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby
+Behind the scenes, mise uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby
 from source. You can check its
 [README](https://github.com/rbenv/ruby-build/blob/master/README.md)
 for additional settings and some troubleshooting.
@@ -28,7 +28,7 @@ for additional settings and some troubleshooting.
 
 `ruby-build` already has a
 [handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
-in additional to that rtx has a few extra configuration variables:
+in additional to that mise has a few extra configuration variables:
 
 - `RTX_RUBY_INSTALL` [bool]: Build with ruby-install instead of ruby-build
 - `RTX_RUBY_APPLY_PATCHES` [string]: A list of patches (files or URLs) to apply to the ruby source code
@@ -39,7 +39,7 @@ in additional to that rtx has a few extra configuration variables:
 
 ## Default gems
 
-rtx can automatically install a default set of gems right after installing a new ruby version.
+mise can automatically install a default set of gems right after installing a new ruby version.
 To enable this feature, provide a `$HOME/.default-gems` file that lists one gem per line, for
 example:
 
@@ -52,7 +52,7 @@ rubocop --pre # install prerelease version
 
 ## `.ruby-version` and `Gemfile` support
 
-rtx uses a `.tool-versions` or `.rtx.toml` file for auto-switching between software versions.
+mise uses a `.tool-versions` or `.mise.toml` file for auto-switching between software versions.
 However it can also read ruby-specific version files `.ruby-version` or `Gemfile`
 (if it specifies a ruby version).
 
@@ -68,6 +68,6 @@ ruby-build should update daily, however if you find versions do not yet exist yo
 update:
 
 ```bash
-rtx cache clean
-rtx ls-remote ruby
+mise cache clean
+mise ls-remote ruby
 ```

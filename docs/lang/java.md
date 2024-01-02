@@ -1,14 +1,14 @@
-# Java in rtx
+# Java in mise
 
-The following are instructions for using the java rtx core plugin. This is used when there isn't a
+The following are instructions for using the java mise core plugin. This is used when there isn't a
 git plugin installed named "java".
 
 If you want to use [asdf-java](https://github.com/halcyon/asdf-java)
-or [rtx-java](https://github.com/rtx-plugins/rtx-java)
-then use `rtx plugins install java GIT_URL`.
+or [mise-java](https://github.com/mise-plugins/mise-java)
+then use `mise plugins install java GIT_URL`.
 
-The code for this is inside the rtx repository at
-[`./src/plugins/core/java.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/java.rs).
+The code for this is inside the mise repository at
+[`./src/plugins/core/java.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/java.rs).
 
 ## Usage
 
@@ -16,11 +16,11 @@ The following installs the latest version of java-openjdk-17.x (if some version 
 not already installed) and makes it the global default:
 
 ```sh
-rtx use -g java@openjdk-17
-rtx use -g java@17         # alternate shorthands for openjdk-only
+mise use -g java@openjdk-17
+mise use -g java@17         # alternate shorthands for openjdk-only
 ```
 
-See available versions with `rtx ls-remote java`.
+See available versions with `mise ls-remote java`.
 
 ## macOS JAVA_HOME Integration
 
@@ -30,9 +30,9 @@ To integrate an installed Java runtime with macOS run the following commands for
 
 ```sh
 sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20.jdk
-sudo ln -s ~/.local/share/rtx/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20.jdk/Contents
+sudo ln -s ~/.local/share/mise/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20.jdk/Contents
 ```
 
-The distribution from Azul Systems does support the integration but the symlink target location will differ from the example above (e.g `~/.local/share/rtx/installs/java/zulu-11.64.190/zulu-11.jdk/Contents`).
+The distribution from Azul Systems does support the integration but the symlink target location will differ from the example above (e.g `~/.local/share/mise/installs/java/zulu-11.64.190/zulu-11.jdk/Contents`).
 
 > Note: Not all distributions of the Java SDK support this integration (e.g liberica).

@@ -4,31 +4,31 @@ outline: 'deep'
 
 # Configuration
 
-## `.rtx.toml`
+## `.mise.toml`
 
-`.rtx.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
+`.mise.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
 that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/rtx/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
+- passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
 They can use any of the following project locations (in order of precedence, top is highest):
 
-- `.rtx.toml`
-- `.rtx/config.toml`
-- `.config/rtx.toml`
-- `.config/rtx/rtx.toml`
+- `.mise.toml`
+- `.mise/config.toml`
+- `.config/mise.toml`
+- `.config/mise/mise.toml`
 
-They can also be named `.rtx.local.toml` and environment-specific files like `.rtx.production.toml`.
+They can also be named `.mise.local.toml` and environment-specific files like `.mise.production.toml`.
 Can also be opted-in. See [Config Environments](/profiles) for more details.
-Run `rtx config` to see the order of precedence on your system.
+Run `mise config` to see the order of precedence on your system.
 
-Here is what an `.rtx.toml` looks like:
+Here is what an `.mise.toml` looks like:
 
 ```toml
 [env]
-# supports arbitrary env vars so rtx can be used like direnv/dotenv
+# supports arbitrary env vars so mise can be used like direnv/dotenv
 NODE_ENV = 'production'
 
 [tools]
@@ -52,8 +52,8 @@ python = 'https://github.com/asdf-community/asdf-python'
 my_custom_node = '20'
 ```
 
-`.rtx.toml` files are hierarchical. The configuration in a file in the current directory will
-override conflicting configuration in parent directories. For example, if `~/src/myproj/.rtx.toml`
+`.mise.toml` files are hierarchical. The configuration in a file in the current directory will
+override conflicting configuration in parent directories. For example, if `~/src/myproj/.mise.toml`
 defines the following:
 
 ```toml
@@ -62,7 +62,7 @@ node = '20'
 python = '3.10'
 ```
 
-And `~/src/myproj/backend/.rtx.toml` defines:
+And `~/src/myproj/backend/.mise.toml` defines:
 
 ```toml
 [tools]
@@ -71,14 +71,14 @@ ruby = '3.1'
 ```
 
 Then when inside of `~/src/myproj/backend`, `node` will be `18`, `python` will be `3.10`, and `ruby`
-will be `3.1`. You can check the active versions with `rtx ls --current`.
+will be `3.1`. You can check the active versions with `mise ls --current`.
 
-You can also have environment specific config files like `.rtx.production.toml`, see
+You can also have environment specific config files like `.mise.production.toml`, see
 [Profiles](/profiles) for more details.
 
 ### `[env]` - Arbitrary Environment Variables
 
-The `[env]` section of .rtx.toml allows setting arbitrary environment variables.
+The `[env]` section of .mise.toml allows setting arbitrary environment variables.
 These can be simple key-value entries like this:
 
 ```toml
@@ -92,7 +92,7 @@ NODE_ENV = 'production'
 env_path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds a path relative to the .rtx.toml, not PWD
+    # adds a path relative to the .mise.toml, not PWD
     "./node_modules/.bin",
 ]
 ```
@@ -126,25 +126,25 @@ _new_ plugin installations. Existing plugins can use any URL.
 
 ```toml
 [plugins]
-elixir = "https://github.com/my-org/rtx-elixir.git"
-node = "https://github.com/my-org/rtx-node.git#DEADBEEF" # supports specific gitref
+elixir = "https://github.com/my-org/mise-elixir.git"
+node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gitref
 ```
 
 If you simply want to install a plugin from a specific URL once, it's better to use
-`rtx plugin install plugin <GIT_URL>`. Add this section to `.rtx.toml` if you want
+`mise plugin install plugin <GIT_URL>`. Add this section to `.mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
-This is similar to [`RTX_SHORTHANDS`](https://github.com/jdx/rtx#rtx_shorthands_fileconfigrtxshorthandstoml)
+This is similar to [`RTX_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
 ## Legacy version files
 
-rtx supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
+mise supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
 and `.python-version`. These are ideal for setting the runtime version of a project without forcing
-other developers to use a specific tool like rtx/asdf.
+other developers to use a specific tool like mise/asdf.
 
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
-in rtx and nvm. Here are some of the supported legacy version files:
+in mise and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
 |-----------|----------------------------------------------------|
@@ -158,7 +158,7 @@ in rtx and nvm. Here are some of the supported legacy version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In rtx these are enabled by default. You can disable them with `rtx settings set legacy_version_file false`.
+In mise these are enabled by default. You can disable them with `mise settings set legacy_version_file false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
@@ -166,14 +166,14 @@ You may not even notice.
 ::: info
 asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
 that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-version files since they're version files not specific to asdf/rtx and can be used by other tools.
+version files since they're version files not specific to asdf/mise and can be used by other tools.
 (`.nvmrc` being a notable exception, which is tied to a specific tool.)
 :::
 
 ## `.tool-versions`
 
-The `.tool-versions` file is asdf's config file and it can be used in rtx just like `.rtx.toml`.
-It isn't as flexible so it's recommended to use `.rtx.toml` instead. It can be useful if you
+The `.tool-versions` file is asdf's config file and it can be used in mise just like `.mise.toml`.
+It isn't as flexible so it's recommended to use `.mise.toml` instead. It can be useful if you
 already have a lot of `.tool-versions` files or work on a team that uses asdf.
 
 Here is an example with all the supported syntax:
@@ -196,7 +196,7 @@ See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions)
 
 ## Scopes
 
-Both `.rtx.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
+Both `.mise.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
 
 - `ref:<SHA>` - compile from a vcs (usually git) ref
 - `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
@@ -207,15 +207,15 @@ Both `.rtx.toml` and `.tool-versions` support "scopes" which modify the behavior
   be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
   version behind the latest version: `sub-0.1:latest`.
 
-## Global config: `~/.config/rtx/config.toml`
+## Global config: `~/.config/mise/config.toml`
 
-rtx can be configured in `~/.config/rtx/config.toml`. It's like local `.rtx.toml` files except that
+mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except that
 it is used for all directories.
 
 ```toml
 [tools]
 # global tool versions go here
-# you can set these with `rtx use -g`
+# you can set these with `mise use -g`
 node = 'lts'
 python = ['3.10', '3.11']
 
@@ -225,13 +225,13 @@ python = ['3.10', '3.11']
 legacy_version_file = true                     # enabled by default (unlike asdf)
 legacy_version_file_disable_tools = ['python'] # disable for specific tools
 
-# configure `rtx install` to always keep the downloaded archive
+# configure `mise install` to always keep the downloaded archive
 always_keep_download = false        # deleted after install by default
 always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/rtx/issues/128)
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/issues/128)
 plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
 
 # config files with these prefixes will be trusted by default
@@ -248,7 +248,7 @@ yes = false         # set to true to automatically answer yes to all prompts
 not_found_auto_install = true # see RTX_NOT_FOUND_AUTO_INSTALL
 task_output = "prefix" # see Task Runner for more information
 
-shorthands_file = '~/.config/rtx/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
+shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
@@ -257,37 +257,37 @@ env_file = '.env' # load env vars from a dotenv file, see `RTX_ENV_FILE`
 experimental = true # enable experimental features
 
 [alias.node]
-my_custom_node = '20'  # makes `rtx install node@my_custom_node` install node-20.x
+my_custom_node = '20'  # makes `mise install node@my_custom_node` install node-20.x
                        # this can also be specified in a plugin (see below in "Aliases")
 ```
 
 ::: tip
-These settings can also be managed with `rtx settings ls|get|set|unset`.
+These settings can also be managed with `mise settings ls|get|set|unset`.
 :::
 
-## System config: `/etc/rtx/config.toml`
+## System config: `/etc/mise/config.toml`
 
-Similar to `~/.config/rtx/config.toml` but for all users on the system. This is useful for
+Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
 setting defaults for all users.
 
 ## Environment variables
 
-rtx can also be configured via environment variables. The following options are available:
+mise can also be configured via environment variables. The following options are available:
 
 ### `RTX_DATA_DIR`
 
-Default: `~/.local/share/rtx` or `$XDG_DATA_HOME/rtx`
+Default: `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
 
-This is the directory where rtx stores plugins and tool installs. These are not supposed to be shared
+This is the directory where mise stores plugins and tool installs. These are not supposed to be shared
 across machines.
 
 ### `RTX_CACHE_DIR`
 
-Default (Linux): `~/.cache/rtx` or `$XDG_CACHE_HOME/rtx`
-Default (macOS): `~/Library/Caches/rtx` or `$XDG_CACHE_HOME/rtx`
+Default (Linux): `~/.cache/mise` or `$XDG_CACHE_HOME/mise`
+Default (macOS): `~/Library/Caches/mise` or `$XDG_CACHE_HOME/mise`
 
-This is the directory where rtx stores internal cache. This is not supposed to be shared
-across machines. It may be deleted at any time rtx is not running.
+This is the directory where mise stores internal cache. This is not supposed to be shared
+across machines. It may be deleted at any time mise is not running.
 
 ### `RTX_TMP_DIR`
 
@@ -297,28 +297,28 @@ This is used for temporary storage such as when installing tools.
 
 ### `RTX_SYSTEM_DIR`
 
-Default: `/etc/rtx`
+Default: `/etc/mise`
 
-This is the directory where rtx stores system-wide configuration.
+This is the directory where mise stores system-wide configuration.
 
 ### `RTX_CONFIG_FILE`
 
-Default: `$RTX_CONFIG_DIR/config.toml` (Usually ~/.config/rtx/config.toml)
+Default: `$RTX_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
 
 This is the path to the config file.
 
 ### `RTX_DEFAULT_TOOL_VERSIONS_FILENAME`
 
-Set to something other than ".tool-versions" to have rtx look for `.tool-versions` files but with
+Set to something other than ".tool-versions" to have mise look for `.tool-versions` files but with
 a different name.
 
 ### `RTX_DEFAULT_CONFIG_FILENAME`
 
-Set to something other than `.rtx.toml` to have rtx look for `.rtx.toml` config files with a different name.
+Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a different name.
 
 ### `RTX_ENV`
 
-Enables environment-specific config files such as `.rtx.development.toml`.
+Enables environment-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
 [Profiles](/profiles) for more on how
@@ -333,8 +333,8 @@ Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
 Default: `true`
 
-Set to "false" to disable using [rtx-versions](https://rtx-versions.jdx.dev) as
-a quick way for rtx to query for new versions. This host regularly grabs all the
+Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
+a quick way for mise to query for new versions. This host regularly grabs all the
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
@@ -343,7 +343,7 @@ See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
 ### `RTX_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use <node@20.x> regardless
-of what is set in `.tool-versions`/`.rtx.toml`.
+of what is set in `.tool-versions`/`.mise.toml`.
 
 ### `RTX_LEGACY_VERSION_FILE=1`
 
@@ -359,24 +359,24 @@ Disable legacy version file parsing for specific tools. Separate with `,`.
 
 ### `RTX_USE_TOML=0`
 
-Set to `1` to default to using `.rtx.toml` in `rtx local` instead of `.tool-versions` for
+Set to `1` to default to using `.mise.toml` in `mise local` instead of `.tool-versions` for
 configuration.
 
-For now this is not used by `rtx use` which will only use `.rtx.toml` unless `--path` is specified.
+For now this is not used by `mise use` which will only use `.mise.toml` unless `--path` is specified.
 
 ### `RTX_TRUSTED_CONFIG_PATHS`
 
-This is a list of paths that rtx will automatically mark as
+This is a list of paths that mise will automatically mark as
 trusted. They can be separated with `:`.
 
 ### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
 
-These change the verbosity of rtx.
+These change the verbosity of mise.
 
 You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as
 `--log-level=trace|debug|info|warn|error`.
 
-### `RTX_LOG_FILE=~/rtx.log`
+### `RTX_LOG_FILE=~/mise.log`
 
 Output logs to a file.
 
@@ -395,7 +395,7 @@ Set to "1" to always keep the install directory. By default it is deleted on fai
 
 ### `RTX_VERBOSE=1`
 
-This shows the installation output during `rtx install` and `rtx plugin install`.
+This shows the installation output during `mise install` and `mise plugin install`.
 This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
 2 configuration for the same thing, but for now it is its own config.
 
@@ -407,8 +407,8 @@ Equivalent to `RTX_LOG_LEVEL=warn`.
 
 ### `RTX_ASDF_COMPAT=1`
 
-Only output `.tool-versions` files in `rtx local|global` which will be usable by asdf.
-This disables rtx functionality that would otherwise make these files incompatible with asdf.
+Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
+This disables mise functionality that would otherwise make these files incompatible with asdf.
 
 ### `RTX_JOBS=1`
 
@@ -422,27 +422,27 @@ plugin accepts input or otherwise does not seem to be installing correctly.
 
 Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
 
-### `RTX_SHORTHANDS_FILE=~/.config/rtx/shorthands.toml`
+### `RTX_SHORTHANDS_FILE=~/.config/mise/shorthands.toml`
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
 
-Shorthands make it so when a user runs something like `rtx install elixir` rtx will
+Shorthands make it so when a user runs something like `mise install elixir` mise will
 automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
 default, it uses the shorthands in
-[`src/default_shorthands.rs`](https://github.com/jdx/rtx/blob/main/src/default_shorthands.rs).
+[`src/default_shorthands.rs`](https://github.com/jdx/mise/blob/main/src/default_shorthands.rs).
 
 The file should be in this toml format:
 
 ```toml
-elixir = "https://github.com/my-org/rtx-elixir.git"
-node = "https://github.com/my-org/rtx-node.git"
+elixir = "https://github.com/my-org/mise-elixir.git"
+node = "https://github.com/my-org/mise-node.git"
 ```
 
 ### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
 
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
-installing plugins, e.g.: `rtx plugin install node https://github.com/asdf-vm/asdf-node.git`
+installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
 
 ### `RTX_DISABLE_TOOLS=python,node`
 
@@ -461,7 +461,7 @@ help diagnose problems.
 
 ### `RTX_TASK_OUTPUT=prefix`
 
-This controls the output of `rtx run`. It can be one of:
+This controls the output of `mise run`. It can be one of:
 
 - `prefix` - (default if jobs > 1) print by line with the prefix of the task name
 - `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
@@ -484,6 +484,6 @@ working with this config.
 
 Configures the vendor_conf.d script for fish shell to automatically activate.
 This file is automatically used in homebrew and potentially other installs to
-automatically activate rtx without configuring.
+automatically activate mise without configuring.
 
 Defaults to enabled, set to "0" to disable.

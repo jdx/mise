@@ -4,7 +4,7 @@ layout: home
 title: Home
 
 hero:
-  name: "mise-en-place documentation"
+  name: "mise-en-place"
   tagline: "The front-end to your dev env."
   actions:
     - theme: brand

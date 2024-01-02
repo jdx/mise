@@ -1,6 +1,6 @@
 # Environments
 
-Use rtx to specify environment variables used for different projects. Create a `.rtx.toml` file
+Use mise to specify environment variables used for different projects. Create a `.mise.toml` file
 in the root of your project directory:
 
 ```toml
@@ -24,7 +24,7 @@ NODE_ENV = false # unset a previously set NODE_ENV
 env_path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds a path relative to the .rtx.toml, not PWD
+    # adds a path relative to the .mise.toml, not PWD
     "./node_modules/.bin",
 ]
 ```
@@ -33,7 +33,7 @@ _Note: `env_path` is a top-level key, it does not go inside of `[env]`._
 
 ## `env_file`
 
-In `.rtx.toml`: `env_file` can be used to specify a [dotenv](https://dotenv.org) file to load:
+In `.mise.toml`: `env_file` can be used to specify a [dotenv](https://dotenv.org) file to load:
 
 ```toml
 env_file = '.env' // [!code focus]
@@ -41,7 +41,7 @@ env_file = '.env' // [!code focus]
 NODE_ENV = 'production'
 ```
 
-Or set [`RTX_ENV_FILE=.env`](/configuration#rtx-env-file) to automatically load dotenv files.
+Or set [`RTX_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files.
 
 ## Templates
 
@@ -51,4 +51,3 @@ Environment variable values can be templates, see [Templates](/templates) for de
 [env]
 LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
 ```
-

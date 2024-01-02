@@ -1,9 +1,9 @@
-# Python in rtx
+# Python in mise
 
-The following are instructions for using the python rtx core plugin. The core plugin will be used so long as no plugin is manually
-installed named "python" using `rtx plugins install python [GIT_URL]`.
+The following are instructions for using the python mise core plugin. The core plugin will be used so long as no plugin is manually
+installed named "python" using `mise plugins install python [GIT_URL]`.
 
-The code for this is inside of the rtx repository at [`./src/plugins/core/python.rs`](https://github.com/jdx/rtx/blob/main/src/plugins/core/python.rs).
+The code for this is inside of the mise repository at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
 
 ## Usage
 
@@ -11,13 +11,13 @@ The following installs the latest version of python-3.11.x and makes it the glob
 default:
 
 ```sh
-rtx use -g python@3.11
+mise use -g python@3.11
 ```
 
 You can also use multiple versions of python at the same time:
 
 ```sh
-$ rtx use -g python@3.10 python@3.11
+$ mise use -g python@3.10 python@3.11
 $ python -V
 3.10.0
 $ python3.11 -V
@@ -26,12 +26,12 @@ $ python3.11 -V
 
 ## Requirements
 
-rtx uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to install python runtimes, you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python.
+mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to install python runtimes, you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python.
 
 ## Configuration
 
 `python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
-additional to that python in rtx has a few extra configuration variables:
+additional to that python in mise has a few extra configuration variables:
 
 - `RTX_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
 - `RTX_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
@@ -40,7 +40,7 @@ additional to that python in rtx has a few extra configuration variables:
 
 ## Default Python packages
 
-rtx can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
+mise can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
 
 ```text
 ansible
@@ -51,7 +51,7 @@ You can specify a non-default location of this file by setting a `RTX_PYTHON_DEF
 
 ## [experimental] Automatic virtualenv creation/activation
 
-Python comes with virtualenv support built in, use it with `.rtx.toml` configuration like
+Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
 one of the following:
 
 ```toml

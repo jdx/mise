@@ -15,10 +15,12 @@ export default defineConfig({
       { text: 'Tasks', link: '/tasks/' },
     ],
     sidebar: [
+      { text: 'About', link: '/about' },
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
       { text: 'IDE Integration', link: '/ide-integration' },
+      { text: 'Coming from rtx', link: '/rtx' },
       { text: 'FAQs', link: '/faq' },
       {
         text: 'Dev Tools',

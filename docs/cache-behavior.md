@@ -1,6 +1,6 @@
 # Cache Behavior
 
-rtx makes use of caching in many places in order to be efficient. The details about how long to keep
+mise makes use of caching in many places in order to be efficient. The details about how long to keep
 cache for should eventually all be configurable. There may be gaps in the current behavior where
 things are hardcoded, but I'm happy to add more settings to cover whatever config is needed.
 
@@ -10,7 +10,7 @@ to be updating, this is a good place to start.
 ## Plugin/Runtime Cache
 
 Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/<PLUGIN>`. It stores
-the list of versions available for that plugin (`rtx ls-remote <PLUGIN>`), the legacy filenames (see below),
+the list of versions available for that plugin (`mise ls-remote <PLUGIN>`), the legacy filenames (see below),
 the list of aliases, the bin directories within each runtime installation, and the result of
 running `exec-env` after the runtime was installed.
 
@@ -26,6 +26,6 @@ static values. The vast majority of `exec-env` scripts only export static values
 working with a plugin that has a dynamic `exec-env` submit
 a ticket and we can try to figure out what to do.
 
-Caching `exec-env` massively improved the performance of rtx since it requires calling bash
-every time rtx is initialized. Ideally, we can keep this
+Caching `exec-env` massively improved the performance of mise since it requires calling bash
+every time mise is initialized. Ideally, we can keep this
 behavior.

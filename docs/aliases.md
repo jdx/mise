@@ -1,10 +1,10 @@
 # Aliases
 
-rtx supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
+mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
 versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
-so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.rtx.toml`.
+so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.mise.toml`.
 
-User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/rtx/config.toml`:
+User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
 
 ```toml
 [alias.node]
@@ -23,6 +23,6 @@ echo "lts-fermium 14"
 ```
 
 ::: info
-Because this is rtx-specific functionality not currently used by asdf it isn't likely to be in any
+Because this is mise-specific functionality not currently used by asdf it isn't likely to be in any
 plugin currently, but plugin authors can add this script without impacting asdf users.
 :::

@@ -1,14 +1,14 @@
 # Tasks <Badge type="warning" text="experimental" />
 
-You can define tasks in `.rtx.toml` files or as standalone shell scripts. These are useful for things like
+You can define tasks in `.mise.toml` files or as standalone shell scripts. These are useful for things like
 running linters, tests, builders, servers, and other tasks that are specific to a project. Of course,
-tasks launched with rtx will include the rtx environment—your tools and env vars defined in `.rtx.toml`.
+tasks launched with mise will include the mise environment—your tools and env vars defined in `.mise.toml`.
 
-Here's my favorite features about rtx's task runner:
+Here's my favorite features about mise's task runner:
 
 - building dependencies in parallel—by default with no configuration required
 - last-modified checking to avoid rebuilding when there are no changes—requires minimal config
-- `rtx watch` to automatically rebuild on changes—no configuration required, but it helps
+- `mise watch` to automatically rebuild on changes—no configuration required, but it helps
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
 
 ::: warning
@@ -19,4 +19,4 @@ Please give feedback early since while it's experimental it's much easier to cha
 
 ## Task Environment Variables
 
-- `RTX_PROJECT_ROOT` - the root of the project, defaults to the directory of the `.rtx.toml` file
+- `RTX_PROJECT_ROOT` - the root of the project, defaults to the directory of the `.mise.toml` file

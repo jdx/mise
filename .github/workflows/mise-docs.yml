@@ -1,4 +1,4 @@
-name: rtx-docs
+name: mise-docs
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   pull_request: {}
 
 concurrency:
-  group: rtx-docs-${{ github.head_ref }}
+  group: mise-docs-${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/rtx-action@v1
+      - uses: jdx/mise-action@v1
       - run: pnpm install
       - run: pnpm run docs:build
   release:
@@ -28,10 +28,10 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/rtx-action@v1
+      - uses: jdx/mise-action@v1
       - run: pnpm install
       - run: pnpm run docs:build
-      - run: rtx run release
+      - run: mise run release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

@@ -3,13 +3,13 @@
 Templates are used in the following locations:
 
 - `.tool-versions` files
-- `.rtx.toml` files for most configuration
+- `.mise.toml` files for most configuration
 - _(Submit a ticket if you want to see it used elsewhere!)_
 
 The following context objects are available inside templates:
 
 - `env: HashMap<String, String>` – current environment variables
-- `config_root: PathBuf` – directory containing the `.rtx.toml` file
+- `config_root: PathBuf` – directory containing the `.mise.toml` file
 
 As well as these functions:
 
