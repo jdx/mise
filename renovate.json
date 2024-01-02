@@ -4,7 +4,7 @@
   "asdf": {
     "enabled": false
   },
-  "nodejs": {
+  "nodenv": {
     "enabled": false
   }
 }
