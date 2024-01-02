@@ -1,6 +1,6 @@
 # Coming from rtx
 
-`mise` was formerly called `rtx`. The name was changed to avoid confusion with nvidia's
+`mise` was formerly called `rtx`. The name was changed to avoid confusion with Nvidia's
 line of graphics cards.
 
 To upgrade from `rtx` to `mise`, simply install `mise` and it should automatically
