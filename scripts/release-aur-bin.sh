@@ -18,7 +18,7 @@ cat >aur-bin/PKGBUILD <<EOF
 pkgname=rtx-bin
 pkgver=${RTX_VERSION#v*}
 pkgrel=1
-pkgdesc='Polyglot runtime manager'
+pkgdesc='The front-end to your dev env'
 arch=('x86_64')
 url='https://github.com/jdx/rtx'
 license=('MIT')
@@ -51,7 +51,7 @@ EOF
 
 cat >aur-bin/.SRCINFO <<EOF
 pkgbase = rtx-bin
-pkgdesc = Polyglot runtime manager
+pkgdesc = The front-end to your dev env
 pkgver = ${RTX_VERSION#v*}
 pkgrel = 1
 url = https://github.com/jdx/rtx
