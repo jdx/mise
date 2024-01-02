@@ -1,4 +1,4 @@
-Summary: Polyglot runtime manager
+Summary: The front-end to your dev env
 Name: rtx
 Version: 2024.0.0
 Release: 1

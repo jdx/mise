@@ -12,7 +12,7 @@ fpm -s dir -t deb \
   --license MIT \
   --version "${RTX_VERSION#v*}" \
   --architecture amd64 \
-  --description "Polyglot runtime manager" \
+  --description "The front-end to your dev env" \
   --url "https://github.com/jdx/rtx" \
   --maintainer "Jeff Dickey @jdx" \
   rtx/bin/rtx=/usr/bin/rtx \
@@ -25,7 +25,7 @@ fpm -s dir -t deb \
   --license MIT \
   --version "${RTX_VERSION#v*}" \
   --architecture arm64 \
-  --description "Polyglot runtime manager" \
+  --description "The front-end to your dev env" \
   --url "https://github.com/jdx/rtx" \
   --maintainer "Jeff Dickey @jdx" \
   rtx/bin/rtx=/usr/bin/rtx \

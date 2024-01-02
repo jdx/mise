@@ -50,7 +50,7 @@ rustPlatform.buildRustPackage {
   OPENSSL_DIR = "${libssl}";
 
   meta = with lib; {
-    description = "Polyglot runtime manager (asdf rust clone)";
+    description = "The front-end to your dev env";
     homepage = "https://github.com/jdx/rtx";
     license = licenses.mit;
   };
