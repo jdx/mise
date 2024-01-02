@@ -71,7 +71,7 @@ openssl = { version = "0.10", optional = true }
 path-absolutize = "3.1"
 rand = "0.8"
 rayon = "1.8"
-regex = "1.9"
+regex = "1.10"
 reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 petgraph = "0.6.4"
