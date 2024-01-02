@@ -1,3 +1,5 @@
+# [mise-en-place](https://mise.jdx.dev)
+
 <div align="center">
 <!-- <a href="https://mise.jdx.dev"><picture> -->
 <!--   <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png"> -->
