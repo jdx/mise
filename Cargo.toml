@@ -38,66 +38,66 @@ path = "src/main.rs"
 lto = true
 
 [dependencies]
-base64 = "<0.22"
+base64 = "0.21"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.4", features = ["env", "derive", "string"] }
+clap = { version = "4", features = ["env", "derive", "string"] }
 clap_complete = { version = "4", optional = true }
 clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
 confique = { version = "0.2", default-features = false }
 console = "0.15"
-ctrlc = "3.4"
+ctrlc = "3"
 demand = "0.3"
-dirs-next = "2.0"
+dirs-next = "2"
 dotenvy = "0.15"
 duct = "0.13"
-either = "1.9.0"
+either = "1"
 eyre = "0.6"
 filetime = "0.2"
-flate2 = "1.0"
+flate2 = "1"
 fslock = "0.2"
-globwalk = "0.9.0"
-humantime = "2.1"
+globwalk = "0.9"
+humantime = "2"
 indenter = "0.3"
-indexmap = { version = "2.1", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "<3"
 itertools = "0.12"
 log = "0.4"
-num_cpus = "1.16"
-once_cell = "1.19"
+num_cpus = "1"
+once_cell = "1"
 openssl = { version = "0.10", optional = true }
-path-absolutize = "3.1"
+path-absolutize = "3"
 rand = "0.8"
-rayon = "1.8"
-regex = "1.10"
-reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "json", "gzip"] }
-rmp-serde = "1.1.2"
-petgraph = "0.6.4"
-self_update = { version = "<1", default-features = false, features = [
+rayon = "1"
+regex = "1"
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "gzip"] }
+rmp-serde = "1"
+petgraph = "0.6"
+self_update = { version = "0.39", default-features = false, features = [
     "archive-tar",
     "compression-flate2",
     "signatures",
 ] }
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = { version = "1.0", features = [] }
+serde = "1"
+serde_derive = "1"
+serde_json = { version = "1", features = [] }
 sha2 = "0.10"
 shell-escape = "0.1"
-shell-words = "1.1"
+shell-words = "1"
 simplelog = { version = "0.12" }
-strum = { version = "0.25.0", features = ["derive"] }
+strum = { version = "0.25", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.15", features = ["ansi"] }
 tar = "0.4"
-tempfile = "3.8.1"
-tera = { version = "1.19", default-features = false }
+tempfile = "3"
+tera = { version = "1", default-features = false }
 terminal_size = "0.3"
-thiserror = "1.0"
-toml = "<1"
-toml_edit = "<1"
-url = "2.5"
+thiserror = "1"
+toml = "0.8"
+toml_edit = "0.21"
+url = "2"
 versions = "6"
 which = "5"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
@@ -109,7 +109,7 @@ exec = "0.3"
 built = { version = "0.7", features = ["chrono", "git2"] }
 
 [dev-dependencies]
-ctor = "<0.3"
+ctor = "0.2"
 insta = { version = "1", features = ["filters", "json"] }
 pretty_assertions = "1"
 
