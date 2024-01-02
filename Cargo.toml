@@ -72,7 +72,7 @@ path-absolutize = "3.1"
 rand = "0.8"
 rayon = "1.8"
 regex = "1.10"
-reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "json", "gzip"] }
+reqwest = { version = "0.11.23", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 petgraph = "0.6.4"
 self_update = { version = "<1", default-features = false, features = [
