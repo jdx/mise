@@ -29,7 +29,7 @@ jobs:
           shared-key: "build-linux-x86_64-unknown-linux-gnu"
           save-if: false
       - run: scripts/build-tarball.sh rtx --release --target x86_64-unknown-linux-gnu
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: |
