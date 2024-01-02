@@ -29,13 +29,13 @@ impl GoPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_rtx() {
+        match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let repo = &*env::RTX_GO_REPO;
+            let repo = &*env::MISE_GO_REPO;
             let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
@@ -59,7 +59,7 @@ impl GoPlugin {
     }
 
     fn install_default_packages(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
-        let body = file::read_to_string(&*env::RTX_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let body = file::read_to_string(&*env::MISE_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -72,10 +72,10 @@ impl GoPlugin {
                 format!("{}@latest", package)
             };
             let mut env = HashMap::new();
-            if *env::RTX_GO_SET_GOROOT != Some(false) {
+            if *env::MISE_GO_SET_GOROOT != Some(false) {
                 env.insert("GOROOT", self.goroot(tv));
             }
-            if *env::RTX_GO_SET_GOPATH != Some(false) {
+            if *env::MISE_GO_SET_GOPATH != Some(false) {
                 env.insert("GOPATH", self.gopath(tv));
             }
             CmdLineRunner::new(self.go_bin(tv))
@@ -98,7 +98,7 @@ impl GoPlugin {
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
-        let tarball_url = format!("{}/{}", &*env::RTX_GO_DOWNLOAD_MIRROR, &filename);
+        let tarball_url = format!("{}/{}", &*env::MISE_GO_DOWNLOAD_MIRROR, &filename);
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {}", &tarball_url));
@@ -110,7 +110,7 @@ impl GoPlugin {
     }
 
     fn verify_tarball_checksum(&self, tarball_url: &str, tarball_path: &Path) -> Result<()> {
-        if !*env::RTX_GO_SKIP_CHECKSUM {
+        if !*env::MISE_GO_SKIP_CHECKSUM {
             let checksum_url = format!("{}.sha256", tarball_url);
             let checksum = HTTP.get_text(checksum_url)?;
             hash::ensure_checksum_sha256(tarball_path, &checksum)?;
@@ -166,9 +166,9 @@ impl Plugin for GoPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        // goroot/bin must always be included, irrespective of RTX_GO_SET_GOROOT
+        // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT
         let mut paths = vec![self.goroot(tv).join("bin")];
-        if *env::RTX_GO_SET_GOPATH != Some(false) {
+        if *env::MISE_GO_SET_GOPATH != Some(false) {
             paths.push(self.gopath(tv).join("bin"));
         }
         Ok(paths)
@@ -181,14 +181,14 @@ impl Plugin for GoPlugin {
         tv: &ToolVersion,
     ) -> Result<HashMap<String, String>> {
         let mut map = HashMap::new();
-        match (*env::RTX_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
+        match (*env::MISE_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
             (Some(false), _) | (None, Some(_)) => {}
             (Some(true), _) | (None, None) => {
                 let goroot = self.goroot(tv).to_string_lossy().to_string();
                 map.insert("GOROOT".to_string(), goroot);
             }
         };
-        match (*env::RTX_GO_SET_GOPATH, env::PRISTINE_ENV.get("GOPATH")) {
+        match (*env::MISE_GO_SET_GOPATH, env::PRISTINE_ENV.get("GOPATH")) {
             (Some(false), _) | (None, Some(_)) => {}
             (Some(true), _) | (None, None) => {
                 let gopath = self.gopath(tv).to_string_lossy().to_string();

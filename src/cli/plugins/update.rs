@@ -64,9 +64,9 @@ impl Update {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx plugins update</bold>            # update all plugins
-  $ <bold>rtx plugins update node</bold>       # update only node
-  $ <bold>rtx plugins update node#beta</bold>  # specify a ref
+  $ <bold>mise plugins update</bold>            # update all plugins
+  $ <bold>mise plugins update node</bold>       # update only node
+  $ <bold>mise plugins update node#beta</bold>  # specify a ref
 "#
 );
 

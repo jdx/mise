@@ -29,16 +29,16 @@ pub struct Ls {
     #[clap(long = "plugin", short, hide = true)]
     plugin_flag: Option<String>,
 
-    /// Only show tool versions currently specified in a .tool-versions/.rtx.toml
+    /// Only show tool versions currently specified in a .tool-versions/.mise.toml
     #[clap(long, short)]
     current: bool,
 
-    /// Only show tool versions currently specified in a the global .tool-versions/.rtx.toml
+    /// Only show tool versions currently specified in a the global .tool-versions/.mise.toml
     #[clap(long, short)]
     global: bool,
 
     /// Only show tool versions that are installed
-    /// Hides missing ones defined in .tool-versions/.rtx.toml but not yet installed
+    /// Hides missing ones defined in .tool-versions/.mise.toml but not yet installed
     #[clap(long, short)]
     installed: bool,
 
@@ -119,7 +119,7 @@ impl Ls {
                 .filter(|(p, _, _)| plugins.contains(&p.name().to_string()))
                 .map(|row| row.into())
                 .collect();
-            rtxprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
             return Ok(());
         }
 
@@ -131,7 +131,7 @@ impl Ls {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
-        rtxprintln!("{}", serde_json::to_string_pretty(&plugins)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 
@@ -145,9 +145,9 @@ impl Ls {
             .for_each(|(_, tv)| {
                 if self.plugin.is_some() {
                     // only displaying 1 plugin so only show the version
-                    rtxprintln!("{}", tv.version);
+                    miseprintln!("{}", tv.version);
                 } else {
-                    rtxprintln!("{} {}", tv.plugin_name, tv.version);
+                    miseprintln!("{} {}", tv.plugin_name, tv.version);
                 }
             });
         Ok(())
@@ -169,7 +169,7 @@ impl Ls {
         });
         let mut table = Table::new(rows);
         table::default_style(&mut table, self.no_header);
-        rtxprintln!("{}", table.to_string());
+        miseprintln!("{}", table.to_string());
         Ok(())
     }
 
@@ -343,24 +343,24 @@ impl Display for VersionStatus {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx ls</bold>
+  $ <bold>mise ls</bold>
   node    20.0.0 ~/src/myapp/.tool-versions latest
   python  3.11.0 ~/.tool-versions           3.10
   python  3.10.0
 
-  $ <bold>rtx ls --current</bold>
+  $ <bold>mise ls --current</bold>
   node    20.0.0 ~/src/myapp/.tool-versions 20
   python  3.11.0 ~/.tool-versions           3.11.0
 
-  $ <bold>rtx ls --json</bold>
+  $ <bold>mise ls --json</bold>
   {
     "node": [
       {
         "version": "20.0.0",
-        "install_path": "/Users/jdx/.rtx/installs/node/20.0.0",
+        "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
         "source": {
-          "type": ".rtx.toml",
-          "path": "/Users/jdx/.rtx.toml"
+          "type": ".mise.toml",
+          "path": "/Users/jdx/.mise.toml"
         }
       }
     ],
@@ -435,13 +435,13 @@ mod tests {
         assert_cli_snapshot!("ls", "--parseable", @r###"
         dummy ref:master
         tiny 3.1.0
-        rtx The parseable output format is deprecated and will be removed in a future release.
-        rtx Please use the regular output format instead which has been modified to be more easily parseable.
+        mise The parseable output format is deprecated and will be removed in a future release.
+        mise Please use the regular output format instead which has been modified to be more easily parseable.
         "###);
         assert_cli_snapshot!("ls", "--parseable", "tiny", @r###"
         3.1.0
-        rtx The parseable output format is deprecated and will be removed in a future release.
-        rtx Please use the regular output format instead which has been modified to be more easily parseable.
+        mise The parseable output format is deprecated and will be removed in a future release.
+        mise Please use the regular output format instead which has been modified to be more easily parseable.
         "###);
     }
 

@@ -8,7 +8,7 @@ use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
 
 /// Marks a config file as trusted
 ///
-/// This means rtx will parse the file with potentially dangerous
+/// This means mise will parse the file with potentially dangerous
 /// features enabled.
 ///
 /// This includes:
@@ -85,11 +85,11 @@ impl Trust {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # trusts ~/some_dir/.rtx.toml
-  $ <bold>rtx trust ~/some_dir/.rtx.toml</bold>
+  # trusts ~/some_dir/.mise.toml
+  $ <bold>mise trust ~/some_dir/.mise.toml</bold>
 
-  # trusts .rtx.toml in the current or parent directory
-  $ <bold>rtx trust</bold>
+  # trusts .mise.toml in the current or parent directory
+  $ <bold>mise trust</bold>
 "#
 );
 

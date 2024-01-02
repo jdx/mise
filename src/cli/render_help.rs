@@ -15,7 +15,7 @@ pub struct RenderHelp {}
 impl RenderHelp {
     pub fn run(self) -> Result<()> {
         let readme = file::read_to_string("docs/cli-reference.md")?;
-        let mut current_readme = readme.split("<!-- RTX:COMMANDS -->");
+        let mut current_readme = readme.split("<!-- MISE:COMMANDS -->");
 
         let mut doc = String::new();
         doc.push_str(current_readme.next().unwrap());
@@ -36,7 +36,7 @@ fn render_commands() -> String {
         .disable_help_flag(true);
     let mut doc = formatdoc!(
         r#"
-            <!-- RTX:COMMANDS -->
+            <!-- MISE:COMMANDS -->
 
             ## Commands
 
@@ -62,7 +62,7 @@ fn render_commands() -> String {
             }
         }
     }
-    doc.push_str("<!-- RTX:COMMANDS -->");
+    doc.push_str("<!-- MISE:COMMANDS -->");
     doc
 }
 
@@ -95,7 +95,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
         .to_string();
     Some(formatdoc!(
         "
-        ### `rtx {usage}`
+        ### `mise {usage}`
         {aliases}
         ```text
         {about}
@@ -123,8 +123,8 @@ mod tests {
         file::write(
             "docs/cli-reference.md",
             indoc! {r#"
-            <!-- RTX:COMMANDS -->
-            <!-- RTX:COMMANDS -->
+            <!-- MISE:COMMANDS -->
+            <!-- MISE:COMMANDS -->
         "#},
         )
         .unwrap();

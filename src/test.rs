@@ -11,25 +11,25 @@ use crate::{dirs, env, file};
 fn init() {
     console::set_colors_enabled(false);
     console::set_colors_enabled_stderr(false);
-    if env::var("__RTX_DIFF").is_ok() {
+    if env::var("__MISE_DIFF").is_ok() {
         // TODO: fix this
-        panic!("cannot run tests when rtx is activated");
+        panic!("cannot run tests when mise is activated");
     }
     env::set_var(
         "HOME",
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
     );
     set_current_dir(env::HOME.join("cwd")).unwrap();
-    env::remove_var("RTX_TRUSTED_CONFIG_PATHS");
+    env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::set_var("NO_COLOR", "1");
-    env::set_var("RTX_YES", "1");
-    env::set_var("RTX_USE_TOML", "0");
-    env::set_var("RTX_DATA_DIR", env::HOME.join("data"));
-    env::set_var("RTX_STATE_DIR", env::HOME.join("state"));
-    env::set_var("RTX_CONFIG_DIR", env::HOME.join("config"));
-    env::set_var("RTX_CACHE_DIR", env::HOME.join("data/cache"));
-    env::set_var("RTX_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
-    env::set_var("RTX_DEFAULT_CONFIG_FILENAME", ".test.rtx.toml");
+    env::set_var("MISE_YES", "1");
+    env::set_var("MISE_USE_TOML", "0");
+    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
+    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
+    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_CACHE_DIR", env::HOME.join("data/cache"));
+    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
     //env::set_var("TERM", "dumb");
     reset_config();
 }
@@ -87,7 +87,7 @@ pub fn replace_path(input: &str) -> String {
     input
         .replace(&path, "$PATH")
         .replace(&home, "~")
-        .replace(&*env::RTX_BIN.to_string_lossy(), "rtx")
+        .replace(&*env::MISE_BIN.to_string_lossy(), "mise")
 }
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
@@ -123,13 +123,13 @@ macro_rules! with_settings {
 #[macro_export]
 macro_rules! assert_cli_snapshot {
     ($($args:expr),+, @$snapshot:literal) => {
-        let args = &vec!["rtx".into(), $($args.into()),+];
+        let args = &vec!["mise".into(), $($args.into()),+];
         let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
         let output = [stdout, stderr].join("\n").trim().to_string();
         insta::assert_snapshot!(output, @$snapshot);
     };
     ($($args:expr),+) => {
-        let args = &vec!["rtx".into(), $($args.into()),+];
+        let args = &vec!["mise".into(), $($args.into()),+];
         let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
         let output = [stdout, stderr].join("\n").trim().to_string();
         insta::assert_snapshot!(output);
@@ -139,7 +139,7 @@ macro_rules! assert_cli_snapshot {
 #[macro_export]
 macro_rules! assert_cli {
     ($($args:expr),+) => {{
-        let args = &vec!["rtx".into(), $($args.into()),+];
+        let args = &vec!["mise".into(), $($args.into()),+];
         $crate::test::cli_run(args).unwrap();
         let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
         console::strip_ansi_codes(&output).trim().to_string()
@@ -149,7 +149,7 @@ macro_rules! assert_cli {
 #[macro_export]
 macro_rules! assert_cli_err {
     ($($args:expr),+) => {{
-        let args = &vec!["rtx".into(), $($args.into()),+];
+        let args = &vec!["mise".into(), $($args.into()),+];
         $crate::test::cli_run(args).unwrap_err()
     }};
 }

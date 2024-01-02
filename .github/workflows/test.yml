@@ -2,7 +2,7 @@ name: test
 on:
   push:
     tags: ["v*"]
-    branches: ["main"]
+    branches: ["main", "mise"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -14,12 +14,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  RTX_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
 jobs:
   unit:
     runs-on: ubuntu-latest
-    #container: ghcr.io/jdx/rtx:github-actions
+    #container: ghcr.io/jdx/mise:github-actions
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -43,19 +43,20 @@ jobs:
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
+        if: github.ref_name != 'mise'
       - run: just render-all lint-fix
       - run: git diff HEAD
       - if: github.event_name == 'pull_request'
         uses: EndBug/add-and-commit@v9
         with:
           push: true
-          author_name: rtx[bot]
+          author_name: mise[bot]
           author_email: 123107610+rtx-vm@users.noreply.github.com
       - run: just lint
 
   coverage:
     name: coverage-${{matrix.tranche}}
-    #container: ghcr.io/jdx/rtx:github-actions
+    #container: ghcr.io/jdx/mise:github-actions
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -81,7 +82,7 @@ jobs:
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
-          RTX_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
           TEST_FULL: ${{github.ref_name == 'main' && '1' || '0'}}

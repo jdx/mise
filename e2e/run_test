@@ -8,17 +8,17 @@ TEST="$1"
 setup_env() {
 	export ROOT
 	export PATH="$ROOT/target/debug:$PATH"
-	export RTX_USE_TOML="0"
-	export RTX_DATA_DIR="$HOME/.rtx/e2e"
-	export RTX_STATE_DIR="$HOME/.rtx/e2e"
-	export RTX_CACHE_DIR="$HOME/.rtx/e2e/cache"
-	export RTX_CONFIG_DIR="$HOME/.rtx/e2e/config"
-	export RTX_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
-	export RTX_DEFAULT_CONFIG_FILENAME=.e2e.rtx.toml
-	export RTX_CONFIG_FILE="$ROOT/e2e/.config/rtx/config.toml"
-	export RTX_ALWAYS_KEEP_DOWNLOAD="1"
-	export RTX_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
-	export RTX_YES="1"
+	export MISE_USE_TOML="0"
+	export MISE_DATA_DIR="$HOME/.mise/e2e"
+	export MISE_STATE_DIR="$HOME/.mise/e2e"
+	export MISE_CACHE_DIR="$HOME/.mise/e2e/cache"
+	export MISE_CONFIG_DIR="$HOME/.mise/e2e/config"
+	export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
+	export MISE_DEFAULT_CONFIG_FILENAME=.e2e.mise.toml
+	export MISE_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
+	export MISE_ALWAYS_KEEP_DOWNLOAD="1"
+	export MISE_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
+	export MISE_YES="1"
 	export NPM_CONFIG_FUND="false"
 	unset GOPATH
 }
@@ -33,7 +33,7 @@ setup_config_files() {
 
 run_test() {
 	echo "::group::E2E $TEST"
-	rm -f "$RTX_CONFIG_FILE"
+	rm -f "$MISE_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
 
 	START=$(date +%s)

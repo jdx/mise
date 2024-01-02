@@ -5,9 +5,9 @@ use crate::env;
 
 mod clear;
 
-/// Manage the rtx cache
+/// Manage the mise cache
 ///
-/// Run `rtx cache` with no args to view the current cache directory.
+/// Run `mise cache` with no args to view the current cache directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Cache {
@@ -34,7 +34,7 @@ impl Cache {
             Some(cmd) => cmd.run(),
             None => {
                 // just show the cache dir
-                rtxprintln!("{}", env::RTX_CACHE_DIR.display());
+                miseprintln!("{}", env::MISE_CACHE_DIR.display());
                 Ok(())
             }
         }
@@ -50,6 +50,6 @@ mod tests {
     #[test]
     fn test_cache() {
         let stdout = assert_cli!("cache");
-        assert_str_eq!(stdout.trim(), env::RTX_CACHE_DIR.display().to_string());
+        assert_str_eq!(stdout.trim(), env::MISE_CACHE_DIR.display().to_string());
     }
 }

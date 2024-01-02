@@ -16,53 +16,53 @@ use serde_derive::Serialize;
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize)))]
 pub struct Settings {
-    #[config(env = "RTX_EXPERIMENTAL", default = false)]
+    #[config(env = "MISE_EXPERIMENTAL", default = false)]
     pub experimental: bool,
-    #[config(env = "RTX_COLOR", default = true)]
+    #[config(env = "MISE_COLOR", default = true)]
     pub color: bool,
-    #[config(env = "RTX_ALWAYS_KEEP_DOWNLOAD", default = false)]
+    #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
-    #[config(env = "RTX_ALWAYS_KEEP_INSTALL", default = false)]
+    #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
-    #[config(env = "RTX_LEGACY_VERSION_FILE", default = true)]
+    #[config(env = "MISE_LEGACY_VERSION_FILE", default = true)]
     pub legacy_version_file: bool,
-    #[config(env = "RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
+    #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
-    #[config(env = "RTX_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
+    #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
-    #[config(env = "RTX_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
+    #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
     pub trusted_config_paths: BTreeSet<PathBuf>,
-    #[config(env = "RTX_LOG_LEVEL", default = "info")]
+    #[config(env = "MISE_LOG_LEVEL", default = "info")]
     pub log_level: String,
-    #[config(env = "RTX_TRACE", default = false)]
+    #[config(env = "MISE_TRACE", default = false)]
     pub trace: bool,
-    #[config(env = "RTX_DEBUG", default = false)]
+    #[config(env = "MISE_DEBUG", default = false)]
     pub debug: bool,
-    #[config(env = "RTX_VERBOSE", default = false)]
+    #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
-    #[config(env = "RTX_QUIET", default = false)]
+    #[config(env = "MISE_QUIET", default = false)]
     pub quiet: bool,
-    #[config(env = "RTX_ASDF_COMPAT", default = false)]
+    #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
-    #[config(env = "RTX_JOBS", default = 4)]
+    #[config(env = "MISE_JOBS", default = 4)]
     pub jobs: usize,
-    #[config(env = "RTX_SHORTHANDS_FILE")]
+    #[config(env = "MISE_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
-    #[config(env = "RTX_DISABLE_DEFAULT_SHORTHANDS", default = false)]
+    #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
     pub disable_default_shorthands: bool,
-    #[config(env = "RTX_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
+    #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub disable_tools: BTreeSet<String>,
-    #[config(env = "RTX_RAW", default = false)]
+    #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
-    #[config(env = "RTX_YES", default = false)]
+    #[config(env = "MISE_YES", default = false)]
     pub yes: bool,
-    #[config(env = "RTX_TASK_OUTPUT")]
+    #[config(env = "MISE_TASK_OUTPUT")]
     pub task_output: Option<String>,
-    #[config(env = "RTX_NOT_FOUND_AUTO_INSTALL", default = true)]
+    #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
     pub not_found_auto_install: bool,
     #[config(env = "CI", default = false)]
     pub ci: bool,
-    #[config(env = "RTX_ENV_FILE")]
+    #[config(env = "MISE_ENV_FILE")]
     pub env_file: Option<PathBuf>,
     pub cd: Option<String>,
 }
@@ -198,7 +198,7 @@ impl Settings {
 
     pub fn ensure_experimental(&self) -> Result<()> {
         let msg =
-            "This command is experimental. Enable it with `rtx settings set experimental true`";
+            "This command is experimental. Enable it with `mise settings set experimental true`";
         ensure!(self.experimental, msg);
         Ok(())
     }

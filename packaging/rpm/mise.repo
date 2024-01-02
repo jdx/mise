@@ -1,0 +1,6 @@
+[mise-repo]
+name=mise repo
+baseurl=https://mise.jdx.dev/rpm
+enabled=1
+gpgcheck=1
+gpgkey=http://mise.jdx.dev/gpg-key.pub

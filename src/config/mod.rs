@@ -15,7 +15,7 @@ use rayon::prelude::*;
 pub use settings::Settings;
 
 use crate::config::config_file::legacy_version::LegacyVersionFile;
-use crate::config::config_file::rtx_toml::RtxToml;
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
@@ -40,7 +40,7 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub env: BTreeMap<String, String>,
     pub env_sources: HashMap<String, PathBuf>,
-    pub global_config: RtxToml,
+    pub global_config: MiseToml,
     pub path_dirs: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
     all_aliases: OnceCell<AliasMap>,
@@ -65,7 +65,7 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
-        let global_config = load_rtxrc()?;
+        let global_config = load_miserc()?;
         // TODO: read system config settings
         Settings::add_partial(global_config.settings()?);
         let settings = Settings::try_get()?;
@@ -124,7 +124,7 @@ impl Config {
     }
 
     pub fn is_activated(&self) -> bool {
-        env::var("__RTX_DIFF").is_ok()
+        env::var("__MISE_DIFF").is_ok()
     }
 
     pub fn resolve_alias(&self, plugin_name: &str, v: &str) -> Result<String> {
@@ -206,8 +206,8 @@ impl Config {
             .flat_map(|cf| {
                 match cf.project_root() {
                     Some(pr) => vec![
-                        pr.join(".rtx").join("tasks"),
-                        pr.join(".config").join("rtx").join("tasks"),
+                        pr.join(".mise").join("tasks"),
+                        pr.join(".config").join("mise").join("tasks"),
                     ],
                     None => vec![],
                 }
@@ -281,16 +281,16 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .map(|pr| pr.to_path_buf())
 }
 
-fn load_rtxrc() -> Result<RtxToml> {
-    let settings_path = env::RTX_CONFIG_FILE
+fn load_miserc() -> Result<MiseToml> {
+    let settings_path = env::MISE_CONFIG_FILE
         .clone()
         .unwrap_or(dirs::CONFIG.join("config.toml"));
     match settings_path.exists() {
         false => {
             trace!("settings does not exist {:?}", settings_path);
-            Ok(RtxToml::init(&settings_path))
+            Ok(MiseToml::init(&settings_path))
         }
-        true => RtxToml::from_file(&settings_path)
+        true => MiseToml::from_file(&settings_path)
             .wrap_err_with(|| eyre!("Error parsing {}", display_path(&settings_path))),
     }
 }
@@ -348,30 +348,32 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
 }
 
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    let mut filenames = vec![
-        env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.clone(),
-        env::RTX_DEFAULT_CONFIG_FILENAME.clone(),
-    ];
-    if *env::RTX_DEFAULT_CONFIG_FILENAME == ".rtx.toml" {
-        filenames.insert(0, ".rtx/config.toml".into());
-        filenames.insert(0, ".config/rtx.toml".into());
-        filenames.insert(0, ".config/rtx/config.toml".into());
-        filenames.push(".config/rtx/config.local.toml".into());
-        filenames.push(".config/rtx.local.toml".into());
-        filenames.push(".rtx/config.local.toml".into());
-        filenames.push(".rtx.local.toml".into());
-        if let Some(env) = &*env::RTX_ENV {
-            filenames.push(format!(".config/rtx/config.{env}.toml"));
-            filenames.push(format!(".config/rtx.{env}.toml"));
-            filenames.push(format!(".rtx/config.{env}.local.toml"));
-            filenames.push(format!(".rtx.{env}.toml"));
-            filenames.push(format!(".config/rtx/config.{env}.local.toml"));
-            filenames.push(format!(".config/rtx.{env}.local.toml"));
-            filenames.push(format!(".rtx/config.{env}.local.toml"));
-            filenames.push(format!(".rtx.{env}.local.toml"));
+    let mut filenames = std::collections::VecDeque::from([
+        env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.clone(),
+        env::MISE_DEFAULT_CONFIG_FILENAME.clone(),
+    ]);
+    if *env::MISE_DEFAULT_CONFIG_FILENAME == ".mise.toml" {
+        filenames.push_front(".rtx.toml".into());
+        filenames.push_front(".rtx.local.toml".into());
+        filenames.push_front(".mise/config.toml".into());
+        filenames.push_front(".config/mise.toml".into());
+        filenames.push_front(".config/mise/config.toml".into());
+        filenames.push_back(".config/mise/config.local.toml".into());
+        filenames.push_back(".config/mise.local.toml".into());
+        filenames.push_back(".mise/config.local.toml".into());
+        filenames.push_back(".mise.local.toml".into());
+        if let Some(env) = &*env::MISE_ENV {
+            filenames.push_back(format!(".config/mise/config.{env}.toml"));
+            filenames.push_back(format!(".config/mise.{env}.toml"));
+            filenames.push_back(format!(".mise/config.{env}.local.toml"));
+            filenames.push_back(format!(".mise.{env}.toml"));
+            filenames.push_back(format!(".config/mise/config.{env}.local.toml"));
+            filenames.push_back(format!(".config/mise.{env}.local.toml"));
+            filenames.push_back(format!(".mise/config.{env}.local.toml"));
+            filenames.push_back(format!(".mise.{env}.local.toml"));
         }
     }
-    filenames
+    filenames.into_iter().collect()
 });
 
 pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
@@ -388,23 +390,23 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     config_files.into_iter().unique().collect()
 }
 
-fn get_global_rtx_toml() -> PathBuf {
-    env::RTX_CONFIG_FILE
+fn get_global_mise_toml() -> PathBuf {
+    env::MISE_CONFIG_FILE
         .clone()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
 pub fn global_config_files() -> Vec<PathBuf> {
     let mut config_files = vec![];
-    if env::RTX_CONFIG_FILE.is_none() && !*env::RTX_USE_TOML {
-        // only add ~/.tool-versions if RTX_CONFIG_FILE is not set
+    if env::MISE_CONFIG_FILE.is_none() && !*env::MISE_USE_TOML {
+        // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
-        let home_config = dirs::HOME.join(env::RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
         if home_config.is_file() {
             config_files.push(home_config);
         }
     };
-    let global_config = get_global_rtx_toml();
+    let global_config = get_global_mise_toml();
     if global_config.is_file() {
         config_files.push(global_config);
     }

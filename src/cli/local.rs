@@ -6,25 +6,25 @@ use itertools::Itertools;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::{config_file, Config, Settings};
-use crate::env::{RTX_DEFAULT_CONFIG_FILENAME, RTX_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 
 use crate::plugins::PluginName;
 use crate::{env, file};
 
-/// Sets/gets tool version in local .tool-versions or .rtx.toml
+/// Sets/gets tool version in local .tool-versions or .mise.toml
 ///
 /// Use this to set a tool's version when within a directory
-/// Use `rtx global` to set a tool version globally
-/// This uses `.tool-version` by default unless there is a `.rtx.toml` file or if `RTX_USE_TOML`
-/// is set. A future v2 release of rtx will default to using `.rtx.toml`.
+/// Use `mise global` to set a tool version globally
+/// This uses `.tool-version` by default unless there is a `.mise.toml` file or if `MISE_USE_TOML`
+/// is set. A future v2 release of mise will default to using `.mise.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
-    /// Tool(s) to add to .tool-versions/.rtx.toml
+    /// Tool(s) to add to .tool-versions/.mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,
-    /// the current value of .tool-versions/.rtx.toml will be displayed
+    /// the current value of .tool-versions/.mise.toml will be displayed
     #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
@@ -34,13 +34,13 @@ pub struct Local {
     parent: bool,
 
     /// Save exact version to `.tool-versions`
-    /// e.g.: `rtx local --pin node@20` will save `node 20.0.0` to .tool-versions
+    /// e.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Save fuzzy version to `.tool-versions`
-    /// e.g.: `rtx local --fuzzy node@20` will save `node 20` to .tool-versions
-    /// This is the default behavior unless RTX_ASDF_COMPAT=1
+    /// e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions
+    /// This is the default behavior unless MISE_ASDF_COMPAT=1
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
@@ -74,18 +74,18 @@ impl Local {
 }
 
 fn get_path() -> Result<PathBuf> {
-    let rtx_toml = env::current_dir()?.join(RTX_DEFAULT_CONFIG_FILENAME.as_str());
-    if *env::RTX_USE_TOML || rtx_toml.exists() {
-        Ok(rtx_toml)
+    let mise_toml = env::current_dir()?.join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
+    if *env::MISE_USE_TOML || mise_toml.exists() {
+        Ok(mise_toml)
     } else {
-        Ok(env::current_dir()?.join(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
+        Ok(env::current_dir()?.join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
     }
 }
 
 pub fn get_parent_path() -> Result<PathBuf> {
-    let mut filenames = vec![RTX_DEFAULT_CONFIG_FILENAME.as_str()];
-    if !*env::RTX_USE_TOML {
-        filenames.push(RTX_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+    let mut filenames = vec![MISE_DEFAULT_CONFIG_FILENAME.as_str()];
+    if !*env::MISE_USE_TOML {
+        filenames.push(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
     file::find_up(&env::current_dir()?, &filenames)
         .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
@@ -104,7 +104,7 @@ pub fn local(
     let settings = Settings::try_get()?;
     let mut cf = config_file::parse_or_init(path)?;
     if show_path {
-        rtxprintln!("{}", path.display());
+        miseprintln!("{}", path.display());
         return Ok(());
     }
 
@@ -116,7 +116,7 @@ pub fn local(
             .iter()
             .map(|r| style(r).blue().for_stderr().to_string())
             .join(" ");
-        rtxprintln!("{} {} {tools}", style("rtx").dim(), display_path(path));
+        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
 
     if !runtime.is_empty() {
@@ -127,13 +127,13 @@ pub fn local(
         let pin = pin || (settings.asdf_compat && !fuzzy);
         cf.add_runtimes(config, &runtimes, pin)?;
         let tools = runtimes.iter().map(|t| t.style()).join(" ");
-        rtxprintln!("{} {} {tools}", style("rtx").dim(), display_path(path));
+        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
 
     if !runtime.is_empty() || remove.is_some() {
         cf.save()?;
     } else {
-        rtxprint!("{}", cf.dump());
+        miseprint!("{}", cf.dump());
     }
 
     Ok(())
@@ -143,20 +143,20 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   # set the current version of node to 20.x for the current directory
   # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ <bold>rtx local node@20</bold>
+  $ <bold>mise local node@20</bold>
 
   # set node to 20.x for the current project (recurses up to find .tool-versions)
-  $ <bold>rtx local -p node@20</bold>
+  $ <bold>mise local -p node@20</bold>
 
   # set the current version of node to 20.x for the current directory
   # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ <bold>rtx local --fuzzy node@20</bold>
+  $ <bold>mise local --fuzzy node@20</bold>
 
   # removes node from .tool-versions
-  $ <bold>rtx local --remove=node</bold>
+  $ <bold>mise local --remove=node</bold>
 
   # show the current version of node in .tool-versions
-  $ <bold>rtx local node</bold>
+  $ <bold>mise local node</bold>
   20.0.0
 "#
 );
@@ -312,7 +312,7 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        let _ = file::remove_file(env::current_dir().unwrap().join(".test.rtx.toml"));
+        let _ = file::remove_file(env::current_dir().unwrap().join(".test.mise.toml"));
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         let orig = file::read_to_string(&cf_path).unwrap();
 

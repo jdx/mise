@@ -21,17 +21,17 @@ use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
-// executes as if it was a shim if the command is not "rtx", e.g.: "node"
+// executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
-    let bin_name = *env::RTX_BIN_NAME;
-    if bin_name == "rtx" || !dirs::SHIMS.join(bin_name).exists() || cfg!(test) {
+    let bin_name = *env::MISE_BIN_NAME;
+    if bin_name == "mise" || !dirs::SHIMS.join(bin_name).exists() || cfg!(test) {
         return Ok(());
     }
     logger::init(&Settings::get());
     let args = env::ARGS.read().unwrap();
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(&env::RTX_BIN_NAME)?.into();
+    args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
     let exec = Exec {
         tool: vec![],
         c: None,
@@ -83,7 +83,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         })
         .lock();
 
-    let rtx_bin = file::which("rtx").unwrap_or(env::RTX_BIN.clone());
+    let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
     create_dir_all(&*dirs::SHIMS)?;
 
@@ -93,7 +93,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
             dirs::SHIMS
                 .join(bin)
                 .read_link()
-                .is_ok_and(|p| p == rtx_bin)
+                .is_ok_and(|p| p == mise_bin)
         })
         .collect::<HashSet<_>>();
 
@@ -113,10 +113,10 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
-        file::make_symlink(&rtx_bin, &symlink_path).wrap_err_with(|| {
+        file::make_symlink(&mise_bin, &symlink_path).wrap_err_with(|| {
             eyre!(
                 "Failed to create symlink from {} to {}",
-                display_path(&rtx_bin),
+                display_path(&mise_bin),
                 display_path(&symlink_path)
             )
         })?;
@@ -182,7 +182,7 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         #!/bin/sh
         export ASDF_DATA_DIR={data_dir}
         export PATH="{fake_asdf_dir}:$PATH"
-        rtx x -- {target} "$@"
+        mise x -- {target} "$@"
         "#,
         data_dir = dirs::DATA.display(),
         fake_asdf_dir = fake_asdf::setup()?.display(),
@@ -211,7 +211,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
         let mut msg = format!("No version is set for shim: {}\n", bin_name);
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
-            msg.push_str(&format!("rtx use -g {}@{}\n", tv.plugin_name, tv.version));
+            msg.push_str(&format!("mise use -g {}@{}\n", tv.plugin_name, tv.version));
         }
         Err(eyre!(msg.trim().to_string()))
     } else {
@@ -223,7 +223,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
         for t in missing_tools.drain(..) {
             msg.push_str(&format!("Missing tool version: {}\n", t));
         }
-        msg.push_str("Install all missing tools with: rtx install\n");
+        msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
 }

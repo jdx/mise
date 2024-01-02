@@ -9,7 +9,7 @@ use crate::ui::table;
 /// Shows the aliases that can be specified.
 /// These can come from user config or from plugins in `bin/list-aliases`.
 ///
-/// For user config, aliases are defined like the following in `~/.config/rtx/config.toml`:
+/// For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
 ///   [alias.node]
 ///   lts = "20.0.0"
@@ -45,7 +45,7 @@ impl AliasLs {
             .collect::<Vec<_>>();
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
-        rtxprintln!("{table}");
+        miseprintln!("{table}");
         Ok(())
     }
 }
@@ -59,7 +59,7 @@ struct Row {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx aliases</bold>
+  $ <bold>mise aliases</bold>
   node    lts-hydrogen   20.0.0
 "#
 );

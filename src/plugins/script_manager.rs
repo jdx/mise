@@ -74,22 +74,22 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
         .map(|(k, v)| (k.into(), v.into()))
         .collect();
     if settings.trace {
-        env.insert("RTX_TRACE".into(), "1".into());
+        env.insert("MISE_TRACE".into(), "1".into());
     }
     if settings.debug {
-        env.insert("RTX_DEBUG".into(), "1".into());
-        env.insert("RTX_VERBOSE".into(), "1".into());
+        env.insert("MISE_DEBUG".into(), "1".into());
+        env.insert("MISE_VERBOSE".into(), "1".into());
     }
     env.extend(
         (indexmap! {
             "ASDF_CONCURRENCY" => num_cpus::get().to_string(),
             "PATH" => get_path_with_fake_asdf(),
-            "RTX_BIN" => env::RTX_BIN.to_string_lossy().to_string(),
-            "RTX_CACHE_DIR" => env::RTX_CACHE_DIR.to_string_lossy().to_string(),
-            "RTX_CONCURRENCY" => num_cpus::get().to_string(),
-            "RTX_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
-            "RTX_LOG_LEVEL" => settings.log_level.to_string(),
-            "__RTX_SCRIPT" => "1".to_string(),
+            "MISE_BIN" => env::MISE_BIN.to_string_lossy().to_string(),
+            "MISE_CACHE_DIR" => env::MISE_CACHE_DIR.to_string_lossy().to_string(),
+            "MISE_CONCURRENCY" => num_cpus::get().to_string(),
+            "MISE_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
+            "MISE_LOG_LEVEL" => settings.log_level.to_string(),
+            "__MISE_SCRIPT" => "1".to_string(),
         })
         .into_iter()
         .map(|(k, v)| (k.into(), v.into())),
@@ -100,9 +100,9 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
 impl ScriptManager {
     pub fn new(plugin_path: PathBuf) -> Self {
         let mut env = INITIAL_ENV.clone();
-        if let Some(failure) = env::var_os("RTX_FAILURE") {
+        if let Some(failure) = env::var_os("MISE_FAILURE") {
             // used for testing failure cases
-            env.insert("RTX_FAILURE".into(), failure);
+            env.insert("MISE_FAILURE".into(), failure);
         }
         Self {
             plugin_name: basename(&plugin_path).expect("invalid plugin path"),

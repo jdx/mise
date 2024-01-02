@@ -72,7 +72,7 @@ impl CorePlugin {
         Self {
             name,
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE),
+                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             cache_path,
         }
     }
@@ -88,11 +88,11 @@ impl CorePlugin {
         F: FnOnce() -> Result<T> + Send,
         T: Send,
     {
-        run_with_timeout(f, *env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT)
+        run_with_timeout(f, *env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT)
     }
 
-    pub fn fetch_remote_versions_from_rtx(&self) -> Result<Option<Vec<String>>> {
-        if !*env::RTX_USE_VERSIONS_HOST {
+    pub fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {
+        if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
         let versions = HTTP_FETCH

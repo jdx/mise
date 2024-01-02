@@ -21,7 +21,7 @@ pub struct Asdf {
 impl Asdf {
     pub fn run(mut self) -> Result<()> {
         let config = Config::try_get()?;
-        let mut args = vec![String::from("rtx")];
+        let mut args = vec![String::from("mise")];
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
@@ -57,16 +57,16 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
     if let Some(plugin) = plugin {
         versions.retain(|(_, v)| v.plugin_name.as_str() == plugin);
         for (_, version) in versions {
-            rtxprintln!("{}", version.version);
+            miseprintln!("{}", version.version);
         }
     } else {
         for (plugin, versions) in &versions
             .into_iter()
             .group_by(|(_, v)| v.plugin_name.to_string())
         {
-            rtxprintln!("{}", plugin);
+            miseprintln!("{}", plugin);
             for (_, tv) in versions {
-                rtxprintln!("  {}", tv.version);
+                miseprintln!("  {}", tv.version);
             }
         }
     }

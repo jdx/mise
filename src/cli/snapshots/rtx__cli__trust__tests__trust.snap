@@ -1,5 +1,0 @@
----
-source: src/cli/trust.rs
-expression: output
----
-rtx trusted ~/cwd/.test-tool-versions

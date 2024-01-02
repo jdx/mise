@@ -308,13 +308,16 @@ impl Toolset {
             .collect::<Vec<(String, String)>>();
         let add_paths = entries
             .iter()
+            .filter(|(k, _)| k == "MISE_ADD_PATH")
             .filter(|(k, _)| k == "RTX_ADD_PATH")
             .map(|(_, v)| v)
             .join(":");
         let mut entries: BTreeMap<String, String> = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
+            .filter(|(k, _)| k != "MISE_ADD_PATH")
             .filter(|(k, _)| !k.starts_with("RTX_TOOL_OPTS__"))
+            .filter(|(k, _)| !k.starts_with("MISE_TOOL_OPTS__"))
             .rev()
             .collect();
         if !add_paths.is_empty() {

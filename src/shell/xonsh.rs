@@ -40,7 +40,7 @@ impl Shell for Xonsh {
         let exe = exe.display();
         let mut out = String::new();
 
-        // todo: xonsh doesn't update the environment that rtx relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
+        // todo: xonsh doesn't update the environment that mise relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
         // with envx.swap(UPDATE_OS_ENVIRON=True): # ← use when ↑ fixed before PATH.add; remove environ
         // meanwhile, save variables twice: in shell env + in os env
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
@@ -129,14 +129,14 @@ mod tests {
     #[test]
     fn test_hook_init() {
         let xonsh = Xonsh::default();
-        let exe = Path::new("/some/dir/rtx");
+        let exe = Path::new("/some/dir/mise");
         insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let xonsh = Xonsh::default();
-        let exe = Path::new("/nix/store/rtx");
+        let exe = Path::new("/nix/store/mise");
         insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
     }
 

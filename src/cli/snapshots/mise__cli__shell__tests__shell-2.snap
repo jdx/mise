@@ -1,0 +1,5 @@
+---
+source: src/cli/shell.rs
+expression: output
+---
+export MISE_TINY_VERSION=1.0.1

@@ -8,7 +8,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 
 /// Sets a tool version for the current shell session
 ///
-/// Only works in a session where rtx is already activated.
+/// Only works in a session where mise is already activated.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
@@ -18,7 +18,7 @@ pub struct Shell {
 
     /// Number of jobs to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
@@ -53,13 +53,13 @@ impl Shell {
         for (p, tv) in ts.list_current_installed_versions() {
             let source = &ts.versions.get(p.name()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("RTX_{}_VERSION", p.name().to_uppercase());
+                let k = format!("MISE_{}_VERSION", p.name().to_uppercase());
                 let op = if self.unset {
                     shell.unset_env(&k)
                 } else {
                     shell.set_env(&k, &tv.version)
                 };
-                rtxprintln!("{op}");
+                miseprintln!("{op}");
             }
         }
 
@@ -70,16 +70,16 @@ impl Shell {
 fn err_inactive() -> Result<()> {
     Err(eyre!(formatdoc!(
         r#"
-                rtx is not activated in this shell session.
+                mise is not activated in this shell session.
                 Please run `{}` first in your shell rc file.
                 "#,
-        style("rtx activate").yellow()
+        style("mise activate").yellow()
     )))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx shell node@20</bold>
+  $ <bold>mise shell node@20</bold>
   $ <bold>node -v</bold>
   v20.0.0
 "#
@@ -93,10 +93,10 @@ mod tests {
     fn test_shell() {
         let err = assert_cli_err!("shell", "tiny@1.0.1");
         assert_display_snapshot!(err);
-        env::set_var("__RTX_DIFF", "");
-        env::set_var("RTX_SHELL", "zsh");
+        env::set_var("__MISE_DIFF", "");
+        env::set_var("MISE_SHELL", "zsh");
         assert_cli_snapshot!("shell", "tiny@1.0.1");
-        env::remove_var("__RTX_DIFF");
-        env::remove_var("RTX_SHELL");
+        env::remove_var("__MISE_DIFF");
+        env::remove_var("MISE_SHELL");
     }
 }

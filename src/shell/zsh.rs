@@ -19,10 +19,10 @@ impl Shell for Zsh {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"
-            export RTX_SHELL=zsh
-            export __RTX_ORIG_PATH="$PATH"
+            export MISE_SHELL=zsh
+            export __MISE_ORIG_PATH="$PATH"
 
-            rtx() {{
+            mise() {{
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
@@ -43,28 +43,28 @@ impl Shell for Zsh {
               command {exe} "$command" "$@"
             }}
 
-            _rtx_hook() {{
+            _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
             typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_rtx_hook]+1}}" ]]; then
-              precmd_functions=( _rtx_hook ${{precmd_functions[@]}} )
+            if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
+              precmd_functions=( _mise_hook ${{precmd_functions[@]}} )
             fi
             typeset -ag chpwd_functions;
-            if [[ -z "${{chpwd_functions[(r)_rtx_hook]+1}}" ]]; then
-              chpwd_functions=( _rtx_hook ${{chpwd_functions[@]}} )
+            if [[ -z "${{chpwd_functions[(r)_mise_hook]+1}}" ]]; then
+              chpwd_functions=( _mise_hook ${{chpwd_functions[@]}} )
             fi
 
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            if [ -z "${{_rtx_cmd_not_found:-}}" ]; then
-                _rtx_cmd_not_found=1
+            if [ -z "${{_mise_cmd_not_found:-}}" ]; then
+                _mise_cmd_not_found=1
                 test -n "$(declare -f command_not_found_handler)" && eval "${{_/command_not_found_handler/_command_not_found_handler}}"
 
                 function command_not_found_handler() {{
                     if {exe} hook-not-found -s zsh "$1"; then
-                      _rtx_hook
+                      _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handler)" ]; then
                         _command_not_found_handler "$@"
@@ -82,11 +82,11 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_rtx_hook}} )
-        chpwd_functions=( ${{chpwd_functions:#_rtx_hook}} )
-        unset -f _rtx_hook
-        unset -f rtx
-        unset RTX_SHELL
+        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
+        chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
+        unset -f _mise_hook
+        unset -f mise
+        unset MISE_SHELL
         "#}
     }
 
@@ -109,14 +109,14 @@ mod tests {
     #[test]
     fn test_hook_init() {
         let zsh = Zsh::default();
-        let exe = Path::new("/some/dir/rtx");
+        let exe = Path::new("/some/dir/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]
     fn test_hook_init_nix() {
         let zsh = Zsh::default();
-        let exe = Path::new("/nix/store/rtx");
+        let exe = Path::new("/nix/store/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 

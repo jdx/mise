@@ -10,12 +10,12 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a tool version
 ///
-/// This will install a tool version to `~/.local/share/rtx/installs/<PLUGIN>/<VERSION>`
+/// This will install a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
 /// It won't be used simply by being installed, however.
-/// For that, you must set up a `.rtx.toml`/`.tool-version` file manually or with `rtx use`.
-/// Or you can call a tool version explicitly with `rtx exec <TOOL>@<VERSION> -- <COMMAND>`.
+/// For that, you must set up a `.mise.toml`/`.tool-version` file manually or with `mise use`.
+/// Or you can call a tool version explicitly with `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
-/// Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
+/// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
@@ -30,7 +30,7 @@ pub struct Install {
 
     /// Number of jobs to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "RTX_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
@@ -59,7 +59,7 @@ impl Install {
         let tool_versions = self.get_requested_tool_versions(config, &ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
-            warn!("specify a version with `rtx install <PLUGIN>@<VERSION>`");
+            warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
             return Ok(());
         }
         ts.install_versions(config, tool_versions, &mpr, &self.install_opts())
@@ -135,10 +135,10 @@ impl Install {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx install node@20.0.0</bold>  # install specific node version
-  $ <bold>rtx install node@20</bold>      # install fuzzy node version
-  $ <bold>rtx install node</bold>         # install version specified in .tool-versions or .rtx.toml
-  $ <bold>rtx install</bold>                # installs everything specified in .tool-versions or .rtx.toml
+  $ <bold>mise install node@20.0.0</bold>  # install specific node version
+  $ <bold>mise install node@20</bold>      # install fuzzy node version
+  $ <bold>mise install node</bold>         # install version specified in .tool-versions or .mise.toml
+  $ <bold>mise install</bold>                # installs everything specified in .tool-versions or .mise.toml
 "#
 );
 

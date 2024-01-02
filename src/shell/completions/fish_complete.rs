@@ -13,53 +13,53 @@ set -l fssf "__fish_seen_subcommand_from"
 
 {subcommands}
 
-function __rtx_all_plugins
-    if test -z "$__rtx_all_plugins_cache"
-        set -g __rtx_all_plugins_cache (rtx plugins ls --all)
+function __mise_all_plugins
+    if test -z "$__mise_all_plugins_cache"
+        set -g __mise_all_plugins_cache (mise plugins ls --all)
     end
-    for p in $__rtx_all_plugins_cache
+    for p in $__mise_all_plugins_cache
         echo $p
     end
 end
-function __rtx_plugins
-    if test -z "$__rtx_plugins_cache"
-        set -g __rtx_plugins_cache (rtx plugins ls --core --user)
+function __mise_plugins
+    if test -z "$__mise_plugins_cache"
+        set -g __mise_plugins_cache (mise plugins ls --core --user)
     end
-    for p in $__rtx_plugins_cache
+    for p in $__mise_plugins_cache
         echo $p
     end
 end
-function __rtx_tool_versions
-    if test -z "$__rtx_tool_versions_cache"
-        set -g __rtx_tool_versions_cache (rtx plugins --core --user) (rtx ls-remote --all | tac)
+function __mise_tool_versions
+    if test -z "$__mise_tool_versions_cache"
+        set -g __mise_tool_versions_cache (mise plugins --core --user) (mise ls-remote --all | tac)
     end
-    for tv in $__rtx_tool_versions_cache
+    for tv in $__mise_tool_versions_cache
         echo $tv
     end
 end
-function __rtx_installed_tool_versions
-    for tv in (rtx ls --installed | awk '{{print $1 "@" $2}}')
+function __mise_installed_tool_versions
+    for tv in (mise ls --installed | awk '{{print $1 "@" $2}}')
         echo $tv
     end
 end
-function __rtx_aliases
-    if test -z "$__rtx_aliases_cache"
-        set -g __rtx_aliases_cache (rtx alias ls | awk '{{print $2}}')
+function __mise_aliases
+    if test -z "$__mise_aliases_cache"
+        set -g __mise_aliases_cache (mise alias ls | awk '{{print $2}}')
     end
-    for a in $__rtx_aliases_cache
+    for a in $__mise_aliases_cache
         echo $a
     end
 end
-function __rtx_tasks
-    for tv in (rtx task ls --no-header | awk '{{print $1}}')
+function __mise_tasks
+    for tv in (mise task ls --no-header | awk '{{print $1}}')
         echo $tv
     end
 end
-function __rtx_settings
-    if test -z "$__rtx_settings_cache"
-        set -g __rtx_settings_cache (rtx settings ls | awk '{{print $1}}')
+function __mise_settings
+    if test -z "$__mise_settings_cache"
+        set -g __mise_settings_cache (mise settings ls | awk '{{print $1}}')
     end
-    for s in $__rtx_settings_cache
+    for s in $__mise_settings_cache
         echo $s
     end
 end
@@ -78,7 +78,7 @@ fn render_args(cmds: &[&Command]) -> Vec<String> {
 }
 
 fn render_arg(cmds: &[&Command], a: &Arg) -> String {
-    let mut complete_cmd = r#"complete -kxc rtx"#.to_string();
+    let mut complete_cmd = r#"complete -kxc mise"#.to_string();
     let parents = cmds.iter().skip(1).map(|c| c.get_name()).collect_vec();
     if cmds.len() > 1 {
         let mut p = format!("$fssf {}", &parents[0]);
@@ -117,14 +117,14 @@ fn render_completer(a: &Arg) -> Option<String> {
         ValueHint::FilePath => Some("(__fish_complete_path)".to_string()),
         ValueHint::AnyPath => Some("(__fish_complete_path)".to_string()),
         _ => match a.get_id().as_str() {
-            "tool" => Some("(__rtx_tool_versions)".to_string()),
-            "installed_tool" => Some("(__rtx_installed_tool_versions)".to_string()),
-            "plugin" => Some("(__rtx_plugins)".to_string()),
-            "new_plugin" => Some("(__rtx_all_plugins)".to_string()),
-            "alias" => Some("(__rtx_aliases)".to_string()),
-            "setting" => Some("(__rtx_settings)".to_string()),
-            "task" => Some("(__rtx_tasks)".to_string()),
-            //"prefix" => Some("(__rtx_prefixes)".to_string()),
+            "tool" => Some("(__mise_tool_versions)".to_string()),
+            "installed_tool" => Some("(__mise_installed_tool_versions)".to_string()),
+            "plugin" => Some("(__mise_plugins)".to_string()),
+            "new_plugin" => Some("(__mise_all_plugins)".to_string()),
+            "alias" => Some("(__mise_aliases)".to_string()),
+            "setting" => Some("(__mise_settings)".to_string()),
+            "task" => Some("(__mise_tasks)".to_string()),
+            //"prefix" => Some("(__mise_prefixes)".to_string()),
             _ => None,
         },
     }
@@ -149,13 +149,13 @@ fn render_subcommands(cmds: &[&Command]) -> Vec<String> {
         let name = cmd.get_name();
         let help = about_to_help(cmd.get_about());
         if parents.is_empty() {
-            format!(r#"complete -xc rtx -n "not $fssf $others" -a {name} -d '{help}'"#)
+            format!(r#"complete -xc mise -n "not $fssf $others" -a {name} -d '{help}'"#)
         } else {
             let mut p = format!("$fssf {}", &parents[0]);
             for parent in &parents[1..] {
                 p.push_str(&format!("; and $fssf {}", parent));
             }
-            format!(r#"complete -xc rtx -n "{p}; and not $fssf $others" -a {name} -d '{help}'"#)
+            format!(r#"complete -xc mise -n "{p}; and not $fssf $others" -a {name} -d '{help}'"#)
         }
     });
 
@@ -165,7 +165,7 @@ fn render_subcommands(cmds: &[&Command]) -> Vec<String> {
         render_subcommands(&cmds)
     });
 
-    let mut out = vec![format! {"# {}", if full_name.is_empty() { "rtx" } else { &full_name }}];
+    let mut out = vec![format! {"# {}", if full_name.is_empty() { "mise" } else { &full_name }}];
     out.extend(args);
     if !subcommands.is_empty() {
         out.push(format! {"set -l others {command_names}"});

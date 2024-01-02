@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn test_find_up() {
         let path = &env::current_dir().unwrap();
-        let filenames = vec![".rtxrc", ".rtxrc.toml", ".test-tool-versions"]
+        let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()
             .map(|s| s.to_string())
             .collect_vec();

@@ -1,0 +1,5 @@
+---
+source: src/cli/outdated.rs
+expression: output
+---
+mise All tools are up to date

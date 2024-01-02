@@ -2,5 +2,5 @@
 set -e
 
 cd
-rm -rf ~/myproj/.* ~/.rtx/installs ~/.config/rtx
-PATH="$HOME/.cargo/bin:$PATH" vhs <~/src/rtx/docs/demo.tape
+rm -rf ~/myproj/.* ~/.mise/installs ~/.config/mise
+PATH="$HOME/.cargo/bin:$PATH" vhs <~/src/mise/docs/demo.tape

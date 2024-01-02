@@ -23,7 +23,7 @@ impl RenderMangen {
 
         let out_dir = project_root().join("man").join("man1");
         fs::create_dir_all(&out_dir)?;
-        fs::write(out_dir.join("rtx.1"), buffer)?;
+        fs::write(out_dir.join("mise.1"), buffer)?;
 
         Ok(())
     }
@@ -45,8 +45,8 @@ mod tests {
     #[test]
     fn test_render_mangen() {
         let out_dir = HOME.parent().unwrap().join("man").join("man1");
-        let orig = file::read_to_string(out_dir.join("rtx.1")).unwrap();
+        let orig = file::read_to_string(out_dir.join("mise.1")).unwrap();
         assert_cli!("render-mangen");
-        file::write(out_dir.join("rtx.1"), orig).unwrap();
+        file::write(out_dir.join("mise.1"), orig).unwrap();
     }
 }

@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn test_tool_version_list_failure() {
-        env::set_var("RTX_FAILURE", "1");
+        env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let config = Config::default();
         let plugin_name = "dummy".to_string();
@@ -66,6 +66,6 @@ mod tests {
         ));
         tvl.resolve(&config, true);
         assert_eq!(tvl.versions.len(), 0);
-        env::remove_var("RTX_FAILURE");
+        env::remove_var("MISE_FAILURE");
     }
 }

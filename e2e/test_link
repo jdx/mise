@@ -4,8 +4,8 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-rtx plugins uninstall tiny
-rtx p ln "$ROOT/test/data/plugins/tiny"
-assert_contains "rtx p" "tiny"
-assert_fail "rtx p link $ROOT/test/data/plugins/tiny"
-rtx plugins link -f "$ROOT/test/data/plugins/tiny"
+mise plugins uninstall tiny
+mise p ln "$ROOT/test/data/plugins/tiny"
+assert_contains "mise p" "tiny"
+assert_fail "mise p link $ROOT/test/data/plugins/tiny"
+mise plugins link -f "$ROOT/test/data/plugins/tiny"

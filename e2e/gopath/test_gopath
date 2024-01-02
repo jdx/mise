@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-export RTX_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=1
 
-eval "$(rtx activate bash)"
-_rtx_hook
+eval "$(mise activate bash)"
+_mise_hook
 
 assert_gopath() {
   local expected="$1"
@@ -14,9 +14,9 @@ assert_gopath() {
   fi
 }
 
-rtx i golang@1.18.10 golang@1.19.5 && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"
-cd 18 && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/go/1.18.10/packages"
-cd .. && _rtx_hook
-assert_gopath "$RTX_DATA_DIR/installs/go/1.19.5/packages"
+mise i golang@1.18.10 golang@1.19.5 && _mise_hook
+assert_gopath "$MISE_DATA_DIR/installs/go/1.19.5/packages"
+cd 18 && _mise_hook
+assert_gopath "$MISE_DATA_DIR/installs/go/1.18.10/packages"
+cd .. && _mise_hook
+assert_gopath "$MISE_DATA_DIR/installs/go/1.19.5/packages"

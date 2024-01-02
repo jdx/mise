@@ -1,5 +1,0 @@
----
-source: src/config/config_file/rtx_toml.rs
-expression: cf
----
-/tmp/.rtx.toml: node@16.0.1 node@18.0.1

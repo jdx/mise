@@ -4,14 +4,14 @@ set -e
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/../assert.sh"
 
-export RTX_EXPERIMENTAL=1
-export RTX_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
-export RTX_RUBY_INSTALL=1
+export MISE_EXPERIMENTAL=1
+export MISE_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
+export MISE_RUBY_INSTALL=1
 
 echo "ruby-3.2.1" > .ruby-version
 
 # disable this slow test for now
-#rtx i ruby
-#assert_contains "rtx x -- ruby --version" "ruby 3.2.1"
+#mise i ruby
+#assert_contains "mise x -- ruby --version" "ruby 3.2.1"
 
 rm .ruby-version

@@ -12,7 +12,7 @@ pub enum Error {
     VersionNotInstalled(PluginName, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
-    #[error("Config file is not trusted.\nTrust it with `rtx trust`.")]
+    #[error("Config file is not trusted.\nTrust it with `mise trust`.")]
     UntrustedConfig(),
 }
 

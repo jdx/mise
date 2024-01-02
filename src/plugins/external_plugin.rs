@@ -16,7 +16,7 @@ use rayon::prelude::*;
 use crate::cache::CacheManager;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
-use crate::env::RTX_FETCH_REMOTE_VERSIONS_TIMEOUT;
+use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
@@ -25,7 +25,7 @@ use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
-use crate::plugins::rtx_plugin_toml::RtxPluginToml;
+use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
@@ -35,12 +35,12 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{dirs, env, file, http};
 
-/// This represents a plugin installed to ~/.local/share/rtx/plugins
+/// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct ExternalPlugin {
     pub name: PluginName,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
-    pub toml: RtxPluginToml,
+    pub toml: MisePluginToml,
     cache_path: PathBuf,
     downloads_path: PathBuf,
     installs_path: PathBuf,
@@ -56,19 +56,19 @@ impl ExternalPlugin {
     pub fn new(name: PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let cache_path = dirs::CACHE.join(&name);
-        let toml_path = plugin_path.join("rtx.plugin.toml");
-        let toml = RtxPluginToml::from_file(&toml_path).unwrap();
+        let toml_path = plugin_path.join("mise.plugin.toml");
+        let toml = MisePluginToml::from_file(&toml_path).unwrap();
         Self {
             script_man: build_script_man(&name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(&name),
             installs_path: dirs::INSTALLS.join(&name),
             cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE)
+                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-all")),
             latest_stable_cache: CacheManager::new(cache_path.join("latest_stable.msgpack.z"))
-                .with_fresh_duration(*env::RTX_FETCH_REMOTE_VERSIONS_CACHE)
+                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/latest-stable")),
             alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))
@@ -130,7 +130,7 @@ impl ExternalPlugin {
     }
 
     fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
-        if !*env::RTX_USE_VERSIONS_HOST {
+        if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
         // ensure that we're using a default shorthand plugin
@@ -175,7 +175,7 @@ impl ExternalPlugin {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
                 Ok(result)
             },
-            *RTX_FETCH_REMOTE_VERSIONS_TIMEOUT,
+            *MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);
@@ -324,10 +324,13 @@ impl ExternalPlugin {
         for (key, value) in &tv.opts {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
+            let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
+            sm = sm.with_env(k, value.clone());
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();
-            sm = sm.with_env("RTX_PROJECT_ROOT", project_root);
+            sm = sm.with_env("RTX_PROJECT_ROOT", project_root.clone());
+            sm = sm.with_env("MISE_PROJECT_ROOT", project_root);
         }
         let install_type = match &tv.request {
             ToolVersionRequest::Version(_, _) | ToolVersionRequest::Prefix(_, _) => "version",
@@ -342,21 +345,25 @@ impl ExternalPlugin {
             ToolVersionRequest::Ref(_, v) => v, // should not have "ref:" prefix
             _ => &tv.version,
         };
-        // add env vars from .rtx.toml files
+        // add env vars from .mise.toml files
         for (key, value) in &config.env {
             sm = sm.with_env(key, value.clone());
         }
         let install = tv.install_path().to_string_lossy().to_string();
         let download = tv.download_path().to_string_lossy().to_string();
         sm = sm
-            .with_env("RTX_INSTALL_PATH", &install)
-            .with_env("ASDF_INSTALL_PATH", install)
-            .with_env("RTX_DOWNLOAD_PATH", &download)
-            .with_env("ASDF_DOWNLOAD_PATH", download)
-            .with_env("RTX_INSTALL_TYPE", install_type)
+            .with_env("ASDF_DOWNLOAD_PATH", &download)
+            .with_env("ASDF_INSTALL_PATH", &install)
             .with_env("ASDF_INSTALL_TYPE", install_type)
+            .with_env("ASDF_INSTALL_VERSION", install_version)
+            .with_env("RTX_DOWNLOAD_PATH", &download)
+            .with_env("RTX_INSTALL_PATH", &install)
+            .with_env("RTX_INSTALL_TYPE", install_type)
             .with_env("RTX_INSTALL_VERSION", install_version)
-            .with_env("ASDF_INSTALL_VERSION", install_version);
+            .with_env("MISE_DOWNLOAD_PATH", download)
+            .with_env("MISE_INSTALL_PATH", install)
+            .with_env("MISE_INSTALL_TYPE", install_type)
+            .with_env("MISE_INSTALL_VERSION", install_version);
         sm
     }
 
@@ -371,10 +378,14 @@ impl ExternalPlugin {
 }
 
 fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
+    let plugin_path_s = plugin_path.to_string_lossy().to_string();
     ScriptManager::new(plugin_path.to_path_buf())
+        .with_env("RTX_PLUGIN_PATH", &plugin_path_s)
         .with_env("RTX_PLUGIN_NAME", name.to_string())
-        .with_env("RTX_PLUGIN_PATH", plugin_path.to_string_lossy().to_string())
         .with_env("RTX_SHIMS_DIR", &*dirs::SHIMS)
+        .with_env("MISE_PLUGIN_NAME", name.to_string())
+        .with_env("MISE_PLUGIN_PATH", plugin_path)
+        .with_env("MISE_SHIMS_DIR", &*dirs::SHIMS)
 }
 
 impl Eq for ExternalPlugin {}
@@ -590,7 +601,7 @@ impl Plugin for ExternalPlugin {
     fn external_commands(&self) -> Result<Vec<Command>> {
         let command_path = self.plugin_path.join("lib/commands");
         if !self.is_installed() || !command_path.exists() || self.name == "direnv" {
-            // asdf-direnv is disabled since it conflicts with rtx's built-in direnv functionality
+            // asdf-direnv is disabled since it conflicts with mise's built-in direnv functionality
             return Ok(vec![]);
         }
         let mut commands = vec![];
@@ -688,7 +699,7 @@ impl Plugin for ExternalPlugin {
         if matches!(tv.request, ToolVersionRequest::System(_)) {
             return Ok(EMPTY_HASH_MAP.clone());
         }
-        if !self.script_man.script_exists(&ExecEnv) || *env::__RTX_SCRIPT {
+        if !self.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {
             // if the script does not exist, or we're already running from within a script,
             // the second is to prevent infinite loops
             return Ok(EMPTY_HASH_MAP.clone());

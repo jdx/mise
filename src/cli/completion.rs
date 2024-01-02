@@ -19,11 +19,11 @@ pub struct Completion {
 impl Completion {
     pub fn run(self) -> Result<()> {
         let c = match self.shell.or(self.shell_type).unwrap() {
-            Shell::Bash => include_str!("../../completions/rtx.bash"),
-            Shell::Fish => include_str!("../../completions/rtx.fish"),
-            Shell::Zsh => include_str!("../../completions/_rtx"),
+            Shell::Bash => include_str!("../../completions/mise.bash"),
+            Shell::Fish => include_str!("../../completions/mise.fish"),
+            Shell::Zsh => include_str!("../../completions/_mise"),
         };
-        rtxprintln!("{}", c.trim());
+        miseprintln!("{}", c.trim());
 
         Ok(())
     }
@@ -31,9 +31,9 @@ impl Completion {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx completion bash > /etc/bash_completion.d/rtx</bold>
-  $ <bold>rtx completion zsh  > /usr/local/share/zsh/site-functions/_rtx</bold>
-  $ <bold>rtx completion fish > ~/.config/fish/completions/rtx.fish</bold>
+  $ <bold>mise completion bash > /etc/bash_completion.d/mise</bold>
+  $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
+  $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
 "#
 );
 

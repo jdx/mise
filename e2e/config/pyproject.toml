@@ -2,7 +2,7 @@
 name = "poetry-test"
 version = "0.1.0"
 description = ""
-authors = ["rtx"]
+authors = ["mise"]
 packages = [{include = "poetry_demo"}]
 
 [tool.poetry.dependencies]

@@ -66,6 +66,6 @@ impl PluginsUninstall {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>rtx uninstall node</bold>
+  $ <bold>mise uninstall node</bold>
 "#
 );

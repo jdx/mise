@@ -5,21 +5,21 @@ set -gx PATH $ROOT/target/debug:$PATH
 set -l orig_node (node -v)
 
 #set -l fish_trace 1
-rtx install node@20.0.0 node@18.0.0; or exit
+mise install node@20.0.0 node@18.0.0; or exit
 
-rtx activate --status fish | source
-__rtx_env_eval
+mise activate --status fish | source
+__mise_env_eval
 
 test (node -v) = "v20.0.0"; or exit
 
-cd 18 && __rtx_env_eval
+cd 18 && __mise_env_eval
 test (node -v) = "v18.0.0"; or exit
 
-cd .. && __rtx_env_eval
+cd .. && __mise_env_eval
 test (node -v) = "v20.0.0"; or exit
 
-rtx shell node@18.0.0 && __rtx_env_eval
+mise shell node@18.0.0 && __mise_env_eval
 test (node -v) = "v18.0.0"; or exit
 
-rtx deactivate
+mise deactivate
 test (node -v) = $orig_node; or exit

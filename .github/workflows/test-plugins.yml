@@ -28,7 +28,7 @@ jobs:
         with:
           shared-key: "build-linux-x86_64-unknown-linux-gnu"
           save-if: false
-      - run: scripts/build-tarball.sh rtx --release --target x86_64-unknown-linux-gnu
+      - run: scripts/build-tarball.sh mise --release --target x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -46,50 +46,50 @@ jobs:
       matrix:
         include:
           - plugin: node
-            command: rtx exec node@latest -- node -v
+            command: mise exec node@latest -- node -v
           - plugin: ruby
-            command: rtx exec ruby@latest -- ruby --version
+            command: mise exec ruby@latest -- ruby --version
           - plugin: python
-            command: rtx exec python@latest -- python -V
+            command: mise exec python@latest -- python -V
           - plugin: direnv
-            command: rtx exec direnv@latest -- direnv --version
+            command: mise exec direnv@latest -- direnv --version
           - plugin: erlang
-            command: rtx exec erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+            command: mise exec erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
             command: |
-              rtx use --global erlang@24.3.4.9
-              eval "$(rtx env bash)"
-              rtx use --global elixir@main-otp-24
-              eval "$(rtx env bash)"
-              rtx exec -- elixir --version
+              mise use --global erlang@24.3.4.9
+              eval "$(mise env bash)"
+              mise use --global elixir@main-otp-24
+              eval "$(mise env bash)"
+              mise exec -- elixir --version
           - plugin: golang
-            command: rtx exec golang@latest -- go version
+            command: mise exec golang@latest -- go version
           - plugin: java
-            command: rtx exec java@openjdk -- java -version
+            command: mise exec java@openjdk -- java -version
           - plugin: terraform
-            command: rtx exec terraform@latest -- terraform -v
+            command: mise exec terraform@latest -- terraform -v
           # - plugin: yarn
-          #   command: rtx exec yarn@latest -- yarn --version
+          #   command: mise exec yarn@latest -- yarn --version
           - plugin: deno
-            command: rtx exec deno@latest -- deno --version
+            command: mise exec deno@latest -- deno --version
           - plugin: bun
-            command: rtx exec bun@latest -- bun --version
+            command: mise exec bun@latest -- bun --version
           - plugin: kubectl
-            command: rtx exec kubectl@latest -- kubectl version --client
+            command: mise exec kubectl@latest -- kubectl version --client
           - plugin: dotnet
-            command: rtx exec dotnet@latest -- dotnet --list-sdks
+            command: mise exec dotnet@latest -- dotnet --list-sdks
           - plugin: flutter
-            command: rtx exec flutter@latest -- flutter --version
+            command: mise exec flutter@latest -- flutter --version
           - plugin: crystal
-            command: rtx exec crystal@latest -- crystal -v
+            command: mise exec crystal@latest -- crystal -v
           - plugin: neovim
-            command: rtx exec neovim@latest -- nvim --version
+            command: mise exec neovim@latest -- nvim --version
           - plugin: php
-            command: rtx exec php@latest -- php -v php
+            command: mise exec php@latest -- php -v php
           - plugin: rust
-            command: rtx exec rust@nightly -- rustc -V
+            command: mise exec rust@nightly -- rustc -V
           - plugin: postgres
-            command: rtx exec postgres@latest -- psql -V
+            command: mise exec postgres@latest -- psql -V
     steps:
       - name: apt-get
         run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev libwxgtk-webview3.0-gtk3-dev
@@ -97,11 +97,11 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-          # dist/rtx-v1.16.0-linux-x64.tar.xz
+          # dist/mise-v1.16.0-linux-x64.tar.xz
           # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
-      - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
-      - run: rtx -v
+      - run: tar -C "$HOME" -xvJf dist/mise-*-linux-x64.tar.xz
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: mise -v
       - name: ${{matrix.command}}
         uses: nick-fields/retry@v2
         with:
@@ -110,11 +110,11 @@ jobs:
           retry_wait_seconds: 30
           command: ${{matrix.command}}
         env:
-          RTX_EXPERIMENTAL: "1"
+          MISE_EXPERIMENTAL: "1"
   test-install:
     # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
     # installing is a better-than-nothing smoke test that the plugin is correctly implemented
-    # and behaves as expected with rtx.
+    # and behaves as expected with mise.
     runs-on: ubuntu-22.04
     needs: [build-linux]
     env:
@@ -150,7 +150,7 @@ jobs:
           - awscli
           - dart
           - conan
-          # TODO: - awsebcli fails in asdf and rtx the same way
+          # TODO: - awsebcli fails in asdf and mise the same way
           - aws-sam-cli
           - ansible-base
           - kotlin
@@ -179,12 +179,12 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - run: tar -C "$HOME" -xvJf dist/rtx-*-linux-x64.tar.xz
-      - run: echo "$HOME/rtx/bin" >> "$GITHUB_PATH"
-      - name: rtx install ${{matrix.plugins}}@latest
+      - run: tar -C "$HOME" -xvJf dist/mise-*-linux-x64.tar.xz
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - name: mise install ${{matrix.plugins}}@latest
         uses: nick-fields/retry@v2
         with:
           timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 30
-          command: rtx install ${{matrix.plugins}}@latest
+          command: mise install ${{matrix.plugins}}@latest

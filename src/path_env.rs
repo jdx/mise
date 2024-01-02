@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 pub struct PathEnv {
     pre: Vec<PathBuf>,
-    rtx: Vec<PathBuf>,
+    mise: Vec<PathBuf>,
     post: Vec<PathBuf>,
     seen_shims: bool,
 }
@@ -17,18 +17,18 @@ impl PathEnv {
     pub fn new() -> Self {
         Self {
             pre: Vec::new(),
-            rtx: Vec::new(),
+            mise: Vec::new(),
             post: Vec::new(),
             seen_shims: false,
         }
     }
 
     pub fn add(&mut self, path: PathBuf) {
-        self.rtx.push(path);
+        self.mise.push(path);
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
-        let mut paths = self.pre.iter().chain(self.rtx.iter()).collect_vec();
+        let mut paths = self.pre.iter().chain(self.mise.iter()).collect_vec();
         if self.seen_shims {
             paths.push(&dirs::SHIMS);
         }
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn test_path_env_no_rtx() {
+    fn test_path_env_no_mise() {
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",

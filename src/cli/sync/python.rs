@@ -8,9 +8,9 @@ use crate::file;
 
 use crate::plugins::PluginName;
 
-/// Symlinks all tool versions from an external tool into rtx
+/// Symlinks all tool versions from an external tool into mise
 ///
-/// For example, use this to import all pyenv installs into rtx
+/// For example, use this to import all pyenv installs into mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncPython {
@@ -35,7 +35,7 @@ impl SyncPython {
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
         for v in sorted(subdirs) {
             python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
-            rtxprintln!("Synced python@{} from pyenv", v);
+            miseprintln!("Synced python@{} from pyenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -45,8 +45,8 @@ impl SyncPython {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>pyenv install 3.11.0</bold>
-  $ <bold>rtx sync python --pyenv</bold>
-  $ <bold>rtx use -g python@3.11.0</bold> - uses pyenv-provided python
+  $ <bold>mise sync python --pyenv</bold>
+  $ <bold>mise use -g python@3.11.0</bold> - uses pyenv-provided python
 "#
 );
 

@@ -10,7 +10,7 @@ assert() {
 	fi
 }
 
-assert "rtx x node@20.0.0 --log-level debug -- node -v" "v20.0.0"
-assert "rtx x node@20.0.0 --log-level=debug -- node -v" "v20.0.0"
-assert "rtx x node@20.0.0 --debug -- node -v" "v20.0.0"
-assert "rtx x node@20.0.0 --trace -- node -v" "v20.0.0"
+assert "mise x node@20.0.0 --log-level debug -- node -v" "v20.0.0"
+assert "mise x node@20.0.0 --log-level=debug -- node -v" "v20.0.0"
+assert "mise x node@20.0.0 --debug -- node -v" "v20.0.0"
+assert "mise x node@20.0.0 --trace -- node -v" "v20.0.0"

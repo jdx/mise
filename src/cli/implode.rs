@@ -8,7 +8,7 @@ use crate::file::remove_all;
 use crate::ui::prompt;
 use crate::{dirs, env, file};
 
-/// Removes rtx CLI and all related data
+/// Removes mise CLI and all related data
 ///
 /// Skips config directory by default.
 #[derive(Debug, clap::Args)]
@@ -25,13 +25,13 @@ pub struct Implode {
 
 impl Implode {
     pub fn run(self) -> Result<()> {
-        let mut files = vec![*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::RTX_BIN];
+        let mut files = vec![*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN];
         if self.config {
             files.push(&dirs::CONFIG);
         }
         for f in files.into_iter().filter(|d| d.exists()) {
             if self.dry_run {
-                rtxprintln!("rm -rf {}", f.display());
+                miseprintln!("rm -rf {}", f.display());
             }
 
             if self.confirm_remove(f)? {

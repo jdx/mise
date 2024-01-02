@@ -1,13 +1,13 @@
 # Security Policy
 
-rtx is a convenient tool to manage developer tools, however its model is also open to potential risks. The following
-are major areas of rtx and the security considerations currently being made and what needs to be made in the future.
+mise is a convenient tool to manage developer tools, however its model is also open to potential risks. The following
+are major areas of mise and the security considerations currently being made and what needs to be made in the future.
 
-Please open a ticket or send me an email if you have thoughts on how rtx can be made more secure.
+Please open a ticket or send me an email if you have thoughts on how mise can be made more secure.
 
 ## Core CLI Security
 
-Development of the "core CLI" is done on jdx/rtx which only a single developer (me, @jdx) has access to.
+Development of the "core CLI" is done on jdx/mise which only a single developer (me, @jdx) has access to.
 Other contributors may only submit contributions via public Pull Requests. Reducing the number
 of developers with access down to 1 minimizes the chance of keys being leaked.
 
@@ -18,43 +18,43 @@ that can take over my account if need be.
 The dependencies in the core CLI are a security vector. I've tried to be judicious about what dependencies make it into
 the project. I only select dependencies with broad usage across the Rust community where possible.
 I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
-rtx more secure.
+mise more secure.
 
-## rtx.jdx.dev
+## mise.jdx.dev
 
-rtx.jdx.dev is the asset host for rtx. It's used to host precompiled rtx CLI binaries, and hosts a "[VERSION](https://rtx.jdx.dev/VERSION)"
-which rtx uses to occasionally check for a new version being released. Everything hosted there uses a single
+mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.jdx.dev/VERSION)"
+which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 
-## rtx plugins
+## mise plugins
 
 Plugins are by far the biggest source of potential problems and where the most work still needs to be made.
 
 There are 3 types of plugins:
 
-- [core](https://github.com/jdx/rtx/issues/236) - plugins that are hardcoded into the CLI.
+- [core](https://github.com/jdx/mise/issues/236) - plugins that are hardcoded into the CLI.
   These are official plugins for the most common languages written in Rust.
 - community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. [See below](#rtx-plugins-github-org) for details.
 - external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
-  secure than installing any random tool from the internet. These receive a warning dialog when installed in rtx.
+  secure than installing any random tool from the internet. These receive a warning dialog when installed in mise.
 
-Just because a plugin is inside of the shorthand registry (so you can run `rtx install foo@`, does not mean
+Just because a plugin is inside of the shorthand registry (so you can run `mise install foo@`, does not mean
 I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the rtx-plugins
-GitHub org, you can have more trust in it. (See the owners with `rtx plugins ls-remote --urls`).
+GitHub org, you can have more trust in it. (See the owners with `mise plugins ls-remote --urls`).
 
-Over time we should be able to move more plugins into being fully maintained by rtx. I plan to add an
-`RTX_PARANOID=1` env var that, when set, will make changes to make rtx behave as securely as possible
+Over time we should be able to move more plugins into being fully maintained by mise. I plan to add an
+`MISE_PARANOID=1` env var that, when set, will make changes to make mise behave as securely as possible
 (e.g.: only using core/rtx-plugins plugins, only allowing plugins that use GPG verification of assets).
 
 ## [rtx-plugins](https://github.com/rtx-plugins) GitHub org
 
 This is similar to <https://github.com/asdf-community> but with the advantage of being more secure by keeping the
 contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
-organization will not receive a confirmation warning dialog when installed with rtx as they've been vetted by a
+organization will not receive a confirmation warning dialog when installed with mise as they've been vetted by a
 trusted source.
 
 If you're a plugin maintainer that would like to move your repo to this org [please let me know](https://github.com/orgs/rtx-plugins/discussions).
-Plugins can either retain compatibility with asdf or use rtx specific functionality—that's up to you. asdf-compatible plugins should use "asdf-" as the prefix and "rtx-" prefixed-plugins denote rtx-only compatibility.
+Plugins can either retain compatibility with asdf or use mise specific functionality—that's up to you. asdf-compatible plugins should use "asdf-" as the prefix and "mise-" prefixed-plugins denote mise-only compatibility.
 
 ## Supported Versions
 
@@ -62,7 +62,7 @@ The only supported version is the most recent one.
 
 ## Reporting a Vulnerability
 
-Send an email to security@<RTX_JDX_DOMAIN_IN_README>
+Send an email to security@<MISE_JDX_DOMAIN_IN_README>
 
 If you want, you may encrypt the message with GPG:
 

@@ -9,7 +9,7 @@ get_latest_stable() {
 
 get_latest_stable "$1"
 
-if [ "$RTX_FAILURE" = "1" ]; then
-  echo "error: RTX_FAILURE set" >&2
+if [ "$MISE_FAILURE" = "1" ]; then
+  echo "error: MISE_FAILURE set" >&2
   exit 1
 fi

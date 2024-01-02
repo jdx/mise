@@ -15,10 +15,10 @@ Steps to reproduce the behavior.
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**`rtx doctor` output**
+**`mise doctor` output**
 
 ```text
-REPLACE WITH OUTPUT OF `rtx doctor`
+REPLACE WITH OUTPUT OF `mise doctor`
 ```
 
 **Additional context**

@@ -5,17 +5,17 @@ PRs are often either rejected or need to change significantly after submission s
 
 ## Development Container
 
-The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use a [GitHub Codespace](https://docs.github.com/codespaces), VSCode's remote container feature or a standalone container to develop rtx. To use it, you'll need to have Docker Desktop installed and running.
+The directory `.devcontainer` contains a Dockerfile that can be used to build a container for local development. This is useful if you want to use a [GitHub Codespace](https://docs.github.com/codespaces), VSCode's remote container feature or a standalone container to develop mise. To use it, you'll need to have Docker Desktop installed and running.
 
 Build and run the container with the following commands:
 
 ```shell
 cd .devcontainer
-docker build  -t local/rtxdevcontainer .
-docker run --rm -it -v "$(pwd)"/../:/workspaces/cached local/rtxdevcontainer
+docker build  -t local/misedevcontainer .
+docker run --rm -it -v "$(pwd)"/../:/workspaces/cached local/misedevcontainer
 ```
 
-To use the container with VSCode, you'll need to install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension. Once installed, you can open the project in a container by opening the Command Palette (F1) and selecting "Remote-Containers: Open Folder in Container...". Select the root of the rtx project and the container will be built and started.
+To use the container with VSCode, you'll need to install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension. Once installed, you can open the project in a container by opening the Command Palette (F1) and selecting "Remote-Containers: Open Folder in Container...". Select the root of the mise project and the container will be built and started.
 
 ## Dependencies
 
@@ -25,7 +25,7 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 - [shfmt](https://github.com/mvdan/sh)
 - [shellcheck](https://www.shellcheck.net/)
 
-(you'd think we'd use rtx to fetch these but frankly it's kind of a pain to dogfood rtx while testing it)
+(you'd think we'd use mise to fetch these but frankly it's kind of a pain to dogfood mise while testing it)
 
 ## Just
 
@@ -33,7 +33,7 @@ Just should be used for just about every task. Here is a full list of its
 tasks:
 
 ```shell
-~/src/rtx ❯ just --list
+~/src/mise ❯ just --list
 Available recipes:
     build *args           # just `cargo build`
     b *args               # alias for `build`
@@ -42,7 +42,7 @@ Available recipes:
     lint                  # clippy, cargo fmt --check, and just --fmt
     lint-fix              # runs linters but makes fixes when possible
     pre-commit            # called by lefthook precommit hook
-    release *args         # create/publish a new version of rtx
+    release *args         # create/publish a new version of mise
     render-completions    # regenerate shell completion files
     render-help           # regenerate README.md
     render-mangen         # regenerate manpages
@@ -61,7 +61,7 @@ Shouldn't require anything special I'm aware of, but `just build` is a good sani
 
 ## Running the CLI
 
-I put a shim for `cargo run` that makes it easy to run build + run rtx in dev mode. It's at `.bin/rtx`. What I do is add this to PATH
+I put a shim for `cargo run` that makes it easy to run build + run mise in dev mode. It's at `.bin/mise`. What I do is add this to PATH
 with direnv. Here is my `.envrc`:
 
 ```shell
@@ -69,9 +69,9 @@ source_up_if_exists
 PATH_add "$(expand_path .bin)"
 ```
 
-Now I can just run `rtx` as if I was using an installed version and it will build it from source every time there are changes.
+Now I can just run `mise` as if I was using an installed version and it will build it from source every time there are changes.
 
-You don't have to do this, but it makes things like `rtx activate` a lot easier to setup.
+You don't have to do this, but it makes things like `mise activate` a lot easier to setup.
 
 ## Running Tests
 
@@ -118,11 +118,11 @@ finch run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://rtx.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=arm64] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list
+wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
 apt update
-apt install -y rtx
-rtx -V
+apt install -y mise
+mise -V
 ```
 
 ### Amazon Linux 2 (yum)
@@ -130,9 +130,9 @@ rtx -V
 ```shell
 finch run -ti --rm amazonlinux
 yum install -y yum-utils
-yum-config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
-yum install -y rtx
-rtx -v
+yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+yum install -y mise
+mise -v
 ```
 
 ### Fedora (dnf)
@@ -140,7 +140,7 @@ rtx -v
 ```shell
 finch run -ti --rm fedora
 dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://rtx.jdx.dev/rpm/rtx.repo
-dnf install -y rtx
-rtx -v
+dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+dnf install -y mise
+mise -v
 ```
