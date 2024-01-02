@@ -97,7 +97,7 @@ terminal_size = "0.3"
 thiserror = "1.0"
 toml = "<1"
 toml_edit = "<1"
-url = "2.4"
+url = "2.5"
 versions = "6"
 which = "5"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
