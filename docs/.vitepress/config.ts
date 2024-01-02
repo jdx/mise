@@ -2,8 +2,8 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "rtx",
-  description: "rtx documentation",
+  title: "mise",
+  description: "mise-en-place documentation",
   lastUpdated: false,
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
@@ -81,17 +81,17 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/jdx/rtx' }
+      { icon: 'github', link: 'https://github.com/jdx/mise' }
     ],
 
     editLink: {
-      pattern: 'https://github.com/jdx/rtx-docs/edit/main/docs/:path',
+      pattern: 'https://github.com/jdx/mise-docs/edit/main/docs/:path',
     },
     search: {
       provider: 'local',
     },
     footer: {
-      message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/rtx/graphs/contributors">friends</a>.',
+      message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/mise/graphs/contributors">friends</a>.',
       copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
     },
   },
