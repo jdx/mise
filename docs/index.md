@@ -5,7 +5,9 @@ title: Home
 
 hero:
   name: "mise-en-place"
-  tagline: "The front-end to your dev env."
+  tagline: |
+      The front-end to your dev env.
+      <span class="formerly"><a href="/rtx">(formerly called "rtx")</a></span>
   actions:
     - theme: brand
       text: Getting Started
@@ -25,3 +27,11 @@ features:
   - title: <a href="/tasks/">Tasks</a> <Badge type="warning" text="experimental" />
     details: mise is a task runner that can replace <a href="https://www.gnu.org/software/make">make</a>, or <a href="https://docs.npmjs.com/cli/v10/using-npm/scripts">npm scripts</a>.
 ---
+
+<style>
+.formerly {
+    font-size: 0.7em;
+    color: #666;
+}
+</style>
+

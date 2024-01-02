@@ -167,12 +167,6 @@ If you need something else, compile it with `cargo install mise-cli` (see below)
 brew install mise
 ```
 
-Alternatively, use the custom tap (which is updated immediately after a release):
-
-```sh
-brew install jdx/tap/mise
-```
-
 ### MacPorts
 
 ```sh
