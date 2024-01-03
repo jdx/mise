@@ -106,15 +106,14 @@ git commit
 
 ## Testing packaging
 
-I test these with finch, but docker should work the same. This is only necessary to test
-if actually changing the packaging setup.
+This is only necessary to test if actually changing the packaging setup.
 
 ### Ubuntu (apt)
 
 This is for arm64, but you can change the arch to amd64 if you want.
 
 ```shell
-finch run -ti --rm ubuntu
+docker run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
@@ -128,7 +127,7 @@ mise -V
 ### Amazon Linux 2 (yum)
 
 ```shell
-finch run -ti --rm amazonlinux
+docker run -ti --rm amazonlinux
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
@@ -138,7 +137,7 @@ mise -v
 ### Fedora (dnf)
 
 ```shell
-finch run -ti --rm fedora
+docker run -ti --rm fedora
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
