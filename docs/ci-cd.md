@@ -12,7 +12,7 @@ jobs:
     steps:
     - run: |
         curl https://mise.jdx.dev/install.sh | sh
-        echo "$HOME/.local/share/mise/bin" >> $GITHUB_PATH
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
 ```
 

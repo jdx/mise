@@ -9,15 +9,15 @@ A common reason for doing this is to support compiling node <=14.
 First, you'll need a copy of mise that's built for x86_64:
 
 ```sh
-$ mkdir -p ~/.local/share/mise/bin
-$ curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/share/mise/bin/mise-x64
-$ chmod +x ~/.local/share/mise/bin/mise-x64
-$ ~/.local/share/mise/bin/mise-x64 --version
+$ mkdir -p ~/.local/bin
+$ curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise-x64
+$ chmod +x ~/.local/bin/mise-x64
+$ ~/.local/bin/mise-x64 --version
 mise 2024.x.x
 ```
 
 ::: warning
-If `~/.local/share/mise/bin` is not in PATH, you'll need to prefix all commands with `~/.local/share/mise/bin/mise-x64`.
+If `~/.local/bin` is not in PATH, you'll need to prefix all commands with `~/.local/bin/mise-x64`.
 :::
 
 Now you can use `mise-x64` to install tools:

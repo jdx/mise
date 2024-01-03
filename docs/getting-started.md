@@ -21,12 +21,12 @@ mise can be installed anywhere.
 
 ```sh
 $ curl https://mise.jdx.dev/install.sh | sh
-$ ~/.local/share/mise/bin/mise --version
+$ ~/.local/bin/mise --version
 mise 2024.x.x
 ```
 
 ::: tip
-"~/.local/share/mise/bin" does not need to be in PATH. mise will automatically add its own directory to PATH when activated.
+"~/.local/bin" does not need to be in PATH. mise will automatically add its own directory to PATH when activated.
 :::
 
 ### 2. Activate mise <Badge type="tip" text="optional" />
@@ -39,13 +39,13 @@ Make sure you restart your shell session after modifying your rc file in order f
 
 ::: code-group
 ```sh [bash]
-echo 'eval "$(~/.local/share/mise/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 ```
 ```sh [zsh]
-echo 'eval "$(~/.local/share/mise/bin/mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 ```sh [fish]
-echo '~/.local/share/mise/bin/mise activate fish | source' >> ~/.config/fish/config.fish
+echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 :::
 
@@ -112,9 +112,7 @@ curl https://mise.jdx.dev/install.sh | sh
 Options:
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
-- `XDG_DATA_HOME=/some/path` – change the data directory (default: `~/.local/share`)
-- `MISE_DATA_DIR=/some/path` – change the mise directory (default: `~/.local/share/mise`)
-- `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/share/mise/bin`)
+- `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 
 If you want to verify the install script hasn't been tampered with:
 
@@ -129,21 +127,20 @@ or if you're allergic to `| sh`:
 
 ::: code-group
 ```sh [macos-arm64]
-curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/share/mise/bin/mise
+curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
 ```
 ```sh [macos-x64]
-curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/share/mise/bin/mise
+curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
 ```
 ```sh [linux-x64]
-curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/share/mise/bin/mise
+curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
 ```
 ```sh [linux-arm64]
-curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/share/mise/bin/mise
+curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
 ```
 :::
 
-It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/share/mise/bin/mise`
-or whatever.
+It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/bin` or whatever.
 
 Supported os/arch:
 

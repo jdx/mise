@@ -33,6 +33,11 @@ If you build infrastructure where users may still be calling `rtx activate` in t
 shell rc scripts, you can create a symlink `ln -s /path/to/mise /path/to/rtx` so
 `rtx activate` still functions.
 
+In [`install.sh`](https://mise.jdx.dev/install.sh), we're using `~/.local/bin/mise`
+as the executable PATH instead of the old directory `~/.local/share/rtx/bin/mise`
+to keep things a bit cleaner. You can still use the old style if you like by setting
+`MISE_INSTALL_PATH`.
+
 Thanks for trying out my little CLI tool by the way. This is a true labor of love for
 me I find incredibly fulfilling to work on and seeing people have success using. I have
 tremendous passion for building dev tools and the ideas in `mise` are the product of
