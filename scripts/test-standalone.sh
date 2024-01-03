@@ -12,8 +12,8 @@ curl -fsSL "https://mise.jdx.dev/$MISE_VERSION/SHASUMS256.txt" >"$RELEASE_DIR/$M
 chmod +x tmp/install.sh
 shellcheck tmp/install.sh
 
-MISE_DATA_DIR="$RELEASE_DIR" ./tmp/install.sh
-if [[ ! "$("$RELEASE_DIR/bin/mise" -v)" =~ ^${MISE_VERSION//v/} ]]; then
+./tmp/install.sh
+if [[ ! "$("$HOME/.local/bin/mise" -v)" =~ ^${MISE_VERSION//v/} ]]; then
   echo "mise version mismatch"
   exit 1
 fi

@@ -33,18 +33,18 @@ Install mise on macOS (other methods [here](https://mise.jdx.dev/getting-started
 
 ```sh-session
 $ curl https://mise.jdx.dev/install.sh | sh
-$ ~/.local/share/mise/bin/mise --version
+$ ~/.local/bin/mise --version
 mise 2024.1.2
 ```
 
 Hook mise into your shell (pick the right one for your shell):
 
 ```sh-session
-# note this assumes mise is located at ~/.local/share/mise/bin/mise
+# note this assumes mise is located at ~/.local/bin/mise
 # which is what install.sh does by default
-echo 'eval "$(~/.local/share/mise/bin/mise activate bash)"' >> ~/.bashrc
-echo 'eval "$(~/.local/share/mise/bin/mise activate zsh)"' >> ~/.zshrc
-echo '~/.local/share/mise/bin/mise activate fish | source' >> ~/.config/fish/config.fish
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 Install a runtime and set it as the global default:
