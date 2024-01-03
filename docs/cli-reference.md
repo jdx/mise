@@ -1,8 +1,8 @@
 <!-- MISE:COMMANDS -->
 
-## Commands
+# Commands
 
-### `mise activate [OPTIONS] [SHELL_TYPE]`
+## `mise activate [OPTIONS] [SHELL_TYPE]`
 
 ```text
 Initializes mise in the current shell session
@@ -46,7 +46,7 @@ Examples:
   $ execx($(mise activate xonsh))
 ```
 
-### `mise alias get <PLUGIN> <ALIAS>`
+## `mise alias get <PLUGIN> <ALIAS>`
 
 ```text
 Show an alias for a plugin
@@ -67,7 +67,7 @@ Examples:
  20.0.0
 ```
 
-### `mise alias ls [OPTIONS] [PLUGIN]`
+## `mise alias ls [OPTIONS] [PLUGIN]`
 
 **Aliases:** `list`
 
@@ -96,7 +96,7 @@ Examples:
   node    lts-hydrogen   20.0.0
 ```
 
-### `mise alias set <PLUGIN> <ALIAS> <VALUE>`
+## `mise alias set <PLUGIN> <ALIAS> <VALUE>`
 
 **Aliases:** `add, create`
 
@@ -121,7 +121,7 @@ Examples:
   $ mise alias set node lts-hydrogen 18.0.0
 ```
 
-### `mise alias unset <PLUGIN> <ALIAS>`
+## `mise alias unset <PLUGIN> <ALIAS>`
 
 **Aliases:** `del, delete, remove, rm`
 
@@ -143,7 +143,7 @@ Examples:
   $ mise alias unset node lts-hydrogen
 ```
 
-### `mise bin-paths`
+## `mise bin-paths`
 
 ```text
 List all the active runtime bin paths
@@ -151,7 +151,7 @@ List all the active runtime bin paths
 Usage: bin-paths
 ```
 
-### `mise cache clear [PLUGIN]...`
+## `mise cache clear [PLUGIN]...`
 
 **Aliases:** `c`
 
@@ -165,7 +165,7 @@ Arguments:
           Plugin(s) to clear cache for e.g.: node, python
 ```
 
-### `mise completion [SHELL]`
+## `mise completion [SHELL]`
 
 ```text
 Generate shell completions
@@ -184,7 +184,7 @@ Examples:
   $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-### `mise config ls [OPTIONS]`
+## `mise config ls [OPTIONS]`
 
 ```text
 [experimental] List config files currently in use
@@ -199,7 +199,7 @@ Examples:
   $ mise config ls
 ```
 
-### `mise config generate [OPTIONS]`
+## `mise config generate [OPTIONS]`
 
 **Aliases:** `g`
 
@@ -217,7 +217,7 @@ Examples:
   $ mise cf generate --output=.mise.toml
 ```
 
-### `mise current [PLUGIN]`
+## `mise current [PLUGIN]`
 
 ```text
 Shows current active and installed runtime versions
@@ -247,7 +247,7 @@ Examples:
   3.11.0 3.10.0
 ```
 
-### `mise deactivate`
+## `mise deactivate`
 
 ```text
 Disable mise for current shell session
@@ -263,7 +263,7 @@ Examples:
   $ execx($(mise deactivate xonsh))
 ```
 
-### `mise direnv activate`
+## `mise direnv activate`
 
 ```text
 Output direnv function to use mise inside direnv
@@ -282,7 +282,7 @@ Examples:
   $ direnv allow
 ```
 
-### `mise doctor`
+## `mise doctor`
 
 ```text
 Check mise installation for possible problems.
@@ -294,7 +294,7 @@ Examples:
   [WARN] plugin node is not installed
 ```
 
-### `mise env [OPTIONS] [TOOL@VERSION]...`
+## `mise env [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `e`
 
@@ -326,7 +326,7 @@ Examples:
   $ execx($(mise env -s xonsh))
 ```
 
-### `mise env-vars [OPTIONS] [ENV_VARS]...`
+## `mise env-vars [OPTIONS] [ENV_VARS]...`
 
 **Aliases:** `ev`
 
@@ -355,7 +355,7 @@ Options:
           Can be used multiple times.
 ```
 
-### `mise exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
+## `mise exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
 **Aliases:** `x`
 
@@ -403,7 +403,7 @@ Examples:
   $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
-### `mise implode [OPTIONS]`
+## `mise implode [OPTIONS]`
 
 ```text
 Removes mise CLI and all related data
@@ -420,7 +420,7 @@ Options:
           List directories that would be removed without actually removing them
 ```
 
-### `mise install [OPTIONS] [TOOL@VERSION]...`
+## `mise install [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `i`
 
@@ -463,7 +463,7 @@ Examples:
   $ mise install                # installs everything specified in .tool-versions or .mise.toml
 ```
 
-### `mise latest [OPTIONS] <TOOL@VERSION>`
+## `mise latest [OPTIONS] <TOOL@VERSION>`
 
 ```text
 Gets the latest available version for a plugin
@@ -486,7 +486,7 @@ Examples:
   20.0.0
 ```
 
-### `mise link [OPTIONS] <TOOL@VERSION> <PATH>`
+## `mise link [OPTIONS] <TOOL@VERSION> <PATH>`
 
 **Aliases:** `ln`
 
@@ -521,7 +521,7 @@ Examples:
   $ mise use node@brew
 ```
 
-### `mise ls [OPTIONS] [PLUGIN]...`
+## `mise ls [OPTIONS] [PLUGIN]...`
 
 **Aliases:** `list`
 
@@ -582,7 +582,7 @@ Examples:
   }
 ```
 
-### `mise ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
+## `mise ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
 
 ```text
 List runtime versions available for install
@@ -618,7 +618,7 @@ Examples:
   20.1.0
 ```
 
-### `mise outdated [TOOL@VERSION]...`
+## `mise outdated [TOOL@VERSION]...`
 
 ```text
 Shows outdated tool versions
@@ -642,7 +642,7 @@ Examples:
   node    20         20.0.0   20.1.0
 ```
 
-### `mise plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
+## `mise plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
 
 **Aliases:** `a, add, i`
 
@@ -692,7 +692,7 @@ Examples:
   $ mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0
 ```
 
-### `mise plugins link [OPTIONS] <NAME> [PATH]`
+## `mise plugins link [OPTIONS] <NAME> [PATH]`
 
 **Aliases:** `ln`
 
@@ -724,7 +724,7 @@ Examples:
   $ mise plugins link ./mise-node
 ```
 
-### `mise plugins ls [OPTIONS]`
+## `mise plugins ls [OPTIONS]`
 
 **Aliases:** `list`
 
@@ -760,7 +760,7 @@ Examples:
   ruby    https://github.com/asdf-vm/asdf-ruby.git
 ```
 
-### `mise plugins ls-remote [OPTIONS]`
+## `mise plugins ls-remote [OPTIONS]`
 
 **Aliases:** `list-all, list-remote`
 
@@ -783,7 +783,7 @@ Options:
           Only show the name of each plugin by default it will show a "*" next to installed plugins
 ```
 
-### `mise plugins uninstall [OPTIONS] [PLUGIN]...`
+## `mise plugins uninstall [OPTIONS] [PLUGIN]...`
 
 **Aliases:** `remove, rm`
 
@@ -807,7 +807,7 @@ Examples:
   $ mise uninstall node
 ```
 
-### `mise plugins update [OPTIONS] [PLUGIN]...`
+## `mise plugins update [OPTIONS] [PLUGIN]...`
 
 **Aliases:** `upgrade`
 
@@ -833,7 +833,7 @@ Examples:
   $ mise plugins update node#beta  # specify a ref
 ```
 
-### `mise prune [OPTIONS] [PLUGIN]...`
+## `mise prune [OPTIONS] [PLUGIN]...`
 
 ```text
 Delete unused versions of tools
@@ -859,7 +859,7 @@ Examples:
   rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
-### `mise reshim`
+## `mise reshim`
 
 ```text
 rebuilds the shim farm
@@ -886,7 +886,7 @@ Examples:
   v20.0.0
 ```
 
-### `mise run [OPTIONS] [TASK] [ARGS]...`
+## `mise run [OPTIONS] [TASK] [ARGS]...`
 
 **Aliases:** `r`
 
@@ -982,7 +982,7 @@ Examples:
   Execute multiple tasks each with their own arguments.
 ```
 
-### `mise self-update [OPTIONS] [VERSION]`
+## `mise self-update [OPTIONS] [VERSION]`
 
 ```text
 Updates mise itself
@@ -1007,7 +1007,7 @@ Options:
           Skip confirmation prompt
 ```
 
-### `mise settings get <SETTING>`
+## `mise settings get <SETTING>`
 
 ```text
 Show a current setting
@@ -1028,7 +1028,7 @@ Examples:
   true
 ```
 
-### `mise settings ls`
+## `mise settings ls`
 
 **Aliases:** `list`
 
@@ -1047,7 +1047,7 @@ Examples:
   legacy_version_file = false
 ```
 
-### `mise settings set <SETTING> <VALUE>`
+## `mise settings set <SETTING> <VALUE>`
 
 **Aliases:** `add, create`
 
@@ -1069,7 +1069,7 @@ Examples:
   $ mise settings set legacy_version_file true
 ```
 
-### `mise settings unset <SETTING>`
+## `mise settings unset <SETTING>`
 
 **Aliases:** `del, delete, remove, rm`
 
@@ -1088,7 +1088,7 @@ Examples:
   $ mise settings unset legacy_version_file
 ```
 
-### `mise shell [OPTIONS] [TOOL@VERSION]...`
+## `mise shell [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `sh`
 
@@ -1122,7 +1122,7 @@ Examples:
   v20.0.0
 ```
 
-### `mise sync node <--brew|--nvm|--nodenv>`
+## `mise sync node <--brew|--nvm|--nodenv>`
 
 ```text
 Symlinks all tool versions from an external tool into mise
@@ -1147,7 +1147,7 @@ Examples:
   $ mise use -g node@18 - uses Homebrew-provided node
 ```
 
-### `mise sync python --pyenv`
+## `mise sync python --pyenv`
 
 ```text
 Symlinks all tool versions from an external tool into mise
@@ -1166,7 +1166,7 @@ Examples:
   $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-### `mise task edit [OPTIONS] <TASK>`
+## `mise task edit [OPTIONS] <TASK>`
 
 ```text
 [experimental] Edit a task with $EDITOR
@@ -1188,7 +1188,7 @@ Examples:
   $ mise task edit test
 ```
 
-### `mise task ls [OPTIONS]`
+## `mise task ls [OPTIONS]`
 
 ```text
 [experimental] List available tasks to execute
@@ -1212,7 +1212,7 @@ Examples:
   $ mise task ls
 ```
 
-### `mise task run [OPTIONS] [TASK] [ARGS]...`
+## `mise task run [OPTIONS] [TASK] [ARGS]...`
 
 **Aliases:** `r`
 
@@ -1308,7 +1308,7 @@ Examples:
   Execute multiple tasks each with their own arguments.
 ```
 
-### `mise trust [OPTIONS] [CONFIG_FILE]`
+## `mise trust [OPTIONS] [CONFIG_FILE]`
 
 ```text
 Marks a config file as trusted
@@ -1342,7 +1342,7 @@ Examples:
   $ mise trust
 ```
 
-### `mise uninstall [OPTIONS] [TOOL@VERSION]...`
+## `mise uninstall [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `remove, rm`
 
@@ -1368,7 +1368,7 @@ Examples:
   $ mise uninstall --all node@18.0.0 # will uninstall all node versions
 ```
 
-### `mise upgrade [OPTIONS] [TOOL@VERSION]...`
+## `mise upgrade [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `up`
 
@@ -1400,7 +1400,7 @@ Options:
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 ```
 
-### `mise use [OPTIONS] [TOOL@VERSION]...`
+## `mise use [OPTIONS] [TOOL@VERSION]...`
 
 **Aliases:** `u`
 
@@ -1472,7 +1472,7 @@ Examples:
   $ mise use --env staging node@20
 ```
 
-### `mise version`
+## `mise version`
 
 ```text
 Show mise version
@@ -1480,7 +1480,7 @@ Show mise version
 Usage: version
 ```
 
-### `mise watch [OPTIONS] [ARGS]...`
+## `mise watch [OPTIONS] [ARGS]...`
 
 **Aliases:** `w`
 
@@ -1516,7 +1516,7 @@ Examples:
   Extra arguments are passed to watchexec. See `watchexec --help` for details.
 ```
 
-### `mise where <TOOL@VERSION>`
+## `mise where <TOOL@VERSION>`
 
 ```text
 Display the installation path for a runtime
@@ -1545,7 +1545,7 @@ Examples:
   /home/jdx/.local/share/mise/installs/node/20.0.0
 ```
 
-### `mise which [OPTIONS] <BIN_NAME>`
+## `mise which [OPTIONS] <BIN_NAME>`
 
 ```text
 Shows the path that a bin name points to

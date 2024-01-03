@@ -38,7 +38,7 @@ fn render_commands() -> String {
         r#"
             <!-- MISE:COMMANDS -->
 
-            ## Commands
+            # Commands
 
     "#
     );
@@ -95,7 +95,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
         .to_string();
     Some(formatdoc!(
         "
-        ### `mise {usage}`
+        ## `mise {usage}`
         {aliases}
         ```text
         {about}
@@ -130,7 +130,7 @@ mod tests {
         .unwrap();
         assert_cli!("render-help");
         let readme = fs::read_to_string("docs/cli-reference.md").unwrap();
-        assert!(readme.contains("## Commands"));
+        assert!(readme.contains("# Commands"));
         file::remove_file("docs/cli-reference.md").unwrap();
     }
 }
