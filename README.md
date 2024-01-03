@@ -34,7 +34,7 @@ Install mise on macOS (other methods [here](https://mise.jdx.dev/getting-started
 ```sh-session
 $ curl https://mise.jdx.dev/install.sh | sh
 $ ~/.local/bin/mise --version
-mise 2024.1.2
+mise 2024.1.3
 ```
 
 Hook mise into your shell (pick the right one for your shell):
