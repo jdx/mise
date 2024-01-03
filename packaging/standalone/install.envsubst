@@ -114,9 +114,7 @@ install_mise() {
 	version="$MISE_VERSION"
 	os="$(get_os)"
 	arch="$(get_arch)"
-	xdg_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-	mise_data_dir="${MISE_DATA_DIR:-$xdg_data_home/mise}"
-	install_path="${MISE_INSTALL_PATH:-${mise_data_dir}/bin/mise}"
+	install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
 	install_dir="$(dirname "$install_path")"
 	tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}.tar.gz"
 
