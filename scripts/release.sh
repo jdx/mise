@@ -75,5 +75,10 @@ fi
 echo "::group::Publish mise-docs"
 cp ./mise/docs/cli-reference.md ./mise-docs/docs/cli/index.md
 pushd mise-docs
-git add docs/cli/index.md && git commit -m "mise ${MISE_VERSION#v}"
+if [[ -z $(git status -s) ]]; then
+  echo "No changes to docs"
+else
+  git add docs/cli/index.md
+  git commit -m "mise ${MISE_VERSION#v}"
+fi
 popd
