@@ -1453,8 +1453,7 @@ Options:
       --pin
           Save exact version to config file
           e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-
-          [env: MISE_ASDF_COMPAT=]
+          Set MISE_ASDF_COMPAT=1 to make this the default behavior
 
 Examples:
   # set the current version of node to 20.x in .mise.toml of current directory
