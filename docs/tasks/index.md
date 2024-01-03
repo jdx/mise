@@ -19,4 +19,4 @@ Please give feedback early since while it's experimental it's much easier to cha
 
 ## Task Environment Variables
 
-- `RTX_PROJECT_ROOT` - the root of the project, defaults to the directory of the `.mise.toml` file
+- `MISE_PROJECT_ROOT` - the root of the project, defaults to the directory of the `.mise.toml` file

@@ -40,7 +40,7 @@ of plugins. One example of this is virtualenv on python runtimes:
 python = {version='3.11', virtualenv='.venv'}
 ```
 
-This will be passed to all plugin scripts as `RTX_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
+This will be passed to all plugin scripts as `MISE_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
 any option and it will be passed to the plugin in that format.
 
 Currently this only supports simple strings, but we can make it compatible with more complex types

@@ -1,3 +1,5 @@
+<!-- MISE:COMMANDS -->
+
 # Commands
 
 ## `mise activate [OPTIONS] [SHELL_TYPE]`
@@ -266,7 +268,7 @@ Examples:
 ```text
 Output direnv function to use mise inside direnv
 
-See https://github.com/jdx/mise#direnv for more information
+See https://mise.jdx.dev/direnv.html for more information
 
 Because this generates the legacy files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
@@ -326,11 +328,13 @@ Examples:
 
 ## `mise env-vars [OPTIONS] [ENV_VARS]...`
 
+**Aliases:** `ev`
+
 ```text
 Manage environment variables
 
 By default this command modifies ".mise.toml" in the current directory.
-You can specify the file name by either setting the RTX_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
+You can specify the file name by either setting the MISE_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
 
 Usage: env-vars [OPTIONS] [ENV_VARS]...
 
@@ -343,7 +347,7 @@ Options:
       --file <FILE>
           The TOML file to update
 
-          Defaults to RTX_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
+          Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
 
       --remove <ENV_VAR>
           Remove the environment variable from config file
@@ -383,7 +387,7 @@ Options:
           Number of jobs to run in parallel
           [default: 4]
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
@@ -428,7 +432,7 @@ It won't be used simply by being installed, however.
 For that, you must set up a `.mise.toml`/`.tool-version` file manually or with `mise use`.
 Or you can call a tool version explicitly with `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 
-Tools will be installed in parallel. To disable, set `--jobs=1` or `RTX_JOBS=1`
+Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
 Usage: install [OPTIONS] [TOOL@VERSION]...
 
@@ -444,7 +448,7 @@ Options:
           Number of jobs to run in parallel
           [default: 4]
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
@@ -678,14 +682,14 @@ Examples:
   $ mise plugins install node
 
   # install the node plugin using a specific git url
-  $ mise plugins install node https://github.com/rtx-plugins/mise-nodejs.git
+  $ mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git
 
   # install the node plugin using the git url only
   # (node is inferred from the url)
-  $ mise plugins install https://github.com/rtx-plugins/mise-nodejs.git
+  $ mise plugins install https://github.com/rtx-plugins/rtx-nodejs.git
 
   # install the node plugin using a specific ref
-  $ mise plugins install node https://github.com/rtx-plugins/mise-nodejs.git#v1.0.0
+  $ mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0
 ```
 
 ## `mise plugins link [OPTIONS] <NAME> [PATH]`
@@ -773,7 +777,7 @@ Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/rtx-plugins/mise-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git
 
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
@@ -836,7 +840,7 @@ Delete unused versions of tools
 
 mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files
 Versions which are no longer the latest specified in any of those configs are deleted.
-Versions installed only with environment variables (`RTX_<PLUGIN>_VERSION`) will be deleted,
+Versions installed only with environment variables (`MISE_<PLUGIN>_VERSION`) will be deleted,
 as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSION>`).
 
 Usage: prune [OPTIONS] [PLUGIN]...
@@ -938,12 +942,12 @@ Options:
   -p, --prefix
           Print stdout/stderr by line, prefixed with the task's label
           Defaults to true if --jobs > 1
-          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
   -i, --interleave
           Print directly to stdout/stderr instead of by line
           Defaults to true if --jobs == 1
-          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
   -t, --tool <TOOL@VERSION>
           Tool(s) to also add e.g.: node@20 python@3.10
@@ -951,13 +955,13 @@ Options:
   -j, --jobs <JOBS>
           Number of tasks to run in parallel
           [default: 4]
-          Configure with `jobs` config or `RTX_JOBS` env var
+          Configure with `jobs` config or `MISE_JOBS` env var
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
   -r, --raw
           Read/write directly to stdin/stdout/stderr instead of by line
-          Configure with `raw` config or `RTX_RAW` env var
+          Configure with `raw` config or `MISE_RAW` env var
 
 Examples:
   $ mise run lint
@@ -1104,7 +1108,7 @@ Options:
           Number of jobs to run in parallel
           [default: 4]
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
@@ -1264,12 +1268,12 @@ Options:
   -p, --prefix
           Print stdout/stderr by line, prefixed with the task's label
           Defaults to true if --jobs > 1
-          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
   -i, --interleave
           Print directly to stdout/stderr instead of by line
           Defaults to true if --jobs == 1
-          Configure with `task_output` config or `RTX_TASK_OUTPUT` env var
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
   -t, --tool <TOOL@VERSION>
           Tool(s) to also add e.g.: node@20 python@3.10
@@ -1277,13 +1281,13 @@ Options:
   -j, --jobs <JOBS>
           Number of tasks to run in parallel
           [default: 4]
-          Configure with `jobs` config or `RTX_JOBS` env var
+          Configure with `jobs` config or `MISE_JOBS` env var
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
   -r, --raw
           Read/write directly to stdin/stdout/stderr instead of by line
-          Configure with `raw` config or `RTX_RAW` env var
+          Configure with `raw` config or `MISE_RAW` env var
 
 Examples:
   $ mise run lint
@@ -1387,7 +1391,7 @@ Options:
           Number of jobs to run in parallel
           [default: 4]
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
   -i, --interactive
           Display multiselect menu to choose which tools to upgrade
@@ -1423,7 +1427,7 @@ Options:
       --fuzzy
           Save fuzzy version to config file
           e.g.: `mise use --fuzzy node@20` will save 20 as the version
-          this is the default behavior unless RTX_ASDF_COMPAT=1
+          this is the default behavior unless MISE_ASDF_COMPAT=1
 
   -g, --global
           Use the global config file (~/.config/mise/config.toml) instead of the local one
@@ -1435,7 +1439,7 @@ Options:
           Number of jobs to run in parallel
           [default: 4]
 
-          [env: RTX_JOBS=]
+          [env: MISE_JOBS=]
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
@@ -1450,7 +1454,7 @@ Options:
           Save exact version to config file
           e.g.: `mise use --pin node@20` will save 20.0.0 as the version
 
-          [env: RTX_ASDF_COMPAT=]
+          [env: MISE_ASDF_COMPAT=]
 
 Examples:
   # set the current version of node to 20.x in .mise.toml of current directory
@@ -1464,7 +1468,7 @@ Examples:
   # sets .mise.local.toml (which is intended not to be committed to a project)
   $ mise use --env local node@20
 
-  # sets .mise.staging.toml (which is used if RTX_ENV=staging)
+  # sets .mise.staging.toml (which is used if MISE_ENV=staging)
   $ mise use --env staging node@20
 ```
 
@@ -1571,3 +1575,5 @@ Examples:
   $ mise which node --version
   20.0.0
 ```
+
+<!-- MISE:COMMANDS -->

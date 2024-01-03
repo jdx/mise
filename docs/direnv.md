@@ -44,8 +44,8 @@ easier to manage, I encourage _not_ actually using `.tool-versions` at all, and 
 setting environment variables entirely in `.envrc`:
 
 ```sh
-export RTX_NODE_VERSION=20.0.0
-export RTX_PYTHON_VERSION=3.11
+export MISE_NODE_VERSION=20.0.0
+export MISE_PYTHON_VERSION=3.11
 ```
 
 Of course if you use `mise activate`, then these steps won't have been necessary and you can use mise

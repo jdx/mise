@@ -30,12 +30,12 @@ for additional settings and some troubleshooting.
 [handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
 in additional to that mise has a few extra configuration variables:
 
-- `RTX_RUBY_INSTALL` [bool]: Build with ruby-install instead of ruby-build
-- `RTX_RUBY_APPLY_PATCHES` [string]: A list of patches (files or URLs) to apply to the ruby source code
-- `RTX_RUBY_VERBOSE_INSTALL` [bool]: Show verbose output during installation (passes --verbose to ruby-build)
-- `RTX_RUBY_BUILD_OPTS` [string]: Command line options to pass to ruby-build when installing
-- `RTX_RUBY_INSTALL_OPTS` [string]: Command line options to pass to ruby-install when installing (if RTX_RUBY_INSTALL=1)
-- `RTX_RUBY_DEFAULT_PACKAGES_FILE` [string]: location of default gems file, defaults to `$HOME/.default-gems`
+- `MISE_RUBY_INSTALL` [bool]: Build with ruby-install instead of ruby-build
+- `MISE_RUBY_APPLY_PATCHES` [string]: A list of patches (files or URLs) to apply to the ruby source code
+- `MISE_RUBY_VERBOSE_INSTALL` [bool]: Show verbose output during installation (passes --verbose to ruby-build)
+- `MISE_RUBY_BUILD_OPTS` [string]: Command line options to pass to ruby-build when installing
+- `MISE_RUBY_INSTALL_OPTS` [string]: Command line options to pass to ruby-install when installing (if MISE_RUBY_INSTALL=1)
+- `MISE_RUBY_DEFAULT_PACKAGES_FILE` [string]: location of default gems file, defaults to `$HOME/.default-gems`
 
 ## Default gems
 

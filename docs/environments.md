@@ -41,7 +41,7 @@ env_file = '.env' // [!code focus]
 NODE_ENV = 'production'
 ```
 
-Or set [`RTX_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files.
+Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files.
 
 ## Templates
 

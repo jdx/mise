@@ -81,8 +81,8 @@ That is another way to use mise without activation.
 
 ### mise is failing or not working right
 
-First try setting `RTX_DEBUG=1` or `RTX_TRACE=1` and see if that gives you more information.
-You can also set `RTX_LOG_FILE_LEVEL=debug RTX_LOG_FILE=/path/to/logfile` to write logs to a file.
+First try setting `MISE_DEBUG=1` or `MISE_TRACE=1` and see if that gives you more information.
+You can also set `MISE_LOG_FILE_LEVEL=debug MISE_LOG_FILE=/path/to/logfile` to write logs to a file.
 
 If something is happening with the activate hook, you can try disabling it and calling `eval "$(mise hook-env)"` manually.
 It can also be helpful to use `mise env` which will just output environment variables that would be set.
@@ -112,7 +112,7 @@ The first is that the mise CLI caches versions for 24 hours. This can be cleared
 The second uses the [mise-versions](https://github.com/jdx/mise-versions) repo as a centralized
 place to list all of the versions of most plugins. This is intended to speed up mise and also
 get around GitHub rate limits when querying for new versions. Check that repo for your plugin to
-see if it has an updated version. This service can be disabled by setting `RTX_USE_VERSIONS_HOST=0`.
+see if it has an updated version. This service can be disabled by setting `MISE_USE_VERSIONS_HOST=0`.
 
 ### Windows support?
 
@@ -168,7 +168,7 @@ shell rc file.
 Then you can just run `mise install` in a directory with an asdf `.tool-versions` file and it will
 install the runtimes. You could attempt to avoid this by copying the internal directory from asdf over
 to mise with `cp -r ~/.asdf ~/.local/share/mise`. That _should_ work because they use the same structure,
-however this isn't officially supported or regularly tested. Alternatively you can set `RTX_DATA_DIR=~/.asdf`
+however this isn't officially supported or regularly tested. Alternatively you can set `MISE_DATA_DIR=~/.asdf`
 and see what happens.
 
 ### How compatible is mise with asdf?
@@ -188,7 +188,7 @@ This isn't important for usability reasons so much as making it so plugins conti
 call asdf commands.
 
 If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`RTX_ASDF_COMPAT=1`](/configuration#mise_asdf_compat1). That prevents
+[`MISE_ASDF_COMPAT=1`](/configuration#mise_asdf_compat1). That prevents
 mise from writing `.tool-versions` files that will not be
 compatible with asdf. Also consider using `.mise.toml` instead which won't conflict with asdf setups.
 

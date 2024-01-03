@@ -2,7 +2,7 @@
 
 If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently 
 need to use the x86_64 version of mise itself. There is an [outstanding issue](https://github.com/jdx/mise/issues/405)
-to support this with an env var like RTX_ARCH=x86_64 to make it more seamless.
+to support this with an env var like MISE_ARCH=x86_64 to make it more seamless.
 
 A common reason for doing this is to support compiling node <=14.
 

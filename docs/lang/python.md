@@ -33,10 +33,10 @@ mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/pyth
 `python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
 additional to that python in mise has a few extra configuration variables:
 
-- `RTX_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
-- `RTX_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
-- `RTX_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
-- `RTX_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
+- `MISE_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
+- `MISE_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
+- `MISE_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
+- `MISE_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
 
 ## Default Python packages
 
@@ -47,7 +47,7 @@ ansible
 pipenv
 ```
 
-You can specify a non-default location of this file by setting a `RTX_PYTHON_DEFAULT_PACKAGES_FILE` variable.
+You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
 
 ## [experimental] Automatic virtualenv creation/activation
 

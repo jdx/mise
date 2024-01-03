@@ -4,11 +4,11 @@ See available tasks with `mise tasks`. Run a task with `mise task run`, `mise ru
 You might even want to make a shell alias like `alias r='mise r'` since this is likely a common command.
 
 By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
-`jobs` setting or `RTX_JOBS` environment variable. The output normally will be by line, prefixed with the task
+`jobs` setting or `MISE_JOBS` environment variable. The output normally will be by line, prefixed with the task
 label. By printing line-by-line we avoid interleaving output from parallel executions. However, if
 --jobs == 1, the output will be set to `interleave`.
 
-To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `RTX_TASK_OUTPUT=interleave`.
+To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `MISE_TASK_OUTPUT=interleave`.
 
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
 it running in parallel with any other task-a RWMutex will get a write lock in this case.

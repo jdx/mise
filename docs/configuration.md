@@ -40,7 +40,7 @@ erlang = ['23.3', '24.0']
 node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 
 # send arbitrary options to the plugin, passed as:
-# RTX_TOOL_OPTS__VENV=.venv
+# MISE_TOOL_OPTS__VENV=.venv
 python = {version='3.10', virtualenv='.venv'}
 
 [plugins]
@@ -134,7 +134,7 @@ If you simply want to install a plugin from a specific URL once, it's better to 
 `mise plugin install plugin <GIT_URL>`. Add this section to `.mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
-This is similar to [`RTX_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
+This is similar to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
 ## Legacy version files
@@ -239,20 +239,20 @@ trusted_config_paths = [
     '~/work/my-trusted-projects',
 ]
 
-verbose = false     # set to true to see full installation output, see `RTX_VERBOSE`
-asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `RTX_ASDF_COMPAT`
+verbose = false     # set to true to see full installation output, see `MISE_VERBOSE`
+asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 yes = false         # set to true to automatically answer yes to all prompts
 
-not_found_auto_install = true # see RTX_NOT_FOUND_AUTO_INSTALL
+not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
 task_output = "prefix" # see Task Runner for more information
 
-shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `RTX_SHORTHANDS_FILE`
-disable_default_shorthands = false # disable the default shorthands, see `RTX_DISABLE_DEFAULT_SHORTHANDS`
+shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
+disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
-env_file = '.env' # load env vars from a dotenv file, see `RTX_ENV_FILE`
+env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 
 experimental = true # enable experimental features
 
@@ -274,14 +274,14 @@ setting defaults for all users.
 
 mise can also be configured via environment variables. The following options are available:
 
-### `RTX_DATA_DIR`
+### `MISE_DATA_DIR`
 
 Default: `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
 
 This is the directory where mise stores plugins and tool installs. These are not supposed to be shared
 across machines.
 
-### `RTX_CACHE_DIR`
+### `MISE_CACHE_DIR`
 
 Default (Linux): `~/.cache/mise` or `$XDG_CACHE_HOME/mise`
 Default (macOS): `~/Library/Caches/mise` or `$XDG_CACHE_HOME/mise`
@@ -289,34 +289,34 @@ Default (macOS): `~/Library/Caches/mise` or `$XDG_CACHE_HOME/mise`
 This is the directory where mise stores internal cache. This is not supposed to be shared
 across machines. It may be deleted at any time mise is not running.
 
-### `RTX_TMP_DIR`
+### `MISE_TMP_DIR`
 
 Default: [`std::env::temp_dir()`](https://doc.rust-lang.org/std/env/fn.temp_dir.html) implementation in rust
 
 This is used for temporary storage such as when installing tools.
 
-### `RTX_SYSTEM_DIR`
+### `MISE_SYSTEM_DIR`
 
 Default: `/etc/mise`
 
 This is the directory where mise stores system-wide configuration.
 
-### `RTX_CONFIG_FILE`
+### `MISE_CONFIG_FILE`
 
-Default: `$RTX_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
+Default: `$MISE_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
 
 This is the path to the config file.
 
-### `RTX_DEFAULT_TOOL_VERSIONS_FILENAME`
+### `MISE_DEFAULT_TOOL_VERSIONS_FILENAME`
 
 Set to something other than ".tool-versions" to have mise look for `.tool-versions` files but with
 a different name.
 
-### `RTX_DEFAULT_CONFIG_FILENAME`
+### `MISE_DEFAULT_CONFIG_FILENAME`
 
 Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a different name.
 
-### `RTX_ENV`
+### `MISE_ENV`
 
 Enables environment-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
@@ -324,12 +324,12 @@ development/staging/production environments. See
 [Profiles](/profiles) for more on how
 to use this feature.
 
-### `RTX_ENV_FILE`
+### `MISE_ENV_FILE`
 
-Set to a filename to read from env from a dotenv file. e.g.: `RTX_ENV_FILE=.env`.
+Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
-### `RTX_USE_VERSIONS_HOST`
+### `MISE_USE_VERSIONS_HOST`
 
 Default: `true`
 
@@ -340,12 +340,12 @@ latest versions of core and community plugins. It's faster than running a plugin
 
 See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
 
-### `RTX_${PLUGIN}_VERSION`
+### `MISE_${PLUGIN}_VERSION`
 
-Set the version for a runtime. For example, `RTX_NODE_VERSION=20` will use <node@20.x> regardless
+Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.mise.toml`.
 
-### `RTX_LEGACY_VERSION_FILE=1`
+### `MISE_LEGACY_VERSION_FILE=1`
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
 for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files) for more
@@ -353,76 +353,76 @@ information.
 
 Set to "0" to disable legacy version file parsing.
 
-### `RTX_LEGACY_VERSION_FILE_DISABLE_TOOLS=node,python`
+### `MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS=node,python`
 
 Disable legacy version file parsing for specific tools. Separate with `,`.
 
-### `RTX_USE_TOML=0`
+### `MISE_USE_TOML=0`
 
 Set to `1` to default to using `.mise.toml` in `mise local` instead of `.tool-versions` for
 configuration.
 
 For now this is not used by `mise use` which will only use `.mise.toml` unless `--path` is specified.
 
-### `RTX_TRUSTED_CONFIG_PATHS`
+### `MISE_TRUSTED_CONFIG_PATHS`
 
 This is a list of paths that mise will automatically mark as
 trusted. They can be separated with `:`.
 
-### `RTX_LOG_LEVEL=trace|debug|info|warn|error`
+### `MISE_LOG_LEVEL=trace|debug|info|warn|error`
 
 These change the verbosity of mise.
 
-You can also use `RTX_DEBUG=1`, `RTX_TRACE=1`, and `RTX_QUIET=1` as well as
+You can also use `MISE_DEBUG=1`, `MISE_TRACE=1`, and `MISE_QUIET=1` as well as
 `--log-level=trace|debug|info|warn|error`.
 
-### `RTX_LOG_FILE=~/mise.log`
+### `MISE_LOG_FILE=~/mise.log`
 
 Output logs to a file.
 
-### `RTX_LOG_FILE_LEVEL=trace|debug|info|warn|error`
+### `MISE_LOG_FILE_LEVEL=trace|debug|info|warn|error`
 
-Same as `RTX_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
+Same as `MISE_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
 
-### `RTX_ALWAYS_KEEP_DOWNLOAD=1`
+### `MISE_ALWAYS_KEEP_DOWNLOAD=1`
 
 Set to "1" to always keep the downloaded archive. By default it is deleted after install.
 
-### `RTX_ALWAYS_KEEP_INSTALL=1`
+### `MISE_ALWAYS_KEEP_INSTALL=1`
 
 Set to "1" to always keep the install directory. By default it is deleted on failure.
 
-### `RTX_VERBOSE=1`
+### `MISE_VERBOSE=1`
 
 This shows the installation output during `mise install` and `mise plugin install`.
-This should likely be merged so it behaves the same as `RTX_DEBUG=1` and we don't have
+This should likely be merged so it behaves the same as `MISE_DEBUG=1` and we don't have
 2 configuration for the same thing, but for now it is its own config.
 
-Equivalent to `RTX_LOG_LEVEL=debug`.
+Equivalent to `MISE_LOG_LEVEL=debug`.
 
-### `RTX_QUIET=1`
+### `MISE_QUIET=1`
 
-Equivalent to `RTX_LOG_LEVEL=warn`.
+Equivalent to `MISE_LOG_LEVEL=warn`.
 
-### `RTX_ASDF_COMPAT=1`
+### `MISE_ASDF_COMPAT=1`
 
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
 This disables mise functionality that would otherwise make these files incompatible with asdf.
 
-### `RTX_JOBS=1`
+### `MISE_JOBS=1`
 
 Set the number plugins or runtimes to install in parallel. The default is `4`.
 
-### `RTX_RAW=1`
+### `MISE_RAW=1`
 
 Set to "1" to directly pipe plugin scripts to stdin/stdout/stderr. By default stdin is disabled
 because when installing a bunch of plugins in parallel you won't see the prompt. Use this if a
 plugin accepts input or otherwise does not seem to be installing correctly.
 
-Sets `RTX_JOBS=1` because only 1 plugin script can be executed at a time.
+Sets `MISE_JOBS=1` because only 1 plugin script can be executed at a time.
 
-### `RTX_SHORTHANDS_FILE=~/.config/mise/shorthands.toml`
+### `MISE_SHORTHANDS_FILE=~/.config/mise/shorthands.toml`
 
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
@@ -439,38 +439,38 @@ elixir = "https://github.com/my-org/mise-elixir.git"
 node = "https://github.com/my-org/mise-node.git"
 ```
 
-### `RTX_DISABLE_DEFAULT_SHORTHANDS=1`
+### `MISE_DISABLE_DEFAULT_SHORTHANDS=1`
 
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
 installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
 
-### `RTX_DISABLE_TOOLS=python,node`
+### `MISE_DISABLE_TOOLS=python,node`
 
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
 all.
 
-### `RTX_YES=1`
+### `MISE_YES=1`
 
 This will automatically answer yes or no to prompts. This is useful for scripting.
 
-### `RTX_NOT_FOUND_AUTO_INSTALL=true`
+### `MISE_NOT_FOUND_AUTO_INSTALL=true`
 
 Set to false to disable the "command not found" handler to autoinstall missing tool versions. Disable this
 if experiencing strange behavior in your shell when a command is not found—but please submit a ticket to
 help diagnose problems.
 
-### `RTX_TASK_OUTPUT=prefix`
+### `MISE_TASK_OUTPUT=prefix`
 
 This controls the output of `mise run`. It can be one of:
 
 - `prefix` - (default if jobs > 1) print by line with the prefix of the task name
 - `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
 
-### `RTX_EXPERIMENTAL=true`
+### `MISE_EXPERIMENTAL=true`
 
 Enables experimental features.
 
-### `RTX_ALL_COMPILE=1`
+### `MISE_ALL_COMPILE=1`
 
 Default: false unless running NixOS or Alpine (let me know if others should be added)
 
@@ -480,7 +480,7 @@ like Alpine that does not use glibc and therefore likely won't be able to run pr
 Note that this needs to be setup for each language. File a ticket if you notice a language that is not
 working with this config.
 
-### `RTX_FISH_AUTO_ACTIVATE=1`
+### `MISE_FISH_AUTO_ACTIVATE=1`
 
 Configures the vendor_conf.d script for fish shell to automatically activate.
 This file is automatically used in homebrew and potentially other installs to

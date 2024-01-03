@@ -9,7 +9,7 @@ to be updating, this is a good place to start.
 
 ## Plugin/Runtime Cache
 
-Each plugin has a cache that's stored in `~/$RTX_CACHE_DIR/<PLUGIN>`. It stores
+Each plugin has a cache that's stored in `~/$MISE_CACHE_DIR/<PLUGIN>`. It stores
 the list of versions available for that plugin (`mise ls-remote <PLUGIN>`), the legacy filenames (see below),
 the list of aliases, the bin directories within each runtime installation, and the result of
 running `exec-env` after the runtime was installed.
@@ -18,7 +18,7 @@ Remote versions are updated daily by default. The file is zlib messagepack, if y
 run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
 
 ```sh
-cat ~/$RTX_CACHE_DIR/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
+cat ~/$MISE_CACHE_DIR/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 Note that the caching of `exec-env` may be problematic if the script isn't simply exporting

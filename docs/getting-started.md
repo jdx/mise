@@ -68,7 +68,7 @@ fish_add_path ~/.local/share/mise/shims
 ```
 
 :::info
-mise respects [`RTX_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like to change these locations.
+mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like to change these locations.
 :::
 
 ### 3. Adding tools to mise
@@ -110,11 +110,11 @@ curl https://mise.jdx.dev/install.sh | sh
 ```
 
 Options:
-- `RTX_DEBUG=1` – enable debug logging
-- `RTX_QUIET=1` – disable non-error output
+- `MISE_DEBUG=1` – enable debug logging
+- `MISE_QUIET=1` – disable non-error output
 - `XDG_DATA_HOME=/some/path` – change the data directory (default: `~/.local/share`)
-- `RTX_DATA_DIR=/some/path` – change the mise directory (default: `~/.local/share/mise`)
-- `RTX_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/share/mise/bin`)
+- `MISE_DATA_DIR=/some/path` – change the mise directory (default: `~/.local/share/mise`)
+- `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/share/mise/bin`)
 
 If you want to verify the install script hasn't been tampered with:
 
@@ -319,7 +319,7 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 For homebrew and possibly other installs mise is automatically activated so
 this is not necessary.
 
-See [`RTX_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
+See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
 :::
 
 #### Nushell
@@ -368,8 +368,8 @@ Use `mise implode` to uninstall mise. This will remove the mise binary and all o
 
 Alternatively, manually remove the following directories to fully clean up:
 
-- `~/.local/share/mise` (can also be `RTX_DATA_DIR` or `XDG_DATA_HOME/mise`)
-- `~/.local/state/mise` (can also be `RTX_STATE_DIR` or `XDG_STATE_HOME/mise`)
-- `~/.config/mise` (can also be `RTX_CONFIG_DIR` or `XDG_CONFIG_HOME/mise`)
-- on Linux: `~/.cache/mise` (can also be `RTX_CACHE_DIR` or `XDG_CACHE_HOME/mise`)
-- on macOS: `~/Library/Caches/mise` (can also be `RTX_CACHE_DIR`)
+- `~/.local/share/mise` (can also be `MISE_DATA_DIR` or `XDG_DATA_HOME/mise`)
+- `~/.local/state/mise` (can also be `MISE_STATE_DIR` or `XDG_STATE_HOME/mise`)
+- `~/.config/mise` (can also be `MISE_CONFIG_DIR` or `XDG_CONFIG_HOME/mise`)
+- on Linux: `~/.cache/mise` (can also be `MISE_CACHE_DIR` or `XDG_CACHE_HOME/mise`)
+- on macOS: `~/Library/Caches/mise` (can also be `MISE_CACHE_DIR`)
