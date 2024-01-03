@@ -68,12 +68,8 @@ pub struct Use {
 
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-    #[clap(
-        long,
-        env = "MISE_ASDF_COMPAT",
-        verbatim_doc_comment,
-        overrides_with = "fuzzy"
-    )]
+    /// Set MISE_ASDF_COMPAT=1 to make this the default behavior
+    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 }
 
