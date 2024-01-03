@@ -12,7 +12,7 @@ Using mise typically involves 3 steps:
 
 ## Quickstart
 
-### 1. Install mise CLI:
+### 1. Install `mise` CLI
 
 First we need to download the mise CLI.
 See [below](#alternate-installation-methods) for alternate installation methods.
