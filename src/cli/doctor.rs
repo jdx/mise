@@ -24,6 +24,9 @@ pub struct Doctor {}
 impl Doctor {
     pub fn run(self) -> Result<()> {
         let mut checks = Vec::new();
+        if let Err(err) = Config::try_get() {
+            checks.push(format!("failed to load config: {}", err));
+        }
 
         miseprintln!("{}", mise_version());
         miseprintln!("{}", build_info());
