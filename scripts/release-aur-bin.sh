@@ -24,6 +24,7 @@ url='https://github.com/jdx/mise'
 license=('MIT')
 provides=('mise')
 conflicts=('mise')
+replaces=('rtx-bin')
 options=('!lto')
 source=("mise-\$pkgver.tar.gz::${TAR_GZ_URI}")
 sha512sums=('$SHA512')
@@ -59,6 +60,7 @@ arch = x86_64
 license = MIT
 provides = mise
 conflicts = mise
+replaces = rtx-bin
 source = mise-${MISE_VERSION#v*}.tar.gz::${TAR_GZ_URI}
 sha512sums = $SHA512
 
