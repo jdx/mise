@@ -10,7 +10,7 @@ use crate::file;
 
 pub fn run() {
     if let Err(err) = migrate_rtx() {
-        warn!("migrate: {}", err);
+        eprintln!("[WARN] migrate: {}", err);
     }
     rayon::scope(|s| {
         task(s, || rename_plugin("nodejs", "node"));
@@ -28,21 +28,21 @@ pub fn run() {
 fn task(s: &Scope, job: impl FnOnce() -> Result<()> + Send + 'static) {
     s.spawn(|_| {
         if let Err(err) = job() {
-            warn!("migrate: {}", err);
+            eprintln!("[WARN] migrate: {}", err);
         }
     });
 }
 
 fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
     if from.exists() {
-        info!("migrating {} to {}", from.display(), to.display());
+        eprintln!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to)?;
         for f in from.read_dir()? {
             let f = f?.file_name();
             let from_file = from.join(&f);
             let to_file = to.join(&f);
             if !to_file.exists() {
-                debug!("moving {} to {}", from_file.display(), to_file.display());
+                eprintln!("moving {} to {}", from_file.display(), to_file.display());
                 file::rename(from_file, to_file)?;
             }
         }
@@ -59,9 +59,24 @@ fn rename_plugin(from: &str, to: &str) -> Result<()> {
 }
 
 fn migrate_rtx() -> Result<()> {
-    move_dirs(&XDG_DATA_HOME.join("rtx"), &DATA)?;
-    move_dirs(&XDG_CONFIG_HOME.join("rtx"), &CONFIG)?;
-    move_dirs(&XDG_STATE_HOME.join("rtx"), &STATE)?;
+    let mut migrated = false;
+    let rtx_data = XDG_DATA_HOME.join("rtx");
+    if rtx_data.exists() {
+        let installs = rtx_data.join("installs");
+        for plugin in file::dir_subdirs(&installs)? {
+            if plugin == "python" {
+                continue;
+            }
+            migrated = migrated || move_dirs(&installs.join(plugin), &INSTALLS)?;
+        }
+        migrated = migrated || move_dirs(&rtx_data.join("plugins"), &DATA)?;
+    }
+    migrated = migrated || move_dirs(&XDG_CONFIG_HOME.join("rtx"), &CONFIG)?;
+    migrated = migrated || move_dirs(&XDG_STATE_HOME.join("rtx"), &STATE)?;
+    if migrated {
+        eprintln!("migrated rtx directories to mise");
+        eprintln!("see https://mise.jdx.dev/rtx.html")
+    }
     Ok(())
 }
 
@@ -78,13 +93,15 @@ fn migrate_trusted_configs() -> Result<()> {
     Ok(())
 }
 
-fn move_dirs(from: &Path, to: &Path) -> Result<()> {
+fn move_dirs(from: &Path, to: &Path) -> Result<bool> {
     if from.exists() && !to.exists() {
-        info!("migrating {} to {}", from.display(), to.display());
+        eprintln!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to.parent().unwrap())?;
         file::rename(from, to)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(())
 }
 
 fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
@@ -94,7 +111,7 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
     if !gitconfig_body.contains(&format!("github.com/rtx-plugins/{plugin_name}")) {
         return Ok(());
     }
-    info!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
+    eprintln!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
     file::remove_all(plugin_root)?;
     Ok(())
 }
