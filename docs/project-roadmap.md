@@ -12,7 +12,7 @@ functionality. As far as general scope however, these are likely going to be foc
 
 ## Versioning
 
-mise uses [Calver](https://calver.org/) versioning (`2023.6.1`).
+mise uses [Calver](https://calver.org/) versioning (`2024.1.0`).
 Breaking changes will be few but when they do happen,
 they will be communicated in the CLI with plenty of notice whenever possible.
 

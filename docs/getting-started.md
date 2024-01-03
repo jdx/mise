@@ -214,7 +214,7 @@ npx @jdxcode/mise exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdx/mise/releases).
 
 ```sh
-curl https://github.com/jdx/mise/releases/download/v2023.12.40/mise-v2023.12.40-linux-x64 > /usr/local/bin/mise
+curl https://github.com/jdx/mise/releases/download/v2024.1.0/mise-v2024.1.0-linux-x64 > /usr/local/bin/mise
 chmod +x /usr/local/bin/mise
 ```
 
