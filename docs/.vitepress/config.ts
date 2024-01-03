@@ -21,6 +21,7 @@ export default defineConfig({
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
       { text: 'FAQs', link: '/faq' },
+      { text: 'Contact', link: '/contact' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',
