@@ -189,8 +189,8 @@ jobs:
           path: mise
       - uses: actions/checkout@v4
         with:
-          repository: jdx/homebrew-tap
-          path: homebrew-tap
+          repository: jdx/mise-docs
+          path: mise-docs
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
       - name: Install fd-find
         run: |
@@ -212,7 +212,7 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-          workdir: homebrew-tap
+          workdir: mise-docs
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - run: mise/scripts/release.sh
@@ -221,10 +221,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-      - name: homebrew-tap push
+      - name: mise-docs push
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: git push
-        working-directory: homebrew-tap
+        working-directory: mise-docs
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v1
         if: startsWith(github.event.ref, 'refs/tags/v')
