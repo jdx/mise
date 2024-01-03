@@ -11,7 +11,10 @@ hero:
   actions:
     - theme: brand
       text: Getting Started
-      link: /getting-started.html
+      link: /getting-started
+    - theme: alt
+      text: About
+      link: /about
     - theme: alt
       text: GitHub
       link: https://github.com/jdx/mise
