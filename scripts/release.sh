@@ -72,8 +72,8 @@ if [[ "$DRY_RUN" != 1 ]]; then
   ./mise/scripts/publish-r2.sh
 fi
 
-#echo "::group::Publish homebrew"
-#./mise/scripts/render-homebrew.sh >homebrew-tap/mise.rb
-#pushd homebrew-tap
-#git add . && git commit -m "mise ${MISE_VERSION#v}"
-#popd
+echo "::group::Publish mise-docs"
+cp ./mise/docs/cli-reference.md ./mise-docs/docs/cli/index.md
+pushd mise-docs
+git add docs/cli/index.md && git commit -m "mise ${MISE_VERSION#v}"
+popd
