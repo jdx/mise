@@ -14,7 +14,7 @@ a particular version of Node.js and ruby for a project. Using `mise activate`, y
 shell automatically switch to the correct node and ruby versions when you `cd` into the project's
 directory[^cd]. Other projects on your machine can use a different set of versions.
 
-mise is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/mise-plugins/registry)
+mise is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
 For more on how mise compares to asdf, [see below](/comparison-to-asdf).
 
