@@ -2,7 +2,7 @@
 set -euo pipefail
 
 rm -rf asdf-plugins
-git clone --depth 1 https://github.com/rtx-plugins/registry asdf-plugins
+git clone --depth 1 https://github.com/mise-plugins/registry asdf-plugins
 rm -f src/default_shorthands.rs
 
 asdf_plugins=$(ls asdf-plugins/plugins)
@@ -40,7 +40,7 @@ for plugin in $asdf_plugins; do
   repository=$(grep -e '^repository = ' "$file")
   repository="${repository/#repository = /}"
   printf "[%03d/%d] %s\n" $((++count)) "$num_plugins" "$repository"
-  if [[ $repository == "https://github.com/rtx-plugins/"* ]]; then
+  if [[ $repository == "https://github.com/mise-plugins/"* ]]; then
     trusted+=("$plugin")
   elif grep -qe '^first-party = true' "$file"; then
     trusted+=("$plugin")

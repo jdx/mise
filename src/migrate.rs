@@ -108,7 +108,7 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
     let plugin_root = PLUGINS.join(name);
     let gitconfig = plugin_root.join(".git").join("config");
     let gitconfig_body = fs::read_to_string(gitconfig).unwrap_or_default();
-    if !gitconfig_body.contains(&format!("github.com/rtx-plugins/{plugin_name}")) {
+    if !gitconfig_body.contains(&format!("github.com/mise-plugins/{plugin_name}")) {
         return Ok(());
     }
     eprintln!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");

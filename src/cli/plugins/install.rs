@@ -147,14 +147,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>mise plugins install node</bold>
 
   # install the node plugin using a specific git url
-  $ <bold>mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git</bold>
+  $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git</bold>
 
   # install the node plugin using the git url only
   # (node is inferred from the url)
-  $ <bold>mise plugins install https://github.com/rtx-plugins/rtx-nodejs.git</bold>
+  $ <bold>mise plugins install https://github.com/mise-plugins/rtx-nodejs.git</bold>
 
   # install the node plugin using a specific ref
-  $ <bold>mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0</bold>
+  $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0</bold>
 "#
 );
 

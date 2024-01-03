@@ -536,7 +536,7 @@ __mise_plugins_ls_cmd() {
 (( $+functions[__mise_plugins_ls_remote_cmd] )) ||
 __mise_plugins_ls_remote_cmd() {
   _arguments -s -S \
-    '(-u --urls)'{-u,--urls}'[Show the git url for each plugin e.g.\: https\://github.com/rtx-plugins/rtx-nodejs.git]' \
+    '(-u --urls)'{-u,--urls}'[Show the git url for each plugin e.g.\: https\://github.com/mise-plugins/rtx-nodejs.git]' \
     '--only-names[Only show the name of each plugin by default it will show a "*" next to installed plugins]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \

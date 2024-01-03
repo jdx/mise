@@ -79,7 +79,7 @@ mod tests {
             "plugin",
             "install",
             "tiny",
-            "https://github.com/rtx-plugins/rtx-tiny.git"
+            "https://github.com/mise-plugins/rtx-tiny.git"
         );
         // assert_cli!("p", "update"); tested in e2e
         assert_cli!("plugins", "update", "tiny");

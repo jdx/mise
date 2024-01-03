@@ -9,7 +9,7 @@ tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}
 
 [plugins]
-tiny-ref = "https://github.com/rtx-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
+tiny-ref = "https://github.com/mise-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
 
 [tasks.configtask]
 run = 'echo "configtask:"'
