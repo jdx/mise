@@ -682,14 +682,14 @@ Examples:
   $ mise plugins install node
 
   # install the node plugin using a specific git url
-  $ mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git
+  $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git
 
   # install the node plugin using the git url only
   # (node is inferred from the url)
-  $ mise plugins install https://github.com/rtx-plugins/rtx-nodejs.git
+  $ mise plugins install https://github.com/mise-plugins/rtx-nodejs.git
 
   # install the node plugin using a specific ref
-  $ mise plugins install node https://github.com/rtx-plugins/rtx-nodejs.git#v1.0.0
+  $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0
 ```
 
 ## `mise plugins link [OPTIONS] <NAME> [PATH]`
@@ -777,7 +777,7 @@ Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git
 
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
