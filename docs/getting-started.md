@@ -158,7 +158,7 @@ Supported os/arch:
 - `linux-armv7`
 - `linux-armv7-musl`
 
-If you need something else, compile it with `cargo install mise-cli` (see below).
+If you need something else, compile it with `cargo install mise` (see below).
 [Windows isn't currently supported.](https://github.com/jdx/mise/discussions/66)
 
 ### Homebrew
@@ -178,20 +178,20 @@ sudo port install mise
 Build from source with Cargo:
 
 ```sh
-cargo install mise-cli
+cargo install mise
 ```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
 cargo install cargo-binstall
-cargo binstall mise-cli
+cargo binstall mise
 ```
 
 Build from the latest commit in main:
 
 ```sh
-cargo install mise-cli --git https://github.com/jdx/mise --branch main
+cargo install mise --git https://github.com/jdx/mise --branch main
 ```
 
 ### npm
