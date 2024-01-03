@@ -206,7 +206,7 @@ npm install -g @jdxcode/mise
 Use npx if you just want to test it out for a single command without fully installing:
 
 ```sh
-npx mise-cli exec python@3.11 -- python some_script.py
+npx @jdxcode/mise exec python@3.11 -- python some_script.py
 ```
 
 ### GitHub Releases
