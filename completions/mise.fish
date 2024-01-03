@@ -202,7 +202,7 @@ complete -kxc mise -n "$fssf plugins; and $fssf ls" -l user -d 'List installed p
 
 # plugins ls-remote
 complete -kxc mise -n "$fssf plugins; and $fssf ls-remote" -l only-names -d 'Only show the name of each plugin by default it will show a "*" next to installed plugins'
-complete -kxc mise -n "$fssf plugins; and $fssf ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/rtx-plugins/rtx-nodejs.git'
+complete -kxc mise -n "$fssf plugins; and $fssf ls-remote" -s u -l urls -d 'Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git'
 
 # plugins uninstall
 complete -kxc mise -n "$fssf plugins; and $fssf uninstall" -s a -l all -d 'Remove all plugins'

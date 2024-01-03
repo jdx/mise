@@ -13,7 +13,7 @@ python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 ruby = "3.1"
 
 [plugins]
-nnnn = 'https://github.com/rtx-plugins/rtx-nodejs#main'
+nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 
 [alias.tiny]
 abc = '1'

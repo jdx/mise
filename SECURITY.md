@@ -34,26 +34,26 @@ There are 3 types of plugins:
 
 - [core](https://github.com/jdx/mise/issues/236) - plugins that are hardcoded into the CLI.
   These are official plugins for the most common languages written in Rust.
-- community - plugins in the [rtx-plugins](https://github.com/rtx-plugins) GitHub Org. [See below](#rtx-plugins-github-org) for details.
+- community - plugins in the [mise-plugins](https://github.com/mise-plugins) GitHub Org. [See below](#mise-plugins-github-org) for details.
 - external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
   secure than installing any random tool from the internet. These receive a warning dialog when installed in mise.
 
 Just because a plugin is inside of the shorthand registry (so you can run `mise install foo@`, does not mean
-I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the rtx-plugins
+I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the mise-plugins
 GitHub org, you can have more trust in it. (See the owners with `mise plugins ls-remote --urls`).
 
 Over time we should be able to move more plugins into being fully maintained by mise. I plan to add an
 `MISE_PARANOID=1` env var that, when set, will make changes to make mise behave as securely as possible
-(e.g.: only using core/rtx-plugins plugins, only allowing plugins that use GPG verification of assets).
+(e.g.: only using core/mise-plugins plugins, only allowing plugins that use GPG verification of assets).
 
-## [rtx-plugins](https://github.com/rtx-plugins) GitHub org
+## [mise-plugins](https://github.com/mise-plugins) GitHub org
 
 This is similar to <https://github.com/asdf-community> but with the advantage of being more secure by keeping the
 contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
 organization will not receive a confirmation warning dialog when installed with mise as they've been vetted by a
 trusted source.
 
-If you're a plugin maintainer that would like to move your repo to this org [please let me know](https://github.com/orgs/rtx-plugins/discussions).
+If you're a plugin maintainer that would like to move your repo to this org [please let me know](https://github.com/orgs/mise-plugins/discussions).
 Plugins can either retain compatibility with asdf or use mise specific functionality—that's up to you. asdf-compatible plugins should use "asdf-" as the prefix and "mise-" prefixed-plugins denote mise-only compatibility.
 
 ## Supported Versions
