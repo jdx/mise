@@ -10,7 +10,7 @@ writing them and I think it makes it more interesting having a bit of my persona
 in the text.
 
 This project is simply a labor of love. I am making it because I want to make
-your life as a developer easir. I hope you find it useful. Feedback is a massive
+your life as a developer easier. I hope you find it useful. Feedback is a massive
 driver for me. If you have anything positive or negative to say-even if it's just
 to say hi-please reach out to me either on [Twitter](https://twitter.com/jdxcode),
 [Mastodon](https://fosstodon.org/@jdx), [Discord](https://discord.gg/UBa7pJUN7Z),
