@@ -200,7 +200,7 @@ mise is available on npm as a precompiled binary. This isn't a Node.js packageâ€
 via npm. This is useful for JS projects that want to setup mise via `package.json` or `npx`.
 
 ```sh
-npm install -g mise-cli
+npm install -g @jdxcode/mise
 ```
 
 Use npx if you just want to test it out for a single command without fully installing:
