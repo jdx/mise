@@ -24,7 +24,7 @@ with asdf `.tool-versions` files. It can also use idiomatic version files like `
 
 [^cd]:
     Note that mise does not modify "cd". It actually runs every time the prompt is _displayed_.
-    See the [What does rtx activate do?](/faq#what-does-mise-activate-do).
+    See the [What does `mise activate` do?](/faq#what-does-mise-activate-do).
 
 * Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](/configuration#env---arbitrary-environment-variables) for different project directories.
 * Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used to build and test projects.
