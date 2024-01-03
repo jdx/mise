@@ -1,4 +1,4 @@
-# Go in mise
+# Go
 
 The following are instructions for using the go mise core plugin. This is used when there isn't a
 git plugin installed named "go".

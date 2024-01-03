@@ -1,4 +1,4 @@
-# Java in mise
+# Java
 
 The following are instructions for using the java mise core plugin. This is used when there isn't a
 git plugin installed named "java".

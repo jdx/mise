@@ -1,4 +1,4 @@
-# Ruby in mise
+# Ruby
 
 The following are instructions for using the ruby mise core plugin. This is used when there isn't a
 git plugin installed named "ruby".

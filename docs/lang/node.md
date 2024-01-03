@@ -1,4 +1,4 @@
-# Node in mise
+# Node
 
 The following are instructions for using the node mise core plugin. This is used when there isn't a
 git plugin installed named "node".

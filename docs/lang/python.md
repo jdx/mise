@@ -1,4 +1,4 @@
-# Python in mise
+# Python
 
 The following are instructions for using the python mise core plugin. The core plugin will be used so long as no plugin is manually
 installed named "python" using `mise plugins install python [GIT_URL]`.

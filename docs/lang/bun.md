@@ -1,4 +1,4 @@
-# Bun in mise
+# Bun
 
 The following are instructions for using the bun mise core plugin. This is used when there isn't a
 git plugin installed named "bun".
