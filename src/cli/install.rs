@@ -138,7 +138,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>mise install node@20.0.0</bold>  # install specific node version
   $ <bold>mise install node@20</bold>      # install fuzzy node version
   $ <bold>mise install node</bold>         # install version specified in .tool-versions or .mise.toml
-  $ <bold>mise install</bold>                # installs everything specified in .tool-versions or .mise.toml
+  $ <bold>mise install</bold>              # installs everything specified in .tool-versions or .mise.toml
 "#
 );
 
