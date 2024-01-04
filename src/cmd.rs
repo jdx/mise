@@ -305,8 +305,10 @@ impl<'a> CmdLineRunner<'a> {
             if !line.trim().is_empty() {
                 pr.set_message(line.into())
             }
+        } else if console::colors_enabled() {
+            println!("{}{line}\x1b[0m", self.prefix);
         } else {
-            println!("{}{}", self.prefix, line);
+            println!("{}{line}", self.prefix);
         }
     }
 
@@ -318,7 +320,13 @@ impl<'a> CmdLineRunner<'a> {
                     pr.println(line.into())
                 }
             }
-            None => eprintln!("{}{}", self.prefix, line),
+            None => {
+                if console::colors_enabled() {
+                    eprintln!("{}{line}\x1b[0m", self.prefix);
+                } else {
+                    eprintln!("{}{line}", self.prefix);
+                }
+            }
         }
     }
 
