@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://mise.jdx.dev/schema/mise.json",
   "title": "mise",
   "description": "config file for mise version manager (.mise.toml)",
@@ -13,30 +13,19 @@
     },
     "env_file": {
       "description": "path to .env file",
-      "type": "string"
+      "type": "string",
+      "deprecated": true
     },
     "env_path": {
       "description": "PATH entries to add",
       "type": "array",
+      "deprecated": true,
       "items": {
         "description": "a path to add to PATH",
         "type": "string"
       }
     },
-    "env": {
-      "description": "environment variables",
-      "type": "object",
-      "additionalProperties": {
-        "oneOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "boolean"
-          }
-        ]
-      }
-    },
+    "env": { "$ref": "#/$defs/env" },
     "tools": {
       "description": "dev tools to use",
       "type": "object",
@@ -44,13 +33,9 @@
         "oneOf": [
           {
             "type": "array",
-            "items": {
-              "$ref": "#/$defs/tool"
-            }
+            "items": { "$ref": "#/$defs/tool" }
           },
-          {
-            "$ref": "#/$defs/tool"
-          }
+          { "$ref": "#/$defs/tool" }
         ]
       }
     },
@@ -79,11 +64,54 @@
         }
       }
     },
-    "settings": {
-      "$ref": "#/$defs/settings"
-    }
+    "settings": { "$ref": "#/$defs/settings" }
   },
   "$defs": {
+    "env": {
+      "description": "environment variables",
+      "type": "object",
+      "properties": {
+        "mise": {
+          "type": "object",
+          "description": "environment modules",
+          "properties": {
+            "file": {
+              "oneOf": [
+                { "type": "string", "description": "dotenv file to load" },
+                {
+                  "type": "array",
+                  "description": "dotenv files to load",
+                  "items": {
+                    "type": "string",
+                    "description": "dotenv file to load"
+                  }
+                }
+              ]
+            },
+            "path": {
+              "oneOf": [
+                { "type": "string", "description": "PATH entry to add" },
+                {
+                  "type": "array",
+                  "description": "PATH entries to add",
+                  "items": {
+                    "type": "string",
+                    "description": "PATH entry to add"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean", "enum": [false] }
+        ]
+      }
+    },
     "tool": {
       "oneOf": [
         {

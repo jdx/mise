@@ -33,21 +33,14 @@ impl ConfigGenerate {
 # # This setup allows you to define default versions and configuration across
 # # all projects but override them for specific projects.
 #
-# # add extra directories to PATH
-# env_path = [
-#   "~/bin", # absolute path
-#   "./node_modules/.bin", # relative path to this file, not $PWD
-# ]
-#
 # # set arbitrary env vars to be used whenever in this project or subprojects
 # [env]
 # NODE_ENV = "development"
 # NPM_CONFIG_PREFIX = "~/.npm-global"
 # EDITOR = "code --wait"
 #
-# [env_remove]
-# load a dotenv file
-# env_file = ".env"
+# mise.file = ".env"                # load vars from a dotenv file
+# mise.path = "./node_modules/.bin" # add a directory to PATH
 #
 # [tools]
 # terraform = '1.0.0'       # specify a single version

@@ -1,8 +1,9 @@
 #:schema ./schema/mise.json
 
-env_file = '.env'
 [env]
+mise.file = [".env"]
 FOO = "bar"
+FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
