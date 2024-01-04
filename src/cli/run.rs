@@ -4,7 +4,6 @@ use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::time::SystemTime;
@@ -106,6 +105,9 @@ pub struct Run {
     /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
+
+    #[clap(skip)]
+    pub is_linear: bool,
 }
 
 impl Run {
@@ -138,7 +140,7 @@ impl Run {
             .collect()
     }
 
-    fn parallelize_tasks(self, config: &Config, tasks: Vec<Task>) -> Result<()> {
+    fn parallelize_tasks(mut self, config: &Config, tasks: Vec<Task>) -> Result<()> {
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
 
         ts.install_arg_versions(config, &InstallOptions::new())?;
@@ -153,6 +155,7 @@ impl Run {
         }
 
         let tasks = Mutex::new(Deps::new(config, tasks)?);
+        self.is_linear = tasks.lock().unwrap().is_linear();
 
         for task in tasks.lock().unwrap().all() {
             self.validate_task(task)?;
@@ -303,7 +306,7 @@ impl Run {
             Ok(TaskOutput::Interleave)
         } else if let Some(output) = &settings.task_output {
             Ok(output.parse()?)
-        } else if self.raw(task) || self.jobs() == 1 {
+        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             Ok(TaskOutput::Interleave)
         } else {
             Ok(TaskOutput::Prefix)
@@ -495,6 +498,15 @@ impl Deps {
 
     fn all(&self) -> impl Iterator<Item = &Task> {
         self.graph.node_indices().map(|idx| &self.graph[idx])
+    }
+
+    fn is_linear(&self) -> bool {
+        !self.graph.node_indices().any(|idx| {
+            self.graph
+                .neighbors_directed(idx, Direction::Outgoing)
+                .count()
+                > 1
+        })
     }
 
     // fn pop(&'a mut self) -> Option<&'a Task> {
