@@ -64,7 +64,7 @@ fn migrate_rtx() -> Result<()> {
     if rtx_data.exists() {
         let installs = rtx_data.join("installs");
         for plugin in file::dir_subdirs(&installs)? {
-            if plugin == "python" {
+            if plugin == "python" || plugin == "ruby" {
                 continue;
             }
             migrated = migrated || move_dirs(&installs.join(plugin), &INSTALLS)?;
