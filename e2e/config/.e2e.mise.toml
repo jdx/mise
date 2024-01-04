@@ -1,8 +1,8 @@
 #:schema ../../schema/mise.json
-env_file = '.test-env'
-env_path = ["/root", "./cwd"]
 [env]
 FOO = "bar"
+mise.file = ['.test-env']
+mise.path = ["/root", "./cwd"]
 
 [tools]
 tiny = "latest"

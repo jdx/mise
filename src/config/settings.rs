@@ -186,7 +186,7 @@ impl Settings {
     }
     pub fn hidden_configs() -> HashSet<&'static str> {
         static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
-            Lazy::new(|| ["ci", "cd", "debug", "trace", "log_level"].into());
+            Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
         HIDDEN_CONFIGS.clone()
     }
 
