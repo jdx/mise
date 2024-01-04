@@ -9,6 +9,11 @@ use eyre::Result;
 use simplelog::*;
 
 pub fn init(settings: &Settings) {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| _init(settings));
+}
+
+pub fn _init(settings: &Settings) {
     if cfg!(test) {
         return;
     }
