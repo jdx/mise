@@ -4,10 +4,11 @@ use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::config::{Config, Settings};
-
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::style;
 
 /// Install a plugin
 ///
@@ -57,6 +58,11 @@ impl PluginsInstall {
         if git_url.is_some() {
             self.install_one(name, git_url, &mpr)?;
         } else {
+            let is_core = CORE_PLUGINS.contains_key(name.as_str());
+            if is_core {
+                let name = style::eblue(name);
+                bail!("{name} is a core plugin and does not need to be installed");
+            }
             let mut plugins: Vec<PluginName> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
@@ -160,10 +166,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_install_invalid_url() {
         let err = assert_cli_err!("plugin", "add", "tiny*");
-        assert_display_snapshot!(err);
+        assert_display_snapshot!(err, @"No repository found for plugin tiny*");
+    }
+
+    #[test]
+    fn test_plugin_install_core_plugin() {
+        let err = assert_cli_err!("plugin", "add", "node");
+        assert_display_snapshot!(err, @"node is a core plugin and does not need to be installed");
     }
 }
