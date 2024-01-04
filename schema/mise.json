@@ -64,7 +64,7 @@
         }
       }
     },
-    "settings": {"$ref": "#/$defs/settings"}
+    "settings": { "$ref": "#/$defs/settings" }
   },
   "$defs": {
     "env": {
@@ -77,21 +77,27 @@
           "properties": {
             "file": {
               "oneOf": [
-                {"type": "string", "description": "dotenv file to load"},
+                { "type": "string", "description": "dotenv file to load" },
                 {
                   "type": "array",
                   "description": "dotenv files to load",
-                  "items": {"type": "string", "description": "dotenv file to load"}
+                  "items": {
+                    "type": "string",
+                    "description": "dotenv file to load"
+                  }
                 }
               ]
             },
             "path": {
               "oneOf": [
-                {"type": "string", "description": "PATH entry to add"},
+                { "type": "string", "description": "PATH entry to add" },
                 {
                   "type": "array",
                   "description": "PATH entries to add",
-                  "items": {"type": "string", "description": "PATH entry to add"}
+                  "items": {
+                    "type": "string",
+                    "description": "PATH entry to add"
+                  }
                 }
               ]
             }
@@ -100,9 +106,9 @@
       },
       "additionalProperties": {
         "oneOf": [
-          {"type": "string"},
-          {"type": "number"},
-          {"type": "boolean", "enum": [false]}
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean", "enum": [false] }
         ]
       }
     },
