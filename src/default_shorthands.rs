@@ -198,7 +198,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("ejson", "https://github.com/cipherstash/asdf-ejson.git"),
     ("eksctl", "https://github.com/elementalvoid/asdf-eksctl.git"),
     ("elasticsearch", "https://github.com/asdf-community/asdf-elasticsearch.git"),
-    ("elixir", "https://github.com/asdf-vm/asdf-elixir.git"),
+    ("elixir", "https://github.com/mise-plugins/mise-elixir.git"),
     ("elixir-ls", "https://github.com/juantascon/asdf-elixir-ls"),
     ("elm", "https://github.com/asdf-community/asdf-elm.git"),
     ("embulk", "https://github.com/yuokada/asdf-embulk.git"),
@@ -738,4 +738,5 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
     Lazy::new(|| HashSet::from([
     "dt",
+    "elixir",
 ]));
