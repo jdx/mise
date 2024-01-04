@@ -147,6 +147,10 @@ impl Run {
         if let Some(root) = &config.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
+        if console::colors_enabled() {
+            env.insert("CLICOLOR_FORCE".into(), "1".into());
+            env.insert("FORCE_COLOR".into(), "1".into());
+        }
 
         let tasks = Mutex::new(Deps::new(config, tasks)?);
 
