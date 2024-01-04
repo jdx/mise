@@ -66,7 +66,7 @@ mod tests {
         let shorthands = get_shorthands();
         assert_str_eq!(
             shorthands["elixir"],
-            "https://github.com/asdf-vm/asdf-elixir.git"
+            "https://github.com/mise-plugins/mise-elixir.git"
         );
         assert_str_eq!(shorthands["node"], "https://node");
         assert_str_eq!(shorthands["xxxxxx"], "https://xxxxxx");
