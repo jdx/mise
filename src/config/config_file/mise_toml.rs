@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -29,7 +30,7 @@ pub struct MiseToml {
     context: Context,
     path: PathBuf,
     toolset: Toolset,
-    env_file: Option<PathBuf>,
+    env_files: Vec<PathBuf>,
     env: HashMap<String, String>,
     env_remove: Vec<String>,
     path_dirs: Vec<PathBuf>,
@@ -70,8 +71,8 @@ impl MiseToml {
         let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
-                "dotenv" => self.parse_env_file(k, v)?,
-                "env_file" => self.parse_env_file(k, v)?,
+                "dotenv" => self.parse_env_file(k, v, true)?,
+                "env_file" => self.parse_env_file(k, v, true)?,
                 "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
@@ -86,47 +87,66 @@ impl MiseToml {
         Ok(())
     }
 
-    fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
+    fn parse_env_file(&mut self, k: &str, v: &Item, deprecate: bool) -> Result<()> {
         self.trust_check()?;
-        match v.as_str() {
-            Some(filename) => {
-                let path = self.path.parent().unwrap().join(filename);
-                let dotenv = dotenvy::from_path_iter(&path).wrap_err_with(|| {
-                    eyre!("failed to parse dotenv file: {}", display_path(&path))
-                })?;
-                for item in dotenv {
-                    let (k, v) = item?;
-                    self.env.insert(k, v);
-                }
-                self.env_file = Some(path);
-            }
-            _ => parse_error!(k, v, "string"),
+        if deprecate {
+            warn!("{k} is deprecated. Use 'env.mise.file' instead.");
         }
+        if let Some(filename) = v.as_str() {
+            let path = self.path.parent().unwrap().join(filename);
+            self.parse_env_filename(path)?;
+        } else if let Some(filenames) = v.as_array() {
+            for filename in filenames {
+                if let Some(filename) = filename.as_str() {
+                    let path = self.path.parent().unwrap().join(filename);
+                    self.parse_env_filename(path)?;
+                } else {
+                    parse_error!(k, v, "string");
+                }
+            }
+        } else {
+            parse_error!(k, v, "string or array of strings");
+        }
+        Ok(())
+    }
+
+    fn parse_env_filename(&mut self, path: PathBuf) -> Result<()> {
+        let dotenv = dotenvy::from_path_iter(&path)
+            .wrap_err_with(|| eyre!("failed to parse dotenv file: {}", display_path(&path)))?;
+        for item in dotenv {
+            let (k, v) = item?;
+            self.env.insert(k, v);
+        }
+        self.env_files.push(path);
         Ok(())
     }
 
     fn parse_env(&mut self, key: &str, v: &Item) -> Result<()> {
         self.trust_check()?;
-        let mut v = v.clone();
-        if let Some(table) = v.as_table_like_mut() {
-            if table.contains_key("PATH") {
-                return Err(eyre!("use 'env_path' instead of 'env.PATH'"));
-            }
+        if let Some(table) = v.as_table_like() {
+            ensure!(
+                !table.contains_key("PATH"),
+                "use 'env.mise.path' instead of 'env.PATH'"
+            );
         }
         match v.as_table_like() {
             Some(table) => {
                 for (k, v) in table.iter() {
                     let key = format!("{}.{}", key, k);
                     let k = self.parse_template(&key, k)?;
-                    if let Some(v) = v.as_str() {
+                    if k == "mise" {
+                        self.parse_env_mise(&key, v)?;
+                    } else if let Some(v) = v.as_str() {
                         let v = self.parse_template(&key, v)?;
                         self.env.insert(k, v);
+                    } else if let Some(v) = v.as_integer() {
+                        self.env.insert(k, v.to_string());
                     } else if let Some(v) = v.as_bool() {
                         if !v {
                             self.env_remove.push(k);
                         }
                     } else {
-                        parse_error!(key, v, "string or bool")
+                        parse_error!(key, v, "string, num, or bool")
                     }
                 }
             }
@@ -135,31 +155,50 @@ impl MiseToml {
         Ok(())
     }
 
-    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
-        self.trust_check()?;
-        match v.as_array() {
-            Some(array) => {
-                let mut path = Vec::new();
-                let config_root = self.path.parent().unwrap().to_path_buf();
-                for v in array {
-                    match v.as_str() {
-                        Some(s) => {
-                            let s = self.parse_template(k, s)?;
-                            let s = match s.strip_prefix("./") {
-                                Some(s) => config_root.join(s),
-                                None => match s.strip_prefix("~/") {
-                                    Some(s) => dirs::HOME.join(s),
-                                    None => s.into(),
-                                },
-                            };
-                            path.push(s);
-                        }
-                        _ => parse_error!(k, v, "string"),
+    fn parse_env_mise(&mut self, key: &str, v: &Item) -> Result<()> {
+        match v.as_table_like() {
+            Some(table) => {
+                for (k, v) in table.iter() {
+                    let key = format!("{}.{}", key, k);
+                    match k {
+                        "file" => self.parse_env_file(&key, v, false)?,
+                        "path" => self.path_dirs = self.parse_path_env(&key, v)?,
+                        _ => parse_error!(key, v, "file or path"),
                     }
                 }
-                Ok(path)
+                Ok(())
             }
-            _ => parse_error!(k, v, "array"),
+            _ => parse_error!(key, v, "table"),
+        }
+    }
+
+    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
+        self.trust_check()?;
+        let config_root = self.path.parent().unwrap().to_path_buf();
+        let get_path = |v: &Item| -> Result<PathBuf> {
+            if let Some(s) = v.as_str() {
+                let s = self.parse_template(k, s)?;
+                let s = match s.strip_prefix("./") {
+                    Some(s) => config_root.join(s),
+                    None => match s.strip_prefix("~/") {
+                        Some(s) => dirs::HOME.join(s),
+                        None => s.into(),
+                    },
+                };
+                Ok(s)
+            } else {
+                parse_error!(k, v, "string")
+            }
+        };
+        if let Some(array) = v.as_array() {
+            let mut path = Vec::new();
+            for v in array {
+                let item = Item::Value(v.clone());
+                path.push(get_path(&item)?);
+            }
+            Ok(path)
+        } else {
+            Ok(vec![get_path(v)?])
         }
     }
 
@@ -787,10 +826,10 @@ impl ConfigFile for MiseToml {
     }
 
     fn watch_files(&self) -> Vec<PathBuf> {
-        match &self.env_file {
-            Some(env_file) => vec![self.path.clone(), env_file.clone()],
-            None => vec![self.path.clone()],
-        }
+        once(&self.path)
+            .chain(self.env_files.iter())
+            .cloned()
+            .collect()
     }
 }
 
@@ -804,8 +843,8 @@ impl Debug for MiseToml {
             let json = serde_json::to_value(settings).unwrap_or_default();
             d.field("settings", &json);
         }
-        if let Some(env_file) = &self.env_file {
-            d.field("env_file", env_file);
+        if !self.env_files.is_empty() {
+            d.field("env_files", &self.env_files);
         }
         if !self.env.is_empty() {
             d.field("env", &self.env);
@@ -832,7 +871,7 @@ impl Clone for MiseToml {
             context: self.context.clone(),
             path: self.path.clone(),
             toolset: self.toolset.clone(),
-            env_file: self.env_file.clone(),
+            env_files: self.env_files.clone(),
             env: self.env.clone(),
             env_remove: self.env_remove.clone(),
             path_dirs: self.path_dirs.clone(),

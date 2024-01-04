@@ -76,7 +76,27 @@ pub mod tests {
             "1"
         );
 
-        assert_cli_snapshot!("settings");
+        assert_cli_snapshot!("settings", @r###"
+        always_keep_download = true
+        always_keep_install = true
+        asdf_compat = false
+        color = true
+        disable_default_shorthands = false
+        disable_tools = []
+        experimental = true
+        jobs = 2
+        legacy_version_file = false
+        legacy_version_file_disable_tools = []
+        not_found_auto_install = true
+        plugin_autoupdate_last_check_duration = "1m"
+        quiet = false
+        raw = false
+        shorthands_file = null
+        task_output = null
+        trusted_config_paths = []
+        verbose = true
+        yes = true
+        "###);
         reset_config();
     }
 }
