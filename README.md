@@ -29,7 +29,7 @@ Note that calling `which node` gives us a real path to node, not a shim.
 
 ## Quickstart
 
-Install mise on macOS (other methods [here](https://mise.jdx.dev/getting-started.html)):
+Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 
 ```sh-session
 $ curl https://mise.jdx.dev/install.sh | sh
