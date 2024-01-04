@@ -14,7 +14,7 @@ To upgrade from `rtx` to `mise`, simply install `mise` and it should automatical
 migrate its internal directories, moving `~/.local/share/rtx/installs/*` to `~/.local/share/mise/installs/*`
 (skipping python which cannot be moved), `~/.local/share/rtx/plugins` to `~/.local/share/mise/plugins`,
 and `~/.config/rtx` to `~/.config/mise` (if the destination does not exist). Python
-installs will need to be reinstalled with `rtx install`.
+installs will need to be reinstalled with `mise install`.
 
 `mise` will continue reading `.rtx.toml` files for some time but that eventually will
 be deprecated so please rename them to `.mise.toml`. `mise` will not read from `RTX_*`
