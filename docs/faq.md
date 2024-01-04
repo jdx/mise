@@ -76,7 +76,7 @@ expecting things to be directly on PATH. You can also run `mise env` in a non-in
 will only setup the global tools. It won't modify the environment variables when entering into a
 different project.
 
-Also see the [shebang](/shebang) example for a way to make scripts call mise to get the runtime.
+Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scripts call mise to get the runtime.
 That is another way to use mise without activation.
 
 ### mise is failing or not working right

@@ -20,6 +20,7 @@ export default defineConfig({
       { text: 'Configuration', link: '/configuration' },
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
+      { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       { text: 'FAQs', link: '/faq' },
       { text: 'Contact', link: '/contact' },
       {
@@ -30,7 +31,6 @@ export default defineConfig({
           { text: 'Shims', link: '/shims' },
           { text: 'Aliases', link: '/aliases' },
           { text: 'Comparison to asdf', link: '/comparison-to-asdf' },
-          { text: 'macOS Rosetta', link: '/macos-rosetta.html' },
         ],
       },
       {
@@ -38,10 +38,8 @@ export default defineConfig({
         link: '/environments',
         items: [
           { text: 'Profiles', link: '/profiles' },
-          { text: 'Shebang', link: '/shebang' },
           { text: 'direnv', link: '/direnv' },
           { text: 'Templates', link: '/templates' },
-          { text: 'CI/CD', link: '/ci-cd' },
         ],
       },
       {
