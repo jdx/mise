@@ -2,4 +2,4 @@
 source: src/cli/plugins/install.rs
 expression: err
 ---
-No repository found for plugin tiny:
+No repository found for plugin tiny*
