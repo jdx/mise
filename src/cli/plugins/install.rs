@@ -116,11 +116,11 @@ impl PluginsInstall {
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_plugin(name);
     Ok(match git_url {
-        Some(url) => match url.contains("://") {
+        Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
             false => (name.to_string(), None),
         },
-        None => match name.contains("://") {
+        None => match name.contains(':') {
             true => (get_name_from_url(name)?, Some(name.to_string())),
             false => (name.to_string(), None),
         },
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_plugin_install_invalid_url() {
-        let err = assert_cli_err!("plugin", "add", "tiny:");
+        let err = assert_cli_err!("plugin", "add", "tiny*");
         assert_display_snapshot!(err);
     }
 }
