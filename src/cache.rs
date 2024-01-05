@@ -4,10 +4,10 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use miette::{IntoDiagnostic, Result};
 use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -60,7 +60,7 @@ where
             let path = &self.cache_file_path;
             if !self.no_cache && self.is_fresh() {
                 match self.parse() {
-                    Ok(val) => return Ok::<_, color_eyre::Report>(val),
+                    Ok(val) => return Ok::<_, miette::Report>(val),
                     Err(err) => {
                         warn!("failed to parse cache file: {} {:#}", path.display(), err);
                     }
@@ -78,10 +78,10 @@ where
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
         trace!("reading {}", display_path(path));
-        let mut zlib = ZlibDecoder::new(File::open(path)?);
+        let mut zlib = ZlibDecoder::new(File::open(path).into_diagnostic()?);
         let mut bytes = Vec::new();
-        zlib.read_to_end(&mut bytes)?;
-        Ok(rmp_serde::from_slice(&bytes)?)
+        zlib.read_to_end(&mut bytes).into_diagnostic()?;
+        rmp_serde::from_slice(&bytes).into_diagnostic()
     }
 
     pub fn write(&self, val: &T) -> Result<()> {
@@ -92,8 +92,12 @@ where
         let partial_path = self
             .cache_file_path
             .with_extension(format!("part-{}", random_string(8)));
-        let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
-        zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+        let mut zlib = ZlibEncoder::new(
+            File::create(&partial_path).into_diagnostic()?,
+            Compression::fast(),
+        );
+        zlib.write_all(&rmp_serde::to_vec_named(&val).into_diagnostic()?[..])
+            .into_diagnostic()?;
         file::rename(&partial_path, &self.cache_file_path)?;
 
         Ok(())

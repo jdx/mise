@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::{config_file, Config, Settings};
@@ -74,11 +74,15 @@ impl Local {
 }
 
 fn get_path() -> Result<PathBuf> {
-    let mise_toml = env::current_dir()?.join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
+    let mise_toml = env::current_dir()
+        .into_diagnostic()?
+        .join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
     if *env::MISE_USE_TOML || mise_toml.exists() {
         Ok(mise_toml)
     } else {
-        Ok(env::current_dir()?.join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
+        Ok(env::current_dir()
+            .into_diagnostic()?
+            .join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
     }
 }
 
@@ -87,8 +91,10 @@ pub fn get_parent_path() -> Result<PathBuf> {
     if !*env::MISE_USE_TOML {
         filenames.push(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
-    file::find_up(&env::current_dir()?, &filenames)
-        .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
+    match file::find_up(&env::current_dir().into_diagnostic()?, &filenames) {
+        Some(path) => Ok(path),
+        None => bail!("no {} file found", filenames.join(" or ")),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

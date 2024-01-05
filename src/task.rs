@@ -6,8 +6,8 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 
 use crate::config::config_file::toml::TomlParser;
 use crate::config::Config;
@@ -131,7 +131,7 @@ impl Task {
                 None => tasks
                     .get(name)
                     .map(|task| vec![task])
-                    .ok_or_else(|| eyre!("task not found: {name}")),
+                    .ok_or_else(|| miette!("task not found: {name}")),
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()

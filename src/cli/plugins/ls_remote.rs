@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use console::{measure_text_width, pad_str, Alignment};
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 
 use crate::config::Config;
 

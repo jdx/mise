@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 
 use crate::config;
 use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
@@ -53,7 +53,7 @@ impl Trust {
             },
         };
         config_file::untrust(&path)?;
-        let path = path.canonicalize()?;
+        let path = path.canonicalize().into_diagnostic()?;
         info!("untrusted {}", path.display());
         Ok(())
     }
@@ -66,7 +66,7 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
-        let path = path.canonicalize()?;
+        let path = path.canonicalize().into_diagnostic()?;
         info!("trusted {}", path.display());
         Ok(())
     }

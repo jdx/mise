@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use eyre::Result;
+use miette::Result;
 
 mod get;
 mod ls;

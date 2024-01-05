@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use color_eyre::eyre::{eyre, Result};
 use console::style;
+use miette::{IntoDiagnostic, Result};
 use path_absolutize::Absolutize;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
@@ -39,7 +39,7 @@ impl Link {
             Some(ref tvr) => tvr.version(),
             None => bail!("must provide a version for {}", self.tool.style()),
         };
-        let path = self.path.absolutize()?;
+        let path = self.path.absolutize().into_diagnostic()?;
         if !path.exists() {
             warn!(
                 "Target path {} does not exist",
@@ -51,7 +51,7 @@ impl Link {
             if self.force {
                 remove_all(&target)?;
             } else {
-                return Err(eyre!(
+                return Err(miette!(
                     "Tool version {} already exists, use {} to overwrite",
                     self.tool.style(),
                     style("--force").yellow().for_stderr()

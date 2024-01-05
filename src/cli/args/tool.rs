@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use clap::{Arg, Command, Error};
 use console::style;
-use eyre::Result;
+use miette::Result;
 use regex::Regex;
 
 use crate::plugins::{unalias_plugin, PluginName};

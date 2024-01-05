@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use eyre::Result;
+use miette::Result;
 use rayon::prelude::*;
 use tabled::settings::object::Columns;
 use tabled::settings::{Margin, Modify, Padding, Style};

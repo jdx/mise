@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::file::touch_dir;
 use crate::shell::{get_shell, ShellType};

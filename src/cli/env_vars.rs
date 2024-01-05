@@ -1,4 +1,4 @@
-use color_eyre::Result;
+use miette::{IntoDiagnostic, Result};
 
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
@@ -67,7 +67,7 @@ impl EnvVars {
 }
 
 fn get_mise_toml(filename: &str) -> Result<MiseToml> {
-    let path = env::current_dir()?.join(filename);
+    let path = env::current_dir().into_diagnostic()?.join(filename);
     let mise_toml = if path.exists() {
         MiseToml::from_file(&path)?
     } else {
