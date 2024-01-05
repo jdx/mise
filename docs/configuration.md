@@ -18,7 +18,7 @@ They can use any of the following project locations (in order of precedence, top
 - `.mise.toml`
 - `.mise/config.toml`
 - `.config/mise.toml`
-- `.config/mise/mise.toml`
+- `.config/mise/config.toml`
 
 They can also be named `.mise.local.toml` and environment-specific files like `.mise.production.toml`.
 Can also be opted-in. See [Config Environments](/profiles) for more details.
