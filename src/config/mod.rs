@@ -355,7 +355,7 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
             ".config/mise.toml".into(),
             ".mise/config.toml".into(),
             ".rtx.toml".into(),
-            env::MISE_DEFAULT_CONFIG_FILENAME.clone(),        // .mise.toml
+            env::MISE_DEFAULT_CONFIG_FILENAME.clone(), // .mise.toml
             ".config/mise/config.local.toml".into(),
             ".config/mise.local.toml".into(),
             ".mise/config.local.toml".into(),
