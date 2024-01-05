@@ -22,7 +22,6 @@ export default defineConfig({
       { text: 'Coming from rtx', link: '/rtx' },
       { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       { text: 'FAQs', link: '/faq' },
-      { text: 'Contact', link: '/contact' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',

@@ -46,7 +46,7 @@ tremendous passion for building dev tools and the ideas in `mise` are the produc
 me thinking about building a tool like this for over a decade.
 
 If you aren't happy with `mise` or the way I'm running this project, even in a tiny way,
-please let me know. You can [contact me privately](/contact) if you like. I certainly
+please let me know. You can [contact me privately](/about#contact) if you like. I certainly
 won't take offense and I would prefer you say something rather than nothing. Otherwise
 I'll never know. I also very much love getting positive feedback, it definitely is a
 big part of why I'm doing this.
