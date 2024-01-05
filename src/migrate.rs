@@ -67,12 +67,12 @@ fn migrate_rtx() -> Result<()> {
             if plugin == "python" || plugin == "ruby" {
                 continue;
             }
-            migrated = migrated || move_dirs(&installs.join(plugin), &INSTALLS)?;
+            migrated = move_dirs(&installs.join(&plugin), &INSTALLS.join(plugin))? || migrated;
         }
-        migrated = migrated || move_dirs(&rtx_data.join("plugins"), &DATA)?;
+        migrated = move_dirs(&rtx_data.join("plugins"), &DATA.join("plugins"))? || migrated;
     }
-    migrated = migrated || move_dirs(&XDG_CONFIG_HOME.join("rtx"), &CONFIG)?;
-    migrated = migrated || move_dirs(&XDG_STATE_HOME.join("rtx"), &STATE)?;
+    migrated = move_dirs(&XDG_CONFIG_HOME.join("rtx"), &CONFIG)? || migrated;
+    migrated = move_dirs(&XDG_STATE_HOME.join("rtx"), &STATE)? || migrated;
     if migrated {
         eprintln!("migrated rtx directories to mise");
         eprintln!("see https://mise.jdx.dev/rtx.html")
