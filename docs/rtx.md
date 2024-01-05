@@ -40,8 +40,8 @@ to keep things a bit cleaner. You can still use the old style if you like by set
 
 If you use shims, a `mise reshim` will be necessary to update the shims.
 
-Thanks for trying out my little CLI tool by the way. This is a true labor of love for
-me I find incredibly fulfilling to work on and seeing people have success using. I have
+Thanks for trying out my little CLI tool by the way. I find this project incredibly
+fulfilling to work on and seeing people have success using. I have
 tremendous passion for building dev tools and the ideas in `mise` are the product of
 me thinking about building a tool like this for over a decade.
 
