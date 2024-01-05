@@ -56,7 +56,10 @@ impl ExternalPlugin {
     pub fn new(name: PluginName) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let cache_path = dirs::CACHE.join(&name);
-        let toml_path = plugin_path.join("mise.plugin.toml");
+        let mut toml_path = plugin_path.join("mise.plugin.toml");
+        if plugin_path.join("rtx.plugin.toml").exists() {
+            toml_path = plugin_path.join("rtx.plugin.toml");
+        }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
         Self {
             script_man: build_script_man(&name, &plugin_path),
