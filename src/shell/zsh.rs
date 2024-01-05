@@ -60,7 +60,7 @@ impl Shell for Zsh {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
                 _mise_cmd_not_found=1
-                [ -n "$(declare -f command_not_found_handler)" ] && eval "${{_/command_not_found_handler/_command_not_found_handler}}"
+                [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
 
                 function command_not_found_handler() {{
                     if {exe} hook-not-found -s zsh "$1"; then
