@@ -1,4 +1,4 @@
-# About mise-en-place
+# About
 
 `mise` (pronounced "meez") or "mise-en-place" is a development environment setup tool.
 The name refers to a French culinary phrase that roughly translates to "setup" or "put in place".

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "mise",
+  title: "mise-en-place",
   description: "mise-en-place documentation",
   lastUpdated: false,
   themeConfig: {
