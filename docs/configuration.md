@@ -78,46 +78,7 @@ You can also have environment specific config files like `.mise.production.toml`
 
 ### `[env]` - Arbitrary Environment Variables
 
-The `[env]` section of .mise.toml allows setting arbitrary environment variables.
-These can be simple key-value entries like this:
-
-```toml
-[env]
-NODE_ENV = 'production'
-```
-
-`PATH` is treated specially, it needs to be defined as an array in `env_path`:
-
-```toml
-env_path = [
-    # adds an absolute path
-    "~/.local/share/bin",
-    # adds a path relative to the .mise.toml, not PWD
-    "./node_modules/.bin",
-]
-```
-
-_Note: `env_path` is a top-level key, it does not go inside of `[env]`._
-
-Environment variable values can be templates, see [Templates](/templates) for details.
-
-```toml
-[env]
-LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
-```
-
-`env_file` can be used to specify a [dotenv](https://dotenv.org) file to load:
-
-```toml
-env_file = '.env'
-```
-
-_Note: `env_file` goes at the top of the file, above `[env]`._
-
-```toml
-[env]
-NODE_ENV = false # unset a previously set NODE_ENV
-```
+See [environments](/environments).
 
 ### `[plugins]` - Specify Custom Plugin Repository URLs
 

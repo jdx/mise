@@ -15,33 +15,33 @@ To clear an env var, set it to `false`:
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
+## `mise.file`
 
-## `PATH`
-
-`PATH` is treated specially, it needs to be defined as an array in `env_path`:
+In `.mise.toml`: `mise.file` can be used to specify a [dotenv](https://dotenv.org) file to load. It can be a string or array and uses relative or absolute paths:
 
 ```toml
-env_path = [
+[env]
+mise.file = '.env'
+```
+
+_This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood._
+
+Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
+directory.
+
+## `mise.path`
+
+`PATH` is treated specially, it needs to be defined as a string/array in `mise.path`:
+
+```toml
+[env]
+mise.path = [
     # adds an absolute path
     "~/.local/share/bin",
     # adds a path relative to the .mise.toml, not PWD
     "./node_modules/.bin",
 ]
 ```
-
-_Note: `env_path` is a top-level key, it does not go inside of `[env]`._
-
-## `env_file`
-
-In `.mise.toml`: `env_file` can be used to specify a [dotenv](https://dotenv.org) file to load:
-
-```toml
-env_file = '.env' // [!code focus]
-[env]
-NODE_ENV = 'production'
-```
-
-Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files.
 
 ## Templates
 
