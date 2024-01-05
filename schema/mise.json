@@ -163,6 +163,10 @@
                 }
               ]
             },
+            "description": {
+              "description": "description of task",
+              "type": "string"
+            },
             "depends": {
               "description": "other tasks to run before this task",
               "type": "array",
