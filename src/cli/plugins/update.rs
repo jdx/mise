@@ -1,5 +1,5 @@
 use console::style;
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
@@ -50,7 +50,8 @@ impl Update {
         let mpr = MultiProgressReport::get();
         rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs.unwrap_or(settings.jobs))
-            .build()?
+            .build()
+            .into_diagnostic()?
             .install(|| {
                 plugins.into_par_iter().for_each(|(plugin, ref_)| {
                     let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());

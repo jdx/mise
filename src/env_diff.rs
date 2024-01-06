@@ -5,11 +5,11 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
-use eyre::Result;
 use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{cmd, file};
@@ -76,7 +76,8 @@ impl EnvDiff {
             ", script = script.display()}
         )
         .full_env(&env)
-        .read()?;
+        .read()
+        .into_diagnostic()?;
         let env: HashMap<String, String> = env
             .into_iter()
             .map(|(k, v)| (k.into_string().unwrap(), v.into_string().unwrap()))
@@ -118,16 +119,17 @@ impl EnvDiff {
     pub fn deserialize(raw: &str) -> Result<EnvDiff> {
         let mut writer = Vec::new();
         let mut decoder = ZlibDecoder::new(writer);
-        let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
-        decoder.write_all(&bytes[..])?;
-        writer = decoder.finish()?;
-        Ok(rmp_serde::from_slice(&writer[..])?)
+        let bytes = BASE64_STANDARD_NO_PAD.decode(raw).into_diagnostic()?;
+        decoder.write_all(&bytes[..]).into_diagnostic()?;
+        writer = decoder.finish().into_diagnostic()?;
+        rmp_serde::from_slice(&writer[..]).into_diagnostic()
     }
 
     pub fn serialize(&self) -> Result<String> {
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
-        gz.write_all(&rmp_serde::to_vec_named(self)?)?;
-        Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
+        gz.write_all(&rmp_serde::to_vec_named(self).into_diagnostic()?)
+            .into_diagnostic()?;
+        Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish().into_diagnostic()?))
     }
 
     pub fn to_patches(&self) -> EnvDiffPatches {

@@ -3,8 +3,8 @@ use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
-use eyre::Result;
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 
 use crate::config::Config;
 
@@ -100,7 +100,10 @@ impl HookEnv {
         installs: &Vec<PathBuf>,
         to_remove: &Vec<PathBuf>,
     ) -> Result<Vec<EnvDiffOperation>> {
-        let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
+        let full = join_paths(&*env::PATH)
+            .into_diagnostic()?
+            .to_string_lossy()
+            .to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
                 Some((pre, post)) if settings.experimental => {
@@ -110,7 +113,10 @@ impl HookEnv {
             },
             None => (String::new(), full),
         };
-        let install_path = join_paths(installs)?.to_string_lossy().to_string();
+        let install_path = join_paths(installs)
+            .into_diagnostic()?
+            .to_string_lossy()
+            .to_string();
         let new_path = vec![pre, install_path, post]
             .into_iter()
             .filter(|p| !p.is_empty())

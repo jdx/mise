@@ -1,4 +1,4 @@
-use eyre::Result;
+use miette::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;

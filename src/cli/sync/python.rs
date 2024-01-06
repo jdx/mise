@@ -1,5 +1,5 @@
-use eyre::Result;
 use itertools::sorted;
+use miette::Result;
 
 use crate::config::Config;
 use crate::dirs;

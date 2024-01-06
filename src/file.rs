@@ -5,9 +5,9 @@ use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
+use miette::{Context, IntoDiagnostic, Result};
 use tar::Archive;
 use zip::ZipArchive;
 
@@ -22,6 +22,7 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         Ok(x) if x.is_dir() => {
             trace!("rm -rf {}", display_path(path));
             fs::remove_dir_all(path)
+                .into_diagnostic()
                 .wrap_err_with(|| format!("failed rm -rf: {}", display_path(path)))?;
         }
         _ => {}
@@ -32,7 +33,9 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
-    fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+    fs::remove_file(path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -40,7 +43,7 @@ pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     (|| -> Result<()> {
         if path.exists() && is_empty_dir(path)? {
             trace!("rmdir {}", display_path(path));
-            fs::remove_dir(path)?;
+            fs::remove_dir(path).into_diagnostic()?;
         }
         Ok(())
     })()
@@ -58,7 +61,7 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
     trace!("mv {} {}", from.display(), to.display());
-    fs::rename(from, to).wrap_err_with(|| {
+    fs::rename(from, to).into_diagnostic().wrap_err_with(|| {
         format!(
             "failed rename: {} -> {}",
             display_path(from),
@@ -70,13 +73,16 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
 pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("write {}", display_path(path));
-    fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
+    fs::write(path, contents)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
 
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
     trace!("cat {}", display_path(path));
     fs::read_to_string(path)
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed read_to_string: {}", display_path(path)))
 }
 
@@ -85,7 +91,9 @@ pub fn create(path: &Path) -> Result<File> {
         create_dir_all(parent)?;
     }
     trace!("touch {}", display_path(path));
-    File::create(path).wrap_err_with(|| format!("failed create: {}", display_path(path)))
+    File::create(path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed create: {}", display_path(path)))
 }
 
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -93,6 +101,7 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     if !path.exists() {
         trace!("mkdir -p {}", display_path(path));
         fs::create_dir_all(path)
+            .into_diagnostic()
             .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))?;
     }
     Ok(())
@@ -124,13 +133,14 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();
     set_file_times(dir, now, now)
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
 }
 
 pub fn modified_duration(path: &Path) -> Result<Duration> {
-    let metadata = path.metadata()?;
-    let modified = metadata.modified()?;
-    let duration = modified.elapsed()?;
+    let metadata = path.metadata().into_diagnostic()?;
+    let modified = metadata.modified().into_diagnostic()?;
+    let duration = modified.elapsed().into_diagnostic()?;
     Ok(duration)
 }
 
@@ -156,9 +166,9 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
         return Ok(output);
     }
 
-    for entry in dir.read_dir()? {
-        let entry = entry?;
-        let ft = entry.file_type()?;
+    for entry in dir.read_dir().into_diagnostic()? {
+        let entry = entry.into_diagnostic()?;
+        let ft = entry.file_type().into_diagnostic()?;
         if ft.is_dir() || ft.is_symlink() {
             output.push(entry.file_name().into_string().unwrap());
         }
@@ -174,9 +184,9 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
         return Ok(output);
     }
 
-    for entry in dir.read_dir()? {
-        let entry = entry?;
-        if entry.file_type()?.is_file() {
+    for entry in dir.read_dir().into_diagnostic()? {
+        let entry = entry.into_diagnostic()?;
+        if entry.file_type().into_diagnostic()?.is_file() {
             output.push(entry.path());
         }
     }
@@ -187,9 +197,9 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
 pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
-        fs::remove_file(link)?;
+        fs::remove_file(link).into_diagnostic()?;
     }
-    symlink(target, link)?;
+    symlink(target, link).into_diagnostic()?;
     Ok(())
 }
 
@@ -197,13 +207,13 @@ pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Pa
     if !symlink_dir.exists() {
         return Ok(());
     }
-    for entry in symlink_dir.read_dir()? {
-        let entry = entry?;
+    for entry in symlink_dir.read_dir().into_diagnostic()? {
+        let entry = entry.into_diagnostic()?;
         let path = entry.path();
         if path.is_symlink() {
-            let target = path.read_link()?;
+            let target = path.read_link().into_diagnostic()?;
             if target.starts_with(target_prefix) {
-                fs::remove_file(&path)?;
+                fs::remove_file(&path).into_diagnostic()?;
             }
         }
     }
@@ -218,9 +228,10 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 pub fn make_executable(path: &Path) -> Result<()> {
-    let mut perms = path.metadata()?.permissions();
+    let mut perms = path.metadata().into_diagnostic()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
     fs::set_permissions(path, perms)
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
     Ok(())
 }
@@ -228,6 +239,7 @@ pub fn make_executable(path: &Path) -> Result<()> {
 fn is_empty_dir(path: &Path) -> Result<bool> {
     path.read_dir()
         .map(|mut i| i.next().is_none())
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
 }
 
@@ -281,19 +293,24 @@ pub fn which(name: &str) -> Option<PathBuf> {
 
 pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
     debug!("tar -xzf {} -C {}", archive.display(), dest.display());
-    let f = File::open(archive)?;
+    let f = File::open(archive).into_diagnostic()?;
     let tar = GzDecoder::new(f);
-    Archive::new(tar).unpack(dest).wrap_err_with(|| {
-        let archive = display_path(archive);
-        let dest = display_path(dest);
-        format!("failed to extract tar: {archive} to {dest}")
-    })
+    Archive::new(tar)
+        .unpack(dest)
+        .into_diagnostic()
+        .wrap_err_with(|| {
+            let archive = display_path(archive);
+            let dest = display_path(dest);
+            format!("failed to extract tar: {archive} to {dest}")
+        })
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
-    ZipArchive::new(File::open(archive)?)
+    ZipArchive::new(File::open(archive).into_diagnostic()?)
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
+        .into_diagnostic()
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
 }
 

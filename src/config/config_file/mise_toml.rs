@@ -4,11 +4,9 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use color_eyre::eyre::eyre;
-use color_eyre::{Result, Section};
 use confique::Partial;
-use eyre::WrapErr;
-use tera::Context;
+use miette::{IntoDiagnostic, Result, WrapErr};
+use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Table, Value};
 
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
@@ -26,7 +24,7 @@ use crate::{dirs, file, parse_error};
 
 #[derive(Default)]
 pub struct MiseToml {
-    context: Context,
+    context: TeraContext,
     path: PathBuf,
     toolset: Toolset,
     env_files: Vec<PathBuf>,
@@ -60,14 +58,14 @@ impl MiseToml {
     pub fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing: {}", display_path(path));
         let mut rf = Self::init(path);
-        let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        let body = file::read_to_string(path)?; // .suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         trace!("{}", rf.dump());
         Ok(rf)
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
+        let doc: Document = s.parse().into_diagnostic()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
                 "dotenv" => self.parse_env_file(k, v, true)?,
@@ -111,9 +109,10 @@ impl MiseToml {
 
     fn parse_env_filename(&mut self, path: PathBuf) -> Result<()> {
         let dotenv = dotenvy::from_path_iter(&path)
-            .wrap_err_with(|| eyre!("failed to parse dotenv file: {}", display_path(&path)))?;
+            .into_diagnostic()
+            .wrap_err_with(|| format!("failed to parse dotenv file: {}", display_path(&path)))?;
         for item in dotenv {
-            let (k, v) = item?;
+            let (k, v) = item.into_diagnostic()?;
             self.env.insert(k, v);
         }
         self.env_files.push(path);
@@ -637,7 +636,8 @@ impl MiseToml {
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("failed to parse template: {k}='{input}'"))?;
         Ok(output)
     }
 }
@@ -782,7 +782,7 @@ impl ConfigFile for MiseToml {
                 }
                 "raw" => s.raw = Some(self.parse_bool(&k, v)?),
                 "yes" => s.yes = Some(self.parse_bool(&k, v)?),
-                _ => Err(eyre!("Unknown config setting: {}", k))?,
+                _ => Err(miette!("Unknown config setting: {}", k))?,
             };
         }
 

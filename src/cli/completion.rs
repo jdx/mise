@@ -1,6 +1,6 @@
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
-use eyre::Result;
+use miette::Result;
 use std::fmt::Display;
 
 /// Generate shell completions

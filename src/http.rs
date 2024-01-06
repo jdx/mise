@@ -15,7 +15,7 @@ use std::time::Duration;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
 use crate::{env, file};
-use eyre::{Report, Result};
+use miette::{IntoDiagnostic, Report, Result};
 use once_cell::sync::Lazy;
 use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
@@ -31,7 +31,8 @@ impl Client {
             reqwest: Self::_new()
                 .timeout(timeout)
                 .connect_timeout(timeout)
-                .build()?,
+                .build()
+                .into_diagnostic()?,
         })
     }
 
@@ -50,16 +51,16 @@ impl Client {
                 req = req.header("authorization", format!("token {}", token));
             }
         }
-        let resp = req.send()?;
+        let resp = req.send().into_diagnostic()?;
         debug!("GET {url} {}", resp.status());
-        resp.error_for_status_ref()?;
+        resp.error_for_status_ref().into_diagnostic()?;
         Ok(resp)
     }
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
         let resp = self.get(url)?;
-        let text = resp.text()?;
+        let text = resp.text().into_diagnostic()?;
         Ok(text)
     }
 
@@ -69,18 +70,18 @@ impl Client {
     {
         let url = url.into_url().unwrap();
         let resp = self.get(url)?;
-        let json = resp.json()?;
+        let json = resp.json().into_diagnostic()?;
         Ok(json)
     }
 
     pub fn download_file<U: IntoUrl>(&self, url: U, path: &Path) -> Result<()> {
-        let url = url.into_url()?;
+        let url = url.into_url().into_diagnostic()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let mut resp = self.get(url)?;
 
         file::create_dir_all(path.parent().unwrap())?;
-        let mut file = File::create(path)?;
-        resp.copy_to(&mut file)?;
+        let mut file = File::create(path).into_diagnostic()?;
+        resp.copy_to(&mut file).into_diagnostic()?;
         Ok(())
     }
 }

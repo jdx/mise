@@ -2,8 +2,7 @@ use demand::DemandOption;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use eyre::Result;
-use eyre::WrapErr;
+use miette::{Context, IntoDiagnostic, Result};
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;
@@ -141,7 +140,7 @@ impl Upgrade {
             };
             ms = ms.option(DemandOption::new(tv).label(&label));
         }
-        Ok(ms.run()?.into_iter().cloned().collect())
+        Ok(ms.run().into_diagnostic()?.into_iter().cloned().collect())
     }
 }
 

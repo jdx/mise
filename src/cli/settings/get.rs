@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use miette::{IntoDiagnostic, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -22,10 +22,10 @@ impl SettingsGet {
         Config::try_get()?;
         let settings = Settings::try_get()?;
         let json = settings.to_string();
-        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
+        let doc: BTreeMap<String, Value> = serde_json::from_str(&json).into_diagnostic()?;
         match doc.get(&self.setting) {
             Some(value) => Ok(miseprintln!("{}", value)),
-            None => Err(eyre!("Unknown setting: {}", self.setting)),
+            None => Err(miette!("Unknown setting: {}", self.setting)),
         }
     }
 }

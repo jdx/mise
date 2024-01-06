@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use console::style;
-use eyre::Result;
+use miette::Result;
 
 use crate::config::{Config, Settings};
 

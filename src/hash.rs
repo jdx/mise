@@ -4,7 +4,7 @@ use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
@@ -18,9 +18,9 @@ pub fn hash_to_str<T: Hash>(t: &T) -> String {
 }
 
 pub fn file_hash_sha256(path: &Path) -> Result<String> {
-    let mut file = File::open(path)?;
+    let mut file = File::open(path).into_diagnostic()?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)?;
+    std::io::copy(&mut file, &mut hasher).into_diagnostic()?;
     let hash = hasher.finalize();
     Ok(format!("{hash:x}"))
 }
