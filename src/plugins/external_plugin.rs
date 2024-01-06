@@ -492,10 +492,10 @@ impl Plugin for ExternalPlugin {
                 let is_trusted = !is_shorthand || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
                 if !is_trusted {
                     warn!(
-                        "⚠️  {name} is a community-developed plugin: {url}",
-                        name = style(&self.name).blue(),
-                        url = style(url.trim_end_matches(".git")).yellow(),
+                        "⚠️ {} is a community-developed plugin",
+                        style(&self.name).blue(),
                     );
+                    warn!("url: {}", style(url.trim_end_matches(".git")).yellow(),);
                     if settings.paranoid {
                         bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
                     }
