@@ -1,6 +1,6 @@
 use crate::cli::run;
 use clap::Subcommand;
-use eyre::Result;
+use miette::Result;
 
 mod edit;
 mod ls;

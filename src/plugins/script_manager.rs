@@ -4,9 +4,9 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use color_eyre::eyre::{Context, Result};
 use duct::Expression;
 use indexmap::indexmap;
+use miette::{Context, IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 
 use crate::cmd::{cmd, CmdLineRunner};
@@ -165,6 +165,7 @@ impl ScriptManager {
             cmd = cmd.stderr_null();
         }
         cmd.read()
+            .into_diagnostic()
             .wrap_err_with(|| ScriptFailed(display_path(&self.get_script_path(script)), None))
     }
 
@@ -180,7 +181,7 @@ impl ScriptManager {
                 Some(ScriptFailed(_, status)) => *status,
                 _ => None,
             };
-            return Err(ScriptFailed(display_path(&path), status).into());
+            return Err(ScriptFailed(display_path(&path), status)).into_diagnostic();
         }
         Ok(())
     }

@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use color_eyre::eyre::eyre;
-use color_eyre::{Result, Section};
+use miette::{IntoDiagnostic, Result};
 use toml_edit::{Document, Item, Value};
 
 use crate::{file, parse_error};
@@ -27,7 +26,7 @@ impl MisePluginToml {
         }
         trace!("parsing: {}", path.display());
         let mut rf = Self::init();
-        let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        let body = file::read_to_string(path)?; // .suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
         Ok(rf)
     }
@@ -39,7 +38,7 @@ impl MisePluginToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        let doc: Document = s.parse().suggestion("ensure file is valid TOML")?;
+        let doc: Document = s.parse().into_diagnostic()?; //.suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
                 "exec-env" => self.exec_env = self.parse_script_config(k, v)?,
@@ -51,7 +50,7 @@ impl MisePluginToml {
                 // this is an old key used in rtx-python
                 // this file is invalid, so just stop parsing entirely if we see it
                 "legacy-filenames" => return Ok(()),
-                _ => Err(eyre!("unknown key: {}", k))?,
+                _ => Err(miette!("unknown key: {}", k))?,
             }
         }
         Ok(())
@@ -101,7 +100,6 @@ impl MisePluginToml {
 
 #[cfg(test)]
 mod tests {
-
     use crate::dirs;
 
     use super::*;

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::config::Settings;
 use crate::file::remove_all;

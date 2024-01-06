@@ -4,8 +4,8 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use eyre::Result;
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 
 pub use python::PythonPlugin;
@@ -80,7 +80,7 @@ impl CorePlugin {
     pub fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
         let mut path = env::split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
         path.insert(0, tv.install_path().join("bin"));
-        Ok(env::join_paths(path)?)
+        env::join_paths(path).into_diagnostic()
     }
 
     pub fn run_fetch_task_with_timeout<F, T>(f: F) -> Result<T>

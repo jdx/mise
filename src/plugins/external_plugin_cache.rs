@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use eyre::WrapErr;
-use eyre::{eyre, Result};
+use miette::{IntoDiagnostic, Result, WrapErr};
 
 use crate::cache::CacheManager;
 use crate::config::Config;
@@ -102,5 +101,6 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<Strin
             .unwrap_or(&env::current_dir().unwrap()),
     )
     .render_str(tmpl, &ctx)
-    .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+    .into_diagnostic()
+    .wrap_err_with(|| miette!("failed to parse template: {tmpl}"))
 }

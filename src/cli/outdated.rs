@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use console::{pad_str, style, Alignment};
-use eyre::Result;
+use miette::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::Config;

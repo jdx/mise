@@ -1,8 +1,8 @@
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
-use color_eyre::eyre::{eyre, Result};
 use duct::Expression;
+use miette::{IntoDiagnostic, Result};
 
 use crate::cmd;
 use crate::file::touch_dir;
@@ -38,13 +38,13 @@ impl Git {
                 if res.status.success() {
                     Ok(())
                 } else {
-                    Err(eyre!(
+                    Err(miette!(
                         "git failed: {cmd:?} {}",
                         String::from_utf8(res.stdout).unwrap()
                     ))
                 }
             }
-            Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
+            Err(err) => Err(miette!("git failed: {cmd:?} {err:#}")),
         };
         exec(git_cmd!(
             &self.dir,
@@ -74,7 +74,7 @@ impl Git {
     pub fn clone(&self, url: &str) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
-            create_dir_all(parent)?;
+            create_dir_all(parent).into_diagnostic()?;
         }
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
@@ -83,29 +83,39 @@ impl Git {
                 err
             ),
         }
-        cmd!("git", "clone", "-q", "--depth", "1", url, &self.dir).run()?;
+        cmd!("git", "clone", "-q", "--depth", "1", url, &self.dir)
+            .run()
+            .into_diagnostic()?;
         Ok(())
     }
 
     pub fn current_branch(&self) -> Result<String> {
-        let branch = git_cmd!(&self.dir, "branch", "--show-current").read()?;
+        let branch = git_cmd!(&self.dir, "branch", "--show-current")
+            .read()
+            .into_diagnostic()?;
         debug!("current branch for {}: {}", self.dir.display(), &branch);
         Ok(branch)
     }
     pub fn current_sha(&self) -> Result<String> {
-        let sha = git_cmd!(&self.dir, "rev-parse", "HEAD").read()?;
+        let sha = git_cmd!(&self.dir, "rev-parse", "HEAD")
+            .read()
+            .into_diagnostic()?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
 
     pub fn current_sha_short(&self) -> Result<String> {
-        let sha = git_cmd!(&self.dir, "rev-parse", "--short", "HEAD").read()?;
+        let sha = git_cmd!(&self.dir, "rev-parse", "--short", "HEAD")
+            .read()
+            .into_diagnostic()?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
 
     pub fn current_abbrev_ref(&self) -> Result<String> {
-        let aref = git_cmd!(&self.dir, "rev-parse", "--abbrev-ref", "HEAD").read()?;
+        let aref = git_cmd!(&self.dir, "rev-parse", "--abbrev-ref", "HEAD")
+            .read()
+            .into_diagnostic()?;
         debug!("current abbrev ref for {}: {}", self.dir.display(), &aref);
         Ok(aref)
     }
@@ -140,7 +150,7 @@ impl Git {
 }
 
 fn get_git_version() -> Result<String> {
-    let version = cmd!("git", "--version").read()?;
+    let version = cmd!("git", "--version").read().into_diagnostic()?;
     Ok(version.trim().into())
 }
 

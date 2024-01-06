@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::local::local;

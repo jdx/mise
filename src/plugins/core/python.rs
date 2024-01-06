@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -73,7 +73,9 @@ impl PythonPlugin {
         self.install_or_update_python_build()?;
         let python_build_bin = self.python_build_bin();
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(python_build_bin, "--definitions").read()?;
+            let output = cmd!(python_build_bin, "--definitions")
+                .read()
+                .into_diagnostic()?;
             let versions = output
                 .split('\n')
                 .map(|s| s.to_string())
@@ -193,7 +195,7 @@ impl Plugin for PythonPlugin {
         let settings = Settings::try_get()?;
         self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
-            return Err(eyre!("Ref versions not supported for python"));
+            return Err(miette!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())

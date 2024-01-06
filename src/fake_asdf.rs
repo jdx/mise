@@ -1,14 +1,14 @@
+use miette::{ErrReport, IntoDiagnostic};
 use std::env::{join_paths, split_paths};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use color_eyre::eyre::ErrReport;
 use once_cell::sync::OnceCell;
 
 use crate::{env, file};
 
-pub fn setup() -> color_eyre::Result<PathBuf> {
+pub fn setup() -> miette::Result<PathBuf> {
     static SETUP: OnceCell<PathBuf> = OnceCell::new();
     let path = SETUP.get_or_try_init(|| {
         let path = env::MISE_DATA_DIR.join(".fake-asdf");
@@ -22,9 +22,9 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
                 mise asdf "$@"
             "#},
             )?;
-            let mut perms = asdf_bin.metadata()?.permissions();
+            let mut perms = asdf_bin.metadata().into_diagnostic()?.permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&asdf_bin, perms)?;
+            fs::set_permissions(&asdf_bin, perms).into_diagnostic()?;
         }
         Ok::<PathBuf, ErrReport>(path)
     })?;

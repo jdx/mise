@@ -8,9 +8,9 @@ use std::sync::{Mutex, RwLock};
 use std::thread;
 
 use crate::config::Settings;
-use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
-use eyre::Context;
+use miette::Result;
+use miette::{Context, IntoDiagnostic};
 
 use crate::env;
 use crate::errors::Error::ScriptFailed;
@@ -221,6 +221,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .cmd
             .spawn()
+            .into_diagnostic()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
@@ -292,7 +293,12 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
-        let status = self.cmd.spawn()?.wait()?;
+        let status = self
+            .cmd
+            .spawn()
+            .into_diagnostic()?
+            .wait()
+            .into_diagnostic()?;
         match status.success() {
             true => Ok(()),
             false => self.on_error(String::new(), status),
@@ -343,7 +349,7 @@ impl<'a> CmdLineRunner<'a> {
                 // eprintln!("{}", output);
             }
         }
-        Err(ScriptFailed(self.get_program(), Some(status)))?
+        Err(ScriptFailed(self.get_program(), Some(status))).into_diagnostic()?
     }
 
     fn get_program(&self) -> String {

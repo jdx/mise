@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionOptions};

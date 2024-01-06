@@ -1,7 +1,7 @@
 use crate::task::Task;
 use console::truncate_str;
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 
 use tabled::Tabled;
 

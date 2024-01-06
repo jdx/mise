@@ -3,14 +3,15 @@ use std::ffi::{OsStr, OsString};
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
-use eyre::Result;
+#[cfg(test)]
+use miette::IntoDiagnostic;
+use miette::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
-
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
@@ -97,11 +98,11 @@ impl Exec {
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
-        let res = cmd.unchecked().run()?;
+        let res = cmd.unchecked().run().into_diagnostic()?;
         match res.status.code() {
             Some(0) => Ok(()),
-            Some(code) => Err(eyre!("command failed: exit code {}", code)),
-            None => Err(eyre!("command failed: terminated by signal")),
+            Some(code) => Err(miette!("command failed: exit code {}", code)),
+            None => Err(miette!("command failed: terminated by signal")),
         }
     }
 }

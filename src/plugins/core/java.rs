@@ -3,8 +3,8 @@ use std::fmt::Display;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
@@ -155,9 +155,11 @@ impl JavaPlugin {
     fn move_to_install_path(&self, tv: &ToolVersion, m: &JavaMetadata) -> Result<()> {
         let basedir = tv
             .download_path()
-            .read_dir()?
+            .read_dir()
+            .into_diagnostic()?
             .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
-            .unwrap()?
+            .unwrap()
+            .into_diagnostic()?
             .path();
         let contents_dir = basedir.join("Contents");
         let source_dir = match m.vendor.as_str() {
@@ -167,8 +169,8 @@ impl JavaPlugin {
         };
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path())?;
-        for entry in fs::read_dir(source_dir)? {
-            let entry = entry?;
+        for entry in fs::read_dir(source_dir).into_diagnostic()? {
+            let entry = entry.into_diagnostic()?;
             let dest = tv.install_path().join(entry.file_name());
             trace!("moving {:?} to {:?}", entry.path(), &dest);
             file::rename(entry.path(), dest)?;
@@ -190,8 +192,8 @@ impl JavaPlugin {
         // move Contents dir to install path for macOS, if it exists
         if contents_dir.exists() {
             file::create_dir_all(tv.install_path().join("Contents"))?;
-            for entry in fs::read_dir(contents_dir)? {
-                let entry = entry?;
+            for entry in fs::read_dir(contents_dir).into_diagnostic()? {
+                let entry = entry.into_diagnostic()?;
                 // skip Home dir, so we can symlink it later
                 if entry.file_name() == "Home" {
                     continue;
@@ -269,7 +271,7 @@ impl JavaPlugin {
         let m = self
             .fetch_java_metadata(&release_type)?
             .get(&v)
-            .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
+            .ok_or_else(|| miette!("no metadata found for version {}", tv.version))?;
         Ok(m)
     }
 

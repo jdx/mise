@@ -1,7 +1,7 @@
 use clap::builder::StyledStr;
 use console::strip_ansi_codes;
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 
 use crate::cli::Cli;
 

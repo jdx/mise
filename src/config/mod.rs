@@ -5,10 +5,10 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use eyre::Context;
-use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use miette::Context;
+use miette::Result;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
 
@@ -291,7 +291,7 @@ fn load_miserc() -> Result<MiseToml> {
             Ok(MiseToml::init(&settings_path))
         }
         true => MiseToml::from_file(&settings_path)
-            .wrap_err_with(|| eyre!("Error parsing {}", display_path(&settings_path))),
+            .wrap_err_with(|| miette!("Error parsing {}", display_path(&settings_path))),
     }
 }
 

@@ -1,6 +1,6 @@
 use console::style;
-use eyre::{Result, WrapErr};
 use itertools::Itertools;
+use miette::{Result, WrapErr};
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -56,7 +56,7 @@ impl Uninstall {
             let pr = mpr.add(&tv.style());
             if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
                 error!("{err}");
-                return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
+                return Err(miette!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             if self.dry_run {
                 pr.finish_with_message("uninstalled (dry-run)".into());

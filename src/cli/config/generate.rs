@@ -4,7 +4,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
 use clap::ValueHint;
-use eyre::Result;
+use miette::Result;
 
 /// [experimental] Generate an .mise.toml file
 #[derive(Debug, clap::Args)]

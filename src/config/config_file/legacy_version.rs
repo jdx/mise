@@ -2,7 +2,7 @@ use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
 use crate::plugins::{Plugin, PluginName};

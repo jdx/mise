@@ -1,6 +1,6 @@
 use std::process::exit;
 
-use eyre::Result;
+use miette::Result;
 
 use crate::config::{Config, Settings};
 

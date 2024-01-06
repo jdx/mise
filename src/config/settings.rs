@@ -1,5 +1,5 @@
 use confique::env::parse::{list_by_colon, list_by_comma};
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
@@ -88,14 +88,14 @@ impl Settings {
         if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
-        let mut settings = Self::default_builder().load()?;
+        let mut settings = Self::default_builder().load().into_diagnostic()?;
         if let Some(cd) = &settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             let mut cd = PathBuf::from(cd);
             if cd.is_relative() {
-                cd = ORIG_PATH.as_ref()?.join(cd);
+                cd = ORIG_PATH.as_ref().into_diagnostic()?.join(cd);
             }
-            env::set_current_dir(cd)?;
+            env::set_current_dir(cd).into_diagnostic()?;
         }
         if settings.raw {
             settings.jobs = 1;

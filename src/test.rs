@@ -1,4 +1,3 @@
-use color_eyre::{Help, SectionExt};
 use std::env::{join_paths, set_current_dir};
 use std::path::PathBuf;
 
@@ -90,12 +89,12 @@ pub fn replace_path(input: &str) -> String {
         .replace(&*env::MISE_BIN.to_string_lossy(), "mise")
 }
 
-pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
+pub fn cli_run(args: &Vec<String>) -> miette::Result<(String, String)> {
     Config::reset();
     *env::ARGS.write().unwrap() = args.clone();
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
-    Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
+    Cli::run(args)?; //.with_context(|| format!("Command: {}", args.join(" ")))?;
     let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
     let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
 
