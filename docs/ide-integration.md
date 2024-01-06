@@ -17,3 +17,23 @@ Direnv and mise work similarly and there should be a direnv extension that can b
 
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_mise`](/direnv) direnv function.
+
+
+## emacs
+
+```lisp
+;; CLI tools installed by Mise
+;; See: https://www.emacswiki.org/emacs/ExecPath
+(setenv "PATH" (concat (getenv "PATH") ":/home/user/.local/share/mise/shims"))
+(setq exec-path (append exec-path '("/home/user/.local/share/mise/shims")))
+```
+
+## [YOUR IDE HERE]
+
+I am not a heavy IDE user. I use JetBrains products but I don't actually
+like to execute code directly inside of them often so I don't have much
+personal advice to offer for IDEs generally. That said, people often
+ask about how to get their IDE to work with mise so if you've done this
+for your IDE, please consider sending a PR to this page with some
+instructions (however rough they are, starting somewhere is better than
+nothing).

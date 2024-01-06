@@ -333,7 +333,7 @@ do {
 
 Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/mise.py` config file and `import mise` it in `~/.config/xonsh/rc.xsh`:
 
-```xsh
+```python
 from pathlib         import Path
 from xonsh.built_ins import XSH
 
@@ -344,7 +344,7 @@ XSH.builtins.execx(mise_init,'exec',ctx,filename='mise')
 
 Or continue to use `rc.xsh`/`.xonshrc`:
 
-```xsh
+```sh
 echo 'execx($(~/bin/mise activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
 ```
 

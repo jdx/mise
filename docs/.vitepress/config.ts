@@ -22,6 +22,7 @@ export default defineConfig({
       { text: 'Coming from rtx', link: '/rtx' },
       { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       { text: 'FAQs', link: '/faq' },
+      { text: 'How I Use mise', link: '/how-i-use-mise' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',
@@ -95,4 +96,9 @@ export default defineConfig({
       copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
     },
   },
+  markdown: {
+    // languages: [
+    //   "elisp"
+    // ]
+  }
 })
