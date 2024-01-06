@@ -174,8 +174,21 @@ impl JavaPlugin {
             file::rename(entry.path(), dest)?;
         }
 
+        if os() == "macosx" {
+            self.handle_macos_integration(&contents_dir, tv, m)?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_macos_integration(
+        &self,
+        contents_dir: &Path,
+        tv: &ToolVersion,
+        m: &JavaMetadata,
+    ) -> Result<()> {
         // move Contents dir to install path for macOS, if it exists
-        if os() == "macosx" && contents_dir.exists() {
+        if contents_dir.exists() {
             file::create_dir_all(tv.install_path().join("Contents"))?;
             for entry in fs::read_dir(contents_dir)? {
                 let entry = entry?;
@@ -191,6 +204,21 @@ impl JavaPlugin {
                 tv.install_path().as_path(),
                 &tv.install_path().join("Contents").join("Home"),
             )?;
+        }
+
+        // if vendor is Zulu, symlink zulu-{major_version}.jdk/Contents to install path for macOS
+        if m.vendor.as_str() == "zulu" {
+            let major_version = m.version.split('.').next().unwrap();
+            file::make_symlink(
+                tv.install_path()
+                    .join(format!("zulu-{}.jdk", major_version))
+                    .join("Contents")
+                    .as_path(),
+                &tv.install_path().join("Contents"),
+            )?;
+        }
+
+        if tv.install_path().join("Contents").exists() {
             info!(
                 "{}",
                 formatdoc! {r#"
@@ -203,7 +231,6 @@ impl JavaPlugin {
                 }
             );
         }
-
         Ok(())
     }
 
