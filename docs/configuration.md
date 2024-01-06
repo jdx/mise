@@ -208,6 +208,7 @@ yes = false         # set to true to automatically answer yes to all prompts
 
 not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
 task_output = "prefix" # see Task Runner for more information
+paranoid = false       # see MISE_PARANOID
 
 shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
 disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
@@ -370,6 +371,10 @@ Equivalent to `MISE_LOG_LEVEL=warn`.
 
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
 This disables mise functionality that would otherwise make these files incompatible with asdf.
+
+### `MISE_PARANOID=0`
+
+Enables extra-secure behavior. See [Paranoid](/paranoid).
 
 ### `MISE_JOBS=1`
 

@@ -55,7 +55,7 @@ really didn't want to know about shims and these version managers. I
 was interested in ruby/rails at the time and the CLI stuff was a
 distraction for me.
 
-I empathathize with that past self and that's the reason the
+I empathize with that past self and that's the reason the
 "golden path" for mise is to use `mise activate`. I'm making it for
 my 25 year-old self that didn't want to understand this stuff so I've
 tried to make it easy, reliable, and to do the right thing with as
@@ -176,3 +176,19 @@ There is a social aspect of this as well that I'm conscious of. I'm
 the author of `mise`. To me it's a little self-serving to go into a project
 and add a config for my own project. I'd love if _someone else_ did that
 instead.
+
+## `~/.mise`
+
+I often need to access mise's internals so I do the following:
+
+```sh
+$ ln -s ~/.mise ~/.cache/mise
+$ ln -s ~/.mise ~/.config/mise
+$ ln -s ~/.mise ~/.local/share/mise
+$ ln -s ~/.mise ~/.local/state/mise
+```
+
+It is good that mise generally follows XDG spec, but for tools that I interact
+with a lot I like to put them at the top level like this. Obviously,
+mise doesn't mind if all of these point to the same place or else it would
+not work for me.

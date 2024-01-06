@@ -21,6 +21,7 @@ export default defineConfig({
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
       { text: 'Tips & Tricks', link: '/tips-and-tricks' },
+      { text: 'Paranoid', link: '/paranoid' },
       { text: 'FAQs', link: '/faq' },
       { text: 'How I Use mise', link: '/how-i-use-mise' },
       {
