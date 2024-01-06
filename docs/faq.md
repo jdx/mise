@@ -109,7 +109,7 @@ There are 2 places that versions are cached so a brand new release might not app
 
 The first is that the mise CLI caches versions for 24 hours. This can be cleared with `mise cache clear`.
 
-The second uses the [mise-versions](https://github.com/jdx/mise-versions) repo as a centralized
+The second uses the mise-versions.jdx.dev host as a centralized
 place to list all of the versions of most plugins. This is intended to speed up mise and also
 get around GitHub rate limits when querying for new versions. Check that repo for your plugin to
 see if it has an updated version. This service can be disabled by setting `MISE_USE_VERSIONS_HOST=0`.
