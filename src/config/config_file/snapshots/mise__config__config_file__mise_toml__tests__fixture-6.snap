@@ -4,6 +4,7 @@ expression: "replace_path(&format!(\"{:#?}\", &cf))"
 ---
 MiseToml(~/fixtures/.mise.toml): terraform@1.0.0, node@18 node@prefix:20 node@ref:master node@path:~/.nodes/18, jq@prefix:1.6, shellcheck@0.9.0, python@3.10.0 python@3.9.0 {
     settings: Object {
+        "all_compile": Null,
         "always_keep_download": Null,
         "always_keep_install": Null,
         "asdf_compat": Null,

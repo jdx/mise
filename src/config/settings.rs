@@ -16,57 +16,60 @@ use serde_derive::Serialize;
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize)))]
 pub struct Settings {
-    #[config(env = "MISE_EXPERIMENTAL", default = false)]
-    pub experimental: bool,
-    #[config(env = "MISE_COLOR", default = true)]
-    pub color: bool,
+    #[config(env = "MISE_ALL_COMPILE", default = false)]
+    pub all_compile: bool,
+    #[config(env = "CI", default = false)]
+    pub ci: bool,
     #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
     #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
+    #[config(env = "MISE_ASDF_COMPAT", default = false)]
+    pub asdf_compat: bool,
+    #[config(env = "MISE_CD")]
+    pub cd: Option<String>,
+    #[config(env = "MISE_COLOR", default = true)]
+    pub color: bool,
+    #[config(env = "MISE_DEBUG", default = false)]
+    pub debug: bool,
+    #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
+    pub disable_default_shorthands: bool,
+    #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
+    pub disable_tools: BTreeSet<String>,
+    #[config(env = "MISE_ENV_FILE")]
+    pub env_file: Option<PathBuf>,
+    #[config(env = "MISE_EXPERIMENTAL", default = false)]
+    pub experimental: bool,
+    #[config(env = "MISE_JOBS", default = 4)]
+    pub jobs: usize,
     #[config(env = "MISE_LEGACY_VERSION_FILE", default = true)]
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
     #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
-    #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
-    pub trusted_config_paths: BTreeSet<PathBuf>,
     #[config(env = "MISE_LOG_LEVEL", default = "info")]
     pub log_level: String,
-    #[config(env = "MISE_TRACE", default = false)]
-    pub trace: bool,
-    #[config(env = "MISE_DEBUG", default = false)]
-    pub debug: bool,
-    #[config(env = "MISE_VERBOSE", default = false)]
-    pub verbose: bool,
-    #[config(env = "MISE_QUIET", default = false)]
-    pub quiet: bool,
-    #[config(env = "MISE_ASDF_COMPAT", default = false)]
-    pub asdf_compat: bool,
-    #[config(env = "MISE_PARANOID", default = false)]
-    pub paranoid: bool,
-    #[config(env = "MISE_JOBS", default = 4)]
-    pub jobs: usize,
-    #[config(env = "MISE_SHORTHANDS_FILE")]
-    pub shorthands_file: Option<PathBuf>,
-    #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
-    pub disable_default_shorthands: bool,
-    #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
-    pub disable_tools: BTreeSet<String>,
-    #[config(env = "MISE_RAW", default = false)]
-    pub raw: bool,
-    #[config(env = "MISE_YES", default = false)]
-    pub yes: bool,
-    #[config(env = "MISE_TASK_OUTPUT")]
-    pub task_output: Option<String>,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
     pub not_found_auto_install: bool,
-    #[config(env = "CI", default = false)]
-    pub ci: bool,
-    #[config(env = "MISE_ENV_FILE")]
-    pub env_file: Option<PathBuf>,
-    pub cd: Option<String>,
+    #[config(env = "MISE_PARANOID", default = false)]
+    pub paranoid: bool,
+    #[config(env = "MISE_QUIET", default = false)]
+    pub quiet: bool,
+    #[config(env = "MISE_RAW", default = false)]
+    pub raw: bool,
+    #[config(env = "MISE_SHORTHANDS_FILE")]
+    pub shorthands_file: Option<PathBuf>,
+    #[config(env = "MISE_TASK_OUTPUT")]
+    pub task_output: Option<String>,
+    #[config(env = "MISE_TRACE", default = false)]
+    pub trace: bool,
+    #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
+    pub trusted_config_paths: BTreeSet<PathBuf>,
+    #[config(env = "MISE_VERBOSE", default = false)]
+    pub verbose: bool,
+    #[config(env = "MISE_YES", default = false)]
+    pub yes: bool,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;

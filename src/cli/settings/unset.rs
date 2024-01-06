@@ -40,6 +40,7 @@ mod tests {
 
         let stdout = assert_cli!("settings");
         assert_snapshot!(stdout, @r###"
+        all_compile = false
         always_keep_download = true
         always_keep_install = true
         asdf_compat = false
