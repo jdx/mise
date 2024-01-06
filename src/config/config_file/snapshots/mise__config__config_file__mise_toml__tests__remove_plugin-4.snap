@@ -4,6 +4,7 @@ expression: cf
 ---
 MiseToml(/tmp/.mise.toml):  {
     settings: Object {
+        "all_compile": Null,
         "always_keep_download": Null,
         "always_keep_install": Null,
         "asdf_compat": Null,

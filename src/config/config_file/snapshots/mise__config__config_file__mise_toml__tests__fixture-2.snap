@@ -3,34 +3,35 @@ source: src/config/config_file/mise_toml.rs
 expression: cf.settings().unwrap()
 ---
 {
-  "experimental": null,
-  "color": null,
+  "all_compile": null,
+  "ci": null,
   "always_keep_download": null,
   "always_keep_install": null,
+  "asdf_compat": null,
+  "cd": null,
+  "color": null,
+  "debug": null,
+  "disable_default_shorthands": null,
+  "disable_tools": [
+    "disabled_tool"
+  ],
+  "env_file": null,
+  "experimental": null,
+  "jobs": null,
   "legacy_version_file": null,
   "legacy_version_file_disable_tools": [
     "disabled_tool_from_legacy_file"
   ],
   "plugin_autoupdate_last_check_duration": null,
-  "trusted_config_paths": null,
   "log_level": null,
-  "trace": null,
-  "debug": null,
-  "verbose": true,
-  "quiet": null,
-  "asdf_compat": null,
-  "paranoid": null,
-  "jobs": null,
-  "shorthands_file": null,
-  "disable_default_shorthands": null,
-  "disable_tools": [
-    "disabled_tool"
-  ],
-  "raw": null,
-  "yes": null,
-  "task_output": null,
   "not_found_auto_install": null,
-  "ci": null,
-  "env_file": null,
-  "cd": null
+  "paranoid": null,
+  "quiet": null,
+  "raw": null,
+  "shorthands_file": null,
+  "task_output": null,
+  "trace": null,
+  "trusted_config_paths": null,
+  "verbose": true,
+  "yes": null
 }
