@@ -1,7 +1,9 @@
 # Rust
 
-Rust is not currently offered as a core plugin. My guidance around Rust is that
-I think you actually just shouldn't use mise at all. Rust has an official version manager called [`rustup`](https://rustup.rs/) that is better than what any of the current mise plugins offer.
+Rust is not currently offered as a core plugin. In fact, I don't think you
+should actually use mise for rust development. Rust has an official version 
+manager called [`rustup`](https://rustup.rs/) that is better than what any of 
+the current mise plugins offer.
 
 You install [rustup](https://rustup.rs/) with the following:
 
