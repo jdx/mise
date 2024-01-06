@@ -44,6 +44,8 @@ pub struct Settings {
     pub quiet: bool,
     #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
+    #[config(env = "MISE_PARANOID", default = false)]
+    pub paranoid: bool,
     #[config(env = "MISE_JOBS", default = 4)]
     pub jobs: usize,
     #[config(env = "MISE_SHORTHANDS_FILE")]

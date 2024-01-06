@@ -88,6 +88,7 @@ pub mod tests {
         legacy_version_file = false
         legacy_version_file_disable_tools = []
         not_found_auto_install = true
+        paranoid = false
         plugin_autoupdate_last_check_duration = "1m"
         quiet = false
         raw = false
