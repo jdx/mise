@@ -174,7 +174,7 @@ impl JavaPlugin {
             file::rename(entry.path(), dest)?;
         }
 
-        if os() == "macosx" {
+        if cfg!(target_os = "macos") {
             self.handle_macos_integration(&contents_dir, tv, m)?;
         }
 
@@ -208,7 +208,10 @@ impl JavaPlugin {
 
         // if vendor is Zulu, symlink zulu-{major_version}.jdk/Contents to install path for macOS
         if m.vendor.as_str() == "zulu" {
-            let major_version = m.version.split('.').next().unwrap();
+            let (major_version, _) = m
+                .version
+                .split_once('.')
+                .unwrap_or_else(|| (&m.version, ""));
             file::make_symlink(
                 tv.install_path()
                     .join(format!("zulu-{}.jdk", major_version))
