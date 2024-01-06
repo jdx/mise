@@ -473,11 +473,14 @@ impl Plugin for ExternalPlugin {
                     .is_some_and(|s| s == &url);
                 let is_trusted = !is_shorthand || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
                 if !is_trusted {
-                    eprintln!(
+                    warn!(
                         "⚠️  {name} is a community-developed plugin: {url}",
                         name = style(&self.name).blue(),
                         url = style(url.trim_end_matches(".git")).yellow(),
                     );
+                    if settings.paranoid {
+                        bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
+                    }
                     if !prompt::confirm(format!("Would you like to install {}?", self.name))? {
                         Err(PluginNotInstalled(self.name.clone()))?
                     }
