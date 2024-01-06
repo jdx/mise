@@ -5,7 +5,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 use versions::{Chunk, Version};
 
 use crate::config::Config;
@@ -227,7 +227,7 @@ impl ToolVersion {
         path: PathBuf,
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
-        let path = fs::canonicalize(path)?;
+        let path = fs::canonicalize(path).into_diagnostic()?;
         let request = ToolVersionRequest::Path(tool.name().into(), path);
         let version = request.version();
         Ok(Self::new(tool, request, opts, version))

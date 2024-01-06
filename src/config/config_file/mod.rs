@@ -5,8 +5,8 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use color_eyre::eyre::{eyre, Result};
 use confique::Partial;
+use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 
 use tool_versions::ToolVersions;
@@ -15,10 +15,9 @@ use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
+use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
-
-use crate::errors::Error::UntrustedConfig;
 use crate::plugins::PluginName;
 use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
@@ -150,7 +149,7 @@ impl dyn ConfigFile {
                 .versions
                 .get(plugin)
                 .ok_or_else(|| {
-                    eyre!(
+                    miette!(
                         "no version set for {} in {}",
                         plugin.to_string(),
                         display_path(self.get_path())
@@ -165,7 +164,7 @@ impl dyn ConfigFile {
         }
         // check for something like `mise local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
-            return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
+            return Err(miette!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
         }
         Ok(false)
     }
@@ -219,8 +218,9 @@ pub fn trust_check(path: &Path) -> Result<()> {
             return Ok(());
         }
     }
-    Err(UntrustedConfig())?
+    Err(UntrustedConfig()).into_diagnostic()?
 }
+
 pub fn is_trusted(path: &Path) -> bool {
     static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
     if let Ok(path) = path.canonicalize() {
@@ -254,7 +254,7 @@ pub fn is_trusted(path: &Path) -> bool {
 }
 
 pub fn trust(path: &Path) -> Result<()> {
-    let path = path.canonicalize()?;
+    let path = path.canonicalize().into_diagnostic()?;
     let hashed_path = trust_path(&path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
@@ -269,7 +269,7 @@ pub fn trust(path: &Path) -> Result<()> {
 }
 
 pub fn untrust(path: &Path) -> Result<()> {
-    let path = path.canonicalize()?;
+    let path = path.canonicalize().into_diagnostic()?;
     let hashed_path = trust_path(&path);
     if hashed_path.exists() {
         file::remove_file(hashed_path)?;
@@ -340,7 +340,9 @@ impl PartialEq for dyn ConfigFile {
         self.get_path() == other.get_path()
     }
 }
+
 impl Eq for dyn ConfigFile {}
+
 impl Hash for dyn ConfigFile {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.get_path().hash(state);

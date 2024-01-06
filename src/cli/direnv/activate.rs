@@ -1,4 +1,4 @@
-use eyre::Result;
+use miette::Result;
 
 /// Output direnv function to use mise inside direnv
 ///

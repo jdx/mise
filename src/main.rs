@@ -1,26 +1,22 @@
 extern crate core;
 #[macro_use]
-extern crate eyre;
-#[macro_use]
 extern crate indoc;
-#[macro_use]
-extern crate strum;
 #[cfg(test)]
 #[macro_use]
 extern crate insta;
+#[macro_use]
+extern crate miette;
+#[macro_use]
+extern crate strum;
+
+use itertools::Itertools;
+use miette::Result;
+
+use crate::cli::Cli;
+
 #[cfg(test)]
 #[macro_use]
 mod test;
-
-use std::process::exit;
-
-use color_eyre::{Help, Report, SectionExt};
-use console::style;
-use eyre::Result;
-use itertools::Itertools;
-
-use crate::cli::version::VERSION;
-use crate::cli::Cli;
 
 #[macro_use]
 mod output;
@@ -69,27 +65,28 @@ mod ui;
 
 fn main() -> Result<()> {
     let args = env::args().collect_vec();
-    color_eyre::install()?;
 
-    match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
-        Ok(()) => Ok(()),
-        Err(err) if log::max_level() < log::LevelFilter::Debug => {
-            display_friendly_err(err);
-            exit(1);
-        }
-        Err(err) => {
-            Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
-        }
-    }
+    // TODO: figure out how to display version/help
+    Cli::run(&args)
+    // match Cli::run(&args).with_context(|| miette!(help = format!("Version: {}", &*VERSION))) {
+    //     Ok(()) => Ok(()),
+    //     Err(err) => Err(err),
+    // Err(err) if log::max_level() < log::LevelFilter::Debug => {
+    //     display_friendly_err(err);
+    //     exit(1);
+    // }
+    // Err(err) => {
+    //     Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
+    // }
 }
 
-fn display_friendly_err(err: Report) {
-    for err in err.chain() {
-        error!("{err}");
-    }
-    let dim = |s| style(s).dim().for_stderr();
-    error!(
-        "{}",
-        dim("Run with --verbose or MISE_VERBOSE=1 for more information")
-    );
-}
+// fn display_friendly_err(err: Report) {
+//     for err in err.chain() {
+//         error!("{err}");
+//     }
+//     let dim = |s| style(s).dim().for_stderr();
+//     error!(
+//         "{}",
+//         dim("Run with --verbose or MISE_VERBOSE=1 for more information")
+//     );
+// }

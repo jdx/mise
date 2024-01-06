@@ -43,7 +43,6 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 clap = { version = "4", features = ["env", "derive", "string"] }
 clap_complete = { version = "4", optional = true }
 clap_mangen = { version = "0.2", optional = true }
-color-eyre = "0.6"
 color-print = "0.3"
 confique = { version = "0.2", default-features = false }
 console = "0.15"
@@ -53,7 +52,6 @@ dirs-next = "2"
 dotenvy = "0.15"
 duct = "0.13"
 either = "1"
-eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
 fslock = "0.2"
@@ -101,6 +99,7 @@ url = "2"
 versions = "6"
 which = "5"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
+miette = { version = "5.10.0", features = ["fancy"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"

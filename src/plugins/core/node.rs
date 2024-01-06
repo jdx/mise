@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use miette::{IntoDiagnostic, Result};
 use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
@@ -45,7 +45,7 @@ impl NodePlugin {
     }
     fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
         let versions = HTTP_FETCH
-            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
+            .json::<Vec<NodeVersion>, _>(base.join("index.json").into_diagnostic()?)?
             .into_iter()
             .map(|v| {
                 if regex!(r"^v\d+\.").is_match(&v.version) {
@@ -74,7 +74,7 @@ impl NodePlugin {
         }?;
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extracting {tarball_name}"));
-        let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
+        let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap()).into_diagnostic()?;
         file::untar(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
         let slug = format!("node-v{}-{}-{}", &opts.version, os(), arch());
@@ -231,7 +231,9 @@ impl NodePlugin {
 
     fn shasums_url(&self, v: &str) -> Result<Url> {
         // let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
-        let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
+        let url = MISE_NODE_MIRROR_URL
+            .join(&format!("v{v}/SHASUMS256.txt"))
+            .into_diagnostic()?;
         Ok(url)
     }
 }
@@ -343,11 +345,13 @@ impl BuildOpts {
             make_install_cmd: make_install_cmd(),
             source_tarball_path: ctx.tv.download_path().join(&source_tarball_name),
             source_tarball_url: env::MISE_NODE_MIRROR_URL
-                .join(&format!("v{v}/{source_tarball_name}"))?,
+                .join(&format!("v{v}/{source_tarball_name}"))
+                .into_diagnostic()?,
             source_tarball_name,
             binary_tarball_path: ctx.tv.download_path().join(&binary_tarball_name),
             binary_tarball_url: env::MISE_NODE_MIRROR_URL
-                .join(&format!("v{v}/{binary_tarball_name}"))?,
+                .join(&format!("v{v}/{binary_tarball_name}"))
+                .into_diagnostic()?,
             binary_tarball_name,
             install_path,
         })

@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use miette::Result;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
@@ -30,7 +30,7 @@ impl SettingsSet {
             "shorthands_file" => self.value.into(),
             "disable_default_shorthands" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
-            _ => return Err(eyre!("Unknown setting: {}", self.setting)),
+            _ => return Err(miette!("Unknown setting: {}", self.setting)),
         };
 
         let mut global_config = Config::try_get()?.global_config.clone();
@@ -43,14 +43,14 @@ fn parse_bool(value: &str) -> Result<toml_edit::Value> {
     match value {
         "true" => Ok(true.into()),
         "false" => Ok(false.into()),
-        _ => Err(eyre!("{} must be true or false", value)),
+        _ => Err(miette!("{} must be true or false", value)),
     }
 }
 
 fn parse_i64(value: &str) -> Result<toml_edit::Value> {
     match value.parse::<i64>() {
         Ok(value) => Ok(value.into()),
-        Err(_) => Err(eyre!("{} must be a number", value)),
+        Err(_) => Err(miette!("{} must be a number", value)),
     }
 }
 

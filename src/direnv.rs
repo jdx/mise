@@ -5,10 +5,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
-use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
 use itertools::Itertools;
+use miette::{IntoDiagnostic, Result};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,10 +26,10 @@ impl DirenvDiff {
         // Ok(serde_json::from_slice(&uncompressed[..])?)
         let mut writer = Vec::new();
         let mut decoder = ZlibDecoder::new(writer);
-        let bytes = BASE64_URL_SAFE.decode(input)?;
-        decoder.write_all(&bytes[..])?;
-        writer = decoder.finish()?;
-        Ok(serde_json::from_slice(&writer[..])?)
+        let bytes = BASE64_URL_SAFE.decode(input).into_diagnostic()?;
+        decoder.write_all(&bytes[..]).into_diagnostic()?;
+        writer = decoder.finish().into_diagnostic()?;
+        serde_json::from_slice(&writer[..]).into_diagnostic()
     }
 
     pub fn new_path(&self) -> Vec<PathBuf> {
@@ -59,10 +59,14 @@ impl DirenvDiff {
         old.insert(0, path.into());
         new.insert(0, path.into());
 
-        self.old
-            .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
-        self.new
-            .insert("PATH".into(), join_paths(&new)?.into_string().unwrap());
+        self.old.insert(
+            "PATH".into(),
+            join_paths(&old).into_diagnostic()?.into_string().unwrap(),
+        );
+        self.new.insert(
+            "PATH".into(),
+            join_paths(&new).into_diagnostic()?.into_string().unwrap(),
+        );
 
         Ok((old, new))
     }
@@ -78,18 +82,23 @@ impl DirenvDiff {
         old.iter().position(|p| p == path).map(|i| old.remove(i));
         new.iter().position(|p| p == path).map(|i| new.remove(i));
 
-        self.old
-            .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
-        self.new
-            .insert("PATH".into(), join_paths(&new)?.into_string().unwrap());
+        self.old.insert(
+            "PATH".into(),
+            join_paths(&old).into_diagnostic()?.into_string().unwrap(),
+        );
+        self.new.insert(
+            "PATH".into(),
+            join_paths(&new).into_diagnostic()?.into_string().unwrap(),
+        );
 
         Ok((old, new))
     }
 
     pub fn dump(&self) -> Result<String> {
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
-        gz.write_all(&serde_json::to_vec(self)?)?;
-        Ok(BASE64_URL_SAFE.encode(gz.finish()?))
+        gz.write_all(&serde_json::to_vec(self).into_diagnostic()?)
+            .into_diagnostic()?;
+        Ok(BASE64_URL_SAFE.encode(gz.finish().into_diagnostic()?))
     }
 }
 
@@ -111,7 +120,6 @@ impl Display for DirenvDiff {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

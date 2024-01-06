@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::{Config, Settings};

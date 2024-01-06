@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
 use itertools::Itertools;
+use miette::Result;
 use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
