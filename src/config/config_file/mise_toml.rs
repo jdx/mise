@@ -11,10 +11,9 @@ use eyre::WrapErr;
 use tera::Context;
 use toml_edit::{table, value, Array, Document, Item, Table, Value};
 
-use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::settings::SettingsPartial;
-use crate::config::{config_file, AliasMap};
-use crate::errors::Error::UntrustedConfig;
+use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::task::Task;
@@ -22,8 +21,8 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
-use crate::ui::{prompt, style};
-use crate::{dirs, env, file, parse_error};
+use crate::ui::style;
+use crate::{dirs, file, parse_error};
 
 #[derive(Default)]
 pub struct MiseToml {
@@ -88,7 +87,7 @@ impl MiseToml {
     }
 
     fn parse_env_file(&mut self, k: &str, v: &Item, deprecate: bool) -> Result<()> {
-        self.trust_check()?;
+        trust_check(&self.path)?;
         if deprecate {
             warn!("{k} is deprecated. Use 'env.mise.file' instead.");
         }
@@ -122,7 +121,7 @@ impl MiseToml {
     }
 
     fn parse_env(&mut self, key: &str, v: &Item) -> Result<()> {
-        self.trust_check()?;
+        trust_check(&self.path)?;
         if let Some(table) = v.as_table_like() {
             ensure!(
                 !table.contains_key("PATH"),
@@ -173,7 +172,7 @@ impl MiseToml {
     }
 
     fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
-        self.trust_check()?;
+        trust_check(&self.path)?;
         let config_root = self.path.parent().unwrap().to_path_buf();
         let get_path = |v: &Item| -> Result<PathBuf> {
             if let Some(s) = v.as_str() {
@@ -232,7 +231,7 @@ impl MiseToml {
     }
 
     fn parse_plugins(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
-        self.trust_check()?;
+        trust_check(&self.path)?;
         self.parse_hashmap(key, v)
     }
 
@@ -364,7 +363,7 @@ impl MiseToml {
         for (tvr, _) in &tool_version_list.requests {
             if let ToolVersionRequest::Path(_, _) = tvr {
                 // "path:" can be dangerous to run automatically
-                self.trust_check()?;
+                trust_check(&self.path)?;
             }
         }
 
@@ -634,43 +633,12 @@ impl MiseToml {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
-        self.trust_check()?;
+        trust_check(&self.path)?;
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
             .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
         Ok(output)
-    }
-
-    fn trust_check(&self) -> Result<()> {
-        let default_cmd = String::new();
-        let args = env::ARGS.read().unwrap();
-        let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-        if self.get_is_trusted() || cmd == "trust" || cmd == "completion" || cfg!(test) {
-            return Ok(());
-        }
-        if cmd != "hook-env" {
-            let ans = prompt::confirm(format!(
-                "{} {} is not trusted. Trust it?",
-                style::eyellow("mise"),
-                style::epath(&self.path)
-            ))?;
-            if ans {
-                config_file::trust(self.path.as_path())?;
-                self.is_trusted.lock().unwrap().replace(true);
-                return Ok(());
-            }
-        }
-        Err(UntrustedConfig())?
-    }
-
-    fn get_is_trusted(&self) -> bool {
-        let mut is_trusted = self.is_trusted.lock().unwrap();
-        is_trusted.unwrap_or_else(|| {
-            let b = config_file::is_trusted(self.path.as_path());
-            *is_trusted = Some(b);
-            b
-        })
     }
 }
 
