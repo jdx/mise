@@ -432,9 +432,24 @@ This controls the output of `mise run`. It can be one of:
 - `prefix` - (default if jobs > 1) print by line with the prefix of the task name
 - `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
 
-### `MISE_EXPERIMENTAL=true`
+### `MISE_EXPERIMENTAL=1`
 
-Enables experimental features.
+Enables experimental features. I generally will publish new features under
+this config which needs to be enabled to use them. While a feature is marked
+as "experimental" its behavior may change or even disappear in any release.
+
+The idea is experimental features can be iterated on this way so we can get
+the behavior right, but once that label goes away you shouldn't expect things
+to change without a proper deprecation—and even then it's unlikely.
+
+Also, I very often will use experimental as a beta flag as well. New
+functionality that I want to test with a smaller subset of users I will often
+push out under experimental mode even if it's not related to an experimental
+feature.
+
+If you'd like to help me out, consider enabling it even if you don't have
+a particular feature you'd like to try. Also, if something isn't working
+right, try disabling it if you can.
 
 ### `MISE_ALL_COMPILE=1`
 

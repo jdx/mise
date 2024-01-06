@@ -88,7 +88,7 @@ if you want to permanently set an env var, don't do what you would do in
 zsh and add it to ~/.config/fish/config.fish, instead just run this:
 
 ```sh
-$ set -Ux MISE_EXPERIMENTAL true
+$ set -Ux MISE_EXPERIMENTAL 1
 ```
 
 Those "universal" variables are persisted through new shells so you set
