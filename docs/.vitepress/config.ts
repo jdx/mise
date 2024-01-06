@@ -60,6 +60,7 @@ export default defineConfig({
           { text: 'Node.js', link: '/lang/node' },
           { text: 'Python', link: '/lang/python' },
           { text: 'Ruby', link: '/lang/ruby' },
+          { text: 'Rust', link: '/lang/rust' },
         ]
       },
       {
