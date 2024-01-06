@@ -20,6 +20,7 @@ MiseToml(/tmp/.mise.toml):  {
         "legacy_version_file_disable_tools": Null,
         "log_level": Null,
         "not_found_auto_install": Null,
+        "paranoid": Null,
         "plugin_autoupdate_last_check_duration": Null,
         "quiet": Null,
         "raw": Null,

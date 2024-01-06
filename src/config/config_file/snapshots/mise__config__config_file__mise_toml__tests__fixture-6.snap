@@ -24,6 +24,7 @@ MiseToml(~/fixtures/.mise.toml): terraform@1.0.0, node@18 node@prefix:20 node@re
         ],
         "log_level": Null,
         "not_found_auto_install": Null,
+        "paranoid": Null,
         "plugin_autoupdate_last_check_duration": Null,
         "quiet": Null,
         "raw": Null,

@@ -19,6 +19,7 @@ expression: cf.settings().unwrap()
   "verbose": true,
   "quiet": null,
   "asdf_compat": null,
+  "paranoid": null,
   "jobs": null,
   "shorthands_file": null,
   "disable_default_shorthands": null,

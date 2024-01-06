@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use color_eyre::eyre::{eyre, Result};
 use confique::Partial;
+use once_cell::sync::Lazy;
 
 use tool_versions::ToolVersions;
 
@@ -12,12 +15,14 @@ use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
-use crate::file::{display_path, replace_path};
-use crate::hash::hash_to_str;
+use crate::file::display_path;
+use crate::hash::{file_hash_sha256, hash_to_str};
 
+use crate::errors::Error::UntrustedConfig;
 use crate::plugins::PluginName;
 use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
+use crate::ui::{prompt, style};
 use crate::{dirs, env, file};
 
 pub mod legacy_version;
@@ -183,6 +188,11 @@ pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
 }
 
 pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
+    if let Ok(settings) = Settings::try_get() {
+        if settings.paranoid {
+            trust_check(path)?;
+        }
+    }
     match detect_config_file_type(path) {
         Some(ConfigFileType::MiseToml) => Ok(Box::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
@@ -191,19 +201,56 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     }
 }
 
+pub fn trust_check(path: &Path) -> Result<()> {
+    let default_cmd = String::new();
+    let args = env::ARGS.read().unwrap();
+    let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
+    if is_trusted(path) || cmd == "trust" || cfg!(test) {
+        return Ok(());
+    }
+    if cmd != "hook-env" {
+        let ans = prompt::confirm(format!(
+            "{} {} is not trusted. Trust it?",
+            style::eyellow("mise"),
+            style::epath(path)
+        ))?;
+        if ans {
+            trust(path)?;
+            return Ok(());
+        }
+    }
+    Err(UntrustedConfig())?
+}
 pub fn is_trusted(path: &Path) -> bool {
-    let settings = Settings::get();
-    if settings
-        .trusted_config_paths
-        .iter()
-        .any(|p| path.starts_with(replace_path(p)))
-    {
+    static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+    if let Ok(path) = path.canonicalize() {
+        let mut cached = IS_TRUSTED.lock().unwrap();
+        if cached.contains(&path) {
+            return true;
+        }
+        let settings = Settings::get();
+        for p in settings.trusted_config_paths.iter() {
+            if path.starts_with(p) {
+                cached.insert(path);
+                return true;
+            }
+        }
+        if !trust_path(&path).exists() {
+            return false;
+        }
+        if settings.paranoid {
+            let trusted = trust_file_hash(&path).unwrap_or_else(|e| {
+                warn!("trust_file_hash: {e}");
+                false
+            });
+            if !trusted {
+                return false;
+            }
+        }
+        cached.insert(path);
         return true;
     }
-    match path.canonicalize() {
-        Ok(path) => trust_path(&path).exists(),
-        Err(_) => false,
-    }
+    false
 }
 
 pub fn trust(path: &Path) -> Result<()> {
@@ -212,6 +259,11 @@ pub fn trust(path: &Path) -> Result<()> {
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
         file::make_symlink(&path, &hashed_path)?;
+    }
+    let trust_hash_path = hashed_path.with_extension("hash");
+    if !trust_hash_path.exists() {
+        let hash = file_hash_sha256(&path)?;
+        file::write(&trust_hash_path, hash)?;
     }
     Ok(())
 }
@@ -225,8 +277,44 @@ pub fn untrust(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
 fn trust_path(path: &Path) -> PathBuf {
-    dirs::TRUSTED_CONFIGS.join(hash_to_str(&path))
+    let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&path));
+    if trust_path.exists() {
+        return trust_path;
+    }
+    let trunc_str = |s: &OsStr| {
+        let mut s = s.to_str().unwrap().to_string();
+        s.truncate(20);
+        s
+    };
+    let parent = path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default()
+        .file_name()
+        .map(trunc_str);
+    let filename = path.file_name().map(trunc_str);
+    let hash = hash_to_str(&path);
+
+    dirs::TRUSTED_CONFIGS.join(
+        [parent, filename, Some(hash)]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("-"),
+    )
+}
+
+fn trust_file_hash(path: &Path) -> Result<bool> {
+    let trust_path = trust_path(path);
+    let trust_hash_path = trust_path.with_extension("hash");
+    if !trust_hash_path.exists() {
+        return Ok(false);
+    }
+    let hash = file::read_to_string(&trust_hash_path)?;
+    let actual = file_hash_sha256(path)?;
+    Ok(hash == actual)
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
