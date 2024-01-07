@@ -24,7 +24,8 @@
     },
     "color": {
       "description": "colorize output",
-      "type": "boolean"
+      "type": "boolean",
+      "default": true
     },
     "disable_default_shorthands": {
       "description": "disables built-in shorthands",
@@ -64,7 +65,8 @@
     },
     "not_found_auto_install": {
       "description": "adds a shell hook to `mise activate` and shims to automatically install tools when they need to be installed",
-      "type": "boolean"
+      "type": "boolean",
+      "default": true
     },
     "paranoid": {
       "description": "extra-security mode, see https://mise.jdx.dev/paranoid.html for details",
@@ -73,6 +75,14 @@
     "plugin_autoupdate_last_check_duration": {
       "description": "how often to check for plugin updates",
       "type": "string"
+    },
+    "python_compile": {
+      "description": "do not use precompiled binaries for python",
+      "type": "boolean"
+    },
+    "python_venv_auto_create": {
+      "description": "automatically create a virtualenv for python tools",
+      "type": "boolean"
     },
     "raw": {
       "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",

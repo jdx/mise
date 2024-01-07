@@ -46,6 +46,10 @@ pub struct Settings {
     pub paranoid: bool,
     #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
+    #[config(env = "MISE_PYTHON_COMPILE", default = false)]
+    pub python_compile: bool,
+    #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
+    pub python_venv_auto_create: bool,
     #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
     #[config(env = "MISE_SHORTHANDS_FILE")]
