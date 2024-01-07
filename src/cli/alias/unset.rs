@@ -17,7 +17,7 @@ pub struct AliasUnset {
 
 impl AliasUnset {
     pub fn run(self) -> Result<()> {
-        let mut global_config = Config::get().global_config.clone();
+        let mut global_config = Config::get().global_config()?;
         global_config.remove_alias(&self.plugin, &self.alias);
         global_config.save()
     }

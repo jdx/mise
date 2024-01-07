@@ -52,7 +52,14 @@ pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".mise.toml".into()));
 pub static MISE_ENV: Lazy<Option<String>> =
     Lazy::new(|| var("MISE_ENV").or_else(|_| var("MISE_ENVIRONMENT")).ok());
-pub static MISE_CONFIG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_CONFIG_FILE"));
+pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
+});
+pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_GLOBAL_CONFIG_FILE")
+        .or_else(|| var_path("MISE_CONFIG_FILE"))
+        .unwrap_or_else(|| MISE_CONFIG_DIR.join("config.toml"))
+});
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("MISE_USE_TOML"));
 pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_BIN")
@@ -103,6 +110,7 @@ pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("
     _ => None,
 });
 pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
+pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
@@ -112,14 +120,6 @@ pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH"
     None => vec![],
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
-pub static MISE_ALL_COMPILE: Lazy<bool> = Lazy::new(|| {
-    var_option_bool("MISE_ALL_COMPILE").unwrap_or_else(|| {
-        matches!(
-            linux_distro().unwrap_or_default().as_str(),
-            "alpine" | "nixos"
-        )
-    })
-});
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
 
@@ -165,9 +165,6 @@ pub static MISE_NODE_MAKE: Lazy<String> =
 pub static MISE_NODE_NINJA: Lazy<bool> =
     Lazy::new(|| var_option_bool("MISE_NODE_NINJA").unwrap_or_else(is_ninja_on_path));
 pub static MISE_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_NODE_VERIFY"));
-pub static MISE_NODE_COMPILE: Lazy<bool> = Lazy::new(|| {
-    *MISE_ALL_COMPILE || var_is_true("MISE_NODE_COMPILE") || var_is_true("MISE_NODE_FORCE_COMPILE")
-});
 pub static MISE_NODE_CFLAGS: Lazy<Option<String>> =
     Lazy::new(|| var("MISE_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
 pub static MISE_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {

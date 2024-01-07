@@ -40,7 +40,6 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub env: BTreeMap<String, String>,
     pub env_sources: HashMap<String, PathBuf>,
-    pub global_config: MiseToml,
     pub path_dirs: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
     all_aliases: OnceCell<AliasMap>,
@@ -65,9 +64,6 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
-        let global_config = load_miserc()?;
-        // TODO: read system config settings
-        Settings::add_partial(global_config.settings()?);
         let settings = Settings::try_get()?;
         trace!("Settings: {:#?}", settings);
 
@@ -94,7 +90,6 @@ impl Config {
             tasks: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
-            global_config,
             plugins: RwLock::new(plugins),
             repo_urls,
         };
@@ -104,7 +99,8 @@ impl Config {
         Ok(config)
     }
     pub fn get_shorthands(&self) -> &Shorthands {
-        self.shorthands.get_or_init(get_shorthands)
+        self.shorthands
+            .get_or_init(|| get_shorthands(&Settings::get()))
     }
 
     pub fn get_repo_url(&self, plugin_name: &PluginName) -> Option<String> {
@@ -267,9 +263,21 @@ impl Config {
         Ok(())
     }
 
+    pub fn global_config(&self) -> Result<MiseToml> {
+        let settings_path = env::MISE_GLOBAL_CONFIG_FILE.to_path_buf();
+        match settings_path.exists() {
+            false => {
+                trace!("settings does not exist {:?}", settings_path);
+                Ok(MiseToml::init(&settings_path))
+            }
+            true => MiseToml::from_file(&settings_path)
+                .wrap_err_with(|| miette!("Error parsing {}", display_path(&settings_path))),
+        }
+    }
+
     #[cfg(test)]
     pub fn reset() {
-        Settings::reset();
+        Settings::reset(None);
         CONFIG.write().unwrap().take();
     }
 }
@@ -279,20 +287,6 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .values()
         .find_map(|cf| cf.project_root())
         .map(|pr| pr.to_path_buf())
-}
-
-fn load_miserc() -> Result<MiseToml> {
-    let settings_path = env::MISE_CONFIG_FILE
-        .clone()
-        .unwrap_or(dirs::CONFIG.join("config.toml"));
-    match settings_path.exists() {
-        false => {
-            trace!("settings does not exist {:?}", settings_path);
-            Ok(MiseToml::init(&settings_path))
-        }
-        true => MiseToml::from_file(&settings_path)
-            .wrap_err_with(|| miette!("Error parsing {}", display_path(&settings_path))),
-    }
 }
 
 fn load_plugins(settings: &Settings) -> Result<PluginMap> {
@@ -395,23 +389,18 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     config_files.into_iter().unique().collect()
 }
 
-fn get_global_mise_toml() -> PathBuf {
-    env::MISE_CONFIG_FILE
-        .clone()
-        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
-}
-
 pub fn global_config_files() -> Vec<PathBuf> {
     let mut config_files = vec![];
-    if env::MISE_CONFIG_FILE.is_none() && !*env::MISE_USE_TOML {
-        // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
-        // because that's how the user overrides the default
-        let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-        if home_config.is_file() {
-            config_files.push(home_config);
-        }
-    };
-    let global_config = get_global_mise_toml();
+    // TODO: add ~/.tool-versions under the right conditions
+    // if env::MISE_CONFIG_FILE.is_none() && !*env::MISE_USE_TOML {
+    //     // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
+    //     // because that's how the user overrides the default
+    //     let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+    //     if home_config.is_file() {
+    //         config_files.push(home_config);
+    //     }
+    // };
+    let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
     if global_config.is_file() {
         config_files.push(global_config);
     }

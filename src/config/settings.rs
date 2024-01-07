@@ -1,43 +1,35 @@
-use confique::env::parse::{list_by_colon, list_by_comma};
-use miette::{IntoDiagnostic, Result};
-
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
-use std::sync::{Arc, Once, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
-use confique::{Builder, Config, Partial};
+#[allow(unused_imports)]
+use confique::env::parse::{list_by_colon, list_by_comma};
+use confique::{Config, Partial};
+use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
-
-use crate::env;
 use serde::ser::Error;
-use serde_derive::Serialize;
+use serde_derive::{Deserialize, Serialize};
+
+use crate::{env, file};
 
 #[derive(Config, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize)))]
+#[config(partial_attr(derive(Clone, Serialize, Default)))]
 pub struct Settings {
     #[config(env = "MISE_ALL_COMPILE", default = false)]
     pub all_compile: bool,
-    #[config(env = "CI", default = false)]
-    pub ci: bool,
     #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
     pub always_keep_download: bool,
     #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
     #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
-    #[config(env = "MISE_CD")]
-    pub cd: Option<String>,
     #[config(env = "MISE_COLOR", default = true)]
     pub color: bool,
-    #[config(env = "MISE_DEBUG", default = false)]
-    pub debug: bool,
     #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
     pub disable_default_shorthands: bool,
     #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub disable_tools: BTreeSet<String>,
-    #[config(env = "MISE_ENV_FILE")]
-    pub env_file: Option<PathBuf>,
     #[config(env = "MISE_EXPERIMENTAL", default = false)]
     pub experimental: bool,
     #[config(env = "MISE_JOBS", default = 4)]
@@ -46,42 +38,60 @@ pub struct Settings {
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
-    #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
-    pub plugin_autoupdate_last_check_duration: String,
-    #[config(env = "MISE_LOG_LEVEL", default = "info")]
-    pub log_level: String,
+    #[config(env = "MISE_NODE_COMPILE", default = false)]
+    pub node_compile: bool,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
     pub not_found_auto_install: bool,
     #[config(env = "MISE_PARANOID", default = false)]
     pub paranoid: bool,
-    #[config(env = "MISE_QUIET", default = false)]
-    pub quiet: bool,
+    #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
+    pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
     #[config(env = "MISE_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
     #[config(env = "MISE_TASK_OUTPUT")]
     pub task_output: Option<String>,
-    #[config(env = "MISE_TRACE", default = false)]
-    pub trace: bool,
     #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
     pub trusted_config_paths: BTreeSet<PathBuf>,
+    #[config(env = "MISE_QUIET", default = false)]
+    pub quiet: bool,
     #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
     #[config(env = "MISE_YES", default = false)]
     pub yes: bool,
+
+    // hidden settings
+    #[config(env = "CI", default = false)]
+    pub ci: bool,
+    #[config(env = "MISE_CD")]
+    pub cd: Option<String>,
+    #[config(env = "MISE_DEBUG", default = false)]
+    pub debug: bool,
+    #[config(env = "MISE_ENV_FILE")]
+    pub env_file: Option<PathBuf>,
+    #[config(env = "MISE_TRACE", default = false)]
+    pub trace: bool,
+    #[config(env = "MISE_LOG_LEVEL", default = "info")]
+    pub log_level: String,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
 
-impl Default for Settings {
-    fn default() -> Self {
-        Settings::default_builder().load().unwrap()
-    }
-}
-
-static PARTIALS: RwLock<Vec<SettingsPartial>> = RwLock::new(Vec::new());
 static SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
+static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
+static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
+    let mut s = SettingsPartial::empty();
+    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
+        s.all_compile = Some(true);
+    }
+    s
+});
+
+#[derive(Serialize, Deserialize)]
+pub struct SettingsFile {
+    pub settings: SettingsPartial,
+}
 
 impl Settings {
     pub fn get() -> Arc<Self> {
@@ -91,7 +101,17 @@ impl Settings {
         if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
-        let mut settings = Self::default_builder().load().into_diagnostic()?;
+        let file_settings = Self::file_settings().unwrap_or_else(|e| {
+            eprintln!("Error loading settings file: {}", e);
+            Default::default()
+        });
+        let mut settings = Self::builder()
+            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .env()
+            .preloaded(file_settings)
+            .preloaded(DEFAULT_SETTINGS.clone())
+            .load()
+            .into_diagnostic()?;
         if let Some(cd) = &settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             let mut cd = PathBuf::from(cd);
@@ -132,29 +152,23 @@ impl Settings {
         if settings.ci {
             settings.yes = true;
         }
+        if settings.all_compile {
+            settings.node_compile = true;
+        }
         let settings = Arc::new(settings);
         *SETTINGS.write().unwrap() = Some(settings.clone());
         Ok(settings)
     }
-    pub fn add_partial(partial: SettingsPartial) {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| {
-            let mut p = SettingsPartial::empty();
-            for arg in &*env::ARGS.read().unwrap() {
-                if arg == "--" {
-                    break;
-                }
-                if arg == "--raw" {
-                    p.raw = Some(true);
-                }
-            }
-            PARTIALS.write().unwrap().push(p);
-        });
-        PARTIALS.write().unwrap().push(partial);
-        *SETTINGS.write().unwrap() = None;
-    }
     pub fn add_cli_matches(m: &clap::ArgMatches) {
         let mut s = SettingsPartial::empty();
+        for arg in &*env::ARGS.read().unwrap() {
+            if arg == "--" {
+                break;
+            }
+            if arg == "--raw" {
+                s.raw = Some(true);
+            }
+        }
         if let Some(cd) = m.get_one::<String>("cd") {
             s.cd = Some(cd.to_string());
         }
@@ -179,25 +193,37 @@ impl Settings {
         if *m.get_one::<u8>("verbose").unwrap() > 1 {
             s.log_level = Some("trace".to_string());
         }
-        Self::add_partial(s);
+        Self::reset(Some(s));
     }
 
-    pub fn default_builder() -> Builder<Self> {
-        let mut b = Self::builder().env();
-        for partial in PARTIALS.read().unwrap().iter() {
-            b = b.preloaded(partial.clone());
+    fn file_settings() -> Result<SettingsPartial> {
+        let settings_file = &*env::MISE_SETTINGS_FILE;
+        if settings_file.exists() {
+            return Self::from_file(settings_file);
         }
-        b
+        let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
+        if !global_config.exists() {
+            return Ok(Default::default());
+        }
+        let raw = file::read_to_string(global_config)?;
+        let settings_file: SettingsFile = toml::from_str(&raw).into_diagnostic()?;
+        Ok(settings_file.settings)
     }
+
+    pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
+        let raw = file::read_to_string(path)?;
+        let settings: SettingsPartial = toml::from_str(&raw).into_diagnostic()?;
+        Ok(settings)
+    }
+
     pub fn hidden_configs() -> HashSet<&'static str> {
         static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
             Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
         HIDDEN_CONFIGS.clone()
     }
 
-    #[cfg(test)]
-    pub fn reset() {
-        PARTIALS.write().unwrap().clear();
+    pub fn reset(cli_settings: Option<SettingsPartial>) {
+        *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *SETTINGS.write().unwrap() = None;
     }
 

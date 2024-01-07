@@ -150,6 +150,11 @@ impl ExternalPlugin {
                 Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
                 res => res?,
             };
+        if versions.starts_with("<!DOCTYPE html>") {
+            debug!("versions host returned html, assuming it's not a valid response");
+            trace!("versions host response: {}", versions);
+            return Ok(None);
+        }
         let versions = versions
             .lines()
             .map(|v| v.trim().to_string())

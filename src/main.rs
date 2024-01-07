@@ -10,7 +10,7 @@ extern crate miette;
 extern crate strum;
 
 use itertools::Itertools;
-use miette::Result;
+use miette::{MietteHandlerOpts, Result};
 
 use crate::cli::Cli;
 
@@ -67,6 +67,11 @@ fn main() -> Result<()> {
     let args = env::args().collect_vec();
 
     // TODO: figure out how to display version/help
+    // let theme = GraphicalTheme::default();
+    // let handler = GraphicalReportHandler::new_themed(theme);
+    miette::set_hook(Box::new(|_| {
+        Box::new(MietteHandlerOpts::default().with_cause_chain().build())
+    }))?;
     Cli::run(&args)
     // match Cli::run(&args).with_context(|| miette!(help = format!("Version: {}", &*VERSION))) {
     //     Ok(()) => Ok(()),
