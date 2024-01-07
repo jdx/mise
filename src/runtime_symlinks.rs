@@ -5,12 +5,11 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result};
-use regex::Regex;
 use versions::Versioning;
 
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, VERSION_REGEX};
 use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
@@ -38,17 +37,24 @@ pub fn rebuild(config: &Config) -> Result<()> {
 }
 
 fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<String, PathBuf>> {
+    // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions(&plugin)? {
-        let versions = Versioning::new(&v).expect("invalid version");
+        let prefix = regex!(r"^[a-zA-Z0-9]+-")
+            .find(&v)
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_default();
+        let sans_prefix = v.trim_start_matches(&prefix);
+        let versions = Versioning::new(sans_prefix).expect("invalid version");
         let mut partial = vec![];
-        while versions.nth(partial.len() + 1).is_some() {
+        while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();
             partial.push(version.to_string());
-            symlinks.insert(partial.join("."), rel_path(&v));
+            let from = format!("{}{}", prefix, partial.join("."));
+            symlinks.insert(from, rel_path(&v));
         }
-        symlinks.insert("latest".into(), rel_path(&v));
+        symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
             .get(plugin.name())
@@ -60,7 +66,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<St
             if !v.starts_with(to) {
                 continue;
             }
-            symlinks.insert(from.clone(), rel_path(&v));
+            symlinks.insert(format!("{prefix}{from}"), rel_path(&v));
         }
     }
     symlinks = symlinks
@@ -71,11 +77,10 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<St
 }
 
 fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
-    let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
     let versions = plugin
         .list_installed_versions()?
         .into_iter()
-        .filter(|v| re.is_match(v))
+        .filter(|v| !VERSION_REGEX.is_match(v))
         .collect();
     Ok(versions)
 }
