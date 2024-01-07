@@ -105,7 +105,7 @@ impl PythonPlugin {
     }
 
     fn should_install_precompiled(&self, settings: &Settings) -> bool {
-        settings.all_compile || settings.python_compile || settings.experimental
+        !settings.all_compile && !settings.python_compile && settings.experimental
     }
 
     fn fetch_precompiled_remote_versions(&self) -> Result<&Vec<(String, String, String)>> {
