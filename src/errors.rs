@@ -4,7 +4,8 @@ use thiserror::Error;
 
 use crate::plugins::PluginName;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Diagnostic, Error)]
+#[diagnostic(help("help me!"))]
 pub enum Error {
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(PluginName),

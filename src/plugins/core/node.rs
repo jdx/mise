@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::env::MISE_NODE_MIRROR_URL;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -293,9 +293,10 @@ impl Plugin for NodePlugin {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let config = Config::get();
+        let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
         debug!("node build opts: {:#?}", opts);
-        if *env::MISE_NODE_COMPILE {
+        if settings.node_compile {
             self.install_compiled(ctx, &opts)?;
         } else {
             self.install_precompiled(ctx, &opts)?;
