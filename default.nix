@@ -1,10 +1,5 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, perl }:
-let
-  libssl = with pkgs; symlinkJoin {
-    name = "libssl-merged";
-    paths = [ openssl.out openssl.dev ];
-  };
-in
+{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl }:
+
 rustPlatform.buildRustPackage {
   pname = "mise";
   version = "2024.1.9";
@@ -23,6 +18,7 @@ rustPlatform.buildRustPackage {
     gnused
     git
     gawk
+    openssl
   ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security darwin.apple_sdk.frameworks.SystemConfiguration ];
 
   prePatch = ''
@@ -32,6 +28,8 @@ rustPlatform.buildRustPackage {
       --replace '#!/bin/sh' '#!${bash}/bin/sh'
     substituteInPlace ./src/env_diff.rs \
       --replace '"bash"' '"${bash}/bin/bash"'
+    substituteInPlace ./test/cwd/.mise/tasks/filetask \
+      --replace '#!/usr/bin/env bash' '#!${bash}/bin/bash'
     substituteInPlace ./src/cli/direnv/exec.rs \
       --replace '"env"' '"${coreutils}/bin/env"' \
       --replace 'cmd!("direnv"' 'cmd!("${direnv}/bin/direnv"'
@@ -43,11 +41,6 @@ rustPlatform.buildRustPackage {
     RUST_BACKTRACE=full cargo test --all-features -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls
   '';
-
-  # Need this to ensure openssl-src's build uses an available version of `perl`
-  # https://github.com/alexcrichton/openssl-src-rs/issues/45
-  OPENSSL_SRC_PERL = "${perl}/bin/perl";
-  OPENSSL_DIR = "${libssl}";
 
   meta = with lib; {
     description = "The front-end to your dev env";
