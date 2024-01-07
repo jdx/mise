@@ -179,8 +179,16 @@ it is used for all directories.
 # you can set these with `mise use -g`
 node = 'lts'
 python = ['3.10', '3.11']
+```
 
-[settings]
+## System config: `/etc/mise/config.toml`
+
+Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
+setting defaults for all users.
+
+## Settings file: `~/.config/mise/settings.toml`
+
+```toml
 # plugins can read the versions files used by other version managers (if enabled by the plugin)
 # for example, .nvmrc in the case of node's nvm
 legacy_version_file = true                     # enabled by default (unlike asdf)
@@ -226,11 +234,6 @@ my_custom_node = '20'  # makes `mise install node@my_custom_node` install node-2
 ::: tip
 These settings can also be managed with `mise settings ls|get|set|unset`.
 :::
-
-## System config: `/etc/mise/config.toml`
-
-Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
-setting defaults for all users.
 
 ## Environment variables
 
