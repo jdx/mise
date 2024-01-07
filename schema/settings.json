@@ -85,10 +85,7 @@
     "task_output": {
       "default": "prefix",
       "description": "how to display task output",
-      "enum": [
-        "prefix",
-        "interleave"
-      ],
+      "enum": ["prefix", "interleave"],
       "type": "string"
     },
     "trusted_config_paths": {
