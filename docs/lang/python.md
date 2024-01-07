@@ -34,6 +34,7 @@ mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/pyth
 additional to that python in mise has a few extra configuration variables:
 
 - `MISE_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
+- `MISE_PYTHON_COMPILE` [bool]: always use python-build instead of precompiled binaries.
 - `MISE_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
 - `MISE_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
 - `MISE_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
@@ -60,3 +61,19 @@ python = {version="3.11", virtualenv=".venv"} # relative to this file's director
 python = {version="3.11", virtualenv="/root/.venv"} # can be absolute
 python = {version="3.11", virtualenv="{{env.HOME}}/.cache/venv/myproj"} # can use templates
 ```
+
+## [experimental] Precompiled node binaries
+
+In experimental mode, mise will download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
+for python instead of compiling them
+with python-build. This makes installing python much faster. The plan is once
+we have enough users using precompiled binaries successfully, we'll make
+that the default behavior in mise.
+
+In addition to being faster, it also means you don't have to install
+all of the system dependencies either.
+
+That said, there are some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
+with the precompiled binaries to be aware of.
+
+If you'd like to disable these binaries, set `MISE_PYTHON_COMPILE` to `1`.
