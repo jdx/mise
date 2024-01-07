@@ -94,6 +94,7 @@ static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
 
 #[derive(Serialize, Deserialize)]
 pub struct SettingsFile {
+    #[serde(default)]
     pub settings: SettingsPartial,
 }
 
