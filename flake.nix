@@ -33,6 +33,8 @@
               shfmt
               nodejs
               cargo-release
+              cargo-insta
+              cargo-llvm-cov
             ];
           };
         }
