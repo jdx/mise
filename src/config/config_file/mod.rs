@@ -5,7 +5,6 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use confique::Partial;
 use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 
@@ -13,7 +12,6 @@ use tool_versions::ToolVersions;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::settings::SettingsPartial;
 use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
@@ -45,7 +43,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     /// and ~/src/foo/.mise.config.toml will return None
     fn project_root(&self) -> Option<&Path> {
         let p = self.get_path();
-        if env::MISE_CONFIG_FILE.as_ref().is_some_and(|f| f == p) {
+        if *env::MISE_GLOBAL_CONFIG_FILE == p {
             return None;
         }
         match p.parent() {
@@ -78,9 +76,6 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;
-    fn settings(&self) -> Result<SettingsPartial> {
-        Ok(SettingsPartial::empty())
-    }
     fn aliases(&self) -> AliasMap {
         Default::default()
     }

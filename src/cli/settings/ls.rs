@@ -1,8 +1,9 @@
-use miette::{IntoDiagnostic, Result};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::config::{Config, Settings};
+use miette::{IntoDiagnostic, Result};
+use serde_json::Value;
+
+use crate::config::Settings;
 
 /// Show current settings
 ///
@@ -16,7 +17,6 @@ pub struct SettingsLs {}
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
-        Config::try_get()?;
         let settings = Settings::try_get()?;
         let json = settings.to_string();
         let doc: BTreeMap<String, Value> = serde_json::from_str(&json).into_diagnostic()?;
@@ -39,7 +39,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use crate::test::reset_config;
 
     #[test]
@@ -57,6 +56,7 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        node_compile = false
         not_found_auto_install = true
         paranoid = false
         plugin_autoupdate_last_check_duration = "20m"

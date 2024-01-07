@@ -15,7 +15,7 @@ setup_env() {
 	export MISE_CONFIG_DIR="$HOME/.mise/e2e/config"
 	export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
 	export MISE_DEFAULT_CONFIG_FILENAME=.e2e.mise.toml
-	export MISE_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
+	export MISE_GLOBAL_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
 	export MISE_ALWAYS_KEEP_DOWNLOAD="1"
 	export MISE_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
 	export MISE_YES="1"
@@ -33,7 +33,7 @@ setup_config_files() {
 
 run_test() {
 	echo "::group::E2E $TEST"
-	rm -f "$MISE_CONFIG_FILE"
+	rm -f "$MISE_GLOBAL_CONFIG_FILE"
 	cd "$(dirname "$TEST")"
 
 	START=$(date +%s)

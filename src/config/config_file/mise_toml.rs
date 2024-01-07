@@ -4,13 +4,12 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use confique::Partial;
 use miette::{IntoDiagnostic, Result, WrapErr};
+use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, Document, Item, Table, Value};
+use toml_edit::{table, value, Array, Document, Item, Value};
 
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
-use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::plugins::{unalias_plugin, PluginName};
@@ -20,22 +19,33 @@ use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
 use crate::ui::style;
-use crate::{dirs, file, parse_error};
+use crate::{dirs, env, file, parse_error, ui};
 
-#[derive(Default)]
+#[derive(Default, Deserialize)]
 pub struct MiseToml {
+    #[serde(skip)]
     context: TeraContext,
+    #[serde(skip)]
     path: PathBuf,
+    #[serde(skip)]
     toolset: Toolset,
+    #[serde(skip)]
     env_files: Vec<PathBuf>,
+    #[serde(skip)]
     env: HashMap<String, String>,
+    #[serde(skip)]
     env_remove: Vec<String>,
+    #[serde(skip)]
     path_dirs: Vec<PathBuf>,
-    settings: Table,
+    #[serde(skip)]
     alias: AliasMap,
+    #[serde(skip)]
     doc: Document,
+    #[serde(skip)]
     plugins: HashMap<String, String>,
+    #[serde(skip)]
     tasks: Vec<Task>,
+    #[serde(skip)]
     is_trusted: Mutex<Option<bool>>,
 }
 
@@ -74,7 +84,12 @@ impl MiseToml {
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "settings" => self.settings = self.parse_settings(k, v)?,
+                "settings" => {
+                    let old = ui::style::eyellow(display_path(&self.path));
+                    let new = ui::style::eyellow(display_path(&env::MISE_GLOBAL_CONFIG_FILE));
+                    warn!("[settings] inside of {old} is deprecated. A separate {new} file should be used instead.");
+                    warn!("Removing the [settings] section from {old} will remove this warning",);
+                }
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
                 _ => bail!("unknown key: {}", style::ered(k)),
@@ -450,13 +465,6 @@ impl MiseToml {
         }
     }
 
-    fn parse_settings(&self, _k: &str, v: &Item) -> Result<Table> {
-        match v.as_table() {
-            Some(table) => Ok(table.clone()),
-            None => parse_error!("settings", v, "table"),
-        }
-    }
-
     pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
         self.alias
             .entry(plugin.into())
@@ -504,13 +512,6 @@ impl MiseToml {
         }
     }
 
-    fn parse_usize(&self, k: &str, v: &Item) -> Result<usize> {
-        match v.as_value().map(|v| v.as_integer()) {
-            Some(Some(v)) => Ok(v as usize),
-            _ => parse_error!(k, v, "usize"),
-        }
-    }
-
     fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
@@ -518,26 +519,6 @@ impl MiseToml {
                 Ok(v.into())
             }
             _ => parse_error!(k, v, "path"),
-        }
-    }
-
-    fn parse_paths(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
-        match v.as_value().map(|v| v.as_array()) {
-            Some(Some(v)) => {
-                let mut paths = vec![];
-                for (i, v) in v.iter().enumerate() {
-                    let k = format!("{}.{}", k, i);
-                    match v.as_str() {
-                        Some(v) => {
-                            let v = self.parse_template(&k, v)?;
-                            paths.push(v.into());
-                        }
-                        _ => parse_error!(k, v, "path"),
-                    }
-                }
-                Ok(paths)
-            }
-            _ => parse_error!(k, v, "array of paths"),
         }
     }
 
@@ -558,53 +539,6 @@ impl MiseToml {
         {
             Some(v) => Ok(v),
             _ => parse_error!(k, v, "array of strings"),
-        }
-    }
-
-    pub fn update_setting<V: Into<Value>>(&mut self, key: &str, value: V) {
-        let key = key.split('.').collect::<Vec<&str>>();
-        let mut settings = self
-            .doc
-            .entry("settings")
-            .or_insert_with(table)
-            .as_table_like_mut()
-            .unwrap();
-        for (i, k) in key.iter().enumerate() {
-            if i == key.len() - 1 {
-                settings.insert(k, toml_edit::value(value));
-                break;
-            } else {
-                settings = settings
-                    .entry(k)
-                    .or_insert(toml_edit::table())
-                    .as_table_mut()
-                    .unwrap();
-            }
-        }
-    }
-
-    pub fn remove_setting(&mut self, key: &str) {
-        let mut settings = self
-            .doc
-            .entry("settings")
-            .or_insert_with(table)
-            .as_table_like_mut()
-            .unwrap();
-        let key = key.split('.').collect::<Vec<&str>>();
-        for (i, k) in key.iter().enumerate() {
-            if i == key.len() - 1 {
-                settings.remove(k);
-                break;
-            } else {
-                settings = settings
-                    .entry(k)
-                    .or_insert(toml_edit::table())
-                    .as_table_mut()
-                    .unwrap();
-            }
-        }
-        if settings.is_empty() {
-            self.doc.as_table_mut().remove("settings");
         }
     }
 
@@ -747,48 +681,6 @@ impl ConfigFile for MiseToml {
         &self.toolset
     }
 
-    fn settings(&self) -> Result<SettingsPartial> {
-        let mut s = SettingsPartial::empty();
-
-        for (config_key, v) in self.settings.iter() {
-            let k = format!("settings.{config_key}");
-            match config_key.to_lowercase().as_str() {
-                "experimental" => s.experimental = Some(self.parse_bool(&k, v)?),
-                "legacy_version_file" => s.legacy_version_file = Some(self.parse_bool(&k, v)?),
-                "legacy_version_file_disable_tools" => {
-                    s.legacy_version_file_disable_tools =
-                        Some(self.parse_string_array(&k, v)?.into_iter().collect())
-                }
-                "always_keep_download" => s.always_keep_download = Some(self.parse_bool(&k, v)?),
-                "always_keep_install" => s.always_keep_install = Some(self.parse_bool(&k, v)?),
-                "plugin_autoupdate_last_check_duration" => {
-                    s.plugin_autoupdate_last_check_duration = match v.as_integer() {
-                        Some(i) => Some(format!("{}m", i)),
-                        None => Some(self.parse_string(&k, v)?),
-                    }
-                }
-                "trusted_config_paths" => {
-                    s.trusted_config_paths = Some(self.parse_paths(&k, v)?.into_iter().collect());
-                }
-                "verbose" => s.verbose = Some(self.parse_bool(&k, v)?),
-                "asdf_compat" => s.asdf_compat = Some(self.parse_bool(&k, v)?),
-                "jobs" => s.jobs = Some(self.parse_usize(&k, v)?),
-                "shorthands_file" => s.shorthands_file = Some(self.parse_path(&k, v)?),
-                "disable_default_shorthands" => {
-                    s.disable_default_shorthands = Some(self.parse_bool(&k, v)?)
-                }
-                "disable_tools" => {
-                    s.disable_tools = Some(self.parse_string_array(&k, v)?.into_iter().collect());
-                }
-                "raw" => s.raw = Some(self.parse_bool(&k, v)?),
-                "yes" => s.yes = Some(self.parse_bool(&k, v)?),
-                _ => Err(miette!("Unknown config setting: {}", k))?,
-            };
-        }
-
-        Ok(s)
-    }
-
     fn aliases(&self) -> AliasMap {
         self.alias.clone()
     }
@@ -807,10 +699,6 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         // d.field("is_trusted", &self.is_trusted);
-        if let Ok(settings) = self.settings() {
-            let json = serde_json::to_value(settings).unwrap_or_default();
-            d.field("settings", &json);
-        }
         if !self.env_files.is_empty() {
             d.field("env_files", &self.env_files);
         }
@@ -843,7 +731,6 @@ impl Clone for MiseToml {
             env: self.env.clone(),
             env_remove: self.env_remove.clone(),
             path_dirs: self.path_dirs.clone(),
-            settings: self.settings.clone(),
             alias: self.alias.clone(),
             doc: self.doc.clone(),
             plugins: self.plugins.clone(),
@@ -865,7 +752,6 @@ mod tests {
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env());
-        assert_json_snapshot!(cf.settings().unwrap());
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
@@ -997,38 +883,6 @@ mod tests {
         assert_snapshot!(cf.dump());
         assert_display_snapshot!(cf);
         assert_debug_snapshot!(cf);
-    }
-
-    #[test]
-    fn test_update_setting() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [settings]
-        legacy_version_file = true
-        [alias.node]
-        18 = "18.0.0"
-        "#})
-            .unwrap();
-        cf.update_setting("legacy_version_file", false);
-        assert_display_snapshot!(cf.dump(), @r###"
-        [settings]
-        legacy_version_file = false
-        [alias.node]
-        18 = "18.0.0"
-        "###);
-    }
-
-    #[test]
-    fn test_remove_setting() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [settings]
-        legacy_version_file = true
-        "#})
-            .unwrap();
-        cf.remove_setting("legacy_version_file");
-        assert_display_snapshot!(cf.dump(), @r###"
-        "###);
     }
 
     #[test]

@@ -1,7 +1,7 @@
-use miette::Result;
+use miette::{IntoDiagnostic, Result};
+use toml_edit::Document;
 
-use crate::config::config_file::ConfigFile;
-use crate::config::Config;
+use crate::{env, file};
 
 /// Clears a setting
 ///
@@ -15,9 +15,11 @@ pub struct SettingsUnset {
 
 impl SettingsUnset {
     pub fn run(self) -> Result<()> {
-        let mut global_config = Config::try_get()?.global_config.clone();
-        global_config.remove_setting(&self.setting);
-        global_config.save()
+        let path = env::MISE_CONFIG_DIR.join("config.toml");
+        let raw = file::read_to_string(&path)?;
+        let mut settings: Document = raw.parse().into_diagnostic()?;
+        settings.remove(&self.setting);
+        file::write(&path, settings.to_string())
     }
 }
 
@@ -29,7 +31,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use crate::test::reset_config;
 
     #[test]
@@ -51,6 +52,7 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        node_compile = false
         not_found_auto_install = true
         paranoid = false
         plugin_autoupdate_last_check_duration = "20m"
