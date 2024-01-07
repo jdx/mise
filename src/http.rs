@@ -59,8 +59,11 @@ impl Client {
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
-        let resp = self.get(url)?;
+        let resp = self.get(url.clone())?;
         let text = resp.text().into_diagnostic()?;
+        if text.starts_with("<!DOCTYPE html>") {
+            bail!("Got HTML instead of text from {}", url);
+        }
         Ok(text)
     }
 
