@@ -126,7 +126,7 @@ fn mise_env_vars() -> String {
 
 fn mise_settings_file() -> String {
     let mut s = style("mise settings file:\n").bold().to_string();
-    s.push_str(&format!("  {}\n", display_path(&*env::MISE_SETTINGS_FILE)));
+    s.push_str(&format!("  {}\n", display_path(&env::MISE_SETTINGS_FILE)));
     s
 }
 
