@@ -1,5 +1,6 @@
 #:schema ./schema/mise.json
 
+min_version = "2024.1.1"
 [env]
 mise.file = [".env"]
 FOO = "bar"
