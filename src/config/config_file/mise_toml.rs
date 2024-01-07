@@ -88,7 +88,7 @@ impl MiseToml {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "settings" => {
                     let old = ui::style::eyellow(display_path(&self.path));
-                    let new = ui::style::eyellow(display_path(&env::MISE_GLOBAL_CONFIG_FILE));
+                    let new = ui::style::eyellow(display_path(&env::MISE_SETTINGS_FILE));
                     warn!("[settings] inside of {old} is deprecated. A separate {new} file should be used instead.");
                     warn!("Removing the [settings] section from {old} will remove this warning",);
                 }
