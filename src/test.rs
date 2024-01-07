@@ -50,18 +50,23 @@ pub fn reset_config() {
     )
     .unwrap();
     file::write(
-        env::HOME.join("config/config.toml"),
+        env::HOME.join("config/settings.toml"),
         indoc! {r#"
-            [env]
-            TEST_ENV_VAR = 'test-123'
-            [settings]
             experimental = true
             verbose = true
             always_keep_download= true
             always_keep_install= true
             legacy_version_file= true
-            plugin_autoupdate_last_check_duration = 20
+            plugin_autoupdate_last_check_duration = "20m"
             jobs = 2
+            "#},
+    )
+    .unwrap();
+    file::write(
+        env::HOME.join("config/config.toml"),
+        indoc! {r#"
+            [env]
+            TEST_ENV_VAR = 'test-123'
 
             [alias.tiny]
             "my/alias" = '3.0'

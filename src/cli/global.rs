@@ -1,20 +1,17 @@
-use std::path::PathBuf;
-
 use miette::Result;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::cli::local::local;
 use crate::config::Config;
+use crate::env;
 use crate::plugins::PluginName;
-use crate::{dirs, env};
 
 /// Sets/gets the global tool version(s)
 ///
 /// Displays the contents of ~/.tool-versions after writing.
-/// The file is `$HOME/.tool-versions` by default. It can be changed with `$MISE_CONFIG_FILE`.
-/// If `$MISE_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.mise.toml`.
+/// The file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.
+/// If `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.mise.toml`.
 /// Otherwise, it will be parsed as a `.tool-versions` file.
-/// A future v2 release of mise will default to using `~/.config/mise/config.toml` instead.
 ///
 /// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
@@ -52,7 +49,7 @@ impl Global {
         let config = Config::try_get()?;
         local(
             &config,
-            &global_file(),
+            &env::MISE_GLOBAL_CONFIG_FILE,
             self.tool,
             self.remove,
             self.pin,
@@ -60,16 +57,6 @@ impl Global {
             self.path,
         )
     }
-}
-
-fn global_file() -> PathBuf {
-    env::MISE_CONFIG_FILE.clone().unwrap_or_else(|| {
-        if *env::MISE_USE_TOML {
-            dirs::CONFIG.join("config.toml")
-        } else {
-            dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
-        }
-    })
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -90,8 +77,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{dirs, file};
     use pretty_assertions::assert_str_eq;
+
+    use crate::{dirs, file};
 
     #[test]
     fn test_global() {
@@ -112,7 +100,7 @@ mod tests {
         let err = assert_cli_err!("global", "invalid-plugin");
         assert_str_eq!(
             err.to_string(),
-            "no version set for invalid-plugin in ~/.test-tool-versions"
+            "no version set for invalid-plugin in ~/config/config.toml"
         );
 
         // can only request a version one plugin at a time

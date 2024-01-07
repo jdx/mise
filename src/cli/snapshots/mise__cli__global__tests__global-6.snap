@@ -2,4 +2,4 @@
 source: src/cli/global.rs
 expression: output
 ---
-~/.test-tool-versions
+~/config/config.toml

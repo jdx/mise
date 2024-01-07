@@ -7,12 +7,14 @@ use miette::{IntoDiagnostic, Result};
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings};
-use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::env::{
+    MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
+};
 use crate::file::display_path;
 use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{dirs, env, file};
+use crate::{env, file};
 
 /// Change the active version of a tool locally or globally.
 ///
@@ -133,7 +135,7 @@ impl Use {
 
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let path = if self.global {
-            global_file()
+            MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(env) = &self.env {
             config_file_from_dir(
                 &env::current_dir()
@@ -176,12 +178,6 @@ impl Use {
             style(path).cyan().for_stderr(),
         );
     }
-}
-
-fn global_file() -> PathBuf {
-    env::MISE_CONFIG_FILE
-        .clone()
-        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
 fn config_file_from_dir(p: &Path) -> PathBuf {

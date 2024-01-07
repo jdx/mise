@@ -11,20 +11,6 @@
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
-    "env_file": {
-      "description": "path to .env file",
-      "type": "string",
-      "deprecated": true
-    },
-    "env_path": {
-      "description": "PATH entries to add",
-      "type": "array",
-      "deprecated": true,
-      "items": {
-        "description": "a path to add to PATH",
-        "type": "string"
-      }
-    },
     "env": { "$ref": "#/$defs/env" },
     "tools": {
       "description": "dev tools to use",
@@ -63,8 +49,7 @@
           "type": "string"
         }
       }
-    },
-    "settings": { "$ref": "#/$defs/settings" }
+    }
   },
   "$defs": {
     "env": {
@@ -228,99 +213,6 @@
           "additionalProperties": false
         }
       ]
-    },
-    "settings": {
-      "description": "settings for mise",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "legacy_version_file": {
-          "description": "should mise parse legacy version files (e.g. .node-version)",
-          "type": "boolean"
-        },
-        "legacy_version_file_disable_tools": {
-          "description": "tools that should not have their legacy version files parsed",
-          "type": "array",
-          "items": {
-            "description": "tool name",
-            "type": "string"
-          }
-        },
-        "always_keep_download": {
-          "description": "should mise keep downloaded files after installation",
-          "type": "boolean"
-        },
-        "always_keep_install": {
-          "description": "should mise keep install files after installation even if the installation fails",
-          "type": "boolean"
-        },
-        "plugin_autoupdate_last_check_duration": {
-          "oneOf": [
-            {
-              "description": "how often to check for plugin updates",
-              "type": "string"
-            },
-            {
-              "description": "how often to check for plugin updates",
-              "type": "integer"
-            }
-          ]
-        },
-        "asdf_compat": {
-          "description": "set to true to ensure .tool-versions will be compatible with asdf",
-          "type": "boolean"
-        },
-        "jobs": {
-          "description": "number of tools to install in parallel, default is 4",
-          "type": "integer"
-        },
-        "raw": {
-          "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",
-          "type": "boolean"
-        },
-        "shorthands_file": {
-          "description": "path to file containing shorthand mappings",
-          "type": "string"
-        },
-        "disable_default_shorthands": {
-          "description": "disables built-in shorthands",
-          "type": "boolean"
-        },
-        "disable_tools": {
-          "description": "tools that should not be used",
-          "type": "array",
-          "items": {
-            "description": "tool name",
-            "type": "string"
-          }
-        },
-        "trusted_config_paths": {
-          "description": "config files with these prefixes will be trusted by default",
-          "type": "array",
-          "items": {
-            "description": "a path to add to PATH",
-            "type": "string"
-          }
-        },
-        "experimental": {
-          "description": "enable experimental features",
-          "type": "boolean"
-        },
-        "verbose": {
-          "description": "display installation output",
-          "type": "boolean"
-        },
-        "yes": {
-          "description": "assume yes for all prompts",
-          "type": "boolean"
-        },
-        "task_output": {
-          "description": "how to display task output",
-          "type": "string",
-          "default": "prefix",
-          "enum": ["prefix", "interleave"]
-        }
-      }
     }
   }
 }
