@@ -8,6 +8,7 @@ use miette::{IntoDiagnostic, Result, WrapErr};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Value};
+use versions::Versioning;
 
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::AliasMap;
@@ -78,6 +79,7 @@ impl MiseToml {
         let doc: Document = s.parse().into_diagnostic()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
+                "min_version" => self.parse_min_version(v)?,
                 "dotenv" => self.parse_env_file(k, v, true)?,
                 "env_file" => self.parse_env_file(k, v, true)?,
                 "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
@@ -97,6 +99,26 @@ impl MiseToml {
         }
         self.doc = doc;
         Ok(())
+    }
+
+    fn parse_min_version(&self, v: &Item) -> Result<()> {
+        match v.as_str() {
+            Some(s) => {
+                if let (Some(min), Some(cur)) = (
+                    Versioning::new(s),
+                    Versioning::new(env!("CARGO_PKG_VERSION")),
+                ) {
+                    ensure!(
+                        cur >= min,
+                        "mise version {} is required, but you are using {}",
+                        style::eyellow(min),
+                        style::eyellow(cur)
+                    );
+                }
+                Ok(())
+            }
+            _ => parse_error!("min_version", v, "string"),
+        }
     }
 
     fn parse_env_file(&mut self, k: &str, v: &Item, deprecate: bool) -> Result<()> {
