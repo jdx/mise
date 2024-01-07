@@ -35,6 +35,7 @@ additional to that python in mise has a few extra configuration variables:
 
 - `MISE_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
 - `MISE_PYTHON_COMPILE` [bool]: always use python-build instead of precompiled binaries.
+- `MISE_PYTHON_VENV_AUTO_CREATE` [bool]: set to `true` to create virtualenv's automatically when they do not exist.
 - `MISE_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
 - `MISE_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
 - `MISE_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
@@ -50,7 +51,7 @@ pipenv
 
 You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
 
-## [experimental] Automatic virtualenv creation/activation
+## [experimental] Automatic virtualenv activation
 
 Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
 one of the following:
@@ -61,6 +62,9 @@ python = {version="3.11", virtualenv=".venv"} # relative to this file's director
 python = {version="3.11", virtualenv="/root/.venv"} # can be absolute
 python = {version="3.11", virtualenv="{{env.HOME}}/.cache/venv/myproj"} # can use templates
 ```
+
+The venv will need to be created manually with `python -m venv /path/to/venv`.
+Alternatively, set `MISE_PYTHON_VENV_AUTO_CREATE` to `true` to create virtualenv's automatically when they do not exist.
 
 ## [experimental] Precompiled node binaries
 
