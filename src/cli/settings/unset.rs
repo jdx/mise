@@ -56,6 +56,8 @@ mod tests {
         not_found_auto_install = true
         paranoid = false
         plugin_autoupdate_last_check_duration = "20m"
+        python_compile = false
+        python_venv_auto_create = false
         quiet = false
         raw = false
         shorthands_file = null
