@@ -15,6 +15,7 @@ use crate::{env, file};
 
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
     #[config(env = "MISE_ALL_COMPILE", default = false)]
     pub all_compile: bool,
