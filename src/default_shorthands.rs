@@ -673,7 +673,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("trivy", "https://github.com/zufardhiyaulhaq/asdf-trivy.git"),
     ("tsuru", "https://github.com/virtualstaticvoid/asdf-tsuru.git"),
     ("ttyd", "https://github.com/ivanvc/asdf-ttyd.git"),
-    ("tuist", "https://github.com/cprecioso/asdf-tuist.git"),
+    ("tuist", "https://github.com/asdf-community/asdf-tuist.git"),
     ("tx", "https://github.com/ORCID/asdf-transifex.git"),
     ("typos", "https://github.com/aschiavon91/asdf-typos.git"),
     ("uaa-cli", "https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf.git"),
