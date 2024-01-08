@@ -90,6 +90,10 @@ impl Client {
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
+    if e.to_string().contains("404") {
+        // TODO: not this when I can figure out how to use miette properly
+        return Some(404);
+    }
     if let Some(err) = e.downcast_ref::<reqwest::Error>() {
         err.status().map(|s| s.as_u16())
     } else {
