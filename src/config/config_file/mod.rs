@@ -224,7 +224,7 @@ pub fn is_trusted(path: &Path) -> bool {
             return true;
         }
         let settings = Settings::get();
-        for p in settings.trusted_config_paths.iter() {
+        for p in settings.trusted_config_paths() {
             if path.starts_with(p) {
                 cached.insert(path);
                 return true;
