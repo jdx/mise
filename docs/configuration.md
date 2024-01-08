@@ -266,7 +266,7 @@ Default: `/etc/mise`
 
 This is the directory where mise stores system-wide configuration.
 
-### `MISE_CONFIG_FILE`
+### `MISE_GLOBAL_CONFIG_FILE`
 
 Default: `$MISE_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
 
