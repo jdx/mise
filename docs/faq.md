@@ -195,7 +195,15 @@ compatible with asdf. Also consider using `.mise.toml` instead which won't confl
 ### mise isn't working when calling from tmux or another shell initialization script
 
 `mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a
-tool provided by mise before the prompt is displayed you must manually call `hook-env`:
+tool provided by mise before the prompt is displayed you can either
+[add the shims to your PATH](getting-started.html#2-add-mise-shims-to-path) e.g.
+
+```bash
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+python --version # will work after adding shims to PATH
+```
+
+Or you can manually call `hook-env`:
 
 ```bash
 eval "$(mise activate bash)"
