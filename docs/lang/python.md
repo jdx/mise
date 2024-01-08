@@ -51,6 +51,44 @@ pipenv
 
 You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
 
+## Troubleshooting errors with Homebrew
+
+If you normally use Homebrew and you see errors regarding OpenSSL,
+your best bet might be using the following command to install Python:
+
+```sh
+CFLAGS="-I$(brew --prefix openssl)/include" \
+LDFLAGS="-L$(brew --prefix openssl)/lib" \
+rtx install python@latest;
+```
+
+Homebrew installs its own OpenSSL version, which may collide with system-expected ones.
+You could even add that to your
+`.profile`,
+`.bashrc`,
+`.zshrc`...
+to avoid setting them every time
+
+Additionally, if you encounter issues with python-build,
+you may benefit from unlinking pkg-config prior to install
+([reason](https://github.com/pyenv/pyenv/issues/2823#issuecomment-1769081965)).
+
+```sh
+brew unlink pkg-config && \
+rtx install python@latest;
+brew link pkg-config
+```
+
+Thus the entire script would look like:
+
+```sh
+CFLAGS="-I$(brew --prefix openssl)/include" \
+LDFLAGS="-L$(brew --prefix openssl)/lib" \
+brew unlink pkg-config && \
+rtx install python@latest; \
+brew link pkg-config
+```
+
 ## [experimental] Automatic virtualenv activation
 
 Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
