@@ -391,15 +391,17 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
 
 pub fn global_config_files() -> Vec<PathBuf> {
     let mut config_files = vec![];
-    // TODO: add ~/.tool-versions under the right conditions
-    // if env::MISE_CONFIG_FILE.is_none() && !*env::MISE_USE_TOML {
-    //     // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
-    //     // because that's how the user overrides the default
-    //     let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-    //     if home_config.is_file() {
-    //         config_files.push(home_config);
-    //     }
-    // };
+    if env::var_path("MISE_CONFIG_FILE").is_none()
+        && env::var_path("MISE_GLOBAL_CONFIG_FILE").is_none()
+        && !*env::MISE_USE_TOML
+    {
+        // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
+        // because that's how the user overrides the default
+        let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        if home_config.is_file() {
+            config_files.push(home_config);
+        }
+    };
     let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
     if global_config.is_file() {
         config_files.push(global_config);
