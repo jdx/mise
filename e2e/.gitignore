@@ -4,6 +4,7 @@
 .config
 .asdf
 .default-go-packages
+.venv
 ruby/Gemfile
 ruby/.ruby-version
 Library
