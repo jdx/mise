@@ -49,7 +49,7 @@ impl Shell for Xonsh {
             from xonsh.built_ins  import XSH
 
         "#});
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
             let dir_str = dir.to_string_lossy();
             let dir_esc = xonsh_escape_sq(&dir_str);
             out.push_str(&formatdoc! {r#"

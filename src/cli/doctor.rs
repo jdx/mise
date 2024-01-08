@@ -133,7 +133,7 @@ fn mise_settings_file() -> String {
 fn render_config_files(config: &Config) -> String {
     let mut s = style("config files:\n").bold().to_string();
     for f in config.config_files.keys().rev() {
-        s.push_str(&format!("  {}\n", f.display()));
+        s.push_str(&format!("  {}\n", display_path(f)));
     }
     s
 }

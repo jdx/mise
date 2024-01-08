@@ -15,6 +15,7 @@ use crate::{env, file};
 
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
     #[config(env = "MISE_ALL_COMPILE", default = false)]
     pub all_compile: bool,
@@ -237,6 +238,10 @@ impl Settings {
             "This command is experimental. Enable it with `mise settings set experimental true`";
         ensure!(self.experimental, msg);
         Ok(())
+    }
+
+    pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.trusted_config_paths.iter().map(file::replace_path)
     }
 }
 
