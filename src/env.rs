@@ -280,7 +280,7 @@ fn var_option_bool(key: &str) -> Option<bool> {
     }
 }
 
-fn var_path(key: &str) -> Option<PathBuf> {
+pub fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
 }
 
