@@ -284,12 +284,12 @@ impl Toolset {
         for p in config.path_dirs.clone() {
             path_env.add(p);
         }
-        for p in self.list_paths() {
-            path_env.add(p);
-        }
         let mut env = self.env(config);
         if let Some(path) = env.get("PATH") {
             path_env.add(PathBuf::from(path));
+        }
+        for p in self.list_paths() {
+            path_env.add(p);
         }
         env.insert("PATH".to_string(), path_env.to_string());
         env
