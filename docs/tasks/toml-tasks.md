@@ -27,7 +27,7 @@ run = """
 cargo clippy
 """
 
-[task.ci] # only dependencies to be run
+[tasks.ci] # only dependencies to be run
 description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
