@@ -11,7 +11,7 @@ impl Shell for Bash {
         let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
         let mut out = String::new();
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
             out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
         }
         out.push_str(&formatdoc! {r#"

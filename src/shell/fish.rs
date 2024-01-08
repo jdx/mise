@@ -13,7 +13,7 @@ impl Shell for Fish {
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
             out.push_str(&format!("fish_add_path -g {dir}\n", dir = dir.display()));
         }
 
