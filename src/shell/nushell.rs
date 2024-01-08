@@ -26,7 +26,7 @@ impl Shell for Nushell {
         let exe = exe.display();
         let mut out = String::new();
 
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) {
+        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
             out.push_str(&format!(
                 "$env.PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
                 dir.display()
