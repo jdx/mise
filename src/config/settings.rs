@@ -238,6 +238,10 @@ impl Settings {
         ensure!(self.experimental, msg);
         Ok(())
     }
+
+    pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.trusted_config_paths.iter().map(file::replace_path)
+    }
 }
 
 impl Display for Settings {
