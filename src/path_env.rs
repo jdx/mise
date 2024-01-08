@@ -28,7 +28,7 @@ impl PathEnv {
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
-        let mut paths = self.pre.iter().chain(self.mise.iter().rev()).collect_vec();
+        let mut paths = self.pre.iter().chain(self.mise.iter()).collect_vec();
         if self.seen_shims {
             paths.push(&dirs::SHIMS);
         }
