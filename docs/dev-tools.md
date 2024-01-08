@@ -6,7 +6,7 @@
 _Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages dev tools like node, python, cmake, terraform, and [hundreds more](/plugins)._
 
 ::: tip
-New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-mise-ac4) for a gentler introduction.
+New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4) for a gentler introduction.
 :::
 
 mise is a tool for managing programming language and tool versions. For example, use this to install
