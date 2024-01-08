@@ -281,14 +281,14 @@ impl Toolset {
     }
     pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in config.path_dirs.clone() {
+            path_env.add(p);
+        }
         let mut env = self.env(config);
         if let Some(path) = env.get("PATH") {
             path_env.add(PathBuf::from(path));
         }
         for p in self.list_paths() {
-            path_env.add(p);
-        }
-        for p in config.path_dirs.clone() {
             path_env.add(p);
         }
         env.insert("PATH".to_string(), path_env.to_string());
