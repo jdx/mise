@@ -179,6 +179,12 @@ it is used for all directories.
 # you can set these with `mise use -g`
 node = 'lts'
 python = ['3.10', '3.11']
+
+[alias.node]
+my_custom_node = '20'  # makes `mise install node@my_custom_node` install node-20.x
+                       # this can also be specified in a plugin (see below in "Aliases")
+                       # note adding an alias will also add a symlink, in this case:
+                       # ~/.local/share/mise/installs/node/20 -> ./20.x.x
 ```
 
 ## System config: `/etc/mise/config.toml`
@@ -225,10 +231,6 @@ disable_tools = ['node']           # disable specific tools, generally used to t
 env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 
 experimental = true # enable experimental features
-
-[alias.node]
-my_custom_node = '20'  # makes `mise install node@my_custom_node` install node-20.x
-                       # this can also be specified in a plugin (see below in "Aliases")
 ```
 
 ::: tip
