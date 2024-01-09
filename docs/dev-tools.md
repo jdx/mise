@@ -121,4 +121,4 @@ $ alias x="mise x --"
 ```
 :::
 
-Similarly, `mise run` can be used to [execute tasks](/tasks) which will also activate the mise environment with all of your tools.
+Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise environment with all of your tools.
