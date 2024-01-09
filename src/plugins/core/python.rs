@@ -133,7 +133,7 @@ impl PythonPlugin {
     fn install_precompiled(&self, ctx: &InstallContext) -> Result<()> {
         warn!("installing precompiled python from indygreg/python-build-standalone");
         warn!("if you experience issues with this python, switch to python-build");
-        warn!("by running: mise settings set python_compile 0");
+        warn!("by running: mise settings set python_compile 1");
 
         let config = Config::get();
         let precompile_info = self
@@ -164,6 +164,10 @@ impl PythonPlugin {
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
 
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
+        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
+            warn!("failed to get virtualenv: {e}");
+        }
+        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }
