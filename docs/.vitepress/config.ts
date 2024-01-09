@@ -90,13 +90,7 @@ export default defineConfig({
       pattern: 'https://github.com/jdx/mise-docs/edit/main/docs/:path',
     },
     search: {
-      provider: 'algolia',
-      options: {
-        indexName: 'rtx',
-        appId: '1452G4RPSJ',
-        apiKey: 'ad09b96a7d2a30eddc2771800da7a1cf',
-        insights: true,
-      }
+      provider: 'local',
     },
     footer: {
       message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/mise/graphs/contributors">friends</a>.',
