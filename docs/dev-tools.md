@@ -92,7 +92,7 @@ There are many ways it can be used:
 
 `mise local` and `mise global` are command which only modify the `.tool-versions` or `.mise.toml` files.
 These are hidden from the CLI help and remain for asdf-compatibility. The recommended approach is
-to use `mise use` instead because that will do the same thing but also install the tool if it is
+to use `mise use` instead because that will do the same thing but also install the tool if it does
 not already exists.
 
 ### `mise exec`|`mise x`
