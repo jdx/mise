@@ -8,6 +8,7 @@ use clap::Command;
 use console::style;
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result, WrapErr};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
 
@@ -320,16 +321,13 @@ fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> Result<Vec<String>>
         query = "[0-9].*";
     }
     let query_regex = Regex::new(&format!("^{}([-.].+)?$", query)).into_diagnostic()?;
-    let version_regex = regex!(
-        r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|SNAPSHOT|master)"
-    );
     let versions = versions
         .into_iter()
         .filter(|v| {
             if query == v {
                 return true;
             }
-            if version_regex.is_match(v) {
+            if VERSION_REGEX.is_match(v) {
                 return false;
             }
             query_regex.is_match(v)
@@ -389,6 +387,13 @@ pub enum PluginType {
     Core,
     External,
 }
+
+pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+    )
+        .unwrap()
+});
 
 #[cfg(test)]
 mod tests {
