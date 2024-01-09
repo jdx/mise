@@ -1,8 +1,17 @@
 # Comparison to asdf
 
-mise is mostly a clone of asdf, but there are notable areas where improvements have been made.
+mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that
+you may have used with asdf and uses asdf plugins. It will not, however, reuse existing asdf directories
+(so you'll need to either reinstall them or move them), and 100% compatibility is not a design goal.
 
-### Performance
+Casual users coming from asdf have generally found mise to just be a faster, easier to use asdf.
+
+:::tip
+Make sure you have a look at [environments[(/environments) and [tasks](/tasks) which
+are major portions of mise that have no asdf equivalent.
+:::
+
+## Performance
 
 asdf made (what I consider) a poor design decision to use shims that go between a call to a runtime
 and the runtime itself. e.g.: when you call `node` it will call an asdf shim file `~/.asdf/shims/node`,
@@ -25,23 +34,7 @@ a full reload.
 tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~5ms)
 when the prompt loads.
 
-### Environment variables in mise
-
-asdf only helps manage runtime executables. However, some tools are managed via environment variables
-(notably Java which switches via `JAVA_HOME`). This isn't supported very well in asdf and requires
-a separate shell extension just to manage.
-
-However asdf _plugins_ have a `bin/exec-env` script that is used for exporting environment variables
-like [`JAVA_HOME`](https://github.com/halcyon/asdf-java/blob/master/bin/exec-env). mise simply exports
-the environment variables from the `bin/exec-env` script in the plugin but places them in the shell
-for _all_ commands. In asdf it only exports those commands when the shim is called. This means if you
-call `java` it will set `JAVA_HOME`, but not if you call some Java tool like `mvn`.
-
-This means we're just using the existing plugin script but because mise doesn't use shims it can be
-used for more things. It would be trivial to make a plugin that exports arbitrary environment
-variables like [dotenv](https://github.com/motdotla/dotenv) or [direnv](https://github.com/direnv/direnv).
-
-### UX
+## UX
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in mise but may use slightly different syntax. mise has more forgiving commands,
