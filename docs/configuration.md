@@ -98,38 +98,39 @@ to share the plugin location/revision with other developers in your project.
 This is similar to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
-## Legacy version files
+### `[aliases]` - Tool version aliases
 
-mise supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
-and `.python-version`. These are ideal for setting the runtime version of a project without forcing
-other developers to use a specific tool like mise/asdf.
+The following makes `mise install node@my_custom_node` install node-20.x
+this can also be specified in a [plugin](/aliases).
+note adding an alias will also add a symlink, in this case:
 
-They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
-in mise and nvm. Here are some of the supported legacy version files:
+    ~/.local/share/mise/installs/node/20 -> ./20.x.x
 
-| Plugin    | "Legacy" (Idiomatic) Files                         |
-|-----------|----------------------------------------------------|
-| crystal   | `.crystal-version`                                 |
-| elixir    | `.exenv-version`                                   |
-| go        | `.go-version`, `go.mod`                            |
-| java      | `.java-version`, `.sdkmanrc`                       |
-| node      | `.nvmrc`, `.node-version`                          |
-| python    | `.python-version`                                  |
-| ruby      | `.ruby-version`, `Gemfile`                         |
-| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn      | `.yarnrc`                                          |
+```toml
+my_custom_node = '20'
+```
 
-In mise these are enabled by default. You can disable them with `mise settings set legacy_version_file false`.
-There is a performance cost to having these when they're parsed as it's performed by the plugin in
-`bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
-You may not even notice.
+## Global config: `~/.config/mise/config.toml`
 
-::: info
-asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
-that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-version files since they're version files not specific to asdf/mise and can be used by other tools.
-(`.nvmrc` being a notable exception, which is tied to a specific tool.)
-:::
+mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except that
+it is used for all directories.
+
+```toml
+[tools]
+# global tool versions go here
+# you can set these with `mise use -g`
+node = 'lts'
+python = ['3.10', '3.11']
+```
+
+## System config: `/etc/mise/config.toml`
+
+Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
+setting defaults for all users.
+
+## System settings: `/etc/mise/settings.toml`
+
+[_TODO: mise does not currently read this file but that needs to be added._](https://github.com/jdx/mise/issues/1425)
 
 ## `.tool-versions`
 
@@ -168,29 +169,38 @@ Both `.mise.toml` and `.tool-versions` support "scopes" which modify the behavio
   be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
   version behind the latest version: `sub-0.1:latest`.
 
-## Global config: `~/.config/mise/config.toml`
+## Legacy version files
 
-mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except that
-it is used for all directories.
+mise supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
+and `.python-version`. These are ideal for setting the runtime version of a project without forcing
+other developers to use a specific tool like mise/asdf.
 
-```toml
-[tools]
-# global tool versions go here
-# you can set these with `mise use -g`
-node = 'lts'
-python = ['3.10', '3.11']
+They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
+in mise and nvm. Here are some of the supported legacy version files:
 
-[alias.node]
-my_custom_node = '20'  # makes `mise install node@my_custom_node` install node-20.x
-                       # this can also be specified in a plugin (see below in "Aliases")
-                       # note adding an alias will also add a symlink, in this case:
-                       # ~/.local/share/mise/installs/node/20 -> ./20.x.x
-```
+| Plugin    | "Legacy" (Idiomatic) Files                         |
+|-----------|----------------------------------------------------|
+| crystal   | `.crystal-version`                                 |
+| elixir    | `.exenv-version`                                   |
+| go        | `.go-version`, `go.mod`                            |
+| java      | `.java-version`, `.sdkmanrc`                       |
+| node      | `.nvmrc`, `.node-version`                          |
+| python    | `.python-version`                                  |
+| ruby      | `.ruby-version`, `Gemfile`                         |
+| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
+| yarn      | `.yarnrc`                                          |
 
-## System config: `/etc/mise/config.toml`
+In mise these are enabled by default. You can disable them with `mise settings set legacy_version_file false`.
+There is a performance cost to having these when they're parsed as it's performed by the plugin in
+`bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
+You may not even notice.
 
-Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
-setting defaults for all users.
+::: info
+asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
+that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
+version files since they're version files not specific to asdf/mise and can be used by other tools.
+(`.nvmrc` being a notable exception, which is tied to a specific tool.)
+:::
 
 ## Settings file: `~/.config/mise/settings.toml`
 
@@ -267,6 +277,12 @@ This is used for temporary storage such as when installing tools.
 Default: `/etc/mise`
 
 This is the directory where mise stores system-wide configuration.
+
+### `MISE_SETTINGS_FILE`
+
+Default: `$MISE_CONFIG_DIR/settings.toml` (Usually ~/.config/mise/settings.toml)
+
+This is the path to the settings file.
 
 ### `MISE_GLOBAL_CONFIG_FILE`
 
