@@ -57,10 +57,19 @@ asdf install node latest:20
 asdf local node latest:20
 ```
 
-In `mise` this can all be done in a single step to set the local runtime version. If the plugin
-and/or runtime needs to be installed it will prompt:
+In `mise` this can all be done in a single step which installs the plugin, installs the runtime,
+and sets the version:
 
-[![asciicast](https://asciinema.org/a/564031.svg)](https://asciinema.org/a/564031)
+```sh
+mise use node@20
+```
+
+If you have an existing `.tool-versions` file, or `.mise-toml`, you can install all plugins
+and runtimes with a single command:
+
+```sh
+mise install
+```
 
 I've found asdf to be particularly rigid and difficult to learn. It also made strange decisions like
 having `asdf list all` but `asdf latest --all` (why is one a flag and one a positional argument?).
