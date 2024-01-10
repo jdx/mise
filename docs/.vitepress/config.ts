@@ -14,6 +14,7 @@ export default defineConfig({
     ],
     sidebar: [
       { text: 'About', link: '/about' },
+      { text: 'Team', link: '/team' },
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
@@ -23,7 +24,6 @@ export default defineConfig({
       { text: 'Paranoid', link: '/paranoid' },
       { text: 'FAQs', link: '/faq' },
       { text: 'How I Use mise', link: '/how-i-use-mise' },
-      { text: 'Team', link: '/team' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',
