@@ -1,3 +1,7 @@
+---
+outline: 'deep'
+---
+
 # Python
 
 The following are instructions for using the python mise core plugin. The core plugin will be used so long as no plugin is manually
@@ -34,14 +38,6 @@ mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/pyth
 additional to that python in mise has a few extra configuration variables.
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
-### `python_compile`
-### `python_default_packages_file`
-### `python_patch_url`
-### `python_patches_directory`
-### `python_precompiled_arch`
-### `python_precompiled_os`
-### `python_pyenv_repo`
-### `python_venv_auto_create`
 
 ### `python_pyenv_repo`
 
