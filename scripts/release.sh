@@ -2,8 +2,8 @@
 set -euxo pipefail
 
 echo "::group::Setup"
-git config --global user.name rtx-vm
-git config --global user.email 123107610+rtx-vm@users.noreply.github.com
+git config --global user.name mise-en-dev
+git config --global user.email 123107610+mise-en-dev@users.noreply.github.com
 
 BASE_DIR="$(cd mise && pwd)"
 MISE_VERSION=$(cd mise && ./scripts/get-version.sh)
