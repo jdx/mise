@@ -53,7 +53,7 @@ The pyenv repo to get python-build from.
 * Env: `MISE_PYTHON_COMPILE`
 * Default: `false`
 
-Set to `true` to always use python-build instead of [precompiled binaries](#experimental-precompiled-python-binaries).
+Set to `true` to always use python-build instead of [precompiled binaries](#precompiled-python-binaries).
 
 ### `python_precompiled_os`
 
@@ -151,7 +151,7 @@ rtx install python@latest; \
 brew link pkg-config
 ```
 
-## [experimental] Automatic virtualenv activation
+## Automatic virtualenv activation <Badge type="warning" text="experimental" />
 
 Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
 one of the following:
@@ -166,7 +166,7 @@ python = {version="3.11", virtualenv="{{env.HOME}}/.cache/venv/myproj"} # can us
 The venv will need to be created manually with `python -m venv /path/to/venv`.
 Alternatively, set `MISE_PYTHON_VENV_AUTO_CREATE` to `true` to create virtualenv's automatically when they do not exist.
 
-## [experimental] Precompiled python binaries
+## Precompiled python binaries <Badge type="warning" text="experimental" />
 
 In experimental mode, mise will download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
 for python instead of compiling them
