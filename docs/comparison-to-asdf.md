@@ -73,3 +73,22 @@ in the right way.
 That said, there are a lot of great things about asdf. It's the best multi-runtime manager out there
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
 were very good. I really just have 2 complaints: the shims and the fact it's written in Bash.
+
+## Command Compatibility
+
+In nearly all places you can use the exact syntax that works in asdf, however this likely won't
+show up in the help or CLI reference. If you're coming from asdf and comfortable with that way of
+working you can almost always use the same syntax with mise, e.g.:
+
+```sh
+mise install node 20.0.0
+mise local node 20.0.0
+```
+
+It's not recommended though. You almost always want to modify config files and install things so
+`mise use node@20` saves an extra command. Also, the "@" in the command is preferred since it allows
+you to install multiple tools at once: `mise use|install node@20 node@18`. Also, there are edge cases
+where it's not possible—or at least very challenging—for us to definitively know which syntax is being
+used and so we default to mise-style. While there aren't many of these, asdf-compatibility is done
+as a "best-effort" in order to make transitioning from asdf feel familiar for those users who can
+rely on their muscle memory. Ensuring asdf-syntax works with everything is not a design goal.
