@@ -119,7 +119,7 @@ pub mod tests {
         paranoid = false
         plugin_autoupdate_last_check_duration = "7d"
         python_compile = false
-        python_default_packages_file = null
+        python_default_packages_file = "~/.default-python-packages"
         python_patch_url = null
         python_patches_directory = null
         python_precompiled_arch = null
