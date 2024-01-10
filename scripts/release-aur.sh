@@ -76,8 +76,8 @@ pkgname = mise
 EOF
 
 cd aur
-git config user.name rtx-vm
-git config user.email 123107610+rtx-vm@users.noreply.github.com
+git config user.name mise-en-dev
+git config user.email 123107610+mise-en-dev@users.noreply.github.com
 git add .SRCINFO PKGBUILD
 if git diff-index --quiet HEAD --; then
   echo "No changes to PKGBUILD or .SRCINFO"

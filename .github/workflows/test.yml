@@ -51,7 +51,7 @@ jobs:
         with:
           push: true
           author_name: mise[bot]
-          author_email: 123107610+rtx-vm@users.noreply.github.com
+          author_email: 123107610+mise-en-dev@users.noreply.github.com
       - run: just lint
 
   coverage:
