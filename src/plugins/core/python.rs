@@ -51,11 +51,12 @@ impl PythonPlugin {
         if self.python_build_path().exists() {
             return Ok(());
         }
+        let settings = Settings::try_get()?;
         let python_build_path = self.python_build_path();
         debug!("Installing python-build to {}", python_build_path.display());
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone(&env::MISE_PYENV_REPO)?;
+        git.clone(&settings.python_pyenv_repo)?;
         Ok(())
     }
     fn update_python_build(&self) -> Result<()> {
@@ -172,13 +173,13 @@ impl PythonPlugin {
         if settings.verbose {
             cmd = cmd.arg("--verbose");
         }
-        if let Some(patch_url) = &*env::MISE_PYTHON_PATCH_URL {
+        if let Some(patch_url) = &settings.python_patch_url {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
             let patch = HTTP.get_text(patch_url)?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
-        if let Some(patches_dir) = &*env::MISE_PYTHON_PATCHES_DIRECTORY {
+        if let Some(patches_dir) = &settings.python_patches_directory {
             let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
             if patch_file.exists() {
                 ctx.pr
@@ -199,7 +200,9 @@ impl PythonPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        if !env::MISE_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
+        let settings = Settings::get();
+        let packages_file = settings.python_default_packages_file();
+        if !packages_file.exists() {
             return Ok(());
         }
         pr.set_message("installing default packages".into());
@@ -210,7 +213,7 @@ impl PythonPlugin {
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
-            .arg(&*env::MISE_PYTHON_DEFAULT_PACKAGES_FILE)
+            .arg(&packages_file)
             .envs(&config.env)
             .execute()
     }
