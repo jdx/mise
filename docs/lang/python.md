@@ -35,7 +35,8 @@ additional to that python in mise has a few extra configuration variables:
 
 - `MISE_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
 - `MISE_PYTHON_COMPILE` [bool]: always use python-build instead of precompiled binaries.
-- `MISE_PYTHON_PRECOMPILED_CPU_VERSION` [string]: the default is `v3`. See below for details.
+- `MISE_PYTHON_PRECOMPILED_OS` [string]: specify the OS to use for precompiled binaries, defaults to the current OS.
+- `MISE_PYTHON_PRECOMPILED_ARCH` [string]: specify the architecture to use for precompiled binaries, defaults to the current architecture.
 - `MISE_PYTHON_VENV_AUTO_CREATE` [bool]: set to `true` to create virtualenv's automatically when they do not exist.
 - `MISE_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
 - `MISE_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
@@ -122,7 +123,7 @@ with the precompiled binaries to be aware of.
 If you'd like to disable these binaries, set `MISE_PYTHON_COMPILE` to `1`.
 
 These binaries may not work on older CPUs however you may opt into binaries which
-are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_CPU_VERSION`.
-"v1" is the most compatible option but the default is "v3" which should run on anything
+are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
+a different version. The default is "x86_64_v3" which should run on anything
 built in the last 10 years. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information
-on this option.
+on this option. Set to "x86_64" for the most compatible binaries.
