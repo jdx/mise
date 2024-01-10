@@ -23,10 +23,6 @@ watch:
 # run all test types
 test *args: (test-unit args) test-e2e lint
 
-# update all test snapshot files
-test-update-snapshots:
-    cargo insta test --accept
-
 # run the rust "unit" tests
 test-unit *args:
     cargo test --all-features {{ args }}
