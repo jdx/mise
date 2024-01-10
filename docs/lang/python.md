@@ -31,16 +31,80 @@ mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/pyth
 ## Configuration
 
 `python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
-additional to that python in mise has a few extra configuration variables:
+additional to that python in mise has a few extra configuration variables.
 
-- `MISE_PYENV_REPO` [string]: the default is `https://github.com/pyenv/pyenv.git`
-- `MISE_PYTHON_COMPILE` [bool]: always use python-build instead of precompiled binaries.
-- `MISE_PYTHON_PRECOMPILED_OS` [string]: specify the OS to use for precompiled binaries, defaults to the current OS.
-- `MISE_PYTHON_PRECOMPILED_ARCH` [string]: specify the architecture to use for precompiled binaries, defaults to the current architecture.
-- `MISE_PYTHON_VENV_AUTO_CREATE` [bool]: set to `true` to create virtualenv's automatically when they do not exist.
-- `MISE_PYTHON_PATCH_URL` [string]: A url to a patch file to pass to python-build.
-- `MISE_PYTHON_PATCHES_DIRECTORY` [string]: A local directory containing patch files to pass to python-build.
-- `MISE_PYTHON_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-python-packages`
+Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
+### `python_compile`
+### `python_default_packages_file`
+### `python_patch_url`
+### `python_patches_directory`
+### `python_precompiled_arch`
+### `python_precompiled_os`
+### `python_pyenv_repo`
+### `python_venv_auto_create`
+
+### `python_pyenv_repo`
+
+* Type: `string`
+* Env: `MISE_PYENV_REPO`
+* Default: `https://github.com/pyenv/pyenv.git`
+
+The pyenv repo to get python-build from.
+
+### `python_compile`
+
+* Type: `bool`
+* Env: `MISE_PYTHON_COMPILE`
+* Default: `false`
+
+Set to `true` to always use python-build instead of [precompiled binaries](#experimental-precompiled-python-binaries).
+
+### `python_precompiled_os`
+
+* Type: `string`
+* Env: `MISE_PYTHON_PRECOMPILED_OS`
+* Default: `"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"`
+
+Specify the OS to use for precompiled binaries.
+
+### `python_precompiled_arch`
+
+* Type: `string`
+* Env: `MISE_PYTHON_PRECOMPILED_ARCH`
+* Default: `"x86_64_v3" | "aarch64"`
+
+Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to
+`"x86_64"` for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
+
+### `python_venv_auto_create`
+
+* Type: `bool`
+* Env: `MISE_PYTHON_VENV_AUTO_CREATE`
+* Default: `false`
+
+Set to `true` to create virtualenv's automatically when they do not exist.
+
+### `python_patch_url`
+
+* Type: `string`
+* Env: `MISE_PYTHON_PATCH_URL`
+
+A url to a patch file to pass to python-build.
+
+### `python_patches_directory`
+
+* Type: `string`
+* Env: `MISE_PYTHON_PATCHES_DIRECTORY`
+
+A local directory containing patch files to pass to python-build.
+
+### `python_default_packages_file`
+
+* Type: `string`
+* Env: `MISE_PYTHON_DEFAULT_PACKAGES_FILE`
+* Default: `$HOME/.default-python-packages`
+
+Packages list to install with pip after installing a Python version.
 
 ## Default Python packages
 
