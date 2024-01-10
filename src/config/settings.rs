@@ -49,6 +49,21 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "MISE_PYTHON_COMPILE", default = false)]
     pub python_compile: bool,
+    #[config(env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE")]
+    pub python_default_packages_file: Option<PathBuf>,
+    #[config(env = "MISE_PYTHON_PATCH_URL")]
+    pub python_patch_url: Option<String>,
+    #[config(env = "MISE_PYTHON_PATCHES_DIRECTORY")]
+    pub python_precompiled_os: Option<String>,
+    #[config(env = "MISE_PYTHON_PRECOMPILED_ARCH")]
+    pub python_patches_directory: Option<PathBuf>,
+    #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
+    pub python_precompiled_arch: Option<String>,
+    #[config(
+        env = "MISE_PYENV_REPO",
+        default = "https://github.com/pyenv/pyenv.git"
+    )]
+    pub python_pyenv_repo: String,
     #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
     pub python_venv_auto_create: bool,
     #[config(env = "MISE_RAW", default = false)]
@@ -242,6 +257,11 @@ impl Settings {
 
     pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths.iter().map(file::replace_path)
+    }
+    pub fn python_default_packages_file(&self) -> PathBuf {
+        self.python_default_packages_file
+            .clone()
+            .unwrap_or_else(|| env::HOME.join(".default-python-packages"))
     }
 }
 
