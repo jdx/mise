@@ -23,6 +23,7 @@ export default defineConfig({
       { text: 'Paranoid', link: '/paranoid' },
       { text: 'FAQs', link: '/faq' },
       { text: 'How I Use mise', link: '/how-i-use-mise' },
+      { text: 'Team', link: '/team' },
       {
         text: 'Dev Tools',
         link: '/dev-tools',
