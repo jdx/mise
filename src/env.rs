@@ -127,17 +127,6 @@ pub static MISE_USE_VERSIONS_HOST: Lazy<bool> =
     Lazy::new(|| !var_is_false("MISE_USE_VERSIONS_HOST"));
 
 // python
-pub static MISE_PYENV_REPO: Lazy<String> = Lazy::new(|| {
-    var("MISE_PYENV_REPO").unwrap_or_else(|_| "https://github.com/pyenv/pyenv.git".into())
-});
-pub static MISE_PYTHON_PATCH_URL: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_PYTHON_PATCH_URL").ok());
-pub static MISE_PYTHON_PATCHES_DIRECTORY: Lazy<Option<PathBuf>> =
-    Lazy::new(|| var_path("MISE_PYTHON_PATCHES_DIRECTORY"));
-pub static MISE_PYTHON_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_PYTHON_DEFAULT_PACKAGES_FILE")
-        .unwrap_or_else(|| HOME.join(".default-python-packages"))
-});
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 

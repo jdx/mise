@@ -51,11 +51,12 @@ impl PythonPlugin {
         if self.python_build_path().exists() {
             return Ok(());
         }
+        let settings = Settings::try_get()?;
         let python_build_path = self.python_build_path();
         debug!("Installing python-build to {}", python_build_path.display());
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone(&env::MISE_PYENV_REPO)?;
+        git.clone(&settings.python_pyenv_repo)?;
         Ok(())
     }
     fn update_python_build(&self) -> Result<()> {
@@ -70,16 +71,6 @@ impl PythonPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let settings = Settings::get();
-        if self.should_install_precompiled(&settings) {
-            let v = self
-                .fetch_precompiled_remote_versions()?
-                .iter()
-                .map(|(v, _, _)| v.to_string())
-                .unique()
-                .collect();
-            return Ok(v);
-        }
         match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
@@ -110,10 +101,12 @@ impl PythonPlugin {
 
     fn fetch_precompiled_remote_versions(&self) -> Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
+            let settings = Settings::get();
             let raw = HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled")?;
+            let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
             let versions = raw
                 .lines()
-                .filter(|v| v.contains(&format!("{}-{}", arch(), os())))
+                .filter(|v| v.contains(&platform))
                 .flat_map(|v| {
                     regex!(r"^cpython-(\d+\.\d+\.\d+)\+(\d+).*")
                         .captures(v)
@@ -135,7 +128,6 @@ impl PythonPlugin {
         warn!("if you experience issues with this python, switch to python-build");
         warn!("by running: mise settings set python_compile 1");
 
-        let config = Config::get();
         let precompile_info = self
             .fetch_precompiled_remote_versions()?
             .iter()
@@ -143,7 +135,7 @@ impl PythonPlugin {
             .find(|(v, _, _)| &ctx.tv.version == v);
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
-            None => bail!("no precompiled version found for {}", ctx.tv),
+            None => return self.install_compiled(ctx),
         };
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
@@ -162,13 +154,43 @@ impl PythonPlugin {
         file::remove_all(&install)?;
         file::rename(download.join("python"), &install)?;
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
+        Ok(())
+    }
 
-        self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
-            warn!("failed to get virtualenv: {e}");
+    fn install_compiled(&self, ctx: &InstallContext) -> Result<()> {
+        let config = Config::get();
+        let settings = Settings::get();
+        self.install_or_update_python_build()?;
+        if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
+            return Err(miette!("Ref versions not supported for python"));
         }
-        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
-
+        ctx.pr.set_message("Running python-build".into());
+        let mut cmd = CmdLineRunner::new(self.python_build_bin())
+            .with_pr(ctx.pr.as_ref())
+            .arg(ctx.tv.version.as_str())
+            .arg(&ctx.tv.install_path())
+            .envs(&config.env);
+        if settings.verbose {
+            cmd = cmd.arg("--verbose");
+        }
+        if let Some(patch_url) = &settings.python_patch_url {
+            ctx.pr
+                .set_message(format!("with patch file from: {patch_url}"));
+            let patch = HTTP.get_text(patch_url)?;
+            cmd = cmd.arg("--patch").stdin_string(patch)
+        }
+        if let Some(patches_dir) = &settings.python_patches_directory {
+            let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
+            if patch_file.exists() {
+                ctx.pr
+                    .set_message(format!("with patch file: {}", patch_file.display()));
+                let contents = file::read_to_string(&patch_file)?;
+                cmd = cmd.arg("--patch").stdin_string(contents);
+            } else {
+                warn!("patch file not found: {}", patch_file.display());
+            }
+        }
+        cmd.execute()?;
         Ok(())
     }
 
@@ -178,7 +200,9 @@ impl PythonPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        if !env::MISE_PYTHON_DEFAULT_PACKAGES_FILE.exists() {
+        let settings = Settings::get();
+        let packages_file = settings.python_default_packages_file();
+        if !packages_file.exists() {
             return Ok(());
         }
         pr.set_message("installing default packages".into());
@@ -189,7 +213,7 @@ impl PythonPlugin {
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
-            .arg(&*env::MISE_PYTHON_DEFAULT_PACKAGES_FILE)
+            .arg(&packages_file)
             .envs(&config.env)
             .execute()
     }
@@ -290,39 +314,10 @@ impl Plugin for PythonPlugin {
         let config = Config::get();
         let settings = Settings::try_get()?;
         if self.should_install_precompiled(&settings) {
-            return self.install_precompiled(ctx);
+            self.install_precompiled(ctx)?;
+        } else {
+            self.install_compiled(ctx)?;
         }
-        self.install_or_update_python_build()?;
-        if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
-            return Err(miette!("Ref versions not supported for python"));
-        }
-        ctx.pr.set_message("Running python-build".into());
-        let mut cmd = CmdLineRunner::new(self.python_build_bin())
-            .with_pr(ctx.pr.as_ref())
-            .arg(ctx.tv.version.as_str())
-            .arg(&ctx.tv.install_path())
-            .envs(&config.env);
-        if settings.verbose {
-            cmd = cmd.arg("--verbose");
-        }
-        if let Some(patch_url) = &*env::MISE_PYTHON_PATCH_URL {
-            ctx.pr
-                .set_message(format!("with patch file from: {patch_url}"));
-            let patch = HTTP.get_text(patch_url)?;
-            cmd = cmd.arg("--patch").stdin_string(patch)
-        }
-        if let Some(patches_dir) = &*env::MISE_PYTHON_PATCHES_DIRECTORY {
-            let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
-            if patch_file.exists() {
-                ctx.pr
-                    .set_message(format!("with patch file: {}", patch_file.display()));
-                let contents = file::read_to_string(&patch_file)?;
-                cmd = cmd.arg("--patch").stdin_string(contents);
-            } else {
-                warn!("patch file not found: {}", patch_file.display());
-            }
-        }
-        cmd.execute()?;
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
             warn!("failed to get virtualenv: {e}");
@@ -351,23 +346,29 @@ impl Plugin for PythonPlugin {
     }
 }
 
-fn os() -> &'static str {
+fn python_os(settings: &Settings) -> String {
+    if let Some(os) = &settings.python_precompiled_os {
+        return os.clone();
+    }
     if cfg!(target_env = "musl") {
-        "unknown-linux-musl"
+        "unknown-linux-musl".into()
     } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
+        "unknown-linux-gnu".into()
     } else if cfg!(target_os = "macos") {
-        "apple-darwin"
+        "apple-darwin".into()
     } else {
         panic!("unsupported OS")
     }
 }
 
-fn arch() -> &'static str {
+fn python_arch(settings: &Settings) -> String {
+    if let Some(arch) = &settings.python_precompiled_arch {
+        return arch.clone();
+    }
     if cfg!(target_arch = "x86_64") {
-        "x86_64_v3" // TODO: make the version configurable
+        "x86_64_v3".into()
     } else if cfg!(target_arch = "aarch64") {
-        "aarch64"
+        "aarch64".into()
     } else {
         panic!("unsupported arch")
     }

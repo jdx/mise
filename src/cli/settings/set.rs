@@ -119,6 +119,12 @@ pub mod tests {
         paranoid = false
         plugin_autoupdate_last_check_duration = "7d"
         python_compile = false
+        python_default_packages_file = null
+        python_patch_url = null
+        python_patches_directory = null
+        python_precompiled_arch = null
+        python_precompiled_os = null
+        python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         python_venv_auto_create = false
         quiet = false
         raw = false
