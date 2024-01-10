@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result};
 
+use crate::build_time::built_info;
 use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -351,14 +352,12 @@ fn python_os(settings: &Settings) -> String {
     if let Some(os) = &settings.python_precompiled_os {
         return os.clone();
     }
-    if cfg!(target_env = "musl") {
-        "unknown-linux-musl".into()
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu".into()
-    } else if cfg!(target_os = "macos") {
+    if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
-        panic!("unsupported OS")
+        let os = &built_info::CFG_OS;
+        let env = &built_info::CFG_ENV;
+        format!("unknown-{os}-{env}")
     }
 }
 
@@ -368,9 +367,7 @@ fn python_arch(settings: &Settings) -> String {
     }
     if cfg!(target_arch = "x86_64") {
         "x86_64_v3".into()
-    } else if cfg!(target_arch = "aarch64") {
-        "aarch64".into()
     } else {
-        panic!("unsupported arch")
+        built_info::CFG_TARGET_ARCH.to_string()
     }
 }
