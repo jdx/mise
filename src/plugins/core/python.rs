@@ -96,7 +96,7 @@ impl PythonPlugin {
     }
 
     fn should_install_precompiled(&self, settings: &Settings) -> bool {
-        !settings.all_compile && !settings.python_compile && settings.experimental
+        !settings.python_compile && settings.experimental
     }
 
     fn fetch_precompiled_remote_versions(&self) -> Result<&Vec<(String, String, String)>> {
@@ -197,11 +197,10 @@ impl PythonPlugin {
     fn install_default_packages(
         &self,
         config: &Config,
+        packages_file: &Path,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let settings = Settings::get();
-        let packages_file = settings.python_default_packages_file();
         if !packages_file.exists() {
             return Ok(());
         }
@@ -213,7 +212,7 @@ impl PythonPlugin {
             .arg("install")
             .arg("--upgrade")
             .arg("-r")
-            .arg(&packages_file)
+            .arg(packages_file)
             .envs(&config.env)
             .execute()
     }
@@ -322,7 +321,9 @@ impl Plugin for PythonPlugin {
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
             warn!("failed to get virtualenv: {e}");
         }
-        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
+        if let Some(default_file) = &settings.python_default_packages_file {
+            self.install_default_packages(&config, default_file, &ctx.tv, ctx.pr.as_ref())?;
+        }
         Ok(())
     }
 
