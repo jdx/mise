@@ -589,6 +589,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | redo                          | [chessmango/asdf-redo](https://github.com/chessmango/asdf-redo)                                                 |
 | redskyctl                     | [sudermanjr/asdf-redskyctl](https://github.com/sudermanjr/asdf-redskyctl)                                       |
 | Reg                           | [looztra/asdf-reg](https://github.com/looztra/asdf-reg)                                                         |
+| regal                         | [asdf-community/asdf-regal](https://github.com/asdf-community/asdf-regal)                                       |
 | regctl                        | [ORCID/asdf-regctl](https://github.com/ORCID/asdf-regctl)                                                       |
 | regsync                       | [rsrchboy/asdf-regsync](https://github.com/rsrchboy/asdf-regsync)                                               |
 | restic                        | [xataz/asdf-restic](https://github.com/xataz/asdf-restic)                                                       |
