@@ -49,6 +49,10 @@ pub struct Settings {
     pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "MISE_PYTHON_COMPILE", default = false)]
     pub python_compile: bool,
+    #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
+    pub python_precompiled_os: Option<String>,
+    #[config(env = "MISE_PYTHON_PRECOMPILED_ARCH")]
+    pub python_precompiled_arch: Option<String>,
     #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
     pub python_venv_auto_create: bool,
     #[config(env = "MISE_RAW", default = false)]
