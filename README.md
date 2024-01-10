@@ -406,6 +406,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | krab                          | [ohkrab/asdf-krab](https://github.com/ohkrab/asdf-krab)                                                         |
 | krew                          | [bjw-s/asdf-krew](https://github.com/bjw-s/asdf-krew)                                                           |
 | Ksonnet                       | [Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet)                                                     |
+| ksops                         | [janpieper/asdf-ksops](https://github.com/janpieper/asdf-ksops)                                                 |
 | ktlint                        | [esensar/asdf-ktlint](https://github.com/esensar/asdf-ktlint)                                                   |
 | kube-capacity                 | [looztra/asdf-kube-capacity](https://github.com/looztra/asdf-kube-capacity)                                     |
 | kube-code-generator           | [jimmidyson/asdf-kube-code-generator](https://github.com/jimmidyson/asdf-kube-code-generator)                   |
