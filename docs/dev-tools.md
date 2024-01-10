@@ -32,7 +32,7 @@ environment variable to point your shell to the correct runtime binaries. When y
 directory containing a `.tool-versions`/`.mise.toml` file, mise will automatically set the
 appropriate tool versions in `PATH`.
 
-::: note
+::: info
 mise does not modify "cd". It actually runs every time the prompt is _displayed_.
 See the [FAQ](/faq#what-does-mise-activate-do).
 :::
