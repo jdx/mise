@@ -102,8 +102,11 @@ static SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
+    s.python_default_packages_file = Some(env::HOME.join(".default-python-packages"));
     if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
-        s.all_compile = Some(true);
+        if !cfg!(test) {
+            s.all_compile = Some(true);
+        }
     }
     s
 });
@@ -175,6 +178,7 @@ impl Settings {
         }
         if settings.all_compile {
             settings.node_compile = true;
+            settings.python_compile = true;
         }
         let settings = Arc::new(settings);
         *SETTINGS.write().unwrap() = Some(settings.clone());
@@ -257,11 +261,6 @@ impl Settings {
 
     pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths.iter().map(file::replace_path)
-    }
-    pub fn python_default_packages_file(&self) -> PathBuf {
-        self.python_default_packages_file
-            .clone()
-            .unwrap_or_else(|| env::HOME.join(".default-python-packages"))
     }
 }
 
