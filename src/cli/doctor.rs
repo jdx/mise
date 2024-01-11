@@ -34,7 +34,6 @@ impl Doctor {
         miseprintln!("{}", shell());
         miseprintln!("{}", mise_data_dir());
         miseprintln!("{}", mise_env_vars());
-        miseprintln!("{}", mise_settings_file());
         match Settings::try_get() {
             Ok(settings) => {
                 miseprintln!(
@@ -121,12 +120,6 @@ fn mise_env_vars() -> String {
     for (k, v) in vars {
         s.push_str(&format!("  {}={}\n", k, v));
     }
-    s
-}
-
-fn mise_settings_file() -> String {
-    let mut s = style("mise settings file:\n").bold().to_string();
-    s.push_str(&format!("  {}\n", display_path(&env::MISE_SETTINGS_FILE)));
     s
 }
 
