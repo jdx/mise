@@ -326,35 +326,6 @@ Examples:
   $ execx($(mise env -s xonsh))
 ```
 
-## `mise env-vars [OPTIONS] [ENV_VARS]...`
-
-**Aliases:** `ev`
-
-```text
-Manage environment variables
-
-By default this command modifies ".mise.toml" in the current directory.
-You can specify the file name by either setting the MISE_DEFAULT_CONFIG_FILENAME environment variable, or by using the --file option.
-
-Usage: env-vars [OPTIONS] [ENV_VARS]...
-
-Arguments:
-  [ENV_VARS]...
-          Environment variable(s) to set
-          e.g.: NODE_ENV=production
-
-Options:
-      --file <FILE>
-          The TOML file to update
-
-          Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
-
-      --remove <ENV_VAR>
-          Remove the environment variable from config file
-
-          Can be used multiple times.
-```
-
 ## `mise exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
 
 **Aliases:** `x`
@@ -1007,6 +978,40 @@ Options:
           Skip confirmation prompt
 ```
 
+## `mise set [OPTIONS] [ENV_VARS]...`
+
+```text
+Manage environment variables
+
+By default this command modifies ".mise.toml" in the current directory.
+
+Usage: set [OPTIONS] [ENV_VARS]...
+
+Arguments:
+  [ENV_VARS]...
+          Environment variable(s) to set
+          e.g.: NODE_ENV=production
+
+Options:
+      --file <FILE>
+          The TOML file to update
+
+          Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
+
+  -g, --global
+          Set the environment variable in the global config file
+
+Examples:
+  $ mise set NODE_ENV=production
+
+  $ mise set NODE_ENV
+  production
+
+  $ mise set
+  key       value       source
+  NODE_ENV  production  ~/.config/mise/config.toml
+```
+
 ## `mise settings get <SETTING>`
 
 ```text
@@ -1366,6 +1371,28 @@ Examples:
   $ mise uninstall node@18.0.0 # will uninstall specific version
   $ mise uninstall node        # will uninstall current node version
   $ mise uninstall --all node@18.0.0 # will uninstall all node versions
+```
+
+## `mise unset [OPTIONS] [KEYS]...`
+
+```text
+Remove environment variable(s) from the config file
+
+By default this command modifies ".mise.toml" in the current directory.
+
+Usage: unset [OPTIONS] [KEYS]...
+
+Arguments:
+  [KEYS]...
+          Environment variable(s) to remove
+          e.g.: NODE_ENV
+
+Options:
+  -f, --file <FILE>
+          Specify a file to use instead of ".mise.toml"
+
+  -g, --global
+          Use the global config file
 ```
 
 ## `mise upgrade [OPTIONS] [TOOL@VERSION]...`

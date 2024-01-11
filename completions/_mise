@@ -28,7 +28,6 @@ _mise() {
         (direnv) __mise_direnv_cmd && ret=0 ;;
         (doctor) __mise_doctor_cmd && ret=0 ;;
         (e|env) __mise_env_cmd && ret=0 ;;
-        (ev|env-vars) __mise_env_vars_cmd && ret=0 ;;
         (x|exec) __mise_exec_cmd && ret=0 ;;
         (g|global) __mise_global_cmd && ret=0 ;;
         (hook-env) __mise_hook_env_cmd && ret=0 ;;
@@ -46,12 +45,14 @@ _mise() {
         (reshim) __mise_reshim_cmd && ret=0 ;;
         (r|run) __mise_run_cmd && ret=0 ;;
         (self-update) __mise_self_update_cmd && ret=0 ;;
+        (env-vars|ev|set) __mise_set_cmd && ret=0 ;;
         (settings) __mise_settings_cmd && ret=0 ;;
         (sh|shell) __mise_shell_cmd && ret=0 ;;
         (sync) __mise_sync_cmd && ret=0 ;;
         (t|tasks|task) __mise_task_cmd && ret=0 ;;
         (trust) __mise_trust_cmd && ret=0 ;;
         (remove|rm|uninstall) __mise_uninstall_cmd && ret=0 ;;
+        (unset) __mise_unset_cmd && ret=0 ;;
         (up|upgrade) __mise_upgrade_cmd && ret=0 ;;
         (u|use) __mise_use_cmd && ret=0 ;;
         (v|version) __mise_version_cmd && ret=0 ;;
@@ -316,17 +317,6 @@ __mise_env_cmd() {
     '(-s --shell)'{-s,--shell}'=[Shell type to generate environment variables for]:shell:(bash fish nu xonsh zsh)' \
     '*::tool:__mise_tool_versions' \
     '(-J --json)'{-J,--json}'[Output in JSON format]' \
-    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
-    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
-    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
-    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
-}
-(( $+functions[__mise_env_vars_cmd] )) ||
-__mise_env_vars_cmd() {
-  _arguments -s -S \
-    '--file=[The TOML file to update]:file:_files' \
-    '*--remove=[Remove the environment variable from config file]:remove:' \
-    '*::env_vars:' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -610,6 +600,17 @@ __mise_self_update_cmd() {
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]'
 }
+(( $+functions[__mise_set_cmd] )) ||
+__mise_set_cmd() {
+  _arguments -s -S \
+    '--file=[The TOML file to update]:file:_files' \
+    '(-g --global)'{-g,--global}'[Set the environment variable in the global config file]' \
+    '*::env_vars:' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
+}
 (( $+functions[__mise_settings_cmd] )) ||
 __mise_settings_cmd() {
   _arguments -s -S \
@@ -808,6 +809,17 @@ __mise_uninstall_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
+(( $+functions[__mise_unset_cmd] )) ||
+__mise_unset_cmd() {
+  _arguments -s -S \
+    '*::keys:' \
+    '(-f --file)'{-f,--file}'=[Specify a file to use instead of ".mise.toml"]:file:_files' \
+    '(-g --global)'{-g,--global}'[Use the global config file]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
+}
 (( $+functions[__mise_upgrade_cmd] )) ||
 __mise_upgrade_cmd() {
   _arguments -s -S \
@@ -893,7 +905,6 @@ __mise_cmds() {
     'direnv:Output direnv function to use mise inside direnv'
     'doctor:Check mise installation for possible problems.'
     {e,env}':Exports env vars to activate mise a single time'
-    {ev,env-vars}':Manage environment variables'
     {x,exec}':Execute a command with tool(s) set'
     'implode:Removes mise CLI and all related data'
     {i,install}':Install a tool version'
@@ -907,12 +918,14 @@ __mise_cmds() {
     'reshim:rebuilds the shim farm'
     {r,run}':\[experimental\] Run a task'
     'self-update:Updates mise itself'
+    'set:Manage environment variables'
     'settings:Manage settings'
     {sh,shell}':Sets a tool version for the current shell session'
     'sync:Add tool versions from external tools to mise'
     {t,task}':\[experimental\] Manage tasks'
     'trust:Marks a config file as trusted'
     {remove,rm,uninstall}':Removes runtime versions'
+    'unset:Remove environment variable(s) from the config file'
     {up,upgrade}':Upgrades outdated tool versions'
     {u,use}':Change the active version of a tool locally or globally.'
     'version:Show mise version'
