@@ -12,4 +12,4 @@ Description:
 - [ ] Your plugin CI tests are green
   - _Tip: use the `plugin_test` action from [asdf-actions](https://github.com/asdf-vm/actions) in your plugin CI_
 
-<!-- Thank you for contributing to asdf-plugins! -->
+<!-- Thank you for contributing to mise-plugins! -->
