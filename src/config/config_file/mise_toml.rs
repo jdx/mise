@@ -20,7 +20,7 @@ use crate::toolset::{
     ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
 };
 use crate::ui::style;
-use crate::{dirs, env, file, parse_error, ui};
+use crate::{dirs, file, parse_error};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
@@ -86,12 +86,7 @@ impl MiseToml {
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "settings" => {
-                    let old = ui::style::eyellow(display_path(&self.path));
-                    let new = ui::style::eyellow(display_path(&env::MISE_SETTINGS_FILE));
-                    warn!("[settings] inside of {old} is deprecated. A separate {new} file should be used instead.");
-                    warn!("Removing the [settings] section from {old} will remove this warning",);
-                }
+                "settings" => {}
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
                 _ => bail!("unknown key: {}", style::ered(k)),
