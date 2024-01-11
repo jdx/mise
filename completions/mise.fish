@@ -5,7 +5,7 @@ complete -kxc mise -s C -l cd -a "(__fish_complete_directories)" -d 'Change dire
 complete -kxc mise -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc mise -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc mise -s y -l yes -d 'Answer yes to all confirmation prompts'
-set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env env-vars exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which
+set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall unset upgrade use version watch where which
 complete -xc mise -n "not $fssf $others" -a activate -d 'Initializes mise in the current shell session'
 complete -xc mise -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc mise -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
@@ -17,7 +17,6 @@ complete -xc mise -n "not $fssf $others" -a deactivate -d 'Disable mise for curr
 complete -xc mise -n "not $fssf $others" -a direnv -d 'Output direnv function to use mise inside direnv'
 complete -xc mise -n "not $fssf $others" -a doctor -d 'Check mise installation for possible problems.'
 complete -xc mise -n "not $fssf $others" -a env -d 'Exports env vars to activate mise a single time'
-complete -xc mise -n "not $fssf $others" -a env-vars -d 'Manage environment variables'
 complete -xc mise -n "not $fssf $others" -a exec -d 'Execute a command with tool(s) set'
 complete -xc mise -n "not $fssf $others" -a implode -d 'Removes mise CLI and all related data'
 complete -xc mise -n "not $fssf $others" -a install -d 'Install a tool version'
@@ -31,12 +30,14 @@ complete -xc mise -n "not $fssf $others" -a prune -d 'Delete unused versions of 
 complete -xc mise -n "not $fssf $others" -a reshim -d 'rebuilds the shim farm'
 complete -xc mise -n "not $fssf $others" -a run -d '[experimental] Run a task'
 complete -xc mise -n "not $fssf $others" -a self-update -d 'Updates mise itself'
+complete -xc mise -n "not $fssf $others" -a set -d 'Manage environment variables'
 complete -xc mise -n "not $fssf $others" -a settings -d 'Manage settings'
 complete -xc mise -n "not $fssf $others" -a shell -d 'Sets a tool version for the current shell session'
 complete -xc mise -n "not $fssf $others" -a sync -d 'Add tool versions from external tools to mise'
 complete -xc mise -n "not $fssf $others" -a task -d '[experimental] Manage tasks'
 complete -xc mise -n "not $fssf $others" -a trust -d 'Marks a config file as trusted'
 complete -xc mise -n "not $fssf $others" -a uninstall -d 'Removes runtime versions'
+complete -xc mise -n "not $fssf $others" -a unset -d 'Remove environment variable(s) from the config file'
 complete -xc mise -n "not $fssf $others" -a upgrade -d 'Upgrades outdated tool versions'
 complete -xc mise -n "not $fssf $others" -a use -d 'Change the active version of a tool locally or globally.'
 complete -xc mise -n "not $fssf $others" -a version -d 'Show mise version'
@@ -120,11 +121,6 @@ complete -xc mise -n "$fssf direnv; and not $fssf $others" -a activate -d 'Outpu
 complete -kxc mise -n "$fssf env" -s J -l json -d 'Output in JSON format'
 complete -kxc mise -n "$fssf env" -s s -l shell -a "bash fish nu xonsh zsh" -d 'Shell type to generate environment variables for'
 complete -kxc mise -n "$fssf env" -a "(__mise_tool_versions)" -d 'Tool(s) to use'
-
-# env-vars
-complete -kxc mise -n "$fssf env-vars" -d 'Environment variable(s) to set'
-complete -kxc mise -n "$fssf env-vars" -l file -a "(__fish_complete_path)" -d 'The TOML file to update'
-complete -kxc mise -n "$fssf env-vars" -l remove -d 'Remove the environment variable from config file'
 
 # exec
 complete -kxc mise -n "$fssf exec" -s c -l command -d 'Command string to execute'
@@ -238,6 +234,11 @@ complete -kxc mise -n "$fssf self-update" -l no-plugins -d 'Disable auto-updatin
 complete -kxc mise -n "$fssf self-update" -d 'Update to a specific version'
 complete -kxc mise -n "$fssf self-update" -s y -l yes -d 'Skip confirmation prompt'
 
+# set
+complete -kxc mise -n "$fssf set" -d 'Environment variable(s) to set'
+complete -kxc mise -n "$fssf set" -l file -a "(__fish_complete_path)" -d 'The TOML file to update'
+complete -kxc mise -n "$fssf set" -s g -l global -d 'Set the environment variable in the global config file'
+
 # settings
 set -l others get ls set unset
 complete -xc mise -n "$fssf settings; and not $fssf $others" -a get -d 'Show a current setting'
@@ -316,6 +317,11 @@ complete -kxc mise -n "$fssf trust" -l untrust -d 'No longer trust this config'
 complete -kxc mise -n "$fssf uninstall" -s a -l all -d 'Delete all installed versions'
 complete -kxc mise -n "$fssf uninstall" -s n -l dry-run -d 'Do not actually delete anything'
 complete -kxc mise -n "$fssf uninstall" -a "(__mise_installed_tool_versions)" -d 'Tool(s) to remove'
+
+# unset
+complete -kxc mise -n "$fssf unset" -s f -l file -a "(__fish_complete_path)" -d 'Specify a file to use instead of ".mise.toml"'
+complete -kxc mise -n "$fssf unset" -s g -l global -d 'Use the global config file'
+complete -kxc mise -n "$fssf unset" -d 'Environment variable(s) to remove'
 
 # upgrade
 complete -kxc mise -n "$fssf upgrade" -s n -l dry-run -d 'Just print what would be done, don'\''t actually do it'
