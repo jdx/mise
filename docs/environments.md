@@ -15,6 +15,17 @@ To clear an env var, set it to `false`:
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
 
+You can also use the CLI to get/set env vars:
+
+```sh
+$ mise set NODE_ENV=development
+$ mise set NODE_ENV
+development
+$ mise set
+key       value        source
+NODE_ENV  development  .mise.toml
+```
+
 ## `mise.file`
 
 In `.mise.toml`: `mise.file` can be used to specify a [dotenv](https://dotenv.org) file to load. It can be a string or array and uses relative or absolute paths:
