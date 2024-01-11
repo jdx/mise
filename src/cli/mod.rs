@@ -17,7 +17,6 @@ mod deactivate;
 mod direnv;
 mod doctor;
 mod env;
-mod env_vars;
 pub mod exec;
 mod external;
 mod global;
@@ -42,12 +41,14 @@ mod render_mangen;
 mod reshim;
 mod run;
 mod self_update;
+mod set;
 mod settings;
 mod shell;
 mod sync;
 mod task;
 mod trust;
 mod uninstall;
+mod unset;
 mod upgrade;
 mod r#use;
 pub mod version;
@@ -71,7 +72,6 @@ pub enum Commands {
     Direnv(direnv::Direnv),
     Doctor(doctor::Doctor),
     Env(env::Env),
-    EnvVars(env_vars::EnvVars),
     Exec(exec::Exec),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
@@ -89,6 +89,7 @@ pub enum Commands {
     Reshim(reshim::Reshim),
     Run(run::Run),
     SelfUpdate(self_update::SelfUpdate),
+    Set(set::Set),
     Settings(settings::Settings),
     Shell(shell::Shell),
     Sync(sync::Sync),
@@ -96,6 +97,7 @@ pub enum Commands {
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Upgrade(upgrade::Upgrade),
+    Unset(unset::Unset),
     Use(r#use::Use),
     Version(version::Version),
     Watch(watch::Watch),
@@ -127,7 +129,6 @@ impl Commands {
             Self::Direnv(cmd) => cmd.run(),
             Self::Doctor(cmd) => cmd.run(),
             Self::Env(cmd) => cmd.run(),
-            Self::EnvVars(cmd) => cmd.run(),
             Self::Exec(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run(),
             Self::HookEnv(cmd) => cmd.run(),
@@ -145,12 +146,14 @@ impl Commands {
             Self::Reshim(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),
             Self::SelfUpdate(cmd) => cmd.run(),
+            Self::Set(cmd) => cmd.run(),
             Self::Settings(cmd) => cmd.run(),
             Self::Shell(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run(),
             Self::Task(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
+            Self::Unset(cmd) => cmd.run(),
             Self::Upgrade(cmd) => cmd.run(),
             Self::Use(cmd) => cmd.run(),
             Self::Version(cmd) => cmd.run(),

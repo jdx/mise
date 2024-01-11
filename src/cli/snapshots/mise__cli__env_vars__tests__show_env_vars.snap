@@ -1,5 +1,0 @@
----
-source: src/cli/env_vars.rs
-expression: output
----
-TEST_ENV_VAR=test-123 ~/config/config.toml
