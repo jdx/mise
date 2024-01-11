@@ -54,7 +54,7 @@
       "description": "mise settings",
       "type": "object",
       "additionalProperties": false,
-      "properties": {"$ref": "#/$defs/settings"}
+      "properties": { "$ref": "#/$defs/settings" }
     }
   },
   "$defs": {
