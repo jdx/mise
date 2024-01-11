@@ -102,6 +102,10 @@ export default defineConfig({
       message: 'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/mise/graphs/contributors">friends</a>.',
       copyright: 'Copyright © 2024 <a href="https://github.com/jdx">@jdx</a>',
     },
+    carbonAds: {
+      code: 'CWYIPKQN',
+      placement: 'misejdxdev',
+    },
   },
   markdown: {
     // languages: [
