@@ -24,6 +24,7 @@ development
 $ mise set
 key       value        source
 NODE_ENV  development  .mise.toml
+$ mise unset NODE_ENV
 ```
 
 ## `mise.file`
