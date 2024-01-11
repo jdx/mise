@@ -1,9 +1,9 @@
-# rtx plugins repository
+# mise plugins repository
 
-The purpose of the [rtx](https://rtx.jdx.dev) plugins repository is to enable shorthand installation of plugins with:
+The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable shorthand installation of plugins with:
 
 ```shell
-rtx plugin install <name>
+mise plugin install <name>
 ```
 
 See the [org's readme](https://github.com/mise-plugins) for more information.
