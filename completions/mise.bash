@@ -57,12 +57,6 @@ _mise() {
             mise,env)
                 cmd="mise__env"
                 ;;
-            mise,env-vars)
-                cmd="mise__env__vars"
-                ;;
-            mise,ev)
-                cmd="mise__env__vars"
-                ;;
             mise,exec)
                 cmd="mise__exec"
                 ;;
@@ -147,6 +141,9 @@ _mise() {
             mise,self-update)
                 cmd="mise__self__update"
                 ;;
+            mise,set)
+                cmd="mise__set"
+                ;;
             mise,settings)
                 cmd="mise__settings"
                 ;;
@@ -173,6 +170,9 @@ _mise() {
                 ;;
             mise,uninstall)
                 cmd="mise__uninstall"
+                ;;
+            mise,unset)
+                cmd="mise__unset"
                 ;;
             mise,up)
                 cmd="mise__upgrade"
@@ -348,9 +348,6 @@ _mise() {
             mise__help,env)
                 cmd="mise__help__env"
                 ;;
-            mise__help,env-vars)
-                cmd="mise__help__env__vars"
-                ;;
             mise__help,exec)
                 cmd="mise__help__exec"
                 ;;
@@ -414,6 +411,9 @@ _mise() {
             mise__help,self-update)
                 cmd="mise__help__self__update"
                 ;;
+            mise__help,set)
+                cmd="mise__help__set"
+                ;;
             mise__help,settings)
                 cmd="mise__help__settings"
                 ;;
@@ -431,6 +431,9 @@ _mise() {
                 ;;
             mise__help,uninstall)
                 cmd="mise__help__uninstall"
+                ;;
+            mise__help,unset)
+                cmd="mise__help__unset"
                 ;;
             mise__help,upgrade)
                 cmd="mise__help__upgrade"
@@ -700,7 +703,7 @@ _mise() {
 
     case "${cmd}" in
         mise)
-            opts="-C -q -v -y -h -V --debug --log-level --trace --cd --quiet --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
+            opts="-C -q -v -y -h -V --debug --log-level --trace --cd --quiet --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1589,40 +1592,6 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__env__vars)
-            opts="-C -q -v -y -h --file --remove --debug --log-level --trace --cd --quiet --verbose --yes --help [ENV_VARS]..."
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --file)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --remove)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --log-level)
-                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
-                    return 0
-                    ;;
-                --cd)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -C)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         mise__exec)
             opts="-c -j -C -q -v -y -h --command --jobs --raw --debug --log-level --trace --cd --quiet --verbose --yes --help [TOOL@VERSION]... [COMMAND]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -1696,7 +1665,7 @@ _mise() {
             return 0
             ;;
         mise__help)
-            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env env-vars exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update settings shell sync task trust uninstall upgrade use version watch where which render-completion render-help render-mangen help"
+            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2004,20 +1973,6 @@ _mise() {
             return 0
             ;;
         mise__help__env)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        mise__help__env__vars)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2409,6 +2364,20 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mise__help__set)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mise__help__settings)
             opts="get ls set unset"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -2606,6 +2575,20 @@ _mise() {
             return 0
             ;;
         mise__help__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__help__unset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3511,6 +3494,40 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mise__set)
+            opts="-g -C -q -v -y -h --file --global --remove --debug --log-level --trace --cd --quiet --verbose --yes --help [ENV_VARS]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --remove)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                --cd)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mise__settings)
             opts="-C -q -v -y -h --debug --log-level --trace --cd --quiet --verbose --yes --help get ls set unset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -4116,6 +4133,40 @@ _mise() {
                 return 0
             fi
             case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                --cd)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__unset)
+            opts="-f -g -C -q -v -y -h --file --global --debug --log-level --trace --cd --quiet --verbose --yes --help [KEYS]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --log-level)
                     COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
                     return 0
