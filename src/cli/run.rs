@@ -17,13 +17,12 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::cli::task::deps::Deps;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::task::Task;
+use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::style;
 use crate::{env, file, ui};
