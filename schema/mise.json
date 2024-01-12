@@ -49,6 +49,12 @@
           "type": "string"
         }
       }
+    },
+    "settings": {
+      "description": "mise settings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "$ref": "#/$defs/settings" }
     }
   },
   "$defs": {
@@ -213,6 +219,120 @@
           "additionalProperties": false
         }
       ]
+    },
+    "settings": {
+      "all_compile": {
+        "description": "do not use precompiled binaries for any tool",
+        "type": "boolean"
+      },
+      "always_keep_download": {
+        "description": "should mise keep downloaded files after installation",
+        "type": "boolean"
+      },
+      "always_keep_install": {
+        "description": "should mise keep install files after installation even if the installation fails",
+        "type": "boolean"
+      },
+      "asdf_compat": {
+        "description": "set to true to ensure .tool-versions will be compatible with asdf",
+        "type": "boolean"
+      },
+      "color": {
+        "description": "colorize output",
+        "type": "boolean",
+        "default": true
+      },
+      "disable_default_shorthands": {
+        "description": "disables built-in shorthands",
+        "type": "boolean"
+      },
+      "disable_tools": {
+        "description": "tools that should not be used",
+        "items": {
+          "description": "tool name",
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "experimental": {
+        "description": "enable experimental features",
+        "type": "boolean"
+      },
+      "jobs": {
+        "description": "number of tools to install in parallel, default is 4",
+        "type": "integer"
+      },
+      "legacy_version_file": {
+        "description": "should mise parse legacy version files (e.g. .node-version)",
+        "type": "boolean"
+      },
+      "legacy_version_file_disable_tools": {
+        "description": "tools that should not have their legacy version files parsed",
+        "items": {
+          "description": "tool name",
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "node_compile": {
+        "description": "do not use precompiled binaries for node",
+        "type": "boolean"
+      },
+      "not_found_auto_install": {
+        "description": "adds a shell hook to `mise activate` and shims to automatically install tools when they need to be installed",
+        "type": "boolean",
+        "default": true
+      },
+      "paranoid": {
+        "description": "extra-security mode, see https://mise.jdx.dev/paranoid.html for details",
+        "type": "boolean"
+      },
+      "plugin_autoupdate_last_check_duration": {
+        "description": "how often to check for plugin updates",
+        "type": "string"
+      },
+      "python_compile": {
+        "description": "do not use precompiled binaries for python",
+        "type": "boolean"
+      },
+      "python_venv_auto_create": {
+        "description": "automatically create a virtualenv for python tools",
+        "type": "boolean"
+      },
+      "raw": {
+        "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",
+        "type": "boolean"
+      },
+      "shorthands_file": {
+        "description": "path to file containing shorthand mappings",
+        "type": "string"
+      },
+      "task_output": {
+        "default": "prefix",
+        "description": "how to display task output",
+        "enum": ["prefix", "interleave"],
+        "type": "string"
+      },
+      "trusted_config_paths": {
+        "description": "config files with these prefixes will be trusted by default",
+        "items": {
+          "description": "a path to add to PATH",
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "quiet": {
+        "description": "suppress all non-error output",
+        "type": "boolean"
+      },
+      "verbose": {
+        "description": "display extra output",
+        "type": "boolean"
+      },
+      "yes": {
+        "description": "assume yes for all prompts",
+        "type": "boolean"
+      }
     }
   }
 }
