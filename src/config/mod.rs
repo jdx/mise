@@ -19,7 +19,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
-use crate::plugins::{ExternalPlugin, Plugin, PluginName, PluginType};
+use crate::plugins::{ExternalPlugin, Plugin, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::ui::style;
@@ -29,9 +29,9 @@ pub mod config_file;
 pub mod settings;
 mod tracking;
 
-type AliasMap = BTreeMap<PluginName, BTreeMap<String, String>>;
+type AliasMap = BTreeMap<String, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type ToolMap = BTreeMap<PluginName, Arc<dyn Plugin>>;
+type ToolMap = BTreeMap<String, Arc<dyn Plugin>>;
 
 #[derive(Default)]
 pub struct Config {
@@ -43,7 +43,7 @@ pub struct Config {
     pub project_root: Option<PathBuf>,
     all_aliases: OnceCell<AliasMap>,
     plugins: RwLock<ToolMap>,
-    repo_urls: HashMap<PluginName, String>,
+    repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
     tasks: OnceCell<HashMap<String, Task>>,
 }
@@ -102,7 +102,7 @@ impl Config {
             .get_or_init(|| get_shorthands(&Settings::get()))
     }
 
-    pub fn get_repo_url(&self, plugin_name: &PluginName) -> Option<String> {
+    pub fn get_repo_url(&self, plugin_name: &String) -> Option<String> {
         match self.repo_urls.get(plugin_name) {
             Some(url) => Some(url),
             None => self.get_shorthands().get(plugin_name),
@@ -300,7 +300,7 @@ fn load_plugins(settings: &Settings) -> Result<PluginMap> {
     Ok(tools)
 }
 
-fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String, Vec<PluginName>> {
+fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String, Vec<String>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
@@ -325,10 +325,10 @@ fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String,
                 None
             }
         })
-        .collect::<Vec<Vec<(String, PluginName)>>>()
+        .collect::<Vec<Vec<(String, String)>>>()
         .into_iter()
         .flatten()
-        .collect::<Vec<(String, PluginName)>>();
+        .collect::<Vec<(String, String)>>();
 
     let mut legacy_filenames = BTreeMap::new();
     for (filename, plugin) in legacy {
@@ -420,7 +420,7 @@ pub fn system_config_files() -> Vec<PathBuf> {
 fn load_all_config_files(
     config_filenames: &[PathBuf],
     tools: &PluginMap,
-    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
+    legacy_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
         .iter()
@@ -448,7 +448,7 @@ fn load_all_config_files(
 
 fn parse_config_file(
     f: &PathBuf,
-    legacy_filenames: &BTreeMap<String, Vec<PluginName>>,
+    legacy_filenames: &BTreeMap<String, Vec<String>>,
     tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {

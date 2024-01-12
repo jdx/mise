@@ -27,7 +27,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
+use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -37,7 +37,7 @@ use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct ExternalPlugin {
-    pub name: PluginName,
+    pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub toml: MisePluginToml,
@@ -53,7 +53,7 @@ pub struct ExternalPlugin {
 }
 
 impl ExternalPlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let cache_path = dirs::CACHE.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
@@ -87,7 +87,7 @@ impl ExternalPlugin {
             name,
         }
     }
-    pub fn newa(name: PluginName) -> Arc<dyn Plugin> {
+    pub fn newa(name: String) -> Arc<dyn Plugin> {
         Arc::new(Self::new(name))
     }
 
@@ -737,7 +737,7 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }

@@ -3,7 +3,7 @@ use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
@@ -14,7 +14,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct Update {
     /// Plugin(s) to update
     #[clap()]
-    plugin: Option<Vec<PluginName>>,
+    plugin: Option<Vec<String>>,
 
     /// Number of jobs to run in parallel
     /// Default: 4

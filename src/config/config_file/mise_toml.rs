@@ -13,7 +13,7 @@ use versions::Versioning;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
@@ -357,7 +357,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &PluginName,
+        plugin_name: &String,
     ) -> Result<ToolVersionList> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut tool_version_list = ToolVersionList::new(plugin_name.to_string(), source);
@@ -404,7 +404,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &PluginName,
+        plugin_name: &String,
     ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
         match v.as_table_like() {
             Some(table) => {
@@ -470,7 +470,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Value,
-        plugin_name: &PluginName,
+        plugin_name: &String,
     ) -> Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
@@ -618,7 +618,7 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn plugins(&self) -> HashMap<PluginName, String> {
+    fn plugins(&self) -> HashMap<String, String> {
         self.plugins.clone()
     }
 
@@ -638,7 +638,7 @@ impl ConfigFile for MiseToml {
         self.tasks.iter().collect()
     }
 
-    fn remove_plugin(&mut self, plugin: &PluginName) {
+    fn remove_plugin(&mut self, plugin: &String) {
         self.toolset.versions.remove(plugin);
         if let Some(tools) = self.doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
@@ -650,7 +650,7 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
+    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]) {
         if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
             plugin.requests = versions
                 .iter()
@@ -871,10 +871,7 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.replace_versions(
-            &PluginName::from("node"),
-            &["16.0.1".into(), "18.0.1".into()],
-        );
+        cf.replace_versions(&String::from("node"), &["16.0.1".into(), "18.0.1".into()]);
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -891,7 +888,7 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.remove_plugin(&PluginName::from("node"));
+        cf.remove_plugin(&String::from("node"));
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);

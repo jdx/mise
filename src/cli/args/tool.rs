@@ -4,12 +4,12 @@ use std::str::FromStr;
 use console::style;
 use regex::Regex;
 
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
-    pub plugin: PluginName,
+    pub plugin: String,
     pub tvr: Option<ToolVersionRequest>,
 }
 

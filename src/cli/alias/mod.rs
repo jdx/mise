@@ -1,8 +1,6 @@
 use clap::Subcommand;
 use eyre::Result;
 
-use crate::plugins::PluginName;
-
 mod get;
 mod ls;
 mod set;
@@ -16,7 +14,7 @@ pub struct Alias {
 
     /// filter aliases by plugin
     #[clap(short, long)]
-    pub plugin: Option<PluginName>,
+    pub plugin: Option<String>,
 
     /// Don't show table header
     #[clap(long)]

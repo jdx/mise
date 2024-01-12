@@ -2,14 +2,12 @@ use std::process::ExitStatus;
 
 use thiserror::Error;
 
-use crate::plugins::PluginName;
-
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("[{0}] plugin not installed")]
-    PluginNotInstalled(PluginName),
+    PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
-    VersionNotInstalled(PluginName, String),
+    VersionNotInstalled(String, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error("Config file is not trusted.\nTrust it with `mise trust`.")]
