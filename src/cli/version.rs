@@ -8,10 +8,8 @@ use versions::Versioning;
 
 use crate::build_time::{built_info, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
-
 use crate::env;
 use crate::file::modified_duration;
-
 use crate::{dirs, duration, file};
 
 #[derive(Debug, clap::Args)]

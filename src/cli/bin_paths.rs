@@ -1,7 +1,6 @@
 use miette::Result;
 
 use crate::config::Config;
-
 use crate::toolset::ToolsetBuilder;
 
 /// List all the active runtime bin paths
@@ -23,7 +22,6 @@ impl BinPaths {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_bin_paths() {
         assert_cli!("i");

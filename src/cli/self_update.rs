@@ -5,7 +5,6 @@ use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};
 
 use crate::cli::version::{ARCH, OS};
-
 use crate::{cmd, env};
 
 /// Updates mise itself

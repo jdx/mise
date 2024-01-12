@@ -1,7 +1,7 @@
 use console::style;
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::shell::get_shell;
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
@@ -13,7 +13,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 #[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
     /// Number of jobs to run in parallel

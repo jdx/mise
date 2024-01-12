@@ -5,9 +5,7 @@ use miette::Result;
 use rayon::prelude::*;
 
 use crate::cli::args::tool::ToolArg;
-use crate::cli::args::tool::ToolArgParser;
 use crate::config::Config;
-
 use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -20,7 +18,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
 pub struct LsRemote {
     /// Plugin to get versions for
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
+    #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
     pub(crate) plugin: Option<ToolArg>,
 
     /// Show all installed plugins and versions
@@ -119,7 +117,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_list_remote() {
         assert_cli_snapshot!("list-remote", "dummy");

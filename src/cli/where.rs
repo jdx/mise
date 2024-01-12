@@ -1,9 +1,8 @@
 use miette::{IntoDiagnostic, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
-
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a runtime
@@ -17,7 +16,7 @@ pub struct Where {
     /// if "@<PREFIX>" is specified, it will show the latest installed version
     /// that matches the prefix
     /// otherwise, it will show the current, active installed version
-    #[clap(required = true, value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(required = true, value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: ToolArg,
 
     /// the version prefix to use when querying the latest version
@@ -84,9 +83,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
 
     use crate::dirs;
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_where() {

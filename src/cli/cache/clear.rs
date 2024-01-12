@@ -34,7 +34,6 @@ impl CacheClear {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_cache_clear() {
         assert_cli_snapshot!("cache", "clear", @r###"

@@ -1,12 +1,10 @@
 use std::process::exit;
 
 use console::style;
-
 use miette::{IntoDiagnostic, Result};
 
-use crate::config::{Config, Settings};
-
 use crate::cmd;
+use crate::config::{Config, Settings};
 use crate::toolset::ToolsetBuilder;
 
 /// [experimental] Run a task watching for changes
@@ -51,7 +49,7 @@ pub struct Watch {
     //
     // /// Tool(s) to also add
     // /// e.g.: node@20 python@3.10
-    // #[clap(short, long, value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    // #[clap(short, long, value_name = "TOOL@VERSION")]
     // pub tool: Vec<ToolArg>,
     //
     // /// Number of tasks to run in parallel

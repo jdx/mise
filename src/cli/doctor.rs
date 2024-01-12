@@ -10,7 +10,6 @@ use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::git::Git;
-
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;

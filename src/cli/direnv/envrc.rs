@@ -4,9 +4,8 @@ use std::io::Write;
 use miette::{IntoDiagnostic, Result};
 
 use crate::config::Config;
-use crate::hash::hash_to_str;
-
 use crate::env;
+use crate::hash::hash_to_str;
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] This is an internal command that writes an envrc file
@@ -59,7 +58,6 @@ impl Envrc {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{dirs, file};
 
     #[test]

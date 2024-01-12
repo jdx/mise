@@ -5,7 +5,6 @@ use console::style;
 use miette::Result;
 
 use crate::config::{Config, Settings};
-
 use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -82,7 +81,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_prune() {
         assert_cli!("prune", "--dry-run");

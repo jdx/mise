@@ -5,10 +5,9 @@ use console::style;
 use miette::{IntoDiagnostic, Result};
 use path_absolutize::Absolutize;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
-
 use crate::{dirs, file};
 
 /// Symlinks a tool version into mise
@@ -19,7 +18,7 @@ use crate::{dirs, file};
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Link {
     /// Tool name and version to create a symlink for
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The local path to the tool version
