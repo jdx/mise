@@ -39,22 +39,6 @@ mise x -C $SRCROOT swiftlint
 
 Note that the `-C` flag ensures that Mise will use the project's root directory, where the Mise configuration file lives, as the working directory for the command. Note that in schemes pre and post action scripts, you'll have to enable "Provide build settings from" to inherit the `$SRCROOT` environment variable.
 
-### Xcode Cloud
-
-If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts) to install Mise. Here's an example:
-
-```bash
-#!/bin/sh
-curl https://mise.jdx.dev/install.sh | sh
-mise install # Installs the tools in .mise.toml
-```
-
-Remember to run your tools using `mise x` from your scripts:
-
-```bash
-mise x swiftlint -- {args}
-```
-
 ## [YOUR IDE HERE]
 
 I am not a heavy IDE user. I use JetBrains products but I don't actually

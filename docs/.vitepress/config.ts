@@ -19,6 +19,7 @@ export default defineConfig({
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
       { text: 'IDE Integration', link: '/ide-integration' },
+      { text: 'Continuous Integration', link: '/continuous-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
       { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       { text: 'Paranoid', link: '/paranoid' },
