@@ -1,8 +1,7 @@
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-
 use crate::toolset::{
     InstallOptions, ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
@@ -21,7 +20,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
@@ -144,8 +143,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::dirs;
     use pretty_assertions::assert_str_eq;
+
+    use crate::dirs;
 
     #[test]
     fn test_install_force() {

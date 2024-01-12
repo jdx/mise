@@ -7,7 +7,7 @@ use duct::IntoExecutablePath;
 use miette::IntoDiagnostic;
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
@@ -28,7 +28,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 pub struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     /// Command string to execute (same as --command)

@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
+
 use miette::{IntoDiagnostic, Result};
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 use crate::config::{Config, Settings};
 
@@ -39,7 +40,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use crate::test::reset_config;
 
     #[test]

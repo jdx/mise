@@ -5,7 +5,6 @@ use crate::config::Config;
 use crate::dirs;
 use crate::env::PYENV_ROOT;
 use crate::file;
-
 use crate::plugins::PluginName;
 
 /// Symlinks all tool versions from an external tool into mise
@@ -52,7 +51,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_pyenv() {
         assert_cli!("sync", "python", "--pyenv");

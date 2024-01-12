@@ -4,11 +4,10 @@ use console::style;
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-
 use crate::plugins::PluginName;
 use crate::{env, file};
 
@@ -25,7 +24,7 @@ pub struct Local {
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/.mise.toml will be displayed
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
@@ -169,7 +168,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use std::panic;
 
     use pretty_assertions::assert_str_eq;

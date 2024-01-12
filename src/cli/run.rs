@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use petgraph::graph::DiGraph;
 use petgraph::Direction;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;
@@ -92,7 +92,7 @@ pub struct Run {
 
     /// Tool(s) to also add
     /// e.g.: node@20 python@3.10
-    #[clap(short, long, value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     /// Number of tasks to run in parallel

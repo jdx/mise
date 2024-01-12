@@ -4,7 +4,6 @@ use itertools::Itertools;
 use miette::Result;
 
 use crate::cli::Cli;
-
 use crate::file;
 
 /// internal command to generate markdown from help
@@ -114,8 +113,9 @@ fn remove_trailing_spaces(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::file;
     use std::fs;
+
+    use crate::file;
 
     #[test]
     fn test_render_help() {

@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use clap::ValueHint;
+use miette::Result;
+
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
-use clap::ValueHint;
-use miette::Result;
 
 /// [experimental] Generate an .mise.toml file
 #[derive(Debug, clap::Args)]

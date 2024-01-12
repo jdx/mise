@@ -8,7 +8,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result};
 use serde_derive::Serialize;
-
 use tabled::{Table, Tabled};
 use versions::Versioning;
 
@@ -59,7 +58,7 @@ pub struct Ls {
     prefix: Option<String>,
 
     /// Don't display headers
-    #[clap(long, alias="no-headers", verbatim_doc_comment, conflicts_with_all = &["json", "parseable"])]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = & ["json", "parseable"])]
     no_header: bool,
 }
 

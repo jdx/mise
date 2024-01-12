@@ -3,7 +3,6 @@ use miette::{Context, IntoDiagnostic, Result};
 use serde_derive::Deserialize;
 
 use crate::config::Config;
-
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] This is an internal command that writes an envrc file

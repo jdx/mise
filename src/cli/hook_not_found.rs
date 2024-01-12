@@ -3,7 +3,6 @@ use std::process::exit;
 use miette::Result;
 
 use crate::config::{Config, Settings};
-
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
 

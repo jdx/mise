@@ -3,7 +3,6 @@ use miette::{IntoDiagnostic, Result};
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
-
 use crate::plugins::{unalias_plugin, PluginName};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -73,7 +72,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_update() {
         assert_cli!(

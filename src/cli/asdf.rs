@@ -1,4 +1,3 @@
-use crate::cli::args::tool::ToolArg;
 use clap::ValueHint::CommandWithArguments;
 use itertools::Itertools;
 use miette::Result;
@@ -6,7 +5,6 @@ use miette::Result;
 use crate::cli::ls_remote::LsRemote;
 use crate::cli::Cli;
 use crate::config::Config;
-
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
@@ -44,7 +42,7 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
         return LsRemote {
             prefix: None,
             all: false,
-            plugin: args.get(3).map(|s| ToolArg::parse(s)),
+            plugin: args.get(3).map(|s| s.parse()).transpose()?,
         }
         .run();
     }
@@ -76,7 +74,6 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_fake_asdf_list() {
         assert_cli!("uninstall", "--all", "tiny");

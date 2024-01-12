@@ -1,18 +1,16 @@
-use console::truncate_str;
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
+use console::truncate_str;
 use itertools::Itertools;
 use miette::{IntoDiagnostic, Result};
 
 use crate::config::Config;
-
 use crate::config::Settings;
 use crate::direnv::DirenvDiff;
 use crate::env::{TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{env, hook_env};
@@ -188,7 +186,6 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_hook_env() {
         assert_cli!("hook-env", "--status", "-s", "fish");
