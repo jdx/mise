@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - run: pnpm install
-      - run: pnpm run build
+      - run: pnpm run docs:build
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - run: pnpm install
-      - run: pnpm run build
+      - run: pnpm run docs:build
       - run: mise run release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
