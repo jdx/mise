@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::task::Task;
@@ -30,7 +30,7 @@ impl TaskEdit {
                 let path = config
                     .project_root
                     .as_ref()
-                    .unwrap_or(&env::current_dir().into_diagnostic()?)
+                    .unwrap_or(&env::current_dir()?)
                     .join(".mise")
                     .join("tasks")
                     .join(&self.task);
@@ -46,7 +46,7 @@ impl TaskEdit {
         if self.path {
             miseprintln!("{}", file.display());
         } else {
-            cmd!(&*env::EDITOR, &file).run().into_diagnostic()?;
+            cmd!(&*env::EDITOR, &file).run()?;
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use miette::Result;
+use color_eyre::eyre::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;

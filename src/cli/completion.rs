@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
-use miette::Result;
+use eyre::Result;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]

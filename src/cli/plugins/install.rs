@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use color_eyre::eyre::{eyre, Result};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
@@ -91,8 +91,7 @@ impl PluginsInstall {
     fn install_many(&self, plugins: Vec<PluginName>, mpr: &MultiProgressReport) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(Settings::get().jobs)
-            .build()
-            .into_diagnostic()?
+            .build()?
             .install(|| -> Result<()> {
                 plugins
                     .into_par_iter()
@@ -145,7 +144,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             return Ok(unalias_plugin(name).to_string());
         }
     }
-    Err(miette!("could not infer plugin name from url: {}", url))
+    Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

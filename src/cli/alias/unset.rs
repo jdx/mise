@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;

@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
@@ -41,7 +41,7 @@ impl Env {
 
     fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(config);
-        miseprintln!("{}", serde_json::to_string_pretty(&env).into_diagnostic()?);
+        miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 

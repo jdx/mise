@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 
+use color_eyre::eyre::{eyre, Result};
+use eyre::WrapErr;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result, WrapErr};
 use rayon::prelude::*;
 
 use crate::cli::exec::Exec;
@@ -113,7 +114,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
         file::make_symlink(&mise_bin, &symlink_path).wrap_err_with(|| {
-            miette!(
+            eyre!(
                 "Failed to create symlink from {} to {}",
                 display_path(&mise_bin),
                 display_path(&symlink_path)
@@ -128,7 +129,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {
-                    let bin = bin.into_diagnostic()?;
+                    let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
                     let symlink_path = dirs::SHIMS.join(bin_name);
                     make_shim(&bin.path(), &symlink_path)?;
@@ -158,11 +159,10 @@ fn list_tool_bins(t: Arc<dyn Plugin>, tv: &ToolVersion) -> Result<Vec<String>> {
 
 fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
     let mut out = HashSet::new();
-    for bin in dir.read_dir().into_diagnostic()? {
-        let bin = bin.into_diagnostic()?;
+    for bin in dir.read_dir()? {
+        let bin = bin?;
         // skip non-files and non-symlinks or non-executable files
-        if (!bin.file_type().into_diagnostic()?.is_file()
-            && !bin.file_type().into_diagnostic()?.is_symlink())
+        if (!bin.file_type()?.is_file() && !bin.file_type()?.is_symlink())
             || !file::is_executable(&bin.path())
         {
             continue;
@@ -213,7 +213,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
         for tv in tvs {
             msg.push_str(&format!("mise use -g {}@{}\n", tv.plugin_name, tv.version));
         }
-        Err(miette!(msg.trim().to_string()))
+        Err(eyre!(msg.trim().to_string()))
     } else {
         let mut msg = format!(
             "Tool{} not installed for shim: {}\n",
@@ -224,6 +224,6 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
             msg.push_str(&format!("Missing tool version: {}\n", t));
         }
         msg.push_str("Install all missing tools with: mise install\n");
-        Err(miette!(msg.trim().to_string()))
+        Err(eyre!(msg.trim().to_string()))
     }
 }

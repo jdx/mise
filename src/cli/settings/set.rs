@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use toml_edit::Document;
 
 use crate::{env, file};
@@ -42,13 +42,13 @@ impl SettingsSet {
             "trusted_config_paths" => self.value.split(':').map(|s| s.to_string()).collect(),
             "verbose" => parse_bool(&self.value)?,
             "yes" => parse_bool(&self.value)?,
-            _ => return Err(miette!("Unknown setting: {}", self.setting)),
+            _ => return Err(eyre!("Unknown setting: {}", self.setting)),
         };
 
         let path = &*env::MISE_GLOBAL_CONFIG_FILE;
         file::create_dir_all(path.parent().unwrap())?;
         let raw = file::read_to_string(path).unwrap_or_default();
-        let mut config: Document = raw.parse().into_diagnostic()?;
+        let mut config: Document = raw.parse()?;
         if !config.contains_key("settings") {
             config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
@@ -62,14 +62,14 @@ fn parse_bool(value: &str) -> Result<toml_edit::Value> {
     match value.to_lowercase().as_str() {
         "1" | "true" | "yes" | "y" => Ok(true.into()),
         "0" | "false" | "no" | "n" => Ok(false.into()),
-        _ => Err(miette!("{} must be true or false", value)),
+        _ => Err(eyre!("{} must be true or false", value)),
     }
 }
 
 fn parse_i64(value: &str) -> Result<toml_edit::Value> {
     match value.parse::<i64>() {
         Ok(value) => Ok(value.into()),
-        Err(_) => Err(miette!("{} must be a number", value)),
+        Err(_) => Err(eyre!("{} must be a number", value)),
     }
 }
 

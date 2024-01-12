@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 use rayon::prelude::*;
 
 use crate::cli::args::tool::ToolArg;

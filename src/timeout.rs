@@ -2,7 +2,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use miette::{IntoDiagnostic, Result};
+use color_eyre::eyre::{Context, Result};
 
 pub fn run_with_timeout<F, T>(f: F, timeout: Duration) -> Result<T>
 where
@@ -16,7 +16,6 @@ where
             // If sending fails, the timeout has already been reached.
             let _ = tx.send(result);
         });
-        rx.recv_timeout(timeout) //.context("timed out")
-    })
-    .into_diagnostic()?
+        rx.recv_timeout(timeout).context("timed out")
+    })?
 }

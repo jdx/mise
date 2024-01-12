@@ -7,9 +7,9 @@ pub struct EnvVarArg {
 }
 
 impl FromStr for EnvVarArg {
-    type Err = miette::Error;
+    type Err = eyre::Error;
 
-    fn from_str(input: &str) -> miette::Result<Self> {
+    fn from_str(input: &str) -> eyre::Result<Self> {
         let ev = match input.split_once('=') {
             Some((k, v)) => Self {
                 key: k.to_string(),

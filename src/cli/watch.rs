@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use console::style;
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::cmd;
 use crate::config::{Config, Settings};
@@ -86,7 +86,7 @@ impl Watch {
                     .tasks()
                     .get(t)
                     .cloned()
-                    .ok_or_else(|| miette!("Task not found: {t}"))
+                    .ok_or_else(|| eyre!("Task not found: {t}"))
             })
             .collect::<Result<Vec<_>>>()?;
         let mut args = vec![];
@@ -115,7 +115,7 @@ impl Watch {
         if let Some(root) = &config.project_root {
             cmd = cmd.dir(root);
         }
-        cmd.run().into_diagnostic()?;
+        cmd.run()?;
         Ok(())
     }
 }

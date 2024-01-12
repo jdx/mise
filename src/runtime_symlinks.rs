@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use versions::Versioning;
 
 use crate::config::Config;
@@ -19,8 +19,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
-                if is_runtime_symlink(&from) && from.read_link().into_diagnostic()?.as_path() != to
-                {
+                if is_runtime_symlink(&from) && from.read_link()?.as_path() != to {
                     trace!("Removing existing symlink: {}", from.display());
                     file::remove_file(&from)?;
                 } else {
@@ -90,8 +89,8 @@ fn remove_missing_symlinks(plugin: Arc<dyn Plugin>) -> Result<()> {
     if !installs_dir.exists() {
         return Ok(());
     }
-    for entry in std::fs::read_dir(installs_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+    for entry in std::fs::read_dir(installs_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if is_runtime_symlink(&path) && !path.exists() {
             trace!("Removing missing symlink: {}", path.display());

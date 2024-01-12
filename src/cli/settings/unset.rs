@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use toml_edit::Document;
 
 use crate::{env, file};
@@ -17,7 +17,7 @@ impl SettingsUnset {
     pub fn run(self) -> Result<()> {
         let path = env::MISE_CONFIG_DIR.join("config.toml");
         let raw = file::read_to_string(&path)?;
-        let mut settings: Document = raw.parse().into_diagnostic()?;
+        let mut settings: Document = raw.parse()?;
         settings.remove(&self.setting);
         file::write(&path, settings.to_string())
     }

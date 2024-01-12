@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
