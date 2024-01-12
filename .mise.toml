@@ -2,7 +2,7 @@
 
 min_version = "2024.1.1"
 [env]
-mise.file = [".env"]
+_.file = [".env"]
 FOO = "bar"
 FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
