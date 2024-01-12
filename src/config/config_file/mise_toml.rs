@@ -4,7 +4,7 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use eyre::{Result, WrapErr};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Value};
@@ -13,7 +13,7 @@ use versions::Versioning;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
@@ -76,7 +76,7 @@ impl MiseToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        let doc: Document = s.parse().into_diagnostic()?; // .suggestion("ensure file is valid TOML")?;
+        let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
                 "min_version" => self.parse_min_version(v)?,
@@ -141,10 +141,9 @@ impl MiseToml {
 
     fn parse_env_filename(&mut self, path: PathBuf) -> Result<()> {
         let dotenv = dotenvy::from_path_iter(&path)
-            .into_diagnostic()
             .wrap_err_with(|| format!("failed to parse dotenv file: {}", display_path(&path)))?;
         for item in dotenv {
-            let (k, v) = item.into_diagnostic()?;
+            let (k, v) = item?;
             self.env.insert(k, v);
         }
         self.env_files.push(path);
@@ -358,7 +357,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &PluginName,
+        plugin_name: &String,
     ) -> Result<ToolVersionList> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut tool_version_list = ToolVersionList::new(plugin_name.to_string(), source);
@@ -405,7 +404,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &PluginName,
+        plugin_name: &str,
     ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
         match v.as_table_like() {
             Some(table) => {
@@ -418,7 +417,7 @@ impl MiseToml {
                     match path.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Path(plugin_name.clone(), s.into())
+                            ToolVersionRequest::Path(plugin_name.to_string(), s.into())
                         }
                         _ => parse_error!(format!("{}.path", key), v, "string"),
                     }
@@ -426,7 +425,7 @@ impl MiseToml {
                     match prefix.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Prefix(plugin_name.clone(), s)
+                            ToolVersionRequest::Prefix(plugin_name.to_string(), s)
                         }
                         _ => parse_error!(format!("{}.prefix", key), v, "string"),
                     }
@@ -434,7 +433,7 @@ impl MiseToml {
                     match r.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Ref(plugin_name.clone(), s)
+                            ToolVersionRequest::Ref(plugin_name.to_string(), s)
                         }
                         _ => parse_error!(format!("{}.ref", key), v, "string"),
                     }
@@ -471,12 +470,12 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Value,
-        plugin_name: &PluginName,
+        plugin_name: &str,
     ) -> Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
-                Ok(ToolVersionRequest::new(plugin_name.clone(), &s))
+                Ok(ToolVersionRequest::new(plugin_name.to_string(), &s))
             }
             _ => parse_error!(key, v, "string"),
         }
@@ -587,8 +586,7 @@ impl MiseToml {
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("failed to parse template: {k}='{input}'"))?;
+            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
         Ok(output)
     }
 }
@@ -620,7 +618,7 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn plugins(&self) -> HashMap<PluginName, String> {
+    fn plugins(&self) -> HashMap<String, String> {
         self.plugins.clone()
     }
 
@@ -640,7 +638,7 @@ impl ConfigFile for MiseToml {
         self.tasks.iter().collect()
     }
 
-    fn remove_plugin(&mut self, plugin: &PluginName) {
+    fn remove_plugin(&mut self, plugin: &str) {
         self.toolset.versions.remove(plugin);
         if let Some(tools) = self.doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
@@ -652,13 +650,13 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
+    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]) {
         if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
             plugin.requests = versions
                 .iter()
                 .map(|s| {
                     (
-                        ToolVersionRequest::new(plugin_name.clone(), s),
+                        ToolVersionRequest::new(plugin_name.to_string(), s),
                         Default::default(),
                     )
                 })
@@ -873,10 +871,7 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.replace_versions(
-            &PluginName::from("node"),
-            &["16.0.1".into(), "18.0.1".into()],
-        );
+        cf.replace_versions(&String::from("node"), &["16.0.1".into(), "18.0.1".into()]);
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -893,7 +888,7 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.remove_plugin(&PluginName::from("node"));
+        cf.remove_plugin(&String::from("node"));
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);

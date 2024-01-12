@@ -2,16 +2,14 @@ use std::string::ToString;
 use std::time::Duration;
 
 use console::style;
-use miette::Result;
+use eyre::Result;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
 use crate::build_time::{built_info, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
-
 use crate::env;
 use crate::file::modified_duration;
-
 use crate::{dirs, duration, file};
 
 #[derive(Debug, clap::Args)]

@@ -1,8 +1,8 @@
-use clap::Args;
 use std::io::Cursor;
 
+use clap::Args;
 use clap_complete::generate;
-use miette::Result;
+use eyre::Result;
 
 use crate::shell::completions;
 
@@ -42,7 +42,6 @@ impl RenderCompletion {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_completion() {
         assert_cli!("render-completion", "bash");

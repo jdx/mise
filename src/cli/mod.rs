@@ -1,5 +1,5 @@
 use clap::{FromArgMatches, Subcommand};
-use miette::{IntoDiagnostic, Result};
+use color_eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::{logger, migrate, shims};
@@ -217,8 +217,7 @@ impl Cli {
             Err(err) => matches
                 .subcommand()
                 .ok_or(err)
-                .map(|(command, sub_m)| external::execute(command, sub_m))
-                .into_diagnostic()?,
+                .map(|(command, sub_m)| external::execute(command, sub_m))?,
         }
     }
 }

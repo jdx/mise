@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use toml_edit::Document;
 
 use crate::{env, file};
@@ -42,26 +42,19 @@ impl SettingsSet {
             "trusted_config_paths" => self.value.split(':').map(|s| s.to_string()).collect(),
             "verbose" => parse_bool(&self.value)?,
             "yes" => parse_bool(&self.value)?,
-            _ => return Err(miette!("Unknown setting: {}", self.setting)),
+            _ => return Err(eyre!("Unknown setting: {}", self.setting)),
         };
 
-        let path = &*env::MISE_SETTINGS_FILE;
+        let path = &*env::MISE_GLOBAL_CONFIG_FILE;
         file::create_dir_all(path.parent().unwrap())?;
-        let mut new_file = false;
-        if !path.exists() {
-            file::write(path, "")?;
-            new_file = true;
+        let raw = file::read_to_string(path).unwrap_or_default();
+        let mut config: Document = raw.parse()?;
+        if !config.contains_key("settings") {
+            config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
-        let raw = file::read_to_string(path)?;
-        let mut settings: Document = raw.parse().into_diagnostic()?;
+        let settings = config["settings"].as_table_mut().unwrap();
         settings.insert(&self.setting, toml_edit::Item::Value(value));
-        if new_file {
-            settings
-                .key_decor_mut(&self.setting)
-                .unwrap()
-                .set_prefix("#:schema https://mise.jdx.dev/schema/settings.json\n");
-        }
-        file::write(path, settings.to_string())
+        file::write(path, config.to_string())
     }
 }
 
@@ -69,14 +62,14 @@ fn parse_bool(value: &str) -> Result<toml_edit::Value> {
     match value.to_lowercase().as_str() {
         "1" | "true" | "yes" | "y" => Ok(true.into()),
         "0" | "false" | "no" | "n" => Ok(false.into()),
-        _ => Err(miette!("{} must be true or false", value)),
+        _ => Err(eyre!("{} must be true or false", value)),
     }
 }
 
 fn parse_i64(value: &str) -> Result<toml_edit::Value> {
     match value.parse::<i64>() {
         Ok(value) => Ok(value.into()),
-        Err(_) => Err(miette!("{} must be a number", value)),
+        Err(_) => Err(eyre!("{} must be a number", value)),
     }
 }
 
@@ -103,6 +96,7 @@ pub mod tests {
         );
 
         assert_cli_snapshot!("settings", @r###"
+        activate_aggressive = false
         all_compile = false
         always_keep_download = false
         always_keep_install = false
@@ -110,7 +104,7 @@ pub mod tests {
         color = true
         disable_default_shorthands = false
         disable_tools = []
-        experimental = false
+        experimental = true
         jobs = 4
         legacy_version_file = true
         legacy_version_file_disable_tools = []
@@ -131,7 +125,7 @@ pub mod tests {
         shorthands_file = null
         task_output = null
         trusted_config_paths = []
-        verbose = false
+        verbose = true
         yes = true
         "###);
         reset_config();

@@ -1,10 +1,9 @@
-use miette::Result;
+use eyre::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::cli::local::local;
 use crate::config::Config;
 use crate::env;
-use crate::plugins::PluginName;
 
 /// Sets/gets the global tool version(s)
 ///
@@ -21,7 +20,7 @@ pub struct Global {
     /// e.g.: node@20
     /// If this is a single tool with no version, the current value of the global
     /// .tool-versions will be displayed
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Save exact version to `~/.tool-versions`
@@ -37,7 +36,7 @@ pub struct Global {
 
     /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
 
     /// Get the path of the global config file
     #[clap(long)]

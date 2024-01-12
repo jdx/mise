@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use console::style;
-use miette::Result;
+use eyre::Result;
 
 use crate::config::{Config, Settings};
-
-use crate::plugins::{Plugin, PluginName};
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -22,7 +21,7 @@ use crate::ui::prompt;
 pub struct Prune {
     /// Prune only versions from these plugins
     #[clap()]
-    pub plugin: Option<Vec<PluginName>>,
+    pub plugin: Option<Vec<String>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
@@ -37,7 +36,7 @@ impl Prune {
             .list_installed_versions(&config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<BTreeMap<String, (Arc<dyn Plugin>, ToolVersion)>>();
+            .collect::<BTreeMap<String, (Arc<dyn Forge>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugin {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
@@ -54,7 +53,7 @@ impl Prune {
         self.delete(to_delete.into_values().collect())
     }
 
-    fn delete(&self, to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>) -> Result<()> {
+    fn delete(&self, to_delete: Vec<(Arc<dyn Forge>, ToolVersion)>) -> Result<()> {
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {
@@ -82,7 +81,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_prune() {
         assert_cli!("prune", "--dry-run");

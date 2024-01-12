@@ -1,10 +1,9 @@
 use console::style;
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
-
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
@@ -15,7 +14,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct Update {
     /// Plugin(s) to update
     #[clap()]
-    plugin: Option<Vec<PluginName>>,
+    plugin: Option<Vec<String>>,
 
     /// Number of jobs to run in parallel
     /// Default: 4
@@ -50,8 +49,7 @@ impl Update {
         let mpr = MultiProgressReport::get();
         rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs.unwrap_or(settings.jobs))
-            .build()
-            .into_diagnostic()?
+            .build()?
             .install(|| {
                 plugins.into_par_iter().for_each(|(plugin, ref_)| {
                     let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
@@ -73,7 +71,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_update() {
         assert_cli!(

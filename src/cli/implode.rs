@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use miette::Result;
+use eyre::Result;
 
 use crate::config::Settings;
 use crate::file::remove_all;
-
 use crate::ui::prompt;
 use crate::{dirs, env, file};
 
@@ -62,7 +61,6 @@ impl Implode {
 #[cfg(test)]
 #[cfg(test)]
 mod tests {
-
     use crate::dirs;
 
     #[test]

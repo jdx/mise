@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
+use color_eyre::eyre::{eyre, Result};
 use console::style;
-use miette::{IntoDiagnostic, Result};
 use path_absolutize::Absolutize;
 
 use crate::file::{make_symlink, remove_all};
-
 use crate::plugins::unalias_plugin;
 use crate::{dirs, file};
 
@@ -36,19 +35,19 @@ impl PluginsLink {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {
-                let path = PathBuf::from(PathBuf::from(&self.name).absolutize().into_diagnostic()?);
+                let path = PathBuf::from(PathBuf::from(&self.name).absolutize()?);
                 let name = get_name_from_path(&path);
                 (name, path)
             }
         };
         let name = unalias_plugin(&name);
-        let path = path.absolutize().into_diagnostic()?;
+        let path = path.absolutize()?;
         let symlink = dirs::PLUGINS.join(name);
         if symlink.exists() {
             if self.force {
                 remove_all(&symlink)?;
             } else {
-                return Err(miette!(
+                return Err(eyre!(
                     "plugin {} already exists, use --force to overwrite",
                     style(&name).blue().for_stderr()
                 ));
@@ -80,7 +79,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_link() {
         assert_cli_snapshot!("plugin", "link", "-f", "tiny-link", "../data/plugins/tiny", @"");

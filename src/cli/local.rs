@@ -1,15 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-
-use crate::plugins::PluginName;
 use crate::{env, file};
 
 /// Sets/gets tool version in local .tool-versions or .mise.toml
@@ -25,7 +23,7 @@ pub struct Local {
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/.mise.toml will be displayed
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
@@ -46,7 +44,7 @@ pub struct Local {
 
     /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
 
     /// Get the path of the config file
     #[clap(long)]
@@ -74,15 +72,11 @@ impl Local {
 }
 
 fn get_path() -> Result<PathBuf> {
-    let mise_toml = env::current_dir()
-        .into_diagnostic()?
-        .join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
+    let mise_toml = env::current_dir()?.join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
     if *env::MISE_USE_TOML || mise_toml.exists() {
         Ok(mise_toml)
     } else {
-        Ok(env::current_dir()
-            .into_diagnostic()?
-            .join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
+        Ok(env::current_dir()?.join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
     }
 }
 
@@ -91,10 +85,8 @@ pub fn get_parent_path() -> Result<PathBuf> {
     if !*env::MISE_USE_TOML {
         filenames.push(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
-    match file::find_up(&env::current_dir().into_diagnostic()?, &filenames) {
-        Some(path) => Ok(path),
-        None => bail!("no {} file found", filenames.join(" or ")),
-    }
+    file::find_up(&env::current_dir()?, &filenames)
+        .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -102,7 +94,7 @@ pub fn local(
     config: &Config,
     path: &Path,
     runtime: Vec<ToolArg>,
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
     pin: bool,
     fuzzy: bool,
     show_path: bool,
@@ -169,7 +161,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use std::panic;
 
     use pretty_assertions::assert_str_eq;

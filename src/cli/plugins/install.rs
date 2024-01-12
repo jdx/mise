@@ -1,11 +1,12 @@
-use miette::{IntoDiagnostic, Result};
+use color_eyre::eyre::{eyre, Result};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::config::{Config, Settings};
+use crate::forge::Forge;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
+use crate::plugins::{unalias_plugin, ExternalPlugin};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -23,7 +24,7 @@ pub struct PluginsInstall {
     /// e.g.: node, ruby
     /// Can specify multiple plugins: `mise plugins install node ruby python`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
-    new_plugin: Option<PluginName>,
+    new_plugin: Option<String>,
 
     /// The git url of the plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
@@ -63,7 +64,7 @@ impl PluginsInstall {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
             }
-            let mut plugins: Vec<PluginName> = vec![name];
+            let mut plugins: Vec<String> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
             };
@@ -88,11 +89,10 @@ impl PluginsInstall {
         Ok(())
     }
 
-    fn install_many(&self, plugins: Vec<PluginName>, mpr: &MultiProgressReport) -> Result<()> {
+    fn install_many(&self, plugins: Vec<String>, mpr: &MultiProgressReport) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(Settings::get().jobs)
-            .build()
-            .into_diagnostic()?
+            .build()?
             .install(|| -> Result<()> {
                 plugins
                     .into_par_iter()
@@ -104,7 +104,7 @@ impl PluginsInstall {
 
     fn install_one(
         &self,
-        name: PluginName,
+        name: String,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
@@ -145,7 +145,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             return Ok(unalias_plugin(name).to_string());
         }
     }
-    Err(miette!("could not infer plugin name from url: {}", url))
+    Err(eyre!("could not infer plugin name from url: {}", url))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

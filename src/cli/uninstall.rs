@@ -1,13 +1,13 @@
-use console::style;
-use itertools::Itertools;
-use miette::{Result, WrapErr};
-use rayon::prelude::*;
 use std::sync::Arc;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
-use crate::config::Config;
+use console::style;
+use eyre::{Result, WrapErr};
+use itertools::Itertools;
+use rayon::prelude::*;
 
-use crate::plugins::Plugin;
+use crate::cli::args::tool::ToolArg;
+use crate::config::Config;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{runtime_symlinks, shims};
@@ -17,7 +17,7 @@ use crate::{runtime_symlinks, shims};
 #[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
     /// Tool(s) to remove
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, required_unless_present = "all")]
+    #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
     installed_tool: Vec<ToolArg>,
 
     /// Delete all installed versions
@@ -56,7 +56,7 @@ impl Uninstall {
             let pr = mpr.add(&tv.style());
             if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
                 error!("{err}");
-                return Err(miette!(err).wrap_err(format!("failed to uninstall {tv}")));
+                return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
             if self.dry_run {
                 pr.finish_with_message("uninstalled (dry-run)".into());
@@ -72,10 +72,7 @@ impl Uninstall {
         Ok(())
     }
 
-    fn get_all_tool_versions(
-        &self,
-        config: &Config,
-    ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
+    fn get_all_tool_versions(&self, config: &Config) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
         let ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = ts
             .list_installed_versions(config)?
@@ -86,7 +83,7 @@ impl Uninstall {
     fn get_requested_tool_versions(
         &self,
         config: &Config,
-    ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
+    ) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool);
         let tool_versions = runtimes
             .into_par_iter()

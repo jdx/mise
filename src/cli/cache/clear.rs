@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
@@ -34,7 +34,6 @@ impl CacheClear {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_cache_clear() {
         assert_cli_snapshot!("cache", "clear", @r###"

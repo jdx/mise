@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use tabled::Tabled;
 
 use crate::config::config_file::mise_toml::MiseToml;
@@ -10,7 +10,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::ui::table;
 
-use super::args::env_var::{EnvVarArg, EnvVarArgParser};
+use super::args::env_var::EnvVarArg;
 
 /// Manage environment variables
 ///
@@ -36,7 +36,7 @@ pub struct Set {
 
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
-    #[clap(value_parser = EnvVarArgParser, verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     env_vars: Option<Vec<EnvVarArg>>,
 }
 
@@ -93,7 +93,7 @@ impl Set {
 }
 
 fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
-    let path = env::current_dir().into_diagnostic()?.join(filename);
+    let path = env::current_dir()?.join(filename);
     let mise_toml = if path.exists() {
         MiseToml::from_file(&path)?
     } else {

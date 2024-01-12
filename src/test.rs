@@ -1,3 +1,4 @@
+use color_eyre::{Help, SectionExt};
 use std::env::{join_paths, set_current_dir};
 use std::path::PathBuf;
 
@@ -54,11 +55,6 @@ pub fn reset_config() {
         indoc! {r#"
             experimental = true
             verbose = true
-            always_keep_download= true
-            always_keep_install= true
-            legacy_version_file= true
-            plugin_autoupdate_last_check_duration = "20m"
-            jobs = 2
             "#},
     )
     .unwrap();
@@ -77,6 +73,12 @@ pub fn reset_config() {
             run = 'echo "linting!"'
             [tasks.test]
             run = 'echo "testing!"'
+            [settings]
+            always_keep_download= true
+            always_keep_install= true
+            legacy_version_file= true
+            plugin_autoupdate_last_check_duration = "20m"
+            jobs = 2
             "#},
     )
     .unwrap();
@@ -94,12 +96,12 @@ pub fn replace_path(input: &str) -> String {
         .replace(&*env::MISE_BIN.to_string_lossy(), "mise")
 }
 
-pub fn cli_run(args: &Vec<String>) -> miette::Result<(String, String)> {
+pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
     *env::ARGS.write().unwrap() = args.clone();
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
-    Cli::run(args)?; //.with_context(|| format!("Command: {}", args.join(" ")))?;
+    Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
     let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
     let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
 

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use rayon::Scope;
 
 use crate::dirs::*;
@@ -37,8 +37,8 @@ fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
     if from.exists() {
         eprintln!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to)?;
-        for f in from.read_dir().into_diagnostic()? {
-            let f = f.into_diagnostic()?.file_name();
+        for f in from.read_dir()? {
+            let f = f?.file_name();
             let from_file = from.join(&f);
             let to_file = to.join(&f);
             if !to_file.exists() {

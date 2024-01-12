@@ -5,27 +5,27 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use versions::{Chunk, Version};
 
 use crate::config::Config;
 use crate::dirs;
+use crate::forge::Forge;
 use crate::hash::hash_to_str;
-use crate::plugins::{Plugin, PluginName};
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
     pub request: ToolVersionRequest,
-    pub plugin_name: PluginName,
+    pub plugin_name: String,
     pub version: String,
     pub opts: ToolVersionOptions,
 }
 
 impl ToolVersion {
     pub fn new(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         version: String,
@@ -39,7 +39,7 @@ impl ToolVersion {
     }
 
     pub fn resolve(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         request: ToolVersionRequest,
         opts: ToolVersionOptions,
         latest_versions: bool,
@@ -93,7 +93,7 @@ impl ToolVersion {
             .join(&self.plugin_name)
             .join(self.tv_pathname())
     }
-    pub fn latest_version(&self, tool: &dyn Plugin) -> Result<String> {
+    pub fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
         let tv = self.request.resolve(tool, self.opts.clone(), true)?;
         Ok(tv.version)
     }
@@ -122,7 +122,7 @@ impl ToolVersion {
     }
 
     fn resolve_version(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         request: ToolVersionRequest,
         latest_versions: bool,
         v: &str,
@@ -186,7 +186,7 @@ impl ToolVersion {
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
     fn resolve_sub(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         request: ToolVersionRequest,
         latest_versions: bool,
         sub: &str,
@@ -202,7 +202,7 @@ impl ToolVersion {
     }
 
     fn resolve_prefix(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         request: ToolVersionRequest,
         prefix: &str,
         opts: ToolVersionOptions,
@@ -216,18 +216,18 @@ impl ToolVersion {
         Ok(Self::new(tool, request, opts, v.to_string()))
     }
 
-    fn resolve_ref(tool: &dyn Plugin, r: String, opts: ToolVersionOptions) -> Self {
+    fn resolve_ref(tool: &dyn Forge, r: String, opts: ToolVersionOptions) -> Self {
         let request = ToolVersionRequest::Ref(tool.name().into(), r);
         let version = request.version();
         Self::new(tool, request, opts, version)
     }
 
     fn resolve_path(
-        tool: &dyn Plugin,
+        tool: &dyn Forge,
         path: PathBuf,
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
-        let path = fs::canonicalize(path).into_diagnostic()?;
+        let path = fs::canonicalize(path)?;
         let request = ToolVersionRequest::Path(tool.name().into(), path);
         let version = request.version();
         Ok(Self::new(tool, request, opts, version))

@@ -2,11 +2,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use console::{pad_str, style, Alignment};
-use miette::Result;
+use eyre::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 
 /// Shows outdated tool versions
@@ -16,7 +16,7 @@ pub struct Outdated {
     /// Tool(s) to show outdated versions for
     /// e.g.: node@20 python@3.10
     /// If not specified, all tools in global and local configs will be shown
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 }
 
@@ -108,7 +108,7 @@ impl Outdated {
     }
 }
 
-type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

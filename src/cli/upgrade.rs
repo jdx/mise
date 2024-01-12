@@ -1,13 +1,12 @@
-use demand::DemandOption;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use miette::{Context, IntoDiagnostic, Result};
+use demand::DemandOption;
+use eyre::{Context, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -21,7 +20,7 @@ pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Just print what would be done, don't actually do it
@@ -116,7 +115,7 @@ impl Upgrade {
 
     fn uninstall_old_version(
         &self,
-        tool: Arc<dyn Plugin>,
+        tool: Arc<dyn Forge>,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
@@ -140,11 +139,11 @@ impl Upgrade {
             };
             ms = ms.option(DemandOption::new(tv).label(&label));
         }
-        Ok(ms.run().into_diagnostic()?.into_iter().cloned().collect())
+        Ok(ms.run()?.into_iter().cloned().collect())
     }
 }
 
-type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 #[cfg(test)]
 pub mod tests {

@@ -1,17 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
 use crate::file::display_path;
-use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file};
@@ -28,7 +27,11 @@ pub struct Use {
     /// Tool(s) to add to config file
     /// e.g.: node@20
     /// If no version is specified, it will default to @latest
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment, required_unless_present = "remove")]
+    #[clap(
+        value_name = "TOOL@VERSION",
+        verbatim_doc_comment,
+        required_unless_present = "remove"
+    )]
     tool: Vec<ToolArg>,
 
     /// Force reinstall even if already installed
@@ -42,11 +45,11 @@ pub struct Use {
     fuzzy: bool,
 
     /// Use the global config file (~/.config/mise/config.toml) instead of the local one
-    #[clap(short, long, overrides_with_all = &["path", "env"])]
+    #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
     /// Modify an environment-specific config file like .mise.<env>.toml
-    #[clap(long, short, overrides_with_all = &["global", "path"])]
+    #[clap(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
 
     /// Number of jobs to run in parallel
@@ -61,11 +64,11 @@ pub struct Use {
 
     /// Remove the tool(s) from config file
     #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
-    remove: Vec<PluginName>,
+    remove: Vec<String>,
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
-    #[clap(short, long, overrides_with_all = &["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Save exact version to config file
@@ -137,15 +140,11 @@ impl Use {
         let path = if self.global {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(env) = &self.env {
-            config_file_from_dir(
-                &env::current_dir()
-                    .into_diagnostic()?
-                    .join(format!(".mise.{}.toml", env)),
-            )
+            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
         } else if let Some(p) = &self.path {
             config_file_from_dir(p)
         } else {
-            config_file_from_dir(&env::current_dir().into_diagnostic()?)
+            config_file_from_dir(&env::current_dir()?)
         };
         config_file::parse_or_init(&path)
     }

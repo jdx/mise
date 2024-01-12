@@ -1,9 +1,9 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use miette::Result;
+use eyre::Result;
 
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -72,7 +72,7 @@ impl ToolVersionRequest {
 
     pub fn resolve(
         &self,
-        plugin: &dyn Plugin,
+        plugin: &dyn Forge,
         opts: ToolVersionOptions,
         latest_versions: bool,
     ) -> Result<ToolVersion> {

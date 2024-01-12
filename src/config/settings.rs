@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -17,6 +17,9 @@ use crate::{env, file};
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
+    /// push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence
+    #[config(env = "MISE_ACTIVATE_AGGRESSIVE", default = false)]
+    pub activate_aggressive: bool,
     #[config(env = "MISE_ALL_COMPILE", default = false)]
     pub all_compile: bool,
     #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
@@ -125,24 +128,28 @@ impl Settings {
         if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
-        let file_settings = Self::file_settings().unwrap_or_else(|e| {
+        let file_1 = Self::config_settings().unwrap_or_else(|e| {
+            eprintln!("Error loading settings file: {}", e);
+            Default::default()
+        });
+        let file_2 = Self::deprecated_settings_file().unwrap_or_else(|e| {
             eprintln!("Error loading settings file: {}", e);
             Default::default()
         });
         let mut settings = Self::builder()
             .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
             .env()
-            .preloaded(file_settings)
+            .preloaded(file_1)
+            .preloaded(file_2)
             .preloaded(DEFAULT_SETTINGS.clone())
-            .load()
-            .into_diagnostic()?;
+            .load()?;
         if let Some(cd) = &settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             let mut cd = PathBuf::from(cd);
             if cd.is_relative() {
-                cd = ORIG_PATH.as_ref().into_diagnostic()?.join(cd);
+                cd = ORIG_PATH.as_ref()?.join(cd);
             }
-            env::set_current_dir(cd).into_diagnostic()?;
+            env::set_current_dir(cd)?;
         }
         if settings.raw {
             settings.jobs = 1;
@@ -221,23 +228,28 @@ impl Settings {
         Self::reset(Some(s));
     }
 
-    fn file_settings() -> Result<SettingsPartial> {
-        let settings_file = &*env::MISE_SETTINGS_FILE;
-        if settings_file.exists() {
-            return Self::from_file(settings_file);
-        }
+    fn config_settings() -> Result<SettingsPartial> {
         let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
         if !global_config.exists() {
             return Ok(Default::default());
         }
         let raw = file::read_to_string(global_config)?;
-        let settings_file: SettingsFile = toml::from_str(&raw).into_diagnostic()?;
+        let settings_file: SettingsFile = toml::from_str(&raw)?;
         Ok(settings_file.settings)
+    }
+
+    fn deprecated_settings_file() -> Result<SettingsPartial> {
+        // TODO: show warning and merge with config file in a few weeks
+        let settings_file = &*env::MISE_SETTINGS_FILE;
+        if !settings_file.exists() {
+            return Ok(Default::default());
+        }
+        Self::from_file(settings_file)
     }
 
     pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
-        let settings: SettingsPartial = toml::from_str(&raw).into_diagnostic()?;
+        let settings: SettingsPartial = toml::from_str(&raw)?;
         Ok(settings)
     }
 

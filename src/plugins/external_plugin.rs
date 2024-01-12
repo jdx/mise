@@ -7,9 +7,9 @@ use std::process::exit;
 use std::sync::Arc;
 
 use clap::Command;
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result, WrapErr};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
@@ -20,6 +20,7 @@ use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
+use crate::forge::Forge;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
@@ -27,7 +28,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginName, PluginType, Script, ScriptManager};
+use crate::plugins::{PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -37,7 +38,7 @@ use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct ExternalPlugin {
-    pub name: PluginName,
+    pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub toml: MisePluginToml,
@@ -53,7 +54,7 @@ pub struct ExternalPlugin {
 }
 
 impl ExternalPlugin {
-    pub fn new(name: PluginName) -> Self {
+    pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let cache_path = dirs::CACHE.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
@@ -87,11 +88,11 @@ impl ExternalPlugin {
             name,
         }
     }
-    pub fn newa(name: PluginName) -> Arc<dyn Plugin> {
+    pub fn newa(name: String) -> Arc<dyn Forge> {
         Arc::new(Self::new(name))
     }
 
-    pub fn list() -> Result<Vec<(String, Arc<dyn Plugin>)>> {
+    pub fn list() -> Result<Vec<(String, Arc<dyn Forge>)>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
             .map(|name| (name.clone(), Self::newa(name)))
@@ -102,7 +103,7 @@ impl ExternalPlugin {
         self.repo_url
             .clone()
             .or_else(|| config.get_repo_url(&self.name))
-            .ok_or_else(|| miette!("No repository found for plugin {}", self.name))
+            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
     }
 
     fn install(&self, pr: &dyn SingleReport) -> Result<()> {
@@ -175,19 +176,14 @@ impl ExternalPlugin {
         let cmd = self.script_man.cmd(&Script::ListAll);
         let result = run_with_timeout(
             move || {
-                let result = cmd
-                    .stdout_capture()
-                    .stderr_capture()
-                    .unchecked()
-                    .run()
-                    .into_diagnostic()?;
+                let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
                 Ok(result)
             },
             *MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);
-            miette!("Failed to run {}", display_path(&script))
+            eyre!("Failed to run {}", display_path(&script))
         })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
@@ -263,24 +259,11 @@ impl ExternalPlugin {
 
     fn fetch_cached_legacy_file(&self, legacy_file: &Path) -> Result<Option<String>> {
         let fp = self.legacy_cache_file_path(legacy_file);
-        if !fp.exists()
-            || fp
-                .metadata()
-                .into_diagnostic()?
-                .modified()
-                .into_diagnostic()?
-                < legacy_file
-                    .metadata()
-                    .into_diagnostic()?
-                    .modified()
-                    .into_diagnostic()?
-        {
+        if !fp.exists() || fp.metadata()?.modified()? < legacy_file.metadata()?.modified()? {
             return Ok(None);
         }
 
-        Ok(Some(
-            fs::read_to_string(fp).into_diagnostic()?.trim().into(),
-        ))
+        Ok(Some(fs::read_to_string(fp)?.trim().into()))
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
@@ -313,7 +296,7 @@ impl ExternalPlugin {
             //         sm.prepend_path(p);
             //     }
             // }
-            let output = sm.cmd(&Script::ListBinPaths).read().into_diagnostic()?;
+            let output = sm.cmd(&Script::ListBinPaths).read()?;
             output.split_whitespace().map(|f| f.to_string()).collect()
         } else {
             vec!["bin".into()]
@@ -424,7 +407,7 @@ impl Hash for ExternalPlugin {
     }
 }
 
-impl Plugin for ExternalPlugin {
+impl Forge for ExternalPlugin {
     fn name(&self) -> &str {
         &self.name
     }
@@ -436,7 +419,7 @@ impl Plugin for ExternalPlugin {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .wrap_err_with(|| {
-                miette!(
+                eyre!(
                     "Failed listing remote versions for plugin {}",
                     style(&self.name).blue().for_stderr(),
                 )
@@ -451,7 +434,7 @@ impl Plugin for ExternalPlugin {
         self.latest_stable_cache
             .get_or_try_init(|| self.fetch_latest_stable())
             .wrap_err_with(|| {
-                miette!(
+                eyre!(
                     "Failed fetching latest stable version for plugin {}",
                     style(&self.name).blue().for_stderr(),
                 )
@@ -501,7 +484,7 @@ impl Plugin for ExternalPlugin {
                         bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
                     }
                     if !prompt::confirm(format!("Would you like to install {}?", self.name))? {
-                        Err(PluginNotInstalled(self.name.clone())).into_diagnostic()?
+                        Err(PluginNotInstalled(self.name.clone()))?
                     }
                 }
             }
@@ -577,7 +560,7 @@ impl Plugin for ExternalPlugin {
             .alias_cache
             .get_or_try_init(|| self.fetch_aliases())
             .wrap_err_with(|| {
-                miette!(
+                eyre!(
                     "Failed fetching aliases for plugin {}",
                     style(&self.name).blue().for_stderr(),
                 )
@@ -598,7 +581,7 @@ impl Plugin for ExternalPlugin {
         self.legacy_filename_cache
             .get_or_try_init(|| self.fetch_legacy_filenames())
             .wrap_err_with(|| {
-                miette!(
+                eyre!(
                     "Failed fetching legacy filenames for plugin {}",
                     style(&self.name).blue().for_stderr(),
                 )
@@ -614,7 +597,7 @@ impl Plugin for ExternalPlugin {
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
         let legacy_version = match self.script_man.script_exists(&script) {
             true => self.script_man.read(&script)?,
-            false => fs::read_to_string(legacy_file).into_diagnostic()?,
+            false => fs::read_to_string(legacy_file)?,
         }
         .trim()
         .to_string();
@@ -666,7 +649,7 @@ impl Plugin for ExternalPlugin {
 
     fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
         if !self.is_installed() {
-            return Err(PluginNotInstalled(self.name.clone())).into_diagnostic();
+            return Err(PluginNotInstalled(self.name.clone()).into());
         }
         let script = Script::RunExternalCommand(
             self.plugin_path
@@ -674,12 +657,7 @@ impl Plugin for ExternalPlugin {
                 .join(format!("command-{command}.bash")),
             args,
         );
-        let result = self
-            .script_man
-            .cmd(&script)
-            .unchecked()
-            .run()
-            .into_diagnostic()?;
+        let result = self.script_man.cmd(&script).unchecked().run()?;
         exit(result.status.code().unwrap_or(-1));
     }
 
@@ -760,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }

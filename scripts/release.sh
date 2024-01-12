@@ -73,12 +73,12 @@ if [[ "$DRY_RUN" != 1 ]]; then
 fi
 
 echo "::group::Publish mise-docs"
-cp ./mise/docs/cli-reference.md ./mise-docs/docs/cli/index.md
+cp ./mise/docs/cli-reference.md ./mise-docs/cli/index.md
 pushd mise-docs
 if [[ -z $(git status -s) ]]; then
   echo "No changes to docs"
 else
-  git add docs/cli/index.md
+  git add cli/index.md
   git commit -m "mise ${MISE_VERSION#v}"
 fi
 popd

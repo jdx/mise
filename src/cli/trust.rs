@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::config;
 use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
@@ -53,7 +53,7 @@ impl Trust {
             },
         };
         config_file::untrust(&path)?;
-        let path = path.canonicalize().into_diagnostic()?;
+        let path = path.canonicalize()?;
         info!("untrusted {}", path.display());
         Ok(())
     }
@@ -66,7 +66,7 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
-        let path = path.canonicalize().into_diagnostic()?;
+        let path = path.canonicalize()?;
         info!("trusted {}", path.display());
         Ok(())
     }
@@ -95,7 +95,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_trust() {
         assert_cli_snapshot!("trust");

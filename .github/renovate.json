@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "dependencyDashboard": false,
+  "extends": ["github>jdx/renovate-config"],
+  "automerge": false,
   "asdf": {
     "enabled": false
   },

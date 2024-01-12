@@ -1,19 +1,19 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use eyre::Result;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 
 use crate::build_time::built_info;
 use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
+use crate::forge::Forge;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file};
@@ -80,9 +80,7 @@ impl PythonPlugin {
         self.install_or_update_python_build()?;
         let python_build_bin = self.python_build_bin();
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(python_build_bin, "--definitions")
-                .read()
-                .into_diagnostic()?;
+            let output = cmd!(python_build_bin, "--definitions").read()?;
             let versions = output
                 .split('\n')
                 .map(|s| s.to_string())
@@ -163,7 +161,7 @@ impl PythonPlugin {
         let settings = Settings::get();
         self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
-            return Err(miette!("Ref versions not supported for python"));
+            return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
@@ -294,7 +292,7 @@ impl PythonPlugin {
     }
 }
 
-impl Plugin for PythonPlugin {
+impl Forge for PythonPlugin {
     fn name(&self) -> &str {
         "python"
     }

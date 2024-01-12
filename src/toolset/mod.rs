@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use console::truncate_str;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::Result;
 use rayon::prelude::*;
 
 pub use builder::ToolsetBuilder;
@@ -19,9 +19,9 @@ pub use tool_version_request::ToolVersionRequest;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::env::TERM_WIDTH;
+use crate::forge::Forge;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
-use crate::plugins::{Plugin, PluginName};
 use crate::runtime_symlinks;
 use crate::shims;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -60,9 +60,9 @@ impl InstallOptions {
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
 pub struct Toolset {
-    pub versions: IndexMap<PluginName, ToolVersionList>,
+    pub versions: IndexMap<String, ToolVersionList>,
     pub source: Option<ToolSource>,
-    pub disable_tools: BTreeSet<PluginName>,
+    pub disable_tools: BTreeSet<String>,
 }
 
 impl Toolset {
@@ -115,7 +115,7 @@ impl Toolset {
         self.install_versions(config, versions, &mpr, opts)
     }
 
-    pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
+    pub fn list_missing_plugins(&self, config: &Config) -> Vec<String> {
         self.versions
             .keys()
             .map(|p| config.get_or_create_plugin(p))
@@ -198,8 +198,8 @@ impl Toolset {
     pub fn list_installed_versions(
         &self,
         config: &Config,
-    ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
-        let current_versions: HashMap<(PluginName, String), (Arc<dyn Plugin>, ToolVersion)> = self
+    ) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+        let current_versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = self
             .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p.clone(), tv)))
@@ -231,32 +231,32 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_plugins(&self) -> Vec<Arc<dyn Plugin>> {
+    pub fn list_plugins(&self) -> Vec<Arc<dyn Forge>> {
         self.list_versions_by_plugin()
             .into_iter()
             .map(|(p, _)| p)
             .collect()
     }
-    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Plugin>, &Vec<ToolVersion>)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Forge>, &Vec<ToolVersion>)> {
         let config = Config::get();
         self.versions
             .iter()
             .map(|(p, v)| (config.get_or_create_plugin(p), &v.versions))
             .collect()
     }
-    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
+    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
         self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| v.iter().map(|v| (p.clone(), v.clone())))
             .collect()
     }
-    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion)> {
+    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
             .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
-    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Plugin>, ToolVersion, String)> {
+    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion, String)> {
         self.list_current_versions()
             .into_iter()
             .filter_map(|(t, tv)| {
@@ -336,7 +336,7 @@ impl Toolset {
             })
             .collect()
     }
-    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Plugin>, ToolVersion)> {
+    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Forge>, ToolVersion)> {
         self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|(p, tv)| {

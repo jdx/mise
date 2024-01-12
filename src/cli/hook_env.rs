@@ -1,18 +1,16 @@
-use console::truncate_str;
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
+use console::truncate_str;
+use eyre::Result;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 
 use crate::config::Config;
-
 use crate::config::Settings;
 use crate::direnv::DirenvDiff;
 use crate::env::{TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{env, hook_env};
@@ -100,23 +98,17 @@ impl HookEnv {
         installs: &Vec<PathBuf>,
         to_remove: &Vec<PathBuf>,
     ) -> Result<Vec<EnvDiffOperation>> {
-        let full = join_paths(&*env::PATH)
-            .into_diagnostic()?
-            .to_string_lossy()
-            .to_string();
+        let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
-                Some((pre, post)) if settings.experimental => {
+                Some((pre, post)) if !settings.activate_aggressive => {
                     (pre.to_string(), (orig_path.to_string() + post))
                 }
                 _ => (String::new(), full),
             },
             None => (String::new(), full),
         };
-        let install_path = join_paths(installs)
-            .into_diagnostic()?
-            .to_string_lossy()
-            .to_string();
+        let install_path = join_paths(installs)?.to_string_lossy().to_string();
         let new_path = vec![pre, install_path, post]
             .into_iter()
             .filter(|p| !p.is_empty())
@@ -188,7 +180,6 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_hook_env() {
         assert_cli!("hook-env", "--status", "-s", "fish");

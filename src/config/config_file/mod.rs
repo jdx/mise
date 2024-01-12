@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use once_cell::sync::Lazy;
 
 use tool_versions::ToolVersions;
@@ -16,7 +16,6 @@ use crate::config::{global_config_files, system_config_files, AliasMap, Config, 
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
-use crate::plugins::PluginName;
 use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
@@ -56,7 +55,7 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn plugins(&self) -> HashMap<PluginName, String> {
+    fn plugins(&self) -> HashMap<String, String> {
         Default::default()
     }
     fn env(&self) -> HashMap<String, String> {
@@ -71,8 +70,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _plugin_name: &PluginName);
-    fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
+    fn remove_plugin(&mut self, _plugin_name: &str);
+    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;
@@ -144,7 +143,7 @@ impl dyn ConfigFile {
                 .versions
                 .get(plugin)
                 .ok_or_else(|| {
-                    miette!(
+                    eyre!(
                         "no version set for {} in {}",
                         plugin.to_string(),
                         display_path(self.get_path())
@@ -159,7 +158,7 @@ impl dyn ConfigFile {
         }
         // check for something like `mise local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
-            return Err(miette!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
+            return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
         }
         Ok(false)
     }
@@ -213,7 +212,7 @@ pub fn trust_check(path: &Path) -> Result<()> {
             return Ok(());
         }
     }
-    Err(UntrustedConfig()).into_diagnostic()?
+    Err(UntrustedConfig())?
 }
 
 pub fn is_trusted(path: &Path) -> bool {
@@ -249,7 +248,7 @@ pub fn is_trusted(path: &Path) -> bool {
 }
 
 pub fn trust(path: &Path) -> Result<()> {
-    let path = path.canonicalize().into_diagnostic()?;
+    let path = path.canonicalize()?;
     let hashed_path = trust_path(&path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
@@ -264,7 +263,7 @@ pub fn trust(path: &Path) -> Result<()> {
 }
 
 pub fn untrust(path: &Path) -> Result<()> {
-    let path = path.canonicalize().into_diagnostic()?;
+    let path = path.canonicalize()?;
     let hashed_path = trust_path(&path);
     if hashed_path.exists() {
         file::remove_file(hashed_path)?;

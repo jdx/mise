@@ -3,15 +3,14 @@ use std::ffi::{OsStr, OsString};
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
-#[cfg(test)]
-use miette::IntoDiagnostic;
-use miette::Result;
+use eyre::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
+
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
@@ -28,7 +27,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 pub struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     /// Command string to execute (same as --command)
@@ -98,11 +97,11 @@ impl Exec {
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
-        let res = cmd.unchecked().run().into_diagnostic()?;
+        let res = cmd.unchecked().run()?;
         match res.status.code() {
             Some(0) => Ok(()),
-            Some(code) => Err(miette!("command failed: exit code {}", code)),
-            None => Err(miette!("command failed: terminated by signal")),
+            Some(code) => Err(eyre!("command failed: exit code {}", code)),
+            None => Err(eyre!("command failed: terminated by signal")),
         }
     }
 }

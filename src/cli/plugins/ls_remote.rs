@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use console::{measure_text_width, pad_str, Alignment};
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 
 use crate::config::Config;
 
@@ -67,7 +67,6 @@ Examples:
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_list_remote() {
         let stdout = assert_cli!("plugin", "ls-remote");

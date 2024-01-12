@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-use miette::Result;
+use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::Config;

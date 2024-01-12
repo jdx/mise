@@ -2,14 +2,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use versions::Versioning;
 
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::plugins::{Plugin, VERSION_REGEX};
+use crate::forge::Forge;
+use crate::plugins::VERSION_REGEX;
 use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
@@ -19,8 +20,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
-                if is_runtime_symlink(&from) && from.read_link().into_diagnostic()?.as_path() != to
-                {
+                if is_runtime_symlink(&from) && from.read_link()?.as_path() != to {
                     trace!("Removing existing symlink: {}", from.display());
                     file::remove_file(&from)?;
                 } else {
@@ -36,7 +36,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
@@ -76,7 +76,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<St
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
+fn installed_versions(plugin: &Arc<dyn Forge>) -> Result<Vec<String>> {
     let versions = plugin
         .list_installed_versions()?
         .into_iter()
@@ -85,13 +85,13 @@ fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(plugin: Arc<dyn Plugin>) -> Result<()> {
+fn remove_missing_symlinks(plugin: Arc<dyn Forge>) -> Result<()> {
     let installs_dir = dirs::INSTALLS.join(plugin.name());
     if !installs_dir.exists() {
         return Ok(());
     }
-    for entry in std::fs::read_dir(installs_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+    for entry in std::fs::read_dir(installs_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if is_runtime_symlink(&path) && !path.exists() {
             trace!("Removing missing symlink: {}", path.display());
@@ -111,14 +111,14 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
-    use crate::plugins::{ExternalPlugin, PluginName};
+    use crate::plugins::ExternalPlugin;
 
     use super::*;
 
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
+        let plugin = ExternalPlugin::newa(String::from("tiny"));
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }

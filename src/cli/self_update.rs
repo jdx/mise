@@ -1,11 +1,10 @@
+use color_eyre::Result;
 use console::style;
-use miette::{IntoDiagnostic, Result};
 use self_update::backends::github::{ReleaseList, Update};
 use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};
 
 use crate::cli::version::{ARCH, OS};
-
 use crate::{cmd, env};
 
 /// Updates mise itself
@@ -45,9 +44,7 @@ impl SelfUpdate {
             miseprintln!("mise is already up to date");
         }
         if !self.no_plugins {
-            cmd!(&*env::MISE_BIN, "plugins", "update")
-                .run()
-                .into_diagnostic()?;
+            cmd!(&*env::MISE_BIN, "plugins", "update").run()?;
         }
 
         Ok(())
@@ -61,10 +58,8 @@ impl SelfUpdate {
         let releases = releases
             .repo_owner("jdx")
             .repo_name("mise")
-            .build()
-            .into_diagnostic()?
-            .fetch()
-            .into_diagnostic()?;
+            .build()?
+            .fetch()?;
         Ok(releases)
     }
 
@@ -98,10 +93,8 @@ impl SelfUpdate {
             .bin_path_in_archive("mise/bin/mise")
             .identifier(&format!("mise-{v}-{target}.tar.gz"))
             .no_confirm(self.yes)
-            .build()
-            .into_diagnostic()?
-            .update()
-            .into_diagnostic()?;
+            .build()?
+            .update()?;
         Ok(status)
     }
 
