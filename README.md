@@ -170,7 +170,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | conftest                      | [looztra/asdf-conftest](https://github.com/looztra/asdf-conftest)                                               |
 | Consul                        | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                               |
 | container-diff                | [cgroschupp/asdf-container-diff](https://github.com/cgroschupp/asdf-container-diff)                             |
-| container-structure-test      | [jonathanmorley/asdf-container-structure-test](https://github.com/jonathanmorley/asdf-container-structure-test) |
+| container-structure-test      | [FeryET/asdf-container-structure-test](https://github.com/FeryET/asdf-container-structure-test)                 |
 | cookiecutter                  | [shawon-crosen/asdf-cookiecutter](https://github.com/shawon-crosen/asdf-cookiecutter)                           |
 | Copper                        | [vladlosev/asdf-copper](https://github.com/vladlosev/asdf-copper)                                               |
 | Coq                           | [gingerhot/asdf-coq](https://github.com/gingerhot/asdf-coq)                                                     |
