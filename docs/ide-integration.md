@@ -28,6 +28,17 @@ Alternatively, you may be able to get tighter integration with a direnv extensio
 (setq exec-path (append exec-path '("/home/user/.local/share/mise/shims")))
 ```
 
+## Xcode
+
+Xcode projects can system commands from script build phases and schemes. Since Xcode doesn't source your shell profile the tool versions pinned by your project's Mise configuration file are not automatically resolved through the `$PATH` environment variable.
+To work around this, you can use the `mise x`:
+
+```bash
+mise x -C $SRCROOT swiftlint
+```
+
+Note that the `-C` flag ensures that Mise will use the project's root directory, where the Mise configuration file lives, as the working directory for the command. Note that in schemes pre and post action scripts, you'll have to enable "Provide build settings from" to inherit the `$SRCROOT` environment variable.
+
 ## [YOUR IDE HERE]
 
 I am not a heavy IDE user. I use JetBrains products but I don't actually
