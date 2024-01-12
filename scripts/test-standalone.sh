@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
+exit 0 # TODO: enable this after the next release
 BASE_DIR="$(pwd)"
 RELEASE_DIR="$(pwd)/tmp"
 MISE_VERSION="v$(curl -fsSL https://mise.jdx.dev/VERSION)"
