@@ -95,7 +95,7 @@ v20.x.x
 ```
 
 :::tip
-Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias rx="mise x --"` to save some keystrokes.
+Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
 :::
 
 ## Alternate Installation Methods
