@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueHint;
-use miette::Result;
+use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::file;

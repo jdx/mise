@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -142,15 +142,14 @@ impl Settings {
             .preloaded(file_1)
             .preloaded(file_2)
             .preloaded(DEFAULT_SETTINGS.clone())
-            .load()
-            .into_diagnostic()?;
+            .load()?;
         if let Some(cd) = &settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             let mut cd = PathBuf::from(cd);
             if cd.is_relative() {
-                cd = ORIG_PATH.as_ref().into_diagnostic()?.join(cd);
+                cd = ORIG_PATH.as_ref()?.join(cd);
             }
-            env::set_current_dir(cd).into_diagnostic()?;
+            env::set_current_dir(cd)?;
         }
         if settings.raw {
             settings.jobs = 1;
@@ -235,7 +234,7 @@ impl Settings {
             return Ok(Default::default());
         }
         let raw = file::read_to_string(global_config)?;
-        let settings_file: SettingsFile = toml::from_str(&raw).into_diagnostic()?;
+        let settings_file: SettingsFile = toml::from_str(&raw)?;
         Ok(settings_file.settings)
     }
 
@@ -250,7 +249,7 @@ impl Settings {
 
     pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
-        let settings: SettingsPartial = toml::from_str(&raw).into_diagnostic()?;
+        let settings: SettingsPartial = toml::from_str(&raw)?;
         Ok(settings)
     }
 

@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 
 use crate::config::Config;
 use crate::hook_env;
@@ -30,7 +30,7 @@ impl Deactivate {
 }
 
 fn err_inactive() -> Result<()> {
-    Err(miette!(formatdoc!(
+    Err(eyre!(formatdoc!(
         r#"
                 mise is not activated in this shell session.
                 Please run `{}` first in your shell rc file.

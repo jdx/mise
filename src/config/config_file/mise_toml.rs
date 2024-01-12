@@ -4,7 +4,7 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use miette::{IntoDiagnostic, Result, WrapErr};
+use eyre::{Result, WrapErr};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Value};
@@ -76,7 +76,7 @@ impl MiseToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        let doc: Document = s.parse().into_diagnostic()?; // .suggestion("ensure file is valid TOML")?;
+        let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
                 "min_version" => self.parse_min_version(v)?,
@@ -141,10 +141,9 @@ impl MiseToml {
 
     fn parse_env_filename(&mut self, path: PathBuf) -> Result<()> {
         let dotenv = dotenvy::from_path_iter(&path)
-            .into_diagnostic()
             .wrap_err_with(|| format!("failed to parse dotenv file: {}", display_path(&path)))?;
         for item in dotenv {
-            let (k, v) = item.into_diagnostic()?;
+            let (k, v) = item?;
             self.env.insert(k, v);
         }
         self.env_files.push(path);
@@ -587,8 +586,7 @@ impl MiseToml {
         let dir = self.path.parent().unwrap();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("failed to parse template: {k}='{input}'"))?;
+            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
         Ok(output)
     }
 }

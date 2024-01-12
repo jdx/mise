@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
@@ -44,7 +44,7 @@ impl Unset {
 }
 
 fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
-    let path = env::current_dir().into_diagnostic()?.join(filename);
+    let path = env::current_dir()?.join(filename);
     let mise_toml = if path.exists() {
         MiseToml::from_file(&path)?
     } else {

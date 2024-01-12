@@ -1,6 +1,6 @@
 use console::truncate_str;
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 use tabled::Tabled;
 
 use crate::config::{Config, Settings};

@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use console::style;
-use miette::Result;
 use regex::Regex;
 
 use crate::plugins::{unalias_plugin, PluginName};
@@ -15,9 +14,9 @@ pub struct ToolArg {
 }
 
 impl FromStr for ToolArg {
-    type Err = miette::Error;
+    type Err = eyre::Error;
 
-    fn from_str(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> eyre::Result<Self> {
         let arg = match input.split_once('@') {
             Some((plugin, version)) => {
                 let plugin = unalias_plugin(plugin).to_string();

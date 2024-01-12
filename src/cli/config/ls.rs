@@ -1,6 +1,6 @@
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 use tabled::settings::object::Columns;
 use tabled::settings::{Modify, Width};
 use tabled::Tabled;

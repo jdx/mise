@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
+use eyre::Result;
 use itertools::sorted;
-use miette::{IntoDiagnostic, Result};
 
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
@@ -51,8 +51,7 @@ impl SyncNode {
     fn run_brew(self, config: &Config) -> Result<()> {
         let tool = config.get_or_create_plugin(&PluginName::from("node"));
 
-        let brew_prefix =
-            PathBuf::from(cmd!("brew", "--prefix").read().into_diagnostic()?).join("opt");
+        let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
         let installed_versions_path = dirs::INSTALLS.join("node");
 
         file::remove_symlinks_with_target_prefix(&installed_versions_path, &brew_prefix)?;

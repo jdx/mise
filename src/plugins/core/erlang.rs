@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::file::display_path;
 use crate::http::HTTP_FETCH;
@@ -51,8 +51,7 @@ impl ErlangPlugin {
         self.install_kerl()?;
         cmd!(self.kerl_path(), "update", "releases")
             .env("KERL_BASE_DIR", self.kerl_base_dir())
-            .run()
-            .into_diagnostic()?;
+            .run()?;
         Ok(())
     }
 
@@ -76,8 +75,7 @@ impl ErlangPlugin {
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(self.kerl_path(), "list", "releases", "all")
                 .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
-                .read()
-                .into_diagnostic()?;
+                .read()?;
             let versions = output
                 .split('\n')
                 .filter(|s| regex!(r"^[0-9].+$").is_match(s))
@@ -118,8 +116,7 @@ impl Plugin for ErlangPlugin {
                     ctx.tv.install_path()
                 )
                 .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
-                .run()
-                .into_diagnostic()?;
+                .run()?;
             }
         }
 

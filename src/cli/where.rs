@@ -1,4 +1,4 @@
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
@@ -61,8 +61,7 @@ impl Where {
             _ => Err(VersionNotInstalled(
                 runtime.plugin.to_string(),
                 runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
-            ))
-            .into_diagnostic()?,
+            ))?,
         }
     }
 }
