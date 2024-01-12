@@ -6,7 +6,7 @@ use eyre::{Context, Result};
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -115,7 +115,7 @@ impl Upgrade {
 
     fn uninstall_old_version(
         &self,
-        tool: Arc<dyn Plugin>,
+        tool: Arc<dyn Forge>,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
@@ -143,7 +143,7 @@ impl Upgrade {
     }
 }
 
-type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 #[cfg(test)]
 pub mod tests {

@@ -70,8 +70,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _plugin_name: &String);
-    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]);
+    fn remove_plugin(&mut self, _plugin_name: &str);
+    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;

@@ -11,6 +11,7 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
+use crate::forge::Forge;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -19,7 +20,6 @@ use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
-use crate::plugins::Plugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 use crate::{dirs, env};
@@ -33,10 +33,10 @@ mod node;
 mod python;
 mod ruby;
 
-pub type PluginMap = BTreeMap<String, Arc<dyn Plugin>>;
+pub type PluginMap = BTreeMap<String, Arc<dyn Forge>>;
 
 pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Plugin>> = vec![
+    let plugins: Vec<Arc<dyn Forge>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
@@ -52,7 +52,7 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
 });
 
 pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Plugin>> = vec![Arc::new(ErlangPlugin::new())];
+    let plugins: Vec<Arc<dyn Forge>> = vec![Arc::new(ErlangPlugin::new())];
     plugins
         .into_iter()
         .map(|plugin| (plugin.name().to_string(), plugin))

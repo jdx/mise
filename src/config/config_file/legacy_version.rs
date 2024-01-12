@@ -5,7 +5,7 @@ use std::sync::Arc;
 use eyre::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(path: PathBuf, plugins: &[&Arc<dyn Plugin>]) -> Result<Self> {
+    pub fn parse(path: PathBuf, plugins: &[&Arc<dyn Forge>]) -> Result<Self> {
         let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.clone()));
 
         for plugin in plugins {
@@ -41,11 +41,11 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, _plugin_name: &String) {
+    fn remove_plugin(&mut self, _plugin_name: &str) {
         unimplemented!()
     }
 
-    fn replace_versions(&mut self, _plugin_name: &String, _versions: &[String]) {
+    fn replace_versions(&mut self, _plugin_name: &str, _versions: &[String]) {
         unimplemented!()
     }
 

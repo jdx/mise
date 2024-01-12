@@ -45,6 +45,7 @@ mod env_diff;
 mod errors;
 mod fake_asdf;
 mod file;
+mod forge;
 mod git;
 pub mod github;
 mod hash;
