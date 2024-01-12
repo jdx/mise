@@ -2,7 +2,6 @@ use eyre::Result;
 use tabled::Tabled;
 
 use crate::config::Config;
-use crate::plugins::PluginName;
 use crate::ui::table;
 
 /// List aliases
@@ -18,7 +17,7 @@ use crate::ui::table;
 pub struct AliasLs {
     /// Show aliases for <PLUGIN>
     #[clap()]
-    pub plugin: Option<PluginName>,
+    pub plugin: Option<String>,
 
     /// Don't show table header
     #[clap(long)]

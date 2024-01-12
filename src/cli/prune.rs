@@ -5,7 +5,7 @@ use console::style;
 use eyre::Result;
 
 use crate::config::{Config, Settings};
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -21,7 +21,7 @@ use crate::ui::prompt;
 pub struct Prune {
     /// Prune only versions from these plugins
     #[clap()]
-    pub plugin: Option<Vec<PluginName>>,
+    pub plugin: Option<Vec<String>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]

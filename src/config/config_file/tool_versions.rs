@@ -12,7 +12,7 @@ use crate::config::config_file::{ConfigFile, ConfigFileType};
 
 use crate::file;
 use crate::file::display_path;
-use crate::plugins::{unalias_plugin, PluginName};
+use crate::plugins::unalias_plugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -26,7 +26,7 @@ pub struct ToolVersions {
     context: Context,
     path: PathBuf,
     pre: String,
-    plugins: IndexMap<PluginName, ToolVersionPlugin>,
+    plugins: IndexMap<String, ToolVersionPlugin>,
     toolset: Toolset,
 }
 
@@ -86,8 +86,8 @@ impl ToolVersions {
             })
     }
 
-    fn parse_plugins(input: &str) -> Result<IndexMap<PluginName, ToolVersionPlugin>> {
-        let mut plugins: IndexMap<PluginName, ToolVersionPlugin> = IndexMap::new();
+    fn parse_plugins(input: &str) -> Result<IndexMap<String, ToolVersionPlugin>> {
+        let mut plugins: IndexMap<String, ToolVersionPlugin> = IndexMap::new();
         for line in input.lines() {
             if line.trim_start().starts_with('#') {
                 if let Some(prev) = &mut plugins.values_mut().last() {
@@ -119,7 +119,7 @@ impl ToolVersions {
         Ok(plugins)
     }
 
-    fn add_version(&mut self, plugin: &PluginName, version: &str) {
+    fn add_version(&mut self, plugin: &String, version: &str) {
         self.get_or_create_plugin(plugin)
             .versions
             .push(version.to_string());
@@ -160,11 +160,11 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, plugin: &PluginName) {
+    fn remove_plugin(&mut self, plugin: &String) {
         self.plugins.remove(plugin);
     }
 
-    fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]) {
+    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]) {
         self.get_or_create_plugin(plugin_name).versions.clear();
         for version in versions {
             self.add_version(plugin_name, version);
