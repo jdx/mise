@@ -84,3 +84,6 @@ depends = ["render-*"]
 [tasks.snapshots]
 description = "Update test snapshots"
 run = "cargo insta test --accept --unreferenced delete"
+
+[tasks.release]
+run = "cargo release"

@@ -127,7 +127,3 @@ pre-commit: render-all lint
     git add docs/cli-reference.md
     git add completions
     git add man
-
-# create/publish a new version of mise
-release *args:
-    cargo release {{ args }}
