@@ -110,14 +110,14 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
-    use crate::plugins::{ExternalPlugin, PluginName};
+    use crate::plugins::ExternalPlugin;
 
     use super::*;
 
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
+        let plugin = ExternalPlugin::newa(String::from("tiny"));
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }

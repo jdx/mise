@@ -4,7 +4,6 @@ use crate::cli::args::tool::ToolArg;
 use crate::cli::local::local;
 use crate::config::Config;
 use crate::env;
-use crate::plugins::PluginName;
 
 /// Sets/gets the global tool version(s)
 ///
@@ -37,7 +36,7 @@ pub struct Global {
 
     /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
 
     /// Get the path of the global config file
     #[clap(long)]

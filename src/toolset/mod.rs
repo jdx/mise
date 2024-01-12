@@ -21,7 +21,7 @@ use crate::env;
 use crate::env::TERM_WIDTH;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::runtime_symlinks;
 use crate::shims;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -60,9 +60,9 @@ impl InstallOptions {
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
 pub struct Toolset {
-    pub versions: IndexMap<PluginName, ToolVersionList>,
+    pub versions: IndexMap<String, ToolVersionList>,
     pub source: Option<ToolSource>,
-    pub disable_tools: BTreeSet<PluginName>,
+    pub disable_tools: BTreeSet<String>,
 }
 
 impl Toolset {
@@ -115,7 +115,7 @@ impl Toolset {
         self.install_versions(config, versions, &mpr, opts)
     }
 
-    pub fn list_missing_plugins(&self, config: &Config) -> Vec<PluginName> {
+    pub fn list_missing_plugins(&self, config: &Config) -> Vec<String> {
         self.versions
             .keys()
             .map(|p| config.get_or_create_plugin(p))
@@ -199,7 +199,7 @@ impl Toolset {
         &self,
         config: &Config,
     ) -> Result<Vec<(Arc<dyn Plugin>, ToolVersion)>> {
-        let current_versions: HashMap<(PluginName, String), (Arc<dyn Plugin>, ToolVersion)> = self
+        let current_versions: HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)> = self
             .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p.clone(), tv)))

@@ -5,7 +5,7 @@ use url::Url;
 
 use crate::config::{Config, Settings};
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin, PluginName};
+use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -23,7 +23,7 @@ pub struct PluginsInstall {
     /// e.g.: node, ruby
     /// Can specify multiple plugins: `mise plugins install node ruby python`
     #[clap(required_unless_present = "all", verbatim_doc_comment)]
-    new_plugin: Option<PluginName>,
+    new_plugin: Option<String>,
 
     /// The git url of the plugin
     /// e.g.: https://github.com/asdf-vm/asdf-node.git
@@ -63,7 +63,7 @@ impl PluginsInstall {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
             }
-            let mut plugins: Vec<PluginName> = vec![name];
+            let mut plugins: Vec<String> = vec![name];
             if let Some(second) = self.git_url.clone() {
                 plugins.push(second);
             };
@@ -88,7 +88,7 @@ impl PluginsInstall {
         Ok(())
     }
 
-    fn install_many(&self, plugins: Vec<PluginName>, mpr: &MultiProgressReport) -> Result<()> {
+    fn install_many(&self, plugins: Vec<String>, mpr: &MultiProgressReport) -> Result<()> {
         ThreadPoolBuilder::new()
             .num_threads(Settings::get().jobs)
             .build()?
@@ -103,7 +103,7 @@ impl PluginsInstall {
 
     fn install_one(
         &self,
-        name: PluginName,
+        name: String,
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {

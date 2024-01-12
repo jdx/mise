@@ -11,7 +11,6 @@ use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
 use crate::file::display_path;
-use crate::plugins::PluginName;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file};
@@ -65,7 +64,7 @@ pub struct Use {
 
     /// Remove the tool(s) from config file
     #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
-    remove: Vec<PluginName>,
+    remove: Vec<String>,
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use eyre::Result;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
 #[derive(Debug)]
@@ -41,11 +41,11 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, _plugin_name: &PluginName) {
+    fn remove_plugin(&mut self, _plugin_name: &String) {
         unimplemented!()
     }
 
-    fn replace_versions(&mut self, _plugin_name: &PluginName, _versions: &[String]) {
+    fn replace_versions(&mut self, _plugin_name: &String, _versions: &[String]) {
         unimplemented!()
     }
 

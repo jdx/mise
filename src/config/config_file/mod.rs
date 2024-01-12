@@ -16,7 +16,6 @@ use crate::config::{global_config_files, system_config_files, AliasMap, Config, 
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
-use crate::plugins::PluginName;
 use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
@@ -56,7 +55,7 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn plugins(&self) -> HashMap<PluginName, String> {
+    fn plugins(&self) -> HashMap<String, String> {
         Default::default()
     }
     fn env(&self) -> HashMap<String, String> {
@@ -71,8 +70,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _plugin_name: &PluginName);
-    fn replace_versions(&mut self, plugin_name: &PluginName, versions: &[String]);
+    fn remove_plugin(&mut self, _plugin_name: &String);
+    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;

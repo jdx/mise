@@ -31,8 +31,6 @@ mod external_plugin_cache;
 mod mise_plugin_toml;
 mod script_manager;
 
-pub type PluginName = String;
-
 pub trait Plugin: Debug + Send + Sync {
     fn name(&self) -> &str;
     fn get_type(&self) -> PluginType {
@@ -404,7 +402,7 @@ mod tests {
     #[test]
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
-        let plugin = ExternalPlugin::newa(PluginName::from("tiny"));
+        let plugin = ExternalPlugin::newa(String::from("tiny"));
         let version = plugin
             .latest_version(Some("1.0.0".into()))
             .unwrap()
@@ -416,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_latest_stable() {
-        let plugin = ExternalPlugin::new(PluginName::from("dummy"));
+        let plugin = ExternalPlugin::new(String::from("dummy"));
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }

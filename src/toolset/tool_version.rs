@@ -11,14 +11,14 @@ use versions::{Chunk, Version};
 use crate::config::Config;
 use crate::dirs;
 use crate::hash::hash_to_str;
-use crate::plugins::{Plugin, PluginName};
+use crate::plugins::Plugin;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
     pub request: ToolVersionRequest,
-    pub plugin_name: PluginName,
+    pub plugin_name: String,
     pub version: String,
     pub opts: ToolVersionOptions,
 }

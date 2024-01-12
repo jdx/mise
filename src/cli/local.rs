@@ -8,7 +8,6 @@ use crate::cli::args::tool::ToolArg;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-use crate::plugins::PluginName;
 use crate::{env, file};
 
 /// Sets/gets tool version in local .tool-versions or .mise.toml
@@ -45,7 +44,7 @@ pub struct Local {
 
     /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
 
     /// Get the path of the config file
     #[clap(long)]
@@ -95,7 +94,7 @@ pub fn local(
     config: &Config,
     path: &Path,
     runtime: Vec<ToolArg>,
-    remove: Option<Vec<PluginName>>,
+    remove: Option<Vec<String>>,
     pin: bool,
     fuzzy: bool,
     show_path: bool,

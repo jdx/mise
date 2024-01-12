@@ -13,7 +13,7 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
-use crate::plugins::{unalias_plugin, Plugin, PluginName};
+use crate::plugins::{unalias_plugin, Plugin};
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::table;
 
@@ -222,7 +222,7 @@ impl Ls {
     }
 }
 
-type JSONOutput = IndexMap<PluginName, Vec<JSONToolVersion>>;
+type JSONOutput = IndexMap<String, Vec<JSONToolVersion>>;
 
 #[derive(Serialize)]
 struct JSONToolVersion {
