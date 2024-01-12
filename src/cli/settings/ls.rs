@@ -45,6 +45,7 @@ mod tests {
     fn test_settings_ls() {
         reset_config();
         assert_cli_snapshot!("settings", @r###"
+        activate_aggressive = false
         all_compile = false
         always_keep_download = true
         always_keep_install = true
