@@ -762,4 +762,5 @@ pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
     Lazy::new(|| HashSet::from([
     "dt",
     "elixir",
+    "tuist",
 ]));
