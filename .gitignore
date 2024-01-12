@@ -172,5 +172,5 @@ dist
 .svelte-kit
 
 # VitePress
-docs/.vitepress/cache
-docs/.vitepress/dist
+.vitepress/cache
+.vitepress/dist

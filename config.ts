@@ -1,1 +1,1 @@
-docs/.vitepress/config.ts
+.vitepress/config.ts
