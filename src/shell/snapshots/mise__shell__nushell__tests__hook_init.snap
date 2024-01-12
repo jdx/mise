@@ -34,11 +34,11 @@ def --wrapped mise [command?: string, --help, ...rest: string] {
   } else if ($command == "activate") {
     $env.MISE_SHELL = "nu"
   } else if ($command in $commands) {
-    ^"/some/dir/mise" $command $rest
+    ^"/some/dir/mise" $command ...$rest
     | parse vars
     | update-env
   } else {
-    ^"/some/dir/mise" $command $rest
+    ^"/some/dir/mise" $command ...$rest
   }
 }
   

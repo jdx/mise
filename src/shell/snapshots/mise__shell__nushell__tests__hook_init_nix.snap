@@ -33,11 +33,11 @@ def --wrapped mise [command?: string, --help, ...rest: string] {
   } else if ($command == "activate") {
     $env.MISE_SHELL = "nu"
   } else if ($command in $commands) {
-    ^"/nix/store/mise" $command $rest
+    ^"/nix/store/mise" $command ...$rest
     | parse vars
     | update-env
   } else {
-    ^"/nix/store/mise" $command $rest
+    ^"/nix/store/mise" $command ...$rest
   }
 }
   
