@@ -104,7 +104,7 @@ impl HookEnv {
             .to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
-                Some((pre, post)) if settings.experimental => {
+                Some((pre, post)) if !settings.activate_aggressive => {
                     (pre.to_string(), (orig_path.to_string() + post))
                 }
                 _ => (String::new(), full),

@@ -96,6 +96,7 @@ pub mod tests {
         );
 
         assert_cli_snapshot!("settings", @r###"
+        activate_aggressive = false
         all_compile = false
         always_keep_download = false
         always_keep_install = false

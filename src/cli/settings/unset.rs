@@ -40,6 +40,7 @@ mod tests {
         assert_cli!("settings", "unset", "legacy_version_file");
 
         assert_cli_snapshot!("settings", @r###"
+        activate_aggressive = false
         all_compile = false
         always_keep_download = true
         always_keep_install = true

@@ -17,6 +17,9 @@ use crate::{env, file};
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
+    /// push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence
+    #[config(env = "MISE_ACTIVATE_AGGRESSIVE", default = false)]
+    pub activate_aggressive: bool,
     #[config(env = "MISE_ALL_COMPILE", default = false)]
     pub all_compile: bool,
     #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
