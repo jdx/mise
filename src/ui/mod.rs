@@ -10,6 +10,7 @@ pub mod progress_report;
 pub mod prompt;
 pub mod style;
 pub mod table;
+pub mod tree;
 
 pub fn handle_ctrlc() {
     static ONCE: Once = Once::new();

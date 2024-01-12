@@ -1,7 +1,7 @@
 use crate::{
     config::{Config, Settings},
-    task::{Deps, Task, TreeItem, TreeItemIndent, TREE_ITEM_CHARS},
-    ui::style,
+    task::{Deps, Task},
+    ui::{style, tree::print_tree},
 };
 use console::style;
 use itertools::Itertools;
@@ -94,43 +94,8 @@ impl TaskDeps {
         });
         // iterate over selected graph nodes and print tree
         for idx in start_indexes {
-            let _ = self.print_tree(&(&deps.graph, idx));
+            let _ = print_tree(&(&deps.graph, idx));
         }
-        Ok(())
-    }
-
-    pub fn print_tree<T: TreeItem>(&self, item: &T) -> Result<()> {
-        let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
-        self.print_tree_item(item, String::from(""), String::from(""), &indent, 0)
-    }
-
-    fn print_tree_item<T: TreeItem>(
-        &self,
-        item: &T,
-        prefix: String,
-        child_prefix: String,
-        indent: &TreeItemIndent,
-        level: u32,
-    ) -> Result<()> {
-        print!("{}", prefix);
-        item.write_self()?;
-        println!("");
-
-        let children = item.children();
-        if let Some((last_child, children)) = children.split_last() {
-            let rp = child_prefix.clone() + &indent.regular_prefix;
-            let cp = child_prefix.clone() + &indent.child_prefix;
-
-            for c in children {
-                self.print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1)?;
-            }
-
-            let rp = child_prefix.clone() + &indent.last_regular_prefix;
-            let cp = child_prefix.clone() + &indent.last_child_prefix;
-
-            self.print_tree_item(last_child, rp, cp, indent, level + 1)?;
-        }
-
         Ok(())
     }
 
