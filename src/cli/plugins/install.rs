@@ -4,8 +4,9 @@ use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::config::{Config, Settings};
+use crate::forge::Forge;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{unalias_plugin, ExternalPlugin, Plugin};
+use crate::plugins::{unalias_plugin, ExternalPlugin};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;

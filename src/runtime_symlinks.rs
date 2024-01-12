@@ -9,7 +9,8 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::plugins::{Plugin, VERSION_REGEX};
+use crate::forge::Forge;
+use crate::plugins::VERSION_REGEX;
 use crate::{dirs, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
@@ -35,7 +36,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
@@ -75,7 +76,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Plugin>) -> Result<IndexMap<St
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
+fn installed_versions(plugin: &Arc<dyn Forge>) -> Result<Vec<String>> {
     let versions = plugin
         .list_installed_versions()?
         .into_iter()
@@ -84,7 +85,7 @@ fn installed_versions(plugin: &Arc<dyn Plugin>) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(plugin: Arc<dyn Plugin>) -> Result<()> {
+fn remove_missing_symlinks(plugin: Arc<dyn Forge>) -> Result<()> {
     let installs_dir = dirs::INSTALLS.join(plugin.name());
     if !installs_dir.exists() {
         return Ok(());

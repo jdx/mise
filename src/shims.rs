@@ -17,7 +17,7 @@ use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
 use crate::{env, logger};
 
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, file};
 
@@ -145,7 +145,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(t: Arc<dyn Plugin>, tv: &ToolVersion) -> Result<Vec<String>> {
+fn list_tool_bins(t: Arc<dyn Forge>, tv: &ToolVersion) -> Result<Vec<String>> {
     Ok(t.list_bin_paths(tv)?
         .into_iter()
         .par_bridge()

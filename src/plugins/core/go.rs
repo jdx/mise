@@ -8,10 +8,10 @@ use versions::Versioning;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::forge::Forge;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, hash};
@@ -134,7 +134,7 @@ impl GoPlugin {
     }
 }
 
-impl Plugin for GoPlugin {
+impl Forge for GoPlugin {
     fn name(&self) -> &str {
         "go"
     }

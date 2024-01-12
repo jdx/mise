@@ -18,8 +18,9 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
+use crate::forge::Forge;
 use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
-use crate::plugins::{ExternalPlugin, Plugin, PluginType};
+use crate::plugins::{ExternalPlugin, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::ui::style;
@@ -31,7 +32,7 @@ mod tracking;
 
 type AliasMap = BTreeMap<String, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type ToolMap = BTreeMap<String, Arc<dyn Plugin>>;
+type ToolMap = BTreeMap<String, Arc<dyn Forge>>;
 
 #[derive(Default)]
 pub struct Config {
@@ -136,7 +137,7 @@ impl Config {
         Ok(v.to_string())
     }
 
-    pub fn external_plugins(&self) -> Vec<(String, Arc<dyn Plugin>)> {
+    pub fn external_plugins(&self) -> Vec<(String, Arc<dyn Forge>)> {
         self.list_plugins()
             .into_iter()
             .filter(|tool| matches!(tool.get_type(), PluginType::External))
@@ -144,7 +145,7 @@ impl Config {
             .collect()
     }
 
-    pub fn get_or_create_plugin(&self, plugin_name: &str) -> Arc<dyn Plugin> {
+    pub fn get_or_create_plugin(&self, plugin_name: &str) -> Arc<dyn Forge> {
         if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
             return plugin.clone();
         }
@@ -155,7 +156,7 @@ impl Config {
             .insert(plugin_name.to_string(), plugin.clone());
         plugin
     }
-    pub fn list_plugins(&self) -> Vec<Arc<dyn Plugin>> {
+    pub fn list_plugins(&self) -> Vec<Arc<dyn Forge>> {
         self.plugins.read().unwrap().values().cloned().collect()
     }
 

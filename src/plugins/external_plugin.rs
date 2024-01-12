@@ -20,6 +20,7 @@ use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
+use crate::forge::Forge;
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
@@ -27,7 +28,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
+use crate::plugins::{PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -87,11 +88,11 @@ impl ExternalPlugin {
             name,
         }
     }
-    pub fn newa(name: String) -> Arc<dyn Plugin> {
+    pub fn newa(name: String) -> Arc<dyn Forge> {
         Arc::new(Self::new(name))
     }
 
-    pub fn list() -> Result<Vec<(String, Arc<dyn Plugin>)>> {
+    pub fn list() -> Result<Vec<(String, Arc<dyn Forge>)>> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
             .map(|name| (name.clone(), Self::newa(name)))
@@ -406,7 +407,7 @@ impl Hash for ExternalPlugin {
     }
 }
 
-impl Plugin for ExternalPlugin {
+impl Forge for ExternalPlugin {
     fn name(&self) -> &str {
         &self.name
     }

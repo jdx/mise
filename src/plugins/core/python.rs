@@ -9,11 +9,11 @@ use crate::cache::CacheManager;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
+use crate::forge::Forge;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file};
@@ -292,7 +292,7 @@ impl PythonPlugin {
     }
 }
 
-impl Plugin for PythonPlugin {
+impl Forge for PythonPlugin {
     fn name(&self) -> &str {
         "python"
     }

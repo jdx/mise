@@ -9,11 +9,11 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::file;
+use crate::forge::Forge;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 
@@ -93,7 +93,7 @@ impl DenoPlugin {
     }
 }
 
-impl Plugin for DenoPlugin {
+impl Forge for DenoPlugin {
     fn name(&self) -> &str {
         "deno"
     }

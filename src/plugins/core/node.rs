@@ -10,10 +10,10 @@ use crate::build_time::built_info;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::MISE_NODE_MIRROR_URL;
+use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash, http};
@@ -236,7 +236,7 @@ impl NodePlugin {
     }
 }
 
-impl Plugin for NodePlugin {
+impl Forge for NodePlugin {
     fn name(&self) -> &str {
         "node"
     }

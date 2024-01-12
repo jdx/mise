@@ -6,7 +6,7 @@ use eyre::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 
 /// Shows outdated tool versions
@@ -108,7 +108,7 @@ impl Outdated {
     }
 }
 
-type OutputVec = Vec<(Arc<dyn Plugin>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
