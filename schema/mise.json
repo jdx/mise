@@ -221,6 +221,10 @@
       ]
     },
     "settings": {
+      "activate_aggressive": {
+        "description": "push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence",
+        "type": "boolean"
+      },
       "all_compile": {
         "description": "do not use precompiled binaries for any tool",
         "type": "boolean"
