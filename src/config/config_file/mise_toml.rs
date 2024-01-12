@@ -404,7 +404,7 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &String,
+        plugin_name: &str,
     ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
         match v.as_table_like() {
             Some(table) => {
@@ -417,7 +417,7 @@ impl MiseToml {
                     match path.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Path(plugin_name.clone(), s.into())
+                            ToolVersionRequest::Path(plugin_name.to_string(), s.into())
                         }
                         _ => parse_error!(format!("{}.path", key), v, "string"),
                     }
@@ -425,7 +425,7 @@ impl MiseToml {
                     match prefix.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Prefix(plugin_name.clone(), s)
+                            ToolVersionRequest::Prefix(plugin_name.to_string(), s)
                         }
                         _ => parse_error!(format!("{}.prefix", key), v, "string"),
                     }
@@ -433,7 +433,7 @@ impl MiseToml {
                     match r.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Ref(plugin_name.clone(), s)
+                            ToolVersionRequest::Ref(plugin_name.to_string(), s)
                         }
                         _ => parse_error!(format!("{}.ref", key), v, "string"),
                     }
@@ -470,12 +470,12 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Value,
-        plugin_name: &String,
+        plugin_name: &str,
     ) -> Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
-                Ok(ToolVersionRequest::new(plugin_name.clone(), &s))
+                Ok(ToolVersionRequest::new(plugin_name.to_string(), &s))
             }
             _ => parse_error!(key, v, "string"),
         }
@@ -638,7 +638,7 @@ impl ConfigFile for MiseToml {
         self.tasks.iter().collect()
     }
 
-    fn remove_plugin(&mut self, plugin: &String) {
+    fn remove_plugin(&mut self, plugin: &str) {
         self.toolset.versions.remove(plugin);
         if let Some(tools) = self.doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
@@ -650,13 +650,13 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]) {
+    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]) {
         if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
             plugin.requests = versions
                 .iter()
                 .map(|s| {
                     (
-                        ToolVersionRequest::new(plugin_name.clone(), s),
+                        ToolVersionRequest::new(plugin_name.to_string(), s),
                         Default::default(),
                     )
                 })

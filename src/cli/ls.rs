@@ -13,7 +13,8 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
-use crate::plugins::{unalias_plugin, Plugin};
+use crate::forge::Forge;
+use crate::plugins::unalias_plugin;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::table;
 
@@ -180,7 +181,7 @@ impl Ls {
             tsb = tsb.with_tools(&plugins);
         }
         let ts = tsb.build(config)?;
-        let mut versions: HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)> = ts
+        let mut versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = ts
             .list_installed_versions(config)?
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
@@ -190,7 +191,7 @@ impl Ls {
             .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
-            .collect::<HashMap<(String, String), (Arc<dyn Plugin>, ToolVersion)>>();
+            .collect::<HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)>>();
 
         versions.extend(active.clone());
 
@@ -236,13 +237,13 @@ struct JSONToolVersion {
     symlinked_to: Option<PathBuf>,
 }
 
-type RuntimeRow = (Arc<dyn Plugin>, ToolVersion, Option<ToolSource>);
+type RuntimeRow = (Arc<dyn Forge>, ToolVersion, Option<ToolSource>);
 
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
 struct Row {
     #[tabled(display_with = "Self::display_plugin")]
-    plugin: Arc<dyn Plugin>,
+    plugin: Arc<dyn Forge>,
     version: VersionStatus,
     #[tabled(rename = "Config Source", display_with = "Self::display_source")]
     source: Option<ToolSource>,
@@ -257,7 +258,7 @@ impl Row {
             None => String::new(),
         }
     }
-    fn display_plugin(plugin: &Arc<dyn Plugin>) -> String {
+    fn display_plugin(plugin: &Arc<dyn Forge>) -> String {
         style(plugin).blue().to_string()
     }
     fn display_source(source: &Option<ToolSource>) -> String {
@@ -288,8 +289,8 @@ enum VersionStatus {
     Symlink(String, PathBuf, bool),
 }
 
-impl From<(&dyn Plugin, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
-    fn from((p, tv, source): (&dyn Plugin, &ToolVersion, &Option<ToolSource>)) -> Self {
+impl From<(&dyn Forge, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
+    fn from((p, tv, source): (&dyn Forge, &ToolVersion, &Option<ToolSource>)) -> Self {
         if let Some(symlink_path) = p.symlink_path(tv) {
             VersionStatus::Symlink(tv.version.clone(), symlink_path, source.is_some())
         } else if !p.is_version_installed(tv) {

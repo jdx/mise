@@ -5,7 +5,7 @@ use console::style;
 use eyre::Result;
 
 use crate::config::{Config, Settings};
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -36,7 +36,7 @@ impl Prune {
             .list_installed_versions(&config)?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<BTreeMap<String, (Arc<dyn Plugin>, ToolVersion)>>();
+            .collect::<BTreeMap<String, (Arc<dyn Forge>, ToolVersion)>>();
 
         if let Some(plugins) = &self.plugin {
             to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
@@ -53,7 +53,7 @@ impl Prune {
         self.delete(to_delete.into_values().collect())
     }
 
-    fn delete(&self, to_delete: Vec<(Arc<dyn Plugin>, ToolVersion)>) -> Result<()> {
+    fn delete(&self, to_delete: Vec<(Arc<dyn Forge>, ToolVersion)>) -> Result<()> {
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {

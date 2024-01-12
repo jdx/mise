@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-use crate::plugins::Plugin;
+use crate::forge::Forge;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -41,7 +41,7 @@ impl LsRemote {
         }
     }
 
-    fn run_single(self, plugin: Arc<dyn Plugin>) -> Result<()> {
+    fn run_single(self, plugin: Arc<dyn Forge>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
@@ -86,7 +86,7 @@ impl LsRemote {
         Ok(())
     }
 
-    fn get_plugin(&self, config: &Config) -> Result<Option<Arc<dyn Plugin>>> {
+    fn get_plugin(&self, config: &Config) -> Result<Option<Arc<dyn Forge>>> {
         match &self.plugin {
             Some(tool_arg) => {
                 let plugin = config.get_or_create_plugin(&tool_arg.plugin);

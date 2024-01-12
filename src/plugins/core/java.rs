@@ -13,10 +13,10 @@ use crate::cache::CacheManager;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash};
@@ -294,7 +294,7 @@ impl JavaPlugin {
     }
 }
 
-impl Plugin for JavaPlugin {
+impl Forge for JavaPlugin {
     fn name(&self) -> &str {
         "java"
     }

@@ -7,11 +7,11 @@ use versions::Versioning;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::file;
+use crate::forge::Forge;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::SingleReport;
 
@@ -94,7 +94,7 @@ impl BunPlugin {
     }
 }
 
-impl Plugin for BunPlugin {
+impl Forge for BunPlugin {
     fn name(&self) -> &str {
         "bun"
     }

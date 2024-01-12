@@ -119,7 +119,7 @@ impl ToolVersions {
         Ok(plugins)
     }
 
-    fn add_version(&mut self, plugin: &String, version: &str) {
+    fn add_version(&mut self, plugin: &str, version: &str) {
         self.get_or_create_plugin(plugin)
             .versions
             .push(version.to_string());
@@ -160,11 +160,11 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, plugin: &String) {
+    fn remove_plugin(&mut self, plugin: &str) {
         self.plugins.remove(plugin);
     }
 
-    fn replace_versions(&mut self, plugin_name: &String, versions: &[String]) {
+    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]) {
         self.get_or_create_plugin(plugin_name).versions.clear();
         for version in versions {
             self.add_version(plugin_name, version);

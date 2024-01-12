@@ -2,7 +2,8 @@ use console::style;
 use eyre::Result;
 
 use crate::config::Config;
-use crate::plugins::{unalias_plugin, Plugin};
+use crate::forge::Forge;
+use crate::plugins::unalias_plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -35,7 +36,7 @@ impl Current {
         }
     }
 
-    fn one(&self, ts: Toolset, tool: &dyn Plugin) -> Result<()> {
+    fn one(&self, ts: Toolset, tool: &dyn Forge) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.name());
             return Ok(());

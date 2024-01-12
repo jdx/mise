@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use eyre::Result;
 
 use crate::file::display_path;
+use crate::forge::Forge;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::ToolVersionRequest;
 use crate::{cmd, file};
 
@@ -87,7 +87,7 @@ impl ErlangPlugin {
     }
 }
 
-impl Plugin for ErlangPlugin {
+impl Forge for ErlangPlugin {
     fn name(&self) -> &str {
         self.core.name
     }

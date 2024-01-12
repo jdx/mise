@@ -9,13 +9,13 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
 
+use crate::forge::Forge;
 use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
-use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file};
@@ -320,7 +320,7 @@ impl RubyPlugin {
     }
 }
 
-impl Plugin for RubyPlugin {
+impl Forge for RubyPlugin {
     fn name(&self) -> &str {
         "ruby"
     }
