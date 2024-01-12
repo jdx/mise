@@ -3,7 +3,7 @@ use eyre::Result;
 
 use crate::cli::run;
 
-pub mod deps;
+mod deps;
 mod edit;
 mod ls;
 

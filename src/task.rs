@@ -1,6 +1,8 @@
 use console::truncate_str;
 use petgraph::graph::DiGraph;
-use petgraph::Direction;
+use petgraph::prelude::*;
+use petgraph::{Direction, Graph};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -283,4 +285,78 @@ impl Deps {
     //         None
     //     }
     // }
+}
+
+pub trait TreeItem: Clone {
+    type Child: TreeItem;
+
+    fn write_self(&self) -> Result<()>;
+
+    fn children(&self) -> Cow<[Self::Child]>;
+}
+
+impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
+    type Child = Self;
+
+    fn write_self(&self) -> Result<()> {
+        if let Some(w) = self.0.node_weight(self.1) {
+            miseprint!("{}", w.name);
+        }
+        Ok(())
+    }
+
+    fn children(&self) -> Cow<[Self::Child]> {
+        let v: Vec<_> = self.0.neighbors(self.1).map(|i| (self.0, i)).collect();
+        Cow::from(v)
+    }
+}
+
+pub struct TreeItemIndentChars {
+    /// Character for pointing down and right (`├`).
+    pub down_and_right: &'static str,
+    /// Character for pointing straight down (`|`).
+    pub down: &'static str,
+    /// Character for turning from down to right (`└`).
+    pub turn_right: &'static str,
+    /// Character for pointing right (`─`).
+    pub right: &'static str,
+    /// Empty character (` `).
+    pub empty: &'static str,
+}
+
+pub const TREE_ITEM_CHARS: TreeItemIndentChars = TreeItemIndentChars {
+    down_and_right: "├",
+    down: "│",
+    turn_right: "└",
+    right: "─",
+    empty: " ",
+};
+
+pub struct TreeItemIndent {
+    pub regular_prefix: String,
+    pub child_prefix: String,
+    pub last_regular_prefix: String,
+    pub last_child_prefix: String,
+}
+
+impl TreeItemIndent {
+    pub fn new(
+        indent_size: usize,
+        padding: usize,
+        characters: &TreeItemIndentChars,
+    ) -> TreeItemIndent {
+        let m = 1 + padding;
+        let n = if indent_size > m { indent_size - m } else { 0 };
+
+        let right_pad = characters.right.repeat(n);
+        let empty_pad = characters.empty.repeat(n);
+        let item_pad = characters.empty.repeat(padding);
+
+        TreeItemIndent {
+            regular_prefix: format!("{}{}{}", characters.down_and_right, right_pad, item_pad),
+            child_prefix: format!("{}{}{}", characters.down, empty_pad, item_pad),
+            last_regular_prefix: format!("{}{}{}", characters.turn_right, right_pad, item_pad),
+            last_child_prefix: format!("{}{}{}", characters.empty, empty_pad, item_pad),
+        }
+    }
 }

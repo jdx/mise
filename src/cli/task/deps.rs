@@ -1,13 +1,12 @@
 use crate::{
     config::{Config, Settings},
-    task::{Deps, Task},
+    task::{Deps, Task, TreeItem, TreeItemIndent, TREE_ITEM_CHARS},
     ui::style,
 };
 use console::style;
 use itertools::Itertools;
 use miette::Result;
 use petgraph::dot::Dot;
-use ptree::graph::print_graph;
 
 /// [experimental] Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
@@ -19,7 +18,7 @@ pub struct TaskDeps {
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
-    /// Print dependencies in DOT format
+    /// Display dependencies in DOT format
     #[clap(long, alias = "dot", verbatim_doc_comment)]
     pub dot: bool,
 }
@@ -35,10 +34,6 @@ impl TaskDeps {
         } else {
             self.get_task_lists(&config)?
         };
-
-        // TODO remove this once printing works properlybr
-        // let task_names = tasks.iter().map(|t| t.name.clone()).join(", ");
-        // miseprint!("Dependencies for task(s): {}\n", task_names);
 
         if self.dot {
             let _ = self.print_deps_dot(&config, tasks);
@@ -99,8 +94,43 @@ impl TaskDeps {
         });
         // iterate over selected graph nodes and print tree
         for idx in start_indexes {
-            let _ = print_graph(&deps.graph, idx);
+            let _ = self.print_tree(&(&deps.graph, idx));
         }
+        Ok(())
+    }
+
+    pub fn print_tree<T: TreeItem>(&self, item: &T) -> Result<()> {
+        let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
+        self.print_tree_item(item, String::from(""), String::from(""), &indent, 0)
+    }
+
+    fn print_tree_item<T: TreeItem>(
+        &self,
+        item: &T,
+        prefix: String,
+        child_prefix: String,
+        indent: &TreeItemIndent,
+        level: u32,
+    ) -> Result<()> {
+        print!("{}", prefix);
+        item.write_self()?;
+        println!("");
+
+        let children = item.children();
+        if let Some((last_child, children)) = children.split_last() {
+            let rp = child_prefix.clone() + &indent.regular_prefix;
+            let cp = child_prefix.clone() + &indent.child_prefix;
+
+            for c in children {
+                self.print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1)?;
+            }
+
+            let rp = child_prefix.clone() + &indent.last_regular_prefix;
+            let cp = child_prefix.clone() + &indent.last_child_prefix;
+
+            self.print_tree_item(last_child, rp, cp, indent, level + 1)?;
+        }
+
         Ok(())
     }
 
