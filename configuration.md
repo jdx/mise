@@ -247,6 +247,42 @@ experimental = true # enable experimental features
 These settings can also be managed with `mise settings ls|get|set|unset`.
 :::
 
+## Settings
+
+The following is a list of all of mise's settings. These can be set via `mise settings set`,
+by directly modifying `~/.config/mise/config.toml`, or via environment variables.
+
+Some of them also can be set via global CLI flags.
+
+### `activate_aggressive`
+
+* Type: `bool`
+* Env: `MISE_ACTIVATE_AGGRESSIVE`
+* Default: `false`
+
+Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.
+
+For example, if you have the following in your `.mise.toml`:
+
+```toml
+[tools]
+node = '20'
+python = '3.12'
+```
+
+But you also have this in your `~/.zshrc`:
+
+```sh
+eval "$(mise activate zsh)"
+PATH="/some/other/python:$PATH"
+```
+
+What will happen is `/some/other/python` will be used instead of the python installed by mise. This means
+you typically want to put `mise activate` at the end of your shell config so nothing overrides it.
+
+If you want to always use the mise versions of tools despite what is in your shell config, set this to `true`.
+In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
+
 ## Environment variables
 
 mise can also be configured via environment variables. The following options are available:
