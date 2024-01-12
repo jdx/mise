@@ -125,14 +125,19 @@ impl Settings {
         if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
-        let file_settings = Self::file_settings().unwrap_or_else(|e| {
+        let file_1 = Self::config_settings().unwrap_or_else(|e| {
+            eprintln!("Error loading settings file: {}", e);
+            Default::default()
+        });
+        let file_2 = Self::deprecated_settings_file().unwrap_or_else(|e| {
             eprintln!("Error loading settings file: {}", e);
             Default::default()
         });
         let mut settings = Self::builder()
             .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
             .env()
-            .preloaded(file_settings)
+            .preloaded(file_1)
+            .preloaded(file_2)
             .preloaded(DEFAULT_SETTINGS.clone())
             .load()
             .into_diagnostic()?;
@@ -221,11 +226,7 @@ impl Settings {
         Self::reset(Some(s));
     }
 
-    fn file_settings() -> Result<SettingsPartial> {
-        let settings_file = &*env::MISE_SETTINGS_FILE;
-        if settings_file.exists() {
-            return Self::from_file(settings_file);
-        }
+    fn config_settings() -> Result<SettingsPartial> {
         let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
         if !global_config.exists() {
             return Ok(Default::default());
@@ -233,6 +234,15 @@ impl Settings {
         let raw = file::read_to_string(global_config)?;
         let settings_file: SettingsFile = toml::from_str(&raw).into_diagnostic()?;
         Ok(settings_file.settings)
+    }
+
+    fn deprecated_settings_file() -> Result<SettingsPartial> {
+        // TODO: show warning and merge with config file in a few weeks
+        let settings_file = &*env::MISE_SETTINGS_FILE;
+        if !settings_file.exists() {
+            return Ok(Default::default());
+        }
+        Self::from_file(settings_file)
     }
 
     pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {

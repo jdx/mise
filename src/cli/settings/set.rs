@@ -45,23 +45,16 @@ impl SettingsSet {
             _ => return Err(miette!("Unknown setting: {}", self.setting)),
         };
 
-        let path = &*env::MISE_SETTINGS_FILE;
+        let path = &*env::MISE_GLOBAL_CONFIG_FILE;
         file::create_dir_all(path.parent().unwrap())?;
-        let mut new_file = false;
-        if !path.exists() {
-            file::write(path, "")?;
-            new_file = true;
+        let raw = file::read_to_string(path).unwrap_or_default();
+        let mut config: Document = raw.parse().into_diagnostic()?;
+        if !config.contains_key("settings") {
+            config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
-        let raw = file::read_to_string(path)?;
-        let mut settings: Document = raw.parse().into_diagnostic()?;
+        let settings = config["settings"].as_table_mut().unwrap();
         settings.insert(&self.setting, toml_edit::Item::Value(value));
-        if new_file {
-            settings
-                .key_decor_mut(&self.setting)
-                .unwrap()
-                .set_prefix("#:schema https://mise.jdx.dev/schema/settings.json\n");
-        }
-        file::write(path, settings.to_string())
+        file::write(path, config.to_string())
     }
 }
 
@@ -110,7 +103,7 @@ pub mod tests {
         color = true
         disable_default_shorthands = false
         disable_tools = []
-        experimental = false
+        experimental = true
         jobs = 4
         legacy_version_file = true
         legacy_version_file_disable_tools = []
@@ -131,7 +124,7 @@ pub mod tests {
         shorthands_file = null
         task_output = null
         trusted_config_paths = []
-        verbose = false
+        verbose = true
         yes = true
         "###);
         reset_config();
