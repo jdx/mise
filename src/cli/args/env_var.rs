@@ -1,6 +1,4 @@
-use std::ffi::OsStr;
-
-use clap::{Arg, Command, Error};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EnvVarArg {
@@ -8,34 +6,21 @@ pub struct EnvVarArg {
     pub value: Option<String>,
 }
 
-impl EnvVarArg {
-    pub fn parse(input: &str) -> Self {
-        input
-            .split_once('=')
-            .map(|(k, v)| Self {
+impl FromStr for EnvVarArg {
+    type Err = miette::Error;
+
+    fn from_str(input: &str) -> miette::Result<Self> {
+        let ev = match input.split_once('=') {
+            Some((k, v)) => Self {
                 key: k.to_string(),
                 value: Some(v.to_string()),
-            })
-            .unwrap_or_else(|| Self {
+            },
+            None => Self {
                 key: input.to_string(),
                 value: None,
-            })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct EnvVarArgParser;
-
-impl clap::builder::TypedValueParser for EnvVarArgParser {
-    type Value = EnvVarArg;
-
-    fn parse_ref(
-        &self,
-        _cmd: &Command,
-        _arg: Option<&Arg>,
-        value: &OsStr,
-    ) -> Result<Self::Value, Error> {
-        Ok(EnvVarArg::parse(&value.to_string_lossy()))
+            },
+        };
+        Ok(ev)
     }
 }
 
@@ -52,7 +37,7 @@ mod tests {
         ];
 
         for (input, want) in values {
-            let got = EnvVarArg::parse(input);
+            let got: EnvVarArg = input.parse().unwrap();
             assert_eq!(got, want);
         }
     }
