@@ -1,5 +1,5 @@
+use color_eyre::eyre::{eyre, Result};
 use console::style;
-use miette::Result;
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
@@ -68,7 +68,7 @@ impl Shell {
 }
 
 fn err_inactive() -> Result<()> {
-    Err(miette!(formatdoc!(
+    Err(eyre!(formatdoc!(
         r#"
                 mise is not activated in this shell session.
                 Please run `{}` first in your shell rc file.

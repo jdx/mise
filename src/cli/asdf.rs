@@ -1,6 +1,6 @@
 use clap::ValueHint::CommandWithArguments;
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 
 use crate::cli::ls_remote::LsRemote;
 use crate::cli::Cli;

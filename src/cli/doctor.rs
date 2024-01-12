@@ -2,8 +2,8 @@ use std::fmt::Write;
 use std::process::exit;
 
 use console::{pad_str, style, Alignment};
+use eyre::Result;
 use indenter::indented;
-use miette::Result;
 
 use crate::build_time::built_info;
 use crate::cli::version::VERSION;

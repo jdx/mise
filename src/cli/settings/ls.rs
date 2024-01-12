@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use serde_json::Value;
 
 use crate::config::Settings;
@@ -19,7 +19,7 @@ impl SettingsLs {
     pub fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         let json = settings.to_string();
-        let doc: BTreeMap<String, Value> = serde_json::from_str(&json).into_diagnostic()?;
+        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
         for (key, value) in doc {
             if Settings::hidden_configs().contains(key.as_str()) {
                 continue;

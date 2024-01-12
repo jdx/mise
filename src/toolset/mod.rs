@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use console::truncate_str;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::Result;
 use rayon::prelude::*;
 
 pub use builder::ToolsetBuilder;

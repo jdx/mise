@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use clap::Args;
 use clap_complete::generate;
-use miette::Result;
+use eyre::Result;
 
 use crate::shell::completions;
 

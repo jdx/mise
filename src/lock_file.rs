@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::dirs;
 use crate::file::create_dir_all;
@@ -34,12 +34,12 @@ impl LockFile {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        let mut lock = fslock::LockFile::open(&self.path).into_diagnostic()?;
-        if !lock.try_lock().into_diagnostic()? {
+        let mut lock = fslock::LockFile::open(&self.path)?;
+        if !lock.try_lock()? {
             if let Some(f) = self.on_locked {
                 f(&self.path)
             }
-            lock.lock().into_diagnostic()?;
+            lock.lock()?;
         }
         Ok(lock)
     }

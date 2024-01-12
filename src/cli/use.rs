@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 
 use crate::cli::args::tool::ToolArg;
 use crate::config::config_file::ConfigFile;
@@ -141,15 +141,11 @@ impl Use {
         let path = if self.global {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(env) = &self.env {
-            config_file_from_dir(
-                &env::current_dir()
-                    .into_diagnostic()?
-                    .join(format!(".mise.{}.toml", env)),
-            )
+            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
         } else if let Some(p) = &self.path {
             config_file_from_dir(p)
         } else {
-            config_file_from_dir(&env::current_dir().into_diagnostic()?)
+            config_file_from_dir(&env::current_dir()?)
         };
         config_file::parse_or_init(&path)
     }

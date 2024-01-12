@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use miette::{IntoDiagnostic, Result};
 use serde_json::Value;
 
 use crate::config::{Config, Settings};
@@ -19,14 +18,14 @@ pub struct SettingsGet {
 }
 
 impl SettingsGet {
-    pub fn run(self) -> Result<()> {
+    pub fn run(self) -> eyre::Result<()> {
         Config::try_get()?;
         let settings = Settings::try_get()?;
         let json = settings.to_string();
-        let doc: BTreeMap<String, Value> = serde_json::from_str(&json).into_diagnostic()?;
+        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
         match doc.get(&self.setting) {
             Some(value) => Ok(miseprintln!("{}", value)),
-            None => Err(miette!("Unknown setting: {}", self.setting)),
+            None => Err(eyre!("Unknown setting: {}", self.setting)),
         }
     }
 }

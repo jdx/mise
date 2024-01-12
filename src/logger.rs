@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::config::Settings;
 use crate::env;
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use simplelog::*;
 
 pub fn init(settings: &Settings) {
@@ -34,13 +34,12 @@ pub fn _init(settings: &Settings) {
 
 fn init_log_file(log_file: &Path) -> Result<File> {
     if let Some(log_dir) = log_file.parent() {
-        create_dir_all(log_dir).into_diagnostic()?;
+        create_dir_all(log_dir)?;
     }
-    OpenOptions::new()
+    Ok(OpenOptions::new()
         .create(true)
         .append(true)
-        .open(log_file)
-        .into_diagnostic()
+        .open(log_file)?)
 }
 
 fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {

@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use base64::prelude::*;
+use eyre::Result;
 use flate2::write::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
@@ -88,30 +88,23 @@ pub struct HookEnvWatches {
 
 pub fn serialize_watches(watches: &HookEnvWatches) -> Result<String> {
     let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
-    gz.write_all(&rmp_serde::to_vec_named(watches).into_diagnostic()?)
-        .into_diagnostic()?;
-    Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish().into_diagnostic()?))
+    gz.write_all(&rmp_serde::to_vec_named(watches)?)?;
+    Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
 }
 
 pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     let mut writer = Vec::new();
     let mut decoder = ZlibDecoder::new(writer);
-    let bytes = BASE64_STANDARD_NO_PAD.decode(raw).into_diagnostic()?;
-    decoder.write_all(&bytes[..]).into_diagnostic()?;
-    writer = decoder.finish().into_diagnostic()?;
-    rmp_serde::from_slice(&writer[..]).into_diagnostic()
+    let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
+    decoder.write_all(&bytes[..])?;
+    writer = decoder.finish()?;
+    Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
 pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
     let mut watches = BTreeMap::new();
     for cf in get_watch_files(watch_files) {
-        watches.insert(
-            cf.clone(),
-            cf.metadata()
-                .into_diagnostic()?
-                .modified()
-                .into_diagnostic()?,
-        );
+        watches.insert(cf.clone(), cf.metadata()?.modified()?);
     }
 
     Ok(HookEnvWatches {

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
-use miette::{Context, IntoDiagnostic, Result};
+use eyre::Result;
+use eyre::WrapErr;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -82,8 +83,7 @@ impl RubyPlugin {
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
             .dir(&tmp)
-            .run()
-            .into_diagnostic()?;
+            .run()?;
         file::remove_all(&tmp)?;
         Ok(())
     }
@@ -117,8 +117,7 @@ impl RubyPlugin {
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
             .dir(&tmp)
-            .run()
-            .into_diagnostic()?;
+            .run()?;
         file::remove_all(&tmp)?;
         Ok(())
     }
@@ -134,9 +133,7 @@ impl RubyPlugin {
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
         CorePlugin::run_fetch_task_with_timeout(move || {
-            cmd!(&ruby_install_path, "--update")
-                .run()
-                .into_diagnostic()?;
+            cmd!(&ruby_install_path, "--update").run()?;
             file::touch_dir(&ruby_install_path)?;
             Ok(())
         })
@@ -158,9 +155,7 @@ impl RubyPlugin {
         }
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(ruby_build_bin, "--definitions")
-                .read()
-                .into_diagnostic()?;
+            let output = cmd!(ruby_build_bin, "--definitions").read()?;
             let versions = output
                 .split('\n')
                 .filter(|s| regex!(r"^[0-9].+$").is_match(s))
@@ -228,9 +223,7 @@ impl RubyPlugin {
     }
 
     fn ruby_build_version(&self) -> Result<String> {
-        let output = cmd!(self.ruby_build_bin(), "--version")
-            .read()
-            .into_diagnostic()?;
+        let output = cmd!(self.ruby_build_bin(), "--version").read()?;
         let re = regex!(r"^ruby-build ([0-9.]+)");
         let caps = re.captures(&output).expect("ruby-build version regex");
         Ok(caps.get(1).unwrap().as_str().to_string())
@@ -270,7 +263,7 @@ impl RubyPlugin {
         Ok(cmd.with_pr(pr).envs(&config.env))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
-        let mut args = env::MISE_RUBY_BUILD_OPTS.clone().into_diagnostic()?;
+        let mut args = env::MISE_RUBY_BUILD_OPTS.clone()?;
         if self.verbose_install() {
             args.push("--verbose".into());
         }
@@ -295,7 +288,7 @@ impl RubyPlugin {
         args.push(version.into());
         args.push("--install-dir".into());
         args.push(tv.install_path().to_string_lossy().to_string());
-        args.extend(env::MISE_RUBY_INSTALL_OPTS.clone().into_diagnostic()?);
+        args.extend(env::MISE_RUBY_INSTALL_OPTS.clone()?);
         Ok(args)
     }
 

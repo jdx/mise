@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 use tabled::Tabled;
 
 use crate::config::Config;

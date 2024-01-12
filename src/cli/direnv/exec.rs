@@ -1,5 +1,6 @@
 use duct::Expression;
-use miette::{Context, IntoDiagnostic, Result};
+use eyre::Result;
+use eyre::WrapErr;
 use serde_derive::Deserialize;
 
 use crate::config::Config;
@@ -29,12 +30,11 @@ impl DirenvExec {
 
         let json = cmd!("direnv", "watch", "json", ".tool-versions")
             .read()
-            .into_diagnostic()
             .wrap_err("error running direnv watch")?;
-        let w: DirenvWatches = serde_json::from_str(&json).into_diagnostic()?;
+        let w: DirenvWatches = serde_json::from_str(&json)?;
         cmd = cmd.env("DIRENV_WATCHES", w.watches);
 
-        miseprint!("{}", cmd.read().into_diagnostic()?);
+        miseprint!("{}", cmd.read()?);
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 use toml::Table;
 
 use crate::config::Settings;
@@ -34,10 +34,10 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
 
 fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
     if f.starts_with("~") {
-        f = dirs::HOME.join(f.strip_prefix("~").into_diagnostic()?);
+        f = dirs::HOME.join(f.strip_prefix("~")?);
     }
     let raw = file::read_to_string(&f)?;
-    let toml = raw.parse::<Table>().into_diagnostic()?;
+    let toml = raw.parse::<Table>()?;
 
     let mut shorthands = HashMap::new();
     for (k, v) in toml {

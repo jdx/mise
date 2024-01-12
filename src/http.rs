@@ -15,7 +15,7 @@ use std::time::Duration;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
 use crate::{env, file};
-use miette::{IntoDiagnostic, Report, Result};
+use eyre::{Report, Result};
 use once_cell::sync::Lazy;
 use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
@@ -31,8 +31,7 @@ impl Client {
             reqwest: Self::_new()
                 .timeout(timeout)
                 .connect_timeout(timeout)
-                .build()
-                .into_diagnostic()?,
+                .build()?,
         })
     }
 
@@ -51,16 +50,16 @@ impl Client {
                 req = req.header("authorization", format!("token {}", token));
             }
         }
-        let resp = req.send().into_diagnostic()?;
+        let resp = req.send()?;
         debug!("GET {url} {}", resp.status());
-        resp.error_for_status_ref().into_diagnostic()?;
+        resp.error_for_status_ref()?;
         Ok(resp)
     }
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
         let resp = self.get(url.clone())?;
-        let text = resp.text().into_diagnostic()?;
+        let text = resp.text()?;
         if text.starts_with("<!DOCTYPE html>") {
             bail!("Got HTML instead of text from {}", url);
         }
@@ -73,25 +72,25 @@ impl Client {
     {
         let url = url.into_url().unwrap();
         let resp = self.get(url)?;
-        let json = resp.json().into_diagnostic()?;
+        let json = resp.json()?;
         Ok(json)
     }
 
     pub fn download_file<U: IntoUrl>(&self, url: U, path: &Path) -> Result<()> {
-        let url = url.into_url().into_diagnostic()?;
+        let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let mut resp = self.get(url)?;
 
         file::create_dir_all(path.parent().unwrap())?;
-        let mut file = File::create(path).into_diagnostic()?;
-        resp.copy_to(&mut file).into_diagnostic()?;
+        let mut file = File::create(path)?;
+        resp.copy_to(&mut file)?;
         Ok(())
     }
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
     if e.to_string().contains("404") {
-        // TODO: not this when I can figure out how to use miette properly
+        // TODO: not this when I can figure out how to use eyre properly
         return Some(404);
     }
     if let Some(err) = e.downcast_ref::<reqwest::Error>() {

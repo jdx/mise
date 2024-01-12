@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use miette::{IntoDiagnostic, Result};
+use eyre::Result;
 
 use crate::cli::{version, Cli};
 
@@ -19,11 +19,11 @@ impl RenderMangen {
 
         let man = clap_mangen::Man::new(cli);
         let mut buffer: Vec<u8> = Default::default();
-        man.render(&mut buffer).into_diagnostic()?;
+        man.render(&mut buffer)?;
 
         let out_dir = project_root().join("man").join("man1");
-        fs::create_dir_all(&out_dir).into_diagnostic()?;
-        fs::write(out_dir.join("mise.1"), buffer).into_diagnostic()?;
+        fs::create_dir_all(&out_dir)?;
+        fs::write(out_dir.join("mise.1"), buffer)?;
 
         Ok(())
     }

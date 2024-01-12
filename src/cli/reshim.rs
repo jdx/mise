@@ -1,4 +1,4 @@
-use miette::Result;
+use eyre::Result;
 
 use crate::config::Config;
 use crate::shims;

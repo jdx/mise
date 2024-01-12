@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use eyre::Result;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use versions::Versioning;
 
 use crate::cli::version::{ARCH, OS};
@@ -36,9 +36,7 @@ impl GoPlugin {
         }
         CorePlugin::run_fetch_task_with_timeout(move || {
             let repo = &*env::MISE_GO_REPO;
-            let output = cmd!("git", "ls-remote", "--tags", repo, "go*")
-                .read()
-                .into_diagnostic()?;
+            let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
@@ -162,9 +160,7 @@ impl Plugin for GoPlugin {
     fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
-            cmd!("chmod", "-R", "u+wx", gopath)
-                .run()
-                .into_diagnostic()?;
+            cmd!("chmod", "-R", "u+wx", gopath).run()?;
         }
         Ok(())
     }

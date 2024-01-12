@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use console::style;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use serde_derive::Serialize;
 use tabled::{Table, Tabled};
 use versions::Versioning;
@@ -101,7 +101,7 @@ impl Ls {
                 for plugin_name in plugins {
                     let plugin = config.get_or_create_plugin(plugin_name);
                     if !plugin.is_installed() {
-                        return Err(PluginNotInstalled(plugin_name.clone())).into_diagnostic()?;
+                        return Err(PluginNotInstalled(plugin_name.clone()))?;
                     }
                 }
             }
@@ -118,10 +118,7 @@ impl Ls {
                 .filter(|(p, _, _)| plugins.contains(&p.name().to_string()))
                 .map(|row| row.into())
                 .collect();
-            miseprintln!(
-                "{}",
-                serde_json::to_string_pretty(&runtimes).into_diagnostic()?
-            );
+            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
             return Ok(());
         }
 
@@ -133,10 +130,7 @@ impl Ls {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
-        miseprintln!(
-            "{}",
-            serde_json::to_string_pretty(&plugins).into_diagnostic()?
-        );
+        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 

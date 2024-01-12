@@ -11,9 +11,9 @@ use std::time::SystemTime;
 use clap::ValueHint;
 use console::{style, Color};
 use duct::IntoExecutablePath;
+use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use once_cell::sync::Lazy;
 use petgraph::graph::DiGraph;
 use petgraph::Direction;
@@ -163,8 +163,7 @@ impl Run {
 
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs() + 1)
-            .build()
-            .into_diagnostic()?;
+            .build()?;
         pool.scope(|s| {
             let run = |task: &Task| {
                 let t = task.clone();
@@ -230,11 +229,11 @@ impl Run {
         info_unprefix_trunc!("{prefix} {cmd}");
 
         if env::var("MISE_TASK_SCRIPT_FILE").is_ok() {
-            let mut tmp = tempfile::NamedTempFile::new().into_diagnostic()?;
+            let mut tmp = tempfile::NamedTempFile::new()?;
             let args = once(tmp.path().display().to_string())
                 .chain(args.iter().cloned())
                 .collect_vec();
-            writeln!(tmp, "{}", script.trim()).into_diagnostic()?;
+            writeln!(tmp, "{}", script.trim())?;
             self.exec("sh", &args, task, env, prefix)
         } else {
             let args = vec!["-c".to_string(), script.trim().to_string()];
@@ -306,7 +305,7 @@ impl Run {
         } else if self.interleave {
             Ok(TaskOutput::Interleave)
         } else if let Some(output) = &settings.task_output {
-            Ok(output.parse().into_diagnostic()?)
+            Ok(output.parse()?)
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             Ok(TaskOutput::Interleave)
         } else {
@@ -326,11 +325,11 @@ impl Run {
         }
     }
 
-    fn err_no_task(&self, config: &Config, t: &str) -> miette::Report {
+    fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
         let tasks = config.tasks();
         let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
-        miette!("no task named `{t}` found. Available tasks: {task_names}")
+        eyre!("no task named `{t}` found. Available tasks: {task_names}")
     }
     fn validate_task(&self, task: &Task) -> Result<()> {
         if let Some(path) = &task.file {
@@ -366,16 +365,15 @@ impl Run {
     fn get_last_modified(&self, root: &Path, globs: &[String]) -> Result<Option<SystemTime>> {
         let last_mod = GlobWalkerBuilder::from_patterns(root, globs)
             .follow_links(true)
-            .build()
-            .into_diagnostic()?
+            .build()?
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .map(|e| e.path().to_owned())
             .unique()
-            .map(|p| p.metadata().map_err(|err| miette!(err)))
+            .map(|p| p.metadata().map_err(|err| eyre!(err)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .map(|m| m.modified().map_err(|err| miette!(err)))
+            .map(|m| m.modified().map_err(|err| eyre!(err)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .max();

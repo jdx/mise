@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use miette::Result;
+use eyre::Result;
 
 use crate::cli::run;
 

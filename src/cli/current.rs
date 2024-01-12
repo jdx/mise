@@ -1,5 +1,5 @@
 use console::style;
-use miette::Result;
+use eyre::Result;
 
 use crate::config::Config;
 use crate::plugins::{unalias_plugin, Plugin};

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use clap::Command;
 use console::style;
+use eyre::{Result, WrapErr};
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result, WrapErr};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use versions::Versioning;
@@ -120,10 +120,10 @@ pub trait Plugin: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.installs_path().join("latest");
                 if installed_symlink.exists() {
-                    let target = installed_symlink.read_link().into_diagnostic()?;
+                    let target = installed_symlink.read_link()?;
                     let version = target
                         .file_name()
-                        .ok_or_else(|| miette!("Invalid symlink target"))?
+                        .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
                     Ok(Some(version))
@@ -288,7 +288,7 @@ pub trait Plugin: Debug + Send + Sync {
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;
-        File::create(self.incomplete_file_path(tv)).into_diagnostic()?;
+        File::create(self.incomplete_file_path(tv))?;
         Ok(())
     }
     fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
@@ -320,7 +320,7 @@ fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> Result<Vec<String>>
     if query == "latest" {
         query = "[0-9].*";
     }
-    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query)).into_diagnostic()?;
+    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
     let versions = versions
         .into_iter()
         .filter(|v| {

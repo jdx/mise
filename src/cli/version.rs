@@ -2,7 +2,7 @@ use std::string::ToString;
 use std::time::Duration;
 
 use console::style;
-use miette::Result;
+use eyre::Result;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 

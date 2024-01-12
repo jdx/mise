@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use crate::config::config_file;
 use console::{measure_text_width, pad_str, Alignment};
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use miette::{IntoDiagnostic, Result};
 use tera::Context;
 
 use crate::config::config_file::{ConfigFile, ConfigFileType};
@@ -58,7 +58,7 @@ impl ToolVersions {
         let mut cf = Self::init(&path);
         let dir = path.parent().unwrap();
         let s = if config_file::is_trusted(&path) {
-            get_tera(dir).render_str(s, &cf.context).into_diagnostic()?
+            get_tera(dir).render_str(s, &cf.context)?
         } else {
             s.to_string()
         };
