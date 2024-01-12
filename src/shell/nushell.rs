@@ -65,11 +65,11 @@ impl Shell for Nushell {
             }} else if ($command == "activate") {{
               $env.MISE_SHELL = "nu"
             }} else if ($command in $commands) {{
-              ^"{exe}" $command $rest
+              ^"{exe}" $command ...$rest
               | parse vars
               | update-env
             }} else {{
-              ^"{exe}" $command $rest
+              ^"{exe}" $command ...$rest
             }}
           }}
             
