@@ -158,16 +158,46 @@ Supported os/arch:
 If you need something else, compile it with `cargo install mise` (see below).
 [Windows isn't currently supported.](https://github.com/jdx/mise/discussions/66)
 
-### Homebrew
+### apk
 
-```sh
-brew install mise
+For Alpine Linux:
+
+```
+apk add mise
 ```
 
-### MacPorts
+_mise lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
 
-```sh
-sudo port install mise
+### apt
+
+For installation on Ubuntu/Debian:
+
+::: code-group
+```sh [amd64]
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update
+sudo apt install -y mise
+```
+
+```sh [arm64]
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update
+sudo apt install -y mise
+```
+:::
+
+### aur
+
+For Arch Linux:
+
+```
+git clone https://aur.archlinux.org/mise.git
+cd mise
+makepkg -si
 ```
 
 ### Cargo
@@ -189,6 +219,28 @@ Build from the latest commit in main:
 
 ```sh
 cargo install mise --git https://github.com/jdx/mise --branch main
+```
+
+### dnf
+
+For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
+
+```
+dnf install -y dnf-plugins-core
+dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+dnf install -y mise
+```
+
+### Docker
+
+```
+docker run jdxcode/mise x node@20 -- node -v
+```
+
+### Homebrew
+
+```sh
+brew install mise
 ```
 
 ### npm
@@ -215,62 +267,10 @@ curl https://github.com/jdx/mise/releases/download/v2024.1.0/mise-v2024.1.0-linu
 chmod +x /usr/local/bin/mise
 ```
 
-### apt
-
-For installation on Ubuntu/Debian:
+### MacPorts
 
 ```sh
-sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-sudo apt update
-sudo apt install -y mise
-```
-
-::: warning
-If you're on arm64 you'll need to run the following:
-
-```
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-```
-:::
-
-### dnf
-
-For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
-
-```
-dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
-```
-
-### yum
-
-```
-yum install -y yum-utils
-yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-yum install -y mise
-```
-
-### apk
-
-For Alpine Linux:
-
-```
-apk add mise
-```
-
-_mise lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
-
-### aur
-
-For Arch Linux:
-
-```
-git clone https://aur.archlinux.org/mise.git
-cd mise
-makepkg -si
+sudo port install mise
 ```
 
 ### nix
@@ -285,12 +285,13 @@ You can also import the package directly using
 `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
-### Docker
+### yum
 
 ```
-docker run jdxcode/mise x node@20 -- node -v
+yum install -y yum-utils
+yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+yum install -y mise
 ```
-
 
 ## Shells
 
