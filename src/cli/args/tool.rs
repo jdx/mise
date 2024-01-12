@@ -1,7 +1,6 @@
-use std::ffi::{OsStr, OsString};
 use std::fmt::Display;
+use std::str::FromStr;
 
-use clap::{Arg, Command, Error};
 use console::style;
 use miette::Result;
 use regex::Regex;
@@ -15,9 +14,11 @@ pub struct ToolArg {
     pub tvr: Option<ToolVersionRequest>,
 }
 
-impl ToolArg {
-    pub fn parse(input: &str) -> Self {
-        match input.split_once('@') {
+impl FromStr for ToolArg {
+    type Err = miette::Error;
+
+    fn from_str(input: &str) -> Result<Self> {
+        let arg = match input.split_once('@') {
             Some((plugin, version)) => {
                 let plugin = unalias_plugin(plugin).to_string();
                 Self {
@@ -29,9 +30,12 @@ impl ToolArg {
                 plugin: unalias_plugin(input).into(),
                 tvr: None,
             },
-        }
+        };
+        Ok(arg)
     }
+}
 
+impl ToolArg {
     /// this handles the case where the user typed in:
     /// mise local node 20.0.0
     /// instead of
@@ -70,7 +74,7 @@ impl ToolArg {
         format!(
             "{}{}",
             style(&self.plugin).blue().for_stderr(),
-            style(&format!("@{version}",)).for_stderr()
+            style(&format!("@{version}")).for_stderr()
         )
     }
 }
@@ -84,27 +88,43 @@ impl Display for ToolArg {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ToolArgParser;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl clap::builder::TypedValueParser for ToolArgParser {
-    type Value = ToolArg;
-
-    fn parse_ref(
-        &self,
-        cmd: &Command,
-        arg: Option<&Arg>,
-        value: &OsStr,
-    ) -> Result<Self::Value, Error> {
-        self.parse(cmd, arg, value.to_os_string())
+    #[test]
+    fn test_tool_arg() {
+        let tool = ToolArg::from_str("node").unwrap();
+        assert_eq!(
+            tool,
+            ToolArg {
+                plugin: "node".into(),
+                tvr: None,
+            }
+        );
     }
 
-    fn parse(
-        &self,
-        _cmd: &Command,
-        _arg: Option<&Arg>,
-        value: OsString,
-    ) -> Result<Self::Value, Error> {
-        Ok(ToolArg::parse(&value.to_string_lossy()))
+    #[test]
+    fn test_tool_arg_with_version() {
+        let tool = ToolArg::from_str("node@20").unwrap();
+        assert_eq!(
+            tool,
+            ToolArg {
+                plugin: "node".into(),
+                tvr: Some(ToolVersionRequest::new("node".into(), "20")),
+            }
+        );
+    }
+
+    #[test]
+    fn test_tool_arg_with_version_and_alias() {
+        let tool = ToolArg::from_str("nodejs@lts").unwrap();
+        assert_eq!(
+            tool,
+            ToolArg {
+                plugin: "node".into(),
+                tvr: Some(ToolVersionRequest::new("node".into(), "lts")),
+            }
+        );
     }
 }

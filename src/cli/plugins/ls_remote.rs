@@ -67,7 +67,6 @@ Examples:
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_list_remote() {
         let stdout = assert_cli!("plugin", "ls-remote");

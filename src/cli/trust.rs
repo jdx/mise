@@ -95,7 +95,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_trust() {
         assert_cli_snapshot!("trust");

@@ -1,7 +1,8 @@
+use std::fmt::Display;
+
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use miette::Result;
-use std::fmt::Display;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
@@ -73,7 +74,6 @@ impl Display for Shell {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_completion() {
         assert_cli!("completion", "zsh");

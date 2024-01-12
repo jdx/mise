@@ -6,7 +6,6 @@ use miette::{IntoDiagnostic, Result};
 use path_absolutize::Absolutize;
 
 use crate::file::{make_symlink, remove_all};
-
 use crate::plugins::unalias_plugin;
 use crate::{dirs, file};
 
@@ -80,7 +79,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_plugin_link() {
         assert_cli_snapshot!("plugin", "link", "-f", "tiny-link", "../data/plugins/tiny", @"");

@@ -2,7 +2,6 @@ use console::style;
 use miette::Result;
 
 use crate::config::Config;
-
 use crate::plugins::{unalias_plugin, Plugin};
 use crate::toolset::{Toolset, ToolsetBuilder};
 

@@ -1,12 +1,11 @@
-use crate::task::Task;
 use console::truncate_str;
 use itertools::Itertools;
 use miette::Result;
-
 use tabled::Tabled;
 
 use crate::config::{Config, Settings};
 use crate::file::display_path;
+use crate::task::Task;
 use crate::ui::{style, table};
 
 /// [experimental] List available tasks to execute

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use console::{pad_str, style, Alignment};
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::plugins::Plugin;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
@@ -16,7 +16,7 @@ pub struct Outdated {
     /// Tool(s) to show outdated versions for
     /// e.g.: node@20 python@3.10
     /// If not specified, all tools in global and local configs will be shown
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 }
 

@@ -1,8 +1,7 @@
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -11,7 +10,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {
     /// Tool to get the latest version of
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The version prefix to use when querying the latest version
@@ -65,7 +64,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     use pretty_assertions::assert_str_eq;
 
     #[test]

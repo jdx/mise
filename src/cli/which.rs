@@ -1,9 +1,8 @@
 use miette::Result;
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
 use crate::dirs::SHIMS;
-
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows the path that a bin name points to
@@ -24,7 +23,7 @@ pub struct Which {
 
     /// Use a specific tool@version
     /// e.g.: `mise which npm --tool=node@20`
-    #[clap(short, long, value_name = "TOOL@VERSION", value_parser = ToolArgParser, verbatim_doc_comment)]
+    #[clap(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Option<ToolArg>,
 }
 
@@ -83,7 +82,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_which() {
         assert_cli!("use", "dummy@1.0.0");

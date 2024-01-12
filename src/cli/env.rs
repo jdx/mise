@@ -1,8 +1,7 @@
 use miette::{IntoDiagnostic, Result};
 
-use crate::cli::args::tool::{ToolArg, ToolArgParser};
+use crate::cli::args::tool::ToolArg;
 use crate::config::Config;
-
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
@@ -18,7 +17,7 @@ pub struct Env {
     shell: Option<ShellType>,
 
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION", value_parser = ToolArgParser)]
+    #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
     /// Output in JSON format
