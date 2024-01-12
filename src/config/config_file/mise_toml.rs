@@ -80,8 +80,8 @@ impl MiseToml {
         for (k, v) in doc.iter() {
             match k {
                 "min_version" => self.parse_min_version(v)?,
-                "dotenv" => self.parse_env_file(k, v, true)?,
-                "env_file" => self.parse_env_file(k, v, true)?,
+                "dotenv" => self.parse_env_file(k, v)?,
+                "env_file" => self.parse_env_file(k, v)?,
                 "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
@@ -116,11 +116,8 @@ impl MiseToml {
         }
     }
 
-    fn parse_env_file(&mut self, k: &str, v: &Item, deprecate: bool) -> Result<()> {
+    fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
         trust_check(&self.path)?;
-        if deprecate {
-            warn!("{k} is deprecated. Use 'env.mise.file' instead.");
-        }
         if let Some(filename) = v.as_str() {
             let path = self.path.parent().unwrap().join(filename);
             self.parse_env_filename(path)?;
@@ -163,7 +160,7 @@ impl MiseToml {
                 for (k, v) in table.iter() {
                     let key = format!("{}.{}", key, k);
                     let k = self.parse_template(&key, k)?;
-                    if k == "mise" {
+                    if k == "_" || k == "mise" {
                         self.parse_env_mise(&key, v)?;
                     } else if let Some(v) = v.as_str() {
                         let v = self.parse_template(&key, v)?;
@@ -190,7 +187,7 @@ impl MiseToml {
                 for (k, v) in table.iter() {
                     let key = format!("{}.{}", key, k);
                     match k {
-                        "file" => self.parse_env_file(&key, v, false)?,
+                        "file" => self.parse_env_file(&key, v)?,
                         "path" => self.path_dirs = self.parse_path_env(&key, v)?,
                         _ => parse_error!(key, v, "file or path"),
                     }
