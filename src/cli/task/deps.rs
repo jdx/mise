@@ -36,9 +36,9 @@ impl TaskDeps {
         };
 
         if self.dot {
-            let _ = self.print_deps_dot(&config, tasks);
+            self.print_deps_dot(&config, tasks)?;
         } else {
-            let _ = self.print_deps_tree(&config, tasks);
+            self.print_deps_tree(&config, tasks)?;
         }
 
         Ok(())
