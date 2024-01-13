@@ -1444,7 +1444,7 @@ Usage: use [OPTIONS] [TOOL@VERSION]...
 Arguments:
   [TOOL@VERSION]...
           Tool(s) to add to config file
-          e.g.: node@20
+          e.g.: node@20, cargo-ripgrep@latest npm-prettier@3
           If no version is specified, it will default to @latest
 
 Options:

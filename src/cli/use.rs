@@ -25,7 +25,7 @@ use crate::{env, file, forge};
 #[clap(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
 pub struct Use {
     /// Tool(s) to add to config file
-    /// e.g.: node@20
+    /// e.g.: node@20, cargo-ripgrep@latest npm-prettier@3
     /// If no version is specified, it will default to @latest
     #[clap(
         value_name = "TOOL@VERSION",
