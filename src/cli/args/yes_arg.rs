@@ -1,8 +1,8 @@
 use clap::{Arg, ArgAction};
 
-pub struct Yes(pub bool);
+pub struct YesArg(pub bool);
 
-impl Yes {
+impl YesArg {
     pub fn arg() -> Arg {
         Arg::new("yes")
             .short('y')

@@ -1,9 +1,9 @@
 use clap::{Arg, ArgAction};
 
 #[derive(Clone)]
-pub struct Verbose(pub u8);
+pub struct VerboseArg(pub u8);
 
-impl Verbose {
+impl VerboseArg {
     pub fn arg() -> clap::Arg {
         Arg::new("verbose")
             .short('v')

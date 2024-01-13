@@ -5,7 +5,7 @@ use clap::ValueHint;
 use duct::IntoExecutablePath;
 use eyre::Result;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 #[cfg(test)]
 use crate::cmd;
 use crate::config::Config;

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use demand::DemandOption;
 use eyre::{Context, Result};
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge::Forge;
 use crate::shims;

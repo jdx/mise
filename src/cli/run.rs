@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use petgraph::graph::DiGraph;
 use petgraph::Direction;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;

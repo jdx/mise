@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};

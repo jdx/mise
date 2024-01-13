@@ -1,9 +1,9 @@
 use clap::{Arg, ArgAction};
 
 #[derive(Clone)]
-pub struct Quiet;
+pub struct QuietArg;
 
-impl Quiet {
+impl QuietArg {
     pub fn arg() -> Arg {
         Arg::new("quiet")
             .short('q')

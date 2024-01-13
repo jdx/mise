@@ -4,7 +4,7 @@ use console::style;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{
