@@ -140,7 +140,7 @@ impl Config {
     pub fn external_plugins(&self) -> Vec<(String, Arc<dyn Forge>)> {
         self.list_plugins()
             .into_iter()
-            .filter(|tool| matches!(tool.get_type(), PluginType::External))
+            .filter(|tool| matches!(tool.get_plugin_type(), PluginType::External))
             .map(|tool| (tool.name().to_string(), tool.clone()))
             .collect()
     }
@@ -526,7 +526,7 @@ impl Debug for Config {
         let plugins = self
             .list_plugins()
             .into_iter()
-            .filter(|t| matches!(t.get_type(), PluginType::External))
+            .filter(|t| matches!(t.get_plugin_type(), PluginType::External))
             .map(|t| t.name().to_string())
             .collect::<Vec<_>>();
         let config_files = self

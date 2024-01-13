@@ -12,7 +12,7 @@ use crate::config::config_file::{ConfigFile, ConfigFileType};
 
 use crate::file;
 use crate::file::display_path;
-use crate::plugins::unalias_plugin;
+use crate::forge::unalias_forge;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -103,7 +103,7 @@ impl ToolVersions {
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
                 let orig_plugin = plugin.trim_end_matches(':');
-                let plugin = unalias_plugin(orig_plugin);
+                let plugin = unalias_forge(orig_plugin);
 
                 let tvp = ToolVersionPlugin {
                     orig_name: orig_plugin.to_string(),

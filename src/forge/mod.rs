@@ -19,9 +19,19 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use versions::Versioning;
 
+#[derive(Debug, PartialEq, Eq, Clone, EnumString)]
+#[strum(serialize_all = "snake_case")]
+pub enum ForgeType {
+    Asdf,
+    Cargo,
+}
+
 pub trait Forge: Debug + Send + Sync {
     fn name(&self) -> &str;
-    fn get_type(&self) -> PluginType {
+    fn get_type(&self) -> ForgeType {
+        ForgeType::Asdf
+    }
+    fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
     fn installs_path(&self) -> PathBuf {
@@ -337,4 +347,12 @@ fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
             style(&dir.to_string_lossy()).cyan().for_stderr()
         )
     })
+}
+
+pub fn unalias_forge(plugin_name: &str) -> &str {
+    match plugin_name {
+        "nodejs" => "node",
+        "golang" => "go",
+        _ => plugin_name,
+    }
 }

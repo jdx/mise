@@ -2,8 +2,8 @@ use console::style;
 use eyre::Result;
 
 use crate::config::Config;
+use crate::forge::unalias_forge;
 use crate::forge::Forge;
-use crate::plugins::unalias_plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -25,7 +25,7 @@ impl Current {
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(plugin_name) => {
-                let plugin_name = unalias_plugin(plugin_name);
+                let plugin_name = unalias_forge(plugin_name);
                 let plugin = config.get_or_create_plugin(plugin_name);
                 if !plugin.is_installed() {
                     bail!("Plugin {} is not installed", plugin_name);

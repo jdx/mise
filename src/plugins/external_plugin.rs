@@ -412,7 +412,7 @@ impl Forge for ExternalPlugin {
         &self.name
     }
 
-    fn get_type(&self) -> PluginType {
+    fn get_plugin_type(&self) -> PluginType {
         PluginType::External
     }
     fn list_remote_versions(&self) -> Result<Vec<String>> {

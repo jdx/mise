@@ -13,7 +13,7 @@ use versions::Versioning;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
-use crate::plugins::unalias_plugin;
+use crate::forge::unalias_forge;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
@@ -340,7 +340,7 @@ impl MiseToml {
             Some(table) => {
                 for (plugin, v) in table.iter() {
                     let k = format!("{}.{}", key, plugin);
-                    let plugin_name = unalias_plugin(plugin).to_string();
+                    let plugin_name = unalias_forge(plugin).to_string();
                     let tvl = self.parse_tool_version_list(&k, v, &plugin_name)?;
                     toolset.versions.insert(plugin_name, tvl);
                 }

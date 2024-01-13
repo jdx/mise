@@ -3,7 +3,7 @@ use eyre::Result;
 use rayon::prelude::*;
 
 use crate::config::{Config, Settings};
-use crate::plugins::unalias_plugin;
+use crate::forge::unalias_forge;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
@@ -32,7 +32,7 @@ impl Update {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
-                    let p = unalias_plugin(p);
+                    let p = unalias_forge(p);
                     let plugin = config.get_or_create_plugin(p);
                     Ok((plugin.clone(), ref_))
                 })

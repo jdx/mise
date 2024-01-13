@@ -14,14 +14,6 @@ mod external_plugin_cache;
 mod mise_plugin_toml;
 mod script_manager;
 
-pub fn unalias_plugin(plugin_name: &str) -> &str {
-    match plugin_name {
-        "nodejs" => "node",
-        "golang" => "go",
-        _ => plugin_name,
-    }
-}
-
 impl Display for dyn Forge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
@@ -30,7 +22,7 @@ impl Display for dyn Forge {
 impl Eq for dyn Forge {}
 impl PartialEq for dyn Forge {
     fn eq(&self, other: &Self) -> bool {
-        self.get_type() == other.get_type() && self.name() == other.name()
+        self.get_plugin_type() == other.get_plugin_type() && self.name() == other.name()
     }
 }
 impl Hash for dyn Forge {

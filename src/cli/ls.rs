@@ -13,8 +13,8 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::errors::Error::PluginNotInstalled;
+use crate::forge::unalias_forge;
 use crate::forge::Forge;
-use crate::plugins::unalias_plugin;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::table;
 
@@ -69,7 +69,7 @@ impl Ls {
         self.plugin = self
             .plugin
             .or_else(|| self.plugin_flag.clone().map(|p| vec![p]))
-            .map(|p| p.into_iter().map(|p| unalias_plugin(&p).into()).collect());
+            .map(|p| p.into_iter().map(|p| unalias_forge(&p).into()).collect());
         self.verify_plugin(&config)?;
 
         let mut runtimes = self.get_runtime_list(&config)?;

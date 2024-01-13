@@ -4,7 +4,7 @@ use std::str::FromStr;
 use console::style;
 use regex::Regex;
 
-use crate::plugins::unalias_plugin;
+use crate::forge::unalias_forge;
 use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -19,14 +19,14 @@ impl FromStr for ToolArg {
     fn from_str(input: &str) -> eyre::Result<Self> {
         let arg = match input.split_once('@') {
             Some((plugin, version)) => {
-                let plugin = unalias_plugin(plugin).to_string();
+                let plugin = unalias_forge(plugin).to_string();
                 Self {
                     plugin: plugin.clone(),
                     tvr: Some(ToolVersionRequest::new(plugin, version)),
                 }
             }
             None => Self {
-                plugin: unalias_plugin(input).into(),
+                plugin: unalias_forge(input).into(),
                 tvr: None,
             },
         };

@@ -140,7 +140,7 @@ fn render_plugins(config: &Config) -> String {
     let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;
     for p in plugins {
         let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
-        let si = match p.get_type() {
+        let si = match p.get_plugin_type() {
             PluginType::External => {
                 let git = Git::new(dirs::PLUGINS.join(p.name()));
                 match git.get_remote_url() {
