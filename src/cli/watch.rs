@@ -85,7 +85,7 @@ impl Watch {
             .iter()
             .map(|t| {
                 config
-                    .tasks()
+                    .tasks_with_aliases()
                     .get(t)
                     .cloned()
                     .ok_or_else(|| eyre!("Task not found: {t}"))

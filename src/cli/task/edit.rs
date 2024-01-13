@@ -25,19 +25,23 @@ impl TaskEdit {
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
 
-        let task = config.tasks().get(&self.task).cloned().map_or_else(
-            || {
-                let path = config
-                    .project_root
-                    .as_ref()
-                    .unwrap_or(&env::current_dir()?)
-                    .join(".mise")
-                    .join("tasks")
-                    .join(&self.task);
-                Task::from_path(path)
-            },
-            Ok,
-        )?;
+        let task = config
+            .tasks_with_aliases()
+            .get(&self.task)
+            .cloned()
+            .map_or_else(
+                || {
+                    let path = config
+                        .project_root
+                        .as_ref()
+                        .unwrap_or(&env::current_dir()?)
+                        .join(".mise")
+                        .join("tasks")
+                        .join(&self.task);
+                    Task::from_path(path)
+                },
+                Ok,
+            )?;
         let file = &task.config_source;
         if !file.exists() {
             file::create(file)?;

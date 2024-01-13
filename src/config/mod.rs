@@ -44,6 +44,7 @@ pub struct Config {
     repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
     tasks: OnceCell<HashMap<String, Task>>,
+    tasks_with_aliases: OnceCell<HashMap<String, Task>>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -84,6 +85,7 @@ impl Config {
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
             tasks: OnceCell::new(),
+            tasks_with_aliases: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
             repo_urls,
@@ -111,7 +113,17 @@ impl Config {
     }
 
     pub fn tasks(&self) -> &HashMap<String, Task> {
-        self.tasks.get_or_init(|| self.load_all_tasks())
+        self.tasks.get_or_init(|| {
+            self.load_all_tasks()
+                .into_iter()
+                .filter(|(n, t)| *n == t.name)
+                .collect()
+        })
+    }
+
+    pub fn tasks_with_aliases(&self) -> &HashMap<String, Task> {
+        self.tasks_with_aliases
+            .get_or_init(|| self.load_all_tasks())
     }
 
     pub fn is_activated(&self) -> bool {
