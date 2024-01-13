@@ -6,7 +6,6 @@ _.file = [".env"]
 FOO = "bar"
 FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
-a = "4"
 
 [tools]
 #node = 'lts'
