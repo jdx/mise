@@ -30,6 +30,8 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # for lastUpdated
       - uses: jdx/mise-action@v2
       - run: pnpm install
       - run: pnpm run docs:build
