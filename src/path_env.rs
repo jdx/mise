@@ -1,10 +1,12 @@
-use crate::dirs;
-use itertools::Itertools;
 use std::env::join_paths;
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+
+use itertools::Itertools;
+
+use crate::dirs;
 
 pub struct PathEnv {
     pre: Vec<PathBuf>,

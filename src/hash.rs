@@ -48,7 +48,6 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

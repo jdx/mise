@@ -10,7 +10,6 @@ use crate::cli::args::ToolArg;
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
-
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set

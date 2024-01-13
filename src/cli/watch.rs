@@ -1,9 +1,9 @@
 use std::process::exit;
 
-use crate::cli::args::ForgeArg;
 use console::style;
 use eyre::Result;
 
+use crate::cli::args::ForgeArg;
 use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::toolset::ToolsetBuilder;

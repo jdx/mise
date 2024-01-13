@@ -51,10 +51,7 @@ fn env_cmd() -> Expression {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
-
     use crate::cli::tests::grep;
-
     #[test]
     fn test_direnv_exec() {
         let stdout = assert_cli!("direnv", "exec");

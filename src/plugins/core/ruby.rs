@@ -5,11 +5,10 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 use eyre::WrapErr;
 
+use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-
-use crate::cli::args::ForgeArg;
 use crate::forge::Forge;
 use crate::git::Git;
 use crate::github::GithubRelease;
@@ -423,7 +422,6 @@ fn parse_gemfile(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

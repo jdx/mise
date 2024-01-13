@@ -68,11 +68,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::tests::grep;
     use std::env;
 
-    use pretty_assertions::assert_str_eq;
-
-    use crate::cli::tests::grep;
     use crate::dirs;
 
     #[test]

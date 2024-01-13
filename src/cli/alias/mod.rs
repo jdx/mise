@@ -1,6 +1,7 @@
-use crate::cli::args::ForgeArg;
 use clap::Subcommand;
 use eyre::Result;
+
+use crate::cli::args::ForgeArg;
 
 mod get;
 mod ls;

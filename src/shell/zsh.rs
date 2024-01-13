@@ -1,6 +1,6 @@
-use crate::config::Settings;
 use std::path::Path;
 
+use crate::config::Settings;
 use crate::shell::bash::Bash;
 use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
@@ -101,10 +101,8 @@ impl Shell for Zsh {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::test::replace_path;
-
     use super::*;
+    use crate::test::replace_path;
 
     #[test]
     fn test_hook_init() {

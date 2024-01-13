@@ -3,10 +3,11 @@ extern crate simplelog;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::Path;
 
-use crate::config::Settings;
-use crate::env;
 use eyre::Result;
 use simplelog::*;
+
+use crate::config::Settings;
+use crate::env;
 
 pub fn init(settings: &Settings) {
     static INIT: std::sync::Once = std::sync::Once::new();

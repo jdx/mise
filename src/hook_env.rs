@@ -165,8 +165,6 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
 mod tests {
     use std::time::UNIX_EPOCH;
 
-    use pretty_assertions::assert_str_eq;
-
     use super::*;
 
     #[test]

@@ -1,8 +1,8 @@
-use crate::config::Settings;
-
-use indicatif::MultiProgress;
 use std::sync::{Arc, Mutex, Weak};
 
+use indicatif::MultiProgress;
+
+use crate::config::Settings;
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
 #[derive(Debug)]
@@ -10,6 +10,7 @@ pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
 }
+
 static INSTANCE: Mutex<Option<Weak<MultiProgressReport>>> = Mutex::new(None);
 
 impl MultiProgressReport {

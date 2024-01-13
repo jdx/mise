@@ -146,7 +146,6 @@ fn get_git_version() -> Result<String> {
 
 // #[cfg(test)]
 // mod tests {
-//     use pretty_assertions::assert_str_eq;
 //     use tempfile::tempdir;
 //
 //     use super::*;
