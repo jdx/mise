@@ -7,6 +7,7 @@ use tempfile::tempdir_in;
 use url::Url;
 
 use crate::build_time::built_info;
+use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::MISE_NODE_MIRROR_URL;
@@ -237,8 +238,8 @@ impl NodePlugin {
 }
 
 impl Forge for NodePlugin {
-    fn name(&self) -> &str {
-        "node"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {

@@ -120,7 +120,7 @@ impl Toolset {
             .keys()
             .map(forge::get)
             .filter(|p| !p.is_installed())
-            .map(|p| p.name().into())
+            .map(|p| p.id().into())
             .collect()
     }
 
@@ -139,7 +139,7 @@ impl Toolset {
             .into_iter()
             .group_by(|v| v.forge.clone())
             .into_iter()
-            .map(|(fa, v)| (fa.get_forge(), v.collect_vec()))
+            .map(|(fa, v)| (forge::get(&fa), v.collect_vec()))
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
@@ -199,7 +199,7 @@ impl Toolset {
         let current_versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = self
             .list_current_versions()
             .into_iter()
-            .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p.clone(), tv)))
+            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let versions = forge::list()
             .into_par_iter()
@@ -208,10 +208,10 @@ impl Toolset {
                 Ok(versions
                     .into_iter()
                     .map(
-                        |v| match current_versions.get(&(p.name().into(), v.clone())) {
+                        |v| match current_versions.get(&(p.id().into(), v.clone())) {
                             Some((p, tv)) => (p.clone(), tv.clone()),
                             None => {
-                                let tv = ToolVersionRequest::new(p.get_fa(), &v)
+                                let tv = ToolVersionRequest::new(p.fa().clone(), &v)
                                     .resolve(p.as_ref(), Default::default(), false)
                                     .unwrap();
                                 (p.clone(), tv)
@@ -359,7 +359,7 @@ impl Toolset {
             let versions = self
                 .list_missing_versions()
                 .into_iter()
-                .filter(|tv| tv.forge == plugin.get_fa())
+                .filter(|tv| &tv.forge == plugin.fa())
                 .collect_vec();
             if !versions.is_empty() {
                 let mpr = MultiProgressReport::get();

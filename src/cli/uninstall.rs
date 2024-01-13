@@ -99,7 +99,7 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.get_fa(), v);
+                        let tvr = ToolVersionRequest::new(tool.fa().clone(), v);
                         let tv = ToolVersion::new(tool.as_ref(), tvr, Default::default(), v.into());
                         (tool.clone(), tv)
                     })

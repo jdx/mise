@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::cli::args::ForgeArg;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -94,8 +95,8 @@ impl DenoPlugin {
 }
 
 impl Forge for DenoPlugin {
-    fn name(&self) -> &str {
-        "deno"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {

@@ -126,7 +126,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
         remove_all(&symlink_path)?;
     }
     for plugin in forge::list() {
-        match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
+        match dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {
                     let bin = bin?;

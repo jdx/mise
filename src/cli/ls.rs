@@ -113,7 +113,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(p, _, _)| plugins.contains(&p.get_fa()))
+                .filter(|(p, _, _)| plugins.contains(p.fa()))
                 .map(|row| row.into())
                 .collect();
             miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
@@ -123,7 +123,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(p, _, _)| p.name().to_string())
+            .group_by(|(p, _, _)| p.id().to_string())
         {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
@@ -177,13 +177,13 @@ impl Ls {
         let mut versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = ts
             .list_installed_versions()?
             .into_iter()
-            .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
+            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
             .collect();
 
         let active = ts
             .list_current_versions()
             .into_iter()
-            .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
+            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
             .collect::<HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)>>();
 
         versions.extend(active.clone());
@@ -191,7 +191,7 @@ impl Ls {
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
             .filter(|(_, (f, _))| match &self.plugin {
-                Some(p) => p.contains(&f.get_fa()),
+                Some(p) => p.contains(f.fa()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -211,7 +211,7 @@ impl Ls {
             // if it isn't installed and it's not specified, don't show it
             .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
             .filter(|(p, _, _)| match &self.plugin {
-                Some(forge) => forge.contains(&p.get_fa()),
+                Some(forge) => forge.contains(p.fa()),
                 None => true,
             })
             .collect();

@@ -241,6 +241,11 @@
         "description": "set to true to ensure .tool-versions will be compatible with asdf",
         "type": "boolean"
       },
+      "cargo_binstall": {
+        "description": "use cargo-binstall to install rust tools if available",
+        "type": "boolean",
+        "default": true
+      },
       "color": {
         "description": "colorize output",
         "type": "boolean",

@@ -74,7 +74,7 @@ impl LsRemote {
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .sorted_by_cached_key(|(p, _)| p.name().to_string())
+            .sorted_by_cached_key(|(p, _)| p.id().to_string())
             .collect::<Vec<_>>();
         for (plugin, versions) in versions {
             for v in versions {

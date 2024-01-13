@@ -14,13 +14,14 @@ use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
 use crate::cache::CacheManager;
+use crate::cli::args::ForgeArg;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::forge::{AForge, Forge, ForgeList};
+use crate::forge::{AForge, Forge, ForgeList, ForgeType};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
@@ -38,6 +39,7 @@ use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct ExternalPlugin {
+    pub fa: ForgeArg,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
@@ -63,6 +65,7 @@ impl ExternalPlugin {
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
         Self {
+            fa: ForgeArg::new(ForgeType::Asdf, &name),
             script_man: build_script_man(&name, &plugin_path),
             downloads_path: dirs::DOWNLOADS.join(&name),
             installs_path: dirs::INSTALLS.join(&name),
@@ -404,8 +407,8 @@ impl Hash for ExternalPlugin {
 }
 
 impl Forge for ExternalPlugin {
-    fn name(&self) -> &str {
-        &self.name
+    fn fa(&self) -> &ForgeArg {
+        &self.fa
     }
 
     fn get_plugin_type(&self) -> PluginType {

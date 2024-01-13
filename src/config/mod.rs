@@ -119,7 +119,7 @@ impl Config {
     }
 
     pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.aliases.get(&forge.get_fa()) {
+        if let Some(plugin_aliases) = self.aliases.get(forge.fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
@@ -139,7 +139,7 @@ impl Config {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
-                (forge.get_fa(), aliases)
+                (forge.fa().clone(), aliases)
             })
             .collect();
         for (fa, plugin_aliases) in plugin_aliases {
@@ -264,13 +264,13 @@ fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
         .filter(|tool| {
             !settings
                 .legacy_version_file_disable_tools
-                .contains(tool.name())
+                .contains(tool.id())
         })
         .filter_map(|tool| match tool.legacy_filenames() {
             Ok(filenames) => Some(
                 filenames
                     .iter()
-                    .map(|f| (f.to_string(), tool.name().to_string()))
+                    .map(|f| (f.to_string(), tool.id().to_string()))
                     .collect_vec(),
             ),
             Err(err) => {
