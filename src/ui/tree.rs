@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, f32::INFINITY};
 
 pub trait TreeItem: Clone {
     type Child: TreeItem;
@@ -74,18 +74,20 @@ fn print_tree_item<T: TreeItem>(
     item.write_self();
     miseprintln!("");
 
-    let children = item.children();
-    if let Some((last_child, children)) = children.split_last() {
-        let rp = child_prefix.clone() + &indent.regular_prefix;
-        let cp = child_prefix.clone() + &indent.child_prefix;
+    if level < INFINITY as u32 {
+        let children = item.children();
+        if let Some((last_child, children)) = children.split_last() {
+            let rp = child_prefix.clone() + &indent.regular_prefix;
+            let cp = child_prefix.clone() + &indent.child_prefix;
 
-        for c in children {
-            print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1);
+            for c in children {
+                print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1);
+            }
+
+            let rp = child_prefix.clone() + &indent.last_regular_prefix;
+            let cp = child_prefix.clone() + &indent.last_child_prefix;
+
+            print_tree_item(last_child, rp, cp, indent, level + 1);
         }
-
-        let rp = child_prefix.clone() + &indent.last_regular_prefix;
-        let cp = child_prefix.clone() + &indent.last_child_prefix;
-
-        print_tree_item(last_child, rp, cp, indent, level + 1);
     }
 }

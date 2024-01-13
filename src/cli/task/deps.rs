@@ -93,7 +93,7 @@ impl TaskDeps {
         });
         // iterate over selected graph nodes and print tree
         for idx in start_indexes {
-            let _ = print_tree(&(&deps.graph, idx));
+            print_tree(&(&deps.graph, idx));
         }
         Ok(())
     }
