@@ -6,6 +6,7 @@ use itertools::Itertools;
 
 use crate::build_time::built_info;
 use crate::cache::CacheManager;
+use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -293,8 +294,8 @@ impl PythonPlugin {
 }
 
 impl Forge for PythonPlugin {
-    fn name(&self) -> &str {
-        "python"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {

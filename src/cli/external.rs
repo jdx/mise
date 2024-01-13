@@ -10,7 +10,7 @@ pub fn commands() -> Vec<Command> {
         .into_par_iter()
         .flat_map(|p| {
             p.external_commands().unwrap_or_else(|e| {
-                let p = p.name();
+                let p = p.id();
                 warn!("failed to load external commands for plugin {p}: {e:#}");
                 vec![]
             })

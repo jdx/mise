@@ -56,7 +56,7 @@ impl Upgrade {
                 .iter()
                 .map(|t| t.forge.clone())
                 .collect::<HashSet<_>>();
-            outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(&p.get_fa()));
+            outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.fa()));
         }
         if outdated.is_empty() {
             info!("All tools are up to date");

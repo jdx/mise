@@ -10,6 +10,7 @@ use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
 use crate::cache::CacheManager;
+use crate::cli::args::ForgeArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
@@ -295,8 +296,8 @@ impl JavaPlugin {
 }
 
 impl Forge for JavaPlugin {
-    fn name(&self) -> &str {
-        "java"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {

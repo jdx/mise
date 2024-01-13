@@ -269,9 +269,9 @@ impl Iterator for FindUp {
     }
 }
 
-pub fn which(name: &str) -> Option<PathBuf> {
+pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     for path in &*env::PATH {
-        let bin = path.join(name);
+        let bin = path.join(name.as_ref());
         if is_executable(&bin) {
             return Some(bin);
         }

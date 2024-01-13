@@ -49,7 +49,7 @@ impl Doctor {
                 miseprintln!("{}", render_plugins());
                 for plugin in forge::list() {
                     if !plugin.is_installed() {
-                        checks.push(format!("plugin {} is not installed", &plugin.name()));
+                        checks.push(format!("plugin {} is not installed", &plugin.id()));
                         continue;
                     }
                 }
@@ -136,12 +136,12 @@ fn render_plugins() -> String {
         .into_iter()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();
-    let max_plugin_name_len = plugins.iter().map(|p| p.name().len()).max().unwrap_or(0) + 2;
+    let max_plugin_name_len = plugins.iter().map(|p| p.id().len()).max().unwrap_or(0) + 2;
     for p in plugins {
-        let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
+        let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
         let si = match p.get_plugin_type() {
             PluginType::External => {
-                let git = Git::new(dirs::PLUGINS.join(p.name()));
+                let git = Git::new(dirs::PLUGINS.join(p.id()));
                 match git.get_remote_url() {
                     Some(url) => {
                         let sha = git

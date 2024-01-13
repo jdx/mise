@@ -27,7 +27,7 @@ impl PluginsLsRemote {
         let installed_plugins = plugins::list()
             .into_iter()
             .filter(|p| p.is_installed())
-            .map(|p| p.name().to_string())
+            .map(|p| p.id().to_string())
             .collect::<HashSet<_>>();
 
         let shorthands = config.get_shorthands().iter().sorted().collect_vec();

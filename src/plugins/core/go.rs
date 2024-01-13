@@ -5,6 +5,7 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
+use crate::cli::args::ForgeArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
@@ -135,10 +136,9 @@ impl GoPlugin {
 }
 
 impl Forge for GoPlugin {
-    fn name(&self) -> &str {
-        "go"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
-
     fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache

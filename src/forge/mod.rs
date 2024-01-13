@@ -49,10 +49,10 @@ fn load_forges() -> ForgeMap {
     let mut plugins = CORE_PLUGINS.clone();
     plugins.extend(ExternalPlugin::list().expect("failed to list plugins"));
     let settings = Settings::get();
-    plugins.retain(|plugin| !settings.disable_tools.contains(plugin.name()));
+    plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
     let plugins: ForgeMap = plugins
         .into_iter()
-        .map(|plugin| (plugin.get_fa(), plugin))
+        .map(|plugin| (plugin.fa().clone(), plugin))
         .collect();
     *forges = Some(plugins.clone());
     plugins
@@ -60,11 +60,6 @@ fn load_forges() -> ForgeMap {
 
 pub fn list() -> ForgeList {
     load_forges().values().cloned().collect()
-}
-
-#[cfg(test)]
-pub fn reset() {
-    *FORGES.lock().unwrap() = None;
 }
 
 pub fn get(fa: &ForgeArg) -> AForge {
@@ -78,43 +73,47 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .entry(fa.clone())
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
-                ForgeType::Cargo => Arc::new(CargoForge::new(name)),
+                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
             })
             .clone()
     }
 }
 
 pub trait Forge: Debug + Send + Sync {
-    fn name(&self) -> &str;
+    fn id(&self) -> &str {
+        &self.fa().id
+    }
+    fn name(&self) -> &str {
+        &self.fa().name
+    }
     fn get_type(&self) -> ForgeType {
         ForgeType::Asdf
     }
-    fn get_fa(&self) -> ForgeArg {
-        ForgeArg::new(self.get_type(), self.name())
-    }
+    fn fa(&self) -> &ForgeArg;
     fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
     fn installs_path(&self) -> PathBuf {
-        dirs::INSTALLS.join(self.name())
+        dirs::INSTALLS.join(self.id())
     }
     fn cache_path(&self) -> PathBuf {
-        dirs::CACHE.join(self.name())
+        dirs::CACHE.join(self.id())
     }
     fn downloads_path(&self) -> PathBuf {
-        dirs::DOWNLOADS.join(self.name())
+        dirs::DOWNLOADS.join(self.id())
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version(Some("latest".into()))
     }
     fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
-        Ok(match self.installs_path().exists() {
-            true => file::dir_subdirs(&self.installs_path())?
+        let installs_path = self.installs_path();
+        Ok(match installs_path.exists() {
+            true => file::dir_subdirs(&installs_path)?
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
-                .filter(|v| !is_runtime_symlink(&self.installs_path().join(v)))
-                .filter(|v| !self.installs_path().join(v).join("incomplete").exists())
+                .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
+                .filter(|v| !installs_path.join(v).join("incomplete").exists())
                 .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                 .collect(),
             false => vec![],
@@ -134,7 +133,11 @@ pub trait Forge: Debug + Send + Sync {
         let latest = match tv.latest_version(p) {
             Ok(latest) => latest,
             Err(e) => {
-                debug!("Error getting latest version for {}: {:#}", self.name(), e);
+                debug!(
+                    "Error getting latest version for {}: {:#}",
+                    self.fa().to_string(),
+                    e
+                );
                 return false;
             }
         };
@@ -420,7 +423,7 @@ pub fn unalias_forge(forge: &str) -> &str {
 
 impl Display for dyn Forge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name())
+        write!(f, "{}", self.id())
     }
 }
 
@@ -428,13 +431,13 @@ impl Eq for dyn Forge {}
 
 impl PartialEq for dyn Forge {
     fn eq(&self, other: &Self) -> bool {
-        self.get_plugin_type() == other.get_plugin_type() && self.name() == other.name()
+        self.get_plugin_type() == other.get_plugin_type() && self.id() == other.id()
     }
 }
 
 impl Hash for dyn Forge {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name().hash(state)
+        self.id().hash(state)
     }
 }
 
@@ -446,6 +449,11 @@ impl PartialOrd for dyn Forge {
 
 impl Ord for dyn Forge {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.name().cmp(other.name())
+        self.id().cmp(other.id())
     }
+}
+
+#[cfg(test)]
+pub fn reset() {
+    *FORGES.lock().unwrap() = None;
 }

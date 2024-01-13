@@ -101,6 +101,7 @@ pub mod tests {
         always_keep_download = false
         always_keep_install = false
         asdf_compat = false
+        cargo_binstall = true
         color = true
         disable_default_shorthands = false
         disable_tools = []
