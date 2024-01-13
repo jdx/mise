@@ -25,7 +25,7 @@ impl TaskEdit {
         let settings = Settings::try_get()?;
         settings.ensure_experimental()?;
 
-        let task = config.tasks().get(&self.task).cloned().map_or_else(
+        let task = config.tasks_with_aliases().get(&self.task).cloned().map_or_else(
             || {
                 let path = config
                     .project_root

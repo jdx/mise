@@ -132,7 +132,7 @@ impl Run {
                 }
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-            .map(|(t, args)| match config.tasks().get(&t) {
+            .map(|(t, args)| match config.tasks_with_aliases().get(&t) {
                 Some(task) => Ok(task.clone().with_args(args.to_vec())),
                 None => Err(self.err_no_task(config, &t)),
             })
@@ -330,6 +330,7 @@ impl Run {
         let t = style(&t).yellow().for_stderr();
         eyre!("no task named `{t}` found. Available tasks: {task_names}")
     }
+
     fn validate_task(&self, task: &Task) -> Result<()> {
         if let Some(path) = &task.file {
             if !file::is_executable(path) {

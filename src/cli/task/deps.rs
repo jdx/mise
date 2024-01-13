@@ -48,7 +48,6 @@ impl TaskDeps {
         config
             .tasks()
             .iter()
-            .filter(|(n, t)| *n == &t.name) // filter out aliases
             .map(|(_, t)| t)
             .sorted()
             .filter(|t| !t.hide)
