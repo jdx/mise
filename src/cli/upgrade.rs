@@ -54,9 +54,9 @@ impl Upgrade {
             let tool_set = self
                 .tool
                 .iter()
-                .map(|t| t.plugin.clone())
+                .map(|t| t.forge.clone())
                 .collect::<HashSet<_>>();
-            outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.name()));
+            outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(&p.get_fa()));
         }
         if outdated.is_empty() {
             info!("All tools are up to date");
@@ -108,7 +108,7 @@ impl Upgrade {
         }
 
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
-        shims::reshim(config, &ts).wrap_err("failed to reshim")?;
+        shims::reshim(&ts).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(config)?;
         Ok(())
     }

@@ -1,9 +1,10 @@
 use console::style;
 use eyre::Result;
 
+use crate::cli::args::ForgeArg;
 use crate::config::Config;
+use crate::forge;
 use crate::forge::Forge;
-use crate::plugins::unalias_plugin;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -14,9 +15,9 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Current {
     /// Plugin to show versions of
-    /// e.g.: ruby, node
+    /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
     #[clap()]
-    plugin: Option<String>,
+    plugin: Option<ForgeArg>,
 }
 
 impl Current {
@@ -24,11 +25,10 @@ impl Current {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
-            Some(plugin_name) => {
-                let plugin_name = unalias_plugin(plugin_name);
-                let plugin = config.get_or_create_plugin(plugin_name);
+            Some(fa) => {
+                let plugin = forge::get(fa);
                 if !plugin.is_installed() {
-                    bail!("Plugin {} is not installed", plugin_name);
+                    bail!("Plugin {fa} is not installed");
                 }
                 self.one(ts, plugin.as_ref())
             }
@@ -73,10 +73,10 @@ impl Current {
             }
             for tv in versions {
                 if !plugin.is_version_installed(tv) {
-                    let source = ts.versions.get(&tv.plugin_name).unwrap().source.clone();
+                    let source = ts.versions.get(&tv.forge).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        tv.plugin_name, &tv.version, &source
+                        &tv.forge, &tv.version, &source
                     );
                 }
             }

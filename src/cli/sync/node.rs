@@ -5,8 +5,8 @@ use itertools::sorted;
 
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
-use crate::file;
 use crate::{cmd, dirs};
+use crate::{file, plugins};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -48,7 +48,7 @@ impl SyncNode {
     }
 
     fn run_brew(self, config: &Config) -> Result<()> {
-        let tool = config.get_or_create_plugin(&String::from("node"));
+        let tool = plugins::get("node");
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
         let installed_versions_path = dirs::INSTALLS.join("node");
@@ -69,7 +69,7 @@ impl SyncNode {
     }
 
     fn run_nvm(self, config: &Config) -> Result<()> {
-        let tool = config.get_or_create_plugin(&String::from("node"));
+        let tool = plugins::get("node");
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
         let installed_versions_path = dirs::INSTALLS.join("node");
@@ -87,7 +87,7 @@ impl SyncNode {
     }
 
     fn run_nodenv(self, config: &Config) -> Result<()> {
-        let tool = config.get_or_create_plugin(&String::from("node"));
+        let tool = plugins::get("node");
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");
         let installed_versions_path = dirs::INSTALLS.join("node");

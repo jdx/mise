@@ -33,7 +33,7 @@ impl Reshim {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
 
-        shims::reshim(&config, &ts)
+        shims::reshim(&ts)
     }
 }
 

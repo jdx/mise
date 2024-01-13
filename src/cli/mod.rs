@@ -1,7 +1,7 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::{logger, migrate, shims};
 
 mod activate;
@@ -203,7 +203,7 @@ impl Cli {
             .try_get_matches_from(args)
             .unwrap_or_else(|_| {
                 Self::command()
-                    .subcommands(external::commands(Config::get().as_ref()))
+                    .subcommands(external::commands())
                     .get_matches_from(args)
             });
         Settings::add_cli_matches(&matches);
@@ -217,7 +217,7 @@ impl Cli {
             Err(err) => matches
                 .subcommand()
                 .ok_or(err)
-                .map(|(command, sub_m)| external::execute(command, sub_m))?,
+                .map(|(command, sub_m)| external::execute(&command.parse()?, sub_m))?,
         }
     }
 }

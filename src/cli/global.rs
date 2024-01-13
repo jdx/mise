@@ -1,8 +1,7 @@
 use eyre::Result;
 
-use crate::cli::args::ToolArg;
+use crate::cli::args::{ForgeArg, ToolArg};
 use crate::cli::local::local;
-use crate::config::Config;
 use crate::env;
 
 /// Sets/gets the global tool version(s)
@@ -36,7 +35,7 @@ pub struct Global {
 
     /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<String>>,
+    remove: Option<Vec<ForgeArg>>,
 
     /// Get the path of the global config file
     #[clap(long)]
@@ -45,9 +44,7 @@ pub struct Global {
 
 impl Global {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         local(
-            &config,
             &env::MISE_GLOBAL_CONFIG_FILE,
             self.tool,
             self.remove,

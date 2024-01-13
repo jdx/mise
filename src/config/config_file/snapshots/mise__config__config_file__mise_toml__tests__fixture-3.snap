@@ -4,13 +4,13 @@ expression: "replace_path(&format!(\"{:#?}\", cf.toolset))"
 ---
 Toolset {
     versions: {
-        "terraform": ToolVersionList {
-            plugin_name: "terraform",
+        ForgeArg("terraform"): ToolVersionList {
+            forge: ForgeArg("terraform"),
             versions: [],
             requests: [
                 (
                     Version(
-                        "terraform",
+                        ForgeArg("terraform"),
                         "1.0.0",
                     ),
                     {},
@@ -20,34 +20,34 @@ Toolset {
                 "~/fixtures/.mise.toml",
             ),
         },
-        "node": ToolVersionList {
-            plugin_name: "node",
+        ForgeArg("node"): ToolVersionList {
+            forge: ForgeArg("node"),
             versions: [],
             requests: [
                 (
                     Version(
-                        "node",
+                        ForgeArg("node"),
                         "18",
                     ),
                     {},
                 ),
                 (
                     Prefix(
-                        "node",
+                        ForgeArg("node"),
                         "20",
                     ),
                     {},
                 ),
                 (
                     Ref(
-                        "node",
+                        ForgeArg("node"),
                         "master",
                     ),
                     {},
                 ),
                 (
                     Path(
-                        "node",
+                        ForgeArg("node"),
                         "~/.nodes/18",
                     ),
                     {},
@@ -57,13 +57,13 @@ Toolset {
                 "~/fixtures/.mise.toml",
             ),
         },
-        "jq": ToolVersionList {
-            plugin_name: "jq",
+        ForgeArg("jq"): ToolVersionList {
+            forge: ForgeArg("jq"),
             versions: [],
             requests: [
                 (
                     Prefix(
-                        "jq",
+                        ForgeArg("jq"),
                         "1.6",
                     ),
                     {},
@@ -73,13 +73,13 @@ Toolset {
                 "~/fixtures/.mise.toml",
             ),
         },
-        "shellcheck": ToolVersionList {
-            plugin_name: "shellcheck",
+        ForgeArg("shellcheck"): ToolVersionList {
+            forge: ForgeArg("shellcheck"),
             versions: [],
             requests: [
                 (
                     Version(
-                        "shellcheck",
+                        ForgeArg("shellcheck"),
                         "0.9.0",
                     ),
                     {},
@@ -89,13 +89,13 @@ Toolset {
                 "~/fixtures/.mise.toml",
             ),
         },
-        "python": ToolVersionList {
-            plugin_name: "python",
+        ForgeArg("python"): ToolVersionList {
+            forge: ForgeArg("python"),
             versions: [],
             requests: [
                 (
                     Version(
-                        "python",
+                        ForgeArg("python"),
                         "3.10.0",
                     ),
                     {
@@ -104,7 +104,7 @@ Toolset {
                 ),
                 (
                     Version(
-                        "python",
+                        ForgeArg("python"),
                         "3.9.0",
                     ),
                     {},

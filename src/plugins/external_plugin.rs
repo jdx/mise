@@ -20,7 +20,7 @@ use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::forge::Forge;
+use crate::forge::{AForge, Forge, ForgeList};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
@@ -88,14 +88,10 @@ impl ExternalPlugin {
             name,
         }
     }
-    pub fn newa(name: String) -> Arc<dyn Forge> {
-        Arc::new(Self::new(name))
-    }
-
-    pub fn list() -> Result<Vec<(String, Arc<dyn Forge>)>> {
+    pub fn list() -> Result<ForgeList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
-            .map(|name| (name.clone(), Self::newa(name)))
+            .map(|name| Arc::new(Self::new(name)) as AForge)
             .collect())
     }
 
@@ -412,7 +408,7 @@ impl Forge for ExternalPlugin {
         &self.name
     }
 
-    fn get_type(&self) -> PluginType {
+    fn get_plugin_type(&self) -> PluginType {
         PluginType::External
     }
     fn list_remote_versions(&self) -> Result<Vec<String>> {

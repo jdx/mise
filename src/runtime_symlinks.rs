@@ -11,10 +11,10 @@ use crate::config::Config;
 use crate::file::make_symlink;
 use crate::forge::Forge;
 use crate::plugins::VERSION_REGEX;
-use crate::{dirs, file};
+use crate::{dirs, file, forge};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for plugin in config.list_plugins() {
+    for plugin in forge::list() {
         let symlinks = list_symlinks(config, plugin.clone())?;
         let installs_dir = dirs::INSTALLS.join(plugin.name());
         for (from, to) in symlinks {
@@ -36,11 +36,11 @@ pub fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions(&plugin)? {
+    for v in installed_versions(&forge)? {
         let prefix = regex!(r"^[a-zA-Z0-9]+-")
             .find(&v)
             .map(|s| s.as_str().to_string())
@@ -57,7 +57,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<Str
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(plugin.name())
+            .get(&forge.get_fa())
             .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {
@@ -118,7 +118,8 @@ mod tests {
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::newa(String::from("tiny"));
+        let plugin = ExternalPlugin::new(String::from("tiny"));
+        let plugin = Arc::new(plugin);
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }

@@ -229,7 +229,7 @@ Usage: current [PLUGIN]
 
 Arguments:
   [PLUGIN]
-          Plugin to show versions of e.g.: ruby, node
+          Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc
 
 Examples:
   # outputs `.tool-versions` compatible format
@@ -818,7 +818,7 @@ Usage: prune [OPTIONS] [PLUGIN]...
 
 Arguments:
   [PLUGIN]...
-          Prune only versions from these plugins
+          Prune only versions from this plugin(s)
 
 Options:
   -n, --dry-run
@@ -1471,8 +1471,8 @@ Options:
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-      --remove <TOOL>
-          Remove the tool(s) from config file
+      --remove <PLUGIN>
+          Remove the plugin(s) from config file
 
   -p, --path <PATH>
           Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions

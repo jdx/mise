@@ -4,9 +4,9 @@ use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::config::{Config, Settings};
-use crate::forge::Forge;
+use crate::forge::{unalias_forge, Forge};
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{unalias_plugin, ExternalPlugin};
+use crate::plugins::ExternalPlugin;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -59,7 +59,7 @@ impl PluginsInstall {
         if git_url.is_some() {
             self.install_one(name, git_url, &mpr)?;
         } else {
-            let is_core = CORE_PLUGINS.contains_key(name.as_str());
+            let is_core = CORE_PLUGINS.iter().any(|p| p.name() == name);
             if is_core {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
@@ -81,7 +81,7 @@ impl PluginsInstall {
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config)?;
-        let missing_plugins = ts.list_missing_plugins(config);
+        let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
@@ -121,7 +121,7 @@ impl PluginsInstall {
 }
 
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
-    let name = unalias_plugin(name);
+    let name = unalias_forge(name);
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -142,7 +142,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             let name = name.strip_prefix("rtx-").unwrap_or(name);
             let name = name.strip_prefix("mise-").unwrap_or(name);
             let name = name.strip_suffix(".git").unwrap_or(name);
-            return Ok(unalias_plugin(name).to_string());
+            return Ok(unalias_forge(name).to_string());
         }
     }
     Err(eyre!("could not infer plugin name from url: {}", url))

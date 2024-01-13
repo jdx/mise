@@ -1,5 +1,6 @@
 use std::process::exit;
 
+use crate::cli::args::ForgeArg;
 use console::style;
 use eyre::Result;
 
@@ -71,7 +72,8 @@ impl Watch {
         let ts = ToolsetBuilder::new().build(&config)?;
         settings.ensure_experimental()?;
         if let Err(err) = which::which("watchexec") {
-            if !ts.versions.contains_key("watchexec") {
+            let watchexec: ForgeArg = "watchexec".parse()?;
+            if !ts.versions.contains_key(&watchexec) {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());
                 eprintln!("  mise use -g watchexec@latest");

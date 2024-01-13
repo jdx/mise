@@ -1,10 +1,10 @@
-use either::Either;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use either::Either;
 use eyre::{Context, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -13,26 +13,24 @@ use rayon::prelude::*;
 
 pub use settings::Settings;
 
+use crate::cli::args::ForgeArg;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::forge::Forge;
-use crate::plugins::core::{PluginMap, CORE_PLUGINS, EXPERIMENTAL_CORE_PLUGINS};
-use crate::plugins::{ExternalPlugin, PluginType};
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::ui::style;
-use crate::{dirs, env, file};
+use crate::{dirs, env, file, forge};
 
 pub mod config_file;
 pub mod settings;
 mod tracking;
 
-type AliasMap = BTreeMap<String, BTreeMap<String, String>>;
+type AliasMap = BTreeMap<ForgeArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type ToolMap = BTreeMap<String, Arc<dyn Forge>>;
 
 #[derive(Default)]
 pub struct Config {
@@ -43,7 +41,6 @@ pub struct Config {
     pub path_dirs: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
     all_aliases: OnceCell<AliasMap>,
-    plugins: RwLock<ToolMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
     tasks: OnceCell<HashMap<String, Task>>,
@@ -67,15 +64,14 @@ impl Config {
         let settings = Settings::try_get()?;
         trace!("Settings: {:#?}", settings);
 
-        let plugins = load_plugins(&settings)?;
-        let legacy_files = load_legacy_files(&settings, &plugins);
+        let legacy_files = load_legacy_files(&settings);
         let config_filenames = legacy_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
-        let config_files = load_all_config_files(&config_paths, &plugins, &legacy_files)?;
+        let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
         let (env, env_sources) = load_env(&settings, &config_files);
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
@@ -90,7 +86,6 @@ impl Config {
             tasks: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
-            plugins: RwLock::new(plugins),
             repo_urls,
         };
 
@@ -123,62 +118,33 @@ impl Config {
         env::var("__MISE_DIFF").is_ok()
     }
 
-    pub fn resolve_alias(&self, plugin_name: &str, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.aliases.get(plugin_name) {
+    pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
+        if let Some(plugin_aliases) = self.aliases.get(&forge.get_fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
         }
-        if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
-            if let Some(alias) = plugin.get_aliases()?.get(v) {
-                return Ok(alias.clone());
-            }
+        if let Some(alias) = forge.get_aliases()?.get(v) {
+            return Ok(alias.clone());
         }
         Ok(v.to_string())
     }
 
-    pub fn external_plugins(&self) -> Vec<(String, Arc<dyn Forge>)> {
-        self.list_plugins()
-            .into_iter()
-            .filter(|tool| matches!(tool.get_type(), PluginType::External))
-            .map(|tool| (tool.name().to_string(), tool.clone()))
-            .collect()
-    }
-
-    pub fn get_or_create_plugin(&self, plugin_name: &str) -> Arc<dyn Forge> {
-        if let Some(plugin) = self.plugins.read().unwrap().get(plugin_name) {
-            return plugin.clone();
-        }
-        let plugin = ExternalPlugin::newa(plugin_name.to_string());
-        self.plugins
-            .write()
-            .unwrap()
-            .insert(plugin_name.to_string(), plugin.clone());
-        plugin
-    }
-    pub fn list_plugins(&self) -> Vec<Arc<dyn Forge>> {
-        self.plugins.read().unwrap().values().cloned().collect()
-    }
-
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
-        let plugin_aliases: Vec<_> = self
-            .list_plugins()
+        let plugin_aliases: Vec<_> = forge::list()
             .into_par_iter()
-            .map(|plugin| {
-                let aliases = plugin.get_aliases().unwrap_or_else(|err| {
+            .map(|forge| {
+                let aliases = forge.get_aliases().unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
-                (plugin.name().to_string(), aliases)
+                (forge.get_fa(), aliases)
             })
             .collect();
-        for (plugin, plugin_aliases) in plugin_aliases {
+        for (fa, plugin_aliases) in plugin_aliases {
             for (from, to) in plugin_aliases {
-                aliases
-                    .entry(plugin.to_string())
-                    .or_default()
-                    .insert(from, to);
+                aliases.entry(fa.clone()).or_default().insert(from, to);
             }
         }
 
@@ -258,7 +224,7 @@ impl Config {
 
     pub fn rebuild_shims_and_runtime_symlinks(&self) -> Result<()> {
         let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
-        crate::shims::reshim(self, &ts)?;
+        crate::shims::reshim(&ts)?;
         crate::runtime_symlinks::rebuild(self)?;
         Ok(())
     }
@@ -289,25 +255,11 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .map(|pr| pr.to_path_buf())
 }
 
-fn load_plugins(settings: &Settings) -> Result<PluginMap> {
-    let mut tools = CORE_PLUGINS.clone();
-    if settings.experimental {
-        tools.extend(EXPERIMENTAL_CORE_PLUGINS.clone());
-    }
-    tools.extend(ExternalPlugin::list()?);
-    for tool in &settings.disable_tools {
-        tools.remove(tool);
-    }
-    Ok(tools)
-}
-
-fn load_legacy_files(settings: &Settings, tools: &PluginMap) -> BTreeMap<String, Vec<String>> {
+fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
-    let legacy = tools
-        .values()
-        .collect_vec()
+    let legacy = forge::list()
         .into_par_iter()
         .filter(|tool| {
             !settings
@@ -420,7 +372,6 @@ pub fn system_config_files() -> Vec<PathBuf> {
 
 fn load_all_config_files(
     config_filenames: &[PathBuf],
-    tools: &PluginMap,
     legacy_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
@@ -429,7 +380,7 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
-            let cf = parse_config_file(f, legacy_filenames, tools).wrap_err_with(|| {
+            let cf = parse_config_file(f, legacy_filenames).wrap_err_with(|| {
                 format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))
@@ -450,16 +401,14 @@ fn load_all_config_files(
 fn parse_config_file(
     f: &PathBuf,
     legacy_filenames: &BTreeMap<String, Vec<String>>,
-    tools: &ToolMap,
 ) -> Result<Box<dyn ConfigFile>> {
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
-            let tools = tools
-                .iter()
-                .filter(|(k, _)| plugin.contains(k))
-                .map(|(_, t)| t)
+            let tools = forge::list()
+                .into_iter()
+                .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            LegacyVersionFile::parse(f.into(), &tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
+            LegacyVersionFile::parse(f.into(), tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
         }
         None => config_file::parse(f),
     }
@@ -523,12 +472,6 @@ fn load_aliases(config_files: &ConfigMap) -> AliasMap {
 
 impl Debug for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let plugins = self
-            .list_plugins()
-            .into_iter()
-            .filter(|t| matches!(t.get_type(), PluginType::External))
-            .map(|t| t.name().to_string())
-            .collect::<Vec<_>>();
         let config_files = self
             .config_files
             .iter()
@@ -536,7 +479,6 @@ impl Debug for Config {
             .collect::<Vec<_>>();
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
-        s.field("Installed Plugins", &plugins);
         if let Some(tasks) = self.tasks.get() {
             s.field(
                 "Tasks",
@@ -559,7 +501,6 @@ impl Debug for Config {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

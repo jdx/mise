@@ -4,8 +4,8 @@ use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use itertools::Itertools;
 
-use crate::cli::args::ToolArg;
-use crate::config::{config_file, Config, Settings};
+use crate::cli::args::{ForgeArg, ToolArg};
+use crate::config::{config_file, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::{env, file};
@@ -44,7 +44,7 @@ pub struct Local {
 
     /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<String>>,
+    remove: Option<Vec<ForgeArg>>,
 
     /// Get the path of the config file
     #[clap(long)]
@@ -53,14 +53,12 @@ pub struct Local {
 
 impl Local {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         let path = if self.parent {
             get_parent_path()?
         } else {
             get_path()?
         };
         local(
-            &config,
             &path,
             self.tool,
             self.remove,
@@ -91,10 +89,9 @@ pub fn get_parent_path() -> Result<PathBuf> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn local(
-    config: &Config,
     path: &Path,
     runtime: Vec<ToolArg>,
-    remove: Option<Vec<String>>,
+    remove: Option<Vec<ForgeArg>>,
     pin: bool,
     fuzzy: bool,
     show_path: bool,
@@ -118,12 +115,12 @@ pub fn local(
     }
 
     if !runtime.is_empty() {
-        let runtimes = ToolArg::double_tool_condition(&runtime);
+        let runtimes = ToolArg::double_tool_condition(&runtime)?;
         if cf.display_runtime(&runtimes)? {
             return Ok(());
         }
         let pin = pin || (settings.asdf_compat && !fuzzy);
-        cf.add_runtimes(config, &runtimes, pin)?;
+        cf.add_runtimes(&runtimes, pin)?;
         let tools = runtimes.iter().map(|t| t.style()).join(" ");
         miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
