@@ -282,10 +282,15 @@ complete -kxc mise -n "$fssf sync; and $fssf python" -l pyenv -d 'Get tool versi
 # task
 complete -kxc mise -n "$fssf task" -l hidden -d 'Show hidden tasks'
 complete -kxc mise -n "$fssf task" -l no-header -d 'Do not print table header'
-set -l others edit ls run
+set -l others deps edit ls run
+complete -xc mise -n "$fssf task; and not $fssf $others" -a deps -d '[experimental] Display a tree visualization of a dependency graph'
 complete -xc mise -n "$fssf task; and not $fssf $others" -a edit -d '[experimental] Edit a task with $EDITOR'
 complete -xc mise -n "$fssf task; and not $fssf $others" -a ls -d '[experimental] List available tasks to execute'
 complete -xc mise -n "$fssf task; and not $fssf $others" -a run -d '[experimental] Run a task'
+
+# task deps
+complete -kxc mise -n "$fssf task; and $fssf deps" -l dot -d 'Display dependencies in DOT format'
+complete -kxc mise -n "$fssf task; and $fssf deps" -a "(__mise_tasks)" -d 'Tasks to show dependencies for'
 
 # task edit
 complete -kxc mise -n "$fssf task; and $fssf edit" -s p -l path -d 'Display the path to the task instead of editing it'

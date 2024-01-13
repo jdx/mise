@@ -12,9 +12,9 @@ use petgraph::dot::Dot;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskDeps {
-    /// Tasks to get dependencies for
+    /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
-    /// e.g.: mise task deps task1 task2
+    /// e.g.: mise task deps lint test check
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
