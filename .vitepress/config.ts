@@ -36,6 +36,7 @@ export default defineConfig({
           { text: 'Comparison to asdf', link: '/dev-tools/comparison-to-asdf' },
           {
             text: 'Backends',
+            link: '/dev-tools/backends/',
             items: [
               { text: 'asdf', link: '/dev-tools/backends/asdf' },
               { text: 'cargo', link: '/dev-tools/backends/cargo' },
