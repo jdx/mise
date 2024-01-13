@@ -27,11 +27,14 @@ impl ErlangPlugin {
     }
 
     fn kerl_path(&self) -> PathBuf {
-        self.core.cache_path.join(format!("kerl-{}", KERL_VERSION))
+        self.core
+            .fa
+            .cache_path
+            .join(format!("kerl-{}", KERL_VERSION))
     }
 
     fn kerl_base_dir(&self) -> PathBuf {
-        self.core.cache_path.join("kerl")
+        self.core.fa.cache_path.join("kerl")
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
@@ -75,7 +78,7 @@ impl ErlangPlugin {
         self.update_kerl()?;
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(self.kerl_path(), "list", "releases", "all")
-                .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
+                .env("KERL_BASE_DIR", self.core.fa.cache_path.join("kerl"))
                 .read()?;
             let versions = output
                 .split('\n')
@@ -115,7 +118,7 @@ impl Forge for ErlangPlugin {
                     &ctx.tv.version,
                     ctx.tv.install_path()
                 )
-                .env("KERL_BASE_DIR", self.core.cache_path.join("kerl"))
+                .env("KERL_BASE_DIR", self.core.fa.cache_path.join("kerl"))
                 .run()?;
             }
         }

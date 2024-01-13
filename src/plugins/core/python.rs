@@ -29,14 +29,14 @@ impl PythonPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new("python");
         Self {
-            precompiled_cache: CacheManager::new(core.cache_path.join("precompiled.msgpack.z"))
+            precompiled_cache: CacheManager::new(core.fa.cache_path.join("precompiled.msgpack.z"))
                 .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             core,
         }
     }
 
     fn python_build_path(&self) -> PathBuf {
-        self.core.cache_path.join("pyenv")
+        self.core.fa.cache_path.join("pyenv")
     }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()

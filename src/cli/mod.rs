@@ -239,8 +239,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>mise install node</bold>              Install the node version defined in config
   $ <bold>mise install</bold>                   Install all plugins/tools defined in config
   
-  $ <bold>mise install cargo-ripgrep            Install something via cargo
-  $ <bold>mise install npm-prettier             Install something via npm
+  $ <bold>mise install cargo:ripgrep            Install something via cargo
+  $ <bold>mise install npm:prettier             Install something via npm
 
   $ <bold>mise use node@20</bold>               Use node-20.x in current project
   $ <bold>mise use -g node@20</bold>            Use node-20.x as default

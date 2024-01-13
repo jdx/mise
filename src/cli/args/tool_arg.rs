@@ -132,8 +132,8 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
         .map(|(f, v)| (f, Some(v)))
         .unwrap_or((s, None));
 
-    // special case for packages with npm scopes like "npm-@antfu/ni"
-    if forge == "npm-" {
+    // special case for packages with npm scopes like "npm:@antfu/ni"
+    if forge == "npm:" {
         if let Some(v) = version {
             return if let Some(i) = v.find('@') {
                 (&s[..forge.len() + i + 1], Some(&v[i + 1..]))
@@ -199,11 +199,11 @@ mod tests {
             assert_eq!(forge, f);
             assert_eq!(version, v);
         };
-        t("npm-@antfu/ni", "npm-@antfu/ni", None);
-        t("npm-@antfu/ni@1.0.0", "npm-@antfu/ni", Some("1.0.0"));
-        t("npm-@antfu/ni@1.0.0@1", "npm-@antfu/ni", Some("1.0.0@1"));
-        t("npm-", "npm-", None);
-        t("npm-prettier", "npm-prettier", None);
-        t("npm-prettier@1.0.0", "npm-prettier", Some("1.0.0"));
+        t("npm:@antfu/ni", "npm:@antfu/ni", None);
+        t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", Some("1.0.0"));
+        t("npm:@antfu/ni@1.0.0@1", "npm:@antfu/ni", Some("1.0.0@1"));
+        t("npm:", "npm:", None);
+        t("npm:prettier", "npm:prettier", None);
+        t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
     }
 }

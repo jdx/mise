@@ -38,11 +38,11 @@ impl JavaPlugin {
             format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
         Self {
             java_metadata_ea_cache: CacheManager::new(
-                core.cache_path.join(java_metadata_ea_cache_filename),
+                core.fa.cache_path.join(java_metadata_ea_cache_filename),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             java_metadata_ga_cache: CacheManager::new(
-                core.cache_path.join(java_metadata_ga_cache_filename),
+                core.fa.cache_path.join(java_metadata_ga_cache_filename),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             core,
