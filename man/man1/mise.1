@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mise 1  "mise 2024.1.18" 
+.TH mise 1  "mise 2024.1.19" 
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
@@ -158,8 +158,8 @@ Examples:
   $ mise install node              Install the node version defined in config
   $ mise install                   Install all plugins/tools defined in config
   
-  $ mise install cargo\-ripgrep            Install something via cargo
-  $ mise install npm\-prettier             Install something via npm
+  $ mise install cargo:ripgrep            Install something via cargo
+  $ mise install npm:prettier             Install something via npm
 
   $ mise use node@20               Use node\-20.x in current project
   $ mise use \-g node@20            Use node\-20.x as default
@@ -179,6 +179,6 @@ Examples:
   $ mise settings                  Show settings in use
   $ mise settings set color 0      Disable color by modifying global config file
 .SH VERSION
-v2024.1.18
+v2024.1.19
 .SH AUTHORS
 Jeff Dickey <@jdx>

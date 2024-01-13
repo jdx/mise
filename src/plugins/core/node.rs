@@ -121,29 +121,26 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> CmdLineRunner {
-        let mut cmd = CmdLineRunner::new("sh");
-        for p in &opts.path {
-            cmd.prepend_path_env(p.clone());
-        }
-        cmd = cmd
+    fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner> {
+        let mut cmd = CmdLineRunner::new("sh")
+            .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
             .arg("-c");
         if let Some(cflags) = &*env::MISE_NODE_CFLAGS {
             cmd = cmd.env("CFLAGS", cflags);
         }
-        cmd
+        Ok(cmd)
     }
 
     fn exec_configure(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts).arg(&opts.configure_cmd).execute()
+        self.sh(ctx, opts)?.arg(&opts.configure_cmd).execute()
     }
     fn exec_make(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts).arg(&opts.make_cmd).execute()
+        self.sh(ctx, opts)?.arg(&opts.make_cmd).execute()
     }
     fn exec_make_install(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts).arg(&opts.make_install_cmd).execute()
+        self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
     }
 
     fn verify(&self, tarball: &Path, version: &str) -> Result<()> {
