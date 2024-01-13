@@ -26,7 +26,7 @@ The following installs the latest version of [eza](https://crates.io/crates/eza)
 sets it as the active version on PATH:
 
 ```sh
-$ mise use -g cargo-eza
+$ mise use -g cargo:eza
 $ eza --version
 eza - A modern, maintained replacement for ls
 v0.17.1 [+git]
@@ -57,5 +57,5 @@ This makes installing CLIs with cargo _much_ faster by downloading precompiled b
 You can install it with mise:
 
 ```sh
-mise use -g cargo-binstall
+mise use -g cargo:cargo-binstall
 ```

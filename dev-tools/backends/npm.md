@@ -20,7 +20,7 @@ The following installs the latest version of [prettier](https://www.npmjs.com/pa
 and sets it as the active version on PATH:
 
 ```sh
-$ mise use -g npm-prettier
+$ mise use -g npm:prettier
 $ prettier --version
 3.1.0
 ```
