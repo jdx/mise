@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::cli::args::ForgeArg;
 use console::style;
 use eyre::Result;
 
@@ -19,9 +20,9 @@ use crate::ui::prompt;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
-    /// Prune only versions from these plugins
+    /// Prune only versions from this plugin(s)
     #[clap()]
-    pub plugin: Option<Vec<String>>,
+    pub plugin: Option<Vec<ForgeArg>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
@@ -33,18 +34,18 @@ impl Prune {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
         let mut to_delete = ts
-            .list_installed_versions(&config)?
+            .list_installed_versions()?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
             .collect::<BTreeMap<String, (Arc<dyn Forge>, ToolVersion)>>();
 
-        if let Some(plugins) = &self.plugin {
-            to_delete.retain(|_, (_, tv)| plugins.contains(&tv.plugin_name));
+        if let Some(forges) = &self.plugin {
+            to_delete.retain(|_, (_, tv)| forges.contains(&tv.forge));
         }
 
         for cf in config.get_tracked_config_files()?.values() {
             let mut ts = cf.to_toolset().clone();
-            ts.resolve(&config);
+            ts.resolve();
             for (_, tv) in ts.list_current_versions() {
                 to_delete.remove(&tv.to_string());
             }

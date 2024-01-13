@@ -4,7 +4,7 @@ use console::style;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::ToolArg;
+use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{
@@ -13,7 +13,7 @@ use crate::env::{
 use crate::file::display_path;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{env, file};
+use crate::{env, file, forge};
 
 /// Change the active version of a tool locally or globally.
 ///
@@ -62,9 +62,9 @@ pub struct Use {
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
-    /// Remove the tool(s) from config file
-    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
-    remove: Vec<String>,
+    /// Remove the plugin(s) from config file
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
+    remove: Vec<ForgeArg>,
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
@@ -89,9 +89,9 @@ impl Use {
             .map(|t| {
                 let tvr = match &t.tvr {
                     Some(ref tvr) => tvr.clone(),
-                    None => ToolVersionRequest::new(t.plugin.to_string(), "latest"),
+                    None => ToolVersionRequest::new(t.forge.clone(), "latest"),
                 };
-                let plugin = config.get_or_create_plugin(&t.plugin);
+                let plugin = forge::get(&t.forge);
                 ToolVersion::resolve(plugin.as_ref(), tvr, Default::default(), false)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -111,7 +111,7 @@ impl Use {
         let settings = Settings::try_get()?;
         let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
-        for (plugin_name, tvl) in &versions.iter().group_by(|tv| tv.plugin_name.clone()) {
+        for (fa, tvl) in &versions.iter().group_by(|tv| &tv.forge) {
             let versions: Vec<String> = tvl
                 .into_iter()
                 .map(|tv| {
@@ -122,7 +122,7 @@ impl Use {
                     }
                 })
                 .collect();
-            cf.replace_versions(&plugin_name, &versions);
+            cf.replace_versions(fa, &versions);
         }
 
         if self.global {
@@ -152,13 +152,13 @@ impl Use {
     fn warn_if_hidden(&self, config: &Config, global: &Path) {
         let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
-            let plugin = &targ.plugin;
+            let plugin = &targ.forge;
             let p = display_path(p);
             let global = display_path(global);
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.plugin) {
+            if let Some(tv) = ts.versions.get(&targ.forge) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if p != global {
                         warn(targ, p);

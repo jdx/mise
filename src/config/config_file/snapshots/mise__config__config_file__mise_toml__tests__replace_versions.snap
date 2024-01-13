@@ -4,20 +4,20 @@ expression: cf.toolset
 ---
 Toolset {
     versions: {
-        "node": ToolVersionList {
-            plugin_name: "node",
+        ForgeArg("node"): ToolVersionList {
+            forge: ForgeArg("node"),
             versions: [],
             requests: [
                 (
                     Version(
-                        "node",
+                        ForgeArg("node"),
                         "16.0.1",
                     ),
                     {},
                 ),
                 (
                     Version(
-                        "node",
+                        ForgeArg("node"),
                         "18.0.1",
                     ),
                     {},

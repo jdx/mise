@@ -5,7 +5,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::forge;
 use crate::forge::Forge;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -19,25 +19,24 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
-    pub(crate) plugin: Option<ToolArg>,
+    pub plugin: Option<ToolArg>,
 
     /// Show all installed plugins and versions
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
-    pub(crate) all: bool,
+    pub all: bool,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     #[clap(verbatim_doc_comment)]
-    pub(crate) prefix: Option<String>,
+    pub prefix: Option<String>,
 }
 
 impl LsRemote {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        if let Some(plugin) = self.get_plugin(&config)? {
+        if let Some(plugin) = self.get_plugin()? {
             self.run_single(plugin)
         } else {
-            self.run_all(&config)
+            self.run_all()
         }
     }
 
@@ -66,9 +65,8 @@ impl LsRemote {
         Ok(())
     }
 
-    fn run_all(self, config: &Config) -> Result<()> {
-        let versions = config
-            .list_plugins()
+    fn run_all(self) -> Result<()> {
+        let versions = forge::list()
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_remote_versions()?;
@@ -86,10 +84,10 @@ impl LsRemote {
         Ok(())
     }
 
-    fn get_plugin(&self, config: &Config) -> Result<Option<Arc<dyn Forge>>> {
+    fn get_plugin(&self) -> Result<Option<Arc<dyn Forge>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let plugin = config.get_or_create_plugin(&tool_arg.plugin);
+                let plugin = forge::get(&tool_arg.forge);
                 let mpr = MultiProgressReport::get();
                 plugin.ensure_installed(&mpr, false)?;
                 Ok(Some(plugin))

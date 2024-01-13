@@ -1,3 +1,4 @@
+use crate::cli::args::ForgeArg;
 use eyre::Result;
 use tabled::Tabled;
 
@@ -17,7 +18,7 @@ use crate::ui::table;
 pub struct AliasLs {
     /// Show aliases for <PLUGIN>
     #[clap()]
-    pub plugin: Option<String>,
+    pub plugin: Option<ForgeArg>,
 
     /// Don't show table header
     #[clap(long)]
@@ -30,12 +31,15 @@ impl AliasLs {
         let rows = config
             .get_all_aliases()
             .iter()
-            .flat_map(|(plugin, aliases)| {
+            .filter(|(fa, _)| {
+                self.plugin.is_none() || self.plugin.as_ref().is_some_and(|f| &f == fa)
+            })
+            .flat_map(|(fa, aliases)| {
                 aliases
                     .iter()
-                    .filter(|(from, _to)| plugin != "node" || !from.starts_with("lts/"))
+                    .filter(|(from, _to)| fa.name != "node" || !from.starts_with("lts/"))
                     .map(|(from, to)| Row {
-                        plugin: plugin.clone(),
+                        plugin: fa.to_string(),
                         alias: from.clone(),
                         version: to.clone(),
                     })
@@ -82,6 +86,15 @@ mod tests {
         tiny  lts          3.1.0
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
+        "###);
+    }
+
+    #[test]
+    fn test_alias_ls_filter() {
+        assert_cli_snapshot!("aliases", "ls", "tiny", @r###"
+        tiny  lts      3.1.0
+        tiny  lts-prev 2.0.0
+        tiny  my/alias 3.0
         "###);
     }
 }

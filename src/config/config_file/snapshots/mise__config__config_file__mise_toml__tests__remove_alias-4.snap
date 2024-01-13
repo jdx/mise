@@ -4,7 +4,7 @@ expression: cf
 ---
 MiseToml(/tmp/.mise.toml):  {
     alias: {
-        "node": {
+        ForgeArg("node"): {
             "18": "18.0.0",
         },
     },

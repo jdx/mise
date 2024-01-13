@@ -2,6 +2,7 @@ use color_eyre::eyre::Result;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::forge;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -33,11 +34,11 @@ impl Latest {
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 
-        let plugin = config.get_or_create_plugin(&self.tool.plugin);
+        let plugin = forge::get(&self.tool.forge);
         let mpr = MultiProgressReport::get();
         plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(plugin.name(), &v)?);
+            prefix = Some(config.resolve_alias(plugin.as_ref(), &v)?);
         }
 
         let latest_version = if self.installed {

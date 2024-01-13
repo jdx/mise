@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{runtime_symlinks, shims};
+use crate::{forge, runtime_symlinks, shims};
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
@@ -35,7 +35,7 @@ impl Uninstall {
         let tool_versions = if self.installed_tool.is_empty() && self.all {
             self.get_all_tool_versions(&config)?
         } else {
-            self.get_requested_tool_versions(&config)?
+            self.get_requested_tool_versions()?
         };
         let tool_versions = tool_versions
             .into_iter()
@@ -66,7 +66,7 @@ impl Uninstall {
         }
 
         let ts = ToolsetBuilder::new().build(&config)?;
-        shims::reshim(&config, &ts).wrap_err("failed to reshim")?;
+        shims::reshim(&ts).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(&config)?;
 
         Ok(())
@@ -75,20 +75,17 @@ impl Uninstall {
     fn get_all_tool_versions(&self, config: &Config) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
         let ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = ts
-            .list_installed_versions(config)?
+            .list_installed_versions()?
             .into_iter()
             .collect::<Vec<_>>();
         Ok(tool_versions)
     }
-    fn get_requested_tool_versions(
-        &self,
-        config: &Config,
-    ) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
-        let runtimes = ToolArg::double_tool_condition(&self.installed_tool);
+    fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+        let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let tool_versions = runtimes
             .into_par_iter()
             .map(|a| {
-                let tool = config.get_or_create_plugin(&a.plugin);
+                let tool = forge::get(&a.forge);
                 let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
                 let installed_versions = tool.list_installed_versions()?;
                 let exact_match = installed_versions.iter().find(|v| v == &&query);
@@ -102,7 +99,7 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.name().into(), v);
+                        let tvr = ToolVersionRequest::new(tool.get_fa(), v);
                         let tv = ToolVersion::new(tool.as_ref(), tvr, Default::default(), v.into());
                         (tool.clone(), tv)
                     })

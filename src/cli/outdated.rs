@@ -27,10 +27,10 @@ impl Outdated {
         let tool_set = self
             .tool
             .iter()
-            .map(|t| t.plugin.clone())
+            .map(|t| t.forge.clone())
             .collect::<HashSet<_>>();
         ts.versions
-            .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.plugin_name));
+            .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.forge));
         let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
             info!("All tools are up to date");

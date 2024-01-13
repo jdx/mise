@@ -5,20 +5,21 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
+use crate::cli::args::ForgeArg;
 use eyre::Result;
 use versions::{Chunk, Version};
 
 use crate::config::Config;
-use crate::dirs;
-use crate::forge::Forge;
+use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
+use crate::{dirs, forge};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
     pub request: ToolVersionRequest,
-    pub plugin_name: String,
+    pub forge: ForgeArg,
     pub version: String,
     pub opts: ToolVersionOptions,
 }
@@ -31,7 +32,7 @@ impl ToolVersion {
         version: String,
     ) -> Self {
         ToolVersion {
-            plugin_name: tool.name().to_string(),
+            forge: tool.get_fa(),
             version,
             request,
             opts,
@@ -66,19 +67,23 @@ impl ToolVersion {
         Ok(tv)
     }
 
+    pub fn get_forge(&self) -> AForge {
+        forge::get(&self.forge)
+    }
+
     pub fn install_path(&self) -> PathBuf {
         let pathname = match &self.request {
             ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        dirs::INSTALLS.join(&self.plugin_name).join(pathname)
+        dirs::INSTALLS.join(self.forge.pathname()).join(pathname)
     }
     pub fn install_short_path(&self) -> PathBuf {
         let pathname = match &self.request {
             ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_short_pathname(),
         };
-        let sp = dirs::INSTALLS.join(&self.plugin_name).join(pathname);
+        let sp = dirs::INSTALLS.join(self.forge.pathname()).join(pathname);
         if sp.exists() {
             sp
         } else {
@@ -86,11 +91,13 @@ impl ToolVersion {
         }
     }
     pub fn cache_path(&self) -> PathBuf {
-        dirs::CACHE.join(&self.plugin_name).join(self.tv_pathname())
+        dirs::CACHE
+            .join(self.forge.pathname())
+            .join(self.tv_pathname())
     }
     pub fn download_path(&self) -> PathBuf {
         dirs::DOWNLOADS
-            .join(&self.plugin_name)
+            .join(self.forge.pathname())
             .join(self.tv_pathname())
     }
     pub fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
@@ -100,7 +107,7 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.plugin_name).blue().for_stderr(),
+            style(&self.forge.pathname()).blue().for_stderr(),
             style(&format!("@{}", &self.version)).for_stderr()
         )
     }
@@ -129,7 +136,7 @@ impl ToolVersion {
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
         let config = Config::get();
-        let v = config.resolve_alias(tool.name(), v)?;
+        let v = config.resolve_alias(tool, v)?;
         match v.split_once(':') {
             Some(("ref", r)) => {
                 return Ok(Self::resolve_ref(tool, r.to_string(), opts));
@@ -195,7 +202,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let v = match v {
             "latest" => tool.latest_version(None)?.unwrap(),
-            _ => Config::get().resolve_alias(tool.name(), v)?,
+            _ => Config::get().resolve_alias(tool, v)?,
         };
         let v = version_sub(&v, sub);
         Self::resolve_version(tool, request, latest_versions, &v, opts)
@@ -217,7 +224,7 @@ impl ToolVersion {
     }
 
     fn resolve_ref(tool: &dyn Forge, r: String, opts: ToolVersionOptions) -> Self {
-        let request = ToolVersionRequest::Ref(tool.name().into(), r);
+        let request = ToolVersionRequest::Ref(tool.get_fa(), r);
         let version = request.version();
         Self::new(tool, request, opts, version)
     }
@@ -228,7 +235,7 @@ impl ToolVersion {
         opts: ToolVersionOptions,
     ) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolVersionRequest::Path(tool.name().into(), path);
+        let request = ToolVersionRequest::Path(tool.get_fa(), path);
         let version = request.version();
         Ok(Self::new(tool, request, opts, version))
     }
@@ -236,13 +243,13 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.plugin_name, &self.version)
+        write!(f, "{}@{}", &self.forge.pathname(), &self.version)
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.plugin_name == other.plugin_name && self.version == other.version
+        self.forge.pathname() == other.forge.pathname() && self.version == other.version
     }
 }
 impl Eq for ToolVersion {}
@@ -253,7 +260,7 @@ impl PartialOrd for ToolVersion {
 }
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.plugin_name.cmp(&other.plugin_name) {
+        match self.forge.pathname().cmp(&other.forge.pathname()) {
             Ordering::Equal => self.version.cmp(&other.version),
             o => o,
         }
@@ -261,7 +268,7 @@ impl Ord for ToolVersion {
 }
 impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.plugin_name.hash(state);
+        self.forge.pathname().hash(state);
         self.version.hash(state);
     }
 }

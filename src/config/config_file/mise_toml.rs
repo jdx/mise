@@ -10,10 +10,10 @@ use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Value};
 use versions::Versioning;
 
+use crate::cli::args::ForgeArg;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
-use crate::plugins::unalias_plugin;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{
@@ -234,7 +234,8 @@ impl MiseToml {
                 let mut aliases = AliasMap::new();
                 for (plugin, table) in table.iter() {
                     let k = format!("{}.{}", k, plugin);
-                    let plugin_aliases = aliases.entry(plugin.into()).or_default();
+                    let fa: ForgeArg = plugin.parse()?;
+                    let plugin_aliases = aliases.entry(fa).or_default();
                     match table.as_table_like() {
                         Some(table) => {
                             for (from, to) in table.iter() {
@@ -340,9 +341,9 @@ impl MiseToml {
             Some(table) => {
                 for (plugin, v) in table.iter() {
                     let k = format!("{}.{}", key, plugin);
-                    let plugin_name = unalias_plugin(plugin).to_string();
-                    let tvl = self.parse_tool_version_list(&k, v, &plugin_name)?;
-                    toolset.versions.insert(plugin_name, tvl);
+                    let fa: ForgeArg = plugin.parse()?;
+                    let tvl = self.parse_tool_version_list(&k, v, fa.clone())?;
+                    toolset.versions.insert(fa, tvl);
                 }
                 Ok(toolset)
             }
@@ -354,17 +355,17 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &String,
+        fa: ForgeArg,
     ) -> Result<ToolVersionList> {
         let source = ToolSource::MiseToml(self.path.clone());
-        let mut tool_version_list = ToolVersionList::new(plugin_name.to_string(), source);
+        let mut tool_version_list = ToolVersionList::new(fa.clone(), source);
 
         match v {
             Item::ArrayOfTables(v) => {
                 for table in v.iter() {
                     for (tool, v) in table.iter() {
                         let k = format!("{}.{}", key, tool);
-                        let (tvr, opts) = self.parse_tool_version(&k, v, plugin_name)?;
+                        let (tvr, opts) = self.parse_tool_version(&k, v, fa.clone())?;
                         tool_version_list.requests.push((tvr, opts));
                     }
                 }
@@ -373,16 +374,14 @@ impl MiseToml {
                 Some(v) => {
                     for v in v.iter() {
                         let item = Item::Value(v.clone());
-                        let (tvr, opts) = self.parse_tool_version(key, &item, plugin_name)?;
+                        let (tvr, opts) = self.parse_tool_version(key, &item, fa.clone())?;
                         tool_version_list.requests.push((tvr, opts));
                     }
                 }
                 _ => {
-                    tool_version_list.requests.push(self.parse_tool_version(
-                        key,
-                        v,
-                        plugin_name,
-                    )?);
+                    tool_version_list
+                        .requests
+                        .push(self.parse_tool_version(key, v, fa)?);
                 }
             },
         }
@@ -401,20 +400,20 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Item,
-        plugin_name: &str,
+        fa: ForgeArg,
     ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
         match v.as_table_like() {
             Some(table) => {
                 let tv = if let Some(v) = table.get("version") {
                     match v {
-                        Item::Value(v) => self.parse_tool_version_request(key, v, plugin_name)?,
+                        Item::Value(v) => self.parse_tool_version_request(key, v, fa)?,
                         _ => parse_error!(format!("{}.version", key), v, "string"),
                     }
                 } else if let Some(path) = table.get("path") {
                     match path.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Path(plugin_name.to_string(), s.into())
+                            ToolVersionRequest::Path(fa, s.into())
                         }
                         _ => parse_error!(format!("{}.path", key), v, "string"),
                     }
@@ -422,7 +421,7 @@ impl MiseToml {
                     match prefix.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Prefix(plugin_name.to_string(), s)
+                            ToolVersionRequest::Prefix(fa, s)
                         }
                         _ => parse_error!(format!("{}.prefix", key), v, "string"),
                     }
@@ -430,7 +429,7 @@ impl MiseToml {
                     match r.as_str() {
                         Some(s) => {
                             let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Ref(plugin_name.to_string(), s)
+                            ToolVersionRequest::Ref(fa, s)
                         }
                         _ => parse_error!(format!("{}.ref", key), v, "string"),
                     }
@@ -455,7 +454,7 @@ impl MiseToml {
             }
             _ => match v {
                 Item::Value(v) => {
-                    let tv = self.parse_tool_version_request(key, v, plugin_name)?;
+                    let tv = self.parse_tool_version_request(key, v, fa)?;
                     Ok((tv, Default::default()))
                 }
                 _ => parse_error!(key, v, "value"),
@@ -467,20 +466,20 @@ impl MiseToml {
         &self,
         key: &str,
         v: &Value,
-        plugin_name: &str,
+        fa: ForgeArg,
     ) -> Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
-                Ok(ToolVersionRequest::new(plugin_name.to_string(), &s))
+                Ok(ToolVersionRequest::new(fa, &s))
             }
             _ => parse_error!(key, v, "string"),
         }
     }
 
-    pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
+    pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) {
         self.alias
-            .entry(plugin.into())
+            .entry(fa.clone())
             .or_default()
             .insert(from.into(), to.into());
         self.doc
@@ -488,21 +487,24 @@ impl MiseToml {
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
-            .entry(plugin)
+            .entry(&fa.to_string())
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
             .insert(from, value(to));
     }
 
-    pub fn remove_alias(&mut self, plugin: &str, from: &str) {
+    pub fn remove_alias(&mut self, fa: &ForgeArg, from: &str) {
         if let Some(aliases) = self.doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
-            if let Some(plugin_aliases) = aliases.get_mut(plugin).and_then(|v| v.as_table_mut()) {
-                self.alias.get_mut(plugin).unwrap().remove(from);
+            if let Some(plugin_aliases) = aliases
+                .get_mut(&fa.to_string())
+                .and_then(|v| v.as_table_mut())
+            {
+                self.alias.get_mut(fa).unwrap().remove(from);
                 plugin_aliases.remove(from);
                 if plugin_aliases.is_empty() {
-                    aliases.remove(plugin);
-                    self.alias.remove(plugin);
+                    aliases.remove(&fa.to_string());
+                    self.alias.remove(fa);
                 }
             }
             if aliases.is_empty() {
@@ -635,11 +637,11 @@ impl ConfigFile for MiseToml {
         self.tasks.iter().collect()
     }
 
-    fn remove_plugin(&mut self, plugin: &str) {
-        self.toolset.versions.remove(plugin);
+    fn remove_plugin(&mut self, fa: &ForgeArg) {
+        self.toolset.versions.remove(fa);
         if let Some(tools) = self.doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
-                tools.remove(plugin);
+                tools.remove(&fa.to_string());
                 if tools.is_empty() {
                     self.doc.as_table_mut().remove("tools");
                 }
@@ -647,16 +649,11 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]) {
-        if let Some(plugin) = self.toolset.versions.get_mut(plugin_name) {
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) {
+        if let Some(plugin) = self.toolset.versions.get_mut(fa) {
             plugin.requests = versions
                 .iter()
-                .map(|s| {
-                    (
-                        ToolVersionRequest::new(plugin_name.to_string(), s),
-                        Default::default(),
-                    )
-                })
+                .map(|s| (ToolVersionRequest::new(fa.clone(), s), Default::default()))
                 .collect();
         }
         let tools = self
@@ -667,13 +664,13 @@ impl ConfigFile for MiseToml {
             .unwrap();
 
         if versions.len() == 1 {
-            tools.insert(plugin_name, value(versions[0].clone()));
+            tools.insert(&fa.to_string(), value(versions[0].clone()));
         } else {
             let mut arr = Array::new();
             for v in versions {
                 arr.push(v);
             }
-            tools.insert(plugin_name, Item::Value(Value::Array(arr)));
+            tools.insert(&fa.to_string(), Item::Value(Value::Array(arr)));
         }
     }
 
@@ -829,9 +826,11 @@ mod tests {
         "#})
             .unwrap();
 
-        cf.set_alias("node", "18", "18.0.1");
-        cf.set_alias("node", "20", "20.0.0");
-        cf.set_alias("python", "3.10", "3.10.0");
+        let node = "node".parse().unwrap();
+        let python = "python".parse().unwrap();
+        cf.set_alias(&node, "18", "18.0.1");
+        cf.set_alias(&node, "20", "20.0.0");
+        cf.set_alias(&python, "3.10", "3.10.0");
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -850,8 +849,10 @@ mod tests {
         "3.10" = "3.10.0"
         "#})
             .unwrap();
-        cf.remove_alias("node", "16");
-        cf.remove_alias("python", "3.10");
+        let node = "node".parse().unwrap();
+        let python = "python".parse().unwrap();
+        cf.remove_alias(&node, "16");
+        cf.remove_alias(&python, "3.10");
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -868,7 +869,8 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.replace_versions(&String::from("node"), &["16.0.1".into(), "18.0.1".into()]);
+        let node = "node".parse().unwrap();
+        cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()]);
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -885,7 +887,7 @@ mod tests {
         node = ["16.0.0", "18.0.0"]
         "#})
             .unwrap();
-        cf.remove_plugin(&String::from("node"));
+        cf.remove_plugin(&"node".parse().unwrap());
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);

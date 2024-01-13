@@ -1,7 +1,7 @@
 use eyre::Result;
 
-use crate::config::Config;
-use crate::plugins::unalias_plugin;
+use crate::forge::unalias_forge;
+use crate::plugins;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
 
@@ -23,12 +23,11 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {
-            true => config
-                .list_plugins()
+            true => plugins::list()
                 .into_iter()
                 .map(|p| p.name().to_string())
                 .collect(),
@@ -36,19 +35,14 @@ impl PluginsUninstall {
         };
 
         for plugin_name in plugins {
-            let plugin_name = unalias_plugin(&plugin_name);
-            self.uninstall_one(config, plugin_name, &mpr)?;
+            let plugin_name = unalias_forge(&plugin_name);
+            self.uninstall_one(plugin_name, &mpr)?;
         }
         Ok(())
     }
 
-    fn uninstall_one(
-        &self,
-        config: &Config,
-        plugin_name: &str,
-        mpr: &MultiProgressReport,
-    ) -> Result<()> {
-        match config.get_or_create_plugin(plugin_name) {
+    fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
+        match plugins::get(plugin_name) {
             plugin if plugin.is_installed() => {
                 let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
                 let pr = mpr.add(&prefix);
