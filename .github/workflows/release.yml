@@ -15,7 +15,6 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    needs: [build]
     steps:
       - uses: actions/checkout@v4
         with:
