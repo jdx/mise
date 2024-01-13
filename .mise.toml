@@ -1,4 +1,4 @@
-tasks.build.run = "pnpm run docs:build"
+tasks.build.run = "bun run docs:build"
 
 [tasks."commit-and-push"]
 depends = ["build"]
@@ -8,5 +8,4 @@ run = [
 ]
 
 [tools]
-node = '20'
-pnpm = '8'
+bun = 'latest'

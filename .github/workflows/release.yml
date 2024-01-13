@@ -20,8 +20,8 @@ jobs:
         with:
           fetch-depth: 0 # for lastUpdated
       - uses: jdx/mise-action@v2
-      - run: pnpm install
-      - run: pnpm run docs:build
+      - run: bun install
+      - run: bun run docs:build
       - run: mise run release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
