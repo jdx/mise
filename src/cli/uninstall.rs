@@ -84,7 +84,7 @@ impl Uninstall {
         &self,
         config: &Config,
     ) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
-        let runtimes = ToolArg::double_tool_condition(&self.installed_tool);
+        let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let tool_versions = runtimes
             .into_par_iter()
             .map(|a| {

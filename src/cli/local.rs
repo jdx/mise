@@ -118,7 +118,7 @@ pub fn local(
     }
 
     if !runtime.is_empty() {
-        let runtimes = ToolArg::double_tool_condition(&runtime);
+        let runtimes = ToolArg::double_tool_condition(&runtime)?;
         if cf.display_runtime(&runtimes)? {
             return Ok(());
         }

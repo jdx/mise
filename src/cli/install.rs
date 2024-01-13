@@ -81,7 +81,7 @@ impl Install {
         mpr: &MultiProgressReport,
     ) -> Result<Vec<ToolVersion>> {
         let mut requests = vec![];
-        for runtime in ToolArg::double_tool_condition(runtimes) {
+        for runtime in ToolArg::double_tool_condition(runtimes)? {
             let default_opts = ToolVersionOptions::new();
             match runtime.tvr {
                 Some(tv) => requests.push((runtime.forge, tv, default_opts.clone())),

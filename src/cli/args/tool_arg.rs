@@ -8,6 +8,7 @@ use regex::Regex;
 use crate::cli::args::ForgeArg;
 use crate::forge::ForgeType;
 use crate::toolset::ToolVersionRequest;
+use crate::ui::style;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
@@ -37,30 +38,38 @@ impl FromStr for ToolArg {
             .map(|(f, v)| (f, Some(v.to_string())))
             .unwrap_or((input, None));
         let forge: ForgeArg = forge_input.parse()?;
+        let version_type = match version.as_ref() {
+            Some(version) => version.parse()?,
+            None => ToolVersionType::Version(String::from("latest")),
+        };
         let tvr = version
             .as_ref()
             .map(|v| ToolVersionRequest::new(forge.name.clone(), v));
-        let version_type = match version.as_ref() {
-            Some(version) => match version.split_once(':') {
-                Some(("ref", r)) => ToolVersionType::Ref(r.to_string()),
-                Some(("prefix", p)) => ToolVersionType::Prefix(p.to_string()),
-                Some(("path", p)) => ToolVersionType::Path(PathBuf::from(p)),
-                Some((p, v)) if p.starts_with("sub-") => ToolVersionType::Sub {
-                    sub: p.split_once('-').unwrap().1.to_string(),
-                    orig_version: v.to_string(),
-                },
-                None if version == "system" => ToolVersionType::System,
-                None => ToolVersionType::Version(version.to_string()),
-                _ => bail!("invalid tool version request: {version}"),
-            },
-            None => ToolVersionType::Version(String::from("latest")),
-        };
         Ok(Self {
             tvr,
             version,
             version_type,
             forge: forge.name,
             forge_type: forge.forge_type,
+        })
+    }
+}
+
+impl FromStr for ToolVersionType {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.split_once(':') {
+            Some(("ref", r)) => Self::Ref(r.to_string()),
+            Some(("prefix", p)) => Self::Prefix(p.to_string()),
+            Some(("path", p)) => Self::Path(PathBuf::from(p)),
+            Some((p, v)) if p.starts_with("sub-") => Self::Sub {
+                sub: p.split_once('-').unwrap().1.to_string(),
+                orig_version: v.to_string(),
+            },
+            Some((p, _)) => bail!("invalid prefix: {}", style::ered(p)),
+            None if s == "system" => Self::System,
+            None => Self::Version(s.to_string()),
         })
     }
 }
@@ -73,19 +82,22 @@ impl ToolArg {
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.
-    pub fn double_tool_condition(tools: &[ToolArg]) -> Vec<ToolArg> {
+    pub fn double_tool_condition(tools: &[ToolArg]) -> eyre::Result<Vec<ToolArg>> {
         let mut tools = tools.to_vec();
         if tools.len() == 2 {
-            let re: &Regex = regex!(r"^\d+(\.\d+)?(\.\d+)?$");
+            let re: &Regex = regex!(r"^\d+(\.\d+)*$");
             let a = tools[0].clone();
             let b = tools[1].clone();
             if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.forge) {
                 tools[1].tvr = Some(ToolVersionRequest::new(a.forge.clone(), &b.forge));
                 tools[1].forge = a.forge;
+                tools[1].forge_type = a.forge_type;
+                tools[1].version_type = b.forge.parse()?;
+                tools[1].version = Some(b.forge);
                 tools.remove(0);
             }
         }
-        tools
+        Ok(tools)
     }
 
     pub fn with_version(self, version: &str) -> Self {
