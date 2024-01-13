@@ -46,7 +46,7 @@ jobs:
         if: github.ref_name != 'mise'
       - run: just render-all lint-fix
       - run: git diff HEAD
-      - if: github.event_name == 'pull_request'
+      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         uses: EndBug/add-and-commit@v9
         with:
           push: true
