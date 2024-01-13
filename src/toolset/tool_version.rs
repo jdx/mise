@@ -1,14 +1,14 @@
-use console::style;
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use crate::cli::args::ForgeArg;
+use console::style;
 use eyre::Result;
 use versions::{Chunk, Version};
 
+use crate::cli::args::ForgeArg;
 use crate::config::Config;
 use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
@@ -250,12 +250,15 @@ impl PartialEq for ToolVersion {
         self.forge.id == other.forge.id && self.version == other.version
     }
 }
+
 impl Eq for ToolVersion {}
+
 impl PartialOrd for ToolVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.forge.id.cmp(&other.forge.id) {
@@ -264,6 +267,7 @@ impl Ord for ToolVersion {
         }
     }
 }
+
 impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.forge.id.hash(state);
@@ -289,9 +293,7 @@ fn version_sub(orig: &str, sub: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use super::*;
+    use super::version_sub;
 
     #[test]
     fn test_version_sub() {

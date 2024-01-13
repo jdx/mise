@@ -1,6 +1,7 @@
-use color_eyre::{Help, SectionExt};
-use std::env::{join_paths, set_current_dir};
+use std::env::join_paths;
 use std::path::PathBuf;
+
+use color_eyre::{Help, SectionExt};
 
 use crate::cli::Cli;
 use crate::config::Config;
@@ -19,7 +20,7 @@ fn init() {
         "HOME",
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
     );
-    set_current_dir(env::HOME.join("cwd")).unwrap();
+    env::set_current_dir(env::HOME.join("cwd")).unwrap();
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::set_var("NO_COLOR", "1");
     env::set_var("MISE_YES", "1");

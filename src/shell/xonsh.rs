@@ -121,10 +121,8 @@ impl Shell for Xonsh {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::test::replace_path;
-
     use super::*;
+    use crate::test::replace_path;
 
     #[test]
     fn test_hook_init() {

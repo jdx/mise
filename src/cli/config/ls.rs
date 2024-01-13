@@ -71,8 +71,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     #[test]
     fn test_config_ls() {
         assert_cli_snapshot!("cfg", "--no-headers", @r###"

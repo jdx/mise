@@ -1,8 +1,8 @@
-use crate::cli::args::ForgeArg;
 use clap::{ArgMatches, Command};
 use eyre::Result;
 use rayon::prelude::*;
 
+use crate::cli::args::ForgeArg;
 use crate::forge;
 
 pub fn commands() -> Vec<Command> {

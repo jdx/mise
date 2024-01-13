@@ -1,7 +1,9 @@
-use crate::ui;
-use demand::Confirm;
 use std::io;
 use std::sync::Mutex;
+
+use demand::Confirm;
+
+use crate::ui;
 
 static MUTEX: Mutex<()> = Mutex::new(());
 

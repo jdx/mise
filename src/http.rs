@@ -1,4 +1,15 @@
 use std::fs::File;
+use std::path::Path;
+use std::time::Duration;
+
+use eyre::{Report, Result};
+use once_cell::sync::Lazy;
+use reqwest::blocking::{ClientBuilder, Response};
+use reqwest::IntoUrl;
+
+use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
+use crate::file::display_path;
+use crate::{env, file};
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
@@ -8,17 +19,6 @@ pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Duration::from_secs(30)
 
 pub static HTTP_FETCH: Lazy<Client> =
     Lazy::new(|| Client::new(*MISE_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap());
-
-use std::path::Path;
-use std::time::Duration;
-
-use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
-use crate::file::display_path;
-use crate::{env, file};
-use eyre::{Report, Result};
-use once_cell::sync::Lazy;
-use reqwest::blocking::{ClientBuilder, Response};
-use reqwest::IntoUrl;
 
 #[derive(Debug)]
 pub struct Client {

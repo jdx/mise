@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::cli::args::ForgeArg;
 use console::style;
 use eyre::Result;
 
+use crate::cli::args::ForgeArg;
 use crate::config::{Config, Settings};
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};

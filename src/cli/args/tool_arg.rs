@@ -31,10 +31,8 @@ impl FromStr for ToolArg {
     type Err = eyre::Error;
 
     fn from_str(input: &str) -> eyre::Result<Self> {
-        let (forge_input, version) = input
-            .split_once('@')
-            .map(|(f, v)| (f, Some(v.to_string())))
-            .unwrap_or((input, None));
+        let (forge_input, version) = parse_input(input);
+
         let forge: ForgeArg = forge_input.parse()?;
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
@@ -45,7 +43,7 @@ impl FromStr for ToolArg {
             .map(|v| ToolVersionRequest::new(forge.clone(), v));
         Ok(Self {
             tvr,
-            version,
+            version: version.map(|v| v.to_string()),
             version_type,
             forge,
         })
@@ -128,6 +126,26 @@ impl Display for ToolArg {
     }
 }
 
+fn parse_input(s: &str) -> (&str, Option<&str>) {
+    let (forge, version) = s
+        .split_once('@')
+        .map(|(f, v)| (f, Some(v)))
+        .unwrap_or((s, None));
+
+    // special case for packages with npm scopes like "npm-@antfu/ni"
+    if forge == "npm-" {
+        if let Some(v) = version {
+            return if let Some(i) = v.find('@') {
+                (&s[..forge.len() + i + 1], Some(&v[i + 1..]))
+            } else {
+                (&s[..forge.len() + v.len() + 1], None)
+            };
+        }
+    }
+
+    (forge, version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +190,20 @@ mod tests {
                 tvr: Some(ToolVersionRequest::new("node".parse().unwrap(), "lts")),
             }
         );
+    }
+
+    #[test]
+    fn test_tool_arg_parse_input() {
+        let t = |input, f, v| {
+            let (forge, version) = parse_input(input);
+            assert_eq!(forge, f);
+            assert_eq!(version, v);
+        };
+        t("npm-@antfu/ni", "npm-@antfu/ni", None);
+        t("npm-@antfu/ni@1.0.0", "npm-@antfu/ni", Some("1.0.0"));
+        t("npm-@antfu/ni@1.0.0@1", "npm-@antfu/ni", Some("1.0.0@1"));
+        t("npm-", "npm-", None);
+        t("npm-prettier", "npm-prettier", None);
+        t("npm-prettier@1.0.0", "npm-prettier", Some("1.0.0"));
     }
 }

@@ -1,6 +1,6 @@
-use crate::config::Settings;
 use std::path::Path;
 
+use crate::config::Settings;
 use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
 
 #[derive(Default)]
@@ -96,10 +96,8 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::test::replace_path;
-
     use super::*;
+    use crate::test::replace_path;
 
     #[test]
     fn test_hook_init() {

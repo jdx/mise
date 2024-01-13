@@ -65,8 +65,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
-
     #[test]
     fn test_latest() {
         assert_cli_snapshot!("latest", "dummy@1");

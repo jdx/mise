@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::cli::args::ForgeArg;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
+use crate::cli::args::ForgeArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
