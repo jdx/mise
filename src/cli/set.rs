@@ -10,7 +10,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::ui::table;
 
-use super::args::env_var::EnvVarArg;
+use super::args::EnvVarArg;
 
 /// Manage environment variables
 ///

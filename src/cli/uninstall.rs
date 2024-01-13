@@ -5,7 +5,7 @@ use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};

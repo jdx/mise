@@ -4,7 +4,7 @@ use std::sync::Arc;
 use console::{pad_str, style, Alignment};
 use eyre::Result;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};

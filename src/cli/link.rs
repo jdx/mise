@@ -5,7 +5,7 @@ use color_eyre::eyre::{eyre, Result};
 use console::style;
 use path_absolutize::Absolutize;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::file::{make_symlink, remove_all};
 use crate::{dirs, file};

@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 
 use tool_versions::ToolVersions;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
 use crate::errors::Error::UntrustedConfig;
