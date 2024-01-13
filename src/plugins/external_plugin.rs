@@ -44,9 +44,6 @@ pub struct ExternalPlugin {
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub toml: MisePluginToml,
-    cache_path: PathBuf,
-    downloads_path: PathBuf,
-    installs_path: PathBuf,
     script_man: ScriptManager,
     cache: ExternalPluginCache,
     remote_version_cache: CacheManager<Vec<String>>,
@@ -58,37 +55,38 @@ pub struct ExternalPlugin {
 impl ExternalPlugin {
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
-        let cache_path = dirs::CACHE.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
+        let fa = ForgeArg::new(ForgeType::Asdf, &name);
         Self {
-            fa: ForgeArg::new(ForgeType::Asdf, &name),
             script_man: build_script_man(&name, &plugin_path),
-            downloads_path: dirs::DOWNLOADS.join(&name),
-            installs_path: dirs::INSTALLS.join(&name),
             cache: ExternalPluginCache::default(),
-            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-all")),
-            latest_stable_cache: CacheManager::new(cache_path.join("latest_stable.msgpack.z"))
+            remote_version_cache: CacheManager::new(
+                fa.cache_path.join("remote_versions.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-all")),
+            latest_stable_cache: CacheManager::new(fa.cache_path.join("latest_stable.msgpack.z"))
                 .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/latest-stable")),
-            alias_cache: CacheManager::new(cache_path.join("aliases.msgpack.z"))
+            alias_cache: CacheManager::new(fa.cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
-            legacy_filename_cache: CacheManager::new(cache_path.join("legacy_filenames.msgpack.z"))
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            legacy_filename_cache: CacheManager::new(
+                fa.cache_path.join("legacy_filenames.msgpack.z"),
+            )
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
             plugin_path,
-            cache_path,
             repo_url: None,
             toml,
             name,
+            fa,
         }
     }
     pub fn list() -> Result<ForgeList> {
@@ -266,7 +264,8 @@ impl ExternalPlugin {
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
-        self.cache_path
+        self.fa
+            .cache_path
             .join("legacy")
             .join(&self.name)
             .join(hash_to_str(&legacy_file.to_string_lossy()))
@@ -675,7 +674,7 @@ impl Forge for ExternalPlugin {
         }
         ctx.pr.set_message("installing".into());
         run_script(&Install)?;
-        file::remove_dir(&self.downloads_path)?;
+        file::remove_dir(&self.fa.downloads_path)?;
 
         Ok(())
     }
@@ -721,9 +720,9 @@ impl Debug for ExternalPlugin {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
             .field("plugin_path", &self.plugin_path)
-            .field("cache_path", &self.cache_path)
-            .field("downloads_path", &self.downloads_path)
-            .field("installs_path", &self.installs_path)
+            .field("cache_path", &self.fa.cache_path)
+            .field("downloads_path", &self.fa.downloads_path)
+            .field("installs_path", &self.fa.installs_path)
             .field("repo_url", &self.repo_url)
             .finish()
     }
