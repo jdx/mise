@@ -270,7 +270,12 @@ impl Run {
         let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
         match &self.output(task)? {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
-            TaskOutput::Interleave => cmd = cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit()),
+            TaskOutput::Interleave => {
+                cmd = cmd
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+            }
         }
         if self.raw(task) {
             cmd.with_raw();

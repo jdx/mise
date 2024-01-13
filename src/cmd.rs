@@ -115,6 +115,11 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    pub fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+        self.cmd.stdin(cfg);
+        self
+    }
+
     pub fn stdout<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stdout(cfg);
         self
