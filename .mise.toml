@@ -1,7 +1,7 @@
-tasks.build = "pnpm run build"
+tasks.build.run = "pnpm run docs:build"
 
 [tasks."commit-and-push"]
-depends = "build"
+depends = ["build"]
 run = [
   "git ci -pm docs",
   "git push",
