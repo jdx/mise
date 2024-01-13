@@ -519,6 +519,9 @@ _mise() {
             mise__help__sync,python)
                 cmd="mise__help__sync__python"
                 ;;
+            mise__help__task,deps)
+                cmd="mise__help__task__deps"
+                ;;
             mise__help__task,edit)
                 cmd="mise__help__task__edit"
                 ;;
@@ -2505,8 +2508,22 @@ _mise() {
             return 0
             ;;
         mise__help__task)
-            opts="edit ls run"
+            opts="deps edit ls run"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__help__task__deps)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
