@@ -6,7 +6,7 @@ people first hear about the project or see it posted they wouldn't realize it wa
 about a CLI tool. It was a bit difficult to search for on Google but also places like
 Twitter and in Slack searches and things. This was the top complaint about `rtx` and
 many people were fairly outspoken about disliking the name for this reason. `rtx` was
-supposed to be a working title that I inteded to change but never got around to doing.
+supposed to be a working title that I intended to change but never got around to doing.
 This change should've happened earlier when there were fewer users and I apologize for
 not having done that sooner knowing that this was likely going to be necessary at some point.
 
