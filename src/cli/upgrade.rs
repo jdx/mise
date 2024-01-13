@@ -54,7 +54,7 @@ impl Upgrade {
             let tool_set = self
                 .tool
                 .iter()
-                .map(|t| t.plugin.clone())
+                .map(|t| t.forge.clone())
                 .collect::<HashSet<_>>();
             outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.name()));
         }

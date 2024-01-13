@@ -88,7 +88,7 @@ impl Uninstall {
         let tool_versions = runtimes
             .into_par_iter()
             .map(|a| {
-                let tool = config.get_or_create_plugin(&a.plugin);
+                let tool = config.get_or_create_plugin(&a.forge);
                 let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
                 let installed_versions = tool.list_installed_versions()?;
                 let exact_match = installed_versions.iter().find(|v| v == &&query);

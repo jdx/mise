@@ -89,9 +89,9 @@ impl Use {
             .map(|t| {
                 let tvr = match &t.tvr {
                     Some(ref tvr) => tvr.clone(),
-                    None => ToolVersionRequest::new(t.plugin.to_string(), "latest"),
+                    None => ToolVersionRequest::new(t.forge.to_string(), "latest"),
                 };
-                let plugin = config.get_or_create_plugin(&t.plugin);
+                let plugin = config.get_or_create_plugin(&t.forge);
                 ToolVersion::resolve(plugin.as_ref(), tvr, Default::default(), false)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -152,13 +152,13 @@ impl Use {
     fn warn_if_hidden(&self, config: &Config, global: &Path) {
         let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
-            let plugin = &targ.plugin;
+            let plugin = &targ.forge;
             let p = display_path(p);
             let global = display_path(global);
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.plugin) {
+            if let Some(tv) = ts.versions.get(&targ.forge) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if p != global {
                         warn(targ, p);

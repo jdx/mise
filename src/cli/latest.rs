@@ -33,7 +33,7 @@ impl Latest {
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 
-        let plugin = config.get_or_create_plugin(&self.tool.plugin);
+        let plugin = config.get_or_create_plugin(&self.tool.forge);
         let mpr = MultiProgressReport::get();
         plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {

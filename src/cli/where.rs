@@ -38,7 +38,7 @@ impl Where {
                         .build(&config)?;
                     let v = ts
                         .versions
-                        .get(&self.tool.plugin)
+                        .get(&self.tool.forge)
                         .and_then(|v| v.requests.first())
                         .map(|(r, _)| r.version());
                     self.tool.with_version(&v.unwrap_or(String::from("latest")))
@@ -47,7 +47,7 @@ impl Where {
             _ => self.tool,
         };
 
-        let plugin = config.get_or_create_plugin(&runtime.plugin);
+        let plugin = config.get_or_create_plugin(&runtime.forge);
 
         match runtime
             .tvr
@@ -59,7 +59,7 @@ impl Where {
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
-                runtime.plugin.to_string(),
+                runtime.forge.to_string(),
                 runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
             ))?,
         }

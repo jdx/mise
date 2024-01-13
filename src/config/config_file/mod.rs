@@ -98,7 +98,7 @@ impl dyn ConfigFile {
         for runtime in runtimes {
             if let Some(tv) = &runtime.tvr {
                 plugins_to_update
-                    .entry(runtime.plugin.clone())
+                    .entry(runtime.forge.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
@@ -137,7 +137,7 @@ impl dyn ConfigFile {
     pub fn display_runtime(&self, runtimes: &[ToolArg]) -> Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
-            let plugin = &runtimes[0].plugin;
+            let plugin = &runtimes[0].forge;
             let tvl = self
                 .to_toolset()
                 .versions

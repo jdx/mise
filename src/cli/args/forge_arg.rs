@@ -14,7 +14,7 @@ impl FromStr for ForgeArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (forge_type, plugin) = s.split_once(':').unwrap_or(("external", s));
+        let (forge_type, plugin) = s.split_once(':').unwrap_or(("asdf", s));
         let name = unalias_forge(plugin).to_string();
         Ok(Self {
             name,

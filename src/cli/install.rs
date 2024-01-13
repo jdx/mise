@@ -84,14 +84,14 @@ impl Install {
         for runtime in ToolArg::double_tool_condition(runtimes) {
             let default_opts = ToolVersionOptions::new();
             match runtime.tvr {
-                Some(tv) => requests.push((runtime.plugin, tv, default_opts.clone())),
+                Some(tv) => requests.push((runtime.forge, tv, default_opts.clone())),
                 None => {
                     if runtime.tvr.is_none() {
-                        match ts.versions.get(&runtime.plugin) {
+                        match ts.versions.get(&runtime.forge) {
                             Some(tvl) => {
                                 for (tvr, opts) in &tvl.requests {
                                     requests.push((
-                                        runtime.plugin.clone(),
+                                        runtime.forge.clone(),
                                         tvr.clone(),
                                         opts.clone(),
                                     ));
@@ -99,10 +99,10 @@ impl Install {
                             }
                             None => {
                                 let tvr = ToolVersionRequest::Version(
-                                    runtime.plugin.clone(),
+                                    runtime.forge.clone(),
                                     "latest".into(),
                                 );
-                                requests.push((runtime.plugin, tvr, default_opts.clone()));
+                                requests.push((runtime.forge, tvr, default_opts.clone()));
                             }
                         }
                     }

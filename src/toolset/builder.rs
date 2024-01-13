@@ -91,7 +91,7 @@ impl ToolsetBuilder {
         if self.global_only {
             return;
         }
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {
                 if let Some(tvr) = &arg.tvr {

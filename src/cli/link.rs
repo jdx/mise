@@ -45,7 +45,7 @@ impl Link {
                 style(path.to_string_lossy()).cyan().for_stderr()
             );
         }
-        let target = dirs::INSTALLS.join(&self.tool.plugin).join(version);
+        let target = dirs::INSTALLS.join(&self.tool.forge).join(version);
         if target.exists() {
             if self.force {
                 remove_all(&target)?;

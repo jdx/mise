@@ -19,16 +19,16 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
-    pub(crate) plugin: Option<ToolArg>,
+    pub plugin: Option<ToolArg>,
 
     /// Show all installed plugins and versions
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
-    pub(crate) all: bool,
+    pub all: bool,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     #[clap(verbatim_doc_comment)]
-    pub(crate) prefix: Option<String>,
+    pub prefix: Option<String>,
 }
 
 impl LsRemote {
@@ -89,7 +89,7 @@ impl LsRemote {
     fn get_plugin(&self, config: &Config) -> Result<Option<Arc<dyn Forge>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let plugin = config.get_or_create_plugin(&tool_arg.plugin);
+                let plugin = config.get_or_create_plugin(&tool_arg.forge);
                 let mpr = MultiProgressReport::get();
                 plugin.ensure_installed(&mpr, false)?;
                 Ok(Some(plugin))

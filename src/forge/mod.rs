@@ -349,10 +349,10 @@ fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     })
 }
 
-pub fn unalias_forge(plugin_name: &str) -> &str {
-    match plugin_name {
+pub fn unalias_forge(forge: &str) -> &str {
+    match forge {
         "nodejs" => "node",
         "golang" => "go",
-        _ => plugin_name,
+        _ => forge,
     }
 }
