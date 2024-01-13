@@ -3,6 +3,7 @@ use eyre::Result;
 
 use crate::cli::run;
 
+mod deps;
 mod edit;
 mod ls;
 
@@ -19,6 +20,7 @@ pub struct Task {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Deps(deps::TaskDeps),
     Edit(edit::TaskEdit),
     Ls(ls::TaskLs),
     Run(run::Run),
@@ -27,6 +29,7 @@ enum Commands {
 impl Commands {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Deps(cmd) => cmd.run(),
             Self::Edit(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),

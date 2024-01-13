@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::Mutex;
 use std::time::SystemTime;
 
 use clap::ValueHint;
@@ -15,19 +15,18 @@ use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use petgraph::graph::DiGraph;
-use petgraph::Direction;
 
-use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::task::Task;
+use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::style;
 use crate::{env, file, ui};
+
+use super::args::ToolArg;
 
 /// [experimental] Run a task
 ///
@@ -133,7 +132,7 @@ impl Run {
                 }
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-            .map(|(t, args)| match config.tasks().get(&t) {
+            .map(|(t, args)| match config.tasks_with_aliases().get(&t) {
                 Some(task) => Ok(task.clone().with_args(args.to_vec())),
                 None => Err(self.err_no_task(config, &t)),
             })
@@ -336,6 +335,7 @@ impl Run {
         let t = style(&t).yellow().for_stderr();
         eyre!("no task named `{t}` found. Available tasks: {task_names}")
     }
+
     fn validate_task(&self, task: &Task) -> Result<()> {
         if let Some(path) = &task.file {
             if !file::is_executable(path) {
@@ -424,104 +424,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   Execute multiple tasks each with their own arguments.
 "#
 );
-
-#[derive(Debug)]
-struct Deps {
-    graph: DiGraph<Task, ()>,
-    sent: HashSet<String>,
-    tx: mpsc::Sender<Option<Task>>,
-}
-
-impl Deps {
-    fn new(config: &Config, tasks: Vec<Task>) -> Result<Self> {
-        let mut graph = DiGraph::new();
-        let mut indexes = HashMap::new();
-        let mut stack = vec![];
-        for t in tasks {
-            stack.push(t.clone());
-            indexes
-                .entry(t.name.clone())
-                .or_insert_with(|| graph.add_node(t));
-        }
-        while let Some(a) = stack.pop() {
-            let a_idx = *indexes
-                .entry(a.name.clone())
-                .or_insert_with(|| graph.add_node(a.clone()));
-            for b in a.resolve_depends(config)? {
-                let b_idx = *indexes
-                    .entry(b.name.clone())
-                    .or_insert_with(|| graph.add_node(b.clone()));
-                graph.add_edge(a_idx, b_idx, ());
-                stack.push(b.clone());
-            }
-        }
-        let (tx, _) = mpsc::channel();
-        let sent = HashSet::new();
-        Ok(Self { graph, tx, sent })
-    }
-
-    fn leaves(&self) -> Vec<Task> {
-        self.graph
-            .externals(Direction::Outgoing)
-            .map(|idx| self.graph[idx].clone())
-            .collect()
-    }
-
-    fn emit_leaves(&mut self) {
-        let leaves = self.leaves().into_iter().collect_vec();
-        for task in leaves {
-            if self.sent.contains(&task.name) {
-                continue;
-            }
-            self.sent.insert(task.name.clone());
-            self.tx.send(Some(task)).unwrap();
-        }
-        if self.graph.node_count() == 0 {
-            self.tx.send(None).unwrap();
-        }
-    }
-
-    fn subscribe(&mut self) -> mpsc::Receiver<Option<Task>> {
-        let (tx, rx) = mpsc::channel();
-        self.tx = tx;
-        self.emit_leaves();
-        rx
-    }
-
-    // #[requires(self.graph.node_count() > 0)]
-    // #[ensures(self.graph.node_count() == old(self.graph.node_count()) - 1)]
-    fn remove(&mut self, task: &Task) {
-        if let Some(idx) = self
-            .graph
-            .node_indices()
-            .find(|&idx| &self.graph[idx] == task)
-        {
-            self.graph.remove_node(idx);
-            self.emit_leaves();
-        }
-    }
-
-    fn all(&self) -> impl Iterator<Item = &Task> {
-        self.graph.node_indices().map(|idx| &self.graph[idx])
-    }
-
-    fn is_linear(&self) -> bool {
-        !self.graph.node_indices().any(|idx| {
-            self.graph
-                .neighbors_directed(idx, Direction::Outgoing)
-                .count()
-                > 1
-        })
-    }
-
-    // fn pop(&'a mut self) -> Option<&'a Task> {
-    //     if let Some(leaf) = self.leaves().first() {
-    //         self.remove(&leaf.clone())
-    //     } else {
-    //         None
-    //     }
-    // }
-}
 
 #[derive(Debug, PartialEq, EnumString)]
 #[strum(serialize_all = "snake_case")]
