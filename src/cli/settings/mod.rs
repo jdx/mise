@@ -1,41 +1,52 @@
-use clap::Subcommand;
+use std::str::FromStr;
 use eyre::Result;
 
-mod get;
-mod ls;
-mod set;
-mod unset;
+mod setting;
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Manage settings")]
 pub struct Settings {
-    #[clap(subcommand)]
-    command: Option<Commands>,
+   setting_vars: Option<Vec<SettingsVarArg>>,
 }
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    Get(get::SettingsGet),
-    Ls(ls::SettingsLs),
-    Set(set::SettingsSet),
-    Unset(unset::SettingsUnset),
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SettingsVarArg {
+    pub key: String,
+    pub value: Option<String>,
 }
 
-impl Commands {
-    pub fn run(self) -> Result<()> {
-        match self {
-            Self::Get(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::Set(cmd) => cmd.run(),
-            Self::Unset(cmd) => cmd.run(),
-        }
+impl FromStr for SettingsVarArg {
+    type Err = eyre::Error;
+
+    fn from_str(input: &str) -> eyre::Result<Self> {
+        let sv = match input.split_once('=') {
+            Some((k, v)) => Self {
+                key: k.to_string(),
+                value: Some(v.to_string())
+            },
+            None => Self {
+                key: input.to_string(),
+                value: None
+            }
+        };
+        Ok(sv)
     }
 }
 
 impl Settings {
     pub fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap_or(Commands::Ls(ls::SettingsLs {}));
-
-        cmd.run()
+        if let Some(setting_vars) = self.setting_vars {
+            for var in setting_vars.iter() {
+                if !var.value.is_none() {
+                    let kv_pair = var.clone();
+                    setting::set_settings(kv_pair.key, kv_pair.value.unwrap().clone())?;
+                    continue;
+                }
+                setting::get_setting(var.key.clone())?;
+            }
+        } else {
+            setting::list_settings()?;
+        }
+        Ok(())
     }
 }

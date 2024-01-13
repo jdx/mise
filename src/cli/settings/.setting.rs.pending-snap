@@ -1,0 +1,6 @@
+{"run_id":"1705150672-35982000","line":147,"new":{"module_name":"mise__cli__settings__setting__tests","snapshot_name":"settings_get_unknown","metadata":{"source":"src/cli/settings/setting.rs","assertion_line":147,"expression":"err"},"snapshot":"Unknown setting: get"},"old":{"module_name":"mise__cli__settings__setting__tests","metadata":{},"snapshot":"Unknown setting: unknown"}}
+{"run_id":"1705150672-35982000","line":100,"new":null,"old":null}
+{"run_id":"1705150828-788740000","line":139,"new":null,"old":null}
+{"run_id":"1705150828-788740000","line":147,"new":null,"old":null}
+{"run_id":"1705150828-788740000","line":100,"new":null,"old":null}
+{"run_id":"1705150828-788740000","line":160,"new":null,"old":null}
