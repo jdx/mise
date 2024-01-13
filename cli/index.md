@@ -1,5 +1,4 @@
 <!-- MISE:COMMANDS -->
-
 # Commands
 
 ## `mise activate [OPTIONS] [SHELL_TYPE]`

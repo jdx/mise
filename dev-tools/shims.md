@@ -1,6 +1,3 @@
----
----
-
 # Shims
 
 While the PATH design of mise works great in most cases, there are some situations where shims are

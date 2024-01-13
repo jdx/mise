@@ -7,8 +7,9 @@ export default defineConfig({
   lastUpdated: true,
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
+    outline: 'deep',
     nav: [
-      { text: 'Dev Tools', link: '/dev-tools' },
+      { text: 'Dev Tools', link: '/dev-tools/' },
       { text: 'Environments', link: '/environments' },
       { text: 'Tasks', link: '/tasks/' },
     ],
@@ -18,6 +19,7 @@ export default defineConfig({
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'Demo', link: '/demo' },
       { text: 'Configuration', link: '/configuration' },
+      { text: 'Plugins', link: '/plugins' },
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Continuous Integration', link: '/continuous-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
@@ -27,12 +29,19 @@ export default defineConfig({
       { text: 'How I Use mise', link: '/how-i-use-mise' },
       {
         text: 'Dev Tools',
-        link: '/dev-tools',
+        link: '/dev-tools/',
         items: [
-          { text: 'Plugins', link: '/plugins' },
-          { text: 'Shims', link: '/shims' },
-          { text: 'Aliases', link: '/aliases' },
-          { text: 'Comparison to asdf', link: '/comparison-to-asdf' },
+          { text: 'Shims', link: '/dev-tools/shims' },
+          { text: 'Aliases', link: '/dev-tools/aliases' },
+          { text: 'Comparison to asdf', link: '/dev-tools/comparison-to-asdf' },
+          {
+            text: 'Backends',
+            items: [
+              { text: 'asdf', link: '/dev-tools/backends/asdf' },
+              { text: 'cargo', link: '/dev-tools/backends/cargo' },
+              { text: 'npm', link: '/dev-tools/backends/npm' },
+            ]
+          }
         ],
       },
       {

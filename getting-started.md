@@ -1,7 +1,3 @@
----
-outline: 'deep'
----
-
 # Getting Started
 
 Using mise typically involves 3 steps:
@@ -31,7 +27,7 @@ mise 2024.x.x
 
 ### 2. Activate mise <Badge type="tip" text="optional" />
 
-`mise activate` is one way to setup mise but alternatively you can use [shims](./shims), [direnv](./direnv), or skip
+`mise activate` is one way to setup mise but alternatively you can use [shims](dev-tools/shims.md), [direnv](./direnv), or skip
 this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
 commands with `mise exec` or run tasks with `mise run` in order to use tools managed with mise.
 

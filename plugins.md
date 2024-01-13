@@ -14,13 +14,13 @@ time. They can be easily overridden by installing a plugin with the same name, e
 
 You can see the core plugins with `mise plugin ls --core`.
 
-- [Bun](./lang/bun)
-- [Deno](./lang/deno)
-- [Go](./lang/go)
-- [Java](./lang/java)
-- [NodeJS](./lang/node)
-- [Python](./lang/python)
-- [Ruby](./lang/ruby)
+- [Bun](/lang/bun)
+- [Deno](/lang/deno)
+- [Go](/lang/go)
+- [Java](/lang/java)
+- [NodeJS](/lang/node)
+- [Python](/lang/python)
+- [Ruby](/lang/ruby)
 
 ## Plugin Authors
 

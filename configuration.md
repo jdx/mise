@@ -1,6 +1,3 @@
----
-outline: 'deep'
----
 
 # Configuration
 
@@ -101,7 +98,7 @@ but doesn't require a separate file.
 ### `[aliases]` - Tool version aliases
 
 The following makes `mise install node@my_custom_node` install node-20.x
-this can also be specified in a [plugin](/aliases).
+this can also be specified in a [plugin](/dev-tools/aliases.md).
 note adding an alias will also add a symlink, in this case:
 
     ~/.local/share/mise/installs/node/20 -> ./20.x.x

@@ -1,6 +1,3 @@
----
----
-
 # Dev Tools
 
 _Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages dev tools like node, python, cmake, terraform, and [hundreds more](/plugins)._
@@ -16,11 +13,11 @@ directory. Other projects on your machine can use a different set of versions.
 
 mise is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
-For more on how mise compares to asdf, [see below](/comparison-to-asdf).
+For more on how mise compares to asdf, [see below](./comparison-to-asdf).
 
 mise can be configured in many ways. The most typical is by `.mise.toml`, but it's also compatible
 with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
-`.ruby-version`. See [Configuration](./configuration) for more.
+`.ruby-version`. See [Configuration](/configuration) for more.
 
 * Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](/configuration#env---arbitrary-environment-variables) for different project directories.
 * Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used to build and test projects.
@@ -49,6 +46,19 @@ means there isn't any need to run `asdf reshim` after installing new runtime bin
 You should note that mise does not directly install these tools.
 Instead, it leverages plugins to install runtimes.
 See [plugins](/plugins) below.
+
+## Backends 
+
+In addition to asdf plugins, you can also directly install CLIs with some package managers.
+
+* [asdf](/dev-tools/backends/asdf)
+* [Cargo](/dev-tools/backends/cargo) <Badge type="warning" text="experimental" />
+* [NPM](/dev-tools/backends/npm) <Badge type="warning" text="experimental" />
+
+::: tip
+If you'd like to contribute a new backend to mise, they're not difficult to write.
+See [`./src/forge/`](https://github.com/jdx/mise/tree/main/src/forge) for examples.
+:::
 
 ## Common commands
 

@@ -51,7 +51,7 @@ situations where it needs to run without the directory changing, for example if 
 Because it runs on prompt display, if you attempt to use `mise activate` in a
 non-interactive session (like a bash script), it will never call `mise hook-env` and in effect will
 never modify PATH because it never displays a prompt. For this type of setup, you can either call
-`mise hook-env` manually every time you wish to update PATH, or use [shims](/shims) instead (preferred).
+`mise hook-env` manually every time you wish to update PATH, or use [shims](/dev-tools/shims.md) instead (preferred).
 Or if you only need to use mise for certain commands, just prefix the commands with
 [`mise x --`](./cli/#mise-exec-options-tool-version-command).
 For example, `mise x -- npm test` or `mise x -- ./my_script.sh`.
@@ -86,7 +86,7 @@ You can also set `MISE_LOG_FILE_LEVEL=debug MISE_LOG_FILE=/path/to/logfile` to w
 
 If something is happening with the activate hook, you can try disabling it and calling `eval "$(mise hook-env)"` manually.
 It can also be helpful to use `mise env` which will just output environment variables that would be set.
-Also consider using [shims](/shims) which can be more compatible.
+Also consider using [shims](/dev-tools/shims.md) which can be more compatible.
 
 If runtime installation isn't working right, try using the `--raw` flag which will install things in
 series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact

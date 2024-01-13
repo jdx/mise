@@ -1,7 +1,3 @@
----
-outline: 'deep'
----
-
 # Directory Structure
 
 The following are the directories that mise uses.

@@ -1,7 +1,3 @@
----
-outline: 'deep'
----
-
 # Environments
 
 Use mise to specify environment variables used for different projects. Create a `.mise.toml` file

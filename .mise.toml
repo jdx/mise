@@ -1,4 +1,5 @@
-tasks.build.run = "bun run docs:build"
+tasks.dev = "bun run docs:dev"
+tasks.build = "bun run docs:build"
 
 [tasks."commit-and-push"]
 depends = ["build"]

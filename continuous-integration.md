@@ -20,7 +20,7 @@ script: |
   mise x npm -- test
 ```
 
-Alternatively, you can add the [shims](/shims) directory to your `PATH`, if the CI provider allows it.
+Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `PATH`, if the CI provider allows it.
 
 ## GitHub Actions
 

@@ -1,6 +1,3 @@
----
----
-
 # direnv
 
 [direnv](https://direnv.net) and mise both manage environment variables based on directory. Because they both analyze
@@ -51,7 +48,7 @@ export MISE_PYTHON_VERSION=3.11
 Of course if you use `mise activate`, then these steps won't have been necessary and you can use mise
 as if direnv was not used.
 
-If you continue to struggle, you can also try using the [shims method](./shims).
+If you continue to struggle, you can also try using the [shims method](dev-tools/shims.md).
 
 ### Do you need direnv?
 

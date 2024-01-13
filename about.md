@@ -13,7 +13,7 @@ Its functionality is grouped into 3 categories described below.
 
 `mise` installs and manages dev tools/runtimes like node, python, or terraform both
 simplifying installing these tools and allowing you to specify which version of these
-tools to use in different projects. `mise` supports [hundreds](/plugins) of dev tools.
+tools to use in different projects. `mise` supports [hundreds](/plugins.md) of dev tools.
 
 `mise` manages environment variables letting you specify configuration like
 `AWS_ACCESS_KEY_ID` that may differ between projects. It can also be used to

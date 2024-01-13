@@ -23,7 +23,7 @@ hero:
       link: https://discord.gg/UBa7pJUN7Z
 
 features:
-  - title: <a href="/dev-tools.html">Dev Tools</a>
+  - title: <a href="/dev-tools/">Dev Tools</a>
     details: mise is a polyglot tool version manager. It replaces tools like <a href="https://asdf-vm.com">asdf</a>, nvm, pyenv, rbenv, etc.
   - title: <a href="/environments.html">Environments</a>
     details: mise allows you to switch sets of env vars in different project directories. It can replace <a href="https://github.com/direnv/direnv">direnv</a>.

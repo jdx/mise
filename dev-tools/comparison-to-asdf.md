@@ -92,3 +92,13 @@ where it's not possible—or at least very challenging—for us to definitively 
 used and so we default to mise-style. While there aren't many of these, asdf-compatibility is done
 as a "best-effort" in order to make transitioning from asdf feel familiar for those users who can
 rely on their muscle memory. Ensuring asdf-syntax works with everything is not a design goal.
+
+## Extra backends <Badge type="warning" text="experimental" />
+
+mise has support for backends other than asdf plugins. For example you can install CLIs
+directly from cargo and npm:
+
+```sh
+$ mise use -g cargo-ripgrep@14
+$ mise use -g npm-prettier@3
+```
