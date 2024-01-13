@@ -4,8 +4,8 @@ use crate::{
     ui::{style, tree::print_tree},
 };
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
-use miette::Result;
 use petgraph::dot::Dot;
 
 /// [experimental] Display a tree visualization of a dependency graph
@@ -133,11 +133,11 @@ impl TaskDeps {
         Ok(())
     }
 
-    fn err_no_task(&self, config: &Config, t: &str) -> miette::Report {
+    fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
         let tasks = config.tasks();
         let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
-        miette!("no task named `{t}` found. Available tasks: {task_names}")
+        eyre!("no task named `{t}` found. Available tasks: {task_names}")
     }
 }
 
