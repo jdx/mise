@@ -96,23 +96,14 @@ pub trait Forge: Debug + Send + Sync {
     fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
-    fn installs_path(&self) -> PathBuf {
-        dirs::INSTALLS.join(self.id())
-    }
-    fn cache_path(&self) -> PathBuf {
-        dirs::CACHE.join(self.id())
-    }
-    fn downloads_path(&self) -> PathBuf {
-        dirs::DOWNLOADS.join(self.id())
-    }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version(Some("latest".into()))
     }
     fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
-        let installs_path = self.installs_path();
+        let installs_path = &self.fa().installs_path;
         Ok(match installs_path.exists() {
-            true => file::dir_subdirs(&installs_path)?
+            true => file::dir_subdirs(installs_path)?
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
                 .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
@@ -153,7 +144,7 @@ pub trait Forge: Debug + Send + Sync {
         }
     }
     fn create_symlink(&self, version: &str, target: &Path) -> eyre::Result<()> {
-        let link = self.installs_path().join(version);
+        let link = self.fa().installs_path.join(version);
         file::create_dir_all(link.parent().unwrap())?;
         file::make_symlink(target, &link)
     }
@@ -181,7 +172,7 @@ pub trait Forge: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => {
-                let installed_symlink = self.installs_path().join("latest");
+                let installed_symlink = self.fa().installs_path.join("latest");
                 if installed_symlink.exists() {
                     let target = installed_symlink.read_link()?;
                     let version = target
@@ -219,9 +210,9 @@ pub trait Forge: Debug + Send + Sync {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        rmdir(&self.installs_path(), pr)?;
-        rmdir(&self.cache_path(), pr)?;
-        rmdir(&self.downloads_path(), pr)?;
+        rmdir(&self.fa().installs_path, pr)?;
+        rmdir(&self.fa().cache_path, pr)?;
+        rmdir(&self.fa().downloads_path, pr)?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
