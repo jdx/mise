@@ -10,12 +10,12 @@ export MISE_CARGO_BINSTALL=1
 #exit
 #fi
 
-assert "mise x cargo-eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
+assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
 v0.17.0 [+git]
 https://github.com/eza-community/eza"
 
 export MISE_CARGO_BINSTALL=0
-mise rm cargo-eza@0.17.0
-assert "mise x cargo-eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
+mise rm cargo:eza@0.17.0
+assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
 v0.17.0 [+git]
 https://github.com/eza-community/eza"

@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::iter::Iterator;
-use std::path::PathBuf;
+
 use std::sync::Arc;
 
 use eyre::Result;
@@ -12,6 +12,7 @@ pub use python::PythonPlugin;
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::config::Settings;
+use crate::env;
 use crate::forge::{Forge, ForgeList, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
@@ -23,7 +24,6 @@ use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
-use crate::{dirs, env};
 
 mod bun;
 mod deno;
@@ -55,19 +55,19 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
 pub struct CorePlugin {
     pub fa: ForgeArg,
     pub name: &'static str,
-    pub cache_path: PathBuf,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl CorePlugin {
     pub fn new(name: &'static str) -> Self {
-        let cache_path = dirs::CACHE.join(name);
+        let fa = ForgeArg::new(ForgeType::Asdf, name);
         Self {
-            fa: ForgeArg::new(ForgeType::Asdf, name),
             name,
-            remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
-                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
-            cache_path,
+            remote_version_cache: CacheManager::new(
+                fa.cache_path.join("remote_versions.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            fa,
         }
     }
 

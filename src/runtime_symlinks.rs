@@ -16,7 +16,7 @@ use crate::{file, forge};
 pub fn rebuild(config: &Config) -> Result<()> {
     for forge in forge::list() {
         let symlinks = list_symlinks(config, forge.clone())?;
-        let installs_dir = forge.installs_path();
+        let installs_dir = &forge.fa().installs_path;
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -31,7 +31,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
         }
         remove_missing_symlinks(forge.clone())?;
         // remove install dir if empty
-        file::remove_dir(&installs_dir)?;
+        file::remove_dir(installs_dir)?;
     }
     Ok(())
 }
@@ -86,7 +86,7 @@ fn installed_versions(forge: &Arc<dyn Forge>) -> Result<Vec<String>> {
 }
 
 fn remove_missing_symlinks(forge: Arc<dyn Forge>) -> Result<()> {
-    let installs_dir = forge.installs_path();
+    let installs_dir = &forge.fa().installs_path;
     if !installs_dir.exists() {
         return Ok(());
     }

@@ -9,7 +9,7 @@ THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-cargo-eza = "0.17.0"
+"cargo:eza" = "0.17.0"
 tiny = { version = "1", foo = "bar" }
 golang = { version = "prefix:1.20", foo = "bar" }
 python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }

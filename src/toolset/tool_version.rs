@@ -10,10 +10,10 @@ use versions::{Chunk, Version};
 
 use crate::cli::args::ForgeArg;
 use crate::config::Config;
+use crate::forge;
 use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
-use crate::{dirs, forge};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -76,14 +76,14 @@ impl ToolVersion {
             ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        dirs::INSTALLS.join(&self.forge.id).join(pathname)
+        self.forge.installs_path.join(pathname)
     }
     pub fn install_short_path(&self) -> PathBuf {
         let pathname = match &self.request {
             ToolVersionRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_short_pathname(),
         };
-        let sp = dirs::INSTALLS.join(&self.forge.id).join(pathname);
+        let sp = self.forge.installs_path.join(pathname);
         if sp.exists() {
             sp
         } else {
@@ -91,12 +91,10 @@ impl ToolVersion {
         }
     }
     pub fn cache_path(&self) -> PathBuf {
-        dirs::CACHE.join(&self.forge.id).join(self.tv_pathname())
+        self.forge.cache_path.join(self.tv_pathname())
     }
     pub fn download_path(&self) -> PathBuf {
-        dirs::DOWNLOADS
-            .join(&self.forge.id)
-            .join(self.tv_pathname())
+        self.forge.downloads_path.join(self.tv_pathname())
     }
     pub fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
         let tv = self.request.resolve(tool, self.opts.clone(), true)?;
@@ -118,12 +116,14 @@ impl ToolVersion {
             ToolVersionRequest::Path(_, p) => format!("path-{}", hash_to_str(p)),
             ToolVersionRequest::System(_) => "system".to_string(),
         }
+        .replace([':', '/'], "-")
     }
     fn tv_short_pathname(&self) -> String {
         match &self.request {
             ToolVersionRequest::Version(_, v) => v.to_string(),
             _ => self.tv_pathname(),
         }
+        .replace([':', '/'], "-")
     }
 
     fn resolve_version(

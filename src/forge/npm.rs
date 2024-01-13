@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
-use crate::dirs;
+use crate::config::{Config, Settings};
+
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 
@@ -34,6 +34,7 @@ impl Forge for NPMForge {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+        let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental()?;
 
@@ -44,6 +45,8 @@ impl Forge for NPMForge {
             .arg("--prefix")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())
+            .envs(&config.env)
+            .prepend_path(ctx.ts.list_paths())?
             .execute()?;
 
         Ok(())
@@ -52,10 +55,11 @@ impl Forge for NPMForge {
 
 impl NPMForge {
     pub fn new(fa: ForgeArg) -> Self {
-        let cache_dir = dirs::CACHE.join(&fa.id);
         Self {
+            remote_version_cache: CacheManager::new(
+                fa.cache_path.join("remote_versions.msgpack.z"),
+            ),
             fa,
-            remote_version_cache: CacheManager::new(cache_dir.join("remote_versions.msgpack.z")),
         }
     }
 }

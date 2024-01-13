@@ -158,21 +158,22 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn prepend_path_env(&mut self, path: PathBuf) -> &mut Self {
-        let k: OsString = "PATH".into();
+    pub fn prepend_path(mut self, paths: Vec<PathBuf>) -> eyre::Result<Self> {
         let existing = self
-            .get_env(&k)
+            .get_env("PATH")
             .map(|c| c.to_owned())
             .unwrap_or_else(|| env::var_os("PATH").unwrap());
-        let mut paths = env::split_paths(&existing).collect::<Vec<_>>();
-        paths.insert(0, path);
-        self.cmd.env("PATH", env::join_paths(paths).unwrap());
-        self
+        let paths = paths
+            .into_iter()
+            .chain(env::split_paths(&existing))
+            .collect::<Vec<_>>();
+        self.cmd.env("PATH", env::join_paths(paths)?);
+        Ok(self)
     }
 
-    fn get_env(&self, key: &OsString) -> Option<&OsStr> {
+    fn get_env(&self, key: &str) -> Option<&OsStr> {
         for (k, v) in self.cmd.get_envs() {
-            if k != key {
+            if k == key {
                 return v;
             }
         }

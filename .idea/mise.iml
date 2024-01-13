@@ -21,6 +21,8 @@
       <excludeFolder url="file://$MODULE_DIR$/asdf-plugins" />
       <excludeFolder url="file://$MODULE_DIR$/megalinter-reports" />
       <excludeFolder url="file://$MODULE_DIR$/e2e/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/cache" />
+      <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/dist" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />
