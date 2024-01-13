@@ -12,11 +12,18 @@ The code for this is inside the mise repository at
 
 ## Usage
 
-The following installs the latest version of go-1.20.x (if some version of 1.20.x is not already
+The following installs the latest version of go-1.21.x (if some version of 1.21.x is not already
 installed) and makes it the global default:
 
 ```sh
-mise use -g go@1.20
+mise use -g go@1.21
+```
+
+Minor go versions 1.20 and below require specifying `prefix` before the version number because the first version 
+of each serie was released without a `.0` suffix, making 1.20 an exact version match:
+
+```sh
+mise use -g go@prefix:1.20
 ```
 
 ## Configuration
