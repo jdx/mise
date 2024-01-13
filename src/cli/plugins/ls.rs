@@ -8,6 +8,7 @@ use tabled::settings::{Margin, Modify, Padding, Style};
 use tabled::Tabled;
 
 use crate::config::Config;
+use crate::plugins;
 use crate::plugins::{ExternalPlugin, PluginType};
 
 /// List installed plugins
@@ -46,7 +47,7 @@ pub struct PluginsLs {
 
 impl PluginsLs {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mut tools = config.list_plugins().into_iter().collect::<BTreeSet<_>>();
+        let mut tools = plugins::list().into_iter().collect::<BTreeSet<_>>();
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {

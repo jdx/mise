@@ -11,10 +11,10 @@ use crate::config::Config;
 use crate::file::make_symlink;
 use crate::forge::Forge;
 use crate::plugins::VERSION_REGEX;
-use crate::{dirs, file};
+use crate::{dirs, file, forge};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for plugin in config.list_plugins() {
+    for plugin in forge::list() {
         let symlinks = list_symlinks(config, plugin.clone())?;
         let installs_dir = dirs::INSTALLS.join(plugin.name());
         for (from, to) in symlinks {
@@ -118,7 +118,8 @@ mod tests {
     #[test]
     fn test_list_symlinks() {
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::newa(String::from("tiny"));
+        let plugin = ExternalPlugin::new(String::from("tiny"));
+        let plugin = Arc::new(plugin);
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
     }

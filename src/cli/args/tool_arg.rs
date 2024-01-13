@@ -6,14 +6,12 @@ use console::style;
 use regex::Regex;
 
 use crate::cli::args::ForgeArg;
-use crate::forge::ForgeType;
 use crate::toolset::ToolVersionRequest;
 use crate::ui::style;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
-    pub forge: String,
-    pub forge_type: ForgeType,
+    pub forge: ForgeArg,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolVersionRequest>,
@@ -44,13 +42,12 @@ impl FromStr for ToolArg {
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolVersionRequest::new(forge.name.clone(), v));
+            .map(|v| ToolVersionRequest::new(forge.clone(), v));
         Ok(Self {
             tvr,
             version,
             version_type,
-            forge: forge.name,
-            forge_type: forge.forge_type,
+            forge,
         })
     }
 }
@@ -88,12 +85,11 @@ impl ToolArg {
             let re: &Regex = regex!(r"^\d+(\.\d+)*$");
             let a = tools[0].clone();
             let b = tools[1].clone();
-            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.forge) {
-                tools[1].tvr = Some(ToolVersionRequest::new(a.forge.clone(), &b.forge));
+            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.forge.name) {
+                tools[1].tvr = Some(ToolVersionRequest::new(a.forge.clone(), &b.forge.name));
                 tools[1].forge = a.forge;
-                tools[1].forge_type = a.forge_type;
-                tools[1].version_type = b.forge.parse()?;
-                tools[1].version = Some(b.forge);
+                tools[1].version_type = b.forge.name.parse()?;
+                tools[1].version = Some(b.forge.name);
                 tools.remove(0);
             }
         }
@@ -103,6 +99,8 @@ impl ToolArg {
     pub fn with_version(self, version: &str) -> Self {
         Self {
             tvr: Some(ToolVersionRequest::new(self.forge.clone(), version)),
+            version: Some(version.into()),
+            version_type: version.parse().unwrap(),
             ..self
         }
     }
@@ -115,7 +113,7 @@ impl ToolArg {
             .unwrap_or(String::from("latest"));
         format!(
             "{}{}",
-            style(&self.forge).blue().for_stderr(),
+            style(&self.forge.name).blue().for_stderr(),
             style(&format!("@{version}")).for_stderr()
         )
     }
@@ -125,7 +123,7 @@ impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
             Some(tvr) => write!(f, "{}", tvr),
-            _ => write!(f, "{}", self.forge),
+            _ => write!(f, "{}", self.forge.name),
         }
     }
 }
@@ -140,10 +138,9 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
+                forge: "node".parse().unwrap(),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
-                forge_type: ForgeType::Asdf,
                 tvr: None,
             }
         );
@@ -155,11 +152,10 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
-                forge_type: ForgeType::Asdf,
+                forge: "node".parse().unwrap(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolVersionRequest::new("node".into(), "20")),
+                tvr: Some(ToolVersionRequest::new("node".parse().unwrap(), "20")),
             }
         );
     }
@@ -170,11 +166,10 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
-                forge_type: ForgeType::Asdf,
+                forge: "node".parse().unwrap(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolVersionRequest::new("node".into(), "lts")),
+                tvr: Some(ToolVersionRequest::new("node".parse().unwrap(), "lts")),
             }
         );
     }

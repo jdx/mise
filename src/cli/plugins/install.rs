@@ -59,7 +59,7 @@ impl PluginsInstall {
         if git_url.is_some() {
             self.install_one(name, git_url, &mpr)?;
         } else {
-            let is_core = CORE_PLUGINS.contains_key(name.as_str());
+            let is_core = CORE_PLUGINS.iter().any(|p| p.name() == name);
             if is_core {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
@@ -81,7 +81,7 @@ impl PluginsInstall {
         mpr: &MultiProgressReport,
     ) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config)?;
-        let missing_plugins = ts.list_missing_plugins(config);
+        let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }

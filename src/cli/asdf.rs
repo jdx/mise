@@ -47,21 +47,18 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
         .run();
     }
     let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions = ts.list_installed_versions(config)?;
+    let mut versions = ts.list_installed_versions()?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
         _ => None,
     };
     if let Some(plugin) = plugin {
-        versions.retain(|(_, v)| v.plugin_name.as_str() == plugin);
+        versions.retain(|(_, v)| &v.forge.to_string() == plugin);
         for (_, version) in versions {
             miseprintln!("{}", version.version);
         }
     } else {
-        for (plugin, versions) in &versions
-            .into_iter()
-            .group_by(|(_, v)| v.plugin_name.to_string())
-        {
+        for (plugin, versions) in &versions.into_iter().group_by(|(_, v)| v.forge.clone()) {
             miseprintln!("{}", plugin);
             for (_, tv) in versions {
                 miseprintln!("  {}", tv.version);

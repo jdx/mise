@@ -13,7 +13,7 @@ use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
-use crate::{cli, cmd, dirs};
+use crate::{cli, cmd, dirs, forge};
 use crate::{duration, env};
 
 /// Check mise installation for possible problems.
@@ -46,8 +46,8 @@ impl Doctor {
         match Config::try_get() {
             Ok(config) => {
                 miseprintln!("{}", render_config_files(&config));
-                miseprintln!("{}", render_plugins(&config));
-                for plugin in config.list_plugins() {
+                miseprintln!("{}", render_plugins());
+                for plugin in forge::list() {
                     if !plugin.is_installed() {
                         checks.push(format!("plugin {} is not installed", &plugin.name()));
                         continue;
@@ -130,10 +130,9 @@ fn render_config_files(config: &Config) -> String {
     s
 }
 
-fn render_plugins(config: &Config) -> String {
+fn render_plugins() -> String {
     let mut s = style("plugins:\n").bold().to_string();
-    let plugins = config
-        .list_plugins()
+    let plugins = forge::list()
         .into_iter()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();

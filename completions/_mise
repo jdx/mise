@@ -242,7 +242,7 @@ __mise_config_ls_cmd() {
 (( $+functions[__mise_current_cmd] )) ||
 __mise_current_cmd() {
   _arguments -s -S \
-    '::plugin:__mise_plugins' \
+    '::forge:' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -340,7 +340,7 @@ __mise_global_cmd() {
     '*::tool:__mise_tool_versions' \
     '--pin[Save exact version to \`~/.tool-versions\`]' \
     '--fuzzy[Save fuzzy version to \`~/.tool-versions\`]' \
-    '*--remove=[Remove the plugin(s) from ~/.tool-versions]:remove:' \
+    '*--remove=[Remove the forge(s) from ~/.tool-versions]:remove:' \
     '--path[Get the path of the global config file]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
@@ -417,7 +417,7 @@ __mise_local_cmd() {
     '(-p --parent)'{-p,--parent}'[Recurse up to find a .tool-versions file rather than using the current directory only]' \
     '--pin[Save exact version to \`.tool-versions\`]' \
     '--fuzzy[Save fuzzy version to \`.tool-versions\` e.g.\: \`mise local --fuzzy node@20\` will save \`node 20\` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1]' \
-    '*--remove=[Remove the plugin(s) from .tool-versions]:remove:' \
+    '*--remove=[Remove the forge(s) from .tool-versions]:remove:' \
     '--path[Get the path of the config file]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
@@ -427,7 +427,7 @@ __mise_local_cmd() {
 (( $+functions[__mise_ls_cmd] )) ||
 __mise_ls_cmd() {
   _arguments -s -S \
-    '*::plugin:__mise_plugins' \
+    '*::forge:' \
     '(-c --current)'{-c,--current}'[Only show tool versions currently specified in a .tool-versions/.mise.toml]' \
     '(-g --global)'{-g,--global}'[Only show tool versions currently specified in a the global .tool-versions/.mise.toml]' \
     '(-i --installed)'{-i,--installed}'[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.mise.toml but not yet installed]' \
@@ -557,7 +557,7 @@ __mise_plugins_update_cmd() {
 (( $+functions[__mise_prune_cmd] )) ||
 __mise_prune_cmd() {
   _arguments -s -S \
-    '*::plugin:__mise_plugins' \
+    '*::forge:' \
     '(-n --dry-run)'{-n,--dry-run}'[Do not actually delete anything]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
@@ -843,7 +843,7 @@ __mise_use_cmd() {
     '(-e --env)'{-e,--env}'=[Modify an environment-specific config file like .mise.<env>.toml]:env:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
-    '*--remove=[Remove the tool(s) from config file]:remove:' \
+    '*--remove=[Remove the forge(s) from config file]:remove:' \
     '(-p --path)'{-p,--path}'=[Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions]:path:_files' \
     '--pin[Save exact version to config file]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \

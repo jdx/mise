@@ -62,8 +62,8 @@ impl Commands {
             Self::Link(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run(config),
             Self::LsRemote(cmd) => cmd.run(config),
-            Self::Uninstall(cmd) => cmd.run(config),
-            Self::Update(cmd) => cmd.run(config),
+            Self::Uninstall(cmd) => cmd.run(),
+            Self::Update(cmd) => cmd.run(),
         }
     }
 }
