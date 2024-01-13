@@ -1,7 +1,7 @@
 # asdf Backend
 
 asdf is the original backend for mise. It's the default if no backend is specified,
-e.g.: `mise i ripgrep` will use [asdf](https://gitlab.com/wt0f/asdf-ripgrep) but `mise i cargo:ripgrep`
+e.g.: `mise i ripgrep` will use [asdf](https://gitlab.com/wt0f/asdf-ripgrep) but `mise  cargo:ripgrep`
 will use the [cargo](./cargo) backend. You can explicitly specify the asdf backend with `mise i asdf:ripgrep`.
 If you wish.
 

@@ -5,7 +5,7 @@ tasks.build = "bun run docs:build"
 depends = ["build"]
 run = [
   "git ci -pm docs",
-  "git push",
+  #"git push",
 ]
 
 [tools]
