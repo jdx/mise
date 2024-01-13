@@ -4,7 +4,7 @@ use eyre::Result;
 mod setting;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Manage settings")]
+#[clap(about = "Manage settings", before_long_help=SETTINGS_HELP_LONG)]
 pub struct Settings {
    setting_vars: Option<Vec<SettingsVarArg>>,
 }
@@ -50,3 +50,14 @@ impl Settings {
         Ok(())
     }
 }
+
+static SETTINGS_HELP_LONG: &str = "
+$ mise settings
+  List all settings 
+
+$ mise settings a
+  Get the value of setting with name 'a'
+
+$ mise settings a=b
+  Set setting with name 'a' to 'b'
+";
