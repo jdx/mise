@@ -2,9 +2,9 @@ use clap::{Arg, ArgAction};
 use log::LevelFilter;
 
 #[derive(Clone)]
-pub struct LogLevel(pub LevelFilter);
+pub struct LogLevelArg(pub LevelFilter);
 
-impl LogLevel {
+impl LogLevelArg {
     pub fn arg() -> clap::Arg {
         Arg::new("log-level")
             .long("log-level")
@@ -16,9 +16,9 @@ impl LogLevel {
     }
 }
 
-pub struct Debug;
+pub struct DebugArg;
 
-impl Debug {
+impl DebugArg {
     pub fn arg() -> clap::Arg {
         Arg::new("debug")
             .long("debug")
@@ -29,9 +29,9 @@ impl Debug {
     }
 }
 
-pub struct Trace;
+pub struct TraceArg;
 
-impl Trace {
+impl TraceArg {
     pub fn arg() -> clap::Arg {
         Arg::new("trace")
             .long("trace")

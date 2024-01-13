@@ -1,7 +1,7 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::shell::get_shell;
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};

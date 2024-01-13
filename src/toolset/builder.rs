@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};

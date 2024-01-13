@@ -4,7 +4,7 @@ use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use itertools::Itertools;
 
-use crate::cli::args::tool::ToolArg;
+use crate::cli::args::ToolArg;
 use crate::config::{config_file, Config, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;

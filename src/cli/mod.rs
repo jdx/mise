@@ -184,13 +184,13 @@ impl Cli {
                 .arg_required_else_help(true)
                 .subcommand_required(true)
                 .after_long_help(AFTER_LONG_HELP)
-                .arg(args::log_level::Debug::arg())
-                .arg(args::log_level::LogLevel::arg())
-                .arg(args::log_level::Trace::arg())
-                .arg(args::cd::Cd::arg())
-                .arg(args::quiet::Quiet::arg())
-                .arg(args::verbose::Verbose::arg())
-                .arg(args::yes::Yes::arg()),
+                .arg(args::CdArg::arg())
+                .arg(args::DebugArg::arg())
+                .arg(args::LogLevelArg::arg())
+                .arg(args::QuietArg::arg())
+                .arg(args::TraceArg::arg())
+                .arg(args::VerboseArg::arg())
+                .arg(args::YesArg::arg()),
         )
     }
 
