@@ -6,13 +6,13 @@ source "$(dirname "$0")/assert.sh"
 export MISE_EXPERIMENTAL=1
 export MISE_CARGO_BINSTALL=1
 
-#if [ "${TEST_ALL:-}" != 1 ]; then
-#exit
-#fi
-
 assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
 v0.17.0 [+git]
 https://github.com/eza-community/eza"
+
+if [ "${TEST_ALL:-}" != 1 ]; then
+	exit
+fi
 
 export MISE_CARGO_BINSTALL=0
 mise rm cargo:eza@0.17.0
