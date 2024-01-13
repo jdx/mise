@@ -1,3 +1,5 @@
+tasks.build = "pnpm run build"
+
 [tasks."commit-and-push"]
 depends = "build"
 run = [
