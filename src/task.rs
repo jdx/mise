@@ -1,4 +1,3 @@
-use console::truncate_str;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
@@ -6,6 +5,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
+use console::truncate_str;
 use eyre::Result;
 use itertools::Itertools;
 

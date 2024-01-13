@@ -1,8 +1,9 @@
 use std::io::Cursor;
 
 use clap::Args;
-use clap_complete::generate;
 use eyre::Result;
+
+use clap_complete::generate;
 
 use crate::shell::completions;
 

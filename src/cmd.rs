@@ -7,11 +7,11 @@ use std::sync::mpsc::channel;
 use std::sync::{Mutex, RwLock};
 use std::thread;
 
-use crate::config::Settings;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
 
+use crate::config::Settings;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;

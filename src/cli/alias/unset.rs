@@ -1,6 +1,6 @@
-use crate::cli::args::ForgeArg;
 use eyre::Result;
 
+use crate::cli::args::ForgeArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 

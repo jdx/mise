@@ -1,7 +1,9 @@
-use console::{user_attended_stderr, Term};
-pub use prompt::confirm;
 use std::process::exit;
 use std::sync::Once;
+
+use console::{user_attended_stderr, Term};
+
+pub use prompt::confirm;
 
 pub mod multi_progress_report;
 pub mod progress_report;

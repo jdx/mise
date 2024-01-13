@@ -1,6 +1,7 @@
-use crate::shell::completions::is_banned;
 use clap::{Arg, ArgAction, Command, ValueHint};
 use itertools::Itertools;
+
+use crate::shell::completions::is_banned;
 
 pub fn render(cmd: &Command) -> String {
     let cmds = vec![cmd];

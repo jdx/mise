@@ -1,7 +1,7 @@
-use crate::cli::args::ForgeArg;
 use eyre::Result;
 use tabled::Tabled;
 
+use crate::cli::args::ForgeArg;
 use crate::config::Config;
 use crate::ui::table;
 

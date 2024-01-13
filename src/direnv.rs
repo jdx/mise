@@ -111,7 +111,6 @@ impl Display for DirenvDiff {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

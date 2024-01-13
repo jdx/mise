@@ -50,7 +50,6 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
     use std::ops::Deref;
 
     use crate::config::settings::Settings;

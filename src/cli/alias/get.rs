@@ -1,6 +1,6 @@
-use crate::cli::args::ForgeArg;
 use color_eyre::eyre::{eyre, Result};
 
+use crate::cli::args::ForgeArg;
 use crate::config::Config;
 
 /// Show an alias for a plugin

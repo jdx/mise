@@ -101,7 +101,6 @@ impl MisePluginToml {
 
 #[cfg(test)]
 mod tests {
-
     use crate::dirs;
 
     use super::*;

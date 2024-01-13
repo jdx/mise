@@ -6,6 +6,9 @@ extern crate indoc;
 #[cfg(test)]
 #[macro_use]
 extern crate insta;
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
 #[macro_use]
 extern crate strum;
 

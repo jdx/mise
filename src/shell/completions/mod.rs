@@ -1,6 +1,7 @@
+use std::collections::HashSet;
+
 use clap::Command;
 use once_cell::sync::Lazy;
-use std::collections::HashSet;
 
 mod fish_complete;
 mod zsh_complete;
