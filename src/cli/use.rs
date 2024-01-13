@@ -62,8 +62,8 @@ pub struct Use {
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
-    /// Remove the forge(s) from config file
-    #[clap(long, value_name = "FORGE", aliases = ["rm", "unset"])]
+    /// Remove the plugin(s) from config file
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Vec<ForgeArg>,
 
     /// Specify a path to a config file or directory

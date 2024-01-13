@@ -14,21 +14,21 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Current {
-    /// Forge to show versions of
+    /// Plugin to show versions of
     /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
     #[clap()]
-    forge: Option<ForgeArg>,
+    plugin: Option<ForgeArg>,
 }
 
 impl Current {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
-        match &self.forge {
+        match &self.plugin {
             Some(fa) => {
                 let plugin = forge::get(fa);
                 if !plugin.is_installed() {
-                    bail!("Forge {fa} is not installed");
+                    bail!("Plugin {fa} is not installed");
                 }
                 self.one(ts, plugin.as_ref())
             }

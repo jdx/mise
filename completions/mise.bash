@@ -1307,7 +1307,7 @@ _mise() {
             return 0
             ;;
         mise__current)
-            opts="-C -q -v -y -h --cd --debug --log-level --quiet --trace --verbose --yes --help [FORGE]"
+            opts="-C -q -v -y -h --cd --debug --log-level --quiet --trace --verbose --yes --help [PLUGIN]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2897,7 +2897,7 @@ _mise() {
             return 0
             ;;
         mise__ls)
-            opts="-p -c -g -i -J -m -C -q -v -y -h --plugin --current --global --installed --parseable --json --missing --prefix --no-header --cd --debug --log-level --quiet --trace --verbose --yes --help [FORGE]..."
+            opts="-p -c -g -i -J -m -C -q -v -y -h --plugin --current --global --installed --parseable --json --missing --prefix --no-header --cd --debug --log-level --quiet --trace --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3289,7 +3289,7 @@ _mise() {
             return 0
             ;;
         mise__prune)
-            opts="-n -C -q -v -y -h --dry-run --cd --debug --log-level --quiet --trace --verbose --yes --help [FORGE]..."
+            opts="-n -C -q -v -y -h --dry-run --cd --debug --log-level --quiet --trace --verbose --yes --help [PLUGIN]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

@@ -13,6 +13,7 @@ use rayon::prelude::*;
 
 pub use settings::Settings;
 
+use crate::cli::args::ForgeArg;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
@@ -28,7 +29,7 @@ pub mod config_file;
 pub mod settings;
 mod tracking;
 
-type AliasMap = BTreeMap<String, BTreeMap<String, String>>;
+type AliasMap = BTreeMap<ForgeArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 
 #[derive(Default)]
@@ -118,7 +119,7 @@ impl Config {
     }
 
     pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.aliases.get(forge.name()) {
+        if let Some(plugin_aliases) = self.aliases.get(&forge.get_fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
@@ -133,20 +134,17 @@ impl Config {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = forge::list()
             .into_par_iter()
-            .map(|plugin| {
-                let aliases = plugin.get_aliases().unwrap_or_else(|err| {
+            .map(|forge| {
+                let aliases = forge.get_aliases().unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
-                (plugin.name().to_string(), aliases)
+                (forge.get_fa(), aliases)
             })
             .collect();
-        for (plugin, plugin_aliases) in plugin_aliases {
+        for (fa, plugin_aliases) in plugin_aliases {
             for (from, to) in plugin_aliases {
-                aliases
-                    .entry(plugin.to_string())
-                    .or_default()
-                    .insert(from, to);
+                aliases.entry(fa.clone()).or_default().insert(from, to);
             }
         }
 

@@ -234,7 +234,8 @@ impl MiseToml {
                 let mut aliases = AliasMap::new();
                 for (plugin, table) in table.iter() {
                     let k = format!("{}.{}", k, plugin);
-                    let plugin_aliases = aliases.entry(plugin.into()).or_default();
+                    let fa: ForgeArg = plugin.parse()?;
+                    let plugin_aliases = aliases.entry(fa).or_default();
                     match table.as_table_like() {
                         Some(table) => {
                             for (from, to) in table.iter() {
@@ -476,9 +477,9 @@ impl MiseToml {
         }
     }
 
-    pub fn set_alias(&mut self, plugin: &str, from: &str, to: &str) {
+    pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) {
         self.alias
-            .entry(plugin.into())
+            .entry(fa.clone())
             .or_default()
             .insert(from.into(), to.into());
         self.doc
@@ -486,21 +487,24 @@ impl MiseToml {
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
-            .entry(plugin)
+            .entry(&fa.to_string())
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
             .insert(from, value(to));
     }
 
-    pub fn remove_alias(&mut self, plugin: &str, from: &str) {
+    pub fn remove_alias(&mut self, fa: &ForgeArg, from: &str) {
         if let Some(aliases) = self.doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
-            if let Some(plugin_aliases) = aliases.get_mut(plugin).and_then(|v| v.as_table_mut()) {
-                self.alias.get_mut(plugin).unwrap().remove(from);
+            if let Some(plugin_aliases) = aliases
+                .get_mut(&fa.to_string())
+                .and_then(|v| v.as_table_mut())
+            {
+                self.alias.get_mut(fa).unwrap().remove(from);
                 plugin_aliases.remove(from);
                 if plugin_aliases.is_empty() {
-                    aliases.remove(plugin);
-                    self.alias.remove(plugin);
+                    aliases.remove(&fa.to_string());
+                    self.alias.remove(fa);
                 }
             }
             if aliases.is_empty() {
@@ -822,9 +826,11 @@ mod tests {
         "#})
             .unwrap();
 
-        cf.set_alias("node", "18", "18.0.1");
-        cf.set_alias("node", "20", "20.0.0");
-        cf.set_alias("python", "3.10", "3.10.0");
+        let node = "node".parse().unwrap();
+        let python = "python".parse().unwrap();
+        cf.set_alias(&node, "18", "18.0.1");
+        cf.set_alias(&node, "20", "20.0.0");
+        cf.set_alias(&python, "3.10", "3.10.0");
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
@@ -843,8 +849,10 @@ mod tests {
         "3.10" = "3.10.0"
         "#})
             .unwrap();
-        cf.remove_alias("node", "16");
-        cf.remove_alias("python", "3.10");
+        let node = "node".parse().unwrap();
+        let python = "python".parse().unwrap();
+        cf.remove_alias(&node, "16");
+        cf.remove_alias(&python, "3.10");
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);

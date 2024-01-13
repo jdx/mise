@@ -20,9 +20,9 @@ use crate::ui::prompt;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
-    /// Prune only versions from this forge(s)
+    /// Prune only versions from this plugin(s)
     #[clap()]
-    pub forge: Option<Vec<ForgeArg>>,
+    pub plugin: Option<Vec<ForgeArg>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
@@ -39,8 +39,8 @@ impl Prune {
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
             .collect::<BTreeMap<String, (Arc<dyn Forge>, ToolVersion)>>();
 
-        if let Some(plugins) = &self.forge {
-            to_delete.retain(|_, (_, tv)| plugins.contains(&tv.forge));
+        if let Some(forges) = &self.plugin {
+            to_delete.retain(|_, (_, tv)| forges.contains(&tv.forge));
         }
 
         for cf in config.get_tracked_config_files()?.values() {

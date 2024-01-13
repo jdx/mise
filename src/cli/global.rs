@@ -33,8 +33,8 @@ pub struct Global {
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// Remove the forge(s) from ~/.tool-versions
-    #[clap(long, value_name = "FORGE", aliases = ["rm", "unset"])]
+    /// Remove the plugin(s) from ~/.tool-versions
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<ForgeArg>>,
 
     /// Get the path of the global config file

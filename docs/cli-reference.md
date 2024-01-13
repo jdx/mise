@@ -217,7 +217,7 @@ Examples:
   $ mise cf generate --output=.mise.toml
 ```
 
-## `mise current [FORGE]`
+## `mise current [PLUGIN]`
 
 ```text
 Shows current active and installed runtime versions
@@ -225,11 +225,11 @@ Shows current active and installed runtime versions
 This is similar to `mise ls --current`, but this only shows the runtime
 and/or version. It's designed to fit into scripts more easily.
 
-Usage: current [FORGE]
+Usage: current [PLUGIN]
 
 Arguments:
-  [FORGE]
-          Forge to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc
+  [PLUGIN]
+          Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc
 
 Examples:
   # outputs `.tool-versions` compatible format
@@ -492,18 +492,18 @@ Examples:
   $ mise use node@brew
 ```
 
-## `mise ls [OPTIONS] [FORGE]...`
+## `mise ls [OPTIONS] [PLUGIN]...`
 
 **Aliases:** `list`
 
 ```text
 List installed and/or currently selected tool versions
 
-Usage: ls [OPTIONS] [FORGE]...
+Usage: ls [OPTIONS] [PLUGIN]...
 
 Arguments:
-  [FORGE]...
-          Only show tool versions from [FORGE]
+  [PLUGIN]...
+          Only show tool versions from [PLUGIN]
 
 Options:
   -c, --current
@@ -804,7 +804,7 @@ Examples:
   $ mise plugins update node#beta  # specify a ref
 ```
 
-## `mise prune [OPTIONS] [FORGE]...`
+## `mise prune [OPTIONS] [PLUGIN]...`
 
 ```text
 Delete unused versions of tools
@@ -814,11 +814,11 @@ Versions which are no longer the latest specified in any of those configs are de
 Versions installed only with environment variables (`MISE_<PLUGIN>_VERSION`) will be deleted,
 as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSION>`).
 
-Usage: prune [OPTIONS] [FORGE]...
+Usage: prune [OPTIONS] [PLUGIN]...
 
 Arguments:
-  [FORGE]...
-          Prune only versions from this forge(s)
+  [PLUGIN]...
+          Prune only versions from this plugin(s)
 
 Options:
   -n, --dry-run
@@ -1471,8 +1471,8 @@ Options:
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-      --remove <FORGE>
-          Remove the forge(s) from config file
+      --remove <PLUGIN>
+          Remove the plugin(s) from config file
 
   -p, --path <PATH>
           Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions

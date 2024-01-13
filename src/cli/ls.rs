@@ -22,12 +22,12 @@ use crate::ui::table;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
-    /// Only show tool versions from [FORGE]
-    #[clap(conflicts_with = "forge_flag")]
-    forge: Option<Vec<ForgeArg>>,
+    /// Only show tool versions from [PLUGIN]
+    #[clap(conflicts_with = "plugin_flag")]
+    plugin: Option<Vec<ForgeArg>>,
 
-    #[clap(long = "plugin", short = 'p', hide = true)]
-    forge_flag: Option<ForgeArg>,
+    #[clap(long = "plugin", short, hide = true)]
+    plugin_flag: Option<ForgeArg>,
 
     /// Only show tool versions currently specified in a .tool-versions/.mise.toml
     #[clap(long, short)]
@@ -55,7 +55,7 @@ pub struct Ls {
     missing: bool,
 
     /// Display versions matching this prefix
-    #[clap(long, requires = "forge")]
+    #[clap(long, requires = "plugin")]
     prefix: Option<String>,
 
     /// Don't display headers
@@ -66,9 +66,9 @@ pub struct Ls {
 impl Ls {
     pub fn run(mut self) -> Result<()> {
         let config = Config::try_get()?;
-        self.forge = self
-            .forge
-            .or_else(|| self.forge_flag.clone().map(|p| vec![p]));
+        self.plugin = self
+            .plugin
+            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]));
         self.verify_plugin()?;
 
         let mut runtimes = self.get_runtime_list(&config)?;
@@ -96,7 +96,7 @@ impl Ls {
     }
 
     fn verify_plugin(&self) -> Result<()> {
-        match &self.forge {
+        match &self.plugin {
             Some(plugins) => {
                 for fa in plugins {
                     let plugin = forge::get(fa);
@@ -109,7 +109,7 @@ impl Ls {
     }
 
     fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        if let Some(plugins) = &self.forge {
+        if let Some(plugins) = &self.plugin {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
@@ -140,7 +140,7 @@ impl Ls {
             .map(|(p, tv, _)| (p, tv))
             .filter(|(p, tv)| p.is_version_installed(tv))
             .for_each(|(_, tv)| {
-                if self.forge.is_some() {
+                if self.plugin.is_some() {
                     // only displaying 1 plugin so only show the version
                     miseprintln!("{}", tv.version);
                 } else {
@@ -190,7 +190,7 @@ impl Ls {
 
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
-            .filter(|(_, (f, _))| match &self.forge {
+            .filter(|(_, (f, _))| match &self.plugin {
                 Some(p) => p.contains(&f.get_fa()),
                 None => true,
             })
@@ -210,7 +210,7 @@ impl Ls {
             })
             // if it isn't installed and it's not specified, don't show it
             .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
-            .filter(|(p, _, _)| match &self.forge {
+            .filter(|(p, _, _)| match &self.plugin {
                 Some(forge) => forge.contains(&p.get_fa()),
                 None => true,
             })

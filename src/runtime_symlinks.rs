@@ -36,11 +36,11 @@ pub fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions(&plugin)? {
+    for v in installed_versions(&forge)? {
         let prefix = regex!(r"^[a-zA-Z0-9]+-")
             .find(&v)
             .map(|s| s.as_str().to_string())
@@ -57,7 +57,7 @@ fn list_symlinks(config: &Config, plugin: Arc<dyn Forge>) -> Result<IndexMap<Str
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(plugin.name())
+            .get(&forge.get_fa())
             .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {

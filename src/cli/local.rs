@@ -42,8 +42,8 @@ pub struct Local {
     #[clap(long, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// Remove the forge(s) from .tool-versions
-    #[clap(long, value_name = "FORGE", aliases = ["rm", "unset"])]
+    /// Remove the plugin(s) from .tool-versions
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
     remove: Option<Vec<ForgeArg>>,
 
     /// Get the path of the config file

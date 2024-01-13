@@ -12,7 +12,7 @@ Config {
         "TEST_ENV_VAR": "test-123",
     },
     Aliases: {
-        "tiny": {
+        ForgeArg("tiny"): {
             "my/alias": "3.0",
         },
     },

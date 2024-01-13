@@ -1,3 +1,4 @@
+use crate::cli::args::ForgeArg;
 use color_eyre::eyre::{eyre, Result};
 
 use crate::config::Config;
@@ -10,7 +11,7 @@ use crate::config::Config;
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasGet {
     /// The plugin to show the alias for
-    pub plugin: String,
+    pub plugin: ForgeArg,
     /// The alias to show
     pub alias: String,
 }
