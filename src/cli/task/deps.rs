@@ -152,3 +152,46 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   Shows dependencies in DOT format
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_tasks_deps_tree() {
+        assert_cli_snapshot!("tasks", "deps", @r###"
+        configtask
+        filetask
+        ├── test
+        └── lint
+        lint
+        test
+        "###
+        );
+    }
+
+    #[test]
+    fn test_tasks_deps_tree_args() {
+        assert_cli_snapshot!("tasks", "deps", "filetask", "lint", "test", @r###"
+        filetask
+        ├── test
+        └── lint
+        lint
+        test
+        "###
+        );
+    }
+
+    #[test]
+    fn test_tasks_deps_dot() {
+        assert_cli_snapshot!("tasks", "deps", "--dot", @r###"
+        digraph {
+            0 [ label = "configtask"]
+            1 [ label = "filetask"]
+            2 [ label = "lint"]
+            3 [ label = "test"]
+            1 -> 2 [ ]
+            1 -> 3 [ ]
+        }
+        "###
+        );
+    }
+}

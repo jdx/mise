@@ -70,9 +70,9 @@ fn print_tree_item<T: TreeItem>(
     indent: &TreeItemIndent,
     level: u32,
 ) {
-    print!("{}", prefix);
+    miseprint!("{}", prefix);
     item.write_self();
-    println!("");
+    miseprintln!("");
 
     let children = item.children();
     if let Some((last_child, children)) = children.split_last() {
