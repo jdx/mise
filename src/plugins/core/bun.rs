@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::cli::args::ForgeArg;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -95,8 +96,8 @@ impl BunPlugin {
 }
 
 impl Forge for BunPlugin {
-    fn name(&self) -> &str {
-        "bun"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {

@@ -11,12 +11,12 @@ use crate::config::Config;
 use crate::file::make_symlink;
 use crate::forge::Forge;
 use crate::plugins::VERSION_REGEX;
-use crate::{dirs, file, forge};
+use crate::{file, forge};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for plugin in forge::list() {
-        let symlinks = list_symlinks(config, plugin.clone())?;
-        let installs_dir = dirs::INSTALLS.join(plugin.name());
+    for forge in forge::list() {
+        let symlinks = list_symlinks(config, forge.clone())?;
+        let installs_dir = forge.installs_path();
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -29,7 +29,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
             }
             make_symlink(&to, &from)?;
         }
-        remove_missing_symlinks(plugin.clone())?;
+        remove_missing_symlinks(forge.clone())?;
         // remove install dir if empty
         file::remove_dir(&installs_dir)?;
     }
@@ -57,7 +57,7 @@ fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<Stri
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(&forge.get_fa())
+            .get(forge.fa())
             .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {
@@ -76,8 +76,8 @@ fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<Stri
     Ok(symlinks)
 }
 
-fn installed_versions(plugin: &Arc<dyn Forge>) -> Result<Vec<String>> {
-    let versions = plugin
+fn installed_versions(forge: &Arc<dyn Forge>) -> Result<Vec<String>> {
+    let versions = forge
         .list_installed_versions()?
         .into_iter()
         .filter(|v| !VERSION_REGEX.is_match(v))
@@ -85,8 +85,8 @@ fn installed_versions(plugin: &Arc<dyn Forge>) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(plugin: Arc<dyn Forge>) -> Result<()> {
-    let installs_dir = dirs::INSTALLS.join(plugin.name());
+fn remove_missing_symlinks(forge: Arc<dyn Forge>) -> Result<()> {
+    let installs_dir = forge.installs_path();
     if !installs_dir.exists() {
         return Ok(());
     }

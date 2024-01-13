@@ -29,7 +29,7 @@ impl PluginsUninstall {
         let plugins = match self.all {
             true => plugins::list()
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.id().to_string())
                 .collect(),
             false => self.plugin.clone(),
         };
@@ -44,7 +44,7 @@ impl PluginsUninstall {
     fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
         match plugins::get(plugin_name) {
             plugin if plugin.is_installed() => {
-                let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
+                let prefix = format!("plugin:{}", style::eblue(&plugin.id()));
                 let pr = mpr.add(&prefix);
                 plugin.uninstall(pr.as_ref())?;
                 if self.purge {

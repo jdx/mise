@@ -33,7 +33,7 @@ pub struct ProgressReport {
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
     forge::list()
         .into_iter()
-        .map(|p| p.name().len() + 10)
+        .map(|p| p.id().len() + 10)
         .max()
         .unwrap_or_default()
         .max(15)

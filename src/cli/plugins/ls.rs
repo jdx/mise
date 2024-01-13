@@ -67,7 +67,7 @@ impl PluginsLs {
                 .into_par_iter()
                 .map(|p| {
                     let mut row = Row {
-                        plugin: p.name().to_string(),
+                        plugin: p.id().to_string(),
                         url: p.get_remote_url().unwrap_or_default(),
                         ref_: String::new(),
                         sha: String::new(),

@@ -43,10 +43,7 @@ impl Outdated {
 
     fn display(&self, outdated: OutputVec) {
         // TODO: make a generic table printer in src/ui/table
-        let plugins = outdated
-            .iter()
-            .map(|(t, _, _)| t.name())
-            .collect::<Vec<_>>();
+        let plugins = outdated.iter().map(|(t, _, _)| t.id()).collect::<Vec<_>>();
         let requests = outdated
             .iter()
             .map(|(_, tv, _)| tv.request.version())

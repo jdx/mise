@@ -38,13 +38,13 @@ impl Current {
 
     fn one(&self, ts: Toolset, tool: &dyn Forge) -> Result<()> {
         if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.name());
+            warn!("Plugin {} is not installed", tool.id());
             return Ok(());
         }
         match ts
             .list_versions_by_plugin()
             .into_iter()
-            .find(|(p, _)| p.name() == tool.name())
+            .find(|(p, _)| p.id() == tool.id())
         {
             Some((_, versions)) => {
                 miseprintln!(
@@ -59,7 +59,7 @@ impl Current {
             None => {
                 warn!(
                     "Plugin {} does not have a version set",
-                    style(tool.name()).blue().for_stderr()
+                    style(tool.id()).blue().for_stderr()
                 );
             }
         };
@@ -82,7 +82,7 @@ impl Current {
             }
             miseprintln!(
                 "{} {}",
-                &plugin.name(),
+                &plugin.id(),
                 versions
                     .iter()
                     .map(|v| v.version.to_string())

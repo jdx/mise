@@ -28,6 +28,9 @@ pub struct Settings {
     pub always_keep_install: bool,
     #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
+    /// use cargo-binstall instead of cargo install if available
+    #[config(env = "MISE_CARGO_BINSTALL", default = true)]
+    pub cargo_binstall: bool,
     #[config(env = "MISE_COLOR", default = true)]
     pub color: bool,
     #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
