@@ -27,6 +27,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
 
 mod cargo;
+mod npm;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
@@ -37,6 +38,7 @@ pub type ForgeList = Vec<AForge>;
 pub enum ForgeType {
     Asdf,
     Cargo,
+    Npm,
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
@@ -74,6 +76,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
             })
             .clone()
     }
