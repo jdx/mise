@@ -45,6 +45,7 @@ mod tests {
         always_keep_download = true
         always_keep_install = true
         asdf_compat = false
+        cargo_binstall = true
         color = true
         disable_default_shorthands = false
         disable_tools = []

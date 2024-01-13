@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
+use crate::cli::args::ForgeArg;
 use crate::file::display_path;
 use crate::forge::Forge;
 use crate::http::HTTP_FETCH;
@@ -88,10 +89,9 @@ impl ErlangPlugin {
 }
 
 impl Forge for ErlangPlugin {
-    fn name(&self) -> &str {
-        self.core.name
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
-
     fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache

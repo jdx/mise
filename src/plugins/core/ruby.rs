@@ -9,6 +9,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
 
+use crate::cli::args::ForgeArg;
 use crate::forge::Forge;
 use crate::git::Git;
 use crate::github::GithubRelease;
@@ -321,10 +322,9 @@ impl RubyPlugin {
 }
 
 impl Forge for RubyPlugin {
-    fn name(&self) -> &str {
-        "ruby"
+    fn fa(&self) -> &ForgeArg {
+        &self.core.fa
     }
-
     fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache

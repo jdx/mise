@@ -50,7 +50,7 @@ impl Update {
             .build()?
             .install(|| {
                 plugins.into_par_iter().for_each(|(plugin, ref_)| {
-                    let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
+                    let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
                     let pr = mpr.add(&prefix);
                     plugin.update(pr.as_ref(), ref_).unwrap();
                 });

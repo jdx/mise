@@ -10,8 +10,9 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
+use crate::cli::args::ForgeArg;
 use crate::config::Settings;
-use crate::forge::{Forge, ForgeList};
+use crate::forge::{Forge, ForgeList, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -52,6 +53,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub struct CorePlugin {
+    pub fa: ForgeArg,
     pub name: &'static str,
     pub cache_path: PathBuf,
     pub remote_version_cache: CacheManager<Vec<String>>,
@@ -61,6 +63,7 @@ impl CorePlugin {
     pub fn new(name: &'static str) -> Self {
         let cache_path = dirs::CACHE.join(name);
         Self {
+            fa: ForgeArg::new(ForgeType::Asdf, name),
             name,
             remote_version_cache: CacheManager::new(cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
