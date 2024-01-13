@@ -146,8 +146,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>mise task deps</bold>
   Shows dependencies for all tasks
 
-  $ <bold>mise task deps task1</bold>
-  Shows dependencies for task1
+  $ <bold>mise task deps lint test check</bold>
+  Shows dependencies for the "lint", "test" and "check" tasks
 
   $ <bold>mise task deps --dot</bold>
   Shows dependencies in DOT format
