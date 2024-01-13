@@ -1,3 +1,10 @@
+[tasks."commit-and-push"]
+depends = "build"
+run = [
+  "git ci -pm docs",
+  "git push",
+]
+
 [tools]
 node = '20'
 pnpm = '8'
