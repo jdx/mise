@@ -1,9 +1,10 @@
-use crate::config::Config;
-use crate::ui;
-use crate::ui::style;
+use std::time::Duration;
+
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
-use std::time::Duration;
+
+use crate::ui::style;
+use crate::{forge, ui};
 
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
@@ -30,8 +31,7 @@ pub struct ProgressReport {
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
-    Config::get()
-        .list_plugins()
+    forge::list()
         .into_iter()
         .map(|p| p.name().len() + 10)
         .max()
@@ -43,10 +43,12 @@ static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
 fn pad_prefix(w: usize, s: &str) -> String {
     console::pad_str(s, w, console::Alignment::Left, None).to_string()
 }
+
 fn normal_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style::edim("mise"));
     pad_prefix(pad, &prefix)
 }
+
 fn success_prefix(pad: usize, prefix: &str) -> String {
     let prefix = format!("{} {prefix}", style::egreen("mise"));
     pad_prefix(pad, &prefix)

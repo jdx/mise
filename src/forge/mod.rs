@@ -1,27 +1,98 @@
-use crate::config::{Config, Settings};
-use crate::file::{display_path, remove_all, remove_all_with_warning};
-use crate::install_context::InstallContext;
-use crate::lock_file::LockFile;
-use crate::plugins::{PluginType, VERSION_REGEX};
-use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Display};
+use std::fs::File;
+use std::hash::Hash;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use clap::Command;
 use console::style;
 use eyre::WrapErr;
 use itertools::Itertools;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
-use std::fs::File;
-use std::path::{Path, PathBuf};
 use versions::Versioning;
+
+use crate::cli::args::ForgeArg;
+use crate::config::{Config, Settings};
+use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::forge::cargo::CargoForge;
+use crate::install_context::InstallContext;
+use crate::lock_file::LockFile;
+use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
+use crate::{dirs, file};
+
+mod cargo;
+
+pub type AForge = Arc<dyn Forge>;
+pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
+pub type ForgeList = Vec<AForge>;
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, EnumString, AsRefStr, Ord, PartialOrd)]
+#[strum(serialize_all = "snake_case")]
+pub enum ForgeType {
+    Asdf,
+    Cargo,
+}
+
+static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
+
+fn load_forges() -> ForgeMap {
+    let mut forges = FORGES.lock().unwrap();
+    if let Some(forges) = &*forges {
+        return forges.clone();
+    }
+    let mut plugins = CORE_PLUGINS.clone();
+    plugins.extend(ExternalPlugin::list().expect("failed to list plugins"));
+    let settings = Settings::get();
+    plugins.retain(|plugin| !settings.disable_tools.contains(plugin.name()));
+    let plugins: ForgeMap = plugins
+        .into_iter()
+        .map(|plugin| (plugin.get_fa(), plugin))
+        .collect();
+    *forges = Some(plugins.clone());
+    plugins
+}
+
+pub fn list() -> ForgeList {
+    load_forges().values().cloned().collect()
+}
+
+#[cfg(test)]
+pub fn reset() {
+    *FORGES.lock().unwrap() = None;
+}
+
+pub fn get(fa: &ForgeArg) -> AForge {
+    if let Some(forge) = load_forges().get(fa) {
+        forge.clone()
+    } else {
+        let mut m = FORGES.lock().unwrap();
+        let forges = m.as_mut().unwrap();
+        let name = fa.name.to_string();
+        forges
+            .entry(fa.clone())
+            .or_insert_with(|| match fa.forge_type {
+                ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
+                ForgeType::Cargo => Arc::new(CargoForge::new(name)),
+            })
+            .clone()
+    }
+}
 
 pub trait Forge: Debug + Send + Sync {
     fn name(&self) -> &str;
-    fn get_type(&self) -> PluginType {
+    fn get_type(&self) -> ForgeType {
+        ForgeType::Asdf
+    }
+    fn get_fa(&self) -> ForgeArg {
+        ForgeArg::new(self.get_type(), self.name())
+    }
+    fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
     fn installs_path(&self) -> PathBuf {
@@ -337,4 +408,44 @@ fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
             style(&dir.to_string_lossy()).cyan().for_stderr()
         )
     })
+}
+
+pub fn unalias_forge(forge: &str) -> &str {
+    match forge {
+        "nodejs" => "node",
+        "golang" => "go",
+        _ => forge,
+    }
+}
+
+impl Display for dyn Forge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+impl Eq for dyn Forge {}
+
+impl PartialEq for dyn Forge {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_plugin_type() == other.get_plugin_type() && self.name() == other.name()
+    }
+}
+
+impl Hash for dyn Forge {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name().hash(state)
+    }
+}
+
+impl PartialOrd for dyn Forge {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for dyn Forge {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name().cmp(other.name())
+    }
 }

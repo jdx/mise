@@ -843,7 +843,7 @@ __mise_use_cmd() {
     '(-e --env)'{-e,--env}'=[Modify an environment-specific config file like .mise.<env>.toml]:env:' \
     '(-j --jobs)'{-j,--jobs}'=[Number of jobs to run in parallel]:jobs:' \
     '--raw[Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1]' \
-    '*--remove=[Remove the tool(s) from config file]:remove:' \
+    '*--remove=[Remove the plugin(s) from config file]:remove:' \
     '(-p --path)'{-p,--path}'=[Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions]:path:_files' \
     '--pin[Save exact version to config file]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \

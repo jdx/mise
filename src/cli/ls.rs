@@ -11,10 +11,10 @@ use serde_derive::Serialize;
 use tabled::{Table, Tabled};
 use versions::Versioning;
 
+use crate::cli::args::ForgeArg;
 use crate::config::Config;
-use crate::errors::Error::PluginNotInstalled;
+use crate::forge;
 use crate::forge::Forge;
-use crate::plugins::unalias_plugin;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::table;
 
@@ -24,10 +24,10 @@ use crate::ui::table;
 pub struct Ls {
     /// Only show tool versions from [PLUGIN]
     #[clap(conflicts_with = "plugin_flag")]
-    plugin: Option<Vec<String>>,
+    plugin: Option<Vec<ForgeArg>>,
 
     #[clap(long = "plugin", short, hide = true)]
-    plugin_flag: Option<String>,
+    plugin_flag: Option<ForgeArg>,
 
     /// Only show tool versions currently specified in a .tool-versions/.mise.toml
     #[clap(long, short)]
@@ -68,9 +68,8 @@ impl Ls {
         let config = Config::try_get()?;
         self.plugin = self
             .plugin
-            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]))
-            .map(|p| p.into_iter().map(|p| unalias_plugin(&p).into()).collect());
-        self.verify_plugin(&config)?;
+            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]));
+        self.verify_plugin()?;
 
         let mut runtimes = self.get_runtime_list(&config)?;
         if self.current || self.global {
@@ -96,14 +95,12 @@ impl Ls {
         }
     }
 
-    fn verify_plugin(&self, config: &Config) -> Result<()> {
+    fn verify_plugin(&self) -> Result<()> {
         match &self.plugin {
             Some(plugins) => {
-                for plugin_name in plugins {
-                    let plugin = config.get_or_create_plugin(plugin_name);
-                    if !plugin.is_installed() {
-                        return Err(PluginNotInstalled(plugin_name.clone()))?;
-                    }
+                for fa in plugins {
+                    let plugin = forge::get(fa);
+                    ensure!(plugin.is_installed(), "{fa} is not installed");
                 }
             }
             None => {}
@@ -116,7 +113,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(p, _, _)| plugins.contains(&p.name().to_string()))
+                .filter(|(p, _, _)| plugins.contains(&p.get_fa()))
                 .map(|row| row.into())
                 .collect();
             miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
@@ -147,7 +144,7 @@ impl Ls {
                     // only displaying 1 plugin so only show the version
                     miseprintln!("{}", tv.version);
                 } else {
-                    miseprintln!("{} {}", tv.plugin_name, tv.version);
+                    miseprintln!("{} {}", &tv.forge, tv.version);
                 }
             });
         Ok(())
@@ -174,15 +171,11 @@ impl Ls {
     }
 
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
-        let mut tsb = ToolsetBuilder::new().with_global_only(self.global);
+        let tsb = ToolsetBuilder::new().with_global_only(self.global);
 
-        if let Some(plugins) = &self.plugin {
-            let plugins = plugins.iter().map(|p| p.as_str()).collect_vec();
-            tsb = tsb.with_tools(&plugins);
-        }
         let ts = tsb.build(config)?;
         let mut versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = ts
-            .list_installed_versions(config)?
+            .list_installed_versions()?
             .into_iter()
             .map(|(p, tv)| ((p.name().into(), tv.version.clone()), (p, tv)))
             .collect();
@@ -197,8 +190,8 @@ impl Ls {
 
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
-            .filter(|((plugin_name, _), _)| match &self.plugin {
-                Some(p) => p.contains(plugin_name),
+            .filter(|(_, (f, _))| match &self.plugin {
+                Some(p) => p.contains(&f.get_fa()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -210,13 +203,17 @@ impl Ls {
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(&tv.plugin_name).map(|tv| tv.source.clone()),
+                    Some((_, tv)) => ts.versions.get(&tv.forge).map(|tv| tv.source.clone()),
                     None => None,
                 };
                 (p, tv, source)
             })
             // if it isn't installed and it's not specified, don't show it
             .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
+            .filter(|(p, _, _)| match &self.plugin {
+                Some(forge) => forge.contains(&p.get_fa()),
+                None => true,
+            })
             .collect();
 
         Ok(rvs)
@@ -454,7 +451,7 @@ mod tests {
     #[test]
     fn test_ls_missing_plugin() {
         let err = assert_cli_err!("ls", "missing-plugin");
-        assert_str_eq!(err.to_string(), r#"[missing-plugin] plugin not installed"#);
+        assert_str_eq!(err.to_string(), r#"missing-plugin is not installed"#);
     }
 
     #[test]

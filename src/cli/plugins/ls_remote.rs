@@ -5,6 +5,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::config::Config;
+use crate::plugins;
 
 /// List all available remote plugins
 #[derive(Debug, clap::Args)]
@@ -23,8 +24,7 @@ pub struct PluginsLsRemote {
 
 impl PluginsLsRemote {
     pub fn run(self, config: &Config) -> Result<()> {
-        let installed_plugins = config
-            .list_plugins()
+        let installed_plugins = plugins::list()
             .into_iter()
             .filter(|p| p.is_installed())
             .map(|p| p.name().to_string())

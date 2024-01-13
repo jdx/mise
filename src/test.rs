@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::output::tests::{STDERR, STDOUT};
-use crate::{dirs, env, file};
+use crate::{dirs, env, file, forge};
 
 #[ctor::ctor]
 fn init() {
@@ -32,6 +32,7 @@ fn init() {
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
     //env::set_var("TERM", "dumb");
     reset_config();
+    forge::reset();
 }
 
 pub fn reset_config() {
@@ -98,6 +99,7 @@ pub fn replace_path(input: &str) -> String {
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
+    forge::reset();
     *env::ARGS.write().unwrap() = args.clone();
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();

@@ -12,10 +12,10 @@ use rayon::prelude::*;
 
 use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
-use crate::fake_asdf;
 use crate::file::{create_dir_all, display_path, remove_all};
 use crate::lock_file::LockFile;
 use crate::{env, logger};
+use crate::{fake_asdf, forge};
 
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -54,7 +54,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     let settings = Settings::try_get()?;
     if settings.not_found_auto_install {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
-            let p = config.get_or_create_plugin(&tv.plugin_name);
+            let p = tv.get_forge();
             if let Some(bin) = p.which(&tv, bin_name)? {
                 return Ok(bin);
             }
@@ -72,11 +72,11 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    let tvs = ts.list_rtvs_with_bin(&config, bin_name)?;
+    let tvs = ts.list_rtvs_with_bin(bin_name)?;
     err_no_version_set(ts, bin_name, tvs)
 }
 
-pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
+pub fn reshim(ts: &Toolset) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -98,7 +98,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         .collect::<HashSet<_>>();
 
     let shims: HashSet<String> = ts
-        .list_installed_versions(config)?
+        .list_installed_versions()?
         .into_par_iter()
         .flat_map(|(t, tv)| {
             list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
@@ -125,7 +125,7 @@ pub fn reshim(config: &Config, ts: &Toolset) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         remove_all(&symlink_path)?;
     }
-    for plugin in config.list_plugins() {
+    for plugin in forge::list() {
         match dirs::PLUGINS.join(plugin.name()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {
@@ -201,17 +201,17 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
     if tvs.is_empty() {
         bail!("{} is not a valid shim", bin_name);
     }
-    let missing_plugins = tvs.iter().map(|tv| &tv.plugin_name).collect::<HashSet<_>>();
+    let missing_plugins = tvs.iter().map(|tv| &tv.forge).collect::<HashSet<_>>();
     let mut missing_tools = ts
         .list_missing_versions()
         .into_iter()
-        .filter(|t| missing_plugins.contains(&t.plugin_name))
+        .filter(|t| missing_plugins.contains(&t.forge))
         .collect_vec();
     if missing_tools.is_empty() {
         let mut msg = format!("No version is set for shim: {}\n", bin_name);
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
-            msg.push_str(&format!("mise use -g {}@{}\n", tv.plugin_name, tv.version));
+            msg.push_str(&format!("mise use -g {}@{}\n", tv.forge, tv.version));
         }
         Err(eyre!(msg.trim().to_string()))
     } else {

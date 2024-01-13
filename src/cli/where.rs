@@ -3,6 +3,7 @@ use eyre::Result;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
+use crate::forge;
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a runtime
@@ -38,7 +39,7 @@ impl Where {
                         .build(&config)?;
                     let v = ts
                         .versions
-                        .get(&self.tool.plugin)
+                        .get(&self.tool.forge)
                         .and_then(|v| v.requests.first())
                         .map(|(r, _)| r.version());
                     self.tool.with_version(&v.unwrap_or(String::from("latest")))
@@ -47,7 +48,7 @@ impl Where {
             _ => self.tool,
         };
 
-        let plugin = config.get_or_create_plugin(&runtime.plugin);
+        let plugin = forge::get(&runtime.forge);
 
         match runtime
             .tvr
@@ -59,7 +60,7 @@ impl Where {
                 Ok(())
             }
             _ => Err(VersionNotInstalled(
-                runtime.plugin.to_string(),
+                runtime.forge.to_string(),
                 runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
             ))?,
         }

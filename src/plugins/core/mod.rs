@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::iter::Iterator;
 use std::path::PathBuf;
@@ -11,7 +10,8 @@ use once_cell::sync::Lazy;
 pub use python::PythonPlugin;
 
 use crate::cache::CacheManager;
-use crate::forge::Forge;
+use crate::config::Settings;
+use crate::forge::{Forge, ForgeList};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -33,10 +33,8 @@ mod node;
 mod python;
 mod ruby;
 
-pub type PluginMap = BTreeMap<String, Arc<dyn Forge>>;
-
-pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Forge>> = vec![
+pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
+    let mut plugins: Vec<Arc<dyn Forge>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
@@ -45,18 +43,11 @@ pub static CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
     ];
+    let settings = Settings::get();
+    if settings.experimental {
+        plugins.push(Arc::new(ErlangPlugin::new()));
+    }
     plugins
-        .into_iter()
-        .map(|plugin| (plugin.name().to_string(), plugin))
-        .collect()
-});
-
-pub static EXPERIMENTAL_CORE_PLUGINS: Lazy<PluginMap> = Lazy::new(|| {
-    let plugins: Vec<Arc<dyn Forge>> = vec![Arc::new(ErlangPlugin::new())];
-    plugins
-        .into_iter()
-        .map(|plugin| (plugin.name().to_string(), plugin))
-        .collect()
 });
 
 #[derive(Debug)]

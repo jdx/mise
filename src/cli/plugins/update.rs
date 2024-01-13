@@ -2,8 +2,8 @@ use console::style;
 use eyre::Result;
 use rayon::prelude::*;
 
-use crate::config::{Config, Settings};
-use crate::plugins::unalias_plugin;
+use crate::config::Settings;
+use crate::plugins;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
@@ -23,7 +23,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()
@@ -32,15 +32,13 @@ impl Update {
                         Some((p, ref_)) => (p, Some(ref_.to_string())),
                         None => (p.as_str(), None),
                     };
-                    let p = unalias_plugin(p);
-                    let plugin = config.get_or_create_plugin(p);
+                    let plugin = plugins::get(p);
                     Ok((plugin.clone(), ref_))
                 })
                 .collect::<Result<_>>()?,
-            None => config
-                .external_plugins()
+            None => plugins::list_external()
                 .into_iter()
-                .map(|(_, p)| (p, None))
+                .map(|p| (p, None))
                 .collect::<Vec<_>>(),
         };
 

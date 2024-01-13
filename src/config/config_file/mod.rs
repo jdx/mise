@@ -10,16 +10,16 @@ use once_cell::sync::Lazy;
 
 use tool_versions::ToolVersions;
 
-use crate::cli::args::ToolArg;
+use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{global_config_files, system_config_files, AliasMap, Config, Settings};
+use crate::config::{global_config_files, system_config_files, AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
 use crate::toolset::{ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
-use crate::{dirs, env, file};
+use crate::{dirs, env, file, forge};
 
 pub mod legacy_version;
 pub mod mise_toml;
@@ -70,8 +70,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _plugin_name: &str);
-    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]);
+    fn remove_plugin(&mut self, _fa: &ForgeArg);
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]);
     fn save(&self) -> Result<()>;
     fn dump(&self) -> String;
     fn to_toolset(&self) -> &Toolset;
@@ -90,34 +90,33 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub fn add_runtimes(&mut self, config: &Config, runtimes: &[ToolArg], pin: bool) -> Result<()> {
+    pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset().to_owned();
-        ts.resolve(config);
+        ts.resolve();
         let mut plugins_to_update = HashMap::new();
-        for runtime in runtimes {
-            if let Some(tv) = &runtime.tvr {
+        for ta in tools {
+            if let Some(tv) = &ta.tvr {
                 plugins_to_update
-                    .entry(runtime.plugin.clone())
+                    .entry(ta.forge.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
         }
-        for (plugin, versions) in &plugins_to_update {
-            let mut tvl =
-                ToolVersionList::new(plugin.to_string(), ts.source.as_ref().unwrap().clone());
+        for (fa, versions) in &plugins_to_update {
+            let mut tvl = ToolVersionList::new(fa.clone(), ts.source.as_ref().unwrap().clone());
             for tv in versions {
                 tvl.requests.push(((*tv).clone(), Default::default()));
             }
-            ts.versions.insert(plugin.clone(), tvl);
+            ts.versions.insert(fa.clone(), tvl);
         }
-        ts.resolve(config);
-        for (plugin, versions) in plugins_to_update {
+        ts.resolve();
+        for (fa, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()
                 .map(|tvr| {
                     if pin {
-                        let plugin = config.get_or_create_plugin(&plugin);
+                        let plugin = forge::get(&fa);
                         let tv = tvr.resolve(plugin.as_ref(), Default::default(), false)?;
                         Ok(tv.version)
                     } else {
@@ -125,7 +124,7 @@ impl dyn ConfigFile {
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
-            self.replace_versions(&plugin, &versions);
+            self.replace_versions(&fa, &versions);
         }
 
         Ok(())
@@ -137,15 +136,15 @@ impl dyn ConfigFile {
     pub fn display_runtime(&self, runtimes: &[ToolArg]) -> Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
-            let plugin = &runtimes[0].plugin;
+            let fa = &runtimes[0].forge;
             let tvl = self
                 .to_toolset()
                 .versions
-                .get(plugin)
+                .get(fa)
                 .ok_or_else(|| {
                     eyre!(
                         "no version set for {} in {}",
-                        plugin.to_string(),
+                        fa.to_string(),
                         display_path(self.get_path())
                     )
                 })?

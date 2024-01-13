@@ -1,18 +1,17 @@
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
-use crate::config::config_file;
 use console::{measure_text_width, pad_str, Alignment};
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use tera::Context;
 
+use crate::cli::args::ForgeArg;
+use crate::config::config_file;
 use crate::config::config_file::{ConfigFile, ConfigFileType};
-
 use crate::file;
 use crate::file::display_path;
-use crate::plugins::unalias_plugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -26,7 +25,7 @@ pub struct ToolVersions {
     context: Context,
     path: PathBuf,
     pre: String,
-    plugins: IndexMap<String, ToolVersionPlugin>,
+    plugins: IndexMap<ForgeArg, ToolVersionPlugin>,
     toolset: Toolset,
 }
 
@@ -76,18 +75,18 @@ impl ToolVersions {
         Ok(cf)
     }
 
-    fn get_or_create_plugin(&mut self, plugin: &str) -> &mut ToolVersionPlugin {
+    fn get_or_create_plugin(&mut self, fa: &ForgeArg) -> &mut ToolVersionPlugin {
         self.plugins
-            .entry(plugin.to_string())
+            .entry(fa.clone())
             .or_insert_with(|| ToolVersionPlugin {
-                orig_name: plugin.to_string(),
+                orig_name: fa.to_string(),
                 versions: vec![],
                 post: "".into(),
             })
     }
 
-    fn parse_plugins(input: &str) -> Result<IndexMap<String, ToolVersionPlugin>> {
-        let mut plugins: IndexMap<String, ToolVersionPlugin> = IndexMap::new();
+    fn parse_plugins(input: &str) -> Result<IndexMap<ForgeArg, ToolVersionPlugin>> {
+        let mut plugins: IndexMap<ForgeArg, ToolVersionPlugin> = IndexMap::new();
         for line in input.lines() {
             if line.trim_start().starts_with('#') {
                 if let Some(prev) = &mut plugins.values_mut().last() {
@@ -103,7 +102,7 @@ impl ToolVersions {
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
                 let orig_plugin = plugin.trim_end_matches(':');
-                let plugin = unalias_plugin(orig_plugin);
+                let fa = orig_plugin.parse()?;
 
                 let tvp = ToolVersionPlugin {
                     orig_name: orig_plugin.to_string(),
@@ -113,14 +112,14 @@ impl ToolVersions {
                         _ => [" #", post, "\n"].join(""),
                     },
                 };
-                plugins.insert(plugin.to_string(), tvp);
+                plugins.insert(fa, tvp);
             }
         }
         Ok(plugins)
     }
 
-    fn add_version(&mut self, plugin: &str, version: &str) {
-        self.get_or_create_plugin(plugin)
+    fn add_version(&mut self, fa: &ForgeArg, version: &str) {
+        self.get_or_create_plugin(fa)
             .versions
             .push(version.to_string());
     }
@@ -160,14 +159,14 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, plugin: &str) {
-        self.plugins.remove(plugin);
+    fn remove_plugin(&mut self, fa: &ForgeArg) {
+        self.plugins.remove(fa);
     }
 
-    fn replace_versions(&mut self, plugin_name: &str, versions: &[String]) {
-        self.get_or_create_plugin(plugin_name).versions.clear();
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) {
+        self.get_or_create_plugin(fa).versions.clear();
         for version in versions {
-            self.add_version(plugin_name, version);
+            self.add_version(fa, version);
         }
     }
 
@@ -182,7 +181,7 @@ impl ConfigFile for ToolVersions {
         let max_plugin_len = self
             .plugins
             .keys()
-            .map(|p| measure_text_width(p))
+            .map(|p| measure_text_width(&p.to_string()))
             .max()
             .unwrap_or_default();
         for (_, tv) in &self.plugins {
@@ -200,9 +199,9 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use pretty_assertions::assert_eq;
 
     use crate::env;
-    use pretty_assertions::assert_eq;
 
     use super::*;
 

@@ -1,53 +1,21 @@
-pub use external_plugin::ExternalPlugin;
+use std::fmt::Debug;
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
-pub use script_manager::{Script, ScriptManager};
-use std::fmt::{Debug, Display};
-use std::hash::Hash;
 
-use crate::forge::Forge;
+pub use external_plugin::ExternalPlugin;
+pub use script_manager::{Script, ScriptManager};
+
+use crate::cli::args::ForgeArg;
+use crate::forge;
+use crate::forge::{Forge, ForgeList, ForgeType};
 
 pub mod core;
 mod external_plugin;
 mod external_plugin_cache;
 mod mise_plugin_toml;
 mod script_manager;
-
-pub fn unalias_plugin(plugin_name: &str) -> &str {
-    match plugin_name {
-        "nodejs" => "node",
-        "golang" => "go",
-        _ => plugin_name,
-    }
-}
-
-impl Display for dyn Forge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name())
-    }
-}
-impl Eq for dyn Forge {}
-impl PartialEq for dyn Forge {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_type() == other.get_type() && self.name() == other.name()
-    }
-}
-impl Hash for dyn Forge {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name().hash(state)
-    }
-}
-impl PartialOrd for dyn Forge {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for dyn Forge {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.name().cmp(other.name())
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PluginType {
@@ -62,17 +30,37 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
+pub fn get(name: &str) -> Arc<dyn Forge> {
+    let fa = ForgeArg::new(ForgeType::Asdf, name);
+    forge::get(&fa)
+}
+
+pub fn list() -> ForgeList {
+    forge::list()
+        .into_iter()
+        .filter(|f| f.get_type() == ForgeType::Asdf)
+        .collect()
+}
+
+pub fn list_external() -> ForgeList {
+    list()
+        .into_iter()
+        .filter(|tool| tool.get_plugin_type() == PluginType::External)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::forge::Forge;
     use pretty_assertions::assert_str_eq;
+
+    use crate::forge::Forge;
 
     use super::*;
 
     #[test]
     fn test_exact_match() {
         assert_cli!("plugin", "add", "tiny");
-        let plugin = ExternalPlugin::newa(String::from("tiny"));
+        let plugin = ExternalPlugin::new(String::from("tiny"));
         let version = plugin
             .latest_version(Some("1.0.0".into()))
             .unwrap()

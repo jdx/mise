@@ -1,12 +1,12 @@
+use crate::cli::args::ForgeArg;
 use clap::{ArgMatches, Command};
 use eyre::Result;
 use rayon::prelude::*;
 
-use crate::config::Config;
+use crate::forge;
 
-pub fn commands(config: &Config) -> Vec<Command> {
-    config
-        .list_plugins()
+pub fn commands() -> Vec<Command> {
+    forge::list()
         .into_par_iter()
         .flat_map(|p| {
             p.external_commands().unwrap_or_else(|e| {
@@ -18,14 +18,13 @@ pub fn commands(config: &Config) -> Vec<Command> {
         .collect()
 }
 
-pub fn execute(plugin: &str, args: &ArgMatches) -> Result<()> {
-    let config = Config::try_get()?;
-    if let Some(mut cmd) = commands(&config)
+pub fn execute(fa: &ForgeArg, args: &ArgMatches) -> Result<()> {
+    if let Some(mut cmd) = commands()
         .into_iter()
-        .find(|c| c.get_name() == plugin)
+        .find(|c| c.get_name() == fa.to_string())
     {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = config.get_or_create_plugin(plugin);
+            let plugin = forge::get(fa);
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

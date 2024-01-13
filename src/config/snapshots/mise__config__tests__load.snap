@@ -8,15 +8,11 @@ Config {
         "~/.test-tool-versions",
         "~/config/config.toml",
     ],
-    Installed Plugins: [
-        "dummy",
-        "tiny",
-    ],
     Env: {
         "TEST_ENV_VAR": "test-123",
     },
     Aliases: {
-        "tiny": {
+        ForgeArg("tiny"): {
             "my/alias": "3.0",
         },
     },

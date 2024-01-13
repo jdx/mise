@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::ToolArg;
+use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
@@ -12,7 +12,6 @@ use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     global_only: bool,
-    tool_filter: Option<Vec<String>>,
 }
 
 impl ToolsetBuilder {
@@ -30,24 +29,20 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn with_tools(mut self, tools: &[&str]) -> Self {
-        self.tool_filter = Some(tools.iter().map(|s| s.to_string()).collect());
-        self
-    }
-
     pub fn build(self, config: &Config) -> Result<Toolset> {
         let settings = Settings::try_get()?;
         let mut toolset = Toolset {
-            disable_tools: settings.disable_tools.clone(),
+            disable_tools: settings
+                .disable_tools
+                .iter()
+                .map(|s| s.parse())
+                .collect::<Result<_>>()?,
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset);
         self.load_runtime_env(&mut toolset, env::vars().collect());
         self.load_runtime_args(&mut toolset);
-        if let Some(tools) = self.tool_filter {
-            toolset.versions.retain(|p, _| tools.contains(p));
-        }
-        toolset.resolve(config);
+        toolset.resolve();
 
         debug!("Toolset: {}", toolset);
         Ok(toolset)
@@ -76,10 +71,11 @@ impl ToolsetBuilder {
                     // ignore MISE_INSTALL_VERSION
                     continue;
                 }
+                let fa: ForgeArg = plugin_name.parse().unwrap();
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source);
                 for v in v.split_whitespace() {
-                    let tvr = ToolVersionRequest::new(plugin_name.clone(), v);
+                    let tvr = ToolVersionRequest::new(fa.clone(), v);
                     env_ts.add_version(tvr, Default::default());
                 }
                 ts.merge(&env_ts);
@@ -91,7 +87,7 @@ impl ToolsetBuilder {
         if self.global_only {
             return;
         }
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.plugin.clone()) {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {
                 if let Some(tvr) = &arg.tvr {

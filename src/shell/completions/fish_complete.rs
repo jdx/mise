@@ -119,7 +119,7 @@ fn render_completer(a: &Arg) -> Option<String> {
         _ => match a.get_id().as_str() {
             "tool" => Some("(__mise_tool_versions)".to_string()),
             "installed_tool" => Some("(__mise_installed_tool_versions)".to_string()),
-            "plugin" => Some("(__mise_plugins)".to_string()),
+            "forge" | "plugin" => Some("(__mise_plugins)".to_string()),
             "new_plugin" => Some("(__mise_all_plugins)".to_string()),
             "alias" => Some("(__mise_aliases)".to_string()),
             "setting" => Some("(__mise_settings)".to_string()),

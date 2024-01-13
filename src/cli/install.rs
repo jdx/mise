@@ -2,6 +2,7 @@ use eyre::Result;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::forge;
 use crate::toolset::{
     InstallOptions, ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
@@ -55,7 +56,7 @@ impl Install {
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new().build(config)?;
-        let tool_versions = self.get_requested_tool_versions(config, &ts, runtimes, &mpr)?;
+        let tool_versions = self.get_requested_tool_versions(&ts, runtimes, &mpr)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
@@ -75,34 +76,27 @@ impl Install {
 
     fn get_requested_tool_versions(
         &self,
-        config: &Config,
         ts: &Toolset,
         runtimes: &[ToolArg],
         mpr: &MultiProgressReport,
     ) -> Result<Vec<ToolVersion>> {
         let mut requests = vec![];
-        for runtime in ToolArg::double_tool_condition(runtimes) {
+        for ta in ToolArg::double_tool_condition(runtimes)? {
             let default_opts = ToolVersionOptions::new();
-            match runtime.tvr {
-                Some(tv) => requests.push((runtime.plugin, tv, default_opts.clone())),
+            match ta.tvr {
+                Some(tv) => requests.push((ta.forge, tv, default_opts.clone())),
                 None => {
-                    if runtime.tvr.is_none() {
-                        match ts.versions.get(&runtime.plugin) {
+                    if ta.tvr.is_none() {
+                        match ts.versions.get(&ta.forge) {
                             Some(tvl) => {
                                 for (tvr, opts) in &tvl.requests {
-                                    requests.push((
-                                        runtime.plugin.clone(),
-                                        tvr.clone(),
-                                        opts.clone(),
-                                    ));
+                                    requests.push((ta.forge.clone(), tvr.clone(), opts.clone()));
                                 }
                             }
                             None => {
-                                let tvr = ToolVersionRequest::Version(
-                                    runtime.plugin.clone(),
-                                    "latest".into(),
-                                );
-                                requests.push((runtime.plugin, tvr, default_opts.clone()));
+                                let tvr =
+                                    ToolVersionRequest::Version(ta.forge.clone(), "latest".into());
+                                requests.push((ta.forge, tvr, default_opts.clone()));
                             }
                         }
                     }
@@ -110,8 +104,8 @@ impl Install {
             }
         }
         let mut tool_versions = vec![];
-        for (plugin_name, tvr, opts) in requests {
-            let plugin = config.get_or_create_plugin(&plugin_name);
+        for (fa, tvr, opts) in requests {
+            let plugin = forge::get(&fa);
             plugin.ensure_installed(mpr, false)?;
             let tv = tvr.resolve(plugin.as_ref(), opts, true)?;
             tool_versions.push(tv);

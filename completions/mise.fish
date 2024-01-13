@@ -104,7 +104,7 @@ complete -kxc mise -n "$fssf config; and $fssf ls" -l no-header -d 'Do not print
 
 
 # current
-complete -kxc mise -n "$fssf current" -a "(__mise_plugins)" -d 'Plugin to show versions of e.g.: ruby, node'
+complete -kxc mise -n "$fssf current" -a "(__mise_plugins)" -d 'Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc'
 
 # deactivate
 
@@ -212,7 +212,7 @@ complete -kxc mise -n "$fssf plugins; and $fssf update" -a "(__mise_plugins)" -d
 
 # prune
 complete -kxc mise -n "$fssf prune" -s n -l dry-run -d 'Do not actually delete anything'
-complete -kxc mise -n "$fssf prune" -a "(__mise_plugins)" -d 'Prune only versions from these plugins'
+complete -kxc mise -n "$fssf prune" -a "(__mise_plugins)" -d 'Prune only versions from this plugin(s)'
 
 # reshim
 
@@ -339,7 +339,7 @@ complete -kxc mise -n "$fssf use" -s j -l jobs -d 'Number of jobs to run in para
 complete -kxc mise -n "$fssf use" -s p -l path -a "(__fish_complete_path)" -d 'Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions'
 complete -kxc mise -n "$fssf use" -l pin -d 'Save exact version to config file'
 complete -kxc mise -n "$fssf use" -l raw -d 'Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1'
-complete -kxc mise -n "$fssf use" -l remove -d 'Remove the tool(s) from config file'
+complete -kxc mise -n "$fssf use" -l remove -d 'Remove the plugin(s) from config file'
 complete -kxc mise -n "$fssf use" -a "(__mise_tool_versions)" -d 'Tool(s) to add to config file'
 
 # version
