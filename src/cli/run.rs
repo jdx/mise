@@ -10,8 +10,9 @@ use std::time::SystemTime;
 
 use clap::ValueHint;
 use console::{style, Color};
+use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use eyre::Result;
+use eyre::{OptionExt, Result};
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -134,7 +135,7 @@ impl Run {
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| match config.tasks_with_aliases().get(&t) {
                 Some(task) => Ok(task.clone().with_args(args.to_vec())),
-                None => Err(self.err_no_task(config, &t)),
+                None => self.prompt_for_task(config, &t),
             })
             .collect()
     }
@@ -329,11 +330,23 @@ impl Run {
         }
     }
 
-    fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
+    fn prompt_for_task(&self, config: &Config, t: &str) -> Result<Task> {
         let tasks = config.tasks();
-        let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
+        let task_names = tasks.keys().sorted().collect_vec();
         let t = style(&t).yellow().for_stderr();
-        eyre!("no task named `{t}` found. Available tasks: {task_names}")
+        let msg = format!("no task named `{t}` found. select a task to run:");
+        let mut s = Select::new("Tasks").description(&msg).filterable(true);
+        for name in task_names {
+            s = s.option(DemandOption::new(name));
+        }
+        let task_name = s.run();
+        match task_name {
+            Ok(name) => tasks
+                .get(name)
+                .cloned()
+                .ok_or_eyre(format!("no task named `{}` found", name)),
+            Err(_) => Err(eyre!("there was an error, please try again")),
+        }
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {
