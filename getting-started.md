@@ -25,7 +25,7 @@ mise 2024.x.x
 "~/.local/bin" does not need to be in PATH. mise will automatically add its own directory to PATH when activated.
 :::
 
-### 2. Activate mise <Badge type="tip" text="optional" />
+### 2. Alternative: Activate mise <Badge type="tip" text="optional" />
 
 `mise activate` is one way to setup mise but alternatively you can use [shims](dev-tools/shims.md), [direnv](./direnv), or skip
 this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
@@ -273,7 +273,7 @@ sudo port install mise
 
 For the Nix package manager, at release 23.05 or later:
 
-```
+```sh
 nix-env -iA mise
 ```
 
@@ -283,7 +283,7 @@ systems.
 
 ### yum
 
-```
+```sh
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
@@ -293,19 +293,19 @@ yum install -y mise
 
 #### Bash
 
-```
+```sh
 echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 ```
 
 #### Zsh
 
-```
+```sh
 echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 ```
 
 #### Fish
 
-```
+```sh
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
