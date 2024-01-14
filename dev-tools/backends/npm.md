@@ -1,4 +1,4 @@
-# NPM Backend <Badge type="warning" text="experimental" />
+# npm Backend <Badge type="warning" text="experimental" />
 
 You may install packages directly from [npmjs.org](https://npmjs.org/) even if there
 isn't an asdf plugin for it.
