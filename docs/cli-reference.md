@@ -1171,6 +1171,34 @@ Examples:
   $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
+## `mise task deps [OPTIONS] [TASKS]...`
+
+```text
+[experimental] Display a tree visualization of a dependency graph
+
+Usage: task deps [OPTIONS] [TASKS]...
+
+Arguments:
+  [TASKS]...
+          Tasks to show dependencies for
+          Can specify multiple tasks by separating with spaces
+          e.g.: mise task deps lint test check
+
+Options:
+      --dot
+          Display dependencies in DOT format
+
+Examples:
+  $ mise task deps
+  Shows dependencies for all tasks
+
+  $ mise task deps lint test check
+  Shows dependencies for the "lint", "test" and "check" tasks
+
+  $ mise task deps --dot
+  Shows dependencies in DOT format
+```
+
 ## `mise task edit [OPTIONS] <TASK>`
 
 ```text

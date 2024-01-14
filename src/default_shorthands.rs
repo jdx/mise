@@ -22,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     Lazy::new(|| HashMap::from([
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
-    ("R", "https://github.com/asdf-community/asdf-r.git"),
     ("act", "https://github.com/grimoh/asdf-act.git"),
     ("action-validator", "https://github.com/mpalmer/action-validator.git"),
     ("actionlint", "https://github.com/crazy-matt/asdf-actionlint.git"),
@@ -143,7 +142,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("conftest", "https://github.com/looztra/asdf-conftest.git"),
     ("consul", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("container-diff", "https://github.com/cgroschupp/asdf-container-diff.git"),
-    ("container-structure-test", "https://github.com/jonathanmorley/asdf-container-structure-test.git"),
+    ("container-structure-test", "https://github.com/FeryET/asdf-container-structure-test.git"),
     ("cookiecutter", "https://github.com/shawon-crosen/asdf-cookiecutter.git"),
     ("copper", "https://github.com/vladlosev/asdf-copper.git"),
     ("coq", "https://github.com/gingerhot/asdf-coq.git"),
@@ -199,6 +198,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("dust", "https://github.com/looztra/asdf-dust.git"),
     ("dvc", "https://github.com/fwfurtado/asdf-dvc.git"),
     ("dyff", "https://gitlab.com/wt0f/asdf-dyff.git"),
+    ("earthly", "https://github.com/YR-ZR0/asdf-earthly"),
     ("ecspresso", "https://github.com/kayac/asdf-ecspresso.git"),
     ("editorconfig-checker", "https://github.com/gabitchov/asdf-editorconfig-checker.git"),
     ("ejson", "https://github.com/cipherstash/asdf-ejson.git"),
@@ -547,6 +547,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("purty", "https://github.com/nsaunders/asdf-purty.git"),
     ("qdns", "https://github.com/moritz-makandra/asdf-plugin-qdns.git"),
     ("quarkus", "https://github.com/asdf-community/asdf-quarkus.git"),
+    ("r", "https://github.com/asdf-community/asdf-r.git"),
     ("rabbitmq", "https://github.com/w-sanches/asdf-rabbitmq.git"),
     ("racket", "https://github.com/asdf-community/asdf-racket.git"),
     ("raku", "https://github.com/m-dango/asdf-raku.git"),
