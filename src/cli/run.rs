@@ -332,6 +332,12 @@ impl Run {
 
     fn prompt_for_task(&self, config: &Config, t: &str) -> Result<Task> {
         let tasks = config.tasks();
+        if tasks.is_empty() {
+            bail!(format!(
+                "no tasks defined. see {url}",
+                url = style("https://mise.jdx.dev/tasks/").underlined()
+            ));
+        }
         let task_names = tasks.keys().sorted().collect_vec();
         let t = style(&t).yellow().for_stderr();
         let msg = format!("no task named `{t}` found. select a task to run:");
