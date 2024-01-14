@@ -190,7 +190,7 @@ sudo apt install -y mise
 
 For Arch Linux:
 
-```
+```sh
 git clone https://aur.archlinux.org/mise.git
 cd mise
 makepkg -si
