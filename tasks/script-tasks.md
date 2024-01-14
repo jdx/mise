@@ -5,7 +5,7 @@ for cargo:
 
 ```bash
 #!/usr/bin/env bash
-# mise:description "Build the CLI"
+# mise description="Build the CLI"
 cargo build
 ```
 
