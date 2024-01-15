@@ -719,7 +719,7 @@ Options:
 
   -u, --urls
           Show the git url for each plugin
-          e.g.: https://github.com/asdf-vm/asdf-node.git
+          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Examples:
   $ mise plugins ls
@@ -727,7 +727,7 @@ Examples:
   ruby
 
   $ mise plugins ls --urls
-  node    https://github.com/asdf-vm/asdf-node.git
+  node    https://github.com/asdf-vm/asdf-nodejs.git
   ruby    https://github.com/asdf-vm/asdf-ruby.git
 ```
 
