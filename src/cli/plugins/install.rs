@@ -27,7 +27,7 @@ pub struct PluginsInstall {
     new_plugin: Option<String>,
 
     /// The git url of the plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-node.git
+    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment)]
     git_url: Option<String>,
 

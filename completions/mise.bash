@@ -672,6 +672,9 @@ _mise() {
             mise__sync__help,python)
                 cmd="mise__sync__help__python"
                 ;;
+            mise__task,deps)
+                cmd="mise__task__deps"
+                ;;
             mise__task,edit)
                 cmd="mise__task__edit"
                 ;;
@@ -686,6 +689,9 @@ _mise() {
                 ;;
             mise__task,run)
                 cmd="mise__task__run"
+                ;;
+            mise__task__help,deps)
+                cmd="mise__task__help__deps"
                 ;;
             mise__task__help,edit)
                 cmd="mise__task__help__edit"
@@ -3928,8 +3934,34 @@ _mise() {
             return 0
             ;;
         mise__task)
-            opts="-C -q -v -y -h --no-header --hidden --cd --debug --log-level --quiet --trace --verbose --yes --help edit ls run help"
+            opts="-C -q -v -y -h --no-header --hidden --cd --debug --log-level --quiet --trace --verbose --yes --help deps edit ls run help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cd)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-level)
+                    COMPREPLY=($(compgen -W "error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__task__deps)
+            opts="-C -q -v -y -h --dot --cd --debug --log-level --quiet --trace --verbose --yes --help [TASKS]..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3980,8 +4012,22 @@ _mise() {
             return 0
             ;;
         mise__task__help)
-            opts="edit ls run help"
+            opts="deps edit ls run help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mise__task__help__deps)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
