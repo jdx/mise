@@ -79,7 +79,7 @@ impl Shell for Fish {
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
             function fish_command_not_found
-                if {exe} hook-not-found -s fish $argv[1]
+                if {exe} hook-not-found -s fish -- $argv[1]
                     {exe} hook-env{flags} -s fish | source
                 else
                     __fish_default_command_not_found_handler $argv
