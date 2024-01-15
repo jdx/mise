@@ -18,10 +18,10 @@ pub fn run() {
         task(s, migrate_trusted_configs);
         task(s, migrate_tracked_configs);
         task(s, || remove_deprecated_plugin("node", "rtx-nodejs"));
-        task(s, || remove_deprecated_plugin("python", "rtx-golang"));
-        task(s, || remove_deprecated_plugin("python", "rtx-java"));
+        task(s, || remove_deprecated_plugin("go", "rtx-golang"));
+        task(s, || remove_deprecated_plugin("java", "rtx-java"));
         task(s, || remove_deprecated_plugin("python", "rtx-python"));
-        task(s, || remove_deprecated_plugin("python", "rtx-ruby"));
+        task(s, || remove_deprecated_plugin("ruby", "rtx-ruby"));
     });
 }
 
