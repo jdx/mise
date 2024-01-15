@@ -35,7 +35,7 @@ pub struct Plugins {
     pub user: bool,
 
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-node.git
+    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 

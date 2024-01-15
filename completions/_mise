@@ -741,6 +741,7 @@ __mise_task_cmd() {
     (args)
       curcontext="${curcontext%:*:*}:mise-cmd-$words[1]:"
       case $words[1] in
+        (deps) __mise_task_deps_cmd && ret=0 ;;
         (edit) __mise_task_edit_cmd && ret=0 ;;
         (ls) __mise_task_ls_cmd && ret=0 ;;
         (r|run) __mise_task_run_cmd && ret=0 ;;
@@ -749,6 +750,16 @@ __mise_task_cmd() {
   esac
 
 return ret
+}
+(( $+functions[__mise_task_deps_cmd] )) ||
+__mise_task_deps_cmd() {
+  _arguments -s -S \
+    '*::tasks:' \
+    '--dot[Display dependencies in DOT format]' \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
 (( $+functions[__mise_task_edit_cmd] )) ||
 __mise_task_edit_cmd() {
@@ -1000,6 +1011,7 @@ __mise_sync_cmds() {
 (( $+functions[__mise_task_cmds] )) ||
 __mise_task_cmds() {
   local commands; commands=(
+    'deps:\[experimental\] Display a tree visualization of a dependency graph'
     'edit:\[experimental\] Edit a task with \$EDITOR'
     'ls:\[experimental\] List available tasks to execute'
     {r,run}':\[experimental\] Run a task'

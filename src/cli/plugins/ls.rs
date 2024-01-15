@@ -35,7 +35,7 @@ pub struct PluginsLs {
     pub user: bool,
 
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/asdf-vm/asdf-node.git
+    /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
@@ -111,7 +111,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   ruby
 
   $ <bold>mise plugins ls --urls</bold>
-  node    https://github.com/asdf-vm/asdf-node.git
+  node    https://github.com/asdf-vm/asdf-nodejs.git
   ruby    https://github.com/asdf-vm/asdf-ruby.git
 "#
 );

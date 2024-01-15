@@ -290,7 +290,7 @@ complete -xc mise -n "$fssf task; and not $fssf $others" -a run -d '[experimenta
 
 # task deps
 complete -kxc mise -n "$fssf task; and $fssf deps" -l dot -d 'Display dependencies in DOT format'
-complete -kxc mise -n "$fssf task; and $fssf deps" -a "(__mise_tasks)" -d 'Tasks to show dependencies for'
+complete -kxc mise -n "$fssf task; and $fssf deps" -d 'Tasks to show dependencies for'
 
 # task edit
 complete -kxc mise -n "$fssf task; and $fssf edit" -s p -l path -d 'Display the path to the task instead of editing it'
