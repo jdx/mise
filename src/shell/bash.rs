@@ -55,7 +55,7 @@ impl Shell for Bash {
                 [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
 
                 command_not_found_handle() {{
-                    if {exe} hook-not-found -s bash "$1"; then
+                    if {exe} hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
