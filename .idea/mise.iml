@@ -7,6 +7,9 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/xtask/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/usage/cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/usage/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/usage/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/test/data" />
       <excludeFolder url="file://$MODULE_DIR$/plugins" />
@@ -23,6 +26,7 @@
       <excludeFolder url="file://$MODULE_DIR$/e2e/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/cache" />
       <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/dist" />
+      <excludeFolder url="file://$MODULE_DIR$/usage/target" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />

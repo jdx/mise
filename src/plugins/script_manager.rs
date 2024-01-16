@@ -84,11 +84,11 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
         (indexmap! {
             "ASDF_CONCURRENCY" => num_cpus::get().to_string(),
             "PATH" => get_path_with_fake_asdf(),
-            "MISE_BIN" => env::MISE_BIN.to_string_lossy().to_string(),
             "MISE_CACHE_DIR" => env::MISE_CACHE_DIR.to_string_lossy().to_string(),
             "MISE_CONCURRENCY" => num_cpus::get().to_string(),
             "MISE_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
             "MISE_LOG_LEVEL" => settings.log_level.to_string(),
+            "__MISE_BIN" => env::MISE_BIN.to_string_lossy().to_string(),
             "__MISE_SCRIPT" => "1".to_string(),
         })
         .into_iter()

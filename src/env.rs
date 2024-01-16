@@ -65,11 +65,6 @@ pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| MISE_CONFIG_DIR.join("config.toml"))
 });
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("MISE_USE_TOML"));
-pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_BIN")
-        .or_else(|| current_exe().ok())
-        .unwrap_or_else(|| "mise".into())
-});
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
@@ -104,6 +99,11 @@ pub static MISE_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(
 
 /// true if inside a script like bin/exec-env or bin/install
 /// used to prevent infinite loops
+pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("__MISE_BIN")
+        .or_else(|| current_exe().ok())
+        .unwrap_or_else(|| "mise".into())
+});
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
