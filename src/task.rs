@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use console::truncate_str;
@@ -17,6 +17,7 @@ use itertools::Itertools;
 use crate::config::config_file::toml::TomlParser;
 use crate::config::Config;
 use crate::file;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -55,8 +56,8 @@ impl Task {
             ..Default::default()
         }
     }
-    pub fn from_path(path: PathBuf) -> Result<Task> {
-        let info = file::read_to_string(&path)?
+    pub fn from_path(path: &Path) -> Result<Task> {
+        let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| regex!(r"^# mise ([a-z]+=.+)$").captures(line))
             .map(|captures| captures.extract())
@@ -71,20 +72,23 @@ impl Task {
                 map
             });
         let info = toml::Value::Table(info);
-        let p = TomlParser::new(&info);
+        let config_root = config_root(path);
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        let p = TomlParser::new(&info, get_tera(config_root), tera_ctx);
         // trace!("task info: {:#?}", info);
 
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
         let task = Task {
-            hide: !file::is_executable(&path) || p.parse_bool("hide").unwrap_or_default(),
-            description: p.parse_str("description").unwrap_or_default(),
-            sources: p.parse_array("sources").unwrap_or_default(),
-            outputs: p.parse_array("outputs").unwrap_or_default(),
-            depends: p.parse_array("depends").unwrap_or_default(),
-            dir: p.parse_str("dir").map(PathBuf::from),
-            env: p.parse_hashmap("env").unwrap_or_default(),
-            file: Some(path.clone()),
-            ..Task::new(name, path)
+            hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
+            description: p.parse_str("description")?.unwrap_or_default(),
+            sources: p.parse_array("sources")?.unwrap_or_default(),
+            outputs: p.parse_array("outputs")?.unwrap_or_default(),
+            depends: p.parse_array("depends")?.unwrap_or_default(),
+            dir: p.parse_str("dir")?,
+            env: p.parse_hashmap("env")?.unwrap_or_default(),
+            file: Some(path.to_path_buf()),
+            ..Task::new(name, path.to_path_buf())
         };
         Ok(task)
     }
@@ -145,18 +149,6 @@ impl Task {
             .collect();
         Ok(depends)
     }
-
-    // pub fn project_root(&self) -> &Path {
-    //     match self
-    //         .config_source
-    //         .parent()
-    //         .expect("task source has no parent")
-    //     {
-    //         dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap(),
-    //         dir if dir.ends_with(".config/mise/tasks") => dir.parent().unwrap().parent().unwrap(),
-    //         dir => dir,
-    //     }
-    // }
 }
 
 impl Display for Task {
@@ -299,5 +291,13 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     fn children(&self) -> Cow<[Self::Child]> {
         let v: Vec<_> = self.0.neighbors(self.1).map(|i| (self.0, i)).collect();
         Cow::from(v)
+    }
+}
+
+fn config_root(config_source: &Path) -> &Path {
+    match config_source.parent().expect("task source has no parent") {
+        dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap(),
+        dir if dir.ends_with(".config/mise/tasks") => dir.parent().unwrap().parent().unwrap(),
+        dir => dir,
     }
 }

@@ -1,24 +1,36 @@
 use std::collections::HashMap;
 
+use tera::{Context, Tera};
+
 pub struct TomlParser<'a> {
-    pub table: &'a toml::Value,
+    table: &'a toml::Value,
+    tera: Tera,
+    tera_ctx: Context,
 }
 
 impl<'a> TomlParser<'a> {
-    pub fn new(table: &'a toml::Value) -> Self {
-        Self { table }
+    pub fn new(table: &'a toml::Value, tera: Tera, tera_ctx: Context) -> Self {
+        Self {
+            table,
+            tera,
+            tera_ctx,
+        }
     }
 
-    pub fn parse_str(&self, key: &str) -> Option<String> {
+    pub fn parse_str<T>(&self, key: &str) -> eyre::Result<Option<T>>
+    where
+        T: From<String>,
+    {
         self.table
             .get(key)
             .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
+            .map(|s| self.render_tmpl(s))
+            .transpose()
     }
     pub fn parse_bool(&self, key: &str) -> Option<bool> {
         self.table.get(key).and_then(|value| value.as_bool())
     }
-    pub fn parse_array<T>(&self, key: &str) -> Option<Vec<T>>
+    pub fn parse_array<T>(&self, key: &str) -> eyre::Result<Option<Vec<T>>>
     where
         T: Default + From<String>,
     {
@@ -28,11 +40,12 @@ impl<'a> TomlParser<'a> {
             .map(|array| {
                 array
                     .iter()
-                    .filter_map(|value| value.as_str().map(|v| v.to_string().into()))
-                    .collect::<Vec<T>>()
+                    .filter_map(|value| value.as_str().map(|v| self.render_tmpl(v)))
+                    .collect::<eyre::Result<Vec<T>>>()
             })
+            .transpose()
     }
-    pub fn parse_hashmap<T>(&self, key: &str) -> Option<HashMap<String, T>>
+    pub fn parse_hashmap<T>(&self, key: &str) -> eyre::Result<Option<HashMap<String, T>>>
     where
         T: From<String>,
     {
@@ -45,9 +58,18 @@ impl<'a> TomlParser<'a> {
                     .filter_map(|(key, value)| {
                         value
                             .as_str()
-                            .map(|v| (key.to_string(), v.to_string().into()))
+                            .map(|v| Ok((self.render_tmpl(key)?, self.render_tmpl(v)?)))
                     })
-                    .collect::<HashMap<String, T>>()
+                    .collect::<eyre::Result<HashMap<String, T>>>()
             })
+            .transpose()
+    }
+
+    fn render_tmpl<T>(&self, tmpl: &str) -> eyre::Result<T>
+    where
+        T: From<String>,
+    {
+        let tmpl = self.tera.clone().render_str(tmpl, &self.tera_ctx)?;
+        Ok(tmpl.into())
     }
 }
