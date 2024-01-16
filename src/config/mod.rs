@@ -350,7 +350,7 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
         }
         Err(error) => {
             debug!("error getting current dir: {error}");
-        },
+        }
     };
 
     config_files.extend(global_config_files());
