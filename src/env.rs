@@ -19,12 +19,16 @@ pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "s
 
 // paths and directories
 pub static HOME: Lazy<PathBuf> =
-    Lazy::new(|| dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/")));
+    Lazy::new(|| home::home_dir().unwrap_or_else(|| PathBuf::from("/")));
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
+#[cfg(target_os = "macos")]
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =
-    Lazy::new(|| dirs_next::cache_dir().unwrap_or_else(|| HOME.join(".cache")));
+    Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join("Library/Caches")));
+#[cfg(not(target_os = "macos"))]
+pub static XDG_CACHE_HOME: Lazy<PathBuf> =
+    Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join(".cache")));
 pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
 pub static XDG_DATA_HOME: Lazy<PathBuf> =
