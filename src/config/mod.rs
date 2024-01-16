@@ -340,24 +340,21 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 });
 
 pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
-    // In cases where the current dir is not available,
-    // we simply don't load any configs.
-    //
-    // This can happen for any reason in a shell, the directory
-    // being deleted or when inside fuse mounts.
-    let Ok(current_dir) = env::current_dir() else {
-        debug!("current dir not available");
-        return Vec::new();
+    let mut config_files = Vec::new();
+
+    // The current directory is not always available, e.g.
+    // when a directory was deleted or inside FUSE mounts.
+    match env::current_dir() {
+        Ok(current_dir) => {
+            config_files.extend(file::FindUp::new(&current_dir, config_filenames));
+        }
+        Err(error) => {
+            debug!("error getting current dir: {error}");
+        },
     };
 
-    let mut config_files = file::FindUp::new(&current_dir, config_filenames).collect::<Vec<_>>();
-
-    for cf in global_config_files() {
-        config_files.push(cf);
-    }
-    for cf in system_config_files() {
-        config_files.push(cf);
-    }
+    config_files.extend(global_config_files());
+    config_files.extend(system_config_files());
 
     config_files.into_iter().unique().collect()
 }
