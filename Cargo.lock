@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.1.21"
+version = "2024.1.22"
 dependencies = [
  "base64",
  "built",
