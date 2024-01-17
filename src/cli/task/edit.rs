@@ -38,7 +38,7 @@ impl TaskEdit {
                         .join(".mise")
                         .join("tasks")
                         .join(&self.task);
-                    Task::from_path(path)
+                    Task::from_path(&path)
                 },
                 Ok,
             )?;

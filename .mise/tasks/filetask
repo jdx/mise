@@ -4,6 +4,7 @@
 # mise sources=[".test-tool-versions"]
 # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
 # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+# mise dir="{{config_root}}"
 
 set -euxo pipefail
 cd "$MISE_PROJECT_ROOT" || exit 1
