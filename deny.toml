@@ -109,6 +109,7 @@ allow = [
   "Unicode-DFS-2016",
   "BSD-3-Clause",
   "OpenSSL",
+  "MPL-2.0",
 ]
 # List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
@@ -140,7 +141,6 @@ confidence-threshold = 0.8
 exceptions = [
   # Each entry is the crate and version constraint, and its specific allow
   # list
-  { allow = ["MPL-2.0"], name = "webpki-roots", version = "*" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
