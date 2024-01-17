@@ -39,8 +39,8 @@ pub type ForgeList = Vec<AForge>;
 pub enum ForgeType {
     Asdf,
     Cargo,
-    Npm,
     Go,
+    Npm,
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
