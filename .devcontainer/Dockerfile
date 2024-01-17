@@ -25,4 +25,7 @@ RUN mkdir /workspaces/target \
     # npm packages
     && npm install -g prettier@3.1.0 markdownlint-cli@0.37.0 markdown-magic@2.6.1
 
+COPY --from=golang:1.21-bullseye /usr/local/go/ /usr/local/go/
+ENV PATH="/usr/local/go/bin:${PATH}"
+
 ENTRYPOINT [ "/bin/bash" ]
