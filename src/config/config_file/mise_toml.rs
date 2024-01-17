@@ -285,6 +285,10 @@ impl MiseToml {
             task.run = self.parse_string_or_array(key, v)?;
             return Ok(task);
         }
+        if v.as_array().is_some() {
+            task.run = self.parse_string_array(key, v)?;
+            return Ok(task);
+        }
         match v.as_table_like() {
             Some(table) => {
                 let mut task = Task::new(name.into(), self.path.clone());
