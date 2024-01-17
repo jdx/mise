@@ -43,7 +43,8 @@ impl Forge for GoForge {
             .arg(&format!("{}@{}", self.name(), ctx.tv.version))
             .with_pr(ctx.pr.as_ref())
             .envs(&config.env)
-            .env("GOPATH", ctx.tv.install_path())
+            .env("GOPATH", ctx.tv.cache_path())
+            .env("GOBIN", ctx.tv.install_path().join("bin"))
             .execute()?;
 
         Ok(())
