@@ -1,66 +1,39 @@
-FROM ubuntu:22.04
+FROM mcr.microsoft.com/devcontainers/rust:1
 LABEL maintainer="jdx"
 
-ENV PATH="/root/.cargo/bin:${PATH}"
-ENV CARGO_HOME="/root/.cargo"
-ENV RUSTUP_HOME="/root/.rustup"
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
+ENV GOPROXY=direct
+ENV MISE_EXPERIMENTAL=1
+ENV MISE_TRUSTED_CONFIG_PATHS="/mise"
+ENV dev="/mise/.dev"
+ENV MISE_DATA_DIR="$dev/mise"
+ENV MISE_STATE_DIR="$dev/mise"
+ENV MISE_CONFIG_DIR="$dev/mise"
+ENV MISE_CACHE_DIR="$dev/mise/cache"
+
+# TODO: deno does not currently support linux/arm64 making it hard to use this on macs
+ENV MISE_DISABLE_TOOLS="deno"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
-        autoconf \
-        bash \
-        build-essential \
-        ca-certificates \
-        curl \
-        direnv \
-        fd-find \
-        fish \
-        git \
-        gnupg \
-        libbz2-dev \
-        libdb-dev \
-        libffi-dev \
-        libgdbm-dev \
-        libgdbm6 \
-        libgmp-dev \
-        liblzma-dev \
-        libncurses5-dev \
-        libncursesw5-dev \
-        libreadline-dev \
-        libreadline6-dev \
-        libsqlite3-dev \
-        libssl-dev \
-        libxml2-dev \
-        libxmlsec1-dev \
-        libyaml-dev \
-        patch \
-        pkg-config \
-        sudo \
-        tk-dev \
-        uuid-dev \
-        xz-utils \
-        zlib1g-dev \
-        zsh \
+       direnv \
+       fd-find \
+       fish \
     && ln -s /usr/bin/{fdfind,fd} \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && node -v \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
-    && rustup install stable && rustup default stable \
     && rustup toolchain install nightly --component llvm-tools-preview \
-    && cargo install \
-       cargo-msrv \
     && cargo binstall -y \
         cargo-deny \
+        cargo-insta \
         cargo-llvm-cov \
         cargo-machete \
+        cargo-msrv \
         cargo-nextest \
         cross \
         just \
@@ -72,3 +45,6 @@ RUN    apt-get update \
     && node -v \
     && npm -v \
     && just --version
+#    && mkdir -p $dev/cargo \
+#    && mv "$CARGO_HOME/registry" $dev/cargo/registry && ln -s $dev/cargo/registry "$CARGO_HOME/registry" \
+#    && mkdir $dev/cargo/git && ln -s $dev/cargo/git "$CARGO_HOME/git"

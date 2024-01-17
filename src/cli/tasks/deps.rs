@@ -11,10 +11,10 @@ use petgraph::dot::Dot;
 /// [experimental] Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskDeps {
+pub struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
-    /// e.g.: mise task deps lint test check
+    /// e.g.: mise tasks deps lint test check
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
@@ -23,7 +23,7 @@ pub struct TaskDeps {
     pub dot: bool,
 }
 
-impl TaskDeps {
+impl TasksDeps {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
@@ -136,19 +136,19 @@ impl TaskDeps {
         let tasks = config.tasks();
         let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
-        eyre!("no task named `{t}` found. Available tasks: {task_names}")
+        eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
     }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise task deps</bold>
+  $ <bold>mise tasks deps</bold>
   Shows dependencies for all tasks
 
-  $ <bold>mise task deps lint test check</bold>
+  $ <bold>mise tasks deps lint test check</bold>
   Shows dependencies for the "lint", "test" and "check" tasks
 
-  $ <bold>mise task deps --dot</bold>
+  $ <bold>mise tasks deps --dot</bold>
   Shows dependencies in DOT format
 "#
 );

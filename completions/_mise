@@ -49,7 +49,7 @@ _mise() {
         (settings) __mise_settings_cmd && ret=0 ;;
         (sh|shell) __mise_shell_cmd && ret=0 ;;
         (sync) __mise_sync_cmd && ret=0 ;;
-        (t|tasks|task) __mise_task_cmd && ret=0 ;;
+        (t|task|tasks) __mise_tasks_cmd && ret=0 ;;
         (trust) __mise_trust_cmd && ret=0 ;;
         (remove|rm|uninstall) __mise_uninstall_cmd && ret=0 ;;
         (unset) __mise_unset_cmd && ret=0 ;;
@@ -577,14 +577,14 @@ __mise_run_cmd() {
     '::task:__mise_tasks' \
     '*::args:' \
     '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
-    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
-    '(-f --force)'{-f,--force}'[Force the task to run even if outputs are up to date]' \
-    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the task'\''s label]' \
+    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the tasks(s), just print them in order of execution]' \
+    '(-f --force)'{-f,--force}'[Force the tasks to run even if outputs are up to date]' \
+    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the tasks'\''s label]' \
     '(-i --interleave)'{-i,--interleave}'[Print directly to stdout/stderr instead of by line]' \
     '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__mise_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
-    '--timings[Shows elapsed time after each task]' \
+    '--timings[Shows elapsed time after each tasks]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
@@ -725,8 +725,8 @@ __mise_sync_python_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
-(( $+functions[__mise_task_cmd] )) ||
-__mise_task_cmd() {
+(( $+functions[__mise_tasks_cmd] )) ||
+__mise_tasks_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
     '--hidden[Show hidden tasks]' \
@@ -734,25 +734,25 @@ __mise_task_cmd() {
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]' \
-    '1: :__mise_task_cmds' \
+    '1: :__mise_tasks_cmds' \
     '*::arg:->args' && ret=0
 
       case "$state" in
     (args)
       curcontext="${curcontext%:*:*}:mise-cmd-$words[1]:"
       case $words[1] in
-        (deps) __mise_task_deps_cmd && ret=0 ;;
-        (edit) __mise_task_edit_cmd && ret=0 ;;
-        (ls) __mise_task_ls_cmd && ret=0 ;;
-        (r|run) __mise_task_run_cmd && ret=0 ;;
+        (deps) __mise_tasks_deps_cmd && ret=0 ;;
+        (edit) __mise_tasks_edit_cmd && ret=0 ;;
+        (ls) __mise_tasks_ls_cmd && ret=0 ;;
+        (r|run) __mise_tasks_run_cmd && ret=0 ;;
       esac
     ;;
   esac
 
 return ret
 }
-(( $+functions[__mise_task_deps_cmd] )) ||
-__mise_task_deps_cmd() {
+(( $+functions[__mise_tasks_deps_cmd] )) ||
+__mise_tasks_deps_cmd() {
   _arguments -s -S \
     '*::tasks:' \
     '--dot[Display dependencies in DOT format]' \
@@ -761,18 +761,18 @@ __mise_task_deps_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
-(( $+functions[__mise_task_edit_cmd] )) ||
-__mise_task_edit_cmd() {
+(( $+functions[__mise_tasks_edit_cmd] )) ||
+__mise_tasks_edit_cmd() {
   _arguments -s -S \
     ':task:__mise_tasks' \
-    '(-p --path)'{-p,--path}'[Display the path to the task instead of editing it]' \
+    '(-p --path)'{-p,--path}'[Display the path to the tasks instead of editing it]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
-(( $+functions[__mise_task_ls_cmd] )) ||
-__mise_task_ls_cmd() {
+(( $+functions[__mise_tasks_ls_cmd] )) ||
+__mise_tasks_ls_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
     '--hidden[Show hidden tasks]' \
@@ -781,20 +781,20 @@ __mise_task_ls_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
-(( $+functions[__mise_task_run_cmd] )) ||
-__mise_task_run_cmd() {
+(( $+functions[__mise_tasks_run_cmd] )) ||
+__mise_tasks_run_cmd() {
   _arguments -s -S \
     '::task:__mise_tasks' \
     '*::args:' \
     '(-C --cd)'{-C,--cd}'=[Change to this directory before executing the command]:cd:_directories' \
-    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the task(s), just print them in order of execution]' \
-    '(-f --force)'{-f,--force}'[Force the task to run even if outputs are up to date]' \
-    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the task'\''s label]' \
+    '(-n --dry-run)'{-n,--dry-run}'[Don'\''t actually run the tasks(s), just print them in order of execution]' \
+    '(-f --force)'{-f,--force}'[Force the tasks to run even if outputs are up to date]' \
+    '(-p --prefix)'{-p,--prefix}'[Print stdout/stderr by line, prefixed with the tasks'\''s label]' \
     '(-i --interleave)'{-i,--interleave}'[Print directly to stdout/stderr instead of by line]' \
     '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__mise_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
-    '--timings[Shows elapsed time after each task]' \
+    '--timings[Shows elapsed time after each tasks]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
@@ -874,7 +874,7 @@ __mise_version_cmd() {
 (( $+functions[__mise_watch_cmd] )) ||
 __mise_watch_cmd() {
   _arguments -s -S \
-    '*'{-t,--task}'=[Task to run]:task:__mise_tasks' \
+    '*'{-t,--task}'=[Tasks to run]:task:__mise_tasks' \
     '*::args:' \
     '*'{-g,--glob}'=[Files to watch]:glob:' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
@@ -928,20 +928,20 @@ __mise_cmds() {
     {p,plugins}':Manage plugins'
     'prune:Delete unused versions of tools'
     'reshim:rebuilds the shim farm'
-    {r,run}':\[experimental\] Run a task'
+    {r,run}':\[experimental\] Run a tasks'
     'self-update:Updates mise itself'
     'set:Manage environment variables'
     'settings:Manage settings'
     {sh,shell}':Sets a tool version for the current shell session'
     'sync:Add tool versions from external tools to mise'
-    {t,task}':\[experimental\] Manage tasks'
+    {t,tasks}':\[experimental\] Manage tasks'
     'trust:Marks a config file as trusted'
     {remove,rm,uninstall}':Removes runtime versions'
     'unset:Remove environment variable(s) from the config file'
     {up,upgrade}':Upgrades outdated tool versions'
     {u,use}':Change the active version of a tool locally or globally.'
     'version:Show mise version'
-    {w,watch}':\[experimental\] Run a task watching for changes'
+    {w,watch}':\[experimental\] Run a tasks watching for changes'
     'where:Display the installation path for a runtime'
     'which:Shows the path that a bin name points to'
   )
@@ -1009,13 +1009,13 @@ __mise_sync_cmds() {
   )
   _describe -t commands 'command' commands "$@"
 }
-(( $+functions[__mise_task_cmds] )) ||
-__mise_task_cmds() {
+(( $+functions[__mise_tasks_cmds] )) ||
+__mise_tasks_cmds() {
   local commands; commands=(
     'deps:\[experimental\] Display a tree visualization of a dependency graph'
-    'edit:\[experimental\] Edit a task with \$EDITOR'
+    'edit:\[experimental\] Edit a tasks with \$EDITOR'
     'ls:\[experimental\] List available tasks to execute'
-    {r,run}':\[experimental\] Run a task'
+    {r,run}':\[experimental\] Run a tasks'
   )
   _describe -t commands 'command' commands "$@"
 }

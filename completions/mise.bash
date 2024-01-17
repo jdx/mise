@@ -157,10 +157,10 @@ _mise() {
                 cmd="mise__sync"
                 ;;
             mise,t)
-                cmd="mise__task"
+                cmd="mise__tasks"
                 ;;
-            mise,task)
-                cmd="mise__task"
+            mise,tasks)
+                cmd="mise__tasks"
                 ;;
             mise,trust)
                 cmd="mise__trust"
@@ -423,8 +423,8 @@ _mise() {
             mise__help,sync)
                 cmd="mise__help__sync"
                 ;;
-            mise__help,task)
-                cmd="mise__help__task"
+            mise__help,tasks)
+                cmd="mise__help__tasks"
                 ;;
             mise__help,trust)
                 cmd="mise__help__trust"
@@ -519,17 +519,17 @@ _mise() {
             mise__help__sync,python)
                 cmd="mise__help__sync__python"
                 ;;
-            mise__help__task,deps)
-                cmd="mise__help__task__deps"
+            mise__help__tasks,deps)
+                cmd="mise__help__tasks__deps"
                 ;;
-            mise__help__task,edit)
-                cmd="mise__help__task__edit"
+            mise__help__tasks,edit)
+                cmd="mise__help__tasks__edit"
                 ;;
-            mise__help__task,ls)
-                cmd="mise__help__task__ls"
+            mise__help__tasks,ls)
+                cmd="mise__help__tasks__ls"
                 ;;
-            mise__help__task,run)
-                cmd="mise__help__task__run"
+            mise__help__tasks,run)
+                cmd="mise__help__tasks__run"
                 ;;
             mise__plugins,a)
                 cmd="mise__plugins__install"
@@ -675,38 +675,38 @@ _mise() {
             mise__sync__help,python)
                 cmd="mise__sync__help__python"
                 ;;
-            mise__task,deps)
-                cmd="mise__task__deps"
+            mise__tasks,deps)
+                cmd="mise__tasks__deps"
                 ;;
-            mise__task,edit)
-                cmd="mise__task__edit"
+            mise__tasks,edit)
+                cmd="mise__tasks__edit"
                 ;;
-            mise__task,help)
-                cmd="mise__task__help"
+            mise__tasks,help)
+                cmd="mise__tasks__help"
                 ;;
-            mise__task,ls)
-                cmd="mise__task__ls"
+            mise__tasks,ls)
+                cmd="mise__tasks__ls"
                 ;;
-            mise__task,r)
-                cmd="mise__task__run"
+            mise__tasks,r)
+                cmd="mise__tasks__run"
                 ;;
-            mise__task,run)
-                cmd="mise__task__run"
+            mise__tasks,run)
+                cmd="mise__tasks__run"
                 ;;
-            mise__task__help,deps)
-                cmd="mise__task__help__deps"
+            mise__tasks__help,deps)
+                cmd="mise__tasks__help__deps"
                 ;;
-            mise__task__help,edit)
-                cmd="mise__task__help__edit"
+            mise__tasks__help,edit)
+                cmd="mise__tasks__help__edit"
                 ;;
-            mise__task__help,help)
-                cmd="mise__task__help__help"
+            mise__tasks__help,help)
+                cmd="mise__tasks__help__help"
                 ;;
-            mise__task__help,ls)
-                cmd="mise__task__help__ls"
+            mise__tasks__help,ls)
+                cmd="mise__tasks__help__ls"
                 ;;
-            mise__task__help,run)
-                cmd="mise__task__help__run"
+            mise__tasks__help,run)
+                cmd="mise__tasks__help__run"
                 ;;
             *)
                 ;;
@@ -715,7 +715,7 @@ _mise() {
 
     case "${cmd}" in
         mise)
-            opts="-C -q -v -y -h -V --cd --debug --log-level --quiet --trace --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
+            opts="-C -q -v -y -h -V --cd --debug --log-level --quiet --trace --verbose --yes --help --version activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1833,7 +1833,7 @@ _mise() {
             return 0
             ;;
         mise__help)
-            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
+            opts="activate alias asdf bin-paths cache completion config current deactivate direnv doctor env exec global hook-env hook-not-found implode install latest link local ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall upgrade unset use version watch where which render-completion render-help render-mangen help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2672,7 +2672,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__help__task)
+        mise__help__tasks)
             opts="deps edit ls run"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2686,7 +2686,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__help__task__deps)
+        mise__help__tasks__deps)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2700,7 +2700,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__help__task__edit)
+        mise__help__tasks__edit)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2714,7 +2714,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__help__task__ls)
+        mise__help__tasks__ls)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2728,7 +2728,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__help__task__run)
+        mise__help__tasks__run)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4299,7 +4299,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task)
+        mise__tasks)
             opts="-C -q -v -y -h --no-header --hidden --cd --debug --log-level --quiet --trace --verbose --yes --help deps edit ls run help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4331,7 +4331,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__deps)
+        mise__tasks__deps)
             opts="-C -q -v -y -h --dot --cd --debug --log-level --quiet --trace --verbose --yes --help [TASKS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4363,7 +4363,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__edit)
+        mise__tasks__edit)
             opts="-p -C -q -v -y -h --path --cd --debug --log-level --quiet --trace --verbose --yes --help <TASK>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4395,7 +4395,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help)
+        mise__tasks__help)
             opts="deps edit ls run help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4409,7 +4409,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help__deps)
+        mise__tasks__help__deps)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4423,7 +4423,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help__edit)
+        mise__tasks__help__edit)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4437,7 +4437,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help__help)
+        mise__tasks__help__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4451,7 +4451,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help__ls)
+        mise__tasks__help__ls)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4465,7 +4465,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__help__run)
+        mise__tasks__help__run)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4479,7 +4479,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__ls)
+        mise__tasks__ls)
             opts="-C -q -v -y -h --no-header --hidden --cd --debug --log-level --quiet --trace --verbose --yes --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -4511,7 +4511,7 @@ _mise() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        mise__task__run)
+        mise__tasks__run)
             opts="-C -n -f -p -i -t -j -r -q -v -y -h --cd --dry-run --force --prefix --interleave --tool --jobs --raw --timings --debug --log-level --quiet --trace --verbose --yes --help [TASK] [ARGS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

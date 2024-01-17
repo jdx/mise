@@ -45,7 +45,7 @@ mod set;
 mod settings;
 mod shell;
 mod sync;
-mod task;
+mod tasks;
 mod trust;
 mod uninstall;
 mod unset;
@@ -93,7 +93,7 @@ pub enum Commands {
     Settings(settings::Settings),
     Shell(shell::Shell),
     Sync(sync::Sync),
-    Task(task::Task),
+    Tasks(tasks::Tasks),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Upgrade(upgrade::Upgrade),
@@ -150,7 +150,7 @@ impl Commands {
             Self::Settings(cmd) => cmd.run(),
             Self::Shell(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run(),
-            Self::Task(cmd) => cmd.run(),
+            Self::Tasks(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
@@ -252,8 +252,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
   $ <bold>mise set NODE_ENV=production</bold>   Set NODE_ENV=production in config
 
-  $ <bold>mise run build</bold>                 Run `build` task
-  $ <bold>mise watch build</bold>               Run `build` task repeatedly when files change
+  $ <bold>mise run build</bold>                 Run `build` tasks
+  $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
 
   $ <bold>mise settings</bold>                  Show settings in use
   $ <bold>mise settings set color 0</bold>      Disable color by modifying global config file

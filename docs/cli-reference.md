@@ -864,11 +864,11 @@ Examples:
 **Aliases:** `r`
 
 ```text
-[experimental] Run a task
+[experimental] Run a tasks
 
-This command will run a task, or multiple tasks in parallel.
+This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a task, it will only run if the source
+If source is configured on a tasks, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -881,7 +881,7 @@ In .mise.toml, tasks take this form:
 
 Alternatively, tasks can be defined as standalone scripts.
 These must be located in the `.mise/tasks` directory.
-The name of the script will be the name of the task.
+The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
     #!/usr/bin/env bash
@@ -893,27 +893,27 @@ Usage: run [OPTIONS] [TASK] [ARGS]...
 
 Arguments:
   [TASK]
-          Task to run
+          Tasks to run
           Can specify multiple tasks by separating with `:::`
           e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
 
           [default: default]
 
   [ARGS]...
-          Arguments to pass to the task. Use ":::" to separate tasks
+          Arguments to pass to the tasks. Use ":::" to separate tasks
 
 Options:
   -C, --cd <CD>
           Change to this directory before executing the command
 
   -n, --dry-run
-          Don't actually run the task(s), just print them in order of execution
+          Don't actually run the tasks(s), just print them in order of execution
 
   -f, --force
-          Force the task to run even if outputs are up to date
+          Force the tasks to run even if outputs are up to date
 
   -p, --prefix
-          Print stdout/stderr by line, prefixed with the task's label
+          Print stdout/stderr by line, prefixed with the tasks's label
           Defaults to true if --jobs > 1
           Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
@@ -937,15 +937,15 @@ Options:
           Configure with `raw` config or `MISE_RAW` env var
 
       --timings
-          Shows elapsed time after each task
+          Shows elapsed time after each tasks
 
 Examples:
   $ mise run lint
-  Runs the "lint" task. This needs to either be defined in .mise.toml
+  Runs the "lint" tasks. This needs to either be defined in .mise.toml
   or as a standalone script. See the project README for more information.
 
   $ mise run build --force
-  Forces the "build" task to run even if its sources are up-to-date.
+  Forces the "build" tasks to run even if its sources are up-to-date.
 
   $ mise run test --raw
   Runs "test" with stdin/stdout/stderr all connected to the current terminal.
@@ -954,7 +954,7 @@ Examples:
   $ mise run lint ::: test ::: check
   Runs the "lint", "test", and "check" tasks in parallel.
 
-  $ mise task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+  $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
   Execute multiple tasks each with their own arguments.
 ```
 
@@ -1176,57 +1176,57 @@ Examples:
   $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-## `mise task deps [OPTIONS] [TASKS]...`
+## `mise tasks deps [OPTIONS] [TASKS]...`
 
 ```text
 [experimental] Display a tree visualization of a dependency graph
 
-Usage: task deps [OPTIONS] [TASKS]...
+Usage: tasks deps [OPTIONS] [TASKS]...
 
 Arguments:
   [TASKS]...
           Tasks to show dependencies for
           Can specify multiple tasks by separating with spaces
-          e.g.: mise task deps lint test check
+          e.g.: mise tasks deps lint test check
 
 Options:
       --dot
           Display dependencies in DOT format
 
 Examples:
-  $ mise task deps
+  $ mise tasks deps
   Shows dependencies for all tasks
 
-  $ mise task deps lint test check
+  $ mise tasks deps lint test check
   Shows dependencies for the "lint", "test" and "check" tasks
 
-  $ mise task deps --dot
+  $ mise tasks deps --dot
   Shows dependencies in DOT format
 ```
 
-## `mise task edit [OPTIONS] <TASK>`
+## `mise tasks edit [OPTIONS] <TASK>`
 
 ```text
-[experimental] Edit a task with $EDITOR
+[experimental] Edit a tasks with $EDITOR
 
-The task will be created as a standalone script if it does not already exist.
+The tasks will be created as a standalone script if it does not already exist.
 
-Usage: task edit [OPTIONS] <TASK>
+Usage: tasks edit [OPTIONS] <TASK>
 
 Arguments:
   <TASK>
-          Task to edit
+          Tasks to edit
 
 Options:
   -p, --path
-          Display the path to the task instead of editing it
+          Display the path to the tasks instead of editing it
 
 Examples:
-  $ mise task edit build
-  $ mise task edit test
+  $ mise tasks edit build
+  $ mise tasks edit test
 ```
 
-## `mise task ls [OPTIONS]`
+## `mise tasks ls [OPTIONS]`
 
 ```text
 [experimental] List available tasks to execute
@@ -1237,7 +1237,7 @@ So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks
 ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 tasks will override the global ones if they have the same name.
 
-Usage: task ls [OPTIONS]
+Usage: tasks ls [OPTIONS]
 
 Options:
       --no-header
@@ -1247,19 +1247,19 @@ Options:
           Show hidden tasks
 
 Examples:
-  $ mise task ls
+  $ mise tasks ls
 ```
 
-## `mise task run [OPTIONS] [TASK] [ARGS]...`
+## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
 
 **Aliases:** `r`
 
 ```text
-[experimental] Run a task
+[experimental] Run a tasks
 
-This command will run a task, or multiple tasks in parallel.
+This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a task, it will only run if the source
+If source is configured on a tasks, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -1272,7 +1272,7 @@ In .mise.toml, tasks take this form:
 
 Alternatively, tasks can be defined as standalone scripts.
 These must be located in the `.mise/tasks` directory.
-The name of the script will be the name of the task.
+The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
     #!/usr/bin/env bash
@@ -1280,31 +1280,31 @@ The name of the script will be the name of the task.
     EOF
     $ mise run build
 
-Usage: task run [OPTIONS] [TASK] [ARGS]...
+Usage: tasks run [OPTIONS] [TASK] [ARGS]...
 
 Arguments:
   [TASK]
-          Task to run
+          Tasks to run
           Can specify multiple tasks by separating with `:::`
           e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
 
           [default: default]
 
   [ARGS]...
-          Arguments to pass to the task. Use ":::" to separate tasks
+          Arguments to pass to the tasks. Use ":::" to separate tasks
 
 Options:
   -C, --cd <CD>
           Change to this directory before executing the command
 
   -n, --dry-run
-          Don't actually run the task(s), just print them in order of execution
+          Don't actually run the tasks(s), just print them in order of execution
 
   -f, --force
-          Force the task to run even if outputs are up to date
+          Force the tasks to run even if outputs are up to date
 
   -p, --prefix
-          Print stdout/stderr by line, prefixed with the task's label
+          Print stdout/stderr by line, prefixed with the tasks's label
           Defaults to true if --jobs > 1
           Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
@@ -1328,15 +1328,15 @@ Options:
           Configure with `raw` config or `MISE_RAW` env var
 
       --timings
-          Shows elapsed time after each task
+          Shows elapsed time after each tasks
 
 Examples:
   $ mise run lint
-  Runs the "lint" task. This needs to either be defined in .mise.toml
+  Runs the "lint" tasks. This needs to either be defined in .mise.toml
   or as a standalone script. See the project README for more information.
 
   $ mise run build --force
-  Forces the "build" task to run even if its sources are up-to-date.
+  Forces the "build" tasks to run even if its sources are up-to-date.
 
   $ mise run test --raw
   Runs "test" with stdin/stdout/stderr all connected to the current terminal.
@@ -1345,7 +1345,7 @@ Examples:
   $ mise run lint ::: test ::: check
   Runs the "lint", "test", and "check" tasks in parallel.
 
-  $ mise task cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+  $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
   Execute multiple tasks each with their own arguments.
 ```
 
@@ -1547,7 +1547,7 @@ Usage: version
 **Aliases:** `w`
 
 ```text
-[experimental] Run a task watching for changes
+[experimental] Run a tasks watching for changes
 
 Usage: watch [OPTIONS] [ARGS]...
 
@@ -1557,22 +1557,22 @@ Arguments:
 
 Options:
   -t, --task <TASK>
-          Task to run
+          Tasks to run
 
           [default: default]
 
   -g, --glob <GLOB>
           Files to watch
-          Defaults to sources from the task(s)
+          Defaults to sources from the tasks(s)
 
 Examples:
   $ mise watch -t build
-  Runs the "build" task. Will re-run the task when any of its sources change.
-  Uses "sources" from the task definition to determine which files to watch.
+  Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+  Uses "sources" from the tasks definition to determine which files to watch.
 
   $ mise watch -t build --glob src/**/*.rs
-  Runs the "build" task but specify the files to watch with a glob pattern.
-  This overrides the "sources" from the task definition.
+  Runs the "build" tasks but specify the files to watch with a glob pattern.
+  This overrides the "sources" from the tasks definition.
 
   $ mise run -t build --clear
   Extra arguments are passed to watchexec. See `watchexec --help` for details.
