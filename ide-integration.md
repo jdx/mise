@@ -53,7 +53,7 @@ swiftlint
 
 
 ::: tip NOTE
-The `mise reshim` command is important to ensure Mise creates shims for the tools and versions specified in the project's Mise configuration file. Otherwise the script might end up using other versions of the tools.
+The `mise reshim` command is important to ensure mise creates shims for the tools and versions specified in the project's mise configuration file. Otherwise the script might end up using other versions of the tools.
 :::
 
 
