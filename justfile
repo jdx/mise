@@ -87,29 +87,28 @@ scripts := "scripts/*.sh e2e/{test_,run_}* e2e/*.sh"
 lint:
     cargo clippy -- -Dwarnings
     cargo fmt --all -- --check
-    shellcheck -x {{ scripts }}
-    shfmt -d {{ scripts }}
+    mise x shellcheck@latest -- shellcheck -x {{ scripts }}
+    mise x shfmt@latest -- shfmt -d {{ scripts }}
     just --unstable --fmt --check
-    prettier -c $(git ls-files '*.yml' '*.yaml')
-    markdownlint .
+    MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -c $(git ls-files '*.yml' '*.yaml')
+    MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint .
 
 # runs linters but makes fixes when possible
 lint-fix:
     cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
     cargo fmt --all
-    shellcheck -x {{ scripts }}
-    shfmt -w {{ scripts }}
+    mise x shellcheck@latest -- shellcheck -x {{ scripts }}
+    mise x shfmt@latest -- shfmt -w {{ scripts }}
     just --unstable --fmt
-    prettier -w $(git ls-files '*.yml' '*.yaml')
-    markdownlint --fix .
+    MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
+    MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint --fix .
 
 render-all: render-help render-completions render-mangen
 
 # regenerate docs/cli-reference.md
 render-help: build
     NO_COLOR=1 mise render-help
-    #npx markdown-magic
-    md-magic
+    mise x node@latest -- npx markdown-magic
 
 # regenerate shell completion files
 render-completions: build

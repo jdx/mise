@@ -39,8 +39,6 @@ RUN    apt-get update \
         libyaml-dev \
         patch \
         pkg-config \
-        shellcheck \
-        shfmt \
         sudo \
         tk-dev \
         uuid-dev \
@@ -53,10 +51,6 @@ RUN    apt-get update \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && node -v \
-    && npm i -g \
-        markdown-magic \
-        markdownlint-cli \
-        prettier \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
     && rustup install stable && rustup default stable \
