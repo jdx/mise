@@ -47,6 +47,7 @@ color-eyre = "0.6"
 color-print = "0.3"
 confique = { version = "0.2", default-features = false }
 console = "0.15"
+contracts = "0.6.3"
 ctrlc = "3"
 demand = "0.3"
 dotenvy = "0.15"

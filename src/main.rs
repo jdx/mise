@@ -10,6 +10,8 @@ extern crate insta;
 #[macro_use]
 extern crate pretty_assertions;
 #[macro_use]
+extern crate contracts;
+#[macro_use]
 extern crate strum;
 
 use std::process::exit;
