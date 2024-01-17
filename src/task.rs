@@ -296,8 +296,10 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
 fn config_root(config_source: &Path) -> &Path {
     match config_source.parent().expect("task source has no parent") {
-        dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap(),
-        dir if dir.ends_with(".config/mise/tasks") => dir.parent().unwrap().parent().unwrap(),
+        dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap().parent().unwrap(),
+        dir if dir.ends_with(".config/mise/tasks") => {
+            dir.parent().unwrap().parent().unwrap().parent().unwrap()
+        }
         dir => dir,
     }
 }
