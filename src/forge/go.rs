@@ -16,7 +16,7 @@ pub struct GoForge {
 
 impl Forge for GoForge {
     fn get_type(&self) -> ForgeType {
-        ForgeType::Npm
+        ForgeType::Go
     }
 
     fn fa(&self) -> &ForgeArg {
