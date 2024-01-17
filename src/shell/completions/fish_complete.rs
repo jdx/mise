@@ -1,5 +1,5 @@
 use clap::builder::StyledStr;
-use clap::{Arg, Command, ValueHint};
+use clap::{Arg, ArgAction, Command, ValueHint};
 use itertools::Itertools;
 
 use crate::shell::completions::is_banned;
@@ -102,15 +102,17 @@ fn render_arg(cmds: &[&Command], a: &Arg) -> String {
 }
 
 fn render_completer(a: &Arg) -> Option<String> {
-    let possible_values = a.get_possible_values();
-    if !possible_values.is_empty() {
-        return Some(
-            possible_values
-                .iter()
-                .map(|v| escape_value(v.get_name()))
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
+    if let ArgAction::Set = a.get_action() {
+        let possible_values = a.get_possible_values();
+        if !possible_values.is_empty() {
+            return Some(
+                possible_values
+                    .iter()
+                    .map(|v| escape_value(v.get_name()))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
     }
     match a.get_value_hint() {
         ValueHint::DirPath => Some("(__fish_complete_directories)".to_string()),
