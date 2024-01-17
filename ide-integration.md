@@ -44,7 +44,7 @@ mise x -C $SRCROOT swiftlint
 If you don't want to prefix your commands with `mise x -C $SRCROOT`, you can add the shims directory to the `$PATH` environment variable:
 
 ```bash
-export PATH="$HOME/.local/bin/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.local/share/mise/shims:$PATH"
 
 mise reshim -C $SRCROOT
