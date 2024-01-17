@@ -199,10 +199,10 @@ impl Config {
             .into_par_iter()
             .flat_map(|either| match either {
                 Either::Left(cf) => cf.tasks().into_iter().cloned().collect(),
-                Either::Right(path) => match Task::from_path(path) {
+                Either::Right(path) => match Task::from_path(&path) {
                     Ok(task) => vec![task],
                     Err(err) => {
-                        warn!("Error loading task: {:#}", err);
+                        warn!("Error loading task {}: {err:#}", display_path(&path));
                         vec![]
                     }
                 },
