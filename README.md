@@ -21,7 +21,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | adr-tools                     | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools)                                                     |
 | ag (the_silver_searcher)      | [koketani/asdf-ag](https://github.com/koketani/asdf-ag)                                                           |
 | age                           | [threkk/asdf-age](https://github.com/threkk/asdf-age)                                                             |
-| age-plugin-yubikey            | [str4d/age-plugin-yubikey](https://github.com/str4d/age-plugin-yubikey)                                           |
+| age-plugin-yubikey            | [str4d/asdf-age-plugin-yubikey](https://github.com/str4d/asdf-age-plugin-yubikey)                                 |
 | agebox                        | [slok/asdf-agebox](https://github.com/slok/asdf-agebox)                                                           |
 | air                           | [pdemagny/asdf-air](https://github.com/pdemagny/asdf-air)                                                         |
 | aks-engine                    | [robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine)                                 |
@@ -77,7 +77,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Bin                           | [yozachar/asdf-bin](https://github.com/yozachar/asdf-bin)                                                         |
 | binnacle                      | [Traackr/asdf-binnacle](https://github.com/Traackr/asdf-binnacle)                                                 |
 | Bitwarden                     | [vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden)                                                 |
-| bitwarden-secrets-manager     | [vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden)                                                 |
+| bitwarden-secrets-manager     | [asdf-community/asdf-bitwarden-secrets-manager](https://github.com/asdf-community/asdf-bitwarden-secrets-manager) |
 | Bombardier                    | [NeoHsu/asdf-bombardier](https://github.com/NeoHsu/asdf-bombardier)                                               |
 | borg                          | [lwiechec/asdf-borg](https://github.com/lwiechec/asdf-borg)                                                       |
 | bosh                          | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
@@ -507,8 +507,8 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Packer                        | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | Pandoc                        | [Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc)                                                   |
 | patat                         | [airtonix/asdf-patat](https://github.com/airtonix/asdf-patat)                                                     |
-| pdm                           | [1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm)                                                           |
 | peco                          | [asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco)                                           |
+| pdm                           | [1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm)                                                           |
 | Perl                          | [ouest/asdf-perl](https://github.com/ouest/asdf-perl)                                                             |
 | PHP                           | [asdf-community/asdf-php](https://github.com/asdf-community/asdf-php)                                             |
 | pint                          | [sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint)                                                 |
@@ -530,9 +530,9 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | promtool                      | [asdf-community/asdf-promtool](https://github.com/asdf-community/asdf-promtool)                                   |
 | protoc                        | [paxosglobal/asdf-protoc](https://github.com/paxosglobal/asdf-protoc)                                             |
 | protoc-gen-connect-go         | [dylanrayboss/asdf-protoc-gen-connect-go](https://github.com/dylanrayboss/asdf-protoc-gen-connect-go)             |
-| protoc-gen-go                 | [pbr0ck3r/asdf-protoc-gen-go](https://github.com/pbr0ck3r/asdf-protoc-gen-go)                                     |
-| protoc-gen-go-grpc            | [pbr0ck3r/asdf-protoc-gen-go-grpc](https://github.com/pbr0ck3r/asdf-protoc-gen-go-grpc)                           |
 | protoc-gen-grpc-web           | [pbr0ck3r/asdf-protoc-gen-grpc-web](https://github.com/pbr0ck3r/asdf-protoc-gen-grpc-web)                         |
+| protoc-gen-go-grpc            | [pbr0ck3r/asdf-protoc-gen-go-grpc](https://github.com/pbr0ck3r/asdf-protoc-gen-go-grpc)                           |
+| protoc-gen-go                 | [pbr0ck3r/asdf-protoc-gen-go](https://github.com/pbr0ck3r/asdf-protoc-gen-go)                                     |
 | protoc-gen-js                 | [pbr0ck3r/asdf-protoc-gen-js](https://github.com/pbr0ck3r/asdf-protoc-gen-js)                                     |
 | protolint                     | [spencergilbert/asdf-protolint](https://github.com/spencergilbert/asdf-protolint)                                 |
 | Proton GE                     | [augustobmoura/asdf-protonge](https://github.com/augustobmoura/asdf-protonge)                                     |
