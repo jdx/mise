@@ -117,7 +117,7 @@ your best bet might be using the following command to install Python:
 ```sh
 CFLAGS="-I$(brew --prefix openssl)/include" \
 LDFLAGS="-L$(brew --prefix openssl)/lib" \
-rtx install python@latest;
+mise install python@latest;
 ```
 
 Homebrew installs its own OpenSSL version, which may collide with system-expected ones.
@@ -132,18 +132,18 @@ you may benefit from unlinking pkg-config prior to install
 ([reason](https://github.com/pyenv/pyenv/issues/2823#issuecomment-1769081965)).
 
 ```sh
-brew unlink pkg-config && \
-rtx install python@latest;
+brew unlink pkg-config
+mise install python@latest
 brew link pkg-config
 ```
 
 Thus the entire script would look like:
 
 ```sh
+brew unlink pkg-config
 CFLAGS="-I$(brew --prefix openssl)/include" \
-LDFLAGS="-L$(brew --prefix openssl)/lib" \
-brew unlink pkg-config && \
-rtx install python@latest; \
+  LDFLAGS="-L$(brew --prefix openssl)/lib" \
+  mise install python@latest
 brew link pkg-config
 ```
 
