@@ -514,7 +514,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | pint                          | [sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint)                                                 |
 | pipectl                       | [pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl)                                                   |
 | pipelight                     | [kogeletey/asdf-pipelight](https://github.com/kogeletey/asdf-pipelight)                                           |
-| pipenv                        | [mise-plugins/rtx-pipenv](https://github.com/mise-plugins/rtx-pipenv)                                             |
+| pipenv                        | [mise-plugins/mise-pipenv](https://github.com/mise-plugins/mise-pipenv)                                             |
 | pipx                          | [yozachar/asdf-pipx](https://github.com/yozachar/asdf-pipx)                                                       |
 | pivnet                        | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
 | Please                        | [asdf-community/asdf-please](https://github.com/asdf-community/asdf-please)                                       |
