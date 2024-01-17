@@ -234,6 +234,7 @@ pub trait Forge: Debug + Send + Sync {
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
         unimplemented!()
     }
+    #[requires(ctx.tv.forge.forge_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
