@@ -39,6 +39,12 @@ pub struct Activate {
     #[clap(long)]
     status: bool,
 
+    /// Use shims instead of modifying PATH
+    /// Effectively the same as:
+    ///    PATH="$HOME/.local/share/mise/shims:$PATH"
+    #[clap(long)]
+    shims: bool,
+
     /// Suppress non-error messages
     #[clap(long, short)]
     quiet: bool,
@@ -65,7 +71,10 @@ impl Activate {
         if self.status {
             flags.push(" --status");
         }
-        let output = shell.activate(&mise_bin, flags.join(""));
+        let output = match self.shims {
+            true => shell.activate_shims(&mise_bin),
+            false => shell.activate(&mise_bin, flags.join("")),
+        };
         miseprint!("{output}");
 
         Ok(())
