@@ -214,6 +214,9 @@ impl Config {
                     .chain(once((t.name.clone(), t.clone())))
                     .collect::<Vec<_>>()
             })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
             .collect()
     }
 
