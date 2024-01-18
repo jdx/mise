@@ -5,6 +5,9 @@ export default defineConfig({
   title: "mise-en-place",
   description: "mise-en-place documentation",
   lastUpdated: true,
+  sitemap: {
+    hostname: 'https://mise.jdx.dev',
+  },
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     outline: 'deep',
