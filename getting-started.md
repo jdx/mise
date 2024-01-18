@@ -25,7 +25,7 @@ mise 2024.x.x
 "~/.local/bin" does not need to be in PATH. mise will automatically add its own directory to PATH when activated.
 :::
 
-### 2. Alternative: Activate mise <Badge type="tip" text="optional" />
+### 2. Activate mise
 
 `mise activate` is one way to setup mise but alternatively you can use [shims](dev-tools/shims.md), [direnv](./direnv), or skip
 this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
@@ -45,7 +45,7 @@ echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 :::
 
-### 2. Add mise shims to PATH <Badge type="tip" text="Alternate" />
+### 2. Alternative: Add mise shims to PATH <Badge type="tip" text="Alternate" />
 
 If you prefer to use shims, you can run the following to use mise without activating it.
 You can use .bashrc/.zshrc instead of .bash_profile/.zprofile if you prefer to only use
@@ -67,7 +67,7 @@ fish_add_path ~/.local/share/mise/shims
 mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like to change these locations.
 :::
 
-### 3. Adding tools to mise
+### 3. Adding tools to mise <Badge type="tip" text="optional" />
 
 :::info
 Of course, if using mise solely for [environment management](/environments) or [running tasks](/tasks/)
