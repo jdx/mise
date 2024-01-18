@@ -46,7 +46,7 @@ fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<Stri
             .map(|s| s.as_str().to_string())
             .unwrap_or_default();
         let sans_prefix = v.trim_start_matches(&prefix);
-        let versions = Versioning::new(sans_prefix).expect("invalid version");
+        let versions = Versioning::new(sans_prefix).unwrap_or_default();
         let mut partial = vec![];
         while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();
