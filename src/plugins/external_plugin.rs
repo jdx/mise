@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -370,10 +371,41 @@ impl ExternalPlugin {
     }
 
     fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> Result<()> {
+        self.exec_hook_env(pr, hook, Default::default())
+    }
+    fn exec_hook_env(
+        &self,
+        pr: &dyn SingleReport,
+        hook: &str,
+        env: HashMap<OsString, OsString>,
+    ) -> Result<()> {
         let script = Script::Hook(hook.to_string());
-        if self.script_man.script_exists(&script) {
+        let mut sm = self.script_man.clone();
+        sm.env.extend(env);
+        if sm.script_exists(&script) {
             pr.set_message(format!("executing {hook} hook"));
-            self.script_man.run_by_line(&script, pr)?;
+            sm.run_by_line(&script, pr)?;
+        }
+        Ok(())
+    }
+
+    fn exec_hook_post_plugin_update(
+        &self,
+        pr: &dyn SingleReport,
+        pre: String,
+        post: String,
+    ) -> Result<()> {
+        if pre != post {
+            let env = [
+                ("ASDF_PLUGIN_PREV_REF", pre.clone()),
+                ("ASDF_PLUGIN_POST_REF", post.clone()),
+                ("MISE_PLUGIN_PREV_REF", pre),
+                ("MISE_PLUGIN_POST_REF", post),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect();
+            self.exec_hook_env(pr, "post-plugin-update", env)?;
         }
         Ok(())
     }
@@ -511,10 +543,10 @@ impl Forge for ExternalPlugin {
             return Ok(());
         }
         pr.set_message("updating git repo".into());
-        let (_pre, _post) = git.update(gitref)?;
+        let (pre, post) = git.update(gitref)?;
         let sha = git.current_sha_short()?;
         let repo_url = self.get_remote_url().unwrap_or_default();
-        self.exec_hook(pr, "post-plugin-update")?;
+        self.exec_hook_post_plugin_update(pr, pre, post)?;
         pr.finish_with_message(format!(
             "{repo_url}#{}",
             style(&sha).bright().yellow().for_stderr(),
