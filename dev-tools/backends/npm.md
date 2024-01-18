@@ -29,5 +29,5 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ```toml
 [tools]
-prettier = "latest"
+"npm:prettier" = "latest"
 ```
