@@ -6,3 +6,4 @@ source "$(dirname "$0")/assert.sh"
 export MISE_EXPERIMENTAL=1
 
 assert "mise x go:github.com/DarthSim/hivemind@v1.1.0 -- hivemind --version" "Hivemind version 1.1.0"
+chmod -R u+w "$MISE_DATA_DIR/cache/go-"*
