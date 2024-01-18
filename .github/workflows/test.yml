@@ -33,9 +33,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
-      - name: Install direnv/shfmt
-        run: sudo apt-get update; sudo apt-get install direnv shfmt
-      - run: npm i -g markdown-magic prettier markdownlint-cli
+      - name: Install direnv
+        run: sudo apt-get update; sudo apt-get install direnv
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -72,8 +71,7 @@ jobs:
         with:
           shared-key: coverage
           save-if: ${{ github.ref_name == 'main' }}
-      - run: sudo apt-get update; sudo apt-get install zsh fish direnv shfmt
-      - run: npm i -g markdown-magic
+      - run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,just

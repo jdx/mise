@@ -15,15 +15,11 @@ RUN mkdir /workspaces/target \
     && apt-get update \
     && apt-get -y install --no-install-recommends \
     # shells, direnv, shellcheck
-    bash fish zsh direnv nodejs shellcheck \
+    bash fish zsh direnv nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    # shfmt
-    && curl -sS https://webi.sh/shfmt | sh \
     # just
-    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin \
-    # npm packages
-    && npm install -g prettier@3.1.0 markdownlint-cli@0.37.0 markdown-magic@2.6.1
+    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin
 
 COPY --from=golang:1.21-bullseye /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
