@@ -1,0 +1,6 @@
+---
+source: src/shell/bash.rs
+expression: replace_path(&bash.prepend_path(&paths))
+---
+export PATH="/some/other/dir:/some/dir:$PATH"
+

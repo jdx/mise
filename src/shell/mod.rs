@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::{dirs, env};
+use crate::env;
 
 mod bash;
 mod fish;
@@ -54,13 +54,13 @@ impl Display for ShellType {
 
 pub trait Shell {
     fn activate(&self, exe: &Path, flags: String) -> String;
-    fn activate_shims(&self, exe: &Path) -> String {
+    fn prepend_path(&self, paths: &[PathBuf]) -> String {
         let mut path = env::var("PATH").unwrap_or_default();
-        let dir = exe.parent().unwrap();
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            path = format!("{}:{path}", dir.display());
+        for p in paths {
+            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+                path = format!("{}:{path}", p.display());
+            }
         }
-        path = format!("{}:{path}", dirs::SHIMS.display());
         self.set_env("PATH", &path)
     }
     fn deactivate(&self) -> String;

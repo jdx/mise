@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
 use crate::file::touch_dir;
-use crate::shell::{get_shell, ShellType};
+use crate::shell::{get_shell, Shell, ShellType};
 use crate::{dirs, env};
 
 /// Initializes mise in the current shell session
@@ -41,8 +41,8 @@ pub struct Activate {
 
     /// Use shims instead of modifying PATH
     /// Effectively the same as:
-    ///    PATH="$HOME/.local/share/mise/shims:$PATH"
-    #[clap(long)]
+    ///     PATH="$HOME/.local/share/mise/shims:$PATH"
+    #[clap(long, verbatim_doc_comment)]
     shims: bool,
 
     /// Suppress non-error messages
@@ -72,12 +72,17 @@ impl Activate {
             flags.push(" --status");
         }
         let output = match self.shims {
-            true => shell.activate_shims(&mise_bin),
+            true => self.activate_shims(shell.as_ref(), &mise_bin),
             false => shell.activate(&mise_bin, flags.join("")),
         };
         miseprint!("{output}");
 
         Ok(())
+    }
+
+    fn activate_shims(&self, shell: &dyn Shell, exe: &Path) -> String {
+        let exe_dir = exe.parent().unwrap().to_path_buf();
+        shell.prepend_path(&[exe_dir, dirs::SHIMS.clone()])
     }
 }
 
