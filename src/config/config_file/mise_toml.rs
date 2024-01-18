@@ -611,8 +611,8 @@ impl ConfigFile for MiseToml {
                 dir if dir.starts_with(*dirs::CONFIG) => None,
                 dir if dir.starts_with(*dirs::SYSTEM) => None,
                 dir if dir == *dirs::HOME => None,
-                dir if !filename.starts_with('.') && dir.ends_with("/.mise") => dir.parent(),
-                dir if !filename.starts_with('.') && dir.ends_with("/.config/mise") => {
+                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
+                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
                     dir.parent().unwrap().parent()
                 }
                 dir => Some(dir),
