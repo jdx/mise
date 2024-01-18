@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
@@ -90,6 +90,19 @@ impl Shell for Zsh {
         "#}
     }
 
+    fn prepend_path(&self, paths: &[PathBuf]) -> String {
+        if paths.is_empty() {
+            return String::new();
+        }
+        let mut path = String::new();
+        for p in paths {
+            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+                path = format!("{}:{path}", p.display());
+            }
+        }
+        format!("export PATH=\"{path}$PATH\"\n")
+    }
+
     fn set_env(&self, k: &str, v: &str) -> String {
         Bash::default().set_env(k, v)
     }
@@ -105,17 +118,23 @@ mod tests {
     use crate::test::replace_path;
 
     #[test]
-    fn test_hook_init() {
+    fn test_activate() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
     #[test]
-    fn test_hook_init_nix() {
+    fn test_activate_nix() {
         let zsh = Zsh::default();
         let exe = Path::new("/nix/store/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
+    }
+
+    #[test]
+    fn test_prepend_path() {
+        let zsh = Zsh::default();
+        assert_snapshot!(zsh.prepend_path(&[PathBuf::from("/some/dir")]));
     }
 
     #[test]

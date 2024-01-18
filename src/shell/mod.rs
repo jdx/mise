@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::env;
 
@@ -54,6 +54,15 @@ impl Display for ShellType {
 
 pub trait Shell {
     fn activate(&self, exe: &Path, flags: String) -> String;
+    fn prepend_path(&self, paths: &[PathBuf]) -> String {
+        let mut path = env::var("PATH").unwrap_or_default();
+        for p in paths {
+            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+                path = format!("{}:{path}", p.display());
+            }
+        }
+        self.set_env("PATH", &path)
+    }
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;

@@ -738,7 +738,7 @@ _mise() {
             return 0
             ;;
         mise__activate)
-            opts="-s -q -C -v -y -h --shell --status --quiet --cd --debug --log-level --trace --verbose --yes --help bash fish nu xonsh zsh"
+            opts="-s -q -C -v -y -h --shell --status --shims --quiet --cd --debug --log-level --trace --verbose --yes --help bash fish nu xonsh zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

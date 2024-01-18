@@ -48,6 +48,7 @@ complete -xc mise -n "not $fssf $others" -a which -d 'Shows the path that a bin 
 # activate
 complete -kxc mise -n "$fssf activate" -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc mise -n "$fssf activate" -a "bash fish nu xonsh zsh" -d 'Shell type to generate the script for'
+complete -kxc mise -n "$fssf activate" -l shims -d 'Use shims instead of modifying PATH'
 complete -kxc mise -n "$fssf activate" -l status -d 'Show "mise: <PLUGIN>@<VERSION>" message when changing directories'
 
 # alias

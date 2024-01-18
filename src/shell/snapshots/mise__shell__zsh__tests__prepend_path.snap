@@ -1,0 +1,6 @@
+---
+source: src/shell/zsh.rs
+expression: "zsh.prepend_path(&[PathBuf::from(\"/some/dir\")])"
+---
+export PATH="/some/dir:$PATH"
+

@@ -1,0 +1,6 @@
+---
+source: src/shell/fish.rs
+expression: fish.prepend_path(&paths)
+---
+set -gx PATH /some/other/dir /some/dir $PATH
+
