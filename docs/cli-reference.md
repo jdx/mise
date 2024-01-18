@@ -36,6 +36,11 @@ Options:
       --status
           Show "mise: <PLUGIN>@<VERSION>" message when changing directories
 
+      --shims
+          Use shims instead of modifying PATH
+          Effectively the same as:
+              PATH="$HOME/.local/share/mise/shims:$PATH"
+
   -q, --quiet
           Suppress non-error messages
 

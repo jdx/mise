@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Settings;
 use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
@@ -101,6 +101,19 @@ impl Shell for Fish {
         "#}
     }
 
+    fn prepend_path(&self, paths: &[PathBuf]) -> String {
+        if paths.is_empty() {
+            return String::new();
+        }
+        let mut path = String::new();
+        for p in paths {
+            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+                path = format!("{} {path}", p.display());
+            }
+        }
+        format!("set -gx PATH {path}$PATH\n")
+    }
+
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
@@ -119,17 +132,24 @@ mod tests {
     use crate::test::replace_path;
 
     #[test]
-    fn test_hook_init() {
+    fn test_activate() {
         let fish = Fish::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(fish.activate(exe, " --status".into()));
     }
 
     #[test]
-    fn test_hook_init_nix() {
+    fn test_activate_nix() {
         let fish = Fish::default();
         let exe = Path::new("/nix/store/mise");
         assert_snapshot!(fish.activate(exe, " --status".into()));
+    }
+
+    #[test]
+    fn test_prepend_path() {
+        let fish = Fish::default();
+        let paths = vec![PathBuf::from("/some/dir"), PathBuf::from("/some/other/dir")];
+        assert_snapshot!(fish.prepend_path(&paths));
     }
 
     #[test]
