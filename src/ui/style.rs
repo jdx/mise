@@ -28,6 +28,10 @@ pub fn ered<D>(val: D) -> StyledObject<D> {
     estyle(val).red()
 }
 
+pub fn eunderline<D>(val: D) -> StyledObject<D> {
+    estyle(val).underlined()
+}
+
 pub fn edim<D>(val: D) -> StyledObject<D> {
     estyle(val).dim()
 }
