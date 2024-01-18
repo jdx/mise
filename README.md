@@ -627,6 +627,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Shellcheck                    | [luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck)                                                 |
 | Shellspec                     | [poikilotherm/asdf-shellspec](https://github.com/poikilotherm/asdf-shellspec)                                     |
 | Shfmt                         | [luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt)                                                           |
+| Shorebird                     | [valian-ca/asdf-shorebird](https://github.com/valian-ca/asdf-shorebird)                                           |
 | Sinker                        | [elementalvoid/asdf-sinker](https://github.com/elementalvoid/asdf-sinker)                                         |
 | Skaffold                      | [nklmilojevic/asdf-skaffold](https://github.com/nklmilojevic/asdf-skaffold)                                       |
 | skate                         | [chessmango/asdf-skate](https://github.com/chessmango/asdf-skate)                                                 |
