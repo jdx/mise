@@ -345,6 +345,7 @@ impl Run {
         for name in task_names {
             s = s.option(DemandOption::new(name));
         }
+        ui::handle_ctrlc();
         let name = s.run()?;
         match tasks.get(name) {
             Some(task) => Ok(task.clone()),
