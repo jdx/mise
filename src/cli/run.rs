@@ -9,10 +9,10 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use clap::ValueHint;
-use console::{style, Color};
+use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use eyre::{OptionExt, Result};
+use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -135,7 +135,8 @@ impl Run {
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| match config.tasks_with_aliases().get(&t) {
                 Some(task) => Ok(task.clone().with_args(args.to_vec())),
-                None => self.prompt_for_task(config, &t),
+                None if t == "default" => self.prompt_for_task(config),
+                None => bail!("no task {} found", style::ered(t)),
             })
             .collect()
     }
@@ -330,28 +331,24 @@ impl Run {
         }
     }
 
-    fn prompt_for_task(&self, config: &Config, t: &str) -> Result<Task> {
+    fn prompt_for_task(&self, config: &Config) -> Result<Task> {
         let tasks = config.tasks();
-        if tasks.is_empty() {
-            bail!(format!(
-                "no tasks defined. see {url}",
-                url = style("https://mise.jdx.dev/tasks/").underlined()
-            ));
-        }
+        ensure!(
+            !tasks.is_empty(),
+            "no tasks defined. see {url}",
+            url = style::eunderline("https://mise.jdx.dev/tasks/")
+        );
         let task_names = tasks.keys().sorted().collect_vec();
-        let t = style(&t).yellow().for_stderr();
-        let msg = format!("no task named `{t}` found. select a task to run:");
-        let mut s = Select::new("Tasks").description(&msg).filterable(true);
+        let mut s = Select::new("Tasks")
+            .description("Select a task to run")
+            .filterable(true);
         for name in task_names {
             s = s.option(DemandOption::new(name));
         }
-        let task_name = s.run();
-        match task_name {
-            Ok(name) => tasks
-                .get(name)
-                .cloned()
-                .ok_or_eyre(format!("no task named `{}` found", name)),
-            Err(_) => Err(eyre!("there was an error, please try again")),
+        let name = s.run()?;
+        match tasks.get(name) {
+            Some(task) => Ok(task.clone()),
+            None => bail!("no task {} found", style::ered(name)),
         }
     }
 
