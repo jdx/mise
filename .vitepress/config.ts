@@ -4,7 +4,9 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "mise-en-place",
   description: "mise-en-place documentation",
+  lang: 'en-US',
   lastUpdated: true,
+  appearance: 'dark',
   sitemap: {
     hostname: 'https://mise.jdx.dev',
   },
