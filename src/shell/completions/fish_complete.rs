@@ -31,7 +31,8 @@ function __mise_plugins
 end
 function __mise_tool_versions
     if test -z "$__mise_tool_versions_cache"
-        set -g __mise_tool_versions_cache (mise plugins --core --user) (mise ls-remote --all | tac)
+        # sed madness reverses the input-but works on linux/bsd
+        set -g __mise_tool_versions_cache (mise plugins --core --user) (mise ls-remote --all | sed '1!G;h;$!d')
     end
     for tv in $__mise_tool_versions_cache
         echo $tv
