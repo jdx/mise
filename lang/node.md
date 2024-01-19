@@ -3,7 +3,7 @@
 The following are instructions for using the node mise core plugin. This is used when there isn't a
 git plugin installed named "node".
 
-If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) 
+If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)
 then run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`
 
 The code for this is inside the mise repository at [`./src/plugins/core/node.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs).

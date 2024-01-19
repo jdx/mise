@@ -4,7 +4,6 @@ The following are instructions for using the ruby mise core plugin. This is used
 git plugin installed named "ruby".
 
 If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
-or [rtx-ruby](https://github.com/mise-plugins/rtx-ruby)
 then use `mise plugins install ruby GIT_URL`.
 
 The code for this is inside the mise repository at

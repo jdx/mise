@@ -4,7 +4,6 @@ The following are instructions for using the go mise core plugin. This is used w
 git plugin installed named "go".
 
 If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
-or [rtx-golang](https://github.com/mise-plugins/rtx-golang)
 then use `mise plugins install go GIT_URL`.
 
 The code for this is inside the mise repository at
