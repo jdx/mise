@@ -18,31 +18,32 @@ export default defineConfig({
     ],
     sidebar: [
       { text: 'About', link: '/about' },
-      { text: 'Team', link: '/team' },
-      { text: 'Getting Started', link: '/getting-started' },
-      { text: 'Demo', link: '/demo' },
-      { text: 'Configuration', link: '/configuration' },
-      { text: 'Plugins', link: '/plugins' },
-      { text: 'IDE Integration', link: '/ide-integration' },
-      { text: 'Continuous Integration', link: '/continuous-integration' },
       { text: 'Coming from rtx', link: '/rtx' },
-      { text: 'Tips & Tricks', link: '/tips-and-tricks' },
-      { text: 'Paranoid', link: '/paranoid' },
+      { text: 'Configuration', link: '/configuration' },
+      { text: 'Continuous Integration', link: '/continuous-integration' },
+      { text: 'Demo', link: '/demo' },
       { text: 'FAQs', link: '/faq' },
+      { text: 'Getting Started', link: '/getting-started' },
       { text: 'How I Use mise', link: '/how-i-use-mise' },
+      { text: 'IDE Integration', link: '/ide-integration' },
+      { text: 'Paranoid', link: '/paranoid' },
+      { text: 'Plugins', link: '/plugins' },
+      { text: 'Team', link: '/team' },
+      { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       {
         text: 'Dev Tools',
         link: '/dev-tools/',
         items: [
-          { text: 'Shims', link: '/dev-tools/shims' },
           { text: 'Aliases', link: '/dev-tools/aliases' },
           { text: 'Comparison to asdf', link: '/dev-tools/comparison-to-asdf' },
+          { text: 'Shims', link: '/dev-tools/shims' },
           {
             text: 'Backends',
             link: '/dev-tools/backends/',
             items: [
               { text: 'asdf', link: '/dev-tools/backends/asdf' },
               { text: 'cargo', link: '/dev-tools/backends/cargo' },
+              { text: 'go', link: '/dev-tools/backends/go' },
               { text: 'npm', link: '/dev-tools/backends/npm' },
             ]
           }
@@ -52,8 +53,8 @@ export default defineConfig({
         text: 'Environments',
         link: '/environments',
         items: [
-          { text: 'Profiles', link: '/profiles' },
           { text: 'direnv', link: '/direnv' },
+          { text: 'Profiles', link: '/profiles' },
           { text: 'Templates', link: '/templates' },
         ],
       },
@@ -61,9 +62,9 @@ export default defineConfig({
         text: 'Tasks',
         link: '/tasks/',
         items: [
+          {text: 'Running Tasks', link: '/tasks/running-tasks'},
           {text: 'Script Tasks', link: '/tasks/script-tasks'},
           {text: 'TOML Tasks', link: '/tasks/toml-tasks'},
-          {text: 'Running Tasks', link: '/tasks/running-tasks'},
         ],
       },
       {
@@ -71,6 +72,7 @@ export default defineConfig({
         items: [
           { text: 'Bun', link: '/lang/bun' },
           { text: 'Deno', link: '/lang/deno' },
+          { text: 'Erlang', link: '/lang/erlang' },
           { text: 'Go', link: '/lang/go' },
           { text: 'Java', link: '/lang/java' },
           { text: 'Node.js', link: '/lang/node' },
@@ -82,8 +84,8 @@ export default defineConfig({
       {
         text: 'Internals',
         items: [
+          { text: 'Cache Behavior', link: '/cache-behavior' },
           { text: 'Directory Structure', link: '/directories' },
-          { text: 'Cache behavior', link: '/cache-behavior' },
           { text: 'Project Roadmap', link: '/project-roadmap' },
         ],
       },
