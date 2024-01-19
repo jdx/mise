@@ -4,7 +4,6 @@ The following are instructions for using the java mise core plugin. This is used
 git plugin installed named "java".
 
 If you want to use [asdf-java](https://github.com/halcyon/asdf-java)
-or [mise-java](https://github.com/rtx-plugins/mise-java)
 then use `mise plugins install java GIT_URL`.
 
 The code for this is inside the mise repository at

@@ -4,7 +4,6 @@ The following are instructions for using the go mise core plugin. This is used w
 git plugin installed named "go".
 
 If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
-or [mise-golang](https://github.com/rtx-plugins/mise-golang)
 then use `mise plugins install go GIT_URL`.
 
 The code for this is inside the mise repository at
@@ -19,7 +18,7 @@ installed) and makes it the global default:
 mise use -g go@1.21
 ```
 
-Minor go versions 1.20 and below require specifying `prefix` before the version number because the first version 
+Minor go versions 1.20 and below require specifying `prefix` before the version number because the first version
 of each serie was released without a `.0` suffix, making 1.20 an exact version match:
 
 ```sh
