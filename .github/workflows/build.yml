@@ -1,5 +1,7 @@
 on:
   pull_request:
+    branches:
+      - main
 
 concurrency:
   group: mise-docs-build-${{ github.head_ref }}
