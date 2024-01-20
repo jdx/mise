@@ -100,7 +100,7 @@ toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.21", features = ["parse"] }
 url = "2"
 versions = "6"
-which = "5"
+which = "6"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
