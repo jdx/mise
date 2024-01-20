@@ -11,7 +11,9 @@ use crate::hash::hash_to_str;
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("cwd", &*env::current_dir().unwrap());
+    if let Ok(dir) = env::current_dir() {
+        context.insert("cwd", &dir);
+    }
     context
 });
 
