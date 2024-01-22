@@ -131,4 +131,4 @@ MY_PROJ_LIB = "{{config_root}}/lib"
 LD_LIBRARY_PATH = "/some/path:{{env.MY_PROJ_LIB}}"
 ```
 
-Of course the ordering when doing this.
+Of course the ordering matters when doing this.
