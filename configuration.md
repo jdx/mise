@@ -473,6 +473,10 @@ Set to false to disable the "command not found" handler to autoinstall missing t
 if experiencing strange behavior in your shell when a command is not found—but please submit a ticket to
 help diagnose problems.
 
+Note this only installs new versions of _previously installed_ tools. It will not install a brand new tool.
+This makes it easy to be selective about which tools you want to manage via mise-en-place by simply
+not installing any version of them.
+
 ### `MISE_TASK_OUTPUT=prefix`
 
 This controls the output of `mise run`. It can be one of:
