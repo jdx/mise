@@ -13,6 +13,27 @@ binaries to PATH. In these cases, mise will not interfere with direnv.
 
 ### mise inside of direnv (`use mise` in `.envrc`)
 
+::: warning
+Update 2024-01-21: after `use mise` has been out for a while, the general impression I have is that
+while it technically functions fine,
+not many people use it because the DX is notably worse than either switching to mise entirely
+or using `mise activate` alongside direnv.
+
+The project direction of mise has changed since this was written and the new direction is for it
+to be capable of replacing direnv completely for any use-case. This likely won't end up as a drop-in
+replacement for direnv like with asdf, but solving the same problems in different ways. See [environments](/environments.html)
+for more details.
+
+I have had virtually no reports of problems with `use mise` in the year it has been out.
+This could be because virtually is using it, or it has been surprisingly stable. I genuinely
+don't know which. If you try it or use it regularly let me know.
+
+While I have no immediate plans or reasons to do this now, I could see this functionality being
+the target of a future deprecation. Not because it's a maintenance burden, but because it just hasn't
+seemed like a particularly useful solution and it may help focus mise on the functionality that does
+work for users.
+:::
+
 If you do encounter issues with `mise activate`, or just want to use direnv in an alternate way,
 this is a simpler setup that's less likely to cause issues—at the cost of functionality.
 
@@ -56,7 +77,3 @@ While making mise compatible with direnv is, and will always be a major goal of 
 want mise to be capable of replacing direnv if needed. This is why mise includes support for managing
 env vars and [virtualenv](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation)
 for python using `.mise.toml`.
-
-If you find you continue to need direnv, please open an issue and let me know what it is to see if
-it's something mise could support. mise will never be as capable as direnv with a DSL like `.envrc`,
-but I think we can handle enough common use cases to make that unnecessary for most people.
