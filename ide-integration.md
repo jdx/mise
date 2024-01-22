@@ -9,6 +9,7 @@ with the following:
 ```sh
 export PATH="$HOME/.local/share/mise/shims:$PATH"
 ```
+Assuming you are not setting `$MISE_DATA_HOME` or `$XDG_DATA_HOME` to something non-standard.
 
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
 if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you feel
@@ -18,6 +19,19 @@ Direnv and mise work similarly and there should be a direnv extension that can b
 Alternatively, you may be able to get tighter integration with a direnv extension and using the
 [`use_mise`](/direnv) direnv function.
 
+## Vim
+
+```vim
+" Prepend mise shims to PATH
+let $PATH = $HOME . '/.local/share/mise/shims:' . $PATH
+```
+
+## Neovim
+
+```lua
+-- Prepend mise shims to PATH
+vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
+```
 
 ## emacs
 
