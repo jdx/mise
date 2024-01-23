@@ -269,8 +269,18 @@ impl Iterator for FindUp {
     }
 }
 
+/// returns the first executable in PATH
+/// will not include mise bin paths or other paths added by mise
 pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    for path in &*env::PATH {
+    _which(name, &env::PATH)
+}
+/// returns the first executable in PATH
+/// will include mise bin paths or other paths added by mise
+pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
+    _which(name, &env::PATH_NON_PRISTINE)
+}
+fn _which<P: AsRef<Path>>(name: P, paths: &Vec<PathBuf>) -> Option<PathBuf> {
+    for path in paths {
         let bin = path.join(name.as_ref());
         if is_executable(&bin) {
             return Some(bin);
