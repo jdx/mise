@@ -49,7 +49,7 @@ impl Forge for CargoForge {
         let settings = Settings::get();
         settings.ensure_experimental()?;
         let cmd = match settings.cargo_binstall {
-            true if file::which("cargo-binstall").is_some() => {
+            true if file::which_non_pristine("cargo-binstall").is_some() => {
                 CmdLineRunner::new("cargo-binstall").arg("-y")
             }
             _ => CmdLineRunner::new("cargo").arg("install"),
