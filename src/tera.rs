@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
 use tera::{Context, Tera, Value};
@@ -63,6 +63,18 @@ pub fn get_tera(dir: &Path) -> Tera {
                 Ok(Value::Number(modified.as_secs().into()))
             }
             _ => Err("hash input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "join_path",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::Array(arr) => arr
+                .iter()
+                .map(Value::as_str)
+                .collect::<Option<PathBuf>>()
+                .ok_or("join_path input must be an array of strings".into())
+                .map(|p| Value::String(p.to_string_lossy().to_string())),
+            _ => Err("join_path input must be an array of strings".into()),
         },
     );
     tera.register_tester(
