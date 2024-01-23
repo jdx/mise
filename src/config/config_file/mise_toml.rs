@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use eyre::{Result, WrapErr};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, Document, Item, Value};
+use toml_edit::{table, value, Array, Document, Item, TableLike, Value};
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
@@ -149,35 +149,51 @@ impl MiseToml {
 
     fn parse_env(&mut self, key: &str, v: &Item) -> Result<()> {
         trust_check(&self.path)?;
-        if let Some(table) = v.as_table_like() {
-            ensure!(
-                !table.contains_key("PATH"),
-                "use 'env.mise.path' instead of 'env.PATH'"
-            );
+
+        if let Some(arr) = v.as_array_of_tables() {
+            arr.iter()
+                .try_for_each(|table| self.parse_single_env(key, table))
+        } else if let Some(table) = v.as_table() {
+            self.parse_single_env(key, table)
+        } else {
+            parse_error!(key, v, "table or array of tables")
         }
-        match v.as_table_like() {
-            Some(table) => {
-                for (k, v) in table.iter() {
-                    let key = format!("{}.{}", key, k);
-                    let k = self.parse_template(&key, k)?;
-                    if k == "_" || k == "mise" {
-                        self.parse_env_mise(&key, v)?;
-                    } else if let Some(v) = v.as_str() {
-                        let v = self.parse_template(&key, v)?;
-                        self.env.insert(k, v);
-                    } else if let Some(v) = v.as_integer() {
-                        self.env.insert(k, v.to_string());
-                    } else if let Some(v) = v.as_bool() {
-                        if !v {
-                            self.env_remove.push(k);
-                        }
-                    } else {
-                        parse_error!(key, v, "string, num, or bool")
-                    }
+    }
+
+    fn parse_single_env(&mut self, key: &str, table: &dyn TableLike) -> Result<()> {
+        ensure!(
+            !table.contains_key("PATH"),
+            "use 'env.mise.path' instead of 'env.PATH'"
+        );
+
+        for (k, v) in table.iter() {
+            let key = format!("{}.{}", key, k);
+            let k = self.parse_template(&key, k)?;
+            if k == "_" || k == "mise" {
+                self.parse_env_mise(&key, v)?;
+            } else if let Some(v) = v.as_str() {
+                let v = self.parse_template(&key, v)?;
+
+                if self.env.insert(k, v).is_some() {
+                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
                 }
+            } else if let Some(v) = v.as_integer() {
+                if self.env.insert(k, v.to_string()).is_some() {
+                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
+                }
+            } else if let Some(v) = v.as_bool() {
+                if self.env_remove.contains(&k) {
+                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
+                };
+
+                if !v {
+                    self.env_remove.push(k);
+                }
+            } else {
+                parse_error!(key, v, "string, num, or bool")
             }
-            _ => parse_error!(key, v, "table"),
         }
+
         Ok(())
     }
 
@@ -793,6 +809,44 @@ mod tests {
             assert_display_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
+    }
+
+    #[test]
+    fn test_env_array_valid() {
+        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
+        cf.parse(&formatdoc! {r#"
+        [[env]]
+        foo="bar"
+
+        [[env]]
+        bar="baz"
+        "#})
+            .unwrap();
+
+        assert_snapshot!(cf.env()["foo"], @"bar");
+        assert_snapshot!(cf.env()["bar"], @"baz");
+    }
+
+    #[test]
+    fn test_env_array_duplicate_key() {
+        let inputs = vec![(r#""bar""#, r#""baz""#), ("1", "2"), ("false", "true")];
+
+        for (a, b) in inputs {
+            let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
+            let err = cf
+                .parse(&formatdoc! {r#"
+            [[env]]
+            foo={a}
+
+            [[env]]
+            foo={b}
+            "#})
+                .unwrap_err();
+
+            allow_duplicates!(
+                assert_snapshot!(err.to_string(), @"duplicate key: env.foo");
+            )
+        }
     }
 
     #[test]
