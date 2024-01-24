@@ -216,54 +216,49 @@ pub fn trust_check(path: &Path) -> Result<()> {
 
 pub fn is_trusted(path: &Path) -> bool {
     static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
-    if let Ok(path) = path.canonicalize() {
-        let mut cached = IS_TRUSTED.lock().unwrap();
-        if cached.contains(&path) {
-            return true;
-        }
-        let settings = Settings::get();
-        for p in settings.trusted_config_paths() {
-            if path.starts_with(p) {
-                cached.insert(path);
-                return true;
-            }
-        }
-        if !trust_path(&path).exists() {
-            return false;
-        }
-        if settings.paranoid {
-            let trusted = trust_file_hash(&path).unwrap_or_else(|e| {
-                warn!("trust_file_hash: {e}");
-                false
-            });
-            if !trusted {
-                return false;
-            }
-        }
-        cached.insert(path);
+    let mut cached = IS_TRUSTED.lock().unwrap();
+    if cached.contains(path) {
         return true;
     }
-    false
+    let settings = Settings::get();
+    for p in settings.trusted_config_paths() {
+        if path.starts_with(p) {
+            cached.insert(path.to_path_buf());
+            return true;
+        }
+    }
+    if !trust_path(path).exists() {
+        return false;
+    }
+    if settings.paranoid {
+        let trusted = trust_file_hash(path).unwrap_or_else(|e| {
+            warn!("trust_file_hash: {e}");
+            false
+        });
+        if !trusted {
+            return false;
+        }
+    }
+    cached.insert(path.to_path_buf());
+    true
 }
 
 pub fn trust(path: &Path) -> Result<()> {
-    let path = path.canonicalize()?;
-    let hashed_path = trust_path(&path);
+    let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink(&path, &hashed_path)?;
+        file::make_symlink(path, &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
     if !trust_hash_path.exists() {
-        let hash = file_hash_sha256(&path)?;
+        let hash = file_hash_sha256(path)?;
         file::write(&trust_hash_path, hash)?;
     }
     Ok(())
 }
 
 pub fn untrust(path: &Path) -> Result<()> {
-    let path = path.canonicalize()?;
-    let hashed_path = trust_path(&path);
+    let hashed_path = trust_path(path);
     if hashed_path.exists() {
         file::remove_file(hashed_path)?;
     }
