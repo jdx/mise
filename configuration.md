@@ -7,7 +7,7 @@
 that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
 
 - setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv='.venv'` for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
+- passing options to plugins like `virtualenv=".venv"` for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
 They can use any of the following project locations (in order of precedence, top is highest):
