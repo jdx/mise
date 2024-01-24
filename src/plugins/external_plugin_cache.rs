@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::RwLock;
 
 use eyre::WrapErr;
@@ -15,7 +15,7 @@ use crate::{dirs, env};
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {
     list_bin_paths: RwLock<HashMap<ToolVersionRequest, CacheManager<Vec<String>>>>,
-    exec_env: RwLock<HashMap<ToolVersionRequest, CacheManager<HashMap<String, String>>>>,
+    exec_env: RwLock<HashMap<ToolVersionRequest, CacheManager<BTreeMap<String, String>>>>,
 }
 
 impl ExternalPluginCache {
@@ -53,9 +53,9 @@ impl ExternalPluginCache {
         plugin: &ExternalPlugin,
         tv: &ToolVersion,
         fetch: F,
-    ) -> Result<HashMap<String, String>>
+    ) -> Result<BTreeMap<String, String>>
     where
-        F: FnOnce() -> Result<HashMap<String, String>>,
+        F: FnOnce() -> Result<BTreeMap<String, String>>,
     {
         let mut w = self.exec_env.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {

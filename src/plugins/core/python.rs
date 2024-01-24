@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
@@ -332,8 +332,8 @@ impl Forge for PythonPlugin {
         config: &Config,
         _ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
-        let mut hm = HashMap::new();
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let mut hm = BTreeMap::new();
         match self.get_virtualenv(config, tv, None) {
             Err(e) => warn!("failed to get virtualenv: {e}"),
             Ok(Some(virtualenv)) => {
