@@ -183,7 +183,7 @@ impl NodePlugin {
                 .arg("install")
                 .arg("--global")
                 .arg(package)
-                .envs(&config.env)
+                .envs(config.env()?)
                 .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
@@ -213,7 +213,7 @@ impl NodePlugin {
         CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(&config.env)
+            .envs(config.env()?)
             .execute()
     }
 
@@ -223,7 +223,7 @@ impl NodePlugin {
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
-            .envs(&config.env)
+            .envs(config.env()?)
             .execute()
     }
 

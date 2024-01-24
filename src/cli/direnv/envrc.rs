@@ -33,7 +33,7 @@ impl Envrc {
         for cf in config.config_files.keys() {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
-        for (k, v) in ts.env(config) {
+        for (k, v) in ts.env(config)? {
             if k == "PATH" {
                 writeln!(file, "PATH_add {}", v)?;
             } else {

@@ -285,7 +285,7 @@ impl ExternalPlugin {
         let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let sm = self.script_man_for_tv(tv);
+            let sm = self.script_man_for_tv(tv)?;
             // TODO: find a way to enable this without deadlocking
             // for (t, tv) in ts.list_current_installed_versions(config) {
             //     if t.name == self.name {
@@ -303,7 +303,7 @@ impl ExternalPlugin {
         Ok(bin_paths)
     }
     fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<HashMap<String, String>> {
-        let mut sm = self.script_man_for_tv(tv);
+        let mut sm = self.script_man_for_tv(tv)?;
         for p in ts.list_paths() {
             sm.prepend_path(p);
         }
@@ -321,7 +321,7 @@ impl ExternalPlugin {
         Ok(env)
     }
 
-    fn script_man_for_tv(&self, tv: &ToolVersion) -> ScriptManager {
+    fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
         let config = Config::get();
         let mut sm = self.script_man.clone();
         for (key, value) in &tv.opts {
@@ -349,7 +349,7 @@ impl ExternalPlugin {
             _ => &tv.version,
         };
         // add env vars from .mise.toml files
-        for (key, value) in &config.env {
+        for (key, value) in config.env()? {
             sm = sm.with_env(key, value.clone());
         }
         let install = tv.install_path().to_string_lossy().to_string();
@@ -367,7 +367,7 @@ impl ExternalPlugin {
             .with_env("MISE_INSTALL_PATH", install)
             .with_env("MISE_INSTALL_TYPE", install_type)
             .with_env("MISE_INSTALL_VERSION", install_version);
-        sm
+        Ok(sm)
     }
 
     fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> Result<()> {
@@ -692,7 +692,7 @@ impl Forge for ExternalPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let mut sm = self.script_man_for_tv(&ctx.tv);
+        let mut sm = self.script_man_for_tv(&ctx.tv)?;
 
         for p in ctx.ts.list_paths() {
             sm.prepend_path(p);
@@ -713,7 +713,7 @@ impl Forge for ExternalPlugin {
 
     fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
-            self.script_man_for_tv(tv)
+            self.script_man_for_tv(tv)?
                 .run_by_line(&Script::Uninstall, pr)?;
         }
         Ok(())

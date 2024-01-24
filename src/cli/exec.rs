@@ -62,7 +62,7 @@ impl Exec {
         ts.notify_if_versions_missing();
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = ts.env_with_path(&config);
+        let env = ts.env_with_path(&config)?;
 
         self.exec(program, args, env)
     }

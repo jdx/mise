@@ -45,12 +45,12 @@ impl Set {
         let config = Config::try_get()?;
         if self.remove.is_none() && self.env_vars.is_none() {
             let rows = config
-                .env
+                .env_with_sources()?
                 .iter()
-                .map(|(key, value)| Row {
+                .map(|(key, (value, source))| Row {
                     key: key.clone(),
                     value: value.clone(),
-                    source: display_path(&config.env_sources.get(key).unwrap().clone()),
+                    source: display_path(source),
                 })
                 .collect::<Vec<_>>();
             let mut table = tabled::Table::new(rows);
@@ -75,7 +75,7 @@ impl Set {
         if let Some(env_vars) = self.env_vars {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
-                match config.env.get(key) {
+                match config.env()?.get(key) {
                     Some(value) => miseprintln!("{value}"),
                     None => bail!("Environment variable {key} not found"),
                 }

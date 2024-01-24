@@ -191,7 +191,7 @@ impl RubyPlugin {
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(&config.env);
+                .envs(config.env()?);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -208,7 +208,7 @@ impl RubyPlugin {
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(&config.env)
+            .envs(config.env()?)
             .execute()
     }
 
@@ -217,7 +217,7 @@ impl RubyPlugin {
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(&config.env)
+            .envs(config.env()?)
             .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
             .execute()
     }
@@ -260,7 +260,7 @@ impl RubyPlugin {
                 .args(self.install_args_ruby_build(tv)?)
                 .stdin_string(self.fetch_patches()?)
         };
-        Ok(cmd.with_pr(pr).envs(&config.env))
+        Ok(cmd.with_pr(pr).envs(config.env()?))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let mut args = env::MISE_RUBY_BUILD_OPTS.clone()?;
