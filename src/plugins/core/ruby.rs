@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
@@ -376,11 +376,11 @@ impl Forge for RubyPlugin {
         _config: &Config,
         _ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
+    ) -> eyre::Result<BTreeMap<String, String>> {
         // TODO: is there a way to avoid needing to set RUBYLIB?
         // is there a directory I can put rubygems_plugin.rb in that will be automatically loaded?
         let rubygems_plugin_path = self.rubygems_plugins_path(tv);
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         if rubygems_plugin_path.exists() {
             let rubygems_plugin_path = rubygems_plugin_path.to_string_lossy().to_string();
             let rubylib = match env::PRISTINE_ENV.get("RUBYLIB") {
