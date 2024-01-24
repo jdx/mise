@@ -315,9 +315,9 @@ __mise_doctor_cmd() {
 (( $+functions[__mise_env_cmd] )) ||
 __mise_env_cmd() {
   _arguments -s -S \
-    '(-s --shell)'{-s,--shell}'=[Shell type to generate environment variables for]:shell:(bash fish nu xonsh zsh)' \
     '*::tool:__mise_tool_versions' \
     '(-J --json)'{-J,--json}'[Output in JSON format]' \
+    '(-s --shell)'{-s,--shell}'=[Shell type to generate environment variables for]:shell:(bash fish nu xonsh zsh)' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \

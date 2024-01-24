@@ -1706,7 +1706,7 @@ _mise() {
             return 0
             ;;
         mise__env)
-            opts="-s -J -C -q -v -y -h --shell --json --cd --debug --log-level --quiet --trace --verbose --yes --help [TOOL@VERSION]..."
+            opts="-J -s -C -q -v -y -h --json --shell --cd --debug --log-level --quiet --trace --verbose --yes --help [TOOL@VERSION]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
