@@ -227,11 +227,11 @@ pub fn is_trusted(path: &Path) -> bool {
             return true;
         }
     }
-    if !trust_path(&path).exists() {
+    if !trust_path(path).exists() {
         return false;
     }
     if settings.paranoid {
-        let trusted = trust_file_hash(&path).unwrap_or_else(|e| {
+        let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
             false
         });
@@ -244,21 +244,21 @@ pub fn is_trusted(path: &Path) -> bool {
 }
 
 pub fn trust(path: &Path) -> Result<()> {
-    let hashed_path = trust_path(&path);
+    let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink(&path, &hashed_path)?;
+        file::make_symlink(path, &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
     if !trust_hash_path.exists() {
-        let hash = file_hash_sha256(&path)?;
+        let hash = file_hash_sha256(path)?;
         file::write(&trust_hash_path, hash)?;
     }
     Ok(())
 }
 
 pub fn untrust(path: &Path) -> Result<()> {
-    let hashed_path = trust_path(&path);
+    let hashed_path = trust_path(path);
     if hashed_path.exists() {
         file::remove_file(hashed_path)?;
     }
