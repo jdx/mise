@@ -169,7 +169,7 @@ impl PythonPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg(ctx.tv.version.as_str())
             .arg(&ctx.tv.install_path())
-            .envs(&config.env);
+            .envs(config.env()?);
         if settings.verbose {
             cmd = cmd.arg("--verbose");
         }
@@ -213,7 +213,7 @@ impl PythonPlugin {
             .arg("--upgrade")
             .arg("-r")
             .arg(packages_file)
-            .envs(&config.env)
+            .envs(config.env()?)
             .execute()
     }
 
@@ -245,7 +245,7 @@ impl PythonPlugin {
                         .arg("-m")
                         .arg("venv")
                         .arg(&virtualenv)
-                        .envs(&config.env);
+                        .envs(config.env()?);
                     if let Some(pr) = pr {
                         cmd = cmd.with_pr(pr);
                     }
@@ -288,7 +288,7 @@ impl PythonPlugin {
         pr.set_message("python --version".into());
         CmdLineRunner::new(self.python_path(tv))
             .arg("--version")
-            .envs(&config.env)
+            .envs(config.env()?)
             .execute()
     }
 }

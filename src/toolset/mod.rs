@@ -274,12 +274,12 @@ impl Toolset {
             })
             .collect()
     }
-    pub fn env_with_path(&self, config: &Config) -> BTreeMap<String, String> {
+    pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in config.path_dirs.clone() {
             path_env.add(p);
         }
-        let mut env = self.env(config);
+        let mut env = self.env(config)?;
         if let Some(path) = env.get("PATH") {
             path_env.add(PathBuf::from(path));
         }
@@ -287,9 +287,9 @@ impl Toolset {
             path_env.add(p);
         }
         env.insert("PATH".to_string(), path_env.to_string());
-        env
+        Ok(env)
     }
-    pub fn env(&self, config: &Config) -> BTreeMap<String, String> {
+    pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
@@ -317,8 +317,8 @@ impl Toolset {
         if !add_paths.is_empty() {
             entries.insert("PATH".to_string(), add_paths);
         }
-        entries.extend(config.env.clone());
-        entries
+        entries.extend(config.env()?.clone());
+        Ok(entries)
     }
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()

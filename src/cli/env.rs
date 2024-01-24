@@ -40,7 +40,7 @@ impl Env {
     }
 
     fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
-        let env = ts.env_with_path(config);
+        let env = ts.env_with_path(config)?;
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
@@ -48,7 +48,7 @@ impl Env {
     fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-        for (k, v) in ts.env_with_path(config) {
+        for (k, v) in ts.env_with_path(config)? {
             let k = k.to_string();
             let v = v.to_string();
             miseprint!("{}", shell.set_env(&k, &v));

@@ -31,15 +31,15 @@ mod tracking;
 
 type AliasMap = BTreeMap<ForgeArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
+type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 #[derive(Default)]
 pub struct Config {
     pub aliases: AliasMap,
     pub config_files: ConfigMap,
-    pub env: BTreeMap<String, String>,
-    pub env_sources: HashMap<String, PathBuf>,
     pub path_dirs: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
+    env: OnceCell<EnvWithSources>,
     all_aliases: OnceCell<AliasMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
@@ -74,12 +74,10 @@ impl Config {
         let config_paths = load_config_paths(&config_filenames);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
-        let (env, env_sources) = load_env(&settings, &config_files);
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
 
         let config = Self {
-            env,
-            env_sources,
+            env: OnceCell::new(),
             path_dirs: load_path_dirs(&config_files),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
@@ -94,6 +92,16 @@ impl Config {
         debug!("{config:#?}");
 
         Ok(config)
+    }
+    pub fn env(&self) -> Result<BTreeMap<String, String>> {
+        Ok(self
+            .env_with_sources()?
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect())
+    }
+    pub fn env_with_sources(&self) -> Result<&EnvWithSources> {
+        self.env.get_or_try_init(|| load_env(&self.config_files))
     }
     pub fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
@@ -435,22 +443,18 @@ fn parse_config_file(
     }
 }
 
-fn load_env(
-    settings: &Settings,
-    config_files: &ConfigMap,
-) -> (BTreeMap<String, String>, HashMap<String, PathBuf>) {
-    let mut env = BTreeMap::new();
-    let mut env_sources = HashMap::new();
+fn load_env(config_files: &ConfigMap) -> Result<EnvWithSources> {
+    let mut env = IndexMap::new();
     for (source, cf) in config_files.iter().rev() {
-        env.extend(cf.env());
-        for k in cf.env().keys() {
-            env_sources.insert(k.clone(), source.clone());
+        for (k, v) in cf.env() {
+            env.insert(k, (v, source.clone()));
         }
         for k in cf.env_remove() {
             // remove values set to "false"
             env.remove(&k);
         }
     }
+    let settings = Settings::get();
     if let Some(env_file) = &settings.env_file {
         match dotenvy::from_filename_iter(env_file) {
             Ok(iter) => {
@@ -459,16 +463,14 @@ fn load_env(
                         warn!("env_file: {err}");
                         Default::default()
                     });
-                    env.insert(k.clone(), v);
-                    env_sources.insert(k, env_file.clone());
+                    env.insert(k, (v, env_file.clone()));
                 }
             }
             Err(err) => trace!("env_file: {err}"),
         }
     }
-    (env, env_sources)
+    Ok(env)
 }
-
 fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
     let mut path_dirs = vec![];
     for cf in config_files.values().rev() {
@@ -506,9 +508,11 @@ impl Debug for Config {
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
             );
         }
-        if !self.env.is_empty() {
-            s.field("Env", &self.env);
-            // s.field("Env Sources", &self.env_sources);
+        if let Ok(env) = self.env() {
+            if !env.is_empty() {
+                s.field("Env", &env);
+                // s.field("Env Sources", &self.env_sources);
+            }
         }
         if !self.path_dirs.is_empty() {
             s.field("Path Dirs", &self.path_dirs);
