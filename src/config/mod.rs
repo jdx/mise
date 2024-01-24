@@ -14,6 +14,7 @@ use rayon::prelude::*;
 pub use settings::Settings;
 
 use crate::cli::args::ForgeArg;
+use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
@@ -88,6 +89,8 @@ impl Config {
             config_files,
             repo_urls,
         };
+
+        config.validate()?;
 
         debug!("{config:#?}");
 
@@ -262,6 +265,21 @@ impl Config {
             true => MiseToml::from_file(&settings_path)
                 .wrap_err_with(|| eyre!("Error parsing {}", display_path(&settings_path))),
         }
+    }
+
+    fn validate(&self) -> Result<()> {
+        for cf in self.config_files.values() {
+            if let Some(min) = cf.min_version() {
+                let cur = &*version::V;
+                ensure!(
+                    cur >= min,
+                    "mise version {} is required, but you are using {}",
+                    style::eyellow(min),
+                    style::eyellow(cur)
+                );
+            }
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -471,6 +489,7 @@ fn load_env(config_files: &ConfigMap) -> Result<EnvWithSources> {
     }
     Ok(env)
 }
+
 fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
     let mut path_dirs = vec![];
     for cf in config_files.values().rev() {

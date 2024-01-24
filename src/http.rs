@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
 
+use crate::cli::version;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
 use crate::{env, file};
@@ -37,7 +38,7 @@ impl Client {
 
     fn _new() -> ClientBuilder {
         ClientBuilder::new()
-            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("mise/{}", &*version::VERSION))
             .gzip(true)
     }
 
