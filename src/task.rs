@@ -79,7 +79,7 @@ impl Task {
             config_root(&path).ok_or_else(|| eyre!("config root not found: {}", path.display()))?;
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &config_root);
-        let p = TomlParser::new(&info, get_tera(config_root), tera_ctx);
+        let p = TomlParser::new(&info, get_tera(Some(config_root)), tera_ctx);
         // trace!("task info: {:#?}", info);
 
         let task = Task {

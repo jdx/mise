@@ -276,7 +276,7 @@ impl Toolset {
     }
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in config.path_dirs.clone() {
+        for p in config.path_dirs()?.clone() {
             path_env.add(p);
         }
         let mut env = self.env(config)?;
@@ -397,7 +397,7 @@ impl Toolset {
             .join(" ");
         warn!(
             "missing: {}",
-            truncate_str(&versions, *TERM_WIDTH - 15, "…"),
+            truncate_str(&versions, *TERM_WIDTH - 14, "…"),
         );
     }
 }

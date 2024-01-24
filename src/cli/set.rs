@@ -50,7 +50,7 @@ impl Set {
                 .map(|(key, (value, source))| Row {
                     key: key.clone(),
                     value: value.clone(),
-                    source: display_path(source),
+                    source: display_path(&source),
                 })
                 .collect::<Vec<_>>();
             let mut table = tabled::Table::new(rows);
