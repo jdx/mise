@@ -598,6 +598,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("shellcheck", "https://github.com/luizm/asdf-shellcheck.git"),
     ("shellspec", "https://github.com/poikilotherm/asdf-shellspec.git"),
     ("shfmt", "https://github.com/luizm/asdf-shfmt.git"),
+    ("shorebird", "https://github.com/valian-ca/asdf-shorebird.git"),
     ("sinker", "https://github.com/elementalvoid/asdf-sinker.git"),
     ("skaffold", "https://github.com/nklmilojevic/asdf-skaffold.git"),
     ("skate", "https://github.com/chessmango/asdf-skate.git"),
