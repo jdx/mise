@@ -48,9 +48,6 @@ pub struct Settings {
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
-    /// what level of status messages to display when entering directories
-    #[config(nested)]
-    pub status: SettingsStatus,
     #[config(env = "MISE_NODE_COMPILE", default = false)]
     pub node_compile: bool,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
@@ -82,6 +79,9 @@ pub struct Settings {
     pub raw: bool,
     #[config(env = "MISE_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
+    /// what level of status messages to display when entering directories
+    #[config(nested)]
+    pub status: SettingsStatus,
     #[config(env = "MISE_TASK_OUTPUT")]
     pub task_output: Option<String>,
     #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]

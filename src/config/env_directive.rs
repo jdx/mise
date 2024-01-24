@@ -75,6 +75,7 @@ impl EnvResults {
         for (directive, source) in input {
             let config_root = source.parent().unwrap();
             ctx.insert("config_root", config_root);
+            ctx.insert("env", &env);
             let normalize_path = |s: String| {
                 let s = s.strip_prefix("./").unwrap_or(&s);
                 match s.strip_prefix("~/") {

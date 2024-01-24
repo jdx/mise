@@ -66,9 +66,6 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn env_entries(&self) -> Vec<EnvDirective> {
         Default::default()
     }
-    fn env_paths(&self) -> Result<Vec<PathBuf>> {
-        Ok(Default::default())
-    }
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
