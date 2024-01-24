@@ -384,22 +384,23 @@ impl Run {
         })
     }
 
-    fn get_last_modified(&self, root: &Path, globs: &[String]) -> Result<Option<SystemTime>> {
-        let last_mod = GlobWalkerBuilder::from_patterns(root, globs)
-            .follow_links(true)
-            .build()?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .map(|e| e.path().to_owned())
-            .unique()
-            .map(|p| p.metadata().map_err(|err| eyre!(err)))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|m| m.modified().map_err(|err| eyre!(err)))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .max();
-        trace!("last_modified of {}: {last_mod:?}", globs.join(" "));
+    fn get_last_modified(
+        &self,
+        root: &Path,
+        patterns_or_paths: &[String],
+    ) -> Result<Option<SystemTime>> {
+        let (patterns, paths): (Vec<&String>, Vec<&String>) =
+            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
+
+        let last_mod = std::cmp::max(
+            last_modified_glob_match(root, &patterns)?,
+            last_modified_path(root, &paths)?,
+        );
+
+        trace!(
+            "last_modified of {}: {last_mod:?}",
+            patterns_or_paths.iter().join(" ")
+        );
         Ok(last_mod)
     }
 
@@ -419,6 +420,61 @@ impl Run {
         // TODO
         Ok(())
     }
+}
+
+fn is_glob_pattern(path: &str) -> bool {
+    // This is the character set used for glob
+    // detection by globwalk
+    let glob_chars = ['*', '{', '}'];
+
+    path.chars().any(|c| glob_chars.contains(&c))
+}
+
+fn last_modified_path(
+    root: impl AsRef<std::ffi::OsStr>,
+    paths: &[&String],
+) -> Result<Option<SystemTime>> {
+    let files = paths
+        .iter()
+        .map(|p| {
+            let base = Path::new(p);
+
+            if base.is_relative() {
+                base.to_path_buf()
+            } else {
+                Path::new(&root).join(base)
+            }
+        })
+        .filter(|p| p.is_file());
+
+    last_modified_file(files)
+}
+
+fn last_modified_glob_match(
+    root: impl AsRef<Path>,
+    patterns: &[&String],
+) -> Result<Option<SystemTime>> {
+    let files = GlobWalkerBuilder::from_patterns(root, patterns)
+        .follow_links(true)
+        .build()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.path().to_owned());
+
+    last_modified_file(files)
+}
+
+fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option<SystemTime>> {
+    Ok(files
+        .into_iter()
+        .unique()
+        .map(|p| p.metadata().map_err(|err| eyre!(err)))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|m| m.modified().map_err(|err| eyre!(err)))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .max())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
