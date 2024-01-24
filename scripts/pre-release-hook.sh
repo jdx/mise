@@ -7,7 +7,7 @@ else
   cargo update && git add Cargo.lock
 fi
 
-mise run render-mangen render-help
+mise run render-mangen ::: render-help
 
 ./scripts/update-shorthand-repo.sh
 mise run lint-fix
