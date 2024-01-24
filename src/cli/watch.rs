@@ -111,7 +111,7 @@ impl Watch {
         }
         info!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
-        for (k, v) in ts.env_with_path(&config) {
+        for (k, v) in ts.env_with_path(&config)? {
             cmd = cmd.env(k, v);
         }
         if let Some(root) = &config.project_root {

@@ -46,7 +46,7 @@ impl HookEnv {
         let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell));
-        let mut env = ts.env(&config);
+        let mut env = ts.env(&config)?;
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
@@ -66,14 +66,14 @@ impl HookEnv {
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}");
         if self.status {
-            self.display_status(&config, &ts);
+            self.display_status(&config, &ts)?;
             ts.notify_if_versions_missing();
         }
 
         Ok(())
     }
 
-    fn display_status(&self, config: &Config, ts: &Toolset) {
+    fn display_status(&self, config: &Config, ts: &Toolset) -> Result<()> {
         let installed_versions = ts
             .list_current_installed_versions()
             .into_iter()
@@ -84,11 +84,12 @@ impl HookEnv {
             let status = installed_versions.into_iter().rev().join(" ");
             info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
         }
-        let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env.clone()).to_patches();
+        let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env()?.clone()).to_patches();
         if !env_diff.is_empty() {
             let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
             info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
         }
+        Ok(())
     }
 
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
