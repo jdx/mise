@@ -27,19 +27,19 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
 });
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
-    let mut version = RAW_VERSION.clone();
+    let mut v = V.to_string();
     if cfg!(debug_assertions) {
-        version.push_str("-DEBUG");
+        v.push_str("-DEBUG");
     };
     let build_time = BUILD_TIME.format("%Y-%m-%d");
     let extra = match &built_info::GIT_COMMIT_HASH_SHORT {
         Some(sha) => format!("({} {})", sha, build_time),
         _ => format!("({})", build_time),
     };
-    format!("{} {}-{} {}", version, *OS, *ARCH, extra)
+    format!("{v} {os}-{arch} {extra}", os = *OS, arch = *ARCH)
 });
 
-pub static RAW_VERSION: Lazy<String> = Lazy::new(|| env!("CARGO_PKG_VERSION").to_string());
+pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
 impl Version {
     pub fn run(self) -> Result<()> {
@@ -79,8 +79,7 @@ fn show_latest() {
 
 pub fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     if let Some(latest) = get_latest_version(cache_duration).and_then(|v| Versioning::new(&v)) {
-        let current = Versioning::new(env!("CARGO_PKG_VERSION")).unwrap();
-        if current < latest {
+        if *V < latest {
             return Some(latest.to_string());
         }
     }
