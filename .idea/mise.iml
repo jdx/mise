@@ -28,6 +28,8 @@
       <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/dist" />
       <excludeFolder url="file://$MODULE_DIR$/usage/target" />
       <excludeFolder url="file://$MODULE_DIR$/usage/xx" />
+      <excludeFolder url="file://$MODULE_DIR$/usage/docs/.vitepress/cache" />
+      <excludeFolder url="file://$MODULE_DIR$/usage/docs/.vitepress/dist" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />

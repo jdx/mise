@@ -12,10 +12,6 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Env {
-    /// Shell type to generate environment variables for
-    #[clap(long, short, overrides_with = "json")]
-    shell: Option<ShellType>,
-
     /// Tool(s) to use
     #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
@@ -23,6 +19,10 @@ pub struct Env {
     /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
+
+    /// Shell type to generate environment variables for
+    #[clap(long, short, overrides_with = "json")]
+    shell: Option<ShellType>,
 }
 
 impl Env {
