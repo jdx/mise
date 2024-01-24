@@ -360,13 +360,21 @@ fn python_os(settings: &Settings) -> String {
     }
 }
 
-fn python_arch(settings: &Settings) -> String {
+fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python_precompiled_arch {
-        return arch.clone();
+        return arch.as_str();
     }
     if cfg!(target_arch = "x86_64") {
-        "x86_64_v3".into()
+        if cfg!(target_feature = "avx512f") {
+            "x86_64_v4"
+        } else if cfg!(target_feature = "avx2") {
+            "x86_64_v3"
+        } else if cfg!(target_feature = "sse4.1") {
+            "x86_64_v2"
+        } else {
+            "x86_64_v1"
+        }
     } else {
-        built_info::CFG_TARGET_ARCH.to_string()
+        built_info::CFG_TARGET_ARCH
     }
 }

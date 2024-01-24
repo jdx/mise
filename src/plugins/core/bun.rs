@@ -137,7 +137,11 @@ fn os() -> &'static str {
 
 fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
-        "x64"
+        if cfg!(target_feature = "avx2") {
+            "x64"
+        } else {
+            "x64-baseline"
+        }
     } else if cfg!(target_arch = "aarch64") || cfg!(target_arch = "arm64") {
         "aarch64"
     } else {
