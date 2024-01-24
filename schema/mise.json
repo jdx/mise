@@ -203,7 +203,7 @@
               "description": "files that this task depends on",
               "type": "array",
               "items": {
-                "description": "glob pattern for files that this task depends on",
+                "description": "glob pattern or path to files that this task depends on",
                 "type": "string"
               }
             },
@@ -211,7 +211,7 @@
               "description": "files created by this task",
               "type": "array",
               "items": {
-                "description": "glob pattern for files created by this task",
+                "description": "glob pattern or path to files created by this task",
                 "type": "string"
               }
             }
