@@ -146,7 +146,7 @@ impl Run {
 
         ts.install_arg_versions(config, &InstallOptions::new())?;
         ts.notify_if_versions_missing();
-        let mut env = ts.env_with_path(config);
+        let mut env = ts.env_with_path(config)?;
         if let Some(root) = &config.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
