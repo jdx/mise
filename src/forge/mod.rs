@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
@@ -310,14 +310,16 @@ pub trait Forge: Debug + Send + Sync {
             _ => Ok(vec![tv.install_short_path().join("bin")]),
         }
     }
+
     fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,
         _tv: &ToolVersion,
-    ) -> eyre::Result<HashMap<String, String>> {
-        Ok(HashMap::new())
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        Ok(BTreeMap::new())
     }
+
     fn which(&self, tv: &ToolVersion, bin_name: &str) -> eyre::Result<Option<PathBuf>> {
         let bin_paths = self.list_bin_paths(tv)?;
         for bin_path in bin_paths {

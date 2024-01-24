@@ -11,7 +11,6 @@ use clap::Command;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
 use crate::cache::CacheManager;
@@ -302,7 +301,7 @@ impl ExternalPlugin {
         };
         Ok(bin_paths)
     }
-    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<HashMap<String, String>> {
+    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
         let mut sm = self.script_man_for_tv(tv)?;
         for p in ts.list_paths() {
             sm.prepend_path(p);
@@ -733,14 +732,14 @@ impl Forge for ExternalPlugin {
         config: &Config,
         ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
+    ) -> eyre::Result<BTreeMap<String, String>> {
         if matches!(tv.request, ToolVersionRequest::System(_)) {
-            return Ok(EMPTY_HASH_MAP.clone());
+            return Ok(BTreeMap::new());
         }
         if !self.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {
             // if the script does not exist, or we're already running from within a script,
             // the second is to prevent infinite loops
-            return Ok(EMPTY_HASH_MAP.clone());
+            return Ok(BTreeMap::new());
         }
         self.cache
             .exec_env(config, self, tv, || self.fetch_exec_env(ts, tv))
@@ -759,8 +758,6 @@ impl Debug for ExternalPlugin {
             .finish()
     }
 }
-
-static EMPTY_HASH_MAP: Lazy<HashMap<String, String>> = Lazy::new(HashMap::new);
 
 #[cfg(test)]
 mod tests {
