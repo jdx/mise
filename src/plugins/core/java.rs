@@ -331,8 +331,8 @@ impl Forge for JavaPlugin {
         _config: &Config,
         _ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
-        let map = HashMap::from([(
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let map = BTreeMap::from([(
             "JAVA_HOME".into(),
             tv.install_path().to_string_lossy().into(),
         )]);

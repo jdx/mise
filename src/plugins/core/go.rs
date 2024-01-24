@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
@@ -179,8 +179,8 @@ impl Forge for GoPlugin {
         _config: &Config,
         _ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
-        let mut map = HashMap::new();
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let mut map = BTreeMap::new();
         match (*env::MISE_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
             (Some(false), _) | (None, Some(_)) => {}
             (Some(true), _) | (None, None) => {

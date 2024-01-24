@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
@@ -136,8 +136,8 @@ impl Forge for DenoPlugin {
         _config: &Config,
         _ts: &Toolset,
         tv: &ToolVersion,
-    ) -> Result<HashMap<String, String>> {
-        let map = HashMap::from([(
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let map = BTreeMap::from([(
             "DENO_INSTALL_ROOT".into(),
             tv.install_path().join(".deno").to_string_lossy().into(),
         )]);
