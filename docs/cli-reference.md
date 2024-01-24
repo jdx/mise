@@ -316,13 +316,13 @@ Arguments:
           Tool(s) to use
 
 Options:
+  -J, --json
+          Output in JSON format
+
   -s, --shell <SHELL>
           Shell type to generate environment variables for
 
           [possible values: bash, fish, nu, xonsh, zsh]
-
-  -J, --json
-          Output in JSON format
 
 Examples:
   $ eval "$(mise env -s bash)"
