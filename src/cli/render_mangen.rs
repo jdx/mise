@@ -14,7 +14,7 @@ pub struct RenderMangen {}
 impl RenderMangen {
     pub fn run(self) -> Result<()> {
         let cli = Cli::command()
-            .version(&*version::RAW_VERSION)
+            .version(version::V.to_string())
             .disable_colored_help(true);
 
         let man = clap_mangen::Man::new(cli);

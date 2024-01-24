@@ -6,6 +6,7 @@ use eyre::Result;
 use indenter::indented;
 
 use crate::build_time::built_info;
+use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -76,9 +77,8 @@ impl Doctor {
 
         if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
             checks.push(format!(
-                "new mise version {} available, currently on {}",
-                latest,
-                env!("CARGO_PKG_VERSION")
+                "new mise version {latest} available, currently on {}",
+                *version::V
             ));
         }
 

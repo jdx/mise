@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use eyre::Result;
 use once_cell::sync::Lazy;
+use versions::Versioning;
 
 use tool_versions::ToolVersions;
 
@@ -36,6 +37,9 @@ pub enum ConfigFileType {
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
+    fn min_version(&self) -> &Option<Versioning> {
+        &None
+    }
     /// gets the project directory for the config
     /// if it's a global/system config, returns None
     /// files like ~/src/foo/.mise/config.toml will return ~/src/foo

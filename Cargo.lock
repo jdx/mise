@@ -2771,6 +2771,7 @@ checksum = "f37ff4899935ba747849dd9eeb27c0bdd0da0210236704b7e4681a6c7bd6f9c6"
 dependencies = [
  "itertools",
  "nom",
+ "serde",
 ]
 
 [[package]]

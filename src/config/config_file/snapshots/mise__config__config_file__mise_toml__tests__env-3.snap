@@ -2,6 +2,7 @@
 source: src/config/config_file/mise_toml.rs
 expression: cf.dump()
 ---
+min_version = "2024.1.1"
 [env]
 foo="bar"
 
