@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use eyre::{Result, WrapErr};
+use serde::Deserializer;
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, TableLike, Value};
@@ -24,6 +25,8 @@ use crate::{dirs, file, parse_error};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
+    #[serde(default, deserialize_with = "deserialize_version")]
+    min_version: Option<Versioning>,
     #[serde(skip)]
     context: TeraContext,
     #[serde(skip)]
@@ -76,44 +79,29 @@ impl MiseToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
+        let cfg: MiseToml = toml::from_str(s)?;
+        self.min_version = cfg.min_version;
+
+        // TODO: right now some things are parsed with serde (above) and some not (below) everything
+        // should be moved to serde eventually
+
         let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
-                "min_version" => self.parse_min_version(v)?,
                 "dotenv" => self.parse_env_file(k, v)?,
                 "env_file" => self.parse_env_file(k, v)?,
                 "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
                 "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "settings" => {}
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
+                "min_version" | "settings" => {}
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
         self.doc = doc;
         Ok(())
-    }
-
-    fn parse_min_version(&self, v: &Item) -> Result<()> {
-        match v.as_str() {
-            Some(s) => {
-                if let (Some(min), Some(cur)) = (
-                    Versioning::new(s),
-                    Versioning::new(env!("CARGO_PKG_VERSION")),
-                ) {
-                    ensure!(
-                        cur >= min,
-                        "mise version {} is required, but you are using {}",
-                        style::eyellow(min),
-                        style::eyellow(cur)
-                    );
-                }
-                Ok(())
-            }
-            _ => parse_error!("min_version", v, "string"),
-        }
     }
 
     fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
@@ -619,6 +607,10 @@ impl ConfigFile for MiseToml {
         self.path.as_path()
     }
 
+    fn min_version(&self) -> &Option<Versioning> {
+        &self.min_version
+    }
+
     fn project_root(&self) -> Option<&Path> {
         let fp = self.get_path();
         let filename = fp.file_name().unwrap_or_default().to_string_lossy();
@@ -728,6 +720,9 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         // d.field("is_trusted", &self.is_trusted);
+        if let Some(min_version) = &self.min_version {
+            d.field("min_version", &min_version.to_string());
+        }
         if !self.env_files.is_empty() {
             d.field("env_files", &self.env_files);
         }
@@ -753,6 +748,7 @@ impl Debug for MiseToml {
 impl Clone for MiseToml {
     fn clone(&self) -> Self {
         Self {
+            min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
             toolset: self.toolset.clone(),
@@ -766,6 +762,22 @@ impl Clone for MiseToml {
             tasks: self.tasks.clone(),
             is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
         }
+    }
+}
+
+fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Versioning>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+
+    match s {
+        Some(s) => Ok(Some(
+            Versioning::new(&s)
+                .ok_or(versions::Error::IllegalVersioning(s))
+                .map_err(serde::de::Error::custom)?,
+        )),
+        None => Ok(None),
     }
 }
 
@@ -792,6 +804,7 @@ mod tests {
     fn test_env() {
         let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
         cf.parse(&formatdoc! {r#"
+        min_version = "2024.1.1"
         [env]
         foo="bar"
         "#})
