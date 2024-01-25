@@ -86,29 +86,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     create_dir_all(&*dirs::SHIMS)?;
 
-    let existing_shims = list_executables_in_dir(&dirs::SHIMS)?
-        .into_par_iter()
-        .filter(|bin| {
-            dirs::SHIMS
-                .join(bin)
-                .read_link()
-                .is_ok_and(|p| p == mise_bin)
-        })
-        .collect::<HashSet<_>>();
-
-    let shims: HashSet<String> = ts
-        .list_installed_versions()?
-        .into_par_iter()
-        .flat_map(|(t, tv)| {
-            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
-                warn!("Error listing bin paths for {}: {:#}", tv, e);
-                Vec::new()
-            })
-        })
-        .collect();
-
-    let shims_to_add = shims.difference(&existing_shims);
-    let shims_to_remove = existing_shims.difference(&shims);
+    let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
@@ -143,17 +121,34 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
     Ok(())
 }
 
-// lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(t: Arc<dyn Forge>, tv: &ToolVersion) -> Result<Vec<String>> {
-    Ok(t.list_bin_paths(tv)?
-        .into_iter()
-        .par_bridge()
-        .filter(|path| path.exists())
-        .map(|dir| list_executables_in_dir(&dir))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect())
+// get_shim_diffs contrasts the actual shims on disk
+// with the desired shims specified by the Toolset
+// and returns a tuple of (missing shims, extra shims)
+pub fn get_shim_diffs(
+    mise_bin: impl AsRef<Path>,
+    toolset: &Toolset,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let actual_shims = get_actual_shims(&mise_bin)?;
+    let desired_shims = get_desired_shims(toolset)?;
+
+    Ok((
+        desired_shims.difference(&actual_shims).cloned().collect(),
+        actual_shims.difference(&desired_shims).cloned().collect(),
+    ))
+}
+
+fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
+    let mise_bin = mise_bin.as_ref();
+
+    Ok(list_executables_in_dir(&dirs::SHIMS)?
+        .into_par_iter()
+        .filter(|bin| {
+            dirs::SHIMS
+                .join(bin)
+                .read_link()
+                .is_ok_and(|p| p == mise_bin)
+        })
+        .collect::<HashSet<_>>())
 }
 
 fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
@@ -169,6 +164,32 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         out.insert(bin.file_name().into_string().unwrap());
     }
     Ok(out)
+}
+
+fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
+    Ok(toolset
+        .list_installed_versions()?
+        .into_par_iter()
+        .flat_map(|(t, tv)| {
+            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                Vec::new()
+            })
+        })
+        .collect())
+}
+
+// lists all the paths to bins in a tv that shims will be needed for
+fn list_tool_bins(t: Arc<dyn Forge>, tv: &ToolVersion) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(tv)?
+        .into_iter()
+        .par_bridge()
+        .filter(|path| path.exists())
+        .map(|dir| list_executables_in_dir(&dir))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
 }
 
 fn make_shim(target: &Path, shim: &Path) -> Result<()> {
