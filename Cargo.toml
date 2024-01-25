@@ -48,7 +48,6 @@ color-print = "0.3.5"
 confique = { version = "0.2.5", default-features = false }
 console = "0.15.8"
 contracts = "0.6.3"
-ctrlc = "3.4.2"
 demand = "1.0.1"
 dotenvy = "0.15.7"
 duct = "0.13.7"
@@ -87,6 +86,7 @@ serde_json = { version = "1.0.111", features = [] }
 sha2 = "0.10.8"
 shell-escape = "0.1.5"
 shell-words = "1.1.0"
+signal-hook = "0.3.17"
 simplelog = { version = "0.12.1" }
 strum = { version = "0.25.0", features = ["derive"] }
 sys-info = "0.9.1"
