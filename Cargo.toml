@@ -48,7 +48,6 @@ color-print = "0.3.5"
 confique = { version = "0.2.5", default-features = false }
 console = "0.15.8"
 contracts = "0.6.3"
-ctrlc = "3.4.2"
 demand = "1.0.1"
 dotenvy = "0.15.7"
 duct = "0.13.7"

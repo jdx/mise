@@ -2,16 +2,16 @@ use console::Term;
 use signal_hook::consts::SIGINT;
 use signal_hook::iterator::{Handle, Signals};
 use std::process::exit;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 #[derive(Debug)]
-pub(crate) struct HandleGuard(Handle);
+pub struct HandleGuard(Handle);
 
 /// ensures cursor is displayed on ctrl-c
 pub fn handle_ctrlc() -> eyre::Result<Option<HandleGuard>> {
     static HANDLED: AtomicBool = AtomicBool::new(false);
-    let handled = HANDLED.swap(true, std::sync::atomic::Ordering::Relaxed);
+    let handled = HANDLED.swap(true, Ordering::Relaxed);
     if handled {
         return Ok(None);
     }
@@ -24,7 +24,7 @@ pub fn handle_ctrlc() -> eyre::Result<Option<HandleGuard>> {
             debug!("Ctrl-C pressed, exiting...");
             exit(1);
         }
-        HANDLED.store(false, std::sync::atomic::Ordering::Relaxed);
+        HANDLED.store(false, Ordering::Relaxed);
     });
     Ok(Some(handle))
 }
