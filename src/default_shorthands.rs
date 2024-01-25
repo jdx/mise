@@ -762,11 +762,25 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 #[rustfmt::skip]
 pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
     Lazy::new(|| HashSet::from([
+    "boundary",
+    "consul",
     "dt",
     "elixir",
     "hub",
+    "levant",
+    "nomad",
+    "nomad-pack",
+    "packer",
     "pipenv",
     "poetry",
+    "sentinel",
+    "serf",
+    "terraform",
+    "terraform-ls",
+    "tfc-agent",
     "tiny",
     "tuist",
+    "vault",
+    "vlt",
+    "waypoint",
 ]));
