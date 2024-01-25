@@ -1367,6 +1367,7 @@ dependencies = [
  "toml_edit",
  "url",
  "versions",
+ "walkdir",
  "which",
  "zip",
 ]
