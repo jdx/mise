@@ -10,6 +10,8 @@ use std::thread;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
+use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+use signal_hook::iterator::Signals;
 
 use crate::config::Settings;
 use crate::env;
@@ -95,6 +97,7 @@ pub struct CmdLineRunner<'a> {
     stdin: Option<String>,
     prefix: String,
     raw: bool,
+    pass_signals: bool,
 }
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
@@ -112,6 +115,7 @@ impl<'a> CmdLineRunner<'a> {
             stdin: None,
             prefix: String::new(),
             raw: false,
+            pass_signals: false,
         }
     }
 
@@ -208,6 +212,11 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    pub fn with_pass_signals(&mut self) -> &mut Self {
+        self.pass_signals = true;
+        self
+    }
+
     pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
         self.cmd.stdin(Stdio::piped());
         self.stdin = Some(input.into());
@@ -237,7 +246,6 @@ impl<'a> CmdLineRunner<'a> {
                         let line = line.unwrap();
                         tx.send(ChildProcessOutput::Stdout(line)).unwrap();
                     }
-                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
             });
         }
@@ -249,7 +257,6 @@ impl<'a> CmdLineRunner<'a> {
                         let line = line.unwrap();
                         tx.send(ChildProcessOutput::Stderr(line)).unwrap();
                     }
-                    tx.send(ChildProcessOutput::Done).unwrap();
                 }
             });
         }
@@ -259,13 +266,27 @@ impl<'a> CmdLineRunner<'a> {
                 stdin.write_all(text.as_bytes()).unwrap();
             });
         }
+        let mut sighandle = None;
+        if self.pass_signals {
+            let mut signals =
+                Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
+            sighandle = Some(signals.handle());
+            let tx = tx.clone();
+            thread::spawn(move || {
+                for sig in &mut signals {
+                    tx.send(ChildProcessOutput::Signal(sig)).unwrap();
+                }
+            });
+        }
+        let id = cp.id();
         thread::spawn(move || {
             let status = cp.wait().unwrap();
+            if let Some(sighandle) = sighandle {
+                sighandle.close();
+            }
             tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
-            tx.send(ChildProcessOutput::Done).unwrap();
         });
         let mut combined_output = vec![];
-        let mut wait_for_count = 3;
         let mut status = None;
         for line in rx {
             match line {
@@ -280,10 +301,9 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
                 }
-                ChildProcessOutput::Done => {
-                    wait_for_count -= 1;
-                    if wait_for_count == 0 {
-                        break;
+                ChildProcessOutput::Signal(sig) => {
+                    if sig != SIGINT {
+                        cmd!("kill", format!("-{sig}"), id.to_string()).run()?;
                     }
                 }
             }
@@ -375,7 +395,7 @@ enum ChildProcessOutput {
     Stdout(String),
     Stderr(String),
     ExitStatus(ExitStatus),
-    Done,
+    Signal(i32),
 }
 
 #[cfg(test)]

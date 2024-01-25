@@ -24,6 +24,7 @@ use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::ui::ctrlc;
 use crate::ui::style;
 use crate::{env, file, ui};
 
@@ -63,7 +64,7 @@ pub struct Run {
     pub task: String,
 
     /// Arguments to pass to the task. Use ":::" to separate tasks.
-    #[clap()]
+    #[clap(allow_hyphen_values = true)]
     pub args: Vec<String>,
 
     /// Change to this directory before executing the command
@@ -269,6 +270,7 @@ impl Run {
     ) -> Result<()> {
         let program = program.to_executable();
         let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
+        cmd.with_pass_signals();
         match &self.output(task)? {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
             TaskOutput::Interleave => {
@@ -345,7 +347,7 @@ impl Run {
         for name in task_names {
             s = s.option(DemandOption::new(name));
         }
-        ui::handle_ctrlc();
+        let _ = ctrlc::handle_ctrlc()?;
         let name = s.run()?;
         match tasks.get(name) {
             Some(task) => Ok(task.clone()),
