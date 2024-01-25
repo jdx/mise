@@ -197,7 +197,9 @@ impl Config {
                     None => vec![],
                 }
                 .into_par_iter()
-                .flat_map(|dir| file::ls(&dir).map_err(|err| warn!("load_all_tasks: {err}")))
+                .flat_map(|dir| {
+                    file::recursive_ls(&dir).map_err(|err| warn!("load_all_tasks: {err}"))
+                })
                 .flatten()
                 .map(Either::Right)
                 .chain(rayon::iter::once(Either::Left(cf)))

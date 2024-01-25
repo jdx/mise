@@ -8,7 +8,9 @@ use std::time::Duration;
 use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
+use itertools::Itertools;
 use tar::Archive;
+use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::{dirs, env};
@@ -182,6 +184,19 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(output)
+}
+
+pub fn recursive_ls(dir: &Path) -> Result<Vec<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+
+    Ok(WalkDir::new(dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_ok(|e| e.file_type().is_file())
+        .map_ok(|e| e.path().to_path_buf())
+        .try_collect()?)
 }
 
 pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {

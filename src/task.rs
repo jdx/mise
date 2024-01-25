@@ -4,9 +4,11 @@ use petgraph::{Direction, Graph};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::ffi;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::path;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
@@ -72,13 +74,13 @@ impl Task {
                 map
             });
         let info = toml::Value::Table(info);
-        let config_root = config_root(path);
+        let config_root =
+            config_root(&path).ok_or_else(|| eyre!("config root not found: {}", path.display()))?;
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &config_root);
         let p = TomlParser::new(&info, get_tera(config_root), tera_ctx);
         // trace!("task info: {:#?}", info);
 
-        let name = path.file_name().unwrap().to_str().unwrap().to_string();
         let task = Task {
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
             description: p.parse_str("description")?.unwrap_or_default(),
@@ -88,7 +90,7 @@ impl Task {
             dir: p.parse_str("dir")?,
             env: p.parse_hashmap("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
-            ..Task::new(name, path.to_path_buf())
+            ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
         };
         Ok(task)
     }
@@ -149,6 +151,22 @@ impl Task {
             .collect();
         Ok(depends)
     }
+}
+
+fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
+    Ok(path
+        .as_ref()
+        .strip_prefix(root)
+        .map(|p| match p {
+            p if p.starts_with(".mise/tasks") => p.strip_prefix(".mise/tasks"),
+            p if p.starts_with(".config/mise/tasks") => p.strip_prefix(".config/mise/tasks"),
+            _ => Ok(p),
+        })??
+        .components()
+        .map(path::Component::as_os_str)
+        .map(ffi::OsStr::to_string_lossy)
+        .map(|s| s.replace(':', "_"))
+        .join(":"))
 }
 
 impl Display for Task {
@@ -294,12 +312,59 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     }
 }
 
-fn config_root(config_source: &Path) -> &Path {
-    match config_source.parent().expect("task source has no parent") {
-        dir if dir.ends_with(".mise/tasks") => dir.parent().unwrap().parent().unwrap(),
-        dir if dir.ends_with(".config/mise/tasks") => {
-            dir.parent().unwrap().parent().unwrap().parent().unwrap()
+fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
+    for ancestor in config_source.as_ref().ancestors() {
+        if ancestor.ends_with(".mise/tasks") {
+            return ancestor.parent()?.parent();
         }
-        dir => dir,
+
+        if ancestor.ends_with(".config/mise/tasks") {
+            return ancestor.parent()?.parent()?.parent();
+        }
+    }
+
+    Some(config_source.as_ref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{config_root, name_from_path};
+    use std::path::Path;
+
+    #[test]
+    fn test_name_from_path() {
+        let test_cases = [
+            (("/.mise/tasks", "/.mise/tasks/a"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/b"), "a:b"),
+            (("/.mise/tasks", "/.mise/tasks/a/b/c"), "a:b:c"),
+            (("/.mise/tasks", "/.mise/tasks/a:b"), "a_b"),
+            (("/.mise/tasks", "/.mise/tasks/a:b/c"), "a_b:c"),
+        ];
+
+        for ((root, path), expected) in test_cases {
+            assert_eq!(name_from_path(root, path).unwrap(), expected)
+        }
+    }
+
+    #[test]
+    fn test_name_from_path_invalid() {
+        let test_cases = [("/some/other/dir", "/.mise/tasks/a")];
+
+        for (root, path) in test_cases {
+            assert!(name_from_path(root, path).is_err())
+        }
+    }
+
+    #[test]
+    fn test_config_root() {
+        let test_cases = [
+            ("/base", Some(Path::new("/base"))),
+            ("/base/.mise/tasks", Some(Path::new("/base"))),
+            ("/base/.config/mise/tasks", Some(Path::new("/base"))),
+        ];
+
+        for (src, expected) in test_cases {
+            assert_eq!(config_root(&src), expected)
+        }
     }
 }
