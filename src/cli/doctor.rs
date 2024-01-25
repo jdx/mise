@@ -13,27 +13,29 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
+use crate::toolset::Toolset;
 use crate::toolset::ToolsetBuilder;
+use crate::ui::style;
 use crate::{cli, cmd, dirs, forge};
 use crate::{duration, env};
+use crate::{file, shims};
 
 /// Check mise installation for possible problems.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Doctor {}
+pub struct Doctor {
+    #[clap(skip)]
+    checks: Vec<String>,
+}
 
 impl Doctor {
-    pub fn run(self) -> Result<()> {
-        let mut checks = Vec::new();
-        if let Err(err) = Config::try_get() {
-            checks.push(format!("failed to load config: {}", err));
-        }
-
+    pub fn run(mut self) -> Result<()> {
         miseprintln!("{}", mise_version());
         miseprintln!("{}", build_info());
         miseprintln!("{}", shell());
         miseprintln!("{}", mise_data_dir());
         miseprintln!("{}", mise_env_vars());
+
         match Settings::try_get() {
             Ok(settings) => {
                 miseprintln!(
@@ -44,57 +46,91 @@ impl Doctor {
             }
             Err(err) => warn!("failed to load settings: {}", err),
         }
+
         match Config::try_get() {
-            Ok(config) => {
-                miseprintln!("{}", render_config_files(&config));
-                miseprintln!("{}", render_plugins());
-                for plugin in forge::list() {
-                    if !plugin.is_installed() {
-                        checks.push(format!("plugin {} is not installed", &plugin.id()));
-                        continue;
-                    }
-                }
-                if !config.is_activated() && !shims_on_path() {
-                    let cmd = style("mise help activate").yellow().for_stderr();
-                    let url = style("https://mise.jdx.dev").underlined().for_stderr();
-                    let shims = style(dirs::SHIMS.display()).cyan().for_stderr();
-                    checks.push(formatdoc!(
-                        r#"mise is not activated, run {cmd} or
-                           read documentation at {url} for activation instructions.
-                           Alternatively, add the shims directory {shims} to PATH.
-                           Using the shims directory is preferred for non-interactive setups."#
-                    ));
-                }
-                match ToolsetBuilder::new().build(&config) {
-                    Ok(ts) => {
-                        miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))
-                    }
-                    Err(err) => warn!("failed to load toolset: {}", err),
-                }
+            Ok(config) => self.analyze_config(config)?,
+            Err(err) => {
+                self.checks.push(format!("failed to load config: {}", err));
             }
-            Err(err) => warn!("failed to load config: {}", err),
         }
 
         if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
-            checks.push(format!(
+            self.checks.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
             ));
         }
 
-        if checks.is_empty() {
+        if self.checks.is_empty() {
             miseprintln!("No problems found");
         } else {
-            let checks_plural = if checks.len() == 1 { "" } else { "s" };
-            let summary = format!("{} problem{checks_plural} found:", checks.len());
+            let checks_plural = if self.checks.len() == 1 { "" } else { "s" };
+            let summary = format!("{} problem{checks_plural} found:", self.checks.len());
             miseprintln!("{}", style(summary).red().bold());
-            for check in &checks {
+            for check in &self.checks {
                 miseprintln!("{}\n", check);
             }
             exit(1);
         }
 
         Ok(())
+    }
+
+    fn analyze_config(&mut self, config: impl AsRef<Config>) -> Result<()> {
+        let config = config.as_ref();
+
+        miseprintln!("{}", render_config_files(config));
+        miseprintln!("{}", render_plugins());
+
+        for plugin in forge::list() {
+            if !plugin.is_installed() {
+                self.checks
+                    .push(format!("plugin {} is not installed", &plugin.id()));
+                continue;
+            }
+        }
+
+        if !config.is_activated() && !shims_on_path() {
+            let cmd = style::estyle("mise help activate");
+            let url = style::eunderline("https://mise.jdx.dev");
+            let shims = style::ecyan(dirs::SHIMS.display());
+            self.checks.push(formatdoc!(
+                r#"mise is not activated, run {cmd} or
+                    read documentation at {url} for activation instructions.
+                    Alternatively, add the shims directory {shims} to PATH.
+                    Using the shims directory is preferred for non-interactive setups."#
+            ));
+        }
+
+        match ToolsetBuilder::new().build(config) {
+            Ok(ts) => {
+                self.analyze_shims(&ts);
+
+                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()));
+            }
+            Err(err) => self.checks.push(format!("failed to load toolset: {}", err)),
+        }
+
+        Ok(())
+    }
+
+    fn analyze_shims(&mut self, toolset: &Toolset) {
+        let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+
+        if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset) {
+            let cmd = style::eyellow("mise reshim");
+
+            if !missing.is_empty() {
+                self.checks
+                    .push(format!("shims are missing, run {cmd} to create them"));
+            }
+
+            if !extra.is_empty() {
+                self.checks.push(format!(
+                    "unused shims are present, run {cmd} to remove them"
+                ));
+            }
+        }
     }
 }
 
