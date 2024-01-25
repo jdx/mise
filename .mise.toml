@@ -91,3 +91,6 @@ run = "cargo release"
 
 [tasks.lint-fix]
 run = "just lint-fix"
+
+[tasks.signal-test]
+run = "node ./test/fixtures/signal-test.js"
