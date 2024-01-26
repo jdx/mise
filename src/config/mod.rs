@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use either::Either;
@@ -18,6 +18,7 @@ use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
+use crate::config::env_directive::EnvResults;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::forge::Forge;
@@ -27,6 +28,7 @@ use crate::ui::style;
 use crate::{dirs, env, file, forge};
 
 pub mod config_file;
+mod env_directive;
 pub mod settings;
 mod tracking;
 
@@ -38,9 +40,9 @@ type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 pub struct Config {
     pub aliases: AliasMap,
     pub config_files: ConfigMap,
-    pub path_dirs: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
-    env: OnceCell<EnvWithSources>,
+    env: OnceCell<EnvResults>,
+    env_with_sources: OnceCell<EnvWithSources>,
     all_aliases: OnceCell<AliasMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
@@ -79,7 +81,7 @@ impl Config {
 
         let config = Self {
             env: OnceCell::new(),
-            path_dirs: load_path_dirs(&config_files),
+            env_with_sources: OnceCell::new(),
             aliases: load_aliases(&config_files),
             all_aliases: OnceCell::new(),
             shorthands: OnceCell::new(),
@@ -96,15 +98,39 @@ impl Config {
 
         Ok(config)
     }
-    pub fn env(&self) -> Result<BTreeMap<String, String>> {
+    pub fn env(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
             .env_with_sources()?
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect())
     }
-    pub fn env_with_sources(&self) -> Result<&EnvWithSources> {
-        self.env.get_or_try_init(|| load_env(&self.config_files))
+    pub fn env_with_sources(&self) -> eyre::Result<&EnvWithSources> {
+        self.env_with_sources.get_or_try_init(|| {
+            let mut env = self.env_results()?.env.clone();
+            let settings = Settings::get();
+            if let Some(env_file) = &settings.env_file {
+                match dotenvy::from_filename_iter(env_file) {
+                    Ok(iter) => {
+                        for item in iter {
+                            let (k, v) = item.unwrap_or_else(|err| {
+                                warn!("env_file: {err}");
+                                Default::default()
+                            });
+                            env.insert(k, (v, env_file.clone()));
+                        }
+                    }
+                    Err(err) => trace!("env_file: {err}"),
+                }
+            }
+            Ok(env)
+        })
+    }
+    pub fn env_results(&self) -> eyre::Result<&EnvResults> {
+        self.env.get_or_try_init(|| self.load_env())
+    }
+    pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
+        Ok(&self.env_results()?.env_paths)
     }
     pub fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
@@ -284,6 +310,25 @@ impl Config {
         Ok(())
     }
 
+    fn load_env(&self) -> Result<EnvResults> {
+        let entries = self
+            .config_files
+            .iter()
+            .rev()
+            .flat_map(|(source, cf)| cf.env_entries().into_iter().map(|e| (e, source.clone())))
+            .collect();
+        EnvResults::resolve(&env::PRISTINE_ENV, entries)
+    }
+
+    pub fn watch_files(&self) -> eyre::Result<BTreeSet<&Path>> {
+        Ok(self
+            .config_files
+            .keys()
+            .chain(self.env_results()?.env_files.iter())
+            .map(|p| p.as_path())
+            .collect())
+    }
+
     #[cfg(test)]
     pub fn reset() {
         Settings::reset(None);
@@ -390,6 +435,13 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     config_files.into_iter().unique().collect()
 }
 
+pub fn is_global_config(path: &Path) -> bool {
+    global_config_files()
+        .iter()
+        .chain(system_config_files().iter())
+        .any(|p| p == path)
+}
+
 pub fn global_config_files() -> Vec<PathBuf> {
     let mut config_files = vec![];
     if env::var_path("MISE_CONFIG_FILE").is_none()
@@ -463,43 +515,6 @@ fn parse_config_file(
     }
 }
 
-fn load_env(config_files: &ConfigMap) -> Result<EnvWithSources> {
-    let mut env = IndexMap::new();
-    for (source, cf) in config_files.iter().rev() {
-        for (k, v) in cf.env() {
-            env.insert(k, (v, source.clone()));
-        }
-        for k in cf.env_remove() {
-            // remove values set to "false"
-            env.remove(&k);
-        }
-    }
-    let settings = Settings::get();
-    if let Some(env_file) = &settings.env_file {
-        match dotenvy::from_filename_iter(env_file) {
-            Ok(iter) => {
-                for item in iter {
-                    let (k, v) = item.unwrap_or_else(|err| {
-                        warn!("env_file: {err}");
-                        Default::default()
-                    });
-                    env.insert(k, (v, env_file.clone()));
-                }
-            }
-            Err(err) => trace!("env_file: {err}"),
-        }
-    }
-    Ok(env)
-}
-
-fn load_path_dirs(config_files: &ConfigMap) -> Vec<PathBuf> {
-    let mut path_dirs = vec![];
-    for cf in config_files.values().rev() {
-        path_dirs.extend(cf.env_path());
-    }
-    path_dirs
-}
-
 fn load_aliases(config_files: &ConfigMap) -> AliasMap {
     let mut aliases: AliasMap = AliasMap::new();
 
@@ -535,8 +550,9 @@ impl Debug for Config {
                 // s.field("Env Sources", &self.env_sources);
             }
         }
-        if !self.path_dirs.is_empty() {
-            s.field("Path Dirs", &self.path_dirs);
+        let path_dirs = self.path_dirs().cloned().unwrap_or_default();
+        if !path_dirs.is_empty() {
+            s.field("Path Dirs", &path_dirs);
         }
         if !self.aliases.is_empty() {
             s.field("Aliases", &self.aliases);

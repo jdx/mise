@@ -5,8 +5,8 @@ use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
-use crate::env;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
+use crate::{config, env};
 
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
@@ -50,7 +50,7 @@ impl ToolsetBuilder {
 
     fn load_config_files(&self, config: &Config, ts: &mut Toolset) {
         for cf in config.config_files.values().rev() {
-            if self.global_only && !cf.is_global() {
+            if self.global_only && !config::is_global_config(cf.get_path()) {
                 return;
             }
             ts.merge(cf.to_toolset());
