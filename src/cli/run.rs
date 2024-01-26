@@ -13,7 +13,6 @@ use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use eyre::Result;
-use globset::Glob;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -23,7 +22,7 @@ use crate::config::{Config, Settings};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::task::{Deps, Task};
+use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::ctrlc;
 use crate::ui::style;
@@ -532,27 +531,6 @@ fn get_color() -> Color {
     static COLOR_IDX: AtomicUsize = AtomicUsize::new(0);
     COLORS[COLOR_IDX.fetch_add(1, Ordering::Relaxed) % COLORS.len()]
 }
-trait GetMatchingExt<T> {
-    fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
-}
-
-impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T> {
-    fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        let normalized = pat.split(':').collect::<PathBuf>();
-        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
-
-        Ok(self
-            .keys()
-            .filter(|k| {
-                let p: PathBuf = k.split(':').collect();
-
-                matcher.is_match(p)
-            })
-            .flat_map(|k| self.get(k))
-            .collect())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::file;
