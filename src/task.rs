@@ -1,3 +1,4 @@
+use globset::Glob;
 use petgraph::graph::DiGraph;
 use petgraph::prelude::*;
 use petgraph::{Direction, Graph};
@@ -134,17 +135,7 @@ impl Task {
         let depends = self
             .depends
             .iter()
-            .map(|name| match name.strip_suffix('*') {
-                Some(prefix) => Ok(tasks
-                    .values()
-                    .unique()
-                    .filter(|t| *t != self && t.name.starts_with(prefix))
-                    .collect::<Vec<_>>()),
-                None => tasks
-                    .get(name)
-                    .map(|task| vec![task])
-                    .ok_or_else(|| eyre!("task not found: {name}")),
-            })
+            .map(|pat| match_tasks(tasks, pat))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
@@ -167,6 +158,15 @@ fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<Stri
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
         .join(":"))
+}
+
+fn match_tasks<'a>(tasks: &'a HashMap<String, Task>, pat: &str) -> Result<Vec<&'a Task>> {
+    let matches = tasks.get_matching(pat)?;
+    if matches.is_empty() {
+        return Err(eyre!("task not found: {pat}"));
+    };
+
+    Ok(matches)
 }
 
 impl Display for Task {
@@ -366,5 +366,30 @@ mod tests {
         for (src, expected) in test_cases {
             assert_eq!(config_root(&src), expected)
         }
+    }
+}
+
+pub trait GetMatchingExt<T> {
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
+}
+
+impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T>
+where
+    T: std::cmp::Eq + std::hash::Hash,
+{
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        let normalized = pat.split(':').collect::<PathBuf>();
+        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
+
+        Ok(self
+            .iter()
+            .filter(|(k, _)| {
+                let p: PathBuf = k.split(':').collect();
+
+                matcher.is_match(p)
+            })
+            .map(|(_, t)| t)
+            .unique()
+            .collect())
     }
 }
