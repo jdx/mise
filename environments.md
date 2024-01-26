@@ -65,9 +65,7 @@ _.path = [
 ]
 ```
 
-### `env._.source` [<Badge type="warning" text="coming soon" />](https://github.com/jdx/mise/issues/1447)
-
-_Follow [#1447](https://github.com/jdx/mise/issues/1447) to see when this is available._
+### `env._.source`
 
 Source an external bash script and pull exported environment variables out of it:
 
@@ -83,14 +81,12 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be ignored. It would be possible to use different types of scripts,
+The shebang will be ignored. It may be possible to use different types of scripts,
 or binaries that are not scripts at all. See [#1448](https://github.com/jdx/mise/issues/1448)
-for information.
+for a potential solution.
 :::
 
-## Multiple `env._` Directives <Badge type="warning" text="coming soon" />
-
-_Follow [#1449](https://github.com/jdx/mise/issues/1449) to see when this is available._
+## Multiple `env._` Directives
 
 It may be necessary to use multiple `env._` directives but TOML syntax won't allow 2 keys
 in a table like that:
@@ -119,9 +115,7 @@ Environment variable values can be templates, see [Templates](/templates) for de
 LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
 ```
 
-## Using env vars in other env vars <Badge type="warning" text="coming soon" />
-
-_Follow [#1262](https://github.com/jdx/mise/issues/1262) to see when this is available._
+## Using env vars in other env vars
 
 You can use the value of an environment variable in later env vars:
 
