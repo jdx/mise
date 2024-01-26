@@ -387,7 +387,7 @@ impl Toolset {
 
     pub fn notify_if_versions_missing(&self) {
         let missing = self.list_missing_versions();
-        if missing.is_empty() {
+        if missing.is_empty() || !Settings::get().status.missing_tools {
             return;
         }
         let versions = missing
@@ -395,7 +395,7 @@ impl Toolset {
             .map(|tv| tv.style())
             .collect::<Vec<_>>()
             .join(" ");
-        info!(
+        warn!(
             "missing: {}",
             truncate_str(&versions, *TERM_WIDTH - 15, "…"),
         );

@@ -27,7 +27,7 @@ pub fn handle_shim() -> Result<()> {
     if bin_name == "mise" || !dirs::SHIMS.join(bin_name).exists() || cfg!(test) {
         return Ok(());
     }
-    logger::init(&Settings::get());
+    logger::init();
     let args = env::ARGS.read().unwrap();
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
     args[0] = which_shim(&env::MISE_BIN_NAME)?.into();

@@ -24,7 +24,7 @@ pub struct HookEnv {
     shell: Option<ShellType>,
 
     /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long)]
+    #[clap(long, hide = true)]
     status: bool,
 
     /// Hide warnings such as when a tool is not installed
@@ -65,30 +65,33 @@ impl HookEnv {
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}");
-        if self.status {
-            self.display_status(&config, &ts)?;
-            ts.notify_if_versions_missing();
-        }
+        self.display_status(&config, &ts)?;
 
         Ok(())
     }
 
     fn display_status(&self, config: &Config, ts: &Toolset) -> Result<()> {
-        let installed_versions = ts
-            .list_current_installed_versions()
-            .into_iter()
-            .rev()
-            .map(|(_, v)| v.to_string())
-            .collect_vec();
-        if !installed_versions.is_empty() {
-            let status = installed_versions.into_iter().rev().join(" ");
-            info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+        let settings = Settings::get();
+        if self.status || settings.status.show_tools {
+            let installed_versions = ts
+                .list_current_installed_versions()
+                .into_iter()
+                .rev()
+                .map(|(_, v)| v.to_string())
+                .collect_vec();
+            if !installed_versions.is_empty() {
+                let status = installed_versions.into_iter().rev().join(" ");
+                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+            }
         }
-        let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env()?.clone()).to_patches();
-        if !env_diff.is_empty() {
-            let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
-            info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
+        if self.status || settings.status.show_env {
+            let env_diff = EnvDiff::new(&env::PRISTINE_ENV, config.env()?.clone()).to_patches();
+            if !env_diff.is_empty() {
+                let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
+                info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
+            }
         }
+        ts.notify_if_versions_missing();
         Ok(())
     }
 
