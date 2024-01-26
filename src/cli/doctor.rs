@@ -122,12 +122,16 @@ impl Doctor {
 
             if !missing.is_empty() {
                 self.checks
-                    .push(format!("shims are missing, run {cmd} to create them"));
+                    .push(formatdoc!("shims are missing, run {cmd} to create them
+                                      Missing shims: {missing}",
+                                      missing = missing.join(", ")));
             }
 
             if !extra.is_empty() {
-                self.checks.push(format!(
-                    "unused shims are present, run {cmd} to remove them"
+                self.checks.push(formatdoc!(
+                    "unused shims are present, run {cmd} to remove them
+                     Unused shims: {extra}",
+                     extra = extra.join(", ")
                 ));
             }
         }
