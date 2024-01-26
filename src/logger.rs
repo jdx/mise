@@ -9,17 +9,18 @@ use simplelog::*;
 use crate::config::Settings;
 use crate::env;
 
-pub fn init(settings: &Settings) {
+pub fn init() {
     static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| _init(settings));
+    INIT.call_once(_init);
 }
 
-pub fn _init(settings: &Settings) {
+pub fn _init() {
     if cfg!(test) {
         return;
     }
+    let settings = Settings::try_get().unwrap_or_else(|_| Default::default());
     let mut loggers: Vec<Box<dyn SharedLogger>> = vec![];
-    let level = settings.log_level.parse().unwrap();
+    let level = settings.log_level.parse().unwrap_or(LevelFilter::Info);
     loggers.push(init_term_logger(level));
 
     if let Some(log_file) = &*env::MISE_LOG_FILE {
@@ -85,6 +86,6 @@ mod tests {
 
     #[test]
     fn test_init() {
-        init(&Settings::get());
+        init();
     }
 }

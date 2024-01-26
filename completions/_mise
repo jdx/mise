@@ -69,7 +69,6 @@ return ret
 __mise_activate_cmd() {
   _arguments -s -S \
     '::shell_type:(bash fish nu xonsh zsh)' \
-    '--status[Show "mise\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '--shims[Use shims instead of modifying PATH]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
@@ -352,7 +351,6 @@ __mise_global_cmd() {
 __mise_hook_env_cmd() {
   _arguments -s -S \
     '(-s --shell)'{-s,--shell}'=[Shell type to generate script for]:shell:(bash fish nu xonsh zsh)' \
-    '--status[Show "mise\: <PLUGIN>@<VERSION>" message when changing directories]' \
     '(-q --quiet)'{-q,--quiet}'[Hide warnings such as when a tool is not installed]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
