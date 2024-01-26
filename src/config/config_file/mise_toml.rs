@@ -1,18 +1,21 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::iter::once;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Mutex;
 
-use eyre::{Result, WrapErr};
-use serde::Deserializer;
+use eyre::WrapErr;
+use itertools::Itertools;
+use serde::de::Visitor;
+use serde::{de, Deserializer};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, Document, Item, TableLike, Value};
+use toml_edit::{table, value, Array, Document, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
+use crate::config::env_directive::EnvDirective;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::task::Task;
@@ -24,6 +27,7 @@ use crate::ui::style;
 use crate::{dirs, file, parse_error};
 
 #[derive(Default, Deserialize)]
+// #[serde(deny_unknown_fields)]
 pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
@@ -33,14 +37,12 @@ pub struct MiseToml {
     path: PathBuf,
     #[serde(skip)]
     toolset: Toolset,
-    #[serde(skip)]
-    env_files: Vec<PathBuf>,
-    #[serde(skip)]
-    env: HashMap<String, String>,
-    #[serde(skip)]
-    env_remove: Vec<String>,
-    #[serde(skip)]
-    path_dirs: Vec<PathBuf>,
+    #[serde(default, alias = "dotenv", deserialize_with = "deserialize_arr")]
+    env_file: Vec<PathBuf>,
+    #[serde(default)]
+    env: EnvList,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    env_path: Vec<PathBuf>,
     #[serde(skip)]
     alias: AliasMap,
     #[serde(skip)]
@@ -51,12 +53,38 @@ pub struct MiseToml {
     tasks: Vec<Task>,
     #[serde(skip)]
     is_trusted: Mutex<Option<bool>>,
+    #[serde(skip)]
+    project_root: Option<PathBuf>,
+    #[serde(skip)]
+    config_root: PathBuf,
 }
+
+#[derive(Debug, Default, Clone)]
+pub struct EnvList(pub(crate) Vec<EnvDirective>);
 
 impl MiseToml {
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", path.parent().unwrap().to_str().unwrap());
+        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+        let project_root = match path.parent() {
+            Some(dir) => match dir {
+                dir if dir.starts_with(*dirs::CONFIG) => None,
+                dir if dir.starts_with(*dirs::SYSTEM) => None,
+                dir if dir == *dirs::HOME => None,
+                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
+                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
+                    dir.parent().unwrap().parent()
+                }
+                dir => Some(dir),
+            },
+            None => None,
+        };
+        let config_root = project_root
+            .or_else(|| path.parent())
+            .or_else(|| dirs::CWD.as_ref().map(|p| p.as_path()))
+            .unwrap_or_else(|| *dirs::HOME)
+            .to_path_buf();
         Self {
             path: path.to_path_buf(),
             context,
@@ -65,11 +93,13 @@ impl MiseToml {
                 source: Some(ToolSource::MiseToml(path.to_path_buf())),
                 ..Default::default()
             },
+            project_root: project_root.map(|p| p.to_path_buf()),
+            config_root,
             ..Default::default()
         }
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub fn from_file(path: &Path) -> eyre::Result<Self> {
         trace!("parsing: {}", display_path(path));
         let mut rf = Self::init(path);
         let body = file::read_to_string(path)?; // .suggestion("ensure file exists and can be read")?;
@@ -78,9 +108,12 @@ impl MiseToml {
         Ok(rf)
     }
 
-    fn parse(&mut self, s: &str) -> Result<()> {
+    fn parse(&mut self, s: &str) -> eyre::Result<()> {
         let cfg: MiseToml = toml::from_str(s)?;
         self.min_version = cfg.min_version;
+        self.env = cfg.env;
+        self.env_file = cfg.env_file;
+        self.env_path = cfg.env_path;
 
         // TODO: right now some things are parsed with serde (above) and some not (below) everything
         // should be moved to serde eventually
@@ -88,15 +121,11 @@ impl MiseToml {
         let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
-                "dotenv" => self.parse_env_file(k, v)?,
-                "env_file" => self.parse_env_file(k, v)?,
-                "env_path" => self.path_dirs = self.parse_path_env(k, v)?,
-                "env" => self.parse_env(k, v)?,
                 "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
-                "min_version" | "settings" => {}
+                "dotenv" | "env_file" | "env_path" | "min_version" | "settings" | "env" => {}
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
@@ -104,135 +133,7 @@ impl MiseToml {
         Ok(())
     }
 
-    fn parse_env_file(&mut self, k: &str, v: &Item) -> Result<()> {
-        trust_check(&self.path)?;
-        if let Some(filename) = v.as_str() {
-            let path = self.path.parent().unwrap().join(filename);
-            self.parse_env_filename(path)?;
-        } else if let Some(filenames) = v.as_array() {
-            for filename in filenames {
-                if let Some(filename) = filename.as_str() {
-                    let path = self.path.parent().unwrap().join(filename);
-                    self.parse_env_filename(path)?;
-                } else {
-                    parse_error!(k, v, "string");
-                }
-            }
-        } else {
-            parse_error!(k, v, "string or array of strings");
-        }
-        Ok(())
-    }
-
-    fn parse_env_filename(&mut self, path: PathBuf) -> Result<()> {
-        let dotenv = dotenvy::from_path_iter(&path)
-            .wrap_err_with(|| format!("failed to parse dotenv file: {}", display_path(&path)))?;
-        for item in dotenv {
-            let (k, v) = item?;
-            self.env.insert(k, v);
-        }
-        self.env_files.push(path);
-        Ok(())
-    }
-
-    fn parse_env(&mut self, key: &str, v: &Item) -> Result<()> {
-        trust_check(&self.path)?;
-
-        if let Some(arr) = v.as_array_of_tables() {
-            arr.iter()
-                .try_for_each(|table| self.parse_single_env(key, table))
-        } else if let Some(table) = v.as_table() {
-            self.parse_single_env(key, table)
-        } else {
-            parse_error!(key, v, "table or array of tables")
-        }
-    }
-
-    fn parse_single_env(&mut self, key: &str, table: &dyn TableLike) -> Result<()> {
-        ensure!(
-            !table.contains_key("PATH"),
-            "use 'env.mise.path' instead of 'env.PATH'"
-        );
-
-        for (k, v) in table.iter() {
-            let key = format!("{}.{}", key, k);
-            let k = self.parse_template(&key, k)?;
-            if k == "_" || k == "mise" {
-                self.parse_env_mise(&key, v)?;
-            } else if let Some(v) = v.as_str() {
-                let v = self.parse_template(&key, v)?;
-
-                if self.env.insert(k, v).is_some() {
-                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
-                }
-            } else if let Some(v) = v.as_integer() {
-                if self.env.insert(k, v.to_string()).is_some() {
-                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
-                }
-            } else if let Some(v) = v.as_bool() {
-                if self.env_remove.contains(&k) {
-                    bail!("duplicate key: {}", crate::ui::style::eyellow(key),)
-                };
-
-                if !v {
-                    self.env_remove.push(k);
-                }
-            } else {
-                parse_error!(key, v, "string, num, or bool")
-            }
-        }
-
-        Ok(())
-    }
-
-    fn parse_env_mise(&mut self, key: &str, v: &Item) -> Result<()> {
-        match v.as_table_like() {
-            Some(table) => {
-                for (k, v) in table.iter() {
-                    let key = format!("{}.{}", key, k);
-                    match k {
-                        "file" => self.parse_env_file(&key, v)?,
-                        "path" => self.path_dirs = self.parse_path_env(&key, v)?,
-                        _ => parse_error!(key, v, "file or path"),
-                    }
-                }
-                Ok(())
-            }
-            _ => parse_error!(key, v, "table"),
-        }
-    }
-
-    fn parse_path_env(&self, k: &str, v: &Item) -> Result<Vec<PathBuf>> {
-        trust_check(&self.path)?;
-        let config_root = self.path.parent().unwrap().to_path_buf();
-        let get_path = |v: &Item| -> Result<PathBuf> {
-            if let Some(s) = v.as_str() {
-                let s = self.parse_template(k, s)?;
-                let s = match s.strip_prefix("./") {
-                    Some(s) => config_root.join(s),
-                    None => match s.strip_prefix("~/") {
-                        Some(s) => dirs::HOME.join(s),
-                        None => s.into(),
-                    },
-                };
-                Ok(s)
-            } else {
-                parse_error!(k, v, "string")
-            }
-        };
-        if let Some(array) = v.as_array() {
-            let mut path = Vec::new();
-            for v in array {
-                let item = Item::Value(v.clone());
-                path.push(get_path(&item)?);
-            }
-            Ok(path)
-        } else {
-            Ok(vec![get_path(v)?])
-        }
-    }
-
-    fn parse_alias(&self, k: &str, v: &Item) -> Result<AliasMap> {
+    fn parse_alias(&self, k: &str, v: &Item) -> eyre::Result<AliasMap> {
         match v.as_table_like() {
             Some(table) => {
                 let mut aliases = AliasMap::new();
@@ -262,12 +163,12 @@ impl MiseToml {
         }
     }
 
-    fn parse_plugins(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+    fn parse_plugins(&self, key: &str, v: &Item) -> eyre::Result<HashMap<String, String>> {
         trust_check(&self.path)?;
         self.parse_hashmap(key, v)
     }
 
-    fn parse_tasks(&self, key: &str, v: &Item) -> Result<Vec<Task>> {
+    fn parse_tasks(&self, key: &str, v: &Item) -> eyre::Result<Vec<Task>> {
         match v.as_table_like() {
             Some(table) => {
                 let mut tasks = Vec::new();
@@ -283,7 +184,7 @@ impl MiseToml {
         }
     }
 
-    fn parse_task(&self, key: &str, v: &Item, name: &str) -> Result<Task> {
+    fn parse_task(&self, key: &str, v: &Item, name: &str) -> eyre::Result<Task> {
         let mut task = Task::new(name.into(), self.path.clone());
         if v.as_str().is_some() {
             task.run = self.parse_string_or_array(key, v)?;
@@ -322,7 +223,7 @@ impl MiseToml {
         }
     }
 
-    fn parse_hashmap(&self, key: &str, v: &Item) -> Result<HashMap<String, String>> {
+    fn parse_hashmap(&self, key: &str, v: &Item) -> eyre::Result<HashMap<String, String>> {
         match v.as_table_like() {
             Some(table) => {
                 let mut env = HashMap::new();
@@ -342,7 +243,7 @@ impl MiseToml {
         }
     }
 
-    fn parse_toolset(&self, key: &str, v: &Item) -> Result<Toolset> {
+    fn parse_toolset(&self, key: &str, v: &Item) -> eyre::Result<Toolset> {
         let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
 
         match v.as_table_like() {
@@ -364,7 +265,7 @@ impl MiseToml {
         key: &str,
         v: &Item,
         fa: ForgeArg,
-    ) -> Result<ToolVersionList> {
+    ) -> eyre::Result<ToolVersionList> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut tool_version_list = ToolVersionList::new(fa.clone(), source);
 
@@ -409,7 +310,7 @@ impl MiseToml {
         key: &str,
         v: &Item,
         fa: ForgeArg,
-    ) -> Result<(ToolVersionRequest, ToolVersionOptions)> {
+    ) -> eyre::Result<(ToolVersionRequest, ToolVersionOptions)> {
         match v.as_table_like() {
             Some(table) => {
                 let tv = if let Some(v) = table.get("version") {
@@ -475,7 +376,7 @@ impl MiseToml {
         key: &str,
         v: &Value,
         fa: ForgeArg,
-    ) -> Result<ToolVersionRequest> {
+    ) -> eyre::Result<ToolVersionRequest> {
         match v.as_str() {
             Some(s) => {
                 let s = self.parse_template(key, s)?;
@@ -521,21 +422,21 @@ impl MiseToml {
         }
     }
 
-    fn parse_bool(&self, k: &str, v: &Item) -> Result<bool> {
+    fn parse_bool(&self, k: &str, v: &Item) -> eyre::Result<bool> {
         match v.as_value().map(|v| v.as_bool()) {
             Some(Some(v)) => Ok(v),
             _ => parse_error!(k, v, "boolean"),
         }
     }
 
-    fn parse_string(&self, k: &str, v: &Item) -> Result<String> {
+    fn parse_string(&self, k: &str, v: &Item) -> eyre::Result<String> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => Ok(v.to_string()),
             _ => parse_error!(k, v, "string"),
         }
     }
 
-    fn parse_path(&self, k: &str, v: &Item) -> Result<PathBuf> {
+    fn parse_path(&self, k: &str, v: &Item) -> eyre::Result<PathBuf> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
                 let v = self.parse_template(k, v)?;
@@ -545,7 +446,7 @@ impl MiseToml {
         }
     }
 
-    fn parse_string_or_array(&self, k: &str, v: &Item) -> Result<Vec<String>> {
+    fn parse_string_or_array(&self, k: &str, v: &Item) -> eyre::Result<Vec<String>> {
         match v.as_value().map(|v| v.as_str()) {
             Some(Some(v)) => {
                 let v = self.parse_template(k, v)?;
@@ -555,7 +456,7 @@ impl MiseToml {
         }
     }
 
-    fn parse_string_array(&self, k: &str, v: &Item) -> Result<Vec<String>> {
+    fn parse_string_array(&self, k: &str, v: &Item) -> eyre::Result<Vec<String>> {
         match v
             .as_array()
             .map(|v| v.iter().map(|v| v.as_str().unwrap().to_string()).collect())
@@ -585,12 +486,12 @@ impl MiseToml {
         env_tbl.remove(key);
     }
 
-    fn parse_template(&self, k: &str, input: &str) -> Result<String> {
+    fn parse_template(&self, k: &str, input: &str) -> eyre::Result<String> {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
         trust_check(&self.path)?;
-        let dir = self.path.parent().unwrap();
+        let dir = self.path.parent();
         let output = get_tera(dir)
             .render_str(input, &self.context)
             .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
@@ -602,7 +503,6 @@ impl ConfigFile for MiseToml {
     fn get_type(&self) -> ConfigFileType {
         ConfigFileType::MiseToml
     }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -612,37 +512,30 @@ impl ConfigFile for MiseToml {
     }
 
     fn project_root(&self) -> Option<&Path> {
-        let fp = self.get_path();
-        let filename = fp.file_name().unwrap_or_default().to_string_lossy();
-        match fp.parent() {
-            Some(dir) => match dir {
-                dir if dir.starts_with(*dirs::CONFIG) => None,
-                dir if dir.starts_with(*dirs::SYSTEM) => None,
-                dir if dir == *dirs::HOME => None,
-                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
-                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
-                    dir.parent().unwrap().parent()
-                }
-                dir => Some(dir),
-            },
-            None => None,
-        }
+        self.project_root.as_deref()
     }
 
     fn plugins(&self) -> HashMap<String, String> {
         self.plugins.clone()
     }
 
-    fn env(&self) -> HashMap<String, String> {
-        self.env.clone()
-    }
-
-    fn env_remove(&self) -> Vec<String> {
-        self.env_remove.clone()
-    }
-
-    fn env_path(&self) -> Vec<PathBuf> {
-        self.path_dirs.clone()
+    fn env_entries(&self) -> Vec<EnvDirective> {
+        let env_entries = self.env.0.iter().cloned();
+        let path_entries = self
+            .env_path
+            .iter()
+            .map(|p| EnvDirective::Path(p.clone()))
+            .collect_vec();
+        let env_files = self
+            .env_file
+            .iter()
+            .map(|p| EnvDirective::File(p.clone()))
+            .collect_vec();
+        path_entries
+            .into_iter()
+            .chain(env_files)
+            .chain(env_entries)
+            .collect()
     }
 
     fn tasks(&self) -> Vec<&Task> {
@@ -686,7 +579,7 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn save(&self) -> Result<()> {
+    fn save(&self) -> eyre::Result<()> {
         let contents = self.dump();
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
@@ -705,13 +598,6 @@ impl ConfigFile for MiseToml {
     fn aliases(&self) -> AliasMap {
         self.alias.clone()
     }
-
-    fn watch_files(&self) -> Vec<PathBuf> {
-        once(&self.path)
-            .chain(self.env_files.iter())
-            .cloned()
-            .collect()
-    }
 }
 
 impl Debug for MiseToml {
@@ -723,17 +609,12 @@ impl Debug for MiseToml {
         if let Some(min_version) = &self.min_version {
             d.field("min_version", &min_version.to_string());
         }
-        if !self.env_files.is_empty() {
-            d.field("env_files", &self.env_files);
+        if !self.env_file.is_empty() {
+            d.field("env_file", &self.env_file);
         }
-        if !self.env.is_empty() {
-            d.field("env", &self.env);
-        }
-        if !self.env_remove.is_empty() {
-            d.field("env_remove", &self.env_remove);
-        }
-        if !self.path_dirs.is_empty() {
-            d.field("path_dirs", &self.path_dirs);
+        let env = self.env_entries();
+        if !env.is_empty() {
+            d.field("env", &env);
         }
         if !self.alias.is_empty() {
             d.field("alias", &self.alias);
@@ -752,15 +633,16 @@ impl Clone for MiseToml {
             context: self.context.clone(),
             path: self.path.clone(),
             toolset: self.toolset.clone(),
-            env_files: self.env_files.clone(),
+            env_file: self.env_file.clone(),
             env: self.env.clone(),
-            env_remove: self.env_remove.clone(),
-            path_dirs: self.path_dirs.clone(),
+            env_path: self.env_path.clone(),
             alias: self.alias.clone(),
             doc: self.doc.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
+            project_root: self.project_root.clone(),
+            config_root: self.config_root.clone(),
         }
     }
 }
@@ -781,6 +663,178 @@ where
     }
 }
 
+fn deserialize_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    struct ArrVisitor<T>(std::marker::PhantomData<T>);
+
+    impl<'de, T> Visitor<'de> for ArrVisitor<T>
+    where
+        T: FromStr,
+        <T as FromStr>::Err: std::fmt::Display,
+    {
+        type Value = Vec<T>;
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("string or array of strings")
+        }
+
+        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let v = v.parse().map_err(de::Error::custom)?;
+            Ok(vec![v])
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut v = vec![];
+            while let Some(s) = seq.next_element::<String>()? {
+                v.push(s.parse().map_err(de::Error::custom)?);
+            }
+            Ok(v)
+        }
+    }
+
+    deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
+}
+
+impl<'de> de::Deserialize<'de> for EnvList {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct EnvManVisitor;
+
+        impl<'de> Visitor<'de> for EnvManVisitor {
+            type Value = EnvList;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("env table or array of env tables")
+            }
+
+            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+            where
+                S: de::SeqAccess<'de>,
+            {
+                let mut env = vec![];
+                while let Some(list) = seq.next_element::<EnvList>()? {
+                    env.extend(list.0);
+                }
+                Ok(EnvList(env))
+            }
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut env = vec![];
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "_" | "mise" => {
+                            #[derive(Deserialize)]
+                            #[serde(deny_unknown_fields)]
+                            struct EnvDirectives {
+                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                path: Vec<PathBuf>,
+                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                file: Vec<PathBuf>,
+                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                source: Vec<PathBuf>,
+                            }
+                            let directives = map.next_value::<EnvDirectives>()?;
+                            // TODO: parse these in the order they're defined somehow
+                            for path in directives.path {
+                                env.push(EnvDirective::Path(path));
+                            }
+                            for file in directives.file {
+                                env.push(EnvDirective::File(file));
+                            }
+                            for source in directives.source {
+                                env.push(EnvDirective::Source(source));
+                            }
+                        }
+                        _ => {
+                            enum Val {
+                                Int(i64),
+                                Str(String),
+                                Bool(bool),
+                            }
+
+                            impl<'de> de::Deserialize<'de> for Val {
+                                fn deserialize<D>(
+                                    deserializer: D,
+                                ) -> std::result::Result<Self, D::Error>
+                                where
+                                    D: de::Deserializer<'de>,
+                                {
+                                    struct ValVisitor;
+
+                                    impl<'de> Visitor<'de> for ValVisitor {
+                                        type Value = Val;
+                                        fn expecting(
+                                            &self,
+                                            formatter: &mut Formatter,
+                                        ) -> std::fmt::Result
+                                        {
+                                            formatter.write_str("env value")
+                                        }
+
+                                        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+                                        where
+                                            E: de::Error,
+                                        {
+                                            match v {
+                                                true => Err(de::Error::custom(
+                                                    "env values cannot be true",
+                                                )),
+                                                false => Ok(Val::Bool(v)),
+                                            }
+                                        }
+
+                                        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+                                        where
+                                            E: de::Error,
+                                        {
+                                            Ok(Val::Int(v))
+                                        }
+
+                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                                        where
+                                            E: de::Error,
+                                        {
+                                            Ok(Val::Str(v.to_string()))
+                                        }
+                                    }
+
+                                    deserializer.deserialize_any(ValVisitor)
+                                }
+                            }
+
+                            let value = map.next_value::<Val>()?;
+                            match value {
+                                Val::Int(i) => {
+                                    env.push(EnvDirective::Val(key, i.to_string()));
+                                }
+                                Val::Str(s) => {
+                                    env.push(EnvDirective::Val(key, s));
+                                }
+                                Val::Bool(_) => env.push(EnvDirective::Rm(key)),
+                            }
+                        }
+                    }
+                }
+                Ok(EnvList(env))
+            }
+        }
+
+        deserializer.deserialize_any(EnvManVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::dirs;
@@ -792,7 +846,7 @@ mod tests {
     fn test_fixture() {
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
-        assert_debug_snapshot!(cf.env());
+        assert_debug_snapshot!(cf.env_entries());
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
         assert_debug_snapshot!(cf.alias);
@@ -802,20 +856,14 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
+        let cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
+        let env = parse_env(formatdoc! {r#"
         min_version = "2024.1.1"
         [env]
         foo="bar"
-        "#})
-            .unwrap();
+        "#});
 
-        assert_debug_snapshot!(cf.env(), @r###"
-        {
-            "foo": "bar",
-        }
-        "###);
-        assert_debug_snapshot!(cf.env_path(), @"[]");
+        assert_debug_snapshot!(env, @r###""foo=bar""###);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(cf.dump());
@@ -826,65 +874,107 @@ mod tests {
 
     #[test]
     fn test_env_array_valid() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
+        let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
 
         [[env]]
         bar="baz"
-        "#})
-            .unwrap();
+        "#});
 
-        assert_snapshot!(cf.env()["foo"], @"bar");
-        assert_snapshot!(cf.env()["bar"], @"baz");
-    }
-
-    #[test]
-    fn test_env_array_duplicate_key() {
-        let inputs = vec![(r#""bar""#, r#""baz""#), ("1", "2"), ("false", "true")];
-
-        for (a, b) in inputs {
-            let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-            let err = cf
-                .parse(&formatdoc! {r#"
-            [[env]]
-            foo={a}
-
-            [[env]]
-            foo={b}
-            "#})
-                .unwrap_err();
-
-            allow_duplicates!(
-                assert_snapshot!(err.to_string(), @"duplicate key: env.foo");
-            )
-        }
+        assert_snapshot!(env, @r###"
+        foo=bar
+        bar=baz
+        "###);
     }
 
     #[test]
     fn test_path_dirs() {
-        with_settings!({
-            let p = dirs::HOME.join("fixtures/.mise.toml");
-            let mut cf = MiseToml::init(&p);
-            cf.parse(&formatdoc! {r#"
+        let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
             foo="bar"
-            "#})
-                .unwrap();
+            "#});
 
-            assert_debug_snapshot!(cf.env(), @r###"
-            {
-                "foo": "bar",
-            }
-            "###);
-            assert_snapshot!(replace_path(&format!("{:?}", cf.env_path())), @r###"["/foo", "~/fixtures/bar"]"###);
-            let cf: Box<dyn ConfigFile> = Box::new(cf);
-            assert_snapshot!(cf.dump());
-            assert_display_snapshot!(cf);
-            assert_debug_snapshot!(cf);
-        });
+        assert_snapshot!(env, @r###"
+        path_add /foo
+        path_add ./bar
+        foo=bar
+        "###);
+
+        let env = parse_env(formatdoc! {r#"
+            env_path="./bar"
+            "#});
+        assert_snapshot!(env, @"path_add ./bar");
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.path = "./bar"
+            "#});
+        assert_debug_snapshot!(env, @r###""path_add ./bar""###);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.path = ["/foo", "./bar"]
+            "#});
+        assert_snapshot!(env, @r###"
+        path_add /foo
+        path_add ./bar
+        "###);
+
+        let env = parse_env(formatdoc! {r#"
+            [[env]]
+            _.path = "/foo"
+            [[env]]
+            _.path = "./bar"
+            "#});
+        assert_snapshot!(env, @r###"
+        path_add /foo
+        path_add ./bar
+        "###);
+
+        let env = parse_env(formatdoc! {r#"
+            env_path = "/foo"
+            [env]
+            _.path = "./bar"
+            "#});
+        assert_snapshot!(env, @r###"
+        path_add /foo
+        path_add ./bar
+        "###);
+    }
+
+    #[test]
+    fn test_env_file() {
+        let env = parse_env(formatdoc! {r#"
+            env_file = ".env"
+            "#});
+
+        assert_debug_snapshot!(env, @r###""dotenv .env""###);
+
+        let env = parse_env(formatdoc! {r#"
+            env_file=[".env", ".env2"]
+            "#});
+        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.file = ".env"
+            "#});
+        assert_debug_snapshot!(env, @r###""dotenv .env""###);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.file = [".env", ".env2"]
+            "#});
+        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
+
+        let env = parse_env(formatdoc! {r#"
+            dotenv = ".env"
+            [env]
+            _.file = ".env2"
+            "#});
+        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
     }
 
     #[test]
@@ -970,11 +1060,80 @@ mod tests {
     #[test]
     fn test_fail_with_unknown_key() {
         let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        let err = cf
+        let _ = cf
             .parse(&formatdoc! {r#"
         invalid_key = true
         "#})
             .unwrap_err();
-        assert_snapshot!(err.to_string(), @"unknown key: invalid_key");
+    }
+
+    #[test]
+    fn test_env_entries() {
+        let toml = formatdoc! {r#"
+        [env]
+        foo1="1"
+        rm=false
+        _.path="/foo"
+        foo2="2"
+        _.file=".env"
+        foo3="3"
+        "#};
+        assert_snapshot!(parse_env(toml), @r###"
+        foo1=1
+        unset rm
+        path_add /foo
+        dotenv .env
+        foo2=2
+        foo3=3
+        "###);
+    }
+
+    #[test]
+    fn test_env_arr() {
+        let toml = formatdoc! {r#"
+        [[env]]
+        foo1="1"
+        rm=false
+        _.path="/foo"
+        foo2="2"
+        _.file=".env"
+        foo3="3"
+        _.source="/baz1"
+
+        [[env]]
+        foo4="4"
+        rm=false
+        _.file=".env2"
+        foo5="5"
+        _.path="/bar"
+        foo6="6"
+        _.source="/baz2"
+        "#};
+        assert_snapshot!(parse_env(toml), @r###"
+        foo1=1
+        unset rm
+        path_add /foo
+        dotenv .env
+        source /baz1
+        foo2=2
+        foo3=3
+        foo4=4
+        unset rm
+        path_add /bar
+        dotenv .env2
+        source /baz2
+        foo5=5
+        foo6=6
+        "###);
+    }
+
+    fn parse(s: String) -> MiseToml {
+        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
+        cf.parse(&s).unwrap();
+        cf
+    }
+
+    fn parse_env(toml: String) -> String {
+        parse(toml).env_entries().into_iter().join("\n")
     }
 }

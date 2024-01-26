@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use base64::prelude::*;
@@ -19,7 +19,7 @@ use crate::{dirs, env};
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(watch_files: &[PathBuf]) -> bool {
+pub fn should_exit_early(watch_files: impl IntoIterator<Item = impl AsRef<Path>>) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
@@ -101,7 +101,9 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
-pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
+pub fn build_watches(
+    watch_files: impl IntoIterator<Item = impl AsRef<Path>>,
+) -> Result<HookEnvWatches> {
     let mut watches = BTreeMap::new();
     for cf in get_watch_files(watch_files) {
         watches.insert(cf.clone(), cf.metadata()?.modified()?);
@@ -113,13 +115,15 @@ pub fn build_watches(watch_files: &[PathBuf]) -> Result<HookEnvWatches> {
     })
 }
 
-pub fn get_watch_files(watch_files: &[PathBuf]) -> BTreeSet<PathBuf> {
+pub fn get_watch_files(
+    watch_files: impl IntoIterator<Item = impl AsRef<Path>>,
+) -> BTreeSet<PathBuf> {
     let mut watches = BTreeSet::new();
     if dirs::DATA.exists() {
         watches.insert(dirs::DATA.to_path_buf());
     }
     for cf in watch_files {
-        watches.insert(cf.clone());
+        watches.insert(cf.as_ref().to_path_buf());
     }
 
     watches

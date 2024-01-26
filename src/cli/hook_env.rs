@@ -1,6 +1,6 @@
 use std::env::{join_paths, split_paths};
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use console::truncate_str;
 use eyre::Result;
@@ -35,11 +35,7 @@ pub struct HookEnv {
 impl HookEnv {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let watch_files: Vec<_> = config
-            .config_files
-            .values()
-            .flat_map(|p| p.watch_files())
-            .collect();
+        let watch_files = config.watch_files()?;
         if hook_env::should_exit_early(&watch_files) {
             return Ok(());
         }
@@ -51,7 +47,7 @@ impl HookEnv {
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        let mut paths = config.path_dirs.clone();
+        let mut paths = config.path_dirs()?.clone();
         if let Some(p) = env_path {
             paths.extend(split_paths(&p).collect_vec());
         }
@@ -165,7 +161,10 @@ impl HookEnv {
         ))
     }
 
-    fn build_watch_operation(&self, watch_files: &[PathBuf]) -> Result<EnvDiffOperation> {
+    fn build_watch_operation(
+        &self,
+        watch_files: impl IntoIterator<Item = impl AsRef<Path>>,
+    ) -> Result<EnvDiffOperation> {
         let watches = hook_env::build_watches(watch_files)?;
         Ok(EnvDiffOperation::Add(
             "__MISE_WATCH".into(),
