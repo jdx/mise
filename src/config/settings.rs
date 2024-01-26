@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{env, file};
+use crate::{dirs, env, file};
 
 #[derive(Config, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
@@ -26,6 +26,9 @@ pub struct Settings {
     pub always_keep_download: bool,
     #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
+    /// default to asdf-compatible behavior
+    /// this means that the global config file will be ~/.tool-versions
+    /// also, the default behavior of `mise global` will be --pin
     #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
     /// use cargo-binstall instead of cargo install if available
@@ -131,21 +134,13 @@ impl Settings {
         if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
-        let file_1 = Self::config_settings().unwrap_or_else(|e| {
-            eprintln!("Error loading settings file: {}", e);
-            Default::default()
-        });
-        let file_2 = Self::deprecated_settings_file().unwrap_or_else(|e| {
-            eprintln!("Error loading settings file: {}", e);
-            Default::default()
-        });
-        let mut settings = Self::builder()
+        let mut sb = Self::builder()
             .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env()
-            .preloaded(file_1)
-            .preloaded(file_2)
-            .preloaded(DEFAULT_SETTINGS.clone())
-            .load()?;
+            .env();
+        for file in Self::all_settings_files() {
+            sb = sb.preloaded(file);
+        }
+        let mut settings = sb.preloaded(DEFAULT_SETTINGS.clone()).load()?;
         if let Some(cd) = &settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             let mut cd = PathBuf::from(cd);
@@ -233,7 +228,15 @@ impl Settings {
 
     fn config_settings() -> Result<SettingsPartial> {
         let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
-        if !global_config.exists() {
+        let filename = global_config
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        // if the file doesn't exist or is actually a .tool-versions config
+        if !global_config.exists()
+            || filename == *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
+            || filename == ".tool-versions"
+        {
             return Ok(Default::default());
         }
         let raw = file::read_to_string(global_config)?;
@@ -248,6 +251,19 @@ impl Settings {
             return Ok(Default::default());
         }
         Self::from_file(settings_file)
+    }
+
+    fn all_settings_files() -> Vec<SettingsPartial> {
+        vec![Self::config_settings(), Self::deprecated_settings_file()]
+            .into_iter()
+            .filter_map(|cfg| match cfg {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    eprintln!("Error loading settings file: {}", e);
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
@@ -276,6 +292,18 @@ impl Settings {
 
     pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths.iter().map(file::replace_path)
+    }
+
+    pub fn global_tools_file(&self) -> PathBuf {
+        env::var_path("MISE_GLOBAL_CONFIG_FILE")
+            .or_else(|| env::var_path("MISE_CONFIG_FILE"))
+            .unwrap_or_else(|| {
+                if self.asdf_compat {
+                    env::HOME.join(&*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME)
+                } else {
+                    dirs::CONFIG.join("config.toml")
+                }
+            })
     }
 }
 
