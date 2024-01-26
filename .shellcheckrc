@@ -1,2 +1,3 @@
-disable=SC2317
 disable=SC1008
+disable=SC2088
+disable=SC2317

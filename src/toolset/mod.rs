@@ -397,7 +397,7 @@ impl Toolset {
             .join(" ");
         info!(
             "missing: {}",
-            truncate_str(&versions, *TERM_WIDTH - 13, "…"),
+            truncate_str(&versions, *TERM_WIDTH - 15, "…"),
         );
     }
 }
