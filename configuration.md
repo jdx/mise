@@ -117,6 +117,50 @@ it is used for all directories.
 # you can set these with `mise use -g`
 node = 'lts'
 python = ['3.10', '3.11']
+
+[settings]
+# plugins can read the versions files used by other version managers (if enabled by the plugin)
+# for example, .nvmrc in the case of node's nvm
+legacy_version_file = true                     # enabled by default (unlike asdf)
+legacy_version_file_disable_tools = ['python'] # disable for specific tools
+
+# configure `mise install` to always keep the downloaded archive
+always_keep_download = false        # deleted after install by default
+always_keep_install = false         # deleted on failure by default
+
+# configure how frequently (in minutes) to fetch updated plugin repository changes
+# this is updated whenever a new runtime is installed
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/issues/128)
+plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
+
+# config files with these prefixes will be trusted by default
+trusted_config_paths = [
+    '~/work/my-trusted-projects',
+]
+
+verbose = false     # set to true to see full installation output, see `MISE_VERBOSE`
+asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
+jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
+yes = false         # set to true to automatically answer yes to all prompts
+
+not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
+task_output = "prefix" # see Task Runner for more information
+paranoid = false       # see MISE_PARANOID
+
+shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
+disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
+disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
+
+env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
+
+experimental = true # enable experimental features
+
+# configure messages displayed when entering directories with config files
+[settings.status]
+missing_tools = true # warn if tools are not installed
+show_env = false     # show configured env vars
+show_tools = false   # show active tools
 ```
 
 ## System config: `/etc/mise/config.toml`
@@ -198,45 +242,7 @@ version files since they're version files not specific to asdf/mise and can be u
 (`.nvmrc` being a notable exception, which is tied to a specific tool.)
 :::
 
-## Settings file: `~/.config/mise/settings.toml`
-
 ```toml
-# plugins can read the versions files used by other version managers (if enabled by the plugin)
-# for example, .nvmrc in the case of node's nvm
-legacy_version_file = true                     # enabled by default (unlike asdf)
-legacy_version_file_disable_tools = ['python'] # disable for specific tools
-
-# configure `mise install` to always keep the downloaded archive
-always_keep_download = false        # deleted after install by default
-always_keep_install = false         # deleted on failure by default
-
-# configure how frequently (in minutes) to fetch updated plugin repository changes
-# this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/issues/128)
-plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
-
-# config files with these prefixes will be trusted by default
-trusted_config_paths = [
-    '~/work/my-trusted-projects',
-]
-
-verbose = false     # set to true to see full installation output, see `MISE_VERBOSE`
-asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
-jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
-raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
-yes = false         # set to true to automatically answer yes to all prompts
-
-not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
-task_output = "prefix" # see Task Runner for more information
-paranoid = false       # see MISE_PARANOID
-
-shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
-disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
-disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
-
-env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
-
-experimental = true # enable experimental features
 ```
 
 ::: tip
@@ -289,6 +295,30 @@ Only output `.tool-versions` files in `mise local|global` which will be usable b
 This disables mise functionality that would otherwise make these files incompatible with asdf such as non-pinned versions.
 
 This will also change the default global tool config to be `~/.tool-versions` instead of `~/.config/mise/config.toml`.
+
+### `status.missing_tools`
+
+* Type: `bool`
+* Env: `MISE_STATUS_MISSING_TOOLS`
+* Default: `true`
+
+Show a warning if tools are not installed when entering a directory with a `.mise.toml` file.
+
+### `status.show_env`
+
+* Type: `bool`
+* Env: `MISE_STATUS_SHOW_ENV`
+* Default: `false`
+
+Show configured env vars when entering a directory with a `.mise.toml` file.
+
+### `status.show_tools`
+
+* Type: `bool`
+* Env: `MISE_STATUS_SHOW_TOOLS`
+* Default: `false`
+
+Show active tools when entering a directory with a `.mise.toml` file.
 
 ## Environment variables
 
