@@ -326,6 +326,31 @@ fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
     Some(config_source.as_ref())
 }
 
+pub trait GetMatchingExt<T> {
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
+}
+
+impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T>
+where
+    T: std::cmp::Eq + std::hash::Hash,
+{
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        let normalized = pat.split(':').collect::<PathBuf>();
+        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
+
+        Ok(self
+            .iter()
+            .filter(|(k, _)| {
+                let p: PathBuf = k.split(':').collect();
+
+                matcher.is_match(p)
+            })
+            .map(|(_, t)| t)
+            .unique()
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{config_root, name_from_path};
@@ -366,30 +391,5 @@ mod tests {
         for (src, expected) in test_cases {
             assert_eq!(config_root(&src), expected)
         }
-    }
-}
-
-pub trait GetMatchingExt<T> {
-    fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
-}
-
-impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T>
-where
-    T: std::cmp::Eq + std::hash::Hash,
-{
-    fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        let normalized = pat.split(':').collect::<PathBuf>();
-        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
-
-        Ok(self
-            .iter()
-            .filter(|(k, _)| {
-                let p: PathBuf = k.split(':').collect();
-
-                matcher.is_match(p)
-            })
-            .map(|(_, t)| t)
-            .unique()
-            .collect())
     }
 }

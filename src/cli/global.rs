@@ -2,14 +2,16 @@ use eyre::Result;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::cli::local::local;
-use crate::env;
+use crate::config::Settings;
 
 /// Sets/gets the global tool version(s)
 ///
-/// Displays the contents of ~/.tool-versions after writing.
+/// Displays the contents of global config after writing.
 /// The file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.
 /// If `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.mise.toml`.
 /// Otherwise, it will be parsed as a `.tool-versions` file.
+///
+/// Use MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions
 ///
 /// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
@@ -44,8 +46,9 @@ pub struct Global {
 
 impl Global {
     pub fn run(self) -> Result<()> {
+        let settings = Settings::try_get()?;
         local(
-            &env::MISE_GLOBAL_CONFIG_FILE,
+            &settings.global_tools_file(),
             self.tool,
             self.remove,
             self.pin,
