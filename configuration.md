@@ -279,6 +279,17 @@ you typically want to put `mise activate` at the end of your shell config so not
 If you want to always use the mise versions of tools despite what is in your shell config, set this to `true`.
 In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
 
+### `asdf_compat`
+
+* Type: `bool`
+* Env: `MISE_ASDF_COMPAT`
+* Default: `false`
+
+Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
+This disables mise functionality that would otherwise make these files incompatible with asdf such as non-pinned versions.
+
+This will also change the default global tool config to be `~/.tool-versions` instead of `~/.config/mise/config.toml`.
+
 ## Environment variables
 
 mise can also be configured via environment variables. The following options are available:
@@ -414,11 +425,6 @@ Equivalent to `MISE_LOG_LEVEL=debug`.
 
 Equivalent to `MISE_LOG_LEVEL=warn`.
 
-### `MISE_ASDF_COMPAT=1`
-
-Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
-This disables mise functionality that would otherwise make these files incompatible with asdf.
-
 ### `MISE_PARANOID=0`
 
 Enables extra-secure behavior. See [Paranoid](/paranoid).
@@ -471,10 +477,6 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 Set to false to disable the "command not found" handler to autoinstall missing tool versions. Disable this
 if experiencing strange behavior in your shell when a command is not found—but please submit a ticket to
 help diagnose problems.
-
-Note this only installs new versions of _previously installed_ tools. It will not install a brand new tool.
-This makes it easy to be selective about which tools you want to manage via mise-en-place by simply
-not installing any version of them.
 
 ### `MISE_TASK_OUTPUT=prefix`
 
