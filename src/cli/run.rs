@@ -13,6 +13,7 @@ use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use eyre::Result;
+use globset::Glob;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -134,11 +135,21 @@ impl Run {
                 }
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-            .map(|(t, args)| match config.tasks_with_aliases().get(&t) {
-                Some(task) => Ok(task.clone().with_args(args.to_vec())),
-                None if t == "default" => self.prompt_for_task(config),
-                None => bail!("no task {} found", style::ered(t)),
+            .map(|(t, args)| {
+                let tasks = config.tasks_with_aliases().get_matching(&t)?;
+                if tasks.is_empty() {
+                    ensure!(t == "default", "no task {} found", style::ered(t));
+
+                    Ok(vec![self.prompt_for_task(config)?])
+                } else {
+                    Ok(tasks
+                        .iter()
+                        .cloned()
+                        .map(|t| t.clone().with_args(args.to_vec()))
+                        .collect())
+                }
             })
+            .flatten_ok()
             .collect()
     }
 
@@ -520,6 +531,26 @@ fn get_color() -> Color {
     });
     static COLOR_IDX: AtomicUsize = AtomicUsize::new(0);
     COLORS[COLOR_IDX.fetch_add(1, Ordering::Relaxed) % COLORS.len()]
+}
+trait GetMatchingExt<T> {
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
+}
+
+impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T> {
+    fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        let normalized = pat.split(':').collect::<PathBuf>();
+        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
+
+        Ok(self
+            .keys()
+            .filter(|k| {
+                let p: PathBuf = k.split(':').collect();
+
+                matcher.is_match(p)
+            })
+            .flat_map(|k| self.get(k))
+            .collect())
+    }
 }
 
 #[cfg(test)]

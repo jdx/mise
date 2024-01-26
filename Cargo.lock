@@ -1316,6 +1316,7 @@ dependencies = [
  "filetime",
  "flate2",
  "fslock",
+ "globset",
  "globwalk 0.9.1",
  "home",
  "humantime",
