@@ -99,7 +99,8 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<Strin
         config
             .project_root
             .as_ref()
-            .unwrap_or(&env::current_dir().unwrap()),
+            .or(env::current_dir().as_ref().ok())
+            .map(|p| p.as_path()),
     )
     .render_str(tmpl, &ctx)
     .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))

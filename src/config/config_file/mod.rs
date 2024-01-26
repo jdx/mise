@@ -13,7 +13,8 @@ use tool_versions::ToolVersions;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{global_config_files, system_config_files, AliasMap, Settings};
+use crate::config::env_directive::EnvDirective;
+use crate::config::{AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
@@ -62,13 +63,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn plugins(&self) -> HashMap<String, String> {
         Default::default()
     }
-    fn env(&self) -> HashMap<String, String> {
-        Default::default()
-    }
-    fn env_remove(&self) -> Vec<String> {
-        Default::default()
-    }
-    fn env_path(&self) -> Vec<PathBuf> {
+    fn env_entries(&self) -> Vec<EnvDirective> {
         Default::default()
     }
     fn tasks(&self) -> Vec<&Task> {
@@ -81,15 +76,6 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn to_toolset(&self) -> &Toolset;
     fn aliases(&self) -> AliasMap {
         Default::default()
-    }
-    fn watch_files(&self) -> Vec<PathBuf> {
-        vec![self.get_path().to_path_buf()]
-    }
-    fn is_global(&self) -> bool {
-        global_config_files()
-            .iter()
-            .chain(system_config_files().iter())
-            .any(|p| p == self.get_path())
     }
 }
 

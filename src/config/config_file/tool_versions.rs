@@ -55,7 +55,7 @@ impl ToolVersions {
 
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
-        let dir = path.parent().unwrap();
+        let dir = path.parent();
         let s = if config_file::is_trusted(&path) {
             get_tera(dir).render_str(s, &cf.context)?
         } else {

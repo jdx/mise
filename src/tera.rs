@@ -17,18 +17,19 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context
 });
 
-pub fn get_tera(dir: &Path) -> Tera {
+pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = Tera::default();
-    let dir = dir.to_path_buf();
+    let dir = dir.map(PathBuf::from);
     tera.register_function(
         "exec",
         move |args: &HashMap<String, Value>| -> tera::Result<Value> {
             match args.get("command") {
                 Some(Value::String(command)) => {
-                    let result = cmd("bash", ["-c", command])
-                        .dir(&dir)
-                        .full_env(&*env::PRISTINE_ENV)
-                        .read()?;
+                    let mut cmd = cmd("bash", ["-c", command]).full_env(&*env::PRISTINE_ENV);
+                    if let Some(dir) = &dir {
+                        cmd = cmd.dir(dir);
+                    }
+                    let result = cmd.read()?;
                     Ok(Value::String(result))
                 }
                 _ => Err("exec command must be a string".into()),
