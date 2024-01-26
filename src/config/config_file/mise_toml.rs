@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -43,11 +43,11 @@ pub struct MiseToml {
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<PathBuf>,
-    #[serde(skip)]
+    #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
     doc: Document,
-    #[serde(skip)]
+    #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(skip)]
     tasks: Vec<Task>,
@@ -110,10 +110,12 @@ impl MiseToml {
 
     fn parse(&mut self, s: &str) -> eyre::Result<()> {
         let cfg: MiseToml = toml::from_str(s)?;
-        self.min_version = cfg.min_version;
+        self.alias = cfg.alias;
         self.env = cfg.env;
         self.env_file = cfg.env_file;
         self.env_path = cfg.env_path;
+        self.min_version = cfg.min_version;
+        self.plugins = cfg.plugins;
 
         // TODO: right now some things are parsed with serde (above) and some not (below) everything
         // should be moved to serde eventually
@@ -121,51 +123,15 @@ impl MiseToml {
         let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
-                "alias" => self.alias = self.parse_alias(k, v)?,
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "plugins" => self.plugins = self.parse_plugins(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
-                "dotenv" | "env_file" | "env_path" | "min_version" | "settings" | "env" => {}
+                "alias" | "dotenv" | "env_file" | "env_path" | "min_version" | "settings"
+                | "env" | "plugins" => {}
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
         self.doc = doc;
         Ok(())
-    }
-
-    fn parse_alias(&self, k: &str, v: &Item) -> eyre::Result<AliasMap> {
-        match v.as_table_like() {
-            Some(table) => {
-                let mut aliases = AliasMap::new();
-                for (plugin, table) in table.iter() {
-                    let k = format!("{}.{}", k, plugin);
-                    let fa: ForgeArg = plugin.parse()?;
-                    let plugin_aliases = aliases.entry(fa).or_default();
-                    match table.as_table_like() {
-                        Some(table) => {
-                            for (from, to) in table.iter() {
-                                match to.as_str() {
-                                    Some(s) => {
-                                        let from = self.parse_template(&k, from)?;
-                                        let s = self.parse_template(&k, s)?;
-                                        plugin_aliases.insert(from, s);
-                                    }
-                                    _ => parse_error!(format!("{}.{}", k, from), to, "string"),
-                                }
-                            }
-                        }
-                        _ => parse_error!(k, v, "table"),
-                    }
-                }
-                Ok(aliases)
-            }
-            _ => parse_error!(k, v, "table"),
-        }
-    }
-
-    fn parse_plugins(&self, key: &str, v: &Item) -> eyre::Result<HashMap<String, String>> {
-        trust_check(&self.path)?;
-        self.parse_hashmap(key, v)
     }
 
     fn parse_tasks(&self, key: &str, v: &Item) -> eyre::Result<Vec<Task>> {
@@ -833,6 +799,37 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
         deserializer.deserialize_any(EnvManVisitor)
     }
+}
+
+fn deserialize_alias<'de, D>(deserializer: D) -> Result<AliasMap, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct AliasMapVisitor;
+
+    impl<'de> Visitor<'de> for AliasMapVisitor {
+        type Value = AliasMap;
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("alias table")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let mut aliases = AliasMap::new();
+            while let Some(plugin) = map.next_key::<String>()? {
+                let fa: ForgeArg = plugin.parse().map_err(de::Error::custom)?;
+                let plugin_aliases = aliases.entry(fa).or_default();
+                for (from, to) in map.next_value::<BTreeMap<String, String>>()? {
+                    plugin_aliases.insert(from, to);
+                }
+            }
+            Ok(aliases)
+        }
+    }
+
+    deserializer.deserialize_map(AliasMapVisitor)
 }
 
 #[cfg(test)]
