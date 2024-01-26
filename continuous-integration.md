@@ -63,11 +63,10 @@ If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build scrip
 ```bash
 #!/bin/sh
 curl https://mise.jdx.dev/install.sh | sh
+export PATH="$HOME/.local/bin/bin:$PATH"
+
 mise install # Installs the tools in .mise.toml
-```
+eval "$(mise activate bash --shims)" # Addds the activated tools to $PATH
 
-Remember to run your tools using `mise x` from your scripts:
-
-```bash
-mise x swiftlint -- {args}
+swiftlint {args}
 ```

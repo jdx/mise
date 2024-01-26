@@ -44,32 +44,15 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 
 ## Xcode
 
-Xcode projects can run system commands from script build phases and schemes. Since Xcode sandboxes the execution of the script using the tool `/usr/bin/sandbox-exec`, don't expect Mise and the automatically-activated tools to work out of the box. First, you'll need to add `$(SRCROOT)/.mise.toml` to the list of **Input files**. This is necessary for Xcode to allow reads to that file. Then, you'll need to run your commands through the `mise x` command: 
+Xcode projects can run system commands from script build phases and schemes. Since Xcode sandboxes the execution of the script using the tool `/usr/bin/sandbox-exec`, don't expect Mise and the automatically-activated tools to work out of the box. First, you'll need to add `$(SRCROOT)/.mise.toml` to the list of **Input files**. This is necessary for Xcode to allow reads to that file. Then, you can use `mise activate` to activate the tools you need:
 
 ```bash
-# Add Mise to the PATH
-export PATH="$HOME/.local/bin/bin:$PATH"
-
 # -C ensures that Mise loads the configuration from the Mise configuration 
 # file in the project's root directory.
-mise x -C $SRCROOT swiftlint
-```
+eval "$($HOME/.local/bin/mise activate -C $SRCROOT bash --shims)"
 
-If you don't want to prefix your commands with `mise x -C $SRCROOT`, you can add the shims directory to the `$PATH` environment variable:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-export PATH="$HOME/.local/share/mise/shims:$PATH"
-
-mise reshim -C $SRCROOT
 swiftlint
 ```
-
-
-::: tip NOTE
-The `mise reshim` command is important to ensure mise creates shims for the tools and versions specified in the project's mise configuration file. Otherwise the script might end up using other versions of the tools.
-:::
-
 
 ## [YOUR IDE HERE]
 
