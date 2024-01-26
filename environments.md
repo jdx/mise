@@ -81,9 +81,8 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be ignored. It may be possible to use different types of scripts,
-or binaries that are not scripts at all. See [#1448](https://github.com/jdx/mise/issues/1448)
-for a potential solution.
+The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448)
+for a potential alternative that would work with binaries or other script languages.
 :::
 
 ## Multiple `env._` Directives
