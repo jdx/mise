@@ -36,7 +36,7 @@ pub struct Activate {
     shell_type: Option<ShellType>,
 
     /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long)]
+    #[clap(long, hide = true)]
     status: bool,
 
     /// Use shims instead of modifying PATH
