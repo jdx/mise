@@ -121,17 +121,18 @@ impl Doctor {
             let cmd = style::eyellow("mise reshim");
 
             if !missing.is_empty() {
-                self.checks
-                    .push(formatdoc!("shims are missing, run {cmd} to create them
-                                      Missing shims: {missing}",
-                                      missing = missing.join(", ")));
+                self.checks.push(formatdoc!(
+                    "shims are missing, run {cmd} to create them
+                     Missing shims: {missing}",
+                    missing = missing.join(", ")
+                ));
             }
 
             if !extra.is_empty() {
                 self.checks.push(formatdoc!(
                     "unused shims are present, run {cmd} to remove them
                      Unused shims: {extra}",
-                     extra = extra.join(", ")
+                    extra = extra.join(", ")
                 ));
             }
         }
