@@ -68,6 +68,7 @@ mod tests {
         quiet = false
         raw = false
         shorthands_file = null
+        status = {"missing_tools":true,"show_env":false,"show_tools":false}
         task_output = null
         trusted_config_paths = []
         verbose = true

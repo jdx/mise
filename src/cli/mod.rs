@@ -207,9 +207,7 @@ impl Cli {
                     .get_matches_from(args)
             });
         Settings::add_cli_matches(&matches);
-        if let Ok(settings) = Settings::try_get() {
-            logger::init(&settings);
-        }
+        logger::init();
         migrate::run();
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {

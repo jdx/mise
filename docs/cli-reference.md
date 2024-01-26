@@ -33,9 +33,6 @@ Arguments:
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Options:
-      --status
-          Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-
       --shims
           Use shims instead of modifying PATH
           Effectively the same as:

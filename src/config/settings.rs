@@ -13,7 +13,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use crate::{dirs, env, file};
 
-#[derive(Config, Debug, Clone, Serialize)]
+#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
@@ -48,6 +48,9 @@ pub struct Settings {
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
+    /// what level of status messages to display when entering directories
+    #[config(nested)]
+    pub status: SettingsStatus,
     #[config(env = "MISE_NODE_COMPILE", default = false)]
     pub node_compile: bool,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
@@ -103,6 +106,21 @@ pub struct Settings {
     pub trace: bool,
     #[config(env = "MISE_LOG_LEVEL", default = "info")]
     pub log_level: String,
+}
+
+#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
+pub struct SettingsStatus {
+    /// warn if a tool is missing
+    #[config(env = "MISE_STATUS_MESSAGE_MISSING_TOOLS", default = true)]
+    pub missing_tools: bool,
+    /// show env var keys when entering directories
+    #[config(env = "MISE_STATUS_MESSAGE_SHOW_ENV", default = false)]
+    pub show_env: bool,
+    /// show active tools when entering directories
+    #[config(env = "MISE_STATUS_MESSAGE_SHOW_TOOLS", default = false)]
+    pub show_tools: bool,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
