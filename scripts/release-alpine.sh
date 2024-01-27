@@ -37,7 +37,7 @@ fi
 git commit -m "community/mise: upgrade to ${MISE_VERSION#v}"
 
 if [ "$DRY_RUN" == 0 ]; then
-  git push jdxcode
+  git push jdxcode -f
 fi
 
 open_mr="$(glab mr list -R alpine/aports --author=@me)"
