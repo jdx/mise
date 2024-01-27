@@ -12,8 +12,11 @@ script. Your default shell can be found with:
 You can change your default shell with `chsh -s /path/to/shell` but you may need
 to first add it to `/etc/shells`.
 
+Once you know the right one, modify the appropriate file:
+
 ::: code-group
-```zsh [~/.zprofile]
+```zsh
+# ~/.zprofile
 if [[ -o interactive ]]; then
   eval "$(mise activate zsh)"
 else
@@ -21,7 +24,8 @@ else
 fi
 ```
 
-```bash [~/.profile]
+```bash
+# ~/.bash_profile or ~/.bash_login or ~/.profile
 if [[ $- == *i* ]]; then
   eval "$(mise activate bash)"
 else
@@ -29,7 +33,8 @@ else
 fi
 ```
 
-```fish [~/.config/fish/config.fish]
+```fish
+# ~/.config/fish/config.fish
 if status is-interactive
   mise activate fish | source
 else
@@ -38,11 +43,10 @@ end
 ```
 :::
 
-Note that bash's rules for this file are [complex](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html#Bash-Startup-Files). So
-you may need to use `~/.bash_profile` or `~/.bash_login` instead.
-
-You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice—though that should not actually cause any problems. Also, this assumes that `mise` is on PATH.
-If it is not, you'll need to use the full path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
+You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice—though that should not actually cause any
+problems, just might make it potentially confusing for you later if you remove one but
+not the other. This also assumes that `mise` is on PATH.
+If it is not, you'll need to use the absolute path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
 if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you feel
