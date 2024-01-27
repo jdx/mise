@@ -95,10 +95,6 @@ impl PythonPlugin {
         tv.install_short_path().join("bin/python")
     }
 
-    fn should_install_precompiled(&self, settings: &Settings) -> bool {
-        !settings.python_compile && settings.experimental
-    }
-
     fn fetch_precompiled_remote_versions(&self) -> Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
             let settings = Settings::get();
@@ -312,10 +308,10 @@ impl Forge for PythonPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
-        if self.should_install_precompiled(&settings) {
-            self.install_precompiled(ctx)?;
-        } else {
+        if settings.python_compile {
             self.install_compiled(ctx)?;
+        } else {
+            self.install_precompiled(ctx)?;
         }
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
