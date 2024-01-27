@@ -3,8 +3,14 @@
 IDEs work better with shims than they do environment variable modifications. The simplest way is
 to add the mise shim directory to PATH.
 
-For IntelliJ and VSCode—and likely others, you can modify your shell's profile script
-with the following:
+For IntelliJ and VSCode—and likely others, you can modify your default shell's profile
+script. Your default shell can be found with:
+
+* [macos] `dscl . -read /Users/$USER UserShell`
+* [linux] `getent passwd $USER | cut -d: -f7`
+
+You can change your default shell with `chsh -s /path/to/shell` but you may need
+to first add it to `/etc/shells`.
 
 ::: code-group
 ```zsh [~/.zprofile]
@@ -35,7 +41,7 @@ end
 Note that bash's rules for this file are [complex](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html#Bash-Startup-Files). So
 you may need to use `~/.bash_profile` or `~/.bash_login` instead.
 
-You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice. Also, this assumes that `mise` is on PATH.
+You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice—though that should not actually cause any problems. Also, this assumes that `mise` is on PATH.
 If it is not, you'll need to use the full path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
