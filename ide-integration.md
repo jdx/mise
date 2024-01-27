@@ -16,9 +16,6 @@ if a shim is executed. For this we need tighter integration with the IDE and a c
 ambitious, take a look at existing direnv extensions for your IDE and see if you can modify it to work for mise.
 Direnv and mise work similarly and there should be a direnv extension that can be used as a starting point.
 
-Alternatively, you may be able to get tighter integration with a direnv extension and using the
-[`use_mise`](/direnv) direnv function.
-
 ## Vim
 
 ```vim
@@ -53,6 +50,23 @@ eval "$($HOME/.local/bin/mise activate -C $SRCROOT bash --shims)"
 
 swiftlint
 ```
+
+## JetBrains Editors (IntelliJ, RustRover, PyCharm, WebStorm, RubyMine, GoLand, etc)
+
+JetBrains has an [open ticket](https://youtrack.jetbrains.com/issue/RUBY-32015/Support-the-mise-ex-rtx-ruby-tool-version-manager) for mise integration. However for some languages, JetBrains already has asdf integration which we can
+make use of just by symlinking the mise installs to where the IDE will look for the asdf installs:
+
+```sh
+$ ln -s ~/.local/share/mise ~/.asdf
+```
+
+Then they should show up on in Project Settings:
+
+![](https://github.com/jdx/mise-docs/assets/216188/b34a0e3f-7af8-45c9-85b8-2c72bd1dc226)
+
+Or in the case of node (possibly other languages), it's under "Languages & Frameworks":
+
+![](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
 
 ## [YOUR IDE HERE]
 
