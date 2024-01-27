@@ -114,7 +114,7 @@ $ mise x -- node -v
 If you use this a lot, an alias can be helpful:
 
 ```sh
-$ alias x="mise x --"
+$ alias mx="mise x --"
 ```
 :::
 
