@@ -66,8 +66,6 @@ target/debug/mise render-completion fish > completions/mise.fish
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = "target/debug/mise render-mangen"
-sources = ["target/debug/mise"]
-outputs = ["man/man1/mise.1"]
 
 [tasks.render-help]
 depends = ["build"]
