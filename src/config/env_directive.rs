@@ -1,5 +1,7 @@
 use crate::config::config_file::trust_check;
+use crate::config::Settings;
 use crate::dirs;
+use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use eyre::Context;
@@ -60,6 +62,7 @@ impl EnvResults {
         initial: &HashMap<String, String>,
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
+        let settings = Settings::get();
         let mut ctx = BASE_CONTEXT.clone();
         let mut env = initial
             .iter()
@@ -75,7 +78,11 @@ impl EnvResults {
         for (directive, source) in input {
             let config_root = source.parent().unwrap();
             ctx.insert("config_root", config_root);
-            ctx.insert("env", &env);
+            let env_vars = env
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<HashMap<_, _>>();
+            ctx.insert("env", &env_vars);
             let normalize_path = |s: String| {
                 let s = s.strip_prefix("./").unwrap_or(&s);
                 match s.strip_prefix("~/") {
@@ -112,11 +119,24 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Source(input) => {
+                    settings.ensure_experimental()?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                     let p = normalize_path(s);
                     r.env_scripts.push(p.clone());
-                    // TODO: run script and apply diff
+                    let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
+                    for p in env_diff.to_patches() {
+                        match p {
+                            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                                r.env_remove.remove(&k);
+                                env.insert(k.clone(), (v.clone(), Some(source.clone())));
+                            }
+                            EnvDiffOperation::Remove(k) => {
+                                env.remove(&k);
+                                r.env_remove.insert(k);
+                            }
+                        }
+                    }
                 }
             };
         }
