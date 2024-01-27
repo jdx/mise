@@ -168,10 +168,6 @@ show_tools = false   # show active tools
 Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
 setting defaults for all users.
 
-## System settings: `/etc/mise/settings.toml`
-
-[_TODO: mise does not currently read this file but that needs to be added._](https://github.com/jdx/mise/issues/1425)
-
 ## `.tool-versions`
 
 The `.tool-versions` file is asdf's config file and it can be used in mise just like `.mise.toml`.
