@@ -87,8 +87,8 @@ for a potential alternative that would work with binaries or other script langua
 
 ## Multiple `env._` Directives
 
-It may be necessary to use multiple `env._` directives but TOML syntax won't allow 2 keys
-in a table like that:
+It may be necessary to use multiple `env._` directives, however TOML fails with this syntax
+because it has 2 identical keys in a table:
 
 ```toml
 [env]
@@ -96,7 +96,7 @@ _.source = "./script_1.sh"
 _.source = "./script_2.sh" # invalid // [!code error]
 ```
 
-To support that, you can optionally make `[env]` an array instead by using TOML's `[[env]]` syntax:
+For this use-case, you can optionally make `[env]` an array-of-tables instead by using `[[env]]` instead:
 
 ```toml
 [[env]]
@@ -104,6 +104,8 @@ _.source = "./script_1.sh"
 [[env]]
 _.source = "./script_2.sh"
 ```
+
+It works identically but you can have multiple tables.
 
 ## Templates
 
