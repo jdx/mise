@@ -6,8 +6,8 @@ to add the mise shim directory to PATH.
 For IntelliJ and VSCode—and likely others, you can modify your default shell's profile
 script. Your default shell can be found with:
 
-* [macos] `dscl . -read /Users/$USER UserShell`
-* [linux] `getent passwd $USER | cut -d: -f7`
+* macos – `dscl . -read /Users/$USER UserShell`
+* linux – `getent passwd $USER | cut -d: -f7`
 
 You can change your default shell with `chsh -s /path/to/shell` but you may need
 to first add it to `/etc/shells`.
