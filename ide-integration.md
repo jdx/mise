@@ -136,3 +136,6 @@ ask about how to get their IDE to work with mise so if you've done this
 for your IDE, please consider sending a PR to this page with some
 instructions (however rough they are, starting somewhere is better than
 nothing).
+
+Also if you've found a setup that you prefer to what is listed here consider
+adding it as a suggestion.
