@@ -1,7 +1,7 @@
 # Running Tasks
 
 See available tasks with `mise tasks`. Run a task with `mise task run`, `mise run`, or just `mise r`.
-You might even want to make a shell alias like `alias r='mise r'` since this is likely a common command.
+You might even want to make a shell alias like `alias mr='mise run --'` since this is likely a common command.
 
 By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
 `jobs` setting or `MISE_JOBS` environment variable. The output normally will be by line, prefixed with the task
