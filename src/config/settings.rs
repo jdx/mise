@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
+use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -11,7 +12,8 @@ use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{dirs, env, file};
+use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
+use crate::{config, dirs, env, file};
 
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
@@ -257,9 +259,7 @@ impl Settings {
         {
             return Ok(Default::default());
         }
-        let raw = file::read_to_string(global_config)?;
-        let settings_file: SettingsFile = toml::from_str(&raw)?;
-        Ok(settings_file.settings)
+        Self::parse_settings_file(global_config)
     }
 
     fn deprecated_settings_file() -> Result<SettingsPartial> {
@@ -271,9 +271,24 @@ impl Settings {
         Self::from_file(settings_file)
     }
 
+    fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
+        let raw = file::read_to_string(path)?;
+        let settings_file: SettingsFile = toml::from_str(&raw)?;
+        Ok(settings_file.settings)
+    }
+
     fn all_settings_files() -> Vec<SettingsPartial> {
-        vec![Self::config_settings(), Self::deprecated_settings_file()]
-            .into_iter()
+        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
+            .iter()
+            .filter(|p| {
+                let filename = p.file_name().unwrap_or_default().to_string_lossy();
+                filename != *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
+                    && filename != ".tool-versions"
+            })
+            .map(Self::parse_settings_file)
+            .chain(once(Self::config_settings()))
+            .chain(once(Self::deprecated_settings_file()))
+            .chain(system_config_files().iter().map(Self::parse_settings_file))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
