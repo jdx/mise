@@ -3,13 +3,40 @@
 IDEs work better with shims than they do environment variable modifications. The simplest way is
 to add the mise shim directory to PATH.
 
-For IntelliJ and VSCode—and likely others, you can modify `~/.zprofile`
+For IntelliJ and VSCode—and likely others, you can modify your shell's profile script
 with the following:
 
-```sh
-export PATH="$HOME/.local/share/mise/shims:$PATH"
+::: code-group
+```zsh [~/.zprofile]
+if [[ -o interactive ]]; then
+  eval "$(mise activate zsh)"
+else
+  eval "$(mise activate zsh --shims)"
+fi
 ```
-Assuming you are not setting `$MISE_DATA_HOME` or `$XDG_DATA_HOME` to something non-standard.
+
+```bash [~/.profile]
+if [[ $- == *i* ]]; then
+  eval "$(mise activate bash)"
+else
+  eval "$(mise activate bash --shims)"
+fi
+```
+
+```fish [~/.config/fish/config.fish]
+if status is-interactive
+  mise activate fish | source
+else
+  mise activate fish --shims | source
+end
+```
+:::
+
+Note that bash's rules for this file are [complex](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html#Bash-Startup-Files). So
+you may need to use `~/.bash_profile` or `~/.bash_login` instead.
+
+You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice. Also, this assumes that `mise` is on PATH.
+If it is not, you'll need to use the full path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
 if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you feel
@@ -67,6 +94,28 @@ Then they should show up on in Project Settings:
 Or in the case of node (possibly other languages), it's under "Languages & Frameworks":
 
 ![](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
+
+## VSCode
+
+While modifying `~/.zprofile` is likely the easiest solution, you can also set
+the tools in `launch.json`:
+
+```json
+{
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch Program",
+      "program": "${file}",
+      "args": [],
+      "osx": { "runtimeExecutable": "mise" },
+      "linux": { "runtimeExecutable": "mise" },
+      "runtimeArgs": ["x", "--", "node"]
+    }
+  ]
+}
+```
 
 ## [YOUR IDE HERE]
 
