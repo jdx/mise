@@ -143,10 +143,9 @@ fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
     Ok(list_executables_in_dir(&dirs::SHIMS)?
         .into_par_iter()
         .filter(|bin| {
-            dirs::SHIMS
-                .join(bin)
-                .read_link()
-                .is_ok_and(|p| p == mise_bin)
+            let path = dirs::SHIMS.join(bin);
+
+            !path.is_symlink() || path.read_link().is_ok_and(|p| p == mise_bin)
         })
         .collect::<HashSet<_>>())
 }
