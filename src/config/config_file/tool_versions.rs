@@ -185,7 +185,13 @@ impl ConfigFile for ToolVersions {
             .max()
             .unwrap_or_default();
         for (_, tv) in &self.plugins {
-            let plugin = pad_str(&tv.orig_name, max_plugin_len, Alignment::Left, None);
+            let mut plugin = tv.orig_name.to_string();
+            if plugin == "node" {
+                plugin = "nodejs".into();
+            } else if plugin == "go" {
+                plugin = "golang".into();
+            }
+            let plugin = pad_str(&plugin, max_plugin_len, Alignment::Left, None);
             s.push_str(&format!("{} {}{}", plugin, tv.versions.join(" "), tv.post));
         }
 
