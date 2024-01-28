@@ -4,10 +4,10 @@ layout: home
 title: Home
 
 hero:
-  name: "mise-en-place"
+  name: mise-en-place
   tagline: |
-      The front-end to your dev env.
-      <span class="formerly"><a href="/rtx">(formerly called "rtx")</a></span>
+      The front-end to your dev env. Pronounced "MEEZ ahn plahs".
+      <span class="formerly"><a href="/rtx">formerly called "rtx"</a></span>
   actions:
     - theme: brand
       text: Getting Started
