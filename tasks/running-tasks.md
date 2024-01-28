@@ -13,22 +13,6 @@ To just print stdout/stderr directly, use `--interleave`, the `task_output` sett
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
 it running in parallel with any other task-a RWMutex will get a write lock in this case.
 
-There is partial support for wildcards, for example, this makes a "lint" task that runs everything that begins with "lint:".
-
-```toml
-[tasks."lint:eslint"] # using a ":" means we need to add quotes
-run = "eslint ."
-[tasks."lint:prettier"]
-run = "prettier --check ."
-[tasks.lint]
-depends = ["lint:*"]
-```
-
-::: info
-As of this writing these wildcards only function at the right side and only work for dependencies.
-It should be possible to also run `mise run lint:*` but that is not yet implemented.
-:::
-
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
 ```bash
@@ -47,6 +31,44 @@ mise will run the task named "default" if no task is specified—and you've crea
 
 ```bash
 mise run
+```
+
+## Task Grouping
+
+Tasks can be grouped semantically by using name prefixes separated with `:`s.
+For example all testing related tasks may begin with `test:`. Nested grouping
+can also be used to further refine groups and simplify pattern matching.
+For example running `mise run test:**:local` will match`test:units:local`,
+`test:integration:local` and `test:e2e:happy:local`
+(See [Wildcards](#wildcards) for more information).
+
+## Wildcards
+
+Glob style wildcards are supported when running tasks or specifying tasks
+dependencies.
+
+Available Wildcard Patterns:
+
+- `?` matches any single character
+- `*` matches 0 or more characters
+- `**` matches 0 or more groups
+- `{glob1,glob2,...}` matches any of the comma-separated glob patterns
+- `[ab,...]` matches any of the characters or ranges `[a-z]`
+- `[!ab,...]` matches any character not in the character set
+
+### Examples
+
+`mise run generate:{completions,docs:*}`
+
+And with dependencies:
+
+```toml
+[tasks."lint:eslint"] # using a ":" means we need to add quotes
+run = "eslint ."
+[tasks."lint:prettier"]
+run = "prettier --check ."
+[tasks.lint]
+depends = ["lint:*"]
 ```
 
 ## Running on file changes

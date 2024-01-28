@@ -27,3 +27,33 @@ This script can be edited with by running `mise task edit build` (using $EDITOR)
 These are convenient for quickly making new scripts. Having the code in a bash file and not TOML helps make it work
 better in editors since they can do syntax highlighting and linting more easily. They also still work great for non-mise users—though
 of course they'll need to find a different way to install their dev tools the tasks might use.
+:::
+
+## Task Grouping
+
+Script tasks in `.mise/tasks` or `.config/mise/tasks` can be grouped into
+sub-directories which will automatically apply prefixes to their names
+when loaded.
+
+### Example
+
+With a folder structure like below:
+
+```text
+.mise
+└── tasks
+    ├── build
+    └── test
+        ├── integration
+        └── units
+```
+
+Running `mise tasks` will give the below output:
+
+```text
+$ mise tasks
+Name              Description Source
+build                         .../.mise/tasks/build
+test:integration              .../.mise/tasks/test/integration
+test:units                    .../.mise/tasks/test/units
+```
