@@ -509,7 +509,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn remove_plugin(&mut self, fa: &ForgeArg) {
-        self.toolset.versions.remove(fa);
+        self.toolset.versions.shift_remove(fa);
         if let Some(tools) = self.doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
                 tools.remove(&fa.to_string());
