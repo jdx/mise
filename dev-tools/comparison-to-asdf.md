@@ -13,7 +13,7 @@ are major portions of mise that have no asdf equivalent.
 
 ## UX
 
-![CleanShot 2024-01-28 at 12 36 20@2x](https://github.com/jdx/mise-docs/assets/216188/91dcf806-987e-4e85-b475-344ace236c33)
+![CleanShot 2024-01-28 at 12 36 20@2x](https://github.com/jdx/mise-docs/assets/216188/47f381d7-1566-4b78-9260-3b85a21dd6ec)
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in mise but may use slightly different syntax. mise has more forgiving commands,
