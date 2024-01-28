@@ -160,7 +160,7 @@ impl ConfigFile for ToolVersions {
     }
 
     fn remove_plugin(&mut self, fa: &ForgeArg) {
-        self.plugins.remove(fa);
+        self.plugins.shift_remove(fa);
     }
 
     fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) {

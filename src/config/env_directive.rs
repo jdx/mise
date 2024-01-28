@@ -98,7 +98,7 @@ impl EnvResults {
                     env.insert(k, (v, Some(source.clone())));
                 }
                 EnvDirective::Rm(k) => {
-                    env.remove(&k);
+                    env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input) => {
@@ -132,7 +132,7 @@ impl EnvResults {
                                 env.insert(k.clone(), (v.clone(), Some(source.clone())));
                             }
                             EnvDiffOperation::Remove(k) => {
-                                env.remove(&k);
+                                env.shift_remove(&k);
                                 r.env_remove.insert(k);
                             }
                         }
