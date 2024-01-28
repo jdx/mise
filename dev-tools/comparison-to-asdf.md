@@ -1,7 +1,5 @@
 # Comparison to asdf
 
-![CleanShot 2024-01-28 at 12 36 20@2x](https://github.com/jdx/mise-docs/assets/216188/91dcf806-987e-4e85-b475-344ace236c33)
-
 mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that
 you may have used with asdf and uses asdf plugins. It will not, however, reuse existing asdf directories
 (so you'll need to either reinstall them or move them), and 100% compatibility is not a design goal.
@@ -14,6 +12,8 @@ are major portions of mise that have no asdf equivalent.
 :::
 
 ## UX
+
+![CleanShot 2024-01-28 at 12 36 20@2x](https://github.com/jdx/mise-docs/assets/216188/91dcf806-987e-4e85-b475-344ace236c33)
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in mise but may use slightly different syntax. mise has more forgiving commands,
