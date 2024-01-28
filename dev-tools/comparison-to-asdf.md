@@ -36,6 +36,8 @@ when the prompt loads.
 
 ## UX
 
+![CleanShot 2024-01-28 at 12 36 20](https://github.com/jdx/mise-docs/assets/216188/d8789f4c-bf21-467e-bdaf-1a799f489edd)
+
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in mise but may use slightly different syntax. mise has more forgiving commands,
 such as using fuzzy-matching, e.g.: `mise install node@20`. While in asdf you _can_ run
