@@ -1,5 +1,7 @@
 # Comparison to asdf
 
+![CleanShot 2024-01-28 at 12 36 20@2x](https://github.com/jdx/mise-docs/assets/216188/91dcf806-987e-4e85-b475-344ace236c33)
+
 mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that
 you may have used with asdf and uses asdf plugins. It will not, however, reuse existing asdf directories
 (so you'll need to either reinstall them or move them), and 100% compatibility is not a design goal.
@@ -11,32 +13,7 @@ Make sure you have a look at [environments](/environments.html) and [tasks](/tas
 are major portions of mise that have no asdf equivalent.
 :::
 
-## Performance
-
-asdf made (what I consider) a poor design decision to use shims that go between a call to a runtime
-and the runtime itself. e.g.: when you call `node` it will call an asdf shim file `~/.asdf/shims/node`,
-which then calls `asdf exec`, which then calls the correct version of node.
-
-These shims have terrible performance, adding ~120ms to every runtime call. `mise activate` does not use shims and instead
-updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo GIF at the top of this README
-that `mise` isn't actually used when calling `node -v` for this reason. The performance is
-identical to running node without using mise.
-
-I don't think it's possible for asdf to fix these issues. The author of asdf did a great writeup
-of [performance problems](https://stratus3d.com/blog/2022/08/11/asdf-performance/). asdf is written
-in bash which certainly makes it challenging to be performant, however I think the real problem is the
-shim design. I don't think it's possible to fix that without a complete rewrite.
-
-mise does call an internal command `mise hook-env` every time the directory has changed, but because
-it's written in Rust, this is very quick—taking ~10ms on my machine. 4ms if there are no changes, 14ms if it's
-a full reload.
-
-tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~5ms)
-when the prompt loads.
-
 ## UX
-
-![CleanShot 2024-01-28 at 12 36 20](https://github.com/jdx/mise-docs/assets/216188/d8789f4c-bf21-467e-bdaf-1a799f489edd)
 
 Some commands are the same in asdf but others have been changed. Everything that's possible
 in asdf should be possible in mise but may use slightly different syntax. mise has more forgiving commands,
@@ -75,6 +52,29 @@ in the right way.
 That said, there are a lot of great things about asdf. It's the best multi-runtime manager out there
 and I've really been impressed with the plugin system. Most of the design decisions the authors made
 were very good. I really just have 2 complaints: the shims and the fact it's written in Bash.
+
+## Performance
+
+asdf made (what I consider) a poor design decision to use shims that go between a call to a runtime
+and the runtime itself. e.g.: when you call `node` it will call an asdf shim file `~/.asdf/shims/node`,
+which then calls `asdf exec`, which then calls the correct version of node.
+
+These shims have terrible performance, adding ~120ms to every runtime call. `mise activate` does not use shims and instead
+updates `PATH` so that it doesn't have any overhead when simply calling binaries. These shims are the main reason that I wrote this. Note that in the demo GIF at the top of this README
+that `mise` isn't actually used when calling `node -v` for this reason. The performance is
+identical to running node without using mise.
+
+I don't think it's possible for asdf to fix these issues. The author of asdf did a great writeup
+of [performance problems](https://stratus3d.com/blog/2022/08/11/asdf-performance/). asdf is written
+in bash which certainly makes it challenging to be performant, however I think the real problem is the
+shim design. I don't think it's possible to fix that without a complete rewrite.
+
+mise does call an internal command `mise hook-env` every time the directory has changed, but because
+it's written in Rust, this is very quick—taking ~10ms on my machine. 4ms if there are no changes, 14ms if it's
+a full reload.
+
+tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~5ms)
+when the prompt loads.
 
 ## Command Compatibility
 
