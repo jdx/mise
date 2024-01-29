@@ -293,6 +293,7 @@ impl Toolset {
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolVersionRequest::System(_)))
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
@@ -323,6 +324,7 @@ impl Toolset {
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolVersionRequest::System(_)))
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
                     warn!("Error listing bin paths for {tv}: {e:#}");
