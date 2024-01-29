@@ -15,3 +15,7 @@ assert_contains "mise x -- go version" "go version go1.20"
 
 rm "$MISE_GO_DEFAULT_PACKAGES_FILE"
 chmod -R u+w "$MISE_DATA_DIR/installs/go"
+
+assert_contains "mise env -s bash" "GOPATH"
+mise use golang@system
+assert_not_contains "mise env -s bash" "GOPATH"

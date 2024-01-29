@@ -92,3 +92,17 @@ run = "just lint-fix"
 
 [tasks.signal-test]
 run = "node ./test/fixtures/signal-test.js"
+
+[tasks."test:e2e"]
+run = "just test-e2e"
+# TODO: make this work when we have task args
+#run = '''
+#set -euo pipefail
+#TEST="$1"
+#if [ "TEST" = all ]; then
+#    echo ./e2e/run_all_tests
+#else
+#    FILES="$(fd TEST e2e/)"
+#    echo ./e2e/run_test "$FILES"
+#fi
+#'''

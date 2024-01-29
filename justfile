@@ -37,7 +37,9 @@ test-e2e TEST=("all"): build
         ./e2e/run_all_tests
     else
         FILES="$(fd {{ TEST }} e2e/)"
-        ./e2e/run_test "$FILES"
+        for FILE in $FILES; do
+            ./e2e/run_test "$FILE"
+        done
     fi
 
 # run unit tests w/ coverage
