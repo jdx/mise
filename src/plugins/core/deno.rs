@@ -124,6 +124,9 @@ impl Forge for DenoPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        if let ToolVersionRequest::System(_) = tv.request {
+            return Ok(vec![]);
+        }
         let bin_paths = vec![
             tv.install_short_path().join("bin"),
             tv.install_short_path().join(".deno/bin"),
