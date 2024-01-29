@@ -7,7 +7,7 @@
 <a href="https://crates.io/crates/mise"><img alt="Crates.io" src="https://img.shields.io/crates/v/mise?style=for-the-badge"></a>
 <a href="https://github.com/jdx/mise/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdx/mise?color=%2320A920&style=for-the-badge"></a>
 <a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?color=%2320A920&style=for-the-badge"></a>
-<!-- <a href="https://codecov.io/gh/jdx/mise"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/jdx/mise?color=%2320A920&style=for-the-badge"></a> -->
+<a href="https://app.codacy.com/gh/jdx/mise/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage"><img src="https://app.codacy.com/project/badge/Coverage/af322e1f36ca41f0a296f49733a705f5"/></a>
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
 <p><em>The front-end to your dev env. (<a href="https://mise.jdx.dev/rtx.html">formerly called "rtx"</a>)</em></p>
 </div>
