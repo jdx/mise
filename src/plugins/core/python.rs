@@ -120,10 +120,6 @@ impl PythonPlugin {
     }
 
     fn install_precompiled(&self, ctx: &InstallContext) -> Result<()> {
-        warn!("installing precompiled python from indygreg/python-build-standalone");
-        warn!("if you experience issues with this python, switch to python-build");
-        warn!("by running: mise settings set python_compile 1");
-
         let precompile_info = self
             .fetch_precompiled_remote_versions()?
             .iter()
@@ -133,6 +129,11 @@ impl PythonPlugin {
             Some((_, tag, filename)) => (tag, filename),
             None => return self.install_compiled(ctx),
         };
+
+        warn!("installing precompiled python from indygreg/python-build-standalone");
+        warn!("if you experience issues with this python, switch to python-build");
+        warn!("by running: mise settings set python_compile 1");
+
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
         );
