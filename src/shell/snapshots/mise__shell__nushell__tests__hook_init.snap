@@ -2,7 +2,6 @@
 source: src/shell/nushell.rs
 expression: "nushell.activate(exe, \" --status\".into())"
 ---
-$env.PATH = ($env.PATH | prepend '/some/dir')
 export-env {
   $env.MISE_SHELL = "nu"
   
@@ -51,7 +50,7 @@ def --env "update-env" [] {
     }
   }
 }
-  
+
 def --env mise_hook [] {
   ^"/some/dir/mise" hook-env --status -s nu
     | parse vars

@@ -1,23 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
-use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
+use crate::shell::Shell;
 
 #[derive(Default)]
 pub struct Zsh {}
 
 impl Shell for Zsh {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
         let mut out = String::new();
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_zsh.go#L10-L22
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
-        }
         out.push_str(&formatdoc! {r#"
             export MISE_SHELL=zsh
             export __MISE_ORIG_PATH="$PATH"
@@ -90,21 +86,12 @@ impl Shell for Zsh {
         "#}
     }
 
-    fn prepend_path(&self, paths: &[PathBuf]) -> String {
-        if paths.is_empty() {
-            return String::new();
-        }
-        let mut path = String::new();
-        for p in paths {
-            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-                path = format!("{}:{path}", p.display());
-            }
-        }
-        format!("export PATH=\"{path}$PATH\"\n")
-    }
-
     fn set_env(&self, k: &str, v: &str) -> String {
         Bash::default().set_env(k, v)
+    }
+
+    fn prepend_env(&self, k: &str, v: &str) -> String {
+        format!("export {k}=\"{v}:${k}\"\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -125,21 +112,14 @@ mod tests {
     }
 
     #[test]
-    fn test_activate_nix() {
-        let zsh = Zsh::default();
-        let exe = Path::new("/nix/store/mise");
-        assert_snapshot!(zsh.activate(exe, " --status".into()));
-    }
-
-    #[test]
-    fn test_prepend_path() {
-        let zsh = Zsh::default();
-        assert_snapshot!(zsh.prepend_path(&[PathBuf::from("/some/dir")]));
-    }
-
-    #[test]
     fn test_set_env() {
         assert_snapshot!(Zsh::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn test_prepend_env() {
+        let sh = Bash::default();
+        assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]

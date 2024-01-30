@@ -936,6 +936,9 @@ Options:
           Read/write directly to stdin/stdout/stderr instead of by line
           Configure with `raw` config or `MISE_RAW` env var
 
+      --timings
+          Shows elapsed time after each task
+
 Examples:
   $ mise run lint
   Runs the "lint" task. This needs to either be defined in .mise.toml
@@ -1323,6 +1326,9 @@ Options:
   -r, --raw
           Read/write directly to stdin/stdout/stderr instead of by line
           Configure with `raw` config or `MISE_RAW` env var
+
+      --timings
+          Shows elapsed time after each task
 
 Examples:
   $ mise run lint
