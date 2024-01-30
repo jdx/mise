@@ -3738,7 +3738,7 @@ _mise() {
             return 0
             ;;
         mise__run)
-            opts="-C -n -f -p -i -t -j -r -q -v -y -h --cd --dry-run --force --prefix --interleave --tool --jobs --raw --debug --log-level --quiet --trace --verbose --yes --help [TASK] [ARGS]..."
+            opts="-C -n -f -p -i -t -j -r -q -v -y -h --cd --dry-run --force --prefix --interleave --tool --jobs --raw --timings --debug --log-level --quiet --trace --verbose --yes --help [TASK] [ARGS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4509,7 +4509,7 @@ _mise() {
             return 0
             ;;
         mise__task__run)
-            opts="-C -n -f -p -i -t -j -r -q -v -y -h --cd --dry-run --force --prefix --interleave --tool --jobs --raw --debug --log-level --quiet --trace --verbose --yes --help [TASK] [ARGS]..."
+            opts="-C -n -f -p -i -t -j -r -q -v -y -h --cd --dry-run --force --prefix --interleave --tool --jobs --raw --timings --debug --log-level --quiet --trace --verbose --yes --help [TASK] [ARGS]..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

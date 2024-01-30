@@ -226,6 +226,7 @@ complete -kxc mise -n "$fssf run" -s j -l jobs -d 'Number of tasks to run in par
 complete -kxc mise -n "$fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
 complete -kxc mise -n "$fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
 complete -kxc mise -n "$fssf run" -a "(__mise_tasks)" -d 'Task to run'
+complete -kxc mise -n "$fssf run" -l timings -d 'Shows elapsed time after each task'
 complete -kxc mise -n "$fssf run" -s t -l tool -a "(__mise_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 # self-update
@@ -310,6 +311,7 @@ complete -kxc mise -n "$fssf task; and $fssf run" -s j -l jobs -d 'Number of tas
 complete -kxc mise -n "$fssf task; and $fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
 complete -kxc mise -n "$fssf task; and $fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
 complete -kxc mise -n "$fssf task; and $fssf run" -a "(__mise_tasks)" -d 'Task to run'
+complete -kxc mise -n "$fssf task; and $fssf run" -l timings -d 'Shows elapsed time after each task'
 complete -kxc mise -n "$fssf task; and $fssf run" -s t -l tool -a "(__mise_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 

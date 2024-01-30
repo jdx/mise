@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
+use crate::shell::Shell;
 
 #[derive(Default)]
 pub struct Xonsh {}
@@ -36,38 +36,21 @@ fn xonsh_escape_char(ch: char) -> Option<&'static str> {
 
 impl Shell for Xonsh {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let dir = exe.parent().unwrap();
         let exe = exe.display();
-        let mut out = String::new();
 
         // todo: xonsh doesn't update the environment that mise relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
         // with envx.swap(UPDATE_OS_ENVIRON=True): # ← use when ↑ fixed before PATH.add; remove environ
         // meanwhile, save variables twice: in shell env + in os env
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
-        out.push_str(&formatdoc! {r#"
-            from os               import environ
+        // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
+        formatdoc! {r#"
             from xonsh.built_ins  import XSH
 
-        "#});
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            let dir_str = dir.to_string_lossy();
-            let dir_esc = xonsh_escape_sq(&dir_str);
-            out.push_str(&formatdoc! {r#"
-                envx = XSH.env
-                envx['PATH'].add('{dir_esc}')
-                environ['PATH'] = envx.get_detyped('PATH')
-
-            "#});
-        }
-        // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
-        out.push_str(&formatdoc! {r#"
             def listen_prompt(): # Hook Events
               execx($({exe} hook-env{flags} -s xonsh))
 
             XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
-            "#});
-
-        out
+        "#}
     }
 
     fn deactivate(&self) -> String {
@@ -104,6 +87,18 @@ impl Shell for Xonsh {
         )
     }
 
+    fn prepend_env(&self, k: &str, v: &str) -> String {
+        let v = xonsh_escape_sq(v);
+        formatdoc! {r#"
+            from os               import environ
+            from xonsh.built_ins  import XSH
+
+            envx = XSH.env
+            envx[   '{k}'].add('{v}', front=True)
+            environ['{k}'] = envx.get_detyped('{k}')
+        "#}
+    }
+
     fn unset_env(&self, k: &str) -> String {
         formatdoc!(
             r#"
@@ -132,15 +127,14 @@ mod tests {
     }
 
     #[test]
-    fn test_hook_init_nix() {
-        let xonsh = Xonsh::default();
-        let exe = Path::new("/nix/store/mise");
-        insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
+    fn test_set_env() {
+        insta::assert_snapshot!(Xonsh::default().set_env("FOO", "1"));
     }
 
     #[test]
-    fn test_set_env() {
-        insta::assert_snapshot!(Xonsh::default().set_env("FOO", "1"));
+    fn test_prepend_env() {
+        let sh = Xonsh::default();
+        assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]
