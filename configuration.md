@@ -238,17 +238,10 @@ version files since they're version files not specific to asdf/mise and can be u
 (`.nvmrc` being a notable exception, which is tied to a specific tool.)
 :::
 
-```toml
-```
-
-::: tip
-These settings can also be managed with `mise settings ls|get|set|unset`.
-:::
-
 ## Settings
 
 The following is a list of all of mise's settings. These can be set via `mise settings set`,
-by directly modifying `~/.config/mise/config.toml`, or via environment variables.
+by directly modifying `~/.config/mise/config.toml` or local config, or via environment variables.
 
 Some of them also can be set via global CLI flags.
 
