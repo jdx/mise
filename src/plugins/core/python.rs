@@ -369,7 +369,7 @@ fn python_arch(settings: &Settings) -> &str {
         } else if cfg!(target_feature = "sse4.1") {
             "x86_64_v2"
         } else {
-            "x86_64_v1"
+            "x86_64"
         }
     } else {
         built_info::CFG_TARGET_ARCH
