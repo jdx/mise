@@ -107,6 +107,10 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
+    /// Shows elapsed time after each task
+    #[clap(long, alias = "timing", verbatim_doc_comment)]
+    pub timings: bool,
+
     #[clap(skip)]
     pub is_linear: bool,
 }
@@ -166,12 +170,16 @@ impl Run {
             env.insert("FORCE_COLOR".into(), "1".into());
         }
 
-        let tasks = Mutex::new(Deps::new(config, tasks)?);
-        self.is_linear = tasks.lock().unwrap().is_linear();
-
-        for task in tasks.lock().unwrap().all() {
+        let tasks = Deps::new(config, tasks)?;
+        for task in tasks.all() {
             self.validate_task(task)?;
         }
+
+        let num_tasks = tasks.all().count();
+        self.is_linear = tasks.is_linear();
+
+        let tasks = Mutex::new(tasks);
+        let timer = std::time::Instant::now();
 
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs() + 1)
@@ -195,6 +203,12 @@ impl Run {
                 run(&task);
             }
         });
+
+        if self.timings && num_tasks > 1 {
+            let msg = format!("finished in {}", format_duration(timer.elapsed()));
+            info!("{}", style::edim(msg));
+        };
+
         Ok(())
     }
 
@@ -211,6 +225,8 @@ impl Run {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
+        let timer = std::time::Instant::now();
+
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
@@ -221,6 +237,14 @@ impl Run {
                 };
                 self.exec_script(cmd, &args, task, &env, &prefix)?;
             }
+        }
+
+        if self.timings {
+            miseprintln!(
+                "{} finished in {}",
+                prefix,
+                format_duration(timer.elapsed())
+            );
         }
 
         self.save_checksum(task)?;
@@ -531,6 +555,15 @@ fn get_color() -> Color {
     static COLOR_IDX: AtomicUsize = AtomicUsize::new(0);
     COLORS[COLOR_IDX.fetch_add(1, Ordering::Relaxed) % COLORS.len()]
 }
+
+fn format_duration(dur: std::time::Duration) -> String {
+    if dur < std::time::Duration::from_secs(1) {
+        format!("{:.0?}", dur)
+    } else {
+        format!("{:.2?}", dur)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::file;
