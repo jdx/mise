@@ -1,21 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::Settings;
-use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
+use crate::shell::Shell;
 
 #[derive(Default)]
 pub struct Fish {}
 
 impl Shell for Fish {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let dir = exe.parent().unwrap();
         let exe = exe.to_string_lossy();
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
-
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            out.push_str(&format!("fish_add_path -g {dir}\n", dir = dir.display()));
-        }
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
@@ -101,24 +96,17 @@ impl Shell for Fish {
         "#}
     }
 
-    fn prepend_path(&self, paths: &[PathBuf]) -> String {
-        if paths.is_empty() {
-            return String::new();
-        }
-        let mut path = String::new();
-        for p in paths {
-            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-                path = format!("{} {path}", p.display());
-            }
-        }
-        format!("set -gx PATH {path}$PATH\n")
-    }
-
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
         let v = v.replace("\\n", "\n");
         format!("set -gx {k} {v}\n")
+    }
+
+    fn prepend_env(&self, k: &str, v: &str) -> String {
+        let k = shell_escape::unix::escape(k.into());
+        let v = shell_escape::unix::escape(v.into());
+        format!("set -gx {k} {v} ${k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -139,22 +127,14 @@ mod tests {
     }
 
     #[test]
-    fn test_activate_nix() {
-        let fish = Fish::default();
-        let exe = Path::new("/nix/store/mise");
-        assert_snapshot!(fish.activate(exe, " --status".into()));
-    }
-
-    #[test]
-    fn test_prepend_path() {
-        let fish = Fish::default();
-        let paths = vec![PathBuf::from("/some/dir"), PathBuf::from("/some/other/dir")];
-        assert_snapshot!(fish.prepend_path(&paths));
-    }
-
-    #[test]
     fn test_set_env() {
         assert_snapshot!(Fish::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn test_prepend_env() {
+        let sh = Fish::default();
+        assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]

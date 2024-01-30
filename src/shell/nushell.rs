@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::Path};
 
-use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
+use crate::shell::Shell;
 
 #[derive(Default)]
 pub struct Nushell {}
@@ -22,18 +22,9 @@ impl<'a> Display for EnvOp<'a> {
 
 impl Shell for Nushell {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let dir = exe.parent().unwrap();
         let exe = exe.display();
-        let mut out = String::new();
 
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            out.push_str(&format!(
-                "$env.PATH = ($env.PATH | prepend '{}')\n", // TODO: set PATH as Path on windows
-                dir.display()
-            ));
-        }
-
-        out.push_str(&formatdoc! {r#"
+        formatdoc! {r#"
           export-env {{
             $env.MISE_SHELL = "nu"
             
@@ -82,16 +73,14 @@ impl Shell for Nushell {
               }}
             }}
           }}
-            
+
           def --env mise_hook [] {{
             ^"{exe}" hook-env{flags} -s nu
               | parse vars
               | update-env
           }}
 
-        "#});
-
-        out
+        "#}
     }
 
     fn deactivate(&self) -> String {
@@ -105,6 +94,10 @@ impl Shell for Nushell {
         let v = v.replace('\'', "");
 
         EnvOp::Set { key: &k, val: &v }.to_string()
+    }
+
+    fn prepend_env(&self, k: &str, v: &str) -> String {
+        format!("$env.{k} = ($env.{k} | prepend '{v}')\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -126,15 +119,14 @@ mod tests {
     }
 
     #[test]
-    fn test_hook_init_nix() {
-        let nushell = Nushell::default();
-        let exe = Path::new("/nix/store/mise");
-        assert_snapshot!(nushell.activate(exe, " --status".into()));
+    fn test_set_env() {
+        assert_snapshot!(Nushell::default().set_env("FOO", "1"));
     }
 
     #[test]
-    fn test_set_env() {
-        assert_snapshot!(Nushell::default().set_env("FOO", "1"));
+    fn test_prepend_env() {
+        let sh = Nushell::default();
+        assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]

@@ -1,20 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::Settings;
-use crate::shell::{is_dir_in_path, is_dir_not_in_nix, Shell};
+use crate::shell::Shell;
 
 #[derive(Default)]
 pub struct Bash {}
 
 impl Shell for Bash {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let dir = exe.parent().unwrap();
+        let settings = Settings::get();
         let exe = exe.to_string_lossy();
-        let mut out = String::new();
-        if is_dir_not_in_nix(dir) && !is_dir_in_path(dir) && !dir.is_relative() {
-            out.push_str(&format!("export PATH=\"{}:$PATH\"\n", dir.display()));
-        }
-        out.push_str(&formatdoc! {r#"
+        let mut out = formatdoc! {r#"
             export MISE_SHELL=bash
             export __MISE_ORIG_PATH="$PATH"
 
@@ -47,12 +43,12 @@ impl Shell for Bash {
             if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
               PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
-            "#});
-        if Settings::get().not_found_auto_install {
+            "#};
+        if settings.not_found_auto_install {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
                 _mise_cmd_not_found=1
-                [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
+                [ -n "$(declare -f command_not_found_handle)" ] && eval "${{$(declare -f command_not_found_handle)/command_not_found_handle/_command_not_found_handle}}"
 
                 command_not_found_handle() {{
                     if {exe} hook-not-found -s bash -- "$1"; then
@@ -82,24 +78,15 @@ impl Shell for Bash {
         "#}
     }
 
-    fn prepend_path(&self, paths: &[PathBuf]) -> String {
-        if paths.is_empty() {
-            return String::new();
-        }
-        let mut path = String::new();
-        for p in paths {
-            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-                path = format!("{}:{path}", p.display());
-            }
-        }
-        format!("export PATH=\"{}$PATH\"\n", path)
-    }
-
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
         let v = v.replace("\\n", "\n");
         format!("export {k}={v}\n")
+    }
+
+    fn prepend_env(&self, k: &str, v: &str) -> String {
+        format!("export {k}=\"{v}:${k}\"\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -109,7 +96,6 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use crate::test::replace_path;
 
@@ -123,22 +109,14 @@ mod tests {
     }
 
     #[test]
-    fn test_activate_nix() {
-        let bash = Bash::default();
-        let exe = Path::new("/nix/store/mise");
-        assert_snapshot!(bash.activate(exe, " --status".into()));
-    }
-
-    #[test]
-    fn test_prepend_path() {
-        let bash = Bash::default();
-        let paths = vec![PathBuf::from("/some/dir"), PathBuf::from("/some/other/dir")];
-        assert_snapshot!(replace_path(&bash.prepend_path(&paths)));
-    }
-
-    #[test]
     fn test_set_env() {
         assert_snapshot!(Bash::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn test_prepend_env() {
+        let bash = Bash::default();
+        assert_snapshot!(replace_path(&bash.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]

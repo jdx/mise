@@ -64,6 +64,21 @@ impl Activate {
         } else {
             env::MISE_BIN.clone()
         };
+        match self.shims {
+            true => self.activate_shims(shell.as_ref(), &mise_bin),
+            false => self.activate(shell.as_ref(), &mise_bin),
+        }
+
+        Ok(())
+    }
+
+    fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) {
+        let exe_dir = mise_bin.parent().unwrap();
+        miseprint!("{}", self.prepend_path(shell, exe_dir));
+        miseprint!("{}", self.prepend_path(shell, &dirs::SHIMS));
+    }
+
+    fn activate(&self, shell: &dyn Shell, mise_bin: &Path) {
         let mut flags = vec![];
         if self.quiet {
             flags.push(" --quiet");
@@ -71,19 +86,31 @@ impl Activate {
         if self.status {
             flags.push(" --status");
         }
-        let output = match self.shims {
-            true => self.activate_shims(shell.as_ref(), &mise_bin),
-            false => shell.activate(&mise_bin, flags.join("")),
-        };
-        miseprint!("{output}");
-
-        Ok(())
+        miseprint!("{}", self.prepend_path(shell, mise_bin));
+        miseprint!("{}", shell.activate(mise_bin, flags.join("")));
     }
 
-    fn activate_shims(&self, shell: &dyn Shell, exe: &Path) -> String {
-        let exe_dir = exe.parent().unwrap().to_path_buf();
-        shell.prepend_path(&[exe_dir, dirs::SHIMS.clone()])
+    fn prepend_path(&self, shell: &dyn Shell, p: &Path) -> String {
+        if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+            shell.prepend_env("PATH", p.to_string_lossy().as_ref())
+        } else {
+            String::new()
+        }
     }
+}
+
+fn is_dir_in_path(dir: &Path) -> bool {
+    let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
+    env::PATH
+        .clone()
+        .into_iter()
+        .any(|p| p.canonicalize().unwrap_or(p) == dir)
+}
+
+fn is_dir_not_in_nix(dir: &Path) -> bool {
+    !dir.canonicalize()
+        .unwrap_or(dir.to_path_buf())
+        .starts_with("/nix/")
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

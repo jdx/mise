@@ -2,12 +2,7 @@
 source: src/shell/xonsh.rs
 expression: "xonsh.activate(exe, \" --status\".into())"
 ---
-from os               import environ
 from xonsh.built_ins  import XSH
-
-envx = XSH.env
-envx['PATH'].add('/some/dir')
-environ['PATH'] = envx.get_detyped('PATH')
 
 def listen_prompt(): # Hook Events
   execx($(/some/dir/mise hook-env --status -s xonsh))
