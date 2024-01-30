@@ -79,6 +79,7 @@ impl Activate {
     }
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) {
+        let exe_dir = mise_bin.parent().unwrap();
         let mut flags = vec![];
         if self.quiet {
             flags.push(" --quiet");
@@ -86,7 +87,7 @@ impl Activate {
         if self.status {
             flags.push(" --status");
         }
-        miseprint!("{}", self.prepend_path(shell, mise_bin));
+        miseprint!("{}", self.prepend_path(shell, exe_dir));
         miseprint!("{}", shell.activate(mise_bin, flags.join("")));
     }
 
