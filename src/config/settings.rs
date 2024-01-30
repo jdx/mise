@@ -65,11 +65,11 @@ pub struct Settings {
     #[config(env = "MISE_PYTHON_PATCH_URL")]
     pub python_patch_url: Option<String>,
     #[config(env = "MISE_PYTHON_PATCHES_DIRECTORY")]
-    pub python_precompiled_os: Option<String>,
-    #[config(env = "MISE_PYTHON_PRECOMPILED_ARCH")]
     pub python_patches_directory: Option<PathBuf>,
-    #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
+    #[config(env = "MISE_PYTHON_PRECOMPILED_ARCH")]
     pub python_precompiled_arch: Option<String>,
+    #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
+    pub python_precompiled_os: Option<String>,
     #[config(
         env = "MISE_PYENV_REPO",
         default = "https://github.com/pyenv/pyenv.git"
