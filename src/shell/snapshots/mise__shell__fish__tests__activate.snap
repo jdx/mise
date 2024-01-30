@@ -2,7 +2,6 @@
 source: src/shell/fish.rs
 expression: "fish.activate(exe, \" --status\".into())"
 ---
-fish_add_path -g /some/dir
 set -gx MISE_SHELL fish
 set -gx __MISE_ORIG_PATH $PATH
 

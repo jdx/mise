@@ -584,6 +584,7 @@ __mise_run_cmd() {
     '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__mise_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
+    '--timings[Shows elapsed time after each task]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
@@ -793,6 +794,7 @@ __mise_task_run_cmd() {
     '*'{-t,--tool}'=[Tool(s) to also add e.g.\: node@20 python@3.10]:tool:__mise_tool_versions' \
     '(-j --jobs)'{-j,--jobs}'=[Number of tasks to run in parallel]:jobs:' \
     '(-r --raw)'{-r,--raw}'[Read/write directly to stdin/stdout/stderr instead of by line]' \
+    '--timings[Shows elapsed time after each task]' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'

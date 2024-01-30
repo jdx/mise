@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::env;
 
@@ -54,17 +54,9 @@ impl Display for ShellType {
 
 pub trait Shell {
     fn activate(&self, exe: &Path, flags: String) -> String;
-    fn prepend_path(&self, paths: &[PathBuf]) -> String {
-        let mut path = env::var("PATH").unwrap_or_default();
-        for p in paths {
-            if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-                path = format!("{}:{path}", p.display());
-            }
-        }
-        self.set_env("PATH", &path)
-    }
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
+    fn prepend_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
 }
 
@@ -77,18 +69,4 @@ pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
         Some(ShellType::Zsh) => Some(Box::<zsh::Zsh>::default()),
         _ => None,
     }
-}
-
-pub fn is_dir_in_path(dir: &Path) -> bool {
-    let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
-    env::PATH
-        .clone()
-        .into_iter()
-        .any(|p| p.canonicalize().unwrap_or(p) == dir)
-}
-
-pub fn is_dir_not_in_nix(dir: &Path) -> bool {
-    !dir.canonicalize()
-        .unwrap_or(dir.to_path_buf())
-        .starts_with("/nix/")
 }
