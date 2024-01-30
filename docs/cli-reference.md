@@ -782,7 +782,7 @@ Examples:
 
 ## `mise plugins update [OPTIONS] [PLUGIN]...`
 
-**Aliases:** `upgrade`
+**Aliases:** `up, upgrade`
 
 ```text
 Updates a plugin to the latest version
