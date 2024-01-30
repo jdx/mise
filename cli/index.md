@@ -782,7 +782,7 @@ Examples:
 
 ## `mise plugins update [OPTIONS] [PLUGIN]...`
 
-**Aliases:** `upgrade`
+**Aliases:** `up, upgrade`
 
 ```text
 Updates a plugin to the latest version
@@ -935,6 +935,9 @@ Options:
   -r, --raw
           Read/write directly to stdin/stdout/stderr instead of by line
           Configure with `raw` config or `MISE_RAW` env var
+
+      --timings
+          Shows elapsed time after each task
 
 Examples:
   $ mise run lint
@@ -1323,6 +1326,9 @@ Options:
   -r, --raw
           Read/write directly to stdin/stdout/stderr instead of by line
           Configure with `raw` config or `MISE_RAW` env var
+
+      --timings
+          Shows elapsed time after each task
 
 Examples:
   $ mise run lint
