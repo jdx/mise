@@ -576,6 +576,9 @@ _mise() {
             mise__plugins,uninstall)
                 cmd="mise__plugins__uninstall"
                 ;;
+            mise__plugins,up)
+                cmd="mise__plugins__update"
+                ;;
             mise__plugins,update)
                 cmd="mise__plugins__update"
                 ;;

@@ -481,7 +481,7 @@ __mise_plugins_cmd() {
         (list|ls) __mise_plugins_ls_cmd && ret=0 ;;
         (list-all|list-remote|ls-remote) __mise_plugins_ls_remote_cmd && ret=0 ;;
         (remove|rm|uninstall) __mise_plugins_uninstall_cmd && ret=0 ;;
-        (upgrade|update) __mise_plugins_update_cmd && ret=0 ;;
+        (up|upgrade|update) __mise_plugins_update_cmd && ret=0 ;;
       esac
     ;;
   esac
@@ -987,7 +987,7 @@ __mise_plugins_cmds() {
     {list,ls}':List installed plugins'
     {list-all,list-remote,ls-remote}':List all available remote plugins'
     {remove,rm,uninstall}':Removes a plugin'
-    {upgrade,update}':Updates a plugin to the latest version'
+    {up,upgrade,update}':Updates a plugin to the latest version'
   )
   _describe -t commands 'command' commands "$@"
 }
