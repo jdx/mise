@@ -14,9 +14,12 @@ assert_gopath() {
   fi
 }
 
-mise i golang@1.18.10 golang@1.19.5 && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/1.19.5/packages"
-cd 18 && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/1.18.10/packages"
+GO_20=$(mise latest golang@1.20)
+GO_21=$(mise latest golang@1.21)
+
+mise i golang@1.20 golang@1.21 && _mise_hook
+assert_gopath "$MISE_DATA_DIR/installs/go/$GO_20/packages"
+cd 21 && _mise_hook
+assert_gopath "$MISE_DATA_DIR/installs/go/$GO_21/packages"
 cd .. && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/1.19.5/packages"
+assert_gopath "$MISE_DATA_DIR/installs/go/$GO_20/packages"
