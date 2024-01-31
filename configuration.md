@@ -285,6 +285,14 @@ This disables mise functionality that would otherwise make these files incompati
 
 This will also change the default global tool config to be `~/.tool-versions` instead of `~/.config/mise/config.toml`.
 
+### `disable_tools`
+
+* Type: `string[]` (comma-delimited)
+* Env: `MISE_DISABLE_TOOLS`
+* Default: `[]`
+
+Disables the specified tools. Separate with `,`. Generally used for core plugins but works with any tool.
+
 ### `status.missing_tools`
 
 * Type: `bool`
@@ -292,6 +300,10 @@ This will also change the default global tool config to be `~/.tool-versions` in
 * Default: `true`
 
 Show a warning if tools are not installed when entering a directory with a `.mise.toml` file.
+
+::: tip
+Disable tools with [`disable_tools`](#disable_tools).
+:::
 
 ### `status.show_env`
 
@@ -481,11 +493,6 @@ node = "https://github.com/my-org/mise-node.git"
 
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
 installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
-
-### `MISE_DISABLE_TOOLS=python,node`
-
-Disables the specified tools. Separate with `,`. Generally used for core plugins but works with
-all.
 
 ### `MISE_YES=1`
 
