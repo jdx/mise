@@ -316,10 +316,10 @@ impl Settings {
         *SETTINGS.write().unwrap() = None;
     }
 
-    pub fn ensure_experimental(&self) -> Result<()> {
-        let msg =
-            "This command is experimental. Enable it with `mise settings set experimental true`";
-        ensure!(self.experimental, msg);
+    pub fn ensure_experimental(&self, what: &str) -> Result<()> {
+        if !self.experimental {
+            bail!("{what} is experimental. Enable it with `mise settings set experimental true`");
+        }
         Ok(())
     }
 

@@ -20,7 +20,7 @@ impl ConfigGenerate {
     pub fn run(self) -> Result<()> {
         let _ = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise config generate`")?;
         let doc = r#"
 # # mise config files are hierarchical. mise will find all of the config files
 # # in all parent directories and merge them together.

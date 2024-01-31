@@ -70,7 +70,7 @@ impl Watch {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise watch`")?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: ForgeArg = "watchexec".parse()?;
             if !ts.versions.contains_key(&watchexec) {

@@ -119,7 +119,7 @@ impl Run {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise run`")?;
         let task_list = self.get_task_lists(&config)?;
         self.parallelize_tasks(&config, task_list)
     }

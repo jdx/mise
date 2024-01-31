@@ -36,7 +36,7 @@ impl Forge for NPMForge {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::get();
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("npm backend")?;
 
         CmdLineRunner::new("npm")
             .arg("install")

@@ -47,7 +47,7 @@ impl Forge for CargoForge {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::get();
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("cargo backend")?;
         let cmd = match settings.cargo_binstall {
             true if file::which_non_pristine("cargo-binstall").is_some() => {
                 CmdLineRunner::new("cargo-binstall").arg("-y")
