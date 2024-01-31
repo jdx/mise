@@ -62,14 +62,13 @@ test-coverage:
     if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
         echo "::group::Unit tests"
         cargo test --all-features
-        echo "::group::render-help render-completions render-mangen"
-        just render-help render-completions render-mangen
+        echo "::group::render"
+        MISE_EXPERIMENTAL=1 mise run render
         echo "::group::Implode"
         mise implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         echo "::group::Self update"
-        # TODO: remove this once the task runnner is shipped
-        mise self-update -fy || true
+        mise self-update -fy
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
@@ -104,27 +103,3 @@ lint-fix:
     just --unstable --fmt
     MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
     MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint --fix .
-
-render-all: render-help render-completions render-mangen
-
-# regenerate docs/cli-reference.md
-render-help: build
-    NO_COLOR=1 mise render-help
-    mise x node@latest -- npx markdown-magic
-
-# regenerate shell completion files
-render-completions: build
-    NO_COLOR=1 mise render-completion bash > completions/mise.bash
-    NO_COLOR=1 mise render-completion zsh > completions/_mise
-    NO_COLOR=1 mise render-completion fish > completions/mise.fish
-
-# regenerate manpages
-render-mangen: build
-    NO_COLOR=1 mise render-mangen
-
-# called by lefthook precommit hook
-pre-commit: render-all lint
-    git add README.md
-    git add docs/cli-reference.md
-    git add completions
-    git add man
