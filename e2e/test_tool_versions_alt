@@ -4,7 +4,9 @@ set -euo pipefail
 export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
 export MISE_DEFAULT_CONFIG_FILENAME=.MISSING
 
-git checkout .alternate-tool-versions
+cat <<EOF > .alternate-tool-versions
+shfmt 3.5.0
+EOF
 
 mise i shfmt
 mise exec -- shfmt --version >&2
