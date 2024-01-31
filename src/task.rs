@@ -139,6 +139,7 @@ impl Task {
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
+            .filter(|t| t.name != self.name)
             .collect();
         Ok(depends)
     }
