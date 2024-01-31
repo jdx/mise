@@ -29,9 +29,13 @@ error() {
 #endregion
 
 get_musl() {
-	libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
-	if [ -z $libc ]; then
-		echo "musl"
+	if type ldd >/dev/null 2>/dev/null; then
+		libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+		if [ -z "$libc" ]; then
+			echo "musl"
+		else
+			echo ""
+		fi
 	else
 		echo ""
 	fi
@@ -88,7 +92,7 @@ get_checksum() {
 	checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
 	checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
 
-	if [ "$os" = "linux"]; then
+	if [ "$os" = "linux" ]; then
 		if [ "$arch" = "x64" ]; then
 			if [ -z "$musl" ]; then
 				echo "$checksum_linux_x86_64"
@@ -116,7 +120,7 @@ get_checksum() {
 		else
 			warn "no checksum for $os-$arch"
 		fi
-	else if [ "$os" = "macos" ]; then
+	elif [ "$os" = "macos" ]; then
 		if [ "$arch" = "x64" ]; then
 			echo "$checksum_macos_x86_64"
 		elif [ "$arch" = "arm64" ]; then
@@ -127,6 +131,7 @@ get_checksum() {
 	else
 		warn "no checksum for $os-$arch"
 	fi
+
 }
 
 #endregion
