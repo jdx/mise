@@ -28,6 +28,16 @@ error() {
 }
 #endregion
 
+get_musl() {
+	libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+	if [ -z $libc ]; then
+			# This is not Musl.
+		echo "musl"
+	else
+		echo ""
+	fi
+}
+
 #region environment setup
 get_os() {
 	os="$(uname -s)"
@@ -46,6 +56,8 @@ get_arch() {
 		echo "x64"
 	elif [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then
 		echo "arm64"
+	elif [ "$arch" = armv7l ]; then
+		echo "armv7"
 	else
 		error "unsupported architecture: $arch"
 	fi
@@ -64,20 +76,55 @@ shasum_bin() {
 get_checksum() {
 	os="$(get_os)"
 	arch="$(get_arch)"
+	musl="$(get_musl)"
 
 	checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
+	checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
 	checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
+	checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
+	checksum_linux_armv6="$MISE_CHECKSUM_LINUX_ARMV6"
+	checksum_linux_armv6_musl="$MISE_CHECKSUM_LINUX_ARMV6_MUSL"
+	checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
+	checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
 	checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
 	checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
 
-	if [ "$os" = "linux" ] && [ "$arch" = "x64" ]; then
-		echo "$checksum_linux_x86_64"
-	elif [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
-		echo "$checksum_linux_arm64"
-	elif [ "$os" = "macos" ] && [ "$arch" = "x64" ]; then
-		echo "$checksum_macos_x86_64"
-	elif [ "$os" = "macos" ] && [ "$arch" = "arm64" ]; then
-		echo "$checksum_macos_arm64"
+	if [ "$os" = "linux"]; then
+		if [ "$arch" = "x64" ]; then
+			if [ -z "$musl" ]; then
+				echo "$checksum_linux_x86_64"
+			else
+				echo "$checksum_linux_x86_64_musl"
+			fi
+		elif [ "$arch" = "arm64" ]; then
+			if [ -z "$musl" ]; then
+				echo "$checksum_linux_arm64"
+			else
+				echo "$checksum_linux_arm64_musl"
+			fi
+		elif [ "$arch" = "armv6" ]; then
+			if [ -z "$musl" ]; then
+				echo "$checksum_linux_armv6"
+			else
+				echo "$checksum_linux_armv6_musl"
+			fi
+		elif [ "$arch" = "armv7" ]; then
+			if [ -z "$musl" ]; then
+				echo "$checksum_linux_armv7"
+			else
+				echo "$checksum_linux_armv7_musl"
+			fi
+		else
+			warn "no checksum for $os-$arch"
+		fi
+	else if [ "$os" = "macos" ]; then
+		if [ "$arch" = "x64" ]; then
+			echo "$checksum_macos_x86_64"
+		elif [ "$arch" = "arm64" ]; then
+			echo "$checksum_macos_arm64"
+		else
+			warn "no checksum for $os-$arch"
+		fi
 	else
 		warn "no checksum for $os-$arch"
 	fi
@@ -114,9 +161,15 @@ install_mise() {
 	version="$MISE_VERSION"
 	os="$(get_os)"
 	arch="$(get_arch)"
+	musl="$(get_musl)"
 	install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
 	install_dir="$(dirname "$install_path")"
-	tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}.tar.gz"
+	if [ -z "$musl" ]; then
+		tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}-${musl}.tar.gz"
+	else
+		tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}.tar.gz"
+	fi
+
 
 	cache_file=$(download_file "$tarball_url")
 	debug "mise-setup: tarball=$cache_file"
