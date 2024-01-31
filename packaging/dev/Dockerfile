@@ -33,7 +33,7 @@ RUN    apt-get update \
         cargo-insta \
         cargo-llvm-cov \
         cargo-machete \
-        cargo-msrv \
+      # cargo-msrv \ this is very slow to compile
         cargo-nextest \
         cross \
         just \
