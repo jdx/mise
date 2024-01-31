@@ -90,6 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cargo install --path . --debug
+      - run: mise trust --all
       - run: mise install -y
       - run: mise run test
   dockerhub:
