@@ -24,7 +24,31 @@ To use the container with VSCode, you'll need to install the [Remote - Container
 
 (you'd think we'd use mise to fetch these but frankly it's kind of a pain to dogfood mise while testing it)
 
-## Just
+## Tasks
+
+Mise uses mise itself to run tasks. See available tasks with `mise tasks`:
+
+```shell
+~/src/mise ❯ mise tasks
+build                                           ~/src/mise/.mise.toml          
+clean                                           ~/src/mise/.mise.toml          
+format                                          ~/src/mise/.mise.toml          
+lint                                            ~/src/mise/.mise/config.toml   
+lint-fix                                        ~/src/mise/.mise.toml          
+release                                         ~/src/mise/.mise.toml          
+render-all                                      ~/src/mise/.mise.toml          
+render-completions                              ~/src/mise/.mise.toml          
+render-help                                     ~/src/mise/.mise.toml          
+render-mangen                                   ~/src/mise/.mise.toml          
+signal-test                                     ~/src/mise/.mise.toml          
+snapshots           Update test snapshots       ~/src/mise/.mise.toml          
+test                                            ~/src/mise/.mise.toml          
+test:e2e                                        ~/src/mise/.mise.toml          
+```
+
+## [deprecated] Just
+
+Note: these tasks are being moved over to `mise run` tasks but not all of them have been migrated yet.
 
 Just should be used for just about every task. Here is a full list of its
 tasks:
