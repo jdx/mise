@@ -3,9 +3,6 @@
 Before submitting a PR, unless it's something obvious, consider filing an issue or simply mention what you plan to do in the [Discord](https://discord.gg/UBa7pJUN7Z).
 PRs are often either rejected or need to change significantly after submission so make sure before you start working on something it won't be a wasted effort.
 
-Again, please **reach out** first. People almost never do and submit PRs out of nowhere. I would much prefer you let me
-know what you're working on before you start.
-
 ## Dev Container
 
 There is a docker setup that makes development with mise easier. It is especially helpful for running the E2E tests.
@@ -19,10 +16,11 @@ $ mise run docker:mise run test:e2e # run the e2e tests inside of the docker con
 $ mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
 ```
 
-> ![NOTE]
-> There used to be a "devcontainer" that was unrelated to this functionality which was compatible with vscode and
+::: info
+There used to be a "devcontainer" that was unrelated to this functionality which was compatible with vscode and
 github codespaces. I removed this to avoid confusion with the new, simpler dev container that makes use of mise tasks.
 I'd accept a pr to make the current dev container compatible with vscode and codespaces or something similar.
+:::
 
 ## Testing
 
@@ -33,9 +31,27 @@ for executing since it does not require having a proper local setup.
 
 To run locally you will need to first disable mise if you are using it.
 
+:::code-group
+```sh [dev container]
+$ mise run docker:cargo test
+```
+```sh [local]
+$ cargo test
+```
+:::
+
 ### E2E Tests
 
 Like unit tests, the e2e tests should be run either in the dev container (recommended) or with mise disabled locally.
+
+:::code-group
+```sh [dev container]
+$ mise run docker:e2e
+```
+```sh [local]
+$ mise run test:e2e
+```
+:::
 
 ## Dependencies
 
@@ -46,22 +62,26 @@ Like unit tests, the e2e tests should be run either in the dev container (recomm
 
 Mise uses mise itself to run tasks. See available tasks with `mise tasks`:
 
-```shell
+```sh
 ~/src/mise ❯ mise tasks
-build                                           ~/src/mise/.mise.toml          
-clean                                           ~/src/mise/.mise.toml          
-format                                          ~/src/mise/.mise.toml          
-lint                                            ~/src/mise/.mise/config.toml   
-lint-fix                                        ~/src/mise/.mise.toml          
-release                                         ~/src/mise/.mise.toml          
-render-all                                      ~/src/mise/.mise.toml          
-render-completions                              ~/src/mise/.mise.toml          
-render-help                                     ~/src/mise/.mise.toml          
-render-mangen                                   ~/src/mise/.mise.toml          
-signal-test                                     ~/src/mise/.mise.toml          
-snapshots           Update test snapshots       ~/src/mise/.mise.toml          
-test                                            ~/src/mise/.mise.toml          
-test:e2e                                        ~/src/mise/.mise.toml          
+build                                                        ~/src/mise/.mise.toml          
+clean                                                        ~/src/mise/.mise.toml          
+docker:cargo        run cargo inside of development docker … ~/src/mise/.mise.toml          
+docker:e2e          run e2e tests inside of development doc… ~/src/mise/.mise.toml          
+docker:image        build docker image from Dockerfile       ~/src/mise/.mise.toml          
+docker:mise         run mise inside of development docker c… ~/src/mise/.mise.toml          
+format                                                       ~/src/mise/.mise.toml          
+lint                                                         ~/src/mise/.mise/config.toml   
+lint:fix                                                     ~/src/mise/.mise.toml          
+release                                                      ~/src/mise/.mise.toml          
+render                                                       ~/src/mise/.mise.toml          
+render:completions                                           ~/src/mise/.mise.toml          
+render:help                                                  ~/src/mise/.mise.toml          
+render:mangen                                                ~/src/mise/.mise.toml          
+signal-test                                                  ~/src/mise/.mise.toml          
+snapshots           Update test snapshots                    ~/src/mise/.mise.toml          
+test                                                         ~/src/mise/.mise.toml          
+test:e2e                                                     ~/src/mise/.mise.toml          
 ```
 
 ## [deprecated] Just
@@ -70,7 +90,7 @@ _Note: these tasks are being moved over to `mise run` tasks but not all of them 
 
 Just should be used for just about every task. Here is a full list of its tasks:
 
-```shell
+```sh
 ~/src/mise ❯ just --list
 Available recipes:
     build *args           # just `cargo build`
@@ -94,27 +114,30 @@ Shouldn't require anything special I'm aware of, but `just build` is a good sani
 
 ## Running the CLI
 
-I put a shim for `cargo run` that makes it easy to run build + run mise in dev mode. It's at `.bin/mise`. What I do is add this to PATH
-with direnv. Here is my `.envrc`:
+Even if using the devcontainer, it's a good idea to create a shim to make it easy to launch mise. I use the following shim
+in `~/.local/bin/@mise`:
 
-```shell
-source_up_if_exists
-PATH_add "$(expand_path .bin)"
+```sh
+#!/bin/sh
+exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
 ```
 
-Now I can just run `mise` as if I was using an installed version and it will build it from source every time there are changes.
+::: note
+Don't forget to change the manifest path to the correct path for your setup.
+:::
 
-You don't have to do this, but it makes things like `mise activate` a lot easier to setup.
+Then if that is in PATH just use `@mise` to run mise by compiling it on the fly.
 
-## Running Tests
-
-- Run only unit tests: `just test-unit`
-- Run only E2E tests: `just test-e2e`
-- Run all tests: `just test`
+```sh
+$ @mise --help
+$ @mise run docker:e2e
+$ eval "$(@mise activate zsh)"
+$ @mise activate fish | source
+```
 
 ## Releasing
 
-Run `just release -x [minor|patch]`. (minor if it is the first release in a month)
+Run `mise run release -x [minor|patch]`. (minor if it is the first release in a month)
 
 ## Linting
 
@@ -123,7 +146,7 @@ Run `just release -x [minor|patch]`. (minor if it is the first release in a mont
 
 ## Generating readme and shell completion files
 
-```shell
+```sh
 mise run render
 ```
 
@@ -135,7 +158,7 @@ This is only necessary to test if actually changing the packaging setup.
 
 This is for arm64, but you can change the arch to amd64 if you want.
 
-```shell
+```sh
 docker run -ti --rm ubuntu
 apt update -y
 apt install -y gpg sudo wget curl
@@ -149,7 +172,7 @@ mise -V
 
 ### Amazon Linux 2 (yum)
 
-```shell
+```sh
 docker run -ti --rm amazonlinux
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
@@ -159,7 +182,7 @@ mise -v
 
 ### Fedora (dnf)
 
-```shell
+```sh
 docker run -ti --rm fedora
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
