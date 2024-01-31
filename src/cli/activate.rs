@@ -12,9 +12,6 @@ use crate::{dirs, env};
 /// Otherwise, it will only take effect in the current session.
 /// (e.g. ~/.zshrc, ~/.bashrc)
 ///
-/// Customize status output with `mise settings set status.missing_tools 0`
-/// and related commands.
-///
 /// This is only intended to be used in interactive sessions, not scripts.
 /// mise is only capable of updating PATH when the prompt is displayed to the user.
 /// For non-interactive use-cases, use shims instead.
@@ -27,6 +24,8 @@ use crate::{dirs, env};
 /// specify the full path like this:
 ///
 ///     echo 'eval "$(/path/to/mise activate)"' >> ~/.zshrc
+///
+/// Customize status output with `status` settings.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {

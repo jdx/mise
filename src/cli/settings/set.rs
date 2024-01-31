@@ -1,6 +1,7 @@
 use eyre::Result;
 use toml_edit::Document;
 
+use crate::config::settings::SettingsStatusMissingTools;
 use crate::{env, file};
 
 /// Add/update a setting
@@ -39,7 +40,11 @@ impl SettingsSet {
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
             "shorthands_file" => self.value.into(),
-            "status.missing_tools" => parse_bool(&self.value)?,
+            "status.missing_tools" => self
+                .value
+                .parse::<SettingsStatusMissingTools>()?
+                .to_string()
+                .into(),
             "status.show_env" => parse_bool(&self.value)?,
             "status.show_tools" => parse_bool(&self.value)?,
             "task_output" => self.value.into(),
@@ -101,7 +106,7 @@ pub mod tests {
         reset_config();
         assert_cli!("settings", "set", "legacy_version_file", "0");
         assert_cli!("settings", "set", "always_keep_download", "y");
-        assert_cli!("settings", "set", "status.missing_tools", "0");
+        assert_cli!("settings", "set", "status.missing_tools", "never");
         assert_cli!(
             "settings",
             "set",
