@@ -30,7 +30,7 @@ run = "cargo clean"
 [tasks.build]
 alias = "b"
 run = "cargo build --color always --all-features"
-sources = ["src/**/*.rs"]
+sources = ["Cargo.*", "src/**/*.rs"]
 outputs = ["target/debug/mise"]
 
 [tasks.test]
