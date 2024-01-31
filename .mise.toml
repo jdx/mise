@@ -45,40 +45,35 @@ depends = [
     "test"
 ]
 
-[tasks.render-completions]
+[tasks."render:completions"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-sources = ["target/debug/mise"]
-outputs = [
-  "completions/mise.bash",
-  "completions/_mise",
-  "completions/mise.fish",
-]
-run = """
+run = '''
 #!/usr/bin/env bash
 set -xeuo pipefail
 target/debug/mise render-completion bash > completions/mise.bash
 target/debug/mise render-completion zsh > completions/_mise
 target/debug/mise render-completion fish > completions/mise.fish
-"""
+'''
 
-[tasks.render-mangen]
+[tasks."render:mangen"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = "target/debug/mise render-mangen"
 
-[tasks.render-help]
+[tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = [
   "target/debug/mise render-help",
-  "md-magic",
+  "mise x node@latest -- npx markdown-magic",
 ]
 sources = ["target/debug/mise"]
 outputs = ["README.md"]
 
-[tasks.render-all]
-depends = ["render-*"]
+[tasks.render]
+alias = "render"
+depends = ["render:*"]
 
 [tasks.snapshots]
 description = "Update test snapshots"
@@ -87,7 +82,8 @@ run = "cargo insta test --accept --unreferenced delete"
 [tasks.release]
 run = "cargo release"
 
-[tasks.lint-fix]
+[tasks."lint:fix"]
+alias = "lint-fix"
 run = "just lint-fix"
 
 [tasks.signal-test]
