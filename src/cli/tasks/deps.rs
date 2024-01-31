@@ -1,12 +1,13 @@
+use console::style;
+use eyre::Result;
+use itertools::Itertools;
+use petgraph::dot::Dot;
+
 use crate::{
     config::{Config, Settings},
     task::{Deps, Task},
     ui::{style, tree::print_tree},
 };
-use console::style;
-use eyre::Result;
-use itertools::Itertools;
-use petgraph::dot::Dot;
 
 /// [experimental] Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
@@ -48,17 +49,16 @@ impl TasksDeps {
         Ok(config
             .tasks()?
             .into_values()
-            .sorted()
             .filter(|t| !t.hide)
             .cloned()
             .collect())
     }
 
     fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
+        let tasks = config.tasks()?;
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
-                .sorted()
-                .map(|tn| match config.tasks()?.remove(tn) {
+                .map(|tn| match tasks.get(tn).cloned() {
                     Some(task) => Ok(task.clone()),
                     None => Err(self.err_no_task(config, tn.as_str())),
                 })
