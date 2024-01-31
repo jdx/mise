@@ -17,9 +17,6 @@ alias lf := lint-fix
 build *args:
     cargo build --all-features {{ args }}
 
-watch:
-    watchexec -w src -- just build
-
 # run all test types
 test *args: (test-unit args) test-e2e lint
 
@@ -72,15 +69,6 @@ test-coverage:
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
-
-# delete built files
-clean:
-    cargo clean
-    rm -f lcov.info
-    rm -rf e2e/.{asdf,config,local,mise}/
-    rm -rf target
-    rm -rf *.profraw
-    rm -rf coverage
 
 scripts := "scripts/*.sh e2e/{test_,run_}* e2e/*.sh"
 

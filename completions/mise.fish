@@ -5,7 +5,7 @@ complete -kxc mise -s C -l cd -a "(__fish_complete_directories)" -d 'Change dire
 complete -kxc mise -s q -l quiet -d 'Suppress non-error messages'
 complete -kxc mise -s v -l verbose -d 'Show extra output (use -vv for even more)'
 complete -kxc mise -s y -l yes -d 'Answer yes to all confirmation prompts'
-set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update set settings shell sync task trust uninstall unset upgrade use version watch where which
+set -l others activate alias bin-paths cache completion config current deactivate direnv doctor env exec implode install latest link ls ls-remote outdated plugins prune reshim run self-update set settings shell sync tasks trust uninstall unset upgrade use version watch where which
 complete -xc mise -n "not $fssf $others" -a activate -d 'Initializes mise in the current shell session'
 complete -xc mise -n "not $fssf $others" -a alias -d 'Manage aliases'
 complete -xc mise -n "not $fssf $others" -a bin-paths -d 'List all the active runtime bin paths'
@@ -28,20 +28,20 @@ complete -xc mise -n "not $fssf $others" -a outdated -d 'Shows outdated tool ver
 complete -xc mise -n "not $fssf $others" -a plugins -d 'Manage plugins'
 complete -xc mise -n "not $fssf $others" -a prune -d 'Delete unused versions of tools'
 complete -xc mise -n "not $fssf $others" -a reshim -d 'rebuilds the shim farm'
-complete -xc mise -n "not $fssf $others" -a run -d '[experimental] Run a task'
+complete -xc mise -n "not $fssf $others" -a run -d '[experimental] Run a tasks'
 complete -xc mise -n "not $fssf $others" -a self-update -d 'Updates mise itself'
 complete -xc mise -n "not $fssf $others" -a set -d 'Manage environment variables'
 complete -xc mise -n "not $fssf $others" -a settings -d 'Manage settings'
 complete -xc mise -n "not $fssf $others" -a shell -d 'Sets a tool version for the current shell session'
 complete -xc mise -n "not $fssf $others" -a sync -d 'Add tool versions from external tools to mise'
-complete -xc mise -n "not $fssf $others" -a task -d '[experimental] Manage tasks'
+complete -xc mise -n "not $fssf $others" -a tasks -d '[experimental] Manage tasks'
 complete -xc mise -n "not $fssf $others" -a trust -d 'Marks a config file as trusted'
 complete -xc mise -n "not $fssf $others" -a uninstall -d 'Removes runtime versions'
 complete -xc mise -n "not $fssf $others" -a unset -d 'Remove environment variable(s) from the config file'
 complete -xc mise -n "not $fssf $others" -a upgrade -d 'Upgrades outdated tool versions'
 complete -xc mise -n "not $fssf $others" -a use -d 'Change the active version of a tool locally or globally.'
 complete -xc mise -n "not $fssf $others" -a version -d 'Show mise version'
-complete -xc mise -n "not $fssf $others" -a watch -d '[experimental] Run a task watching for changes'
+complete -xc mise -n "not $fssf $others" -a watch -d '[experimental] Run a tasks watching for changes'
 complete -xc mise -n "not $fssf $others" -a where -d 'Display the installation path for a runtime'
 complete -xc mise -n "not $fssf $others" -a which -d 'Shows the path that a bin name points to'
 
@@ -217,16 +217,16 @@ complete -kxc mise -n "$fssf prune" -a "(__mise_plugins)" -d 'Prune only version
 # reshim
 
 # run
-complete -kxc mise -n "$fssf run" -d 'Arguments to pass to the task. Use ":::" to separate tasks'
+complete -kxc mise -n "$fssf run" -d 'Arguments to pass to the tasks. Use ":::" to separate tasks'
 complete -kxc mise -n "$fssf run" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
-complete -kxc mise -n "$fssf run" -s n -l dry-run -d 'Don'\''t actually run the task(s), just print them in order of execution'
-complete -kxc mise -n "$fssf run" -s f -l force -d 'Force the task to run even if outputs are up to date'
+complete -kxc mise -n "$fssf run" -s n -l dry-run -d 'Don'\''t actually run the tasks(s), just print them in order of execution'
+complete -kxc mise -n "$fssf run" -s f -l force -d 'Force the tasks to run even if outputs are up to date'
 complete -kxc mise -n "$fssf run" -s i -l interleave -d 'Print directly to stdout/stderr instead of by line'
 complete -kxc mise -n "$fssf run" -s j -l jobs -d 'Number of tasks to run in parallel'
-complete -kxc mise -n "$fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
+complete -kxc mise -n "$fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the tasks'\''s label'
 complete -kxc mise -n "$fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
-complete -kxc mise -n "$fssf run" -a "(__mise_tasks)" -d 'Task to run'
-complete -kxc mise -n "$fssf run" -l timings -d 'Shows elapsed time after each task'
+complete -kxc mise -n "$fssf run" -a "(__mise_tasks)" -d 'Tasks to run'
+complete -kxc mise -n "$fssf run" -l timings -d 'Shows elapsed time after each tasks'
 complete -kxc mise -n "$fssf run" -s t -l tool -a "(__mise_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 # self-update
@@ -280,39 +280,39 @@ complete -kxc mise -n "$fssf sync; and $fssf node" -l nvm -d 'Get tool versions 
 complete -kxc mise -n "$fssf sync; and $fssf python" -l pyenv -d 'Get tool versions from pyenv'
 
 
-# task
-complete -kxc mise -n "$fssf task" -l hidden -d 'Show hidden tasks'
-complete -kxc mise -n "$fssf task" -l no-header -d 'Do not print table header'
+# tasks
+complete -kxc mise -n "$fssf tasks" -l hidden -d 'Show hidden tasks'
+complete -kxc mise -n "$fssf tasks" -l no-header -d 'Do not print table header'
 set -l others deps edit ls run
-complete -xc mise -n "$fssf task; and not $fssf $others" -a deps -d '[experimental] Display a tree visualization of a dependency graph'
-complete -xc mise -n "$fssf task; and not $fssf $others" -a edit -d '[experimental] Edit a task with $EDITOR'
-complete -xc mise -n "$fssf task; and not $fssf $others" -a ls -d '[experimental] List available tasks to execute'
-complete -xc mise -n "$fssf task; and not $fssf $others" -a run -d '[experimental] Run a task'
+complete -xc mise -n "$fssf tasks; and not $fssf $others" -a deps -d '[experimental] Display a tree visualization of a dependency graph'
+complete -xc mise -n "$fssf tasks; and not $fssf $others" -a edit -d '[experimental] Edit a tasks with $EDITOR'
+complete -xc mise -n "$fssf tasks; and not $fssf $others" -a ls -d '[experimental] List available tasks to execute'
+complete -xc mise -n "$fssf tasks; and not $fssf $others" -a run -d '[experimental] Run a tasks'
 
-# task deps
-complete -kxc mise -n "$fssf task; and $fssf deps" -l dot -d 'Display dependencies in DOT format'
-complete -kxc mise -n "$fssf task; and $fssf deps" -d 'Tasks to show dependencies for'
+# tasks deps
+complete -kxc mise -n "$fssf tasks; and $fssf deps" -l dot -d 'Display dependencies in DOT format'
+complete -kxc mise -n "$fssf tasks; and $fssf deps" -d 'Tasks to show dependencies for'
 
-# task edit
-complete -kxc mise -n "$fssf task; and $fssf edit" -s p -l path -d 'Display the path to the task instead of editing it'
-complete -kxc mise -n "$fssf task; and $fssf edit" -a "(__mise_tasks)" -d 'Task to edit'
+# tasks edit
+complete -kxc mise -n "$fssf tasks; and $fssf edit" -s p -l path -d 'Display the path to the tasks instead of editing it'
+complete -kxc mise -n "$fssf tasks; and $fssf edit" -a "(__mise_tasks)" -d 'Tasks to edit'
 
-# task ls
-complete -kxc mise -n "$fssf task; and $fssf ls" -l hidden -d 'Show hidden tasks'
-complete -kxc mise -n "$fssf task; and $fssf ls" -l no-header -d 'Do not print table header'
+# tasks ls
+complete -kxc mise -n "$fssf tasks; and $fssf ls" -l hidden -d 'Show hidden tasks'
+complete -kxc mise -n "$fssf tasks; and $fssf ls" -l no-header -d 'Do not print table header'
 
-# task run
-complete -kxc mise -n "$fssf task; and $fssf run" -d 'Arguments to pass to the task. Use ":::" to separate tasks'
-complete -kxc mise -n "$fssf task; and $fssf run" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
-complete -kxc mise -n "$fssf task; and $fssf run" -s n -l dry-run -d 'Don'\''t actually run the task(s), just print them in order of execution'
-complete -kxc mise -n "$fssf task; and $fssf run" -s f -l force -d 'Force the task to run even if outputs are up to date'
-complete -kxc mise -n "$fssf task; and $fssf run" -s i -l interleave -d 'Print directly to stdout/stderr instead of by line'
-complete -kxc mise -n "$fssf task; and $fssf run" -s j -l jobs -d 'Number of tasks to run in parallel'
-complete -kxc mise -n "$fssf task; and $fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the task'\''s label'
-complete -kxc mise -n "$fssf task; and $fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
-complete -kxc mise -n "$fssf task; and $fssf run" -a "(__mise_tasks)" -d 'Task to run'
-complete -kxc mise -n "$fssf task; and $fssf run" -l timings -d 'Shows elapsed time after each task'
-complete -kxc mise -n "$fssf task; and $fssf run" -s t -l tool -a "(__mise_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
+# tasks run
+complete -kxc mise -n "$fssf tasks; and $fssf run" -d 'Arguments to pass to the tasks. Use ":::" to separate tasks'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s C -l cd -a "(__fish_complete_directories)" -d 'Change to this directory before executing the command'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s n -l dry-run -d 'Don'\''t actually run the tasks(s), just print them in order of execution'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s f -l force -d 'Force the tasks to run even if outputs are up to date'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s i -l interleave -d 'Print directly to stdout/stderr instead of by line'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s j -l jobs -d 'Number of tasks to run in parallel'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s p -l prefix -d 'Print stdout/stderr by line, prefixed with the tasks'\''s label'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s r -l raw -d 'Read/write directly to stdin/stdout/stderr instead of by line'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -a "(__mise_tasks)" -d 'Tasks to run'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -l timings -d 'Shows elapsed time after each tasks'
+complete -kxc mise -n "$fssf tasks; and $fssf run" -s t -l tool -a "(__mise_tool_versions)" -d 'Tool(s) to also add e.g.: node@20 python@3.10'
 
 
 # trust
@@ -354,7 +354,7 @@ complete -kxc mise -n "$fssf use" -a "(__mise_tool_versions)" -d 'Tool(s) to add
 # watch
 complete -kxc mise -n "$fssf watch" -d 'Extra arguments'
 complete -kxc mise -n "$fssf watch" -s g -l glob -d 'Files to watch'
-complete -kxc mise -n "$fssf watch" -s t -l task -a "(__mise_tasks)" -d 'Task to run'
+complete -kxc mise -n "$fssf watch" -s t -l task -a "(__mise_tasks)" -d 'Tasks to run'
 
 # where
 complete -kxc mise -n "$fssf where" -a "(__mise_tool_versions)" -d 'Tool(s) to look up'

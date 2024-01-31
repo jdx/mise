@@ -17,7 +17,7 @@ use crate::ui::{style, table};
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskLs {
+pub struct TasksLs {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
@@ -27,11 +27,11 @@ pub struct TaskLs {
     pub hidden: bool,
 }
 
-impl TaskLs {
+impl TasksLs {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise task ls`")?;
+        settings.ensure_experimental("`mise tasks ls`")?;
         let rows = config
             .tasks()
             .iter()
@@ -59,7 +59,7 @@ struct Row {
 
 impl From<&Task> for Row {
     fn from(task: &Task) -> Self {
-        // let cmd = task.command_string().unwrap_or_default();
+        // let cmd = tasks.command_string().unwrap_or_default();
         Self {
             name: style::nbold(&task.name).bright().to_string(),
             description: style::nblue(truncate(&task.description, 40)).to_string(),
@@ -80,7 +80,7 @@ fn truncate(s: &str, len: usize) -> String {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise task ls</bold>
+  $ <bold>mise tasks ls</bold>
 "#
 );
 

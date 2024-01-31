@@ -33,11 +33,6 @@ run = "cargo build --color always --all-features"
 sources = ["Cargo.*", "src/**/*.rs"]
 outputs = ["target/debug/mise"]
 
-[tasks.test]
-run = "cargo test"
-depends = ["clean"]
-env = { CARGO_TERM_COLOR = "always" }
-
 [tasks.ci]
 depends = [
     "format",
@@ -89,6 +84,16 @@ run = "just lint-fix"
 [tasks.signal-test]
 run = "node ./test/fixtures/signal-test.js"
 
+[tasks.test]
+run = [
+  "mise run test:unit",
+  "mise run test:e2e",
+]
+
+[tasks."test:unit"]
+run = "cargo test"
+env = { CARGO_TERM_COLOR = "always" }
+
 [tasks."test:e2e"]
 run = "just test-e2e"
 # TODO: make this work when we have task args
@@ -102,3 +107,19 @@ run = "just test-e2e"
 #    echo ./e2e/run_test "$FILES"
 #fi
 #'''
+
+[tasks."docker:image"]
+description = "build docker image from Dockerfile"
+run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
+
+[tasks."docker:cargo"]
+description = "run cargo inside of development docker container"
+run = 'docker run -ti --rm -v $root:/mise -w /mise ghcr.io/jdx/mise:dev cargo'
+
+[tasks."docker:mise"]
+description = "run mise inside of development docker container"
+run = "mise run -- docker:cargo run --"
+
+[tasks."docker:e2e"]
+description = "run e2e tests inside of development docker container"
+run = "mise run docker:mise run test:e2e"

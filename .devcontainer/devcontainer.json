@@ -3,12 +3,12 @@
 {
   "name": "Rust",
 
-  // "image": "mcr.microsoft.com/devcontainers/rust:0-1-bullseye",
+  "image": "ghcr.io/jdx/mise:dev",
 
   // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  "build": {
-    "dockerfile": "Dockerfile",
-  },
+  // "build": {
+  //   "dockerfile": "Dockerfile",
+  // },
 
   // Use 'mounts' to make the cargo cache persistent in a Docker Volume.
   // "mounts": [

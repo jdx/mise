@@ -4,22 +4,22 @@ use crate::config::{Config, Settings};
 use crate::task::Task;
 use crate::{env, file};
 
-/// [experimental] Edit a task with $EDITOR
+/// [experimental] Edit a tasks with $EDITOR
 ///
-/// The task will be created as a standalone script if it does not already exist.
+/// The tasks will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskEdit {
-    /// Task to edit
+pub struct TasksEdit {
+    /// Tasks to edit
     #[clap()]
     task: String,
 
-    /// Display the path to the task instead of editing it
+    /// Display the path to the tasks instead of editing it
     #[clap(long, short, verbatim_doc_comment)]
     path: bool,
 }
 
-impl TaskEdit {
+impl TasksEdit {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
@@ -59,7 +59,7 @@ impl TaskEdit {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise task edit build</bold>
-  $ <bold>mise task edit test</bold>
+  $ <bold>mise tasks edit build</bold>
+  $ <bold>mise tasks edit test</bold>
 "#
 );

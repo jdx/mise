@@ -29,6 +29,7 @@ pub fn handle_shim() -> Result<()> {
     }
     logger::init();
     let args = env::ARGS.read().unwrap();
+    trace!("shim[{bin_name}] args: {}", args.join(" "));
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
     args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
     let exec = Exec {
@@ -47,6 +48,10 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     let mut ts = ToolsetBuilder::new().build(&config)?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
+            trace!(
+                "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
+                bin = display_path(&bin)
+            );
             return Ok(bin);
         }
     }
@@ -55,6 +60,10 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
             let p = tv.get_forge();
             if let Some(bin) = p.which(&tv, bin_name)? {
+                trace!(
+                    "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
+                    bin = display_path(&bin)
+                );
                 return Ok(bin);
             }
         }
@@ -68,6 +77,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
         }
         let bin = path.join(bin_name);
         if bin.exists() {
+            trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
             return Ok(bin);
         }
     }
