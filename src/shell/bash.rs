@@ -48,7 +48,10 @@ impl Shell for Bash {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
                 _mise_cmd_not_found=1
-                [ -n "$(declare -f command_not_found_handle)" ] && eval "${{$(declare -f command_not_found_handle)/command_not_found_handle/_command_not_found_handle}}"
+                if [ -n "$(declare -f command_not_found_handle)" ]; then
+                    _mise_cmd_not_found_handle=$(declare -f command_not_found_handle)
+                    eval "${{_mise_cmd_not_found_handle/command_not_found_handle/_command_not_found_handle}}"
+                fi
 
                 command_not_found_handle() {{
                     if {exe} hook-not-found -s bash -- "$1"; then
