@@ -45,21 +45,20 @@ impl TasksDeps {
     }
 
     fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
-        config
-            .tasks()
-            .iter()
-            .map(|(_, t)| t)
+        Ok(config
+            .tasks()?
+            .into_values()
             .sorted()
             .filter(|t| !t.hide)
-            .map(|t| Ok(t.to_owned()))
-            .collect()
+            .cloned()
+            .collect())
     }
 
     fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
                 .sorted()
-                .map(|tn| match config.tasks().get(tn) {
+                .map(|tn| match config.tasks()?.remove(tn) {
                     Some(task) => Ok(task.clone()),
                     None => Err(self.err_no_task(config, tn.as_str())),
                 })
@@ -133,7 +132,7 @@ impl TasksDeps {
     }
 
     fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
-        let tasks = config.tasks();
+        let tasks = config.tasks().unwrap_or_default();
         let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
         eyre!("no tasks named `{t}` found. Available tasks: {task_names}")

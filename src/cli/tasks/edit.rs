@@ -26,7 +26,7 @@ impl TasksEdit {
         settings.ensure_experimental("`mise tasks edit`")?;
 
         let task = config
-            .tasks_with_aliases()
+            .tasks_with_aliases()?
             .get(&self.task)
             .cloned()
             .map_or_else(

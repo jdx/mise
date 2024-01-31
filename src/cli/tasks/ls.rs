@@ -33,8 +33,8 @@ impl TasksLs {
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise tasks ls`")?;
         let rows = config
-            .tasks()
-            .iter()
+            .tasks()?
+            .into_iter()
             .map(|(_, t)| t)
             .sorted()
             .filter(|t| self.hidden || !t.hide)
