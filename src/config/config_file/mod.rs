@@ -79,7 +79,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
     fn task_config(&self) -> &TaskConfig {
-        static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(|| TaskConfig::default());
+        static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
     }
 }
