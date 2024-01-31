@@ -56,7 +56,7 @@ $ mise run test:e2e
 ## Dependencies
 
 - [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can use whatever)
-- [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some things
+- [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some things.
 
 ## Tasks
 
@@ -82,30 +82,6 @@ signal-test                                                  ~/src/mise/.mise.to
 snapshots           Update test snapshots                    ~/src/mise/.mise.toml          
 test                                                         ~/src/mise/.mise.toml          
 test:e2e                                                     ~/src/mise/.mise.toml          
-```
-
-## [deprecated] Just
-
-_Note: these tasks are being moved over to `mise run` tasks but not all of them have been migrated yet._
-
-Just should be used for just about every task. Here is a full list of its tasks:
-
-```sh
-~/src/mise ❯ just --list
-Available recipes:
-    build *args           # just `cargo build`
-    b *args               # alias for `build`
-    default               # defaults to `just test`
-    lint                  # clippy, cargo fmt --check, and just --fmt
-    l                     # alias for `lint`
-    lint-fix              # runs linters but makes fixes when possible
-    lf                    # alias for `lint-fix`
-    test *args            # run all test types
-    t *args               # alias for `test`
-    test-coverage         # run unit tests w/ coverage
-    test-e2e TEST=("all") # specify a test name to run a single test
-    e TEST=("all")        # alias for `test-e2e`
-    test-unit *args       # run the rust "unit" tests
 ```
 
 ## Setup
