@@ -31,7 +31,6 @@ error() {
 get_musl() {
 	libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
 	if [ -z $libc ]; then
-			# This is not Musl.
 		echo "musl"
 	else
 		echo ""
