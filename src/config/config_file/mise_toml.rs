@@ -118,17 +118,7 @@ impl MiseToml {
         self.env_path = cfg.env_path;
         self.min_version = cfg.min_version;
         self.plugins = cfg.plugins;
-        self.task_config = if cfg.task_config.includes.is_empty() && self.project_root.is_some() {
-            let pr = self.project_root.as_ref().unwrap();
-            TaskConfig {
-                includes: vec![
-                    pr.join(".mise").join("tasks"),
-                    pr.join(".config").join("mise").join("tasks"),
-                ],
-            }
-        } else {
-            cfg.task_config
-        };
+        self.task_config = cfg.task_config;
 
         // TODO: right now some things are parsed with serde (above) and some not (below) everything
         // should be moved to serde eventually
@@ -578,8 +568,8 @@ impl ConfigFile for MiseToml {
         self.alias.clone()
     }
 
-    fn task_config(&self) -> TaskConfig {
-        self.task_config.clone()
+    fn task_config(&self) -> &TaskConfig {
+        &self.task_config
     }
 }
 
@@ -605,7 +595,7 @@ impl Debug for MiseToml {
         if !self.plugins.is_empty() {
             d.field("plugins", &self.plugins);
         }
-        if !self.task_config.includes.is_empty() {
+        if self.task_config.includes.is_some() {
             d.field("task_config", &self.task_config);
         }
         d.finish()

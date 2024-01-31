@@ -139,7 +139,7 @@ impl Run {
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| {
-                let tasks = config.tasks_with_aliases().get_matching(&t)?;
+                let tasks = config.tasks_with_aliases()?.get_matching(&t)?;
                 if tasks.is_empty() {
                     ensure!(t == "default", "no tasks {} found", style::ered(t));
 
@@ -369,7 +369,7 @@ impl Run {
     }
 
     fn prompt_for_task(&self, config: &Config) -> Result<Task> {
-        let tasks = config.tasks();
+        let tasks = config.tasks()?;
         ensure!(
             !tasks.is_empty(),
             "no tasks defined. see {url}",
@@ -385,7 +385,7 @@ impl Run {
         let _ = ctrlc::handle_ctrlc()?;
         let name = s.run()?;
         match tasks.get(name) {
-            Some(task) => Ok(task.clone()),
+            Some(task) => Ok((*task).clone()),
             None => bail!("no tasks {} found", style::ered(name)),
         }
     }
