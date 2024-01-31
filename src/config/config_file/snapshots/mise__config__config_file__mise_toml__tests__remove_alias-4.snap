@@ -8,4 +8,10 @@ MiseToml(/tmp/.mise.toml):  {
             "18": "18.0.0",
         },
     },
+    task_config: TaskConfig {
+        includes: [
+            "/tmp/.mise/tasks",
+            "/tmp/.config/mise/tasks",
+        ],
+    },
 }
