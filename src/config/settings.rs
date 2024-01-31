@@ -305,10 +305,10 @@ impl Settings {
         Ok(settings)
     }
 
-    pub fn hidden_configs() -> HashSet<&'static str> {
+    pub fn hidden_configs() -> &'static HashSet<&'static str> {
         static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
             Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
-        HIDDEN_CONFIGS.clone()
+        &HIDDEN_CONFIGS
     }
 
     pub fn reset(cli_settings: Option<SettingsPartial>) {

@@ -9,20 +9,20 @@ mod ls;
 
 /// [experimental] Manage tasks
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "t", alias = "tasks", verbatim_doc_comment)]
-pub struct Task {
+#[clap(visible_alias = "t", alias = "task", verbatim_doc_comment)]
+pub struct Tasks {
     #[clap(subcommand)]
     command: Option<Commands>,
 
     #[clap(flatten)]
-    ls: ls::TaskLs,
+    ls: ls::TasksLs,
 }
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Deps(deps::TaskDeps),
-    Edit(edit::TaskEdit),
-    Ls(ls::TaskLs),
+    Deps(deps::TasksDeps),
+    Edit(edit::TasksEdit),
+    Ls(ls::TasksLs),
     Run(run::Run),
 }
 
@@ -37,7 +37,7 @@ impl Commands {
     }
 }
 
-impl Task {
+impl Tasks {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
 
