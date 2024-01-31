@@ -323,7 +323,7 @@ fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
         }
     }
 
-    Some(config_source.as_ref())
+    config_source.as_ref().parent()
 }
 
 pub trait GetMatchingExt<T> {
@@ -383,7 +383,7 @@ mod tests {
     #[test]
     fn test_config_root() {
         let test_cases = [
-            ("/base", Some(Path::new("/base"))),
+            ("/base", Some(Path::new("/"))),
             ("/base/.mise/tasks", Some(Path::new("/base"))),
             ("/base/.config/mise/tasks", Some(Path::new("/base"))),
         ];

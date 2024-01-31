@@ -9,6 +9,7 @@ use eyre::{Context, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
+use path_absolutize::Absolutize;
 use rayon::prelude::*;
 
 pub use settings::Settings;
@@ -216,10 +217,21 @@ impl Config {
             .into_par_iter()
             .flat_map(|cf| {
                 match cf.project_root() {
-                    Some(pr) => vec![
-                        pr.join(".mise").join("tasks"),
-                        pr.join(".config").join("mise").join("tasks"),
-                    ],
+                    Some(pr) => cf
+                        .task_config()
+                        .includes
+                        .iter()
+                        .map(|p| {
+                            if p.is_absolute() {
+                                return p.clone();
+                            }
+
+                            file::replace_path(p)
+                                .absolutize_from(pr)
+                                .unwrap()
+                                .to_path_buf()
+                        })
+                        .collect(),
                     None => vec![],
                 }
                 .into_par_iter()
