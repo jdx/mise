@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
@@ -16,6 +16,7 @@ use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use velcro::hash_set;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -165,10 +166,6 @@ impl Run {
         if let Some(root) = &config.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
-        if console::colors_enabled() {
-            env.insert("CLICOLOR_FORCE".into(), "1".into());
-            env.insert("FORCE_COLOR".into(), "1".into());
-        }
 
         let tasks = Deps::new(config, tasks)?;
         for task in tasks.all() {
@@ -219,11 +216,18 @@ impl Run {
             return Ok(());
         }
 
-        let env: BTreeMap<String, String> = env
+        let mut env: BTreeMap<String, String> = env
             .iter()
             .chain(task.env.iter())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+
+        static COLOR_KEYS: Lazy<HashSet<&str>> =
+            Lazy::new(|| hash_set!("CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR", "NO_COLOR"));
+        if console::colors_enabled() && !task.env.keys().any(|k| COLOR_KEYS.contains(k.as_str())) {
+            env.insert("CLICOLOR_FORCE".into(), "1".into());
+            env.insert("FORCE_COLOR".into(), "1".into());
+        }
 
         let timer = std::time::Instant::now();
 
@@ -260,19 +264,23 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let script = format!("{} {}", script, shell_words::join(args));
+        let script = script.trim_start();
         let cmd = style::ebold(format!("$ {script}")).bright().to_string();
         info_unprefix_trunc!("{prefix} {cmd}");
 
-        if env::var("MISE_TASK_SCRIPT_FILE").is_ok() {
-            let mut tmp = tempfile::NamedTempFile::new()?;
-            let args = once(tmp.path().display().to_string())
-                .chain(args.iter().cloned())
-                .collect_vec();
-            writeln!(tmp, "{}", script.trim())?;
-            self.exec("sh", &args, task, env, prefix)
+        if script.starts_with("#!") {
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join("script");
+            let mut tmp = std::fs::File::create(&file)?;
+            tmp.write_all(script.as_bytes())?;
+            tmp.flush()?;
+            drop(tmp);
+            file::make_executable(&file)?;
+            let filename = file.display().to_string();
+            self.exec(&filename, args, task, env, prefix)
         } else {
-            let args = vec!["-c".to_string(), script.trim().to_string()];
+            let script = format!("{} {}", script, shell_words::join(args));
+            let args = vec!["-c".to_string(), script];
             self.exec("sh", &args, task, env, prefix)
         }
     }

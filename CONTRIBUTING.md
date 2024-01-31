@@ -62,7 +62,6 @@ Available recipes:
     default               # defaults to `just test`
     lint                  # clippy, cargo fmt --check, and just --fmt
     lint-fix              # runs linters but makes fixes when possible
-    pre-commit            # called by lefthook precommit hook
     release *args         # create/publish a new version of mise
     render-completions    # regenerate shell completion files
     render-help           # regenerate README.md
@@ -106,23 +105,13 @@ Run `just release -x [minor|patch]`. (minor if it is the first release in a mont
 
 ## Linting
 
-- Lint codebase: `just lint`
-- Lint and fix codebase: `just lint-fix`
+- Lint codebase: `mise run lint`
+- Lint and fix codebase: `mise run lint:fix`
 
 ## Generating readme and shell completion files
 
 ```shell
-just pre-commit
-```
-
-## [optional] Pre-commit hook
-
-This project uses lefthook which will automatically install a pre-commit hook:
-
-```shell
-brew install lefthook # or install via some other means
-lefthook install
-git commit
+mise run render
 ```
 
 ## Testing packaging

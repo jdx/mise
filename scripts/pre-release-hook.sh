@@ -7,9 +7,7 @@ else
   cargo update && git add Cargo.lock
 fi
 
-mise run render-mangen ::: render-help
-
 ./scripts/update-shorthand-repo.sh
-mise run lint-fix
+mise run render ::: lint:fix
 
 git add man src/default_shorthands.rs
