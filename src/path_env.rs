@@ -4,6 +4,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
+use crate::config::Settings;
 use itertools::Itertools;
 
 use crate::dirs;
@@ -50,12 +51,14 @@ impl Display for PathEnv {
 
 impl FromIterator<PathBuf> for PathEnv {
     fn from_iter<T: IntoIterator<Item = PathBuf>>(paths: T) -> Self {
+        let settings = Settings::get();
+
         let mut path_env = Self::new();
 
         for path in paths {
             if path_env.seen_shims {
                 path_env.post.push(path);
-            } else if path == *dirs::SHIMS {
+            } else if path == *dirs::SHIMS && !settings.activate_aggressive {
                 path_env.seen_shims = true;
             } else {
                 path_env.pre.push(path);
