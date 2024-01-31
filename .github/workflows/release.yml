@@ -58,11 +58,11 @@ jobs:
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
-            runs-on: macos-12
+            runs-on: macos-latest
           - os: macos
             name: macos-arm64
             target: aarch64-apple-darwin
-            runs-on: macos-12
+            runs-on: macos-latest
     #          - os: macos
     #            name: macos
     #            target: universal2-apple-darwin
