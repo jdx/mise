@@ -31,6 +31,7 @@ export default defineConfig({
       { text: 'Paranoid', link: '/paranoid' },
       { text: 'Plugins', link: '/plugins' },
       { text: 'Team', link: '/team' },
+      { text: 'Contributing', link: '/contributing' },
       { text: 'Tips & Tricks', link: '/tips-and-tricks' },
       {
         text: 'Dev Tools',
