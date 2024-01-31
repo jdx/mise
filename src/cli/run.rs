@@ -146,8 +146,7 @@ impl Run {
                     Ok(vec![self.prompt_for_task(config)?])
                 } else {
                     Ok(tasks
-                        .iter()
-                        .cloned()
+                        .into_iter()
                         .map(|t| t.clone().with_args(args.to_vec()))
                         .collect())
                 }
@@ -375,11 +374,10 @@ impl Run {
             "no tasks defined. see {url}",
             url = style::eunderline("https://mise.jdx.dev/tasks/")
         );
-        let task_names = tasks.keys().sorted().collect_vec();
         let mut s = Select::new("Tasks")
             .description("Select a tasks to run")
             .filterable(true);
-        for name in task_names {
+        for name in tasks.keys() {
             s = s.option(DemandOption::new(name));
         }
         let _ = ctrlc::handle_ctrlc()?;
