@@ -1,6 +1,5 @@
 use console::truncate_str;
 use eyre::Result;
-use itertools::Itertools;
 use tabled::Tabled;
 
 use crate::config::{Config, Settings};
@@ -34,9 +33,7 @@ impl TasksLs {
         settings.ensure_experimental("`mise tasks ls`")?;
         let rows = config
             .tasks()?
-            .into_iter()
-            .map(|(_, t)| t)
-            .sorted()
+            .into_values()
             .filter(|t| self.hidden || !t.hide)
             .map(|t| t.into())
             .collect::<Vec<Row>>();

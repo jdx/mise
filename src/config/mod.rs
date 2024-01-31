@@ -47,7 +47,7 @@ pub struct Config {
     all_aliases: OnceCell<AliasMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceCell<HashMap<String, String>>,
-    tasks_with_aliases: OnceCell<HashMap<String, Task>>,
+    tasks_with_aliases: OnceCell<BTreeMap<String, Task>>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -148,7 +148,7 @@ impl Config {
         self.all_aliases.get_or_init(|| self.load_all_aliases())
     }
 
-    pub fn tasks(&self) -> Result<HashMap<&String, &Task>> {
+    pub fn tasks(&self) -> Result<BTreeMap<&String, &Task>> {
         Ok(self
             .tasks_with_aliases()?
             .iter()
@@ -156,7 +156,7 @@ impl Config {
             .collect())
     }
 
-    pub fn tasks_with_aliases(&self) -> Result<&HashMap<String, Task>> {
+    pub fn tasks_with_aliases(&self) -> Result<&BTreeMap<String, Task>> {
         self.tasks_with_aliases
             .get_or_try_init(|| self.load_all_tasks())
     }
@@ -207,7 +207,7 @@ impl Config {
         aliases
     }
 
-    pub fn load_all_tasks(&self) -> Result<HashMap<String, Task>> {
+    pub fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
         Ok(self
             .config_files
             .values()
