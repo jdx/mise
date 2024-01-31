@@ -114,5 +114,5 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: jdxcode/mise:latest,{% if startsWith(github.event.ref, 'refs/tags/v') %}jdxcode/mise:${{ github.ref_name }}{% endif %}
+          tags: jdxcode/mise:latest,jdxcode/mise:${{ github.ref_name }}
           labels: ${{ steps.meta.outputs.labels }}
