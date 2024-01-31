@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
@@ -16,7 +16,6 @@ use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use velcro::hash_set;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -31,11 +30,11 @@ use crate::{env, file, ui};
 
 use super::args::ToolArg;
 
-/// [experimental] Run a task
+/// [experimental] Run a tasks
 ///
-/// This command will run a task, or multiple tasks in parallel.
+/// This command will run a tasks, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
-/// If source is configured on a task, it will only run if the source
+/// If source is configured on a tasks, it will only run if the source
 /// files have changed.
 ///
 /// Tasks can be defined in .mise.toml or as standalone scripts.
@@ -48,7 +47,7 @@ use super::args::ToolArg;
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
 /// These must be located in the `.mise/tasks` directory.
-/// The name of the script will be the name of the task.
+/// The name of the script will be the name of the tasks.
 ///
 ///     $ cat .mise/tasks/build<<EOF
 ///     #!/usr/bin/env bash
@@ -58,13 +57,13 @@ use super::args::ToolArg;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
-    /// Task to run
+    /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
     #[clap(verbatim_doc_comment, default_value = "default")]
     pub task: String,
 
-    /// Arguments to pass to the task. Use ":::" to separate tasks.
+    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
     #[clap(allow_hyphen_values = true)]
     pub args: Vec<String>,
 
@@ -72,15 +71,15 @@ pub struct Run {
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
 
-    /// Don't actually run the task(s), just print them in order of execution
+    /// Don't actually run the tasks(s), just print them in order of execution
     #[clap(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
-    /// Force the task to run even if outputs are up to date
+    /// Force the tasks to run even if outputs are up to date
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
-    /// Print stdout/stderr by line, prefixed with the task's label
+    /// Print stdout/stderr by line, prefixed with the tasks's label
     /// Defaults to true if --jobs > 1
     /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
@@ -108,7 +107,7 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
-    /// Shows elapsed time after each task
+    /// Shows elapsed time after each tasks
     #[clap(long, alias = "timing", verbatim_doc_comment)]
     pub timings: bool,
 
@@ -142,7 +141,7 @@ impl Run {
             .map(|(t, args)| {
                 let tasks = config.tasks_with_aliases().get_matching(&t)?;
                 if tasks.is_empty() {
-                    ensure!(t == "default", "no task {} found", style::ered(t));
+                    ensure!(t == "default", "no tasks {} found", style::ered(t));
 
                     Ok(vec![self.prompt_for_task(config)?])
                 } else {
@@ -165,6 +164,7 @@ impl Run {
         let mut env = ts.env_with_path(config)?;
         if let Some(root) = &config.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+            env.insert("root".into(), root.display().to_string());
         }
 
         let tasks = Deps::new(config, tasks)?;
@@ -186,7 +186,7 @@ impl Run {
                 let t = task.clone();
                 s.spawn(|_| {
                     let task = t;
-                    trace!("running task: {task}");
+                    trace!("running tasks: {task}");
                     if let Err(err) = self.run_task(config, &env, &task) {
                         error!("{err}");
                         exit(1);
@@ -216,18 +216,11 @@ impl Run {
             return Ok(());
         }
 
-        let mut env: BTreeMap<String, String> = env
+        let env: BTreeMap<String, String> = env
             .iter()
             .chain(task.env.iter())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-
-        static COLOR_KEYS: Lazy<HashSet<&str>> =
-            Lazy::new(|| hash_set!("CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR", "NO_COLOR"));
-        if console::colors_enabled() && !task.env.keys().any(|k| COLOR_KEYS.contains(k.as_str())) {
-            env.insert("CLICOLOR_FORCE".into(), "1".into());
-            env.insert("FORCE_COLOR".into(), "1".into());
-        }
 
         let timer = std::time::Instant::now();
 
@@ -384,7 +377,7 @@ impl Run {
         );
         let task_names = tasks.keys().sorted().collect_vec();
         let mut s = Select::new("Tasks")
-            .description("Select a task to run")
+            .description("Select a tasks to run")
             .filterable(true);
         for name in task_names {
             s = s.option(DemandOption::new(name));
@@ -393,7 +386,7 @@ impl Run {
         let name = s.run()?;
         match tasks.get(name) {
             Some(task) => Ok(task.clone()),
-            None => bail!("no task {} found", style::ered(name)),
+            None => bail!("no tasks {} found", style::ered(name)),
         }
     }
 
@@ -524,11 +517,11 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>mise run lint</bold>
-  Runs the "lint" task. This needs to either be defined in .mise.toml
+  Runs the "lint" tasks. This needs to either be defined in .mise.toml
   or as a standalone script. See the project README for more information.
 
   $ <bold>mise run build --force</bold>
-  Forces the "build" task to run even if its sources are up-to-date.
+  Forces the "build" tasks to run even if its sources are up-to-date.
 
   $ <bold>mise run test --raw</bold>
   Runs "test" with stdin/stdout/stderr all connected to the current terminal.
@@ -537,7 +530,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   $ <bold>mise run lint ::: test ::: check</bold>
   Runs the "lint", "test", and "check" tasks in parallel.
 
-  $ <bold>mise task cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
+  $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
   Execute multiple tasks each with their own arguments.
 "#
 );

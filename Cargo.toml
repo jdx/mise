@@ -100,7 +100,6 @@ thiserror = "1.0.56"
 toml = { version = "0.8.8", features = ["parse"] }
 toml_edit = { version = "0.21.0", features = ["parse"] }
 url = "2.5.0"
-velcro = "0.5.4"
 versions = { version = "6.1.0" , features=["serde"]}
 walkdir = "2.4.0"
 which = "6.0.0"

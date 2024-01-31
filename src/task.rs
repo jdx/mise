@@ -288,7 +288,7 @@ impl Deps {
         })
     }
 
-    // fn pop(&'a mut self) -> Option<&'a Task> {
+    // fn pop(&'a mut self) -> Option<&'a Tasks> {
     //     if let Some(leaf) = self.leaves().first() {
     //         self.remove(&leaf.clone())
     //     } else {
