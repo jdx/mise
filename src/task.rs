@@ -131,7 +131,7 @@ impl Task {
     }
 
     pub fn resolve_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
-        let tasks = config.tasks_with_aliases();
+        let tasks = config.tasks_with_aliases()?;
         let depends = self
             .depends
             .iter()
