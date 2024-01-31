@@ -42,7 +42,10 @@ jobs:
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
-      - run: just render-all lint-fix
+      - run: cargo build --all-features
+      - run: ./target/debug/mise settings set experimental true
+      - run: ./target/debug/mise run render
+      - run: ./target/debug/mise run lint:fix
       - run: git diff HEAD
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         uses: EndBug/add-and-commit@v9
@@ -50,7 +53,7 @@ jobs:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
-      - run: just lint
+      - run: ./target/debug/mise run lint
 
   coverage:
     name: coverage-${{matrix.tranche}}
