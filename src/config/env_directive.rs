@@ -119,7 +119,7 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Source(input) => {
-                    settings.ensure_experimental()?;
+                    settings.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                     let p = normalize_path(s);

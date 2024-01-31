@@ -23,7 +23,7 @@ impl ConfigLs {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise config ls`")?;
         let rows = config
             .config_files
             .values()

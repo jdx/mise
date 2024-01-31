@@ -36,7 +36,7 @@ impl Forge for GoForge {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::get();
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("go backend")?;
 
         CmdLineRunner::new("go")
             .arg("install")

@@ -27,7 +27,7 @@ impl TaskDeps {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise tasks deps`")?;
 
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks(&config)?
