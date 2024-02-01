@@ -38,7 +38,7 @@ pub struct Ls {
     global: bool,
 
     /// Only show tool versions that are installed
-    /// Hides missing ones defined in .tool-versions/.mise.toml but not yet installed
+    /// (Hides tools defined in .tool-versions/.mise.toml but not installed)
     #[clap(long, short)]
     installed: bool,
 

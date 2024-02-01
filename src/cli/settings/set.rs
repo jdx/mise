@@ -1,6 +1,7 @@
 use eyre::Result;
 use toml_edit::Document;
 
+use crate::config::settings::SettingsStatusMissingTools;
 use crate::{env, file};
 
 /// Add/update a setting
@@ -19,6 +20,7 @@ pub struct SettingsSet {
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
         let value: toml_edit::Value = match self.setting.as_str() {
+            "activate_aggressive" => parse_bool(&self.value)?,
             "all_compile" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
@@ -38,6 +40,13 @@ impl SettingsSet {
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
             "shorthands_file" => self.value.into(),
+            "status.missing_tools" => self
+                .value
+                .parse::<SettingsStatusMissingTools>()?
+                .to_string()
+                .into(),
+            "status.show_env" => parse_bool(&self.value)?,
+            "status.show_tools" => parse_bool(&self.value)?,
             "task_output" => self.value.into(),
             "trusted_config_paths" => self.value.split(':').map(|s| s.to_string()).collect(),
             "verbose" => parse_bool(&self.value)?,
@@ -53,7 +62,16 @@ impl SettingsSet {
             config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         let settings = config["settings"].as_table_mut().unwrap();
-        settings.insert(&self.setting, toml_edit::Item::Value(value));
+        if self.setting.as_str().starts_with("status.") {
+            let status = settings
+                .entry("status")
+                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                .as_table_mut()
+                .unwrap();
+            status.insert(&self.setting[7..], toml_edit::Item::Value(value));
+        } else {
+            settings.insert(&self.setting, toml_edit::Item::Value(value));
+        }
         file::write(path, config.to_string())
     }
 }
@@ -88,6 +106,7 @@ pub mod tests {
         reset_config();
         assert_cli!("settings", "set", "legacy_version_file", "0");
         assert_cli!("settings", "set", "always_keep_download", "y");
+        assert_cli!("settings", "set", "status.missing_tools", "never");
         assert_cli!(
             "settings",
             "set",
@@ -124,7 +143,6 @@ pub mod tests {
         quiet = false
         raw = false
         shorthands_file = null
-        status = {"missing_tools":true,"show_env":false,"show_tools":false}
         task_output = null
         trusted_config_paths = []
         verbose = true

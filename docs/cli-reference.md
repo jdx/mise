@@ -24,6 +24,8 @@ specify the full path like this:
 
     echo 'eval "$(/path/to/mise activate)"' >> ~/.zshrc
 
+Customize status output with `status` settings.
+
 Usage: activate [OPTIONS] [SHELL_TYPE]
 
 Arguments:
@@ -515,7 +517,7 @@ Options:
           Only show tool versions currently specified in a the global .tool-versions/.mise.toml
 
   -i, --installed
-          Only show tool versions that are installed Hides missing ones defined in .tool-versions/.mise.toml but not yet installed
+          Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
 
   -J, --json
           Output in json format

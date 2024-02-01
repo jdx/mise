@@ -115,14 +115,30 @@ pub struct Settings {
 #[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct SettingsStatus {
     /// warn if a tool is missing
-    #[config(env = "MISE_STATUS_MESSAGE_MISSING_TOOLS", default = true)]
-    pub missing_tools: bool,
+    #[config(
+        env = "MISE_STATUS_MESSAGE_MISSING_TOOLS",
+        default = "if_other_versions_installed"
+    )]
+    pub missing_tools: SettingsStatusMissingTools,
     /// show env var keys when entering directories
     #[config(env = "MISE_STATUS_MESSAGE_SHOW_ENV", default = false)]
     pub show_env: bool,
     /// show active tools when entering directories
     #[config(env = "MISE_STATUS_MESSAGE_SHOW_TOOLS", default = false)]
     pub show_tools: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, EnumString, Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SettingsStatusMissingTools {
+    /// never show the warning
+    Never,
+    /// hide this warning if the user hasn't installed at least 1 version of the tool before
+    #[default]
+    IfOtherVersionsInstalled,
+    /// always show the warning if tools are missing
+    Always,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
