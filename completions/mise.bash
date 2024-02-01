@@ -51,6 +51,9 @@ _mise() {
             mise,doctor)
                 cmd="mise__doctor"
                 ;;
+            mise,dr)
+                cmd="mise__doctor"
+                ;;
             mise,e)
                 cmd="mise__env"
                 ;;
