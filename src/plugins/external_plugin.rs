@@ -528,7 +528,7 @@ impl Forge for ExternalPlugin {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
-                "Plugin: {} is a symlink, not updating",
+                "plugin:{} is a symlink, not updating",
                 style(&self.name).blue().for_stderr()
             );
             return Ok(());
@@ -536,7 +536,7 @@ impl Forge for ExternalPlugin {
         let git = Git::new(plugin_path);
         if !git.is_repo() {
             warn!(
-                "Plugin {} is not a git repository, not updating",
+                "plugin:{} is not a git repository, not updating",
                 style(&self.name).blue().for_stderr()
             );
             return Ok(());
