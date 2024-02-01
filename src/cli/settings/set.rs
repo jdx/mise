@@ -1,6 +1,8 @@
 use eyre::Result;
 use toml_edit::Document;
 
+use crate::config::settings::SettingsFile;
+
 use crate::{env, file};
 
 /// Add/update a setting
@@ -19,6 +21,7 @@ pub struct SettingsSet {
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
         let value: toml_edit::Value = match self.setting.as_str() {
+            "activate_aggressive" => parse_bool(&self.value)?,
             "all_compile" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
@@ -32,12 +35,15 @@ impl SettingsSet {
             "node_compile" => parse_bool(&self.value)?,
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
-            "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
+            "plugin_autoupdate_last_check_duration" => self.value.into(),
             "python_compile" => parse_bool(&self.value)?,
             "python_venv_auto_create" => parse_bool(&self.value)?,
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
             "shorthands_file" => self.value.into(),
+            "status.missing_tools" => self.value.into(),
+            "status.show_env" => parse_bool(&self.value)?,
+            "status.show_tools" => parse_bool(&self.value)?,
             "task_output" => self.value.into(),
             "trusted_config_paths" => self.value.split(':').map(|s| s.to_string()).collect(),
             "verbose" => parse_bool(&self.value)?,
@@ -53,7 +59,20 @@ impl SettingsSet {
             config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         let settings = config["settings"].as_table_mut().unwrap();
-        settings.insert(&self.setting, toml_edit::Item::Value(value));
+        if self.setting.as_str().starts_with("status.") {
+            let status = settings
+                .entry("status")
+                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                .as_table_mut()
+                .unwrap();
+            status.insert(&self.setting[7..], toml_edit::Item::Value(value));
+        } else {
+            settings.insert(&self.setting, toml_edit::Item::Value(value));
+        }
+
+        // validate
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
+
         file::write(path, config.to_string())
     }
 }
@@ -88,6 +107,7 @@ pub mod tests {
         reset_config();
         assert_cli!("settings", "set", "legacy_version_file", "0");
         assert_cli!("settings", "set", "always_keep_download", "y");
+        assert_cli!("settings", "set", "status.missing_tools", "never");
         assert_cli!(
             "settings",
             "set",
@@ -98,37 +118,35 @@ pub mod tests {
         assert_cli_snapshot!("settings", @r###"
         activate_aggressive = false
         all_compile = false
-        always_keep_download = false
-        always_keep_install = false
+        always_keep_download = true
+        always_keep_install = true
         asdf_compat = false
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
         disable_tools = []
         experimental = true
-        jobs = 4
-        legacy_version_file = true
+        jobs = 2
+        legacy_version_file = false
         legacy_version_file_disable_tools = []
         node_compile = false
         not_found_auto_install = true
         paranoid = false
-        plugin_autoupdate_last_check_duration = "7d"
+        plugin_autoupdate_last_check_duration = "1"
         python_compile = false
         python_default_packages_file = "~/.default-python-packages"
-        python_patch_url = null
-        python_patches_directory = null
-        python_precompiled_arch = null
-        python_precompiled_os = null
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         python_venv_auto_create = false
         quiet = false
         raw = false
-        shorthands_file = null
-        status = {"missing_tools":true,"show_env":false,"show_tools":false}
-        task_output = null
         trusted_config_paths = []
         verbose = true
         yes = true
+
+        [status]
+        missing_tools = "never"
+        show_env = false
+        show_tools = false
         "###);
         reset_config();
     }

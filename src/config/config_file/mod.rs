@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use eyre::Result;
 use once_cell::sync::Lazy;
+use serde_derive::Deserialize;
 use versions::Versioning;
 
 use tool_versions::ToolVersions;
@@ -76,6 +77,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn to_toolset(&self) -> &Toolset;
     fn aliases(&self) -> AliasMap {
         Default::default()
+    }
+    fn task_config(&self) -> &TaskConfig {
+        static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
+        &DEFAULT_TASK_CONFIG
     }
 }
 
@@ -325,6 +330,11 @@ impl Hash for dyn ConfigFile {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.get_path().hash(state);
     }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct TaskConfig {
+    pub includes: Option<Vec<PathBuf>>,
 }
 
 #[cfg(test)]

@@ -1,10 +1,6 @@
-use globset::Glob;
-use petgraph::graph::DiGraph;
-use petgraph::prelude::*;
-use petgraph::{Direction, Graph};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -15,7 +11,11 @@ use std::sync::mpsc;
 
 use console::truncate_str;
 use eyre::Result;
+use globset::Glob;
 use itertools::Itertools;
+use petgraph::graph::DiGraph;
+use petgraph::prelude::*;
+use petgraph::{Direction, Graph};
 
 use crate::config::config_file::toml::TomlParser;
 use crate::config::Config;
@@ -131,16 +131,13 @@ impl Task {
     }
 
     pub fn resolve_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
-        let tasks = config.tasks_with_aliases();
-        let depends = self
-            .depends
+        let tasks = config.tasks_with_aliases()?;
+        self.depends
             .iter()
             .map(|pat| match_tasks(tasks, pat))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-        Ok(depends)
+            .flatten_ok()
+            .filter_ok(|t| t.name != self.name)
+            .collect()
     }
 }
 
@@ -160,7 +157,7 @@ fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<Stri
         .join(":"))
 }
 
-fn match_tasks<'a>(tasks: &'a HashMap<String, Task>, pat: &str) -> Result<Vec<&'a Task>> {
+fn match_tasks<'a>(tasks: &'a BTreeMap<String, Task>, pat: &str) -> Result<Vec<&'a Task>> {
     let matches = tasks.get_matching(pat)?;
     if matches.is_empty() {
         return Err(eyre!("task not found: {pat}"));
@@ -288,7 +285,7 @@ impl Deps {
         })
     }
 
-    // fn pop(&'a mut self) -> Option<&'a Task> {
+    // fn pop(&'a mut self) -> Option<&'a Tasks> {
     //     if let Some(leaf) = self.leaves().first() {
     //         self.remove(&leaf.clone())
     //     } else {
@@ -323,16 +320,16 @@ fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
         }
     }
 
-    Some(config_source.as_ref())
+    config_source.as_ref().parent()
 }
 
 pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
-impl<T> GetMatchingExt<T> for std::collections::HashMap<String, T>
+impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
-    T: std::cmp::Eq + std::hash::Hash,
+    T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
         let normalized = pat.split(':').collect::<PathBuf>();
@@ -353,8 +350,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{config_root, name_from_path};
     use std::path::Path;
+
+    use super::{config_root, name_from_path};
 
     #[test]
     fn test_name_from_path() {
@@ -383,7 +381,7 @@ mod tests {
     #[test]
     fn test_config_root() {
         let test_cases = [
-            ("/base", Some(Path::new("/base"))),
+            ("/base", Some(Path::new("/"))),
             ("/base/.mise/tasks", Some(Path::new("/base"))),
             ("/base/.config/mise/tasks", Some(Path::new("/base"))),
         ];

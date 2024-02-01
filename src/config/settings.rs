@@ -115,14 +115,30 @@ pub struct Settings {
 #[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct SettingsStatus {
     /// warn if a tool is missing
-    #[config(env = "MISE_STATUS_MESSAGE_MISSING_TOOLS", default = true)]
-    pub missing_tools: bool,
+    #[config(
+        env = "MISE_STATUS_MESSAGE_MISSING_TOOLS",
+        default = "if_other_versions_installed"
+    )]
+    pub missing_tools: SettingsStatusMissingTools,
     /// show env var keys when entering directories
     #[config(env = "MISE_STATUS_MESSAGE_SHOW_ENV", default = false)]
     pub show_env: bool,
     /// show active tools when entering directories
     #[config(env = "MISE_STATUS_MESSAGE_SHOW_TOOLS", default = false)]
     pub show_tools: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, EnumString, Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SettingsStatusMissingTools {
+    /// never show the warning
+    Never,
+    /// hide this warning if the user hasn't installed at least 1 version of the tool before
+    #[default]
+    IfOtherVersionsInstalled,
+    /// always show the warning if tools are missing
+    Always,
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;
@@ -179,7 +195,7 @@ impl Settings {
             settings.log_level = "trace".to_string();
         }
         if settings.quiet {
-            settings.log_level = "warn".to_string();
+            settings.log_level = "error".to_string();
         }
         if settings.log_level == "trace" || settings.log_level == "debug" {
             settings.verbose = true;
@@ -305,10 +321,10 @@ impl Settings {
         Ok(settings)
     }
 
-    pub fn hidden_configs() -> HashSet<&'static str> {
+    pub fn hidden_configs() -> &'static HashSet<&'static str> {
         static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
             Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
-        HIDDEN_CONFIGS.clone()
+        &HIDDEN_CONFIGS
     }
 
     pub fn reset(cli_settings: Option<SettingsPartial>) {
@@ -316,10 +332,10 @@ impl Settings {
         *SETTINGS.write().unwrap() = None;
     }
 
-    pub fn ensure_experimental(&self) -> Result<()> {
-        let msg =
-            "This command is experimental. Enable it with `mise settings set experimental true`";
-        ensure!(self.experimental, msg);
+    pub fn ensure_experimental(&self, what: &str) -> Result<()> {
+        if !self.experimental {
+            bail!("{what} is experimental. Enable it with `mise settings set experimental true`");
+        }
         Ok(())
     }
 
@@ -338,13 +354,17 @@ impl Settings {
                 }
             })
     }
+
+    pub fn as_dict(&self) -> eyre::Result<toml::Table> {
+        Ok(self.to_string().parse()?)
+    }
 }
 
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match serde_json::to_string_pretty(self) {
+        match toml::to_string_pretty(self) {
             Ok(s) => write!(f, "{}", s),
-            Err(e) => std::fmt::Result::Err(std::fmt::Error::custom(e)),
+            Err(e) => Err(std::fmt::Error::custom(e)),
         }
     }
 }

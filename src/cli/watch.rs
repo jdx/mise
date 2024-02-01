@@ -8,11 +8,11 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::toolset::ToolsetBuilder;
 
-/// [experimental] Run a task watching for changes
+/// [experimental] Run a tasks watching for changes
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Watch {
-    /// Task to run
+    /// Tasks to run
     #[clap(short, long, verbatim_doc_comment, default_value = "default")]
     task: Vec<String>,
 
@@ -21,22 +21,22 @@ pub struct Watch {
     args: Vec<String>,
 
     /// Files to watch
-    /// Defaults to sources from the task(s)
+    /// Defaults to sources from the tasks(s)
     #[clap(short, long, verbatim_doc_comment)]
     glob: Vec<String>,
     // /// Change to this directory before executing the command
     // #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     // pub cd: Option<PathBuf>,
     //
-    // /// Don't actually run the task(s), just print them in order of execution
+    // /// Don't actually run the tasks(s), just print them in order of execution
     // #[clap(long, short = 'n', verbatim_doc_comment)]
     // pub dry_run: bool,
     //
-    // /// Force the task to run even if outputs are up to date
+    // /// Force the tasks to run even if outputs are up to date
     // #[clap(long, short, verbatim_doc_comment)]
     // pub force: bool,
     //
-    // /// Print stdout/stderr by line, prefixed with the task's label
+    // /// Print stdout/stderr by line, prefixed with the tasks's label
     // /// Defaults to true if --jobs > 1
     // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
@@ -70,7 +70,7 @@ impl Watch {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise watch`")?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: ForgeArg = "watchexec".parse()?;
             if !ts.versions.contains_key(&watchexec) {
@@ -85,10 +85,10 @@ impl Watch {
             .iter()
             .map(|t| {
                 config
-                    .tasks_with_aliases()
+                    .tasks_with_aliases()?
                     .get(t)
                     .cloned()
-                    .ok_or_else(|| eyre!("Task not found: {t}"))
+                    .ok_or_else(|| eyre!("Tasks not found: {t}"))
             })
             .collect::<Result<Vec<_>>>()?;
         let mut args = vec![];
@@ -125,12 +125,12 @@ impl Watch {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
   $ <bold>mise watch -t build</bold>
-  Runs the "build" task. Will re-run the task when any of its sources change.
-  Uses "sources" from the task definition to determine which files to watch.
+  Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+  Uses "sources" from the tasks definition to determine which files to watch.
 
   $ <bold>mise watch -t build --glob src/**/*.rs</bold>
-  Runs the "build" task but specify the files to watch with a glob pattern.
-  This overrides the "sources" from the task definition.
+  Runs the "build" tasks but specify the files to watch with a glob pattern.
+  This overrides the "sources" from the tasks definition.
 
   $ <bold>mise run -t build --clear</bold>
   Extra arguments are passed to watchexec. See `watchexec --help` for details.

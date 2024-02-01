@@ -30,13 +30,8 @@ run = "cargo clean"
 [tasks.build]
 alias = "b"
 run = "cargo build --color always --all-features"
-sources = ["src/**/*.rs"]
+sources = ["Cargo.*", "src/**/*.rs"]
 outputs = ["target/debug/mise"]
-
-[tasks.test]
-run = "cargo test"
-depends = ["clean"]
-env = { CARGO_TERM_COLOR = "always" }
 
 [tasks.ci]
 depends = [
@@ -45,40 +40,35 @@ depends = [
     "test"
 ]
 
-[tasks.render-completions]
+[tasks."render:completions"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-sources = ["target/debug/mise"]
-outputs = [
-  "completions/mise.bash",
-  "completions/_mise",
-  "completions/mise.fish",
-]
-run = """
+run = '''
 #!/usr/bin/env bash
 set -xeuo pipefail
 target/debug/mise render-completion bash > completions/mise.bash
 target/debug/mise render-completion zsh > completions/_mise
 target/debug/mise render-completion fish > completions/mise.fish
-"""
+'''
 
-[tasks.render-mangen]
+[tasks."render:mangen"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = "target/debug/mise render-mangen"
 
-[tasks.render-help]
+[tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = [
   "target/debug/mise render-help",
-  "md-magic",
+  "mise x node@latest -- npx markdown-magic",
 ]
 sources = ["target/debug/mise"]
 outputs = ["README.md"]
 
-[tasks.render-all]
-depends = ["render-*"]
+[tasks.render]
+alias = "render"
+depends = ["render:*"]
 
 [tasks.snapshots]
 description = "Update test snapshots"
@@ -87,11 +77,22 @@ run = "cargo insta test --accept --unreferenced delete"
 [tasks.release]
 run = "cargo release"
 
-[tasks.lint-fix]
+[tasks."lint:fix"]
+alias = "lint-fix"
 run = "just lint-fix"
 
 [tasks.signal-test]
 run = "node ./test/fixtures/signal-test.js"
+
+[tasks.test]
+run = [
+  "mise run test:unit",
+  "mise run test:e2e",
+]
+
+[tasks."test:unit"]
+run = "cargo test"
+env = { CARGO_TERM_COLOR = "always" }
 
 [tasks."test:e2e"]
 run = "just test-e2e"
@@ -106,3 +107,19 @@ run = "just test-e2e"
 #    echo ./e2e/run_test "$FILES"
 #fi
 #'''
+
+[tasks."docker:image"]
+description = "build docker image from Dockerfile"
+run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
+
+[tasks."docker:cargo"]
+description = "run cargo inside of development docker container"
+run = 'docker run -ti --rm -v $root:/mise -w /mise ghcr.io/jdx/mise:dev cargo'
+
+[tasks."docker:mise"]
+description = "run mise inside of development docker container"
+run = "mise run -- docker:cargo run --"
+
+[tasks."docker:e2e"]
+description = "run e2e tests inside of development docker container"
+run = "mise run docker:mise run test:e2e"

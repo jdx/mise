@@ -14,7 +14,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
-use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType};
+use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType, TaskConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
@@ -49,6 +49,8 @@ pub struct MiseToml {
     doc: Document,
     #[serde(default)]
     plugins: HashMap<String, String>,
+    #[serde(default)]
+    pub task_config: TaskConfig,
     #[serde(skip)]
     tasks: Vec<Task>,
     #[serde(skip)]
@@ -116,6 +118,7 @@ impl MiseToml {
         self.env_path = cfg.env_path;
         self.min_version = cfg.min_version;
         self.plugins = cfg.plugins;
+        self.task_config = cfg.task_config;
 
         // TODO: right now some things are parsed with serde (above) and some not (below) everything
         // should be moved to serde eventually
@@ -126,7 +129,7 @@ impl MiseToml {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
                 "tasks" => self.tasks = self.parse_tasks(k, v)?,
                 "alias" | "dotenv" | "env_file" | "env_path" | "min_version" | "settings"
-                | "env" | "plugins" => {}
+                | "env" | "plugins" | "task_config" => {}
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
@@ -564,6 +567,10 @@ impl ConfigFile for MiseToml {
     fn aliases(&self) -> AliasMap {
         self.alias.clone()
     }
+
+    fn task_config(&self) -> &TaskConfig {
+        &self.task_config
+    }
 }
 
 impl Debug for MiseToml {
@@ -588,6 +595,9 @@ impl Debug for MiseToml {
         if !self.plugins.is_empty() {
             d.field("plugins", &self.plugins);
         }
+        if self.task_config.includes.is_some() {
+            d.field("task_config", &self.task_config);
+        }
         d.finish()
     }
 }
@@ -606,6 +616,7 @@ impl Clone for MiseToml {
             doc: self.doc.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
+            task_config: self.task_config.clone(),
             is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
             project_root: self.project_root.clone(),
             config_root: self.config_root.clone(),

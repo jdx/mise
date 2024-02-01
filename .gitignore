@@ -22,3 +22,4 @@ lcov.info
 /aur
 
 megalinter-reports/
+.dev/

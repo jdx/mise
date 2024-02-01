@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::file;
 use crate::file::display_path;
 
@@ -18,9 +18,8 @@ pub struct ConfigGenerate {
 
 impl ConfigGenerate {
     pub fn run(self) -> Result<()> {
-        let _ = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise config generate`")?;
         let doc = r#"
 # # mise config files are hierarchical. mise will find all of the config files
 # # in all parent directories and merge them together.

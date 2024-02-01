@@ -2,8 +2,8 @@
 
 tasks.a1 = ["echo a1 1>&2 && sleep 1.5"]
 tasks.a2 = "echo a2 && sleep 1.0"
-tasks.b1 = { run = "echo b1 && sleep 1.0", depends = ["a1", "a2"] }
-tasks.c1 = { run = "echo c1 && sleep 0.5 && echo", depends = ["b1"] }
+tasks.b1 = { run = "echo b1 && sleep 1.0", depends = ["a1", "a2"], hide = true }
+tasks.c1 = { run = "echo c1 && sleep 0.5 && echo", depends = ["b1"], hide = true }
 #tasks.filetask = "echo local"
 
 [env]

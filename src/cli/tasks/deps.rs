@@ -1,20 +1,21 @@
-use crate::{
-    config::{Config, Settings},
-    task::{Deps, Task},
-    ui::{style, tree::print_tree},
-};
 use console::style;
 use eyre::Result;
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
+use crate::{
+    config::{Config, Settings},
+    task::{Deps, Task},
+    ui::{style, tree::print_tree},
+};
+
 /// [experimental] Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskDeps {
+pub struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
-    /// e.g.: mise task deps lint test check
+    /// e.g.: mise tasks deps lint test check
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
@@ -23,11 +24,11 @@ pub struct TaskDeps {
     pub dot: bool,
 }
 
-impl TaskDeps {
+impl TasksDeps {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
-        settings.ensure_experimental()?;
+        settings.ensure_experimental("`mise tasks deps`")?;
 
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks(&config)?
@@ -45,21 +46,19 @@ impl TaskDeps {
     }
 
     fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
-        config
-            .tasks()
-            .iter()
-            .map(|(_, t)| t)
-            .sorted()
+        Ok(config
+            .tasks()?
+            .into_values()
             .filter(|t| !t.hide)
-            .map(|t| Ok(t.to_owned()))
-            .collect()
+            .cloned()
+            .collect())
     }
 
     fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
+        let tasks = config.tasks()?;
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
-                .sorted()
-                .map(|tn| match config.tasks().get(tn) {
+                .map(|tn| match tasks.get(tn).cloned() {
                     Some(task) => Ok(task.clone()),
                     None => Err(self.err_no_task(config, tn.as_str())),
                 })
@@ -133,22 +132,22 @@ impl TaskDeps {
     }
 
     fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
-        let tasks = config.tasks();
+        let tasks = config.tasks().unwrap_or_default();
         let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
-        eyre!("no task named `{t}` found. Available tasks: {task_names}")
+        eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
     }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise task deps</bold>
+  $ <bold>mise tasks deps</bold>
   Shows dependencies for all tasks
 
-  $ <bold>mise task deps lint test check</bold>
+  $ <bold>mise tasks deps lint test check</bold>
   Shows dependencies for the "lint", "test" and "check" tasks
 
-  $ <bold>mise task deps --dot</bold>
+  $ <bold>mise tasks deps --dot</bold>
   Shows dependencies in DOT format
 "#
 );
