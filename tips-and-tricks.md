@@ -72,3 +72,11 @@ jobs:
       - uses: jdx/mise-action@v1
       - run: node -v # will be the node version from `.mise.toml`/`.tool-versions`
 ```
+
+## `mise set`
+
+Instead of manually editing `.mise.toml` to add env vars, you can use `mise set` instead:
+
+```sh
+$ mise set NODE_ENV=production
+```
