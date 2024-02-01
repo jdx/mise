@@ -1,7 +1,4 @@
-use std::collections::BTreeMap;
-
 use eyre::Result;
-use serde_json::Value;
 
 use crate::config::Settings;
 
@@ -18,18 +15,11 @@ pub struct SettingsLs {}
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
-        let json = settings.to_string();
-        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
-        for (key, value) in doc {
-            if Settings::hidden_configs().contains(key.as_str()) {
-                continue;
-            }
-            if key == "status" {
-                // TODO: print this properly
-                continue;
-            }
-            miseprintln!("{} = {}", key, value);
+        let mut settings = settings.as_dict()?;
+        for k in Settings::hidden_configs() {
+            settings.remove(*k);
         }
+        miseprintln!("{}", settings);
         Ok(())
     }
 }
@@ -68,19 +58,18 @@ mod tests {
         plugin_autoupdate_last_check_duration = "20m"
         python_compile = false
         python_default_packages_file = "~/.default-python-packages"
-        python_patch_url = null
-        python_patches_directory = null
-        python_precompiled_arch = null
-        python_precompiled_os = null
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         python_venv_auto_create = false
         quiet = false
         raw = false
-        shorthands_file = null
-        task_output = null
         trusted_config_paths = []
         verbose = true
         yes = true
+
+        [status]
+        missing_tools = "if_other_versions_installed"
+        show_env = false
+        show_tools = false
         "###);
     }
 }

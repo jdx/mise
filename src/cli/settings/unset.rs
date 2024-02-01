@@ -59,19 +59,18 @@ mod tests {
         plugin_autoupdate_last_check_duration = "20m"
         python_compile = false
         python_default_packages_file = "~/.default-python-packages"
-        python_patch_url = null
-        python_patches_directory = null
-        python_precompiled_arch = null
-        python_precompiled_os = null
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         python_venv_auto_create = false
         quiet = false
         raw = false
-        shorthands_file = null
-        task_output = null
         trusted_config_paths = []
         verbose = true
         yes = true
+
+        [status]
+        missing_tools = "if_other_versions_installed"
+        show_env = false
+        show_tools = false
         "###);
 
         reset_config();
