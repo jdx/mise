@@ -284,6 +284,7 @@ impl PythonPlugin {
     fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("python --version".into());
         CmdLineRunner::new(self.python_path(tv))
+            .with_pr(pr)
             .arg("--version")
             .envs(config.env()?)
             .execute()
