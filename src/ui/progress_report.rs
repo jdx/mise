@@ -28,8 +28,7 @@ pub struct ProgressReport {
     pub pb: ProgressBar,
     prefix: String,
     pad: usize,
-    #[allow(dead_code)]
-    handle: Option<ui::ctrlc::HandleGuard>,
+    _ctrlc: Option<ui::ctrlc::HandleGuard>,
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -58,7 +57,7 @@ fn success_prefix(pad: usize, prefix: &str) -> String {
 
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
-        let handle = ui::ctrlc::handle_ctrlc().unwrap_or_default();
+        let _ctrlc = ui::ctrlc::handle_ctrlc().unwrap_or_default();
         let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(100)
             .with_style(PROG_TEMPLATE.clone())
@@ -68,7 +67,7 @@ impl ProgressReport {
             prefix,
             pb,
             pad,
-            handle,
+            _ctrlc,
         }
     }
 }

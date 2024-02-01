@@ -380,7 +380,7 @@ impl Run {
         for name in tasks.keys() {
             s = s.option(DemandOption::new(name));
         }
-        let _ = ctrlc::handle_ctrlc()?;
+        let _ctrlc = ctrlc::handle_ctrlc()?;
         let name = s.run()?;
         match tasks.get(name) {
             Some(task) => Ok((*task).clone()),
