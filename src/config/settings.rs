@@ -195,7 +195,7 @@ impl Settings {
             settings.log_level = "trace".to_string();
         }
         if settings.quiet {
-            settings.log_level = "warn".to_string();
+            settings.log_level = "error".to_string();
         }
         if settings.log_level == "trace" || settings.log_level == "debug" {
             settings.verbose = true;

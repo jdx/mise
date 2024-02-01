@@ -218,7 +218,7 @@ impl Config {
                     .task_config()
                     .includes
                     .clone()
-                    .unwrap_or_else(|| default_task_includes(cf))
+                    .unwrap_or_else(|| default_task_includes(cf.as_ref()))
                     .iter()
                     .map(|p| {
                         if let Some(pr) = cf.project_root() {
@@ -572,7 +572,7 @@ impl Debug for Config {
     }
 }
 
-fn default_task_includes(cf: &Box<dyn ConfigFile>) -> Vec<PathBuf> {
+fn default_task_includes(cf: &dyn ConfigFile) -> Vec<PathBuf> {
     match cf.project_root() {
         Some(pr) => vec![pr.join(".mise/tasks"), pr.join(".config/mise/tasks")],
         None => vec![],
