@@ -126,7 +126,7 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &OutputVec) -> Result<HashSet<ToolVersion>> {
-        let _ = ui::ctrlc::handle_ctrlc()?;
+        let _ctrlc = ui::ctrlc::handle_ctrlc()?;
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
             .filterable(true)

@@ -8,7 +8,7 @@ static MUTEX: Mutex<()> = Mutex::new(());
 
 pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
-    let _ = ctrlc::handle_ctrlc()?;
+    let _ctrlc = ctrlc::handle_ctrlc()?;
 
     if !console::user_attended_stderr() {
         return Ok(false);
