@@ -218,7 +218,7 @@ impl Config {
                     .task_config()
                     .includes
                     .clone()
-                    .unwrap_or_else(|| default_task_includes(&cf))
+                    .unwrap_or_else(|| default_task_includes(cf))
                     .iter()
                     .map(|p| {
                         if let Some(pr) = cf.project_root() {

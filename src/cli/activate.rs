@@ -24,6 +24,8 @@ use crate::{dirs, env};
 /// specify the full path like this:
 ///
 ///     echo 'eval "$(/path/to/mise activate)"' >> ~/.zshrc
+///
+/// Customize status output with `status` settings.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {

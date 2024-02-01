@@ -429,7 +429,7 @@ __mise_ls_cmd() {
     '*::plugin:__mise_plugins' \
     '(-c --current)'{-c,--current}'[Only show tool versions currently specified in a .tool-versions/.mise.toml]' \
     '(-g --global)'{-g,--global}'[Only show tool versions currently specified in a the global .tool-versions/.mise.toml]' \
-    '(-i --installed)'{-i,--installed}'[Only show tool versions that are installed Hides missing ones defined in .tool-versions/.mise.toml but not yet installed]' \
+    '(-i --installed)'{-i,--installed}'[Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)]' \
     '(-J --json)'{-J,--json}'[Output in json format]' \
     '(-m --missing)'{-m,--missing}'[Display missing tool versions]' \
     '--prefix=[Display versions matching this prefix]:prefix:__mise_prefixes' \

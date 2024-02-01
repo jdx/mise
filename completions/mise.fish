@@ -152,7 +152,7 @@ complete -kxc mise -n "$fssf link" -a "(__mise_tool_versions)" -d 'Tool name and
 # ls
 complete -kxc mise -n "$fssf ls" -s c -l current -d 'Only show tool versions currently specified in a .tool-versions/.mise.toml'
 complete -kxc mise -n "$fssf ls" -s g -l global -d 'Only show tool versions currently specified in a the global .tool-versions/.mise.toml'
-complete -kxc mise -n "$fssf ls" -s i -l installed -d 'Only show tool versions that are installed Hides missing ones defined in .tool-versions/.mise.toml but not yet installed'
+complete -kxc mise -n "$fssf ls" -s i -l installed -d 'Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)'
 complete -kxc mise -n "$fssf ls" -s J -l json -d 'Output in json format'
 complete -kxc mise -n "$fssf ls" -s m -l missing -d 'Display missing tool versions'
 complete -kxc mise -n "$fssf ls" -l no-header -d 'Don'\''t display headers'
