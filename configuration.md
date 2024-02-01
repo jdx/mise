@@ -157,10 +157,7 @@ env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 experimental = true # enable experimental features
 
 # configure messages displayed when entering directories with config files
-[settings.status]
-missing_tools = "if_other_versions_installed"
-show_env = false     # show configured env vars
-show_tools = false   # show active tools
+status = {missing_tools = "if_other_versions_installed", show_env = false, show_tools = false}
 ```
 
 ## System config: `/etc/mise/config.toml`
