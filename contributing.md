@@ -16,12 +16,6 @@ $ mise run docker:mise run test:e2e # run the e2e tests inside of the docker con
 $ mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
 ```
 
-::: info
-There used to be a "devcontainer" that was unrelated to this functionality which was compatible with vscode and
-github codespaces. I removed this to avoid confusion with the new, simpler dev container that makes use of mise tasks.
-I'd accept a pr to make the current dev container compatible with vscode and codespaces or something similar.
-:::
-
 ## Testing
 
 ### Unit Tests
@@ -52,6 +46,8 @@ $ mise run docker:e2e
 $ mise run test:e2e
 ```
 :::
+
+Slow tests do not run by default or on PRs. They can be manually enabled with `TEST_ALL=1`.
 
 ## Dependencies
 

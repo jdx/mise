@@ -158,7 +158,7 @@ experimental = true # enable experimental features
 
 # configure messages displayed when entering directories with config files
 [settings.status]
-missing_tools = true # warn if tools are not installed
+missing_tools = "if_other_versions_installed"
 show_env = false     # show configured env vars
 show_tools = false   # show active tools
 ```
@@ -295,9 +295,15 @@ Disables the specified tools. Separate with `,`. Generally used for core plugins
 
 ### `status.missing_tools`
 
-* Type: `bool`
+* Type: `enum`
 * Env: `MISE_STATUS_MISSING_TOOLS`
-* Default: `true`
+* Default: `if_other_versions_installed`
+
+| Choice                                  | Description                                                                |
+|-----------------------------------------|----------------------------------------------------------------------------|
+| `if_other_versions_installed` [default] | Show the warning only when the tool has at least 1 other version installed |
+| `always`                                | Always show the warning                                                    |
+| `never`                                 | Never show the warning                                                     |
 
 Show a warning if tools are not installed when entering a directory with a `.mise.toml` file.
 
