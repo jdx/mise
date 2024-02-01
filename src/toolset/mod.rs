@@ -17,6 +17,7 @@ pub use tool_version_list::ToolVersionList;
 pub use tool_version_request::ToolVersionRequest;
 
 use crate::cli::args::ForgeArg;
+use crate::config::settings::SettingsStatusMissingTools;
 use crate::config::{Config, Settings};
 use crate::env::TERM_WIDTH;
 use crate::forge::Forge;
@@ -387,9 +388,23 @@ impl Toolset {
             .collect())
     }
 
+    // shows a warning if any versions are missing
+    // only displays for tools which have at least one version already installed
     pub fn notify_if_versions_missing(&self) {
-        let missing = self.list_missing_versions();
-        if missing.is_empty() || !Settings::get().status.missing_tools {
+        let settings = Settings::get();
+        let missing = self
+            .list_missing_versions()
+            .into_iter()
+            .filter(|tv| match settings.status.missing_tools {
+                SettingsStatusMissingTools::Never => false,
+                SettingsStatusMissingTools::Always => true,
+                SettingsStatusMissingTools::IfOtherVersionsInstalled => tv
+                    .get_forge()
+                    .list_installed_versions()
+                    .is_ok_and(|f| !f.is_empty()),
+            })
+            .collect_vec();
+        if missing.is_empty() {
             return;
         }
         let versions = missing
