@@ -41,11 +41,22 @@ get_os() {
 }
 
 get_arch() {
+	musl=""
+	if type ldd >/dev/null 2>/dev/null; then
+		libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+		if [ -z "$libc" ]; then
+			musl="-musl"
+		fi
+	fi
 	arch="$(uname -m)"
 	if [ "$arch" = x86_64 ]; then
-		echo "x64"
+		echo "x64$musl"
 	elif [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then
-		echo "arm64"
+		echo "arm64$musl"
+	elif [ "$arch" = armv6l ]; then
+		echo "armv6$musl"
+	elif [ "$arch" = armv7l ]; then
+		echo "armv7$musl"
 	else
 		error "unsupported architecture: $arch"
 	fi
@@ -66,18 +77,44 @@ get_checksum() {
 	arch="$(get_arch)"
 
 	checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
+	checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
 	checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
+	checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
+	checksum_linux_armv6="$MISE_CHECKSUM_LINUX_ARMV6"
+	checksum_linux_armv6_musl="$MISE_CHECKSUM_LINUX_ARMV6_MUSL"
+	checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
+	checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
 	checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
 	checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
 
-	if [ "$os" = "linux" ] && [ "$arch" = "x64" ]; then
-		echo "$checksum_linux_x86_64"
-	elif [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
-		echo "$checksum_linux_arm64"
-	elif [ "$os" = "macos" ] && [ "$arch" = "x64" ]; then
-		echo "$checksum_macos_x86_64"
-	elif [ "$os" = "macos" ] && [ "$arch" = "arm64" ]; then
-		echo "$checksum_macos_arm64"
+	if [ "$os" = "linux" ]; then
+		if [ "$arch" = "x64" ]; then
+			echo "$checksum_linux_x86_64"
+		elif [ "$arch" = "x64-musl" ]; then
+			echo "$checksum_linux_x86_64_musl"
+		elif [ "$arch" = "arm64" ]; then
+			echo "$checksum_linux_arm64"
+		elif [ "$arch" = "arm64-musl" ]; then
+			echo "$checksum_linux_arm64_musl"
+		elif [ "$arch" = "armv6" ]; then
+			echo "$checksum_linux_armv6"
+		elif [ "$arch" = "armv6-musl" ]; then
+			echo "$checksum_linux_armv6_musl"
+		elif [ "$arch" = "armv7" ]; then
+			echo "$checksum_linux_armv7"
+		elif [ "$arch" = "armv7-musl" ]; then
+			echo "$checksum_linux_armv7_musl"
+		else
+			warn "no checksum for $os-$arch"
+		fi
+	elif [ "$os" = "macos" ]; then
+		if [ "$arch" = "x64" ]; then
+			echo "$checksum_macos_x86_64"
+		elif [ "$arch" = "arm64" ]; then
+			echo "$checksum_macos_arm64"
+		else
+			warn "no checksum for $os-$arch"
+		fi
 	else
 		warn "no checksum for $os-$arch"
 	fi
