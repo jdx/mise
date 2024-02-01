@@ -35,7 +35,7 @@ Note that calling `which node` gives us a real path to node, not a shim.
 Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 
 ```sh-session
-$ curl https://mise.jdx.dev/install.sh | sh
+$ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
 mise 2024.2.0
 ```
@@ -44,7 +44,7 @@ Hook mise into your shell (pick the right one for your shell):
 
 ```sh-session
 # note this assumes mise is located at ~/.local/bin/mise
-# which is what install.sh does by default
+# which is what https://mise.run does by default
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
