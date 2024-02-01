@@ -91,6 +91,19 @@
                   }
                 }
               ]
+            },
+            "source": {
+              "oneOf": [
+                { "type": "string", "description": "bash script to load" },
+                {
+                  "type": "array",
+                  "description": "bash scripts to load",
+                  "items": {
+                    "type": "string",
+                    "description": "bash script to load"
+                  }
+                }
+              ]
             }
           }
         }
