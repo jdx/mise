@@ -1,8 +1,4 @@
-use std::collections::BTreeMap;
-
-use serde_json::Value;
-
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 
 /// Show a current setting
 ///
@@ -19,14 +15,24 @@ pub struct SettingsGet {
 
 impl SettingsGet {
     pub fn run(self) -> eyre::Result<()> {
-        Config::try_get()?;
         let settings = Settings::try_get()?;
-        let json = settings.to_string();
-        let doc: BTreeMap<String, Value> = serde_json::from_str(&json)?;
-        match doc.get(&self.setting) {
-            Some(value) => Ok(miseprintln!("{}", value)),
-            None => Err(eyre!("Unknown setting: {}", self.setting)),
+        let mut value = toml::Value::Table(settings.as_dict()?);
+        let mut key = Some(self.setting.as_str());
+        while let Some(k) = key {
+            let k = k
+                .split_once('.')
+                .map(|(a, b)| (a, Some(b)))
+                .unwrap_or((k, None));
+            if let Some(v) = value.as_table().and_then(|t| t.get(k.0)) {
+                key = k.1;
+                value = v.clone()
+            } else {
+                bail!("Unknown setting: {}", self.setting);
+            }
         }
+        miseprintln!("{}", value);
+
+        Ok(())
     }
 }
 
@@ -44,10 +50,8 @@ mod tests {
     #[test]
     fn test_settings_get() {
         reset_config();
-        let stdout = assert_cli!("settings", "get", "legacy_version_file");
-        assert_snapshot!(stdout, @r###"
-        true
-        "###);
+        assert_cli_snapshot!("settings", "get", "legacy_version_file", @"true");
+        assert_cli_snapshot!("settings", "get", "status.missing_tools", @r###""if_other_versions_installed""###);
     }
 
     #[test]
