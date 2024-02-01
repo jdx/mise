@@ -22,7 +22,7 @@ use crate::{file, shims};
 
 /// Check mise installation for possible problems.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {
     #[clap(skip)]
     checks: Vec<String>,

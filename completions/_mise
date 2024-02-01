@@ -26,7 +26,7 @@ _mise() {
         (current) __mise_current_cmd && ret=0 ;;
         (deactivate) __mise_deactivate_cmd && ret=0 ;;
         (direnv) __mise_direnv_cmd && ret=0 ;;
-        (doctor) __mise_doctor_cmd && ret=0 ;;
+        (dr|doctor) __mise_doctor_cmd && ret=0 ;;
         (e|env) __mise_env_cmd && ret=0 ;;
         (x|exec) __mise_exec_cmd && ret=0 ;;
         (g|global) __mise_global_cmd && ret=0 ;;
@@ -915,7 +915,7 @@ __mise_cmds() {
     'current:Shows current active and installed runtime versions'
     'deactivate:Disable mise for current shell session'
     'direnv:Output direnv function to use mise inside direnv'
-    'doctor:Check mise installation for possible problems.'
+    {dr,doctor}':Check mise installation for possible problems.'
     {e,env}':Exports env vars to activate mise a single time'
     {x,exec}':Execute a command with tool(s) set'
     'implode:Removes mise CLI and all related data'
