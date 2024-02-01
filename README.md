@@ -60,4 +60,4 @@ v20.0.0
 
 ## Full Documentation
 
-See [mise.jdx.dev](https://mise.jdx.dev).
+See [mise.jdx.dev](https://mise.jdx.dev)
