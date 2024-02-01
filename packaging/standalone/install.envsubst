@@ -118,7 +118,6 @@ get_checksum() {
 	else
 		warn "no checksum for $os-$arch"
 	fi
-
 }
 
 #endregion
