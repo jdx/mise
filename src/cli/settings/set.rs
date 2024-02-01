@@ -1,7 +1,8 @@
 use eyre::Result;
 use toml_edit::Document;
 
-use crate::config::settings::SettingsStatusMissingTools;
+use crate::config::settings::SettingsFile;
+
 use crate::{env, file};
 
 /// Add/update a setting
@@ -34,17 +35,13 @@ impl SettingsSet {
             "node_compile" => parse_bool(&self.value)?,
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
-            "plugin_autoupdate_last_check_duration" => parse_i64(&self.value)?,
+            "plugin_autoupdate_last_check_duration" => self.value.into(),
             "python_compile" => parse_bool(&self.value)?,
             "python_venv_auto_create" => parse_bool(&self.value)?,
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
             "shorthands_file" => self.value.into(),
-            "status.missing_tools" => self
-                .value
-                .parse::<SettingsStatusMissingTools>()?
-                .to_string()
-                .into(),
+            "status.missing_tools" => self.value.into(),
             "status.show_env" => parse_bool(&self.value)?,
             "status.show_tools" => parse_bool(&self.value)?,
             "task_output" => self.value.into(),
@@ -72,6 +69,10 @@ impl SettingsSet {
         } else {
             settings.insert(&self.setting, toml_edit::Item::Value(value));
         }
+
+        // validate
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
+
         file::write(path, config.to_string())
     }
 }
@@ -117,36 +118,35 @@ pub mod tests {
         assert_cli_snapshot!("settings", @r###"
         activate_aggressive = false
         all_compile = false
-        always_keep_download = false
-        always_keep_install = false
+        always_keep_download = true
+        always_keep_install = true
         asdf_compat = false
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
         disable_tools = []
         experimental = true
-        jobs = 4
-        legacy_version_file = true
+        jobs = 2
+        legacy_version_file = false
         legacy_version_file_disable_tools = []
         node_compile = false
         not_found_auto_install = true
         paranoid = false
-        plugin_autoupdate_last_check_duration = "7d"
+        plugin_autoupdate_last_check_duration = "1"
         python_compile = false
         python_default_packages_file = "~/.default-python-packages"
-        python_patch_url = null
-        python_patches_directory = null
-        python_precompiled_arch = null
-        python_precompiled_os = null
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         python_venv_auto_create = false
         quiet = false
         raw = false
-        shorthands_file = null
-        task_output = null
         trusted_config_paths = []
         verbose = true
         yes = true
+
+        [status]
+        missing_tools = "never"
+        show_env = false
+        show_tools = false
         "###);
         reset_config();
     }

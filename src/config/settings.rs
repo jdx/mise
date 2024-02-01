@@ -354,13 +354,17 @@ impl Settings {
                 }
             })
     }
+
+    pub fn as_dict(&self) -> eyre::Result<toml::Table> {
+        Ok(self.to_string().parse()?)
+    }
 }
 
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match serde_json::to_string_pretty(self) {
+        match toml::to_string_pretty(self) {
             Ok(s) => write!(f, "{}", s),
-            Err(e) => std::fmt::Result::Err(std::fmt::Error::custom(e)),
+            Err(e) => Err(std::fmt::Error::custom(e)),
         }
     }
 }
