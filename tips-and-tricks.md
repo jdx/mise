@@ -57,7 +57,7 @@ jobs:
   build:
     steps:
     - run: |
-        curl https://mise.jdx.dev/install.sh | sh
+        curl https://mise.run | sh
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
 ```

@@ -9,7 +9,7 @@ Continuous integration pipelines allow running arbitrary commands. You can use t
 
 ```yaml
 script: |
-  curl https://mise.jdx.dev/install.sh | sh
+  curl https://mise.run | sh
   mise install
 ```
 
@@ -62,7 +62,7 @@ If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build scrip
 
 ```bash
 #!/bin/sh
-curl https://mise.jdx.dev/install.sh | sh
+curl https://mise.run | sh
 export PATH="$HOME/.local/bin/bin:$PATH"
 
 mise install # Installs the tools in .mise.toml

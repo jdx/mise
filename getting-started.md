@@ -16,7 +16,7 @@ This directory is simply a suggestion.
 mise can be installed anywhere.
 
 ```sh
-$ curl https://mise.jdx.dev/install.sh | sh
+$ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
 mise 2024.x.x
 ```
@@ -100,13 +100,13 @@ Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias
 
 ## Alternate Installation Methods
 
-### `install.sh`
+### https://mise.run
 
 Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your shell's rc
 file, mise will automatically add itself to `PATH`.
 
 ```sh
-curl https://mise.jdx.dev/install.sh | sh
+curl https://mise.run | sh
 ```
 
 Options:
