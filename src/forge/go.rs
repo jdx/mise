@@ -26,9 +26,21 @@ impl Forge for GoForge {
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("go", "list", "-m", "-versions", "-json", self.name()).read()?;
-                let mod_info: GoModInfo = serde_json::from_str(&raw)?;
-                Ok(mod_info.versions)
+                let mut mod_path = Some(self.name());
+
+                while let Some(cur_mod_path) = mod_path {
+                    let raw =
+                        cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path).read()?;
+
+                    let result = serde_json::from_str::<GoModInfo>(&raw);
+                    if let Ok(mod_info) = result {
+                        return Ok(mod_info.versions);
+                    }
+
+                    mod_path = trim_after_last_slash(cur_mod_path);
+                }
+
+                Err(eyre!("couldn't find module versions"))
             })
             .cloned()
     }
@@ -59,6 +71,13 @@ impl GoForge {
             ),
             fa,
         }
+    }
+}
+
+fn trim_after_last_slash(s: &str) -> Option<&str> {
+    match s.rsplit_once('/') {
+        Some((new_path, _)) => Some(new_path),
+        None => None,
     }
 }
 

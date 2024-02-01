@@ -8,4 +8,6 @@ eval "$(mise activate bash --shims)"
 mise use go@prefix:1.20
 
 assert "mise x go:github.com/DarthSim/hivemind@v1.1.0 -- hivemind --version" "Hivemind version 1.1.0"
+assert "mise x go:github.com/go-task/task/v3/cmd/task@v3.34.1 -- task --version" "Task version: v3.34.1 (h1:yAAxUM54zoaHv+OtDnGgkWSVeiRuaOCn1lPUXPQQA0o=)"
+
 chmod -R u+w "$MISE_DATA_DIR/cache/go-"* || true
