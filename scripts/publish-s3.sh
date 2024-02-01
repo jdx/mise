@@ -25,11 +25,21 @@ aws s3 cp artifacts/deb/pool/ "s3://$AWS_S3_BUCKET/deb/pool/" --cache-control "$
 aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_day" --no-progress --no-progress --recursive
 
 export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
+
+# jdx.dev
 curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/90dfd7997bdcfa8579c52d8ee8dd4cd1/purge_cache" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{ "purge_everything": true }'
+
+# rtx.pub
 curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/80d977fd09f01db52bec165778088891/purge_cache" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{ "purge_everything": true }'
+
+# mise.run
+curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/782fc08181b7bbd26c529a00df52a277/purge_cache" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{ "purge_everything": true }'
