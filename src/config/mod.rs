@@ -431,13 +431,11 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
 
     // The current directory is not always available, e.g.
     // when a directory was deleted or inside FUSE mounts.
-    match env::current_dir() {
-        Ok(current_dir) => {
-            config_files.extend(file::FindUp::new(&current_dir, config_filenames));
+    match &*dirs::CWD {
+        Some(current_dir) => {
+            config_files.extend(file::FindUp::new(current_dir, config_filenames));
         }
-        Err(error) => {
-            debug!("error getting current dir: {error}");
-        }
+        None => {}
     };
 
     config_files.extend(global_config_files());
