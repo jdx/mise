@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use eyre::WrapErr;
 use itertools::Itertools;
@@ -13,6 +12,7 @@ use toml_edit::{table, value, Array, Document, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
+use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType, TaskConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::AliasMap;
@@ -50,9 +50,12 @@ pub struct MiseToml {
     plugins: HashMap<String, String>,
     #[serde(default)]
     task_config: TaskConfig,
-    #[serde(skip)]
-    tasks: Vec<Task>,
+    #[serde(default)]
+    tasks: Tasks,
 }
+
+#[derive(Debug, Default, Clone)]
+pub struct Tasks(pub BTreeMap<String, Task>);
 
 #[derive(Debug, Default, Clone)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
@@ -90,6 +93,11 @@ impl MiseToml {
         self.min_version = cfg.min_version;
         self.plugins = cfg.plugins;
         self.task_config = cfg.task_config;
+        self.tasks = cfg.tasks;
+
+        for task in self.tasks.0.values_mut() {
+            task.config_source = self.path.clone();
+        }
 
         // TODO: right now some things are parsed with serde (above) and some not (below) everything
         // should be moved to serde eventually
@@ -98,89 +106,13 @@ impl MiseToml {
         for (k, v) in doc.iter() {
             match k {
                 "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "tasks" => self.tasks = self.parse_tasks(k, v)?,
                 "alias" | "dotenv" | "env_file" | "env_path" | "min_version" | "settings"
-                | "env" | "plugins" | "task_config" => {}
+                | "env" | "plugins" | "task_config" | "tasks" => {}
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
         self.doc = doc;
         Ok(())
-    }
-
-    fn parse_tasks(&self, key: &str, v: &Item) -> eyre::Result<Vec<Task>> {
-        match v.as_table_like() {
-            Some(table) => {
-                let mut tasks = Vec::new();
-                for (name, v) in table.iter() {
-                    let k = format!("{}.{}", key, name);
-                    let name = self.parse_template(&k, name)?;
-                    let task = self.parse_task(&k, v, &name)?;
-                    tasks.push(task);
-                }
-                Ok(tasks)
-            }
-            _ => parse_error!(key, v, "table"),
-        }
-    }
-
-    fn parse_task(&self, key: &str, v: &Item, name: &str) -> eyre::Result<Task> {
-        let mut task = Task::new(name.into(), self.path.clone());
-        if v.as_str().is_some() {
-            task.run = self.parse_string_or_array(key, v)?;
-            return Ok(task);
-        }
-        if v.as_array().is_some() {
-            task.run = self.parse_string_array(key, v)?;
-            return Ok(task);
-        }
-        match v.as_table_like() {
-            Some(table) => {
-                let mut task = Task::new(name.into(), self.path.clone());
-                for (k, v) in table.iter() {
-                    let key = format!("{key}.{k}");
-                    match k {
-                        "alias" => task.aliases = self.parse_string_or_array(&key, v)?,
-                        // "args" => task.args = self.parse_string_array(&key, v)?,
-                        "run" => task.run = self.parse_string_or_array(&key, v)?,
-                        // "command" => task.command = Some(self.parse_string_tmpl(&key, v)?),
-                        "depends" => task.depends = self.parse_string_array(&key, v)?,
-                        "description" => task.description = self.parse_string(&key, v)?,
-                        "env" => task.env = self.parse_hashmap(&key, v)?,
-                        "file" => task.file = Some(self.parse_path(&key, v)?),
-                        "hide" => task.hide = self.parse_bool(&key, v)?,
-                        "dir" => task.dir = Some(self.parse_path(&key, v)?),
-                        "outputs" => task.outputs = self.parse_string_array(&key, v)?,
-                        "raw" => task.raw = self.parse_bool(&key, v)?,
-                        // "script" => task.script = Some(self.parse_string_tmpl(&key, v)?),
-                        "sources" => task.sources = self.parse_string_array(&key, v)?,
-                        _ => parse_error!(key, v, "task property"),
-                    }
-                }
-                Ok(task)
-            }
-            _ => parse_error!(key, v, "table"),
-        }
-    }
-
-    fn parse_hashmap(&self, key: &str, v: &Item) -> eyre::Result<HashMap<String, String>> {
-        match v.as_table_like() {
-            Some(table) => {
-                let mut env = HashMap::new();
-                for (k, v) in table.iter() {
-                    match v.as_str() {
-                        Some(s) => {
-                            let k = self.parse_template(key, k)?;
-                            let s = self.parse_template(key, s)?;
-                            env.insert(k, s);
-                        }
-                        _ => parse_error!(key, v, "string"),
-                    }
-                }
-                Ok(env)
-            }
-            _ => parse_error!(key, v, "table"),
-        }
     }
 
     fn parse_toolset(&self, key: &str, v: &Item) -> eyre::Result<Toolset> {
@@ -362,50 +294,6 @@ impl MiseToml {
         }
     }
 
-    fn parse_bool(&self, k: &str, v: &Item) -> eyre::Result<bool> {
-        match v.as_value().map(|v| v.as_bool()) {
-            Some(Some(v)) => Ok(v),
-            _ => parse_error!(k, v, "boolean"),
-        }
-    }
-
-    fn parse_string(&self, k: &str, v: &Item) -> eyre::Result<String> {
-        match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => Ok(v.to_string()),
-            _ => parse_error!(k, v, "string"),
-        }
-    }
-
-    fn parse_path(&self, k: &str, v: &Item) -> eyre::Result<PathBuf> {
-        match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => {
-                let v = self.parse_template(k, v)?;
-                Ok(v.into())
-            }
-            _ => parse_error!(k, v, "path"),
-        }
-    }
-
-    fn parse_string_or_array(&self, k: &str, v: &Item) -> eyre::Result<Vec<String>> {
-        match v.as_value().map(|v| v.as_str()) {
-            Some(Some(v)) => {
-                let v = self.parse_template(k, v)?;
-                Ok(vec![v])
-            }
-            _ => self.parse_string_array(k, v),
-        }
-    }
-
-    fn parse_string_array(&self, k: &str, v: &Item) -> eyre::Result<Vec<String>> {
-        match v
-            .as_array()
-            .map(|v| v.iter().map(|v| v.as_str().unwrap().to_string()).collect())
-        {
-            Some(v) => Ok(v),
-            _ => parse_error!(k, v, "array of strings"),
-        }
-    }
-
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) {
         let env_tbl = self
             .doc
@@ -492,7 +380,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn tasks(&self) -> Vec<&Task> {
-        self.tasks.iter().collect()
+        self.tasks.0.values().collect()
     }
 
     fn remove_plugin(&mut self, fa: &ForgeArg) {
@@ -618,47 +506,6 @@ where
         )),
         None => Ok(None),
     }
-}
-
-fn deserialize_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: FromStr,
-    <T as FromStr>::Err: std::fmt::Display,
-{
-    struct ArrVisitor<T>(std::marker::PhantomData<T>);
-
-    impl<'de, T> Visitor<'de> for ArrVisitor<T>
-    where
-        T: FromStr,
-        <T as FromStr>::Err: std::fmt::Display,
-    {
-        type Value = Vec<T>;
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("string or array of strings")
-        }
-
-        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            let v = v.parse().map_err(de::Error::custom)?;
-            Ok(vec![v])
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut v = vec![];
-            while let Some(s) = seq.next_element::<String>()? {
-                v.push(s.parse().map_err(de::Error::custom)?);
-            }
-            Ok(v)
-        }
-    }
-
-    deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
 }
 
 impl<'de> de::Deserialize<'de> for EnvList {
@@ -789,6 +636,87 @@ impl<'de> de::Deserialize<'de> for EnvList {
         }
 
         deserializer.deserialize_any(EnvManVisitor)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for Tasks {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TasksVisitor;
+
+        impl<'de> Visitor<'de> for TasksVisitor {
+            type Value = Tasks;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("task, string, or array of strings")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                struct TaskDef(Task);
+                impl<'de> de::Deserialize<'de> for TaskDef {
+                    fn deserialize<D>(deserializer: D) -> std::result::Result<TaskDef, D::Error>
+                    where
+                        D: de::Deserializer<'de>,
+                    {
+                        struct TaskDefVisitor;
+                        impl<'de> Visitor<'de> for TaskDefVisitor {
+                            type Value = TaskDef;
+                            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                                formatter.write_str("task definition")
+                            }
+
+                            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                            where
+                                E: de::Error,
+                            {
+                                Ok(TaskDef(Task {
+                                    run: vec![v.to_string()],
+                                    ..Default::default()
+                                }))
+                            }
+
+                            fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
+                            where
+                                S: de::SeqAccess<'de>,
+                            {
+                                let mut run = vec![];
+                                while let Some(s) = seq.next_element::<String>()? {
+                                    run.push(s);
+                                }
+                                Ok(TaskDef(Task {
+                                    run,
+                                    ..Default::default()
+                                }))
+                            }
+
+                            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+                            where
+                                M: de::MapAccess<'de>,
+                            {
+                                let t = de::Deserialize::deserialize(
+                                    de::value::MapAccessDeserializer::new(map),
+                                )?;
+                                Ok(TaskDef(t))
+                            }
+                        }
+                        deserializer.deserialize_any(TaskDefVisitor)
+                    }
+                }
+                let mut tasks = BTreeMap::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    let mut task = map.next_value::<TaskDef>()?.0;
+                    task.name = name.clone();
+                    tasks.insert(name, task);
+                }
+                Ok(Tasks(tasks))
+            }
+        }
+
+        deserializer.deserialize_any(TasksVisitor)
     }
 }
 
