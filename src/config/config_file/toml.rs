@@ -1,4 +1,7 @@
+use serde::de;
 use std::collections::HashMap;
+use std::fmt::Formatter;
+use std::str::FromStr;
 
 use tera::{Context, Tera};
 
@@ -72,4 +75,45 @@ impl<'a> TomlParser<'a> {
         let tmpl = self.tera.clone().render_str(tmpl, &self.tera_ctx)?;
         Ok(tmpl.into())
     }
+}
+
+pub fn deserialize_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
+where
+    D: de::Deserializer<'de>,
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    struct ArrVisitor<T>(std::marker::PhantomData<T>);
+
+    impl<'de, T> de::Visitor<'de> for ArrVisitor<T>
+    where
+        T: FromStr,
+        <T as FromStr>::Err: std::fmt::Display,
+    {
+        type Value = Vec<T>;
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("string or array of strings")
+        }
+
+        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let v = v.parse().map_err(de::Error::custom)?;
+            Ok(vec![v])
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut v = vec![];
+            while let Some(s) = seq.next_element::<String>()? {
+                v.push(s.parse().map_err(de::Error::custom)?);
+            }
+            Ok(v)
+        }
+    }
+
+    deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
 }

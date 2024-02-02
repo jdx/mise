@@ -85,6 +85,7 @@ run = "just lint-fix"
 run = "node ./test/fixtures/signal-test.js"
 
 [tasks.test]
+alias = 't'
 run = [
   "mise run test:unit",
   "mise run test:e2e",
