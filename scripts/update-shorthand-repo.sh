@@ -39,7 +39,7 @@ for plugin in $asdf_plugins; do
   file="asdf-plugins/plugins/$plugin"
   repository=$(grep -e '^repository = ' "$file")
   repository="${repository/#repository = /}"
-  printf "[%03d/%d] %s\n" $((++count)) "$num_plugins" "$repository"
+  printf "\033[2K[%03d/%d] %s\r" $((++count)) "$num_plugins" "$repository"
   if [[ $repository == "https://github.com/mise-plugins/"* ]]; then
     trusted+=("$plugin")
   elif grep -qe '^first-party = true' "$file"; then
