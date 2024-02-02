@@ -67,15 +67,15 @@ impl BunPlugin {
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading {}", &url));
-        HTTP.download_file(&url, &tarball_path)?;
+        pr.set_message(format!("downloading {filename}"));
+        HTTP.download_file(&url, &tarball_path, Some(pr))?;
 
         Ok(tarball_path)
     }
 
     fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
-        ctx.pr
-            .set_message(format!("installing {}", tarball_path.display()));
+        let filename = tarball_path.file_name().unwrap().to_string_lossy();
+        ctx.pr.set_message(format!("installing {filename}"));
         file::remove_all(ctx.tv.install_path())?;
         file::create_dir_all(ctx.tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &ctx.tv.download_path())?;
