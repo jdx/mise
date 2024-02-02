@@ -133,10 +133,10 @@ impl JavaPlugin {
         let filename = m.url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading {}", &m.url));
-        HTTP.download_file(&m.url, &tarball_path)?;
+        pr.set_message(format!("downloading {filename}"));
+        HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
-        hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
+        hash::ensure_checksum_sha256(&tarball_path, &m.sha256, Some(pr))?;
 
         Ok(tarball_path)
     }
@@ -148,7 +148,8 @@ impl JavaPlugin {
         tarball_path: &Path,
         m: &JavaMetadata,
     ) -> Result<()> {
-        pr.set_message(format!("installing {}", tarball_path.display()));
+        let filename = tarball_path.file_name().unwrap().to_string_lossy();
+        pr.set_message(format!("installing {filename}"));
         file::untar(tarball_path, &tv.download_path())?;
         self.move_to_install_path(tv, m)
     }

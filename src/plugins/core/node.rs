@@ -112,11 +112,11 @@ impl NodePlugin {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
             pr.set_message(format!("downloading {tarball_name}"));
-            HTTP.download_file(url.clone(), local)?;
+            HTTP.download_file(url.clone(), local, Some(pr))?;
         }
         if *env::MISE_NODE_VERIFY {
             pr.set_message(format!("verifying {tarball_name}"));
-            self.verify(local, version)?;
+            self.verify(local, version, pr)?;
         }
         Ok(())
     }
@@ -143,13 +143,13 @@ impl NodePlugin {
         self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
     }
 
-    fn verify(&self, tarball: &Path, version: &str) -> Result<()> {
+    fn verify(&self, tarball: &Path, version: &str, pr: &dyn SingleReport) -> Result<()> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         // TODO: verify gpg signature
         let shasums = HTTP.get_text(self.shasums_url(version)?)?;
         let shasums = hash::parse_shasums(&shasums);
         let shasum = shasums.get(&tarball_name).unwrap();
-        hash::ensure_checksum_sha256(tarball, shasum)
+        hash::ensure_checksum_sha256(tarball, shasum, Some(pr))
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {

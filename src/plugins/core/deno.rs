@@ -71,8 +71,8 @@ impl DenoPlugin {
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading {}", &url));
-        HTTP.download_file(&url, &tarball_path)?;
+        pr.set_message(format!("downloading {filename}"));
+        HTTP.download_file(&url, &tarball_path, Some(pr))?;
 
         // TODO: hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
 
@@ -80,7 +80,8 @@ impl DenoPlugin {
     }
 
     fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
-        pr.set_message(format!("installing {}", tarball_path.display()));
+        let filename = tarball_path.file_name().unwrap().to_string_lossy();
+        pr.set_message(format!("installing {filename}"));
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
