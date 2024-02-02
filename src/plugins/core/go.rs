@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::thread;
 
 use eyre::Result;
 use itertools::Itertools;
@@ -100,23 +101,23 @@ impl GoPlugin {
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
         let tarball_url = format!("{}/{}", &*env::MISE_GO_DOWNLOAD_MIRROR, &filename);
-        let tarball_path = tv.download_path().join(filename);
+        let tarball_path = tv.download_path().join(&filename);
 
-        pr.set_message(format!("downloading {}", &tarball_url));
-        HTTP.download_file(&tarball_url, &tarball_path)?;
+        thread::scope(|s| {
+            let checksum_handle = s.spawn(|| {
+                let checksum_url = format!("{}.sha256", &tarball_url);
+                HTTP.get_text(checksum_url)
+            });
+            pr.set_message(format!("downloading {filename}"));
+            HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
 
-        self.verify_tarball_checksum(&tarball_url, &tarball_path)?;
-
-        Ok(tarball_path)
-    }
-
-    fn verify_tarball_checksum(&self, tarball_url: &str, tarball_path: &Path) -> Result<()> {
-        if !*env::MISE_GO_SKIP_CHECKSUM {
-            let checksum_url = format!("{}.sha256", tarball_url);
-            let checksum = HTTP.get_text(checksum_url)?;
-            hash::ensure_checksum_sha256(tarball_path, &checksum)?;
-        }
-        Ok(())
+            if !*env::MISE_GO_SKIP_CHECKSUM {
+                pr.set_message(format!("verifying {filename}"));
+                let checksum = checksum_handle.join().unwrap()?;
+                hash::ensure_checksum_sha256(&tarball_path, &checksum, Some(pr))?;
+            }
+            Ok(tarball_path)
+        })
     }
 
     fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {

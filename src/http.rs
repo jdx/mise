@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ use reqwest::IntoUrl;
 use crate::cli::version;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
+use crate::ui::progress_report::SingleReport;
 use crate::{env, file};
 
 #[cfg(not(test))]
@@ -77,14 +79,35 @@ impl Client {
         Ok(json)
     }
 
-    pub fn download_file<U: IntoUrl>(&self, url: U, path: &Path) -> Result<()> {
+    pub fn download_file<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let mut resp = self.get(url)?;
+        if let Some(length) = resp.content_length() {
+            if let Some(pr) = pr {
+                pr.set_length(length);
+            }
+        }
 
         file::create_dir_all(path.parent().unwrap())?;
+
+        let mut buf = [0; 32 * 1024];
         let mut file = File::create(path)?;
-        resp.copy_to(&mut file)?;
+        loop {
+            let n = resp.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n])?;
+            if let Some(pr) = pr {
+                pr.inc(n as u64);
+            }
+        }
         Ok(())
     }
 }

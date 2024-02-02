@@ -4,18 +4,32 @@ use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 
 use crate::ui::style;
-use crate::{forge, ui};
+use crate::{env, forge, ui};
 
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
+    fn inc(&self, _delta: u64) {}
+    fn set_length(&self, _length: u64) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
 }
 
+static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    let tmpl = "{prefix} {wide_msg} {spinner:.blue} {elapsed:>3.dim.italic}";
+    ProgressStyle::with_template(tmpl).unwrap()
+});
+
 static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    ProgressStyle::with_template("{prefix} {wide_msg} {spinner:.blue} {elapsed:3.dim.italic}")
-        .unwrap()
+    let tmpl = match *env::TERM_WIDTH {
+        0..=89 => "{prefix} {wide_msg} {bar:10.cyan/blue} {percent:>2}%",
+        90..=99 => "{prefix} {wide_msg} {bar:15.cyan/blue} {percent:>2}%",
+        100..=114 => "{prefix} {wide_msg} {bytes}/{total_bytes:10} {bar:10.cyan/blue}",
+        _ => {
+            "{prefix} {wide_msg} {bytes}/{total_bytes} ({eta}) {bar:20.cyan/blue} {elapsed:>3.dim.italic}"
+        }
+    };
+    ProgressStyle::with_template(tmpl).unwrap()
 });
 
 static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -34,7 +48,7 @@ pub struct ProgressReport {
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
     forge::list()
         .into_iter()
-        .map(|p| p.id().len() + 10)
+        .map(|p| p.id().len())
         .max()
         .unwrap_or_default()
         .max(15)
@@ -60,7 +74,7 @@ impl ProgressReport {
         let _ctrlc = ui::ctrlc::handle_ctrlc().unwrap_or_default();
         let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(100)
-            .with_style(PROG_TEMPLATE.clone())
+            .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
         pb.enable_steady_tick(Duration::from_millis(250));
         ProgressReport {
@@ -80,6 +94,19 @@ impl SingleReport for ProgressReport {
     }
     fn set_message(&self, message: String) {
         self.pb.set_message(message.replace('\r', ""));
+    }
+    fn inc(&self, delta: u64) {
+        self.pb.inc(delta);
+        if Some(self.pb.position()) == self.pb.length() {
+            self.pb.set_style(SPIN_TEMPLATE.clone());
+            self.pb.enable_steady_tick(Duration::from_millis(250));
+        }
+    }
+    fn set_length(&self, length: u64) {
+        self.pb.set_position(0);
+        self.pb.set_style(PROG_TEMPLATE.clone());
+        self.pb.disable_steady_tick();
+        self.pb.set_length(length);
     }
     fn finish(&self) {
         self.pb.set_style(SUCCESS_TEMPLATE.clone());
