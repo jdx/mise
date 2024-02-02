@@ -489,6 +489,9 @@ fn last_modified_glob_match(
     root: impl AsRef<Path>,
     patterns: &[&String],
 ) -> Result<Option<SystemTime>> {
+    if patterns.is_empty() {
+        return Ok(None);
+    }
     let files = GlobWalkerBuilder::from_patterns(root, patterns)
         .follow_links(true)
         .build()?
