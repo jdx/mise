@@ -70,10 +70,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _fa: &ForgeArg);
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]);
+    fn remove_plugin(&mut self, _fa: &ForgeArg) -> Result<()>;
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> Result<()>;
     fn save(&self) -> Result<()>;
-    fn dump(&self) -> String;
+    fn dump(&self) -> Result<String>;
     fn to_toolset(&self) -> &Toolset;
     fn aliases(&self) -> AliasMap {
         Default::default()
@@ -119,7 +119,7 @@ impl dyn ConfigFile {
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
-            self.replace_versions(&fa, &versions);
+            self.replace_versions(&fa, &versions)?;
         }
 
         Ok(())

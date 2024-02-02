@@ -36,7 +36,7 @@ impl Unset {
         let mut mise_toml = get_mise_toml(&filename)?;
 
         for name in self.keys.iter() {
-            mise_toml.remove_env(name);
+            mise_toml.remove_env(name)?;
         }
 
         mise_toml.save()
@@ -62,7 +62,7 @@ mod tests {
 
     fn remove_config_file(filename: &str) -> PathBuf {
         let cf_path = env::current_dir().unwrap().join(filename);
-        let _ = file::remove_file(&cf_path);
+        let _ = file::write(&cf_path, "");
         cf_path
     }
 
@@ -76,5 +76,6 @@ mod tests {
         assert_cli_snapshot!("unset", "BAZ", @"");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
+        file::remove_file(filename).unwrap();
     }
 }
