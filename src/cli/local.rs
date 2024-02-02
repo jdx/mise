@@ -105,7 +105,7 @@ pub fn local(
 
     if let Some(plugins) = &remove {
         for plugin in plugins {
-            cf.remove_plugin(plugin);
+            cf.remove_plugin(plugin)?;
         }
         let tools = plugins
             .iter()
@@ -128,7 +128,7 @@ pub fn local(
     if !runtime.is_empty() || remove.is_some() {
         cf.save()?;
     } else {
-        miseprint!("{}", cf.dump());
+        miseprint!("{}", cf.dump()?);
     }
 
     Ok(())

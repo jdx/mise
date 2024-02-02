@@ -85,6 +85,7 @@ pub fn reset_config() {
             "#},
     )
     .unwrap();
+    let _ = file::remove_file(".test.mise.toml");
 }
 
 pub fn replace_path(input: &str) -> String {

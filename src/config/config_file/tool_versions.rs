@@ -159,23 +159,25 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, fa: &ForgeArg) {
+    fn remove_plugin(&mut self, fa: &ForgeArg) -> Result<()> {
         self.plugins.shift_remove(fa);
+        Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) {
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()> {
         self.get_or_create_plugin(fa).versions.clear();
         for version in versions {
             self.add_version(fa, version);
         }
+        Ok(())
     }
 
     fn save(&self) -> Result<()> {
-        let s = self.dump();
+        let s = self.dump()?;
         file::write(&self.path, s)
     }
 
-    fn dump(&self) -> String {
+    fn dump(&self) -> eyre::Result<String> {
         let mut s = self.pre.clone();
 
         let max_plugin_len = self
@@ -195,7 +197,7 @@ impl ConfigFile for ToolVersions {
             s.push_str(&format!("{} {}{}", plugin, tv.versions.join(" "), tv.post));
         }
 
-        s.trim_end().to_string() + "\n"
+        Ok(s.trim_end().to_string() + "\n")
     }
 
     fn to_toolset(&self) -> &Toolset {
@@ -238,7 +240,7 @@ pub(crate) mod tests {
         "};
         let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
-        assert_eq!(tv.dump(), orig);
+        assert_eq!(tv.dump().unwrap(), orig);
     }
 
     #[test]
@@ -248,7 +250,7 @@ pub(crate) mod tests {
         "};
         let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
-        assert_snapshot!(tv.dump(), @r###"
+        assert_snapshot!(tv.dump().unwrap(), @r###"
         ruby 3.0.5
         "###);
     }
@@ -263,7 +265,7 @@ pub(crate) mod tests {
         assert_cli!("trust", path.to_string_lossy());
         let tv = ToolVersions::parse_str(orig, path.clone()).unwrap();
         assert_cli!("trust", "--untrust", path.to_string_lossy());
-        assert_snapshot!(tv.dump(), @r###"
+        assert_snapshot!(tv.dump().unwrap(), @r###"
         ruby   3.0.5
         python 3.11.0
         "###);
