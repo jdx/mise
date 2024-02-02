@@ -138,6 +138,7 @@ impl Toolset {
         let settings = Settings::try_get()?;
         let queue: Vec<_> = versions
             .into_iter()
+            .rev()
             .group_by(|v| v.forge.clone())
             .into_iter()
             .map(|(fa, v)| (forge::get(&fa), v.collect_vec()))
