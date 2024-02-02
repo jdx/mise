@@ -62,7 +62,7 @@
       "description": "environment variables",
       "type": "object",
       "properties": {
-        "mise": {
+        "_": {
           "type": "object",
           "description": "environment modules",
           "properties": {
