@@ -1,13 +1,15 @@
 # Script Tasks
 
-Tasks can be defined in 2 ways, either as standalone script files in `.mise/tasks/:task_name` such as the following build script
-for cargo:
+In addition to defining tasks through the configuration, they can also be defined as standalone script files in
+`.mise/tasks/:task_name` such as the following build script for cargo:
 
 ```bash
 #!/usr/bin/env bash
 # mise description="Build the CLI"
 cargo build
 ```
+
+Ensure that the file is executable, otherwise mise will not be able to detect it.
 
 :::tip
 The `mise:description` comment is optional but recommended. It will be used in the output of `mise tasks`.
