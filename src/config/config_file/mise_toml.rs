@@ -52,10 +52,6 @@ pub struct MiseToml {
     task_config: TaskConfig,
     #[serde(skip)]
     tasks: Vec<Task>,
-    #[serde(skip)]
-    project_root: Option<PathBuf>,
-    #[serde(skip)]
-    config_root: PathBuf,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -65,25 +61,6 @@ impl MiseToml {
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", path.parent().unwrap().to_str().unwrap());
-        let filename = path.file_name().unwrap_or_default().to_string_lossy();
-        let project_root = match path.parent() {
-            Some(dir) => match dir {
-                dir if dir.starts_with(*dirs::CONFIG) => None,
-                dir if dir.starts_with(*dirs::SYSTEM) => None,
-                dir if dir == *dirs::HOME => None,
-                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
-                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
-                    dir.parent().unwrap().parent()
-                }
-                dir => Some(dir),
-            },
-            None => None,
-        };
-        let config_root = project_root
-            .or_else(|| path.parent())
-            .or_else(|| dirs::CWD.as_ref().map(|p| p.as_path()))
-            .unwrap_or_else(|| *dirs::HOME)
-            .to_path_buf();
         Self {
             path: path.to_path_buf(),
             context,
@@ -91,8 +68,6 @@ impl MiseToml {
                 source: Some(ToolSource::MiseToml(path.to_path_buf())),
                 ..Default::default()
             },
-            project_root: project_root.map(|p| p.to_path_buf()),
-            config_root,
             ..Default::default()
         }
     }
@@ -477,7 +452,20 @@ impl ConfigFile for MiseToml {
     }
 
     fn project_root(&self) -> Option<&Path> {
-        self.project_root.as_deref()
+        let filename = self.path.file_name().unwrap_or_default().to_string_lossy();
+        match self.path.parent() {
+            Some(dir) => match dir {
+                dir if dir.starts_with(*dirs::CONFIG) => None,
+                dir if dir.starts_with(*dirs::SYSTEM) => None,
+                dir if dir == *dirs::HOME => None,
+                dir if !filename.starts_with('.') && dir.ends_with(".mise") => dir.parent(),
+                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
+                    dir.parent().unwrap().parent()
+                }
+                dir => Some(dir),
+            },
+            None => None,
+        }
     }
 
     fn plugins(&self) -> HashMap<String, String> {
@@ -612,8 +600,6 @@ impl Clone for MiseToml {
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
-            project_root: self.project_root.clone(),
-            config_root: self.config_root.clone(),
         }
     }
 }
