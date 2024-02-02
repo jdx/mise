@@ -331,7 +331,14 @@ impl Run {
                 if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
                     if let Some(code) = status.code() {
                         error!("{prefix} exited with code {code}");
-                        exit(code);
+                        if !task.service || i == 0 {
+                            exit(code);
+                        }
+                        if i > 0 {
+                            i -= 1;
+                        }
+                        sleep(std::time::Duration::from_millis(50));
+                        continue;
                     } else if let Some(signal) = status.signal() {
                         error!("{prefix} killed by signal {signal}");
                         exit(1);
@@ -340,13 +347,7 @@ impl Run {
                 error!("{err}");
                 exit(1);
             }
-            if !task.service || i == 0 {
-                break;
-            }
-            if i > 0 {
-                i -= 1;
-            }
-            sleep(std::time::Duration::from_millis(50));
+            break;
         }
         trace!("{prefix} exited successfully");
         Ok(())
