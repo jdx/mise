@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::thread::sleep;
 use std::time::SystemTime;
 
 use clap::ValueHint;
@@ -303,38 +304,49 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let program = program.to_executable();
-        let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
-        cmd.with_pass_signals();
-        match &self.output(task)? {
-            TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
-            TaskOutput::Interleave => {
-                cmd = cmd
-                    .stdin(Stdio::inherit())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
-            }
-        }
-        if self.raw(task) {
-            cmd.with_raw();
-        }
-        if let Some(cd) = &self.cd.as_ref().or(task.dir.as_ref()) {
-            cmd = cmd.current_dir(cd);
-        }
-        if self.dry_run {
-            return Ok(());
-        }
-        if let Err(err) = cmd.execute() {
-            if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
-                if let Some(code) = status.code() {
-                    error!("{prefix} exited with code {code}");
-                    exit(code);
-                } else if let Some(signal) = status.signal() {
-                    error!("{prefix} killed by signal {signal}");
-                    exit(1);
+        // TODO: add attribute to task
+        let mut i = -1;
+        loop {
+            let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
+            cmd.with_pass_signals();
+            match &self.output(task)? {
+                TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
+                TaskOutput::Interleave => {
+                    cmd = cmd
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
                 }
             }
-            error!("{err}");
-            exit(1);
+            if self.raw(task) {
+                cmd.with_raw();
+            }
+            if let Some(cd) = &self.cd.as_ref().or(task.dir.as_ref()) {
+                cmd = cmd.current_dir(cd);
+            }
+            if self.dry_run {
+                return Ok(());
+            }
+            if let Err(err) = cmd.execute() {
+                if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+                    if let Some(code) = status.code() {
+                        error!("{prefix} exited with code {code}");
+                        exit(code);
+                    } else if let Some(signal) = status.signal() {
+                        error!("{prefix} killed by signal {signal}");
+                        exit(1);
+                    }
+                }
+                error!("{err}");
+                exit(1);
+            }
+            if !task.service || i == 0 {
+                break;
+            }
+            if i > 0 {
+                i -= 1;
+            }
+            sleep(std::time::Duration::from_millis(50));
         }
         trace!("{prefix} exited successfully");
         Ok(())

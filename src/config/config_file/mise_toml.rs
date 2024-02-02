@@ -183,6 +183,7 @@ impl MiseToml {
                         "raw" => task.raw = self.parse_bool(&key, v)?,
                         // "script" => task.script = Some(self.parse_string_tmpl(&key, v)?),
                         "sources" => task.sources = self.parse_string_array(&key, v)?,
+                        "service" => task.service = self.parse_bool(&key, v)?,
                         _ => parse_error!(key, v, "task property"),
                     }
                 }

@@ -227,6 +227,10 @@
                 "description": "glob pattern or path to files created by this task",
                 "type": "string"
               }
+            },
+            "service": {
+              "description": "If true or an object, treat this script as a long-running process.\nServices are automatically brought up and down as they are depended upon by other scripts.",
+              "type": "boolean"
             }
           },
           "additionalProperties": false

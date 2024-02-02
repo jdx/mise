@@ -36,6 +36,7 @@ pub struct Task {
     pub raw: bool,
     pub sources: Vec<String>,
     pub outputs: Vec<String>,
+    pub service: bool,
 
     // normal type
     pub run: Vec<String>,
@@ -91,6 +92,7 @@ impl Task {
             dir: p.parse_str("dir")?,
             env: p.parse_hashmap("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
+            service: p.parse_bool("service").unwrap_or_default(),
             ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
         };
         Ok(task)

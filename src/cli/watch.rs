@@ -92,6 +92,10 @@ impl Watch {
             })
             .collect::<Result<Vec<_>>>()?;
         let mut args = vec![];
+        // check if any tasks has a service = true
+        if let Some(_service) = tasks.iter().find_map(|t| Some(t.service)) {
+            args.push("-r".to_string());
+        }
         let globs = if self.glob.is_empty() {
             tasks
                 .iter()
