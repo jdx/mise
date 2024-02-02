@@ -17,20 +17,12 @@ Once you know the right one, modify the appropriate file:
 ::: code-group
 ```zsh
 # ~/.zprofile
-if [[ -o interactive ]]; then
-  eval "$(mise activate zsh)"
-else
-  eval "$(mise activate zsh --shims)"
-fi
+eval "$(mise activate zsh --shims)"
 ```
 
 ```bash
 # ~/.bash_profile or ~/.bash_login or ~/.profile
-if [[ $- == *i* ]]; then
-  eval "$(mise activate bash)"
-else
-  eval "$(mise activate bash --shims)"
-fi
+eval "$(mise activate bash --shims)"
 ```
 
 ```fish
@@ -43,10 +35,7 @@ end
 ```
 :::
 
-You will likely want to also remove any existing `mise activate` calls in `~/.zshrc` or `~/.bashrc` to avoid running mise twice—though that should not actually cause any
-problems, just might make it potentially confusing for you later if you remove one but
-not the other. This also assumes that `mise` is on PATH.
-If it is not, you'll need to use the absolute path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
+This assumes that `mise` is on PATH. If it is not, you'll need to use the absolute path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
 if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you feel
