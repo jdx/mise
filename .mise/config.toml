@@ -1,1 +1,1 @@
-tasks.lint = "echo LINT!"
+tasks.lint = "just lint"
