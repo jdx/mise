@@ -227,6 +227,10 @@
                 "description": "glob pattern or path to files created by this task",
                 "type": "string"
               }
+            },
+            "prefix": {
+              "description": "prefix output with task name",
+              "type": "boolean"
             }
           },
           "additionalProperties": false

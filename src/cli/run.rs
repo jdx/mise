@@ -211,7 +211,7 @@ impl Run {
     fn run_task(&self, config: &Config, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = style::estyle(task.prefix()).fg(get_color()).to_string();
         if !self.force && self.sources_are_fresh(config, task) {
-            info_unprefix_trunc!("{prefix} sources up-to-date, skipping");
+            info_unprefix_trunc!("{prefix}sources up-to-date, skipping");
             return Ok(());
         }
 
@@ -237,7 +237,7 @@ impl Run {
 
         if self.timings {
             miseprintln!(
-                "{} finished in {}",
+                "{}finished in {}",
                 prefix,
                 format_duration(timer.elapsed())
             );
@@ -258,7 +258,7 @@ impl Run {
     ) -> Result<()> {
         let script = script.trim_start();
         let cmd = style::ebold(format!("$ {script}")).bright().to_string();
-        info_unprefix_trunc!("{prefix} {cmd}");
+        info_unprefix_trunc!("{prefix}{cmd}");
 
         if script.starts_with("#!") {
             let dir = tempfile::tempdir()?;
@@ -289,7 +289,7 @@ impl Run {
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-        info_unprefix_trunc!("{prefix} {cmd}");
+        info_unprefix_trunc!("{prefix}{cmd}");
 
         self.exec(&command, &args, task, env, prefix)
     }
@@ -306,7 +306,7 @@ impl Run {
         let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
         cmd.with_pass_signals();
         match &self.output(task)? {
-            TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
+            TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix}")),
             TaskOutput::Interleave => {
                 cmd = cmd
                     .stdin(Stdio::inherit())
@@ -326,17 +326,17 @@ impl Run {
         if let Err(err) = cmd.execute() {
             if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
                 if let Some(code) = status.code() {
-                    error!("{prefix} exited with code {code}");
+                    error!("{prefix}exited with code {code}");
                     exit(code);
                 } else if let Some(signal) = status.signal() {
-                    error!("{prefix} killed by signal {signal}");
+                    error!("{prefix}killed by signal {signal}");
                     exit(1);
                 }
             }
             error!("{err}");
             exit(1);
         }
-        trace!("{prefix} exited successfully");
+        trace!("{prefix}exited successfully");
         Ok(())
     }
 

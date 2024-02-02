@@ -36,6 +36,7 @@ pub struct Task {
     pub raw: bool,
     pub sources: Vec<String>,
     pub outputs: Vec<String>,
+    pub prefix: bool,
 
     // normal type
     pub run: Vec<String>,
@@ -56,6 +57,7 @@ impl Task {
         Task {
             name: name.clone(),
             config_source,
+            prefix: true,
             ..Default::default()
         }
     }
@@ -91,6 +93,7 @@ impl Task {
             dir: p.parse_str("dir")?,
             env: p.parse_hashmap("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
+            prefix: p.parse_bool("prefix").unwrap_or(true),
             ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
         };
         Ok(task)
@@ -127,7 +130,11 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.name)
+        if self.prefix {
+            format!("[{}] ", self.name)
+        } else {
+            "".to_string()
+        }
     }
 
     pub fn resolve_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
@@ -169,7 +176,7 @@ fn match_tasks<'a>(tasks: &'a BTreeMap<String, Task>, pat: &str) -> Result<Vec<&
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if let Some(cmd) = self.command_string() {
-            write!(f, "{} {}", self.prefix(), truncate_str(&cmd, 60, "…"))
+            write!(f, "{}{}", self.prefix(), truncate_str(&cmd, 60, "…"))
         } else {
             write!(f, "{}", self.prefix())
         }
