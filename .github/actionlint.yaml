@@ -1,6 +1,7 @@
 self-hosted-runner:
   # Labels of self-hosted runner in array of strings.
   labels:
+    - macos-14
     - buildjet-32vcpu-ubuntu-2204-arm
     - buildjet-16vcpu-ubuntu-2204-arm
     - buildjet-8vcpu-ubuntu-2204-arm
