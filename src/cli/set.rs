@@ -68,7 +68,7 @@ impl Set {
 
         if let Some(env_names) = &self.remove {
             for name in env_names {
-                mise_toml.remove_env(name);
+                mise_toml.remove_env(name)?;
             }
         }
 
@@ -83,7 +83,7 @@ impl Set {
             }
             for ev in env_vars {
                 match ev.value {
-                    Some(value) => mise_toml.update_env(&ev.key, value),
+                    Some(value) => mise_toml.update_env(&ev.key, value)?,
                     None => bail!("{} has no value", ev.key),
                 }
             }
@@ -131,7 +131,7 @@ mod tests {
 
     fn remove_config_file(filename: &str) -> PathBuf {
         let cf_path = env::current_dir().unwrap().join(filename);
-        let _ = file::remove_file(&cf_path);
+        let _ = file::write(&cf_path, "");
         cf_path
     }
 
@@ -156,6 +156,7 @@ mod tests {
         assert_cli_snapshot!("env-vars", "--file", filename, "FOO=bar", @"");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
+        file::remove_file(filename).unwrap();
     }
 
     #[test]
@@ -175,5 +176,6 @@ mod tests {
         assert_cli_snapshot!("env-vars", "--file", filename, "--remove", "BAZ", @"");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
+        file::remove_file(filename).unwrap();
     }
 }

@@ -41,11 +41,11 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, _fa: &ForgeArg) {
+    fn remove_plugin(&mut self, _fa: &ForgeArg) -> Result<()> {
         unimplemented!()
     }
 
-    fn replace_versions(&mut self, _plugin_name: &ForgeArg, _versions: &[String]) {
+    fn replace_versions(&mut self, _plugin_name: &ForgeArg, _versions: &[String]) -> Result<()> {
         unimplemented!()
     }
 
@@ -53,7 +53,7 @@ impl ConfigFile for LegacyVersionFile {
         unimplemented!()
     }
 
-    fn dump(&self) -> String {
+    fn dump(&self) -> Result<String> {
         unimplemented!()
     }
 

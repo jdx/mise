@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::WrapErr;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use serde::de::Visitor;
 use serde::{de, Deserializer};
 use serde_derive::Deserialize;
@@ -45,7 +46,7 @@ pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
-    doc: Document,
+    doc: OnceCell<Document>,
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
@@ -80,7 +81,7 @@ impl MiseToml {
         let mut rf = Self::init(path);
         let body = file::read_to_string(path)?; // .suggestion("ensure file exists and can be read")?;
         rf.parse(&body)?;
-        trace!("{}", rf.dump());
+        trace!("{}", rf.dump()?);
         Ok(rf)
     }
 
@@ -111,8 +112,19 @@ impl MiseToml {
                 _ => bail!("unknown key: {}", style::ered(k)),
             }
         }
-        self.doc = doc;
         Ok(())
+    }
+
+    fn doc(&self) -> eyre::Result<&Document> {
+        self.doc.get_or_try_init(|| {
+            let body = file::read_to_string(&self.path).unwrap_or_default();
+            Ok(body.parse()?)
+        })
+    }
+
+    fn doc_mut(&mut self) -> eyre::Result<&mut Document> {
+        self.doc()?;
+        Ok(self.doc.get_mut().unwrap())
     }
 
     fn parse_toolset(&self, key: &str, v: &Item) -> eyre::Result<Toolset> {
@@ -258,12 +270,12 @@ impl MiseToml {
         }
     }
 
-    pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) {
+    pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) -> eyre::Result<()> {
         self.alias
             .entry(fa.clone())
             .or_default()
             .insert(from.into(), to.into());
-        self.doc
+        self.doc_mut()?
             .entry("alias")
             .or_insert_with(table)
             .as_table_like_mut()
@@ -273,45 +285,57 @@ impl MiseToml {
             .as_table_like_mut()
             .unwrap()
             .insert(from, value(to));
+        Ok(())
     }
 
-    pub fn remove_alias(&mut self, fa: &ForgeArg, from: &str) {
-        if let Some(aliases) = self.doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
+    pub fn remove_alias(&mut self, fa: &ForgeArg, from: &str) -> eyre::Result<()> {
+        if let Some(aliases) = self
+            .doc_mut()?
+            .get_mut("alias")
+            .and_then(|v| v.as_table_mut())
+        {
             if let Some(plugin_aliases) = aliases
                 .get_mut(&fa.to_string())
                 .and_then(|v| v.as_table_mut())
             {
-                self.alias.get_mut(fa).unwrap().remove(from);
                 plugin_aliases.remove(from);
                 if plugin_aliases.is_empty() {
                     aliases.remove(&fa.to_string());
-                    self.alias.remove(fa);
                 }
             }
             if aliases.is_empty() {
-                self.doc.as_table_mut().remove("alias");
+                self.doc_mut()?.as_table_mut().remove("alias");
             }
         }
+        if let Some(aliases) = self.alias.get_mut(fa) {
+            aliases.remove(from);
+            if aliases.is_empty() {
+                self.alias.remove(fa);
+            }
+        }
+        Ok(())
     }
 
-    pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) {
+    pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
         let env_tbl = self
-            .doc
+            .doc_mut()?
             .entry("env")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap();
         env_tbl.insert(key, toml_edit::value(value));
+        Ok(())
     }
 
-    pub fn remove_env(&mut self, key: &str) {
+    pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
         let env_tbl = self
-            .doc
+            .doc_mut()?
             .entry("env")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap();
         env_tbl.remove(key);
+        Ok(())
     }
 
     fn parse_template(&self, k: &str, input: &str) -> eyre::Result<String> {
@@ -383,19 +407,21 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
-    fn remove_plugin(&mut self, fa: &ForgeArg) {
+    fn remove_plugin(&mut self, fa: &ForgeArg) -> eyre::Result<()> {
         self.toolset.versions.shift_remove(fa);
-        if let Some(tools) = self.doc.get_mut("tools") {
+        let doc = self.doc_mut()?;
+        if let Some(tools) = doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
                 tools.remove(&fa.to_string());
                 if tools.is_empty() {
-                    self.doc.as_table_mut().remove("tools");
+                    doc.as_table_mut().remove("tools");
                 }
             }
         }
+        Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) {
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()> {
         if let Some(plugin) = self.toolset.versions.get_mut(fa) {
             plugin.requests = versions
                 .iter()
@@ -403,7 +429,7 @@ impl ConfigFile for MiseToml {
                 .collect();
         }
         let tools = self
-            .doc
+            .doc_mut()?
             .entry("tools")
             .or_insert_with(table)
             .as_table_mut()
@@ -418,18 +444,20 @@ impl ConfigFile for MiseToml {
             }
             tools.insert(&fa.to_string(), Item::Value(Value::Array(arr)));
         }
+
+        Ok(())
     }
 
     fn save(&self) -> eyre::Result<()> {
-        let contents = self.dump();
+        let contents = self.dump()?;
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
         file::write(&self.path, contents)
     }
 
-    fn dump(&self) -> String {
-        self.doc.to_string()
+    fn dump(&self) -> eyre::Result<String> {
+        Ok(self.doc()?.to_string())
     }
 
     fn to_toolset(&self) -> &Toolset {
@@ -755,6 +783,7 @@ where
 mod tests {
     use crate::dirs;
     use crate::test::replace_path;
+    use dirs::CWD;
 
     use super::*;
 
@@ -772,17 +801,23 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        let env = parse_env(formatdoc! {r#"
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
         min_version = "2024.1.1"
         [env]
         foo="bar"
-        "#});
+        "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let env = parse_env(file::read_to_string(&p).unwrap());
 
         assert_debug_snapshot!(env, @r###""foo=bar""###);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
-            assert_snapshot!(cf.dump());
+            assert_snapshot!(cf.dump().unwrap());
             assert_display_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
@@ -895,80 +930,98 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [alias.node]
-        16 = "16.0.0"
-        18 = "18.0.0"
-        "#})
-            .unwrap();
-
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [alias.node]
+            16 = "16.0.0"
+            18 = "18.0.0"
+        "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
         let node = "node".parse().unwrap();
         let python = "python".parse().unwrap();
-        cf.set_alias(&node, "18", "18.0.1");
-        cf.set_alias(&node, "20", "20.0.0");
-        cf.set_alias(&python, "3.10", "3.10.0");
+        cf.set_alias(&node, "18", "18.0.1").unwrap();
+        cf.set_alias(&node, "20", "20.0.0").unwrap();
+        cf.set_alias(&python, "3.10", "3.10.0").unwrap();
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_display_snapshot!(cf);
+        file::remove_file(&p).unwrap();
     }
 
     #[test]
     fn test_remove_alias() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [alias.node]
-        16 = "16.0.0"
-        18 = "18.0.0"
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [alias.node]
+            16 = "16.0.0"
+            18 = "18.0.0"
 
-        [alias.python]
-        "3.10" = "3.10.0"
-        "#})
-            .unwrap();
+            [alias.python]
+            "3.10" = "3.10.0"
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
         let node = "node".parse().unwrap();
         let python = "python".parse().unwrap();
-        cf.remove_alias(&node, "16");
-        cf.remove_alias(&python, "3.10");
+        cf.remove_alias(&node, "16").unwrap();
+        cf.remove_alias(&python, "3.10").unwrap();
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump());
+        assert_snapshot!(cf.dump().unwrap());
         assert_display_snapshot!(cf);
         assert_debug_snapshot!(cf);
+        file::remove_file(&p).unwrap();
     }
 
     #[test]
     fn test_replace_versions() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [tools]
-        node = ["16.0.0", "18.0.0"]
-        "#})
-            .unwrap();
+        let p = PathBuf::from("/tmp/.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            node = ["16.0.0", "18.0.0"]
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
         let node = "node".parse().unwrap();
-        cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()]);
+        cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()])
+            .unwrap();
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump());
+        assert_snapshot!(cf.dump().unwrap());
         assert_display_snapshot!(cf);
         assert_debug_snapshot!(cf);
     }
 
     #[test]
     fn test_remove_plugin() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&formatdoc! {r#"
-        [tools]
-        node = ["16.0.0", "18.0.0"]
-        "#})
-            .unwrap();
-        cf.remove_plugin(&"node".parse().unwrap());
+        let p = PathBuf::from("/tmp/.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            node = ["16.0.0", "18.0.0"]
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.remove_plugin(&"node".parse().unwrap()).unwrap();
 
         assert_debug_snapshot!(cf.toolset);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump());
+        assert_snapshot!(cf.dump().unwrap());
         assert_display_snapshot!(cf);
         assert_debug_snapshot!(cf);
     }
@@ -1044,9 +1097,9 @@ mod tests {
     }
 
     fn parse(s: String) -> MiseToml {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        cf.parse(&s).unwrap();
-        cf
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(&p, s).unwrap();
+        MiseToml::from_file(&p).unwrap()
     }
 
     fn parse_env(toml: String) -> String {
