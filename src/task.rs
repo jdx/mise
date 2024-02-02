@@ -16,38 +16,54 @@ use itertools::Itertools;
 use petgraph::graph::DiGraph;
 use petgraph::prelude::*;
 use petgraph::{Direction, Graph};
+use serde_derive::Deserialize;
 
+use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::toml::TomlParser;
 use crate::config::Config;
 use crate::file;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
 
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
+    #[serde(skip)]
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
+    #[serde(skip)]
     pub config_source: PathBuf,
+    #[serde(default)]
     pub depends: Vec<String>,
+    #[serde(default)]
     pub env: HashMap<String, String>,
+    #[serde(default)]
     pub dir: Option<PathBuf>,
+    #[serde(default)]
     pub hide: bool,
+    #[serde(default)]
     pub raw: bool,
+    #[serde(default)]
     pub sources: Vec<String>,
+    #[serde(default)]
     pub outputs: Vec<String>,
 
     // normal type
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub run: Vec<String>,
 
     // command type
     // pub command: Option<String>,
+    #[serde(default)]
     pub args: Vec<String>,
 
     // script type
     // pub script: Option<String>,
 
     // file type
+    #[serde(default)]
     pub file: Option<PathBuf>,
 }
 
@@ -99,8 +115,8 @@ impl Task {
     pub fn command_string(&self) -> Option<String> {
         if let Some(command) = self.run.first() {
             Some(command.to_string())
-        // } else if let Some(script) = &self.script {
-        //     Some(script.to_string())
+            // } else if let Some(script) = &self.script {
+            //     Some(script.to_string())
         } else {
             self.file
                 .as_ref()
