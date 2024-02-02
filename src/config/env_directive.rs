@@ -1,9 +1,9 @@
 use crate::config::config_file::trust_check;
 use crate::config::Settings;
-use crate::dirs;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::{dirs, env};
 use eyre::Context;
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap};
@@ -76,19 +76,23 @@ impl EnvResults {
             env_scripts: Vec::new(),
         };
         for (directive, source) in input {
-            let config_root = source.parent().unwrap();
-            ctx.insert("config_root", config_root);
+            let config_root = source
+                .parent()
+                .map(Path::to_path_buf)
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default();
+            ctx.insert("config_root", &config_root);
             let env_vars = env
                 .iter()
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
-            let normalize_path = |s: String| {
-                let s = s.strip_prefix("./").unwrap_or(&s);
-                match s.strip_prefix("~/") {
-                    Some(s) => dirs::HOME.join(s),
-                    None if s.starts_with('/') => PathBuf::from(s),
-                    None => config_root.join(s),
+            let normalize_path = |p: PathBuf| {
+                let p = p.strip_prefix("./").unwrap_or(&p);
+                match p.strip_prefix("~/") {
+                    Ok(p) => dirs::HOME.join(p),
+                    _ if p.is_relative() => config_root.join(p),
+                    _ => p.to_path_buf(),
                 }
             };
             match directive {
@@ -103,13 +107,14 @@ impl EnvResults {
                 }
                 EnvDirective::Path(input) => {
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    let p = normalize_path(s);
-                    r.env_paths.push(p.clone());
+                    env::split_paths(&s)
+                        .map(normalize_path)
+                        .for_each(|p| r.env_paths.push(p.clone()));
                 }
                 EnvDirective::File(input) => {
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    let p = normalize_path(s);
+                    let p = normalize_path(s.into());
                     r.env_files.push(p.clone());
                     let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
                     for item in dotenvy::from_path_iter(&p).wrap_err_with(errfn)? {
@@ -122,7 +127,7 @@ impl EnvResults {
                     settings.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    let p = normalize_path(s);
+                    let p = normalize_path(s.into());
                     r.env_scripts.push(p.clone());
                     let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
                     for p in env_diff.to_patches() {
@@ -163,5 +168,52 @@ impl EnvResults {
             .render_str(input, ctx)
             .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::replace_path;
+
+    #[test]
+    fn test_env_path() {
+        let mut env = HashMap::new();
+        env.insert("A".to_string(), "1".to_string());
+        env.insert("B".to_string(), "2".to_string());
+        let results = EnvResults::resolve(
+            &env,
+            vec![
+                (
+                    EnvDirective::Path("/path/1".into()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Path("/path/2".into()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Path("~/foo/{{ env.A }}".into()),
+                    Default::default(),
+                ),
+                (
+                    EnvDirective::Path("./rel/{{ env.A }}:./rel2/{{env.B}}".into()),
+                    Default::default(),
+                ),
+            ],
+        )
+        .unwrap();
+        assert_debug_snapshot!(
+            results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
+            @r###"
+        [
+            "/path/1",
+            "/path/2",
+            "~/foo/1",
+            "~/cwd/rel/1",
+            "~/cwd/rel2/2",
+        ]
+        "###
+        );
     }
 }
