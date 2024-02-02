@@ -122,14 +122,14 @@ impl Use {
                     }
                 })
                 .collect();
-            cf.replace_versions(fa, &versions);
+            cf.replace_versions(fa, &versions)?;
         }
 
         if self.global {
             self.warn_if_hidden(&config, cf.get_path());
         }
         for plugin_name in &self.remove {
-            cf.remove_plugin(plugin_name);
+            cf.remove_plugin(plugin_name)?;
         }
         cf.save()?;
         self.render_success_message(cf.as_ref(), &versions);
@@ -264,13 +264,31 @@ mod tests {
     fn test_use_global() {
         let cf_path = dirs::CONFIG.join("config.toml");
         let orig = file::read_to_string(&cf_path).unwrap();
-        let _ = file::remove_file(&cf_path);
 
         assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
         mise ~/config/config.toml tools: tiny@2.1.0
         mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [env]
+        TEST_ENV_VAR = 'test-123'
+
+        [alias.tiny]
+        "my/alias" = '3.0'
+
+        [tasks.configtask]
+        run = 'echo "configtask:"'
+        [tasks.lint]
+        run = 'echo "linting!"'
+        [tasks.test]
+        run = 'echo "testing!"'
+        [settings]
+        always_keep_download= true
+        always_keep_install= true
+        legacy_version_file= true
+        plugin_autoupdate_last_check_duration = "20m"
+        jobs = 2
+
         [tools]
         tiny = "2"
         "###);

@@ -2,4 +2,12 @@
 source: src/config/config_file/mise_toml.rs
 expression: cf
 ---
-MiseToml(/tmp/.mise.toml): 
+MiseToml(~/cwd/.test.mise.toml):  {
+    min_version: "2024.1.1",
+    env: [
+        Val(
+            "foo",
+            "bar",
+        ),
+    ],
+}
