@@ -49,7 +49,7 @@ pub struct MiseToml {
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
-    pub task_config: TaskConfig,
+    task_config: TaskConfig,
     #[serde(skip)]
     tasks: Vec<Task>,
     #[serde(skip)]
