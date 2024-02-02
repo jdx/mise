@@ -1098,7 +1098,7 @@ mod tests {
 
     fn parse(s: String) -> MiseToml {
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(&p, &s).unwrap();
+        file::write(&p, s).unwrap();
         MiseToml::from_file(&p).unwrap()
     }
 

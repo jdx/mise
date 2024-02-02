@@ -76,6 +76,6 @@ mod tests {
         assert_cli_snapshot!("unset", "BAZ", @"");
         assert_snapshot!(file::read_to_string(cf_path).unwrap());
         remove_config_file(filename);
-        file::remove_file(&filename).unwrap();
+        file::remove_file(filename).unwrap();
     }
 }
