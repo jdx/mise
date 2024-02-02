@@ -131,8 +131,8 @@ download_file() {
 	info "mise: installing mise..."
 
 	if command -v curl >/dev/null 2>&1; then
-		debug ">" curl -fLlSso "$file" "$url"
-		curl -fLlSso "$file" "$url"
+		debug ">" curl -#fLo "$file" "$url"
+		curl -#fLo "$file" "$url"
 	else
 		if command -v wget >/dev/null 2>&1; then
 			debug ">" wget -qO "$file" "$url"
