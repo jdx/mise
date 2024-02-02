@@ -64,6 +64,7 @@ impl ErlangPlugin {
         HTTP_FETCH.download_file(
             format!("https://raw.githubusercontent.com/kerl/kerl/{KERL_VERSION}/kerl"),
             &self.kerl_path(),
+            None,
         )?;
         file::make_executable(&self.kerl_path())?;
         Ok(())

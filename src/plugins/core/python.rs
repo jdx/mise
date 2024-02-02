@@ -142,11 +142,10 @@ impl PythonPlugin {
         let download = ctx.tv.download_path();
         let tarball_path = download.join(filename);
 
-        ctx.pr.set_message(format!("downloading {}", &url));
-        HTTP.download_file(&url, &tarball_path)?;
+        ctx.pr.set_message(format!("downloading {filename}"));
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
 
-        ctx.pr
-            .set_message(format!("installing {}", tarball_path.display()));
+        ctx.pr.set_message(format!("installing {filename}"));
         file::untar(&tarball_path, &download)?;
         file::remove_all(&install)?;
         file::rename(download.join("python"), &install)?;
