@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use eyre::WrapErr;
 use itertools::Itertools;
@@ -54,8 +53,6 @@ pub struct MiseToml {
     #[serde(skip)]
     tasks: Vec<Task>,
     #[serde(skip)]
-    is_trusted: Mutex<Option<bool>>,
-    #[serde(skip)]
     project_root: Option<PathBuf>,
     #[serde(skip)]
     config_root: PathBuf,
@@ -90,7 +87,6 @@ impl MiseToml {
         Self {
             path: path.to_path_buf(),
             context,
-            is_trusted: Mutex::new(None),
             toolset: Toolset {
                 source: Some(ToolSource::MiseToml(path.to_path_buf())),
                 ..Default::default()
@@ -578,7 +574,6 @@ impl Debug for MiseToml {
         let tools = self.toolset.to_string();
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
-        // d.field("is_trusted", &self.is_trusted);
         if let Some(min_version) = &self.min_version {
             d.field("min_version", &min_version.to_string());
         }
@@ -617,7 +612,6 @@ impl Clone for MiseToml {
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
-            is_trusted: Mutex::new(*self.is_trusted.lock().unwrap()),
             project_root: self.project_root.clone(),
             config_root: self.config_root.clone(),
         }
