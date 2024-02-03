@@ -74,7 +74,7 @@ petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.8.1"
 regex = "1.10.3"
-reqwest = { version = "0.11.23", default-features = false, features = ["blocking", "json", "gzip"] }
+reqwest = { version = "0.11.24", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 self_update = { version = "0.39.0", default-features = false, features = [
     "archive-tar",
