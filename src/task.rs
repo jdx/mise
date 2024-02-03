@@ -31,7 +31,7 @@ pub struct Task {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default, deserialize_with = "deserialize_arr")]
+    #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
     #[serde(skip)]
     pub config_source: PathBuf,
