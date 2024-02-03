@@ -202,7 +202,13 @@
             "env": {
               "description": "environment variables",
               "type": "object",
-              "additionalProperties": { "type": "string" }
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "number" },
+                  { "type": "boolean", "enum": [false] }
+                ]
+              }
             },
             "quiet": {
               "description": "do not display mise information for this task",

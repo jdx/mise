@@ -1,9 +1,12 @@
-use serde::de;
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
+use either::Either;
+use serde::de;
 use tera::{Context, Tera};
+
+use crate::task::EitherStringOrBool;
 
 pub struct TomlParser<'a> {
     table: &'a toml::Value,
@@ -48,22 +51,36 @@ impl<'a> TomlParser<'a> {
             })
             .transpose()
     }
-    pub fn parse_hashmap<T>(&self, key: &str) -> eyre::Result<Option<HashMap<String, T>>>
-    where
-        T: From<String>,
-    {
+    pub fn parse_env(
+        &self,
+        key: &str,
+    ) -> eyre::Result<Option<HashMap<String, EitherStringOrBool>>> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
             .map(|table| {
                 table
                     .iter()
-                    .filter_map(|(key, value)| {
-                        value
+                    .map(|(key, value)| {
+                        let v = value
                             .as_str()
-                            .map(|v| Ok((self.render_tmpl(key)?, self.render_tmpl(v)?)))
+                            .map(|v| Ok(EitherStringOrBool(Either::Left(self.render_tmpl(v)?))))
+                            .or_else(|| {
+                                value
+                                    .as_integer()
+                                    .map(|v| Ok(EitherStringOrBool(Either::Left(v.to_string()))))
+                            })
+                            .or_else(|| {
+                                value
+                                    .as_bool()
+                                    .map(|v| Ok(EitherStringOrBool(Either::Right(v))))
+                            })
+                            .unwrap_or_else(|| {
+                                Err(eyre::eyre!("invalid env value: {:?}", value))
+                            })?;
+                        Ok((key.clone(), v))
                     })
-                    .collect::<eyre::Result<HashMap<String, T>>>()
+                    .collect::<eyre::Result<HashMap<String, EitherStringOrBool>>>()
             })
             .transpose()
     }
