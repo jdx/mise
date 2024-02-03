@@ -4,6 +4,9 @@ FOO = "bar"
 mise.file = ['.test-env']
 mise.path = ["/root", "./cwd"]
 
+[task_config]
+includes = ["e2e/.mise/config"]
+
 [tools]
 tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}

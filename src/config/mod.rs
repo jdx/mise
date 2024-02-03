@@ -266,7 +266,6 @@ impl Config {
             })
             .collect::<Vec<_>>()
             .into_iter()
-            .rev()
             .collect())
     }
 
