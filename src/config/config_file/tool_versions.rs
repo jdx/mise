@@ -200,8 +200,8 @@ impl ConfigFile for ToolVersions {
         Ok(s.trim_end().to_string() + "\n")
     }
 
-    fn to_toolset(&self) -> &Toolset {
-        &self.toolset
+    fn to_toolset(&self) -> Result<Toolset> {
+        Ok(self.toolset.clone())
     }
 }
 
@@ -278,6 +278,6 @@ pub(crate) mod tests {
         "};
         let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
-        assert_display_snapshot!(tv.to_toolset(), @"ruby@3.0.5 ruby@3.1");
+        assert_display_snapshot!(tv.to_toolset().unwrap(), @"ruby@3.0.5 ruby@3.1");
     }
 }

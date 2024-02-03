@@ -39,7 +39,7 @@ impl ToolsetBuilder {
                 .collect::<Result<_>>()?,
             ..Default::default()
         };
-        self.load_config_files(config, &mut toolset);
+        self.load_config_files(config, &mut toolset)?;
         self.load_runtime_env(&mut toolset, env::vars().collect());
         self.load_runtime_args(&mut toolset);
         toolset.resolve();
@@ -48,13 +48,14 @@ impl ToolsetBuilder {
         Ok(toolset)
     }
 
-    fn load_config_files(&self, config: &Config, ts: &mut Toolset) {
+    fn load_config_files(&self, config: &Config, ts: &mut Toolset) -> eyre::Result<()> {
         for cf in config.config_files.values().rev() {
             if self.global_only && !config::is_global_config(cf.get_path()) {
-                return;
+                return Ok(());
             }
-            ts.merge(cf.to_toolset());
+            ts.merge(cf.to_toolset()?);
         }
+        Ok(())
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: BTreeMap<String, String>) {
@@ -78,7 +79,7 @@ impl ToolsetBuilder {
                     let tvr = ToolVersionRequest::new(fa.clone(), v);
                     env_ts.add_version(tvr, Default::default());
                 }
-                ts.merge(&env_ts);
+                ts.merge(env_ts);
             }
         }
     }
@@ -94,7 +95,7 @@ impl ToolsetBuilder {
                     arg_ts.add_version(tvr.clone(), Default::default());
                 }
             }
-            ts.merge(&arg_ts);
+            ts.merge(arg_ts);
         }
     }
 }

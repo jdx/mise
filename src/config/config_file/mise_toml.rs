@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 
 use eyre::WrapErr;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use serde::de::Visitor;
@@ -12,22 +13,20 @@ use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, Document, Item, Value};
 use versions::Versioning;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::{ForgeArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType, TaskConfig};
 use crate::config::env_directive::EnvDirective;
+use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{
-    ToolSource, ToolVersionList, ToolVersionOptions, ToolVersionRequest, Toolset,
-};
-use crate::ui::style;
-use crate::{dirs, file, parse_error};
+use crate::toolset::{ToolSource, ToolVersionOptions, ToolVersionRequest, Toolset};
+use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
-// #[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
@@ -35,8 +34,6 @@ pub struct MiseToml {
     context: TeraContext,
     #[serde(skip)]
     path: PathBuf,
-    #[serde(skip)]
-    toolset: Toolset,
     #[serde(default, alias = "dotenv", deserialize_with = "deserialize_arr")]
     env_file: Vec<PathBuf>,
     #[serde(default)]
@@ -48,11 +45,24 @@ pub struct MiseToml {
     #[serde(skip)]
     doc: OnceCell<Document>,
     #[serde(default)]
+    tools: IndexMap<ForgeArg, MiseTomlToolList>,
+    #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
     task_config: TaskConfig,
     #[serde(default)]
     tasks: Tasks,
+    #[serde(default)]
+    settings: SettingsPartial,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MiseTomlToolList(Vec<MiseTomlTool>);
+
+#[derive(Debug, Clone)]
+pub struct MiseTomlTool {
+    pub tt: ToolVersionType,
+    pub options: ToolVersionOptions,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -68,51 +78,23 @@ impl MiseToml {
         Self {
             path: path.to_path_buf(),
             context,
-            toolset: Toolset {
-                source: Some(ToolSource::MiseToml(path.to_path_buf())),
-                ..Default::default()
-            },
             ..Default::default()
         }
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
         trace!("parsing: {}", display_path(path));
-        let mut rf = Self::init(path);
-        let body = file::read_to_string(path)?; // .suggestion("ensure file exists and can be read")?;
-        rf.parse(&body)?;
+        let body = file::read_to_string(path)?;
+        let mut rf: MiseToml = toml::from_str(&body)?;
+        rf.context = BASE_CONTEXT.clone();
+        rf.context
+            .insert("config_root", path.parent().unwrap().to_str().unwrap());
+        rf.path = path.to_path_buf();
+        for task in rf.tasks.0.values_mut() {
+            task.config_source = rf.path.clone();
+        }
         trace!("{}", rf.dump()?);
         Ok(rf)
-    }
-
-    fn parse(&mut self, s: &str) -> eyre::Result<()> {
-        let cfg: MiseToml = toml::from_str(s)?;
-        self.alias = cfg.alias;
-        self.env = cfg.env;
-        self.env_file = cfg.env_file;
-        self.env_path = cfg.env_path;
-        self.min_version = cfg.min_version;
-        self.plugins = cfg.plugins;
-        self.task_config = cfg.task_config;
-        self.tasks = cfg.tasks;
-
-        for task in self.tasks.0.values_mut() {
-            task.config_source = self.path.clone();
-        }
-
-        // TODO: right now some things are parsed with serde (above) and some not (below) everything
-        // should be moved to serde eventually
-
-        let doc: Document = s.parse()?; // .suggestion("ensure file is valid TOML")?;
-        for (k, v) in doc.iter() {
-            match k {
-                "tools" => self.toolset = self.parse_toolset(k, v)?,
-                "alias" | "dotenv" | "env_file" | "env_path" | "min_version" | "settings"
-                | "env" | "plugins" | "task_config" | "tasks" => {}
-                _ => bail!("unknown key: {}", style::ered(k)),
-            }
-        }
-        Ok(())
     }
 
     fn doc(&self) -> eyre::Result<&Document> {
@@ -125,149 +107,6 @@ impl MiseToml {
     fn doc_mut(&mut self) -> eyre::Result<&mut Document> {
         self.doc()?;
         Ok(self.doc.get_mut().unwrap())
-    }
-
-    fn parse_toolset(&self, key: &str, v: &Item) -> eyre::Result<Toolset> {
-        let mut toolset = Toolset::new(self.toolset.source.clone().unwrap());
-
-        match v.as_table_like() {
-            Some(table) => {
-                for (plugin, v) in table.iter() {
-                    let k = format!("{}.{}", key, plugin);
-                    let fa: ForgeArg = plugin.parse()?;
-                    let tvl = self.parse_tool_version_list(&k, v, fa.clone())?;
-                    toolset.versions.insert(fa, tvl);
-                }
-                Ok(toolset)
-            }
-            _ => parse_error!(key, v, "table"),
-        }
-    }
-
-    fn parse_tool_version_list(
-        &self,
-        key: &str,
-        v: &Item,
-        fa: ForgeArg,
-    ) -> eyre::Result<ToolVersionList> {
-        let source = ToolSource::MiseToml(self.path.clone());
-        let mut tool_version_list = ToolVersionList::new(fa.clone(), source);
-
-        match v {
-            Item::ArrayOfTables(v) => {
-                for table in v.iter() {
-                    for (tool, v) in table.iter() {
-                        let k = format!("{}.{}", key, tool);
-                        let (tvr, opts) = self.parse_tool_version(&k, v, fa.clone())?;
-                        tool_version_list.requests.push((tvr, opts));
-                    }
-                }
-            }
-            v => match v.as_array() {
-                Some(v) => {
-                    for v in v.iter() {
-                        let item = Item::Value(v.clone());
-                        let (tvr, opts) = self.parse_tool_version(key, &item, fa.clone())?;
-                        tool_version_list.requests.push((tvr, opts));
-                    }
-                }
-                _ => {
-                    tool_version_list
-                        .requests
-                        .push(self.parse_tool_version(key, v, fa)?);
-                }
-            },
-        }
-
-        for (tvr, _) in &tool_version_list.requests {
-            if let ToolVersionRequest::Path(_, _) = tvr {
-                // "path:" can be dangerous to run automatically
-                trust_check(&self.path)?;
-            }
-        }
-
-        Ok(tool_version_list)
-    }
-
-    fn parse_tool_version(
-        &self,
-        key: &str,
-        v: &Item,
-        fa: ForgeArg,
-    ) -> eyre::Result<(ToolVersionRequest, ToolVersionOptions)> {
-        match v.as_table_like() {
-            Some(table) => {
-                let tv = if let Some(v) = table.get("version") {
-                    match v {
-                        Item::Value(v) => self.parse_tool_version_request(key, v, fa)?,
-                        _ => parse_error!(format!("{}.version", key), v, "string"),
-                    }
-                } else if let Some(path) = table.get("path") {
-                    match path.as_str() {
-                        Some(s) => {
-                            let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Path(fa, s.into())
-                        }
-                        _ => parse_error!(format!("{}.path", key), v, "string"),
-                    }
-                } else if let Some(prefix) = table.get("prefix") {
-                    match prefix.as_str() {
-                        Some(s) => {
-                            let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Prefix(fa, s)
-                        }
-                        _ => parse_error!(format!("{}.prefix", key), v, "string"),
-                    }
-                } else if let Some(r) = table.get("ref") {
-                    match r.as_str() {
-                        Some(s) => {
-                            let s = self.parse_template(key, s)?;
-                            ToolVersionRequest::Ref(fa, s)
-                        }
-                        _ => parse_error!(format!("{}.ref", key), v, "string"),
-                    }
-                } else {
-                    parse_error!(key, v, "version, path, or prefix");
-                };
-                let mut opts = ToolVersionOptions::default();
-                for (k, v) in table.iter() {
-                    if k == "version" || k == "path" || k == "prefix" || k == "ref" {
-                        continue;
-                    }
-                    let s = if let Some(s) = v.as_str() {
-                        self.parse_template(key, s)?
-                    } else if let Some(b) = v.as_bool() {
-                        b.to_string()
-                    } else {
-                        parse_error!(key, v, "string or bool");
-                    };
-                    opts.insert(k.into(), s);
-                }
-                Ok((tv, opts))
-            }
-            _ => match v {
-                Item::Value(v) => {
-                    let tv = self.parse_tool_version_request(key, v, fa)?;
-                    Ok((tv, Default::default()))
-                }
-                _ => parse_error!(key, v, "value"),
-            },
-        }
-    }
-
-    fn parse_tool_version_request(
-        &self,
-        key: &str,
-        v: &Value,
-        fa: ForgeArg,
-    ) -> eyre::Result<ToolVersionRequest> {
-        match v.as_str() {
-            Some(s) => {
-                let s = self.parse_template(key, s)?;
-                Ok(ToolVersionRequest::new(fa, &s))
-            }
-            _ => parse_error!(key, v, "string"),
-        }
     }
 
     pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) -> eyre::Result<()> {
@@ -408,7 +247,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn remove_plugin(&mut self, fa: &ForgeArg) -> eyre::Result<()> {
-        self.toolset.versions.shift_remove(fa);
+        self.tools.shift_remove(fa);
         let doc = self.doc_mut()?;
         if let Some(tools) = doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
@@ -422,12 +261,13 @@ impl ConfigFile for MiseToml {
     }
 
     fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()> {
-        if let Some(plugin) = self.toolset.versions.get_mut(fa) {
-            plugin.requests = versions
-                .iter()
-                .map(|s| (ToolVersionRequest::new(fa.clone(), s), Default::default()))
-                .collect();
-        }
+        self.tools.entry(fa.clone()).or_default().0 = versions
+            .iter()
+            .map(|v| MiseTomlTool {
+                tt: ToolVersionType::Version(v.clone()),
+                options: Default::default(),
+            })
+            .collect();
         let tools = self
             .doc_mut()?
             .entry("tools")
@@ -460,8 +300,22 @@ impl ConfigFile for MiseToml {
         Ok(self.doc()?.to_string())
     }
 
-    fn to_toolset(&self) -> &Toolset {
-        &self.toolset
+    fn to_toolset(&self) -> eyre::Result<Toolset> {
+        let mut toolset = Toolset::new(ToolSource::MiseToml(self.path.clone()));
+        for (fa, tvp) in &self.tools {
+            for tool in &tvp.0 {
+                if let ToolVersionType::Path(_) = &tool.tt {
+                    trust_check(&self.path)?;
+                }
+                let tvr = ToolVersionRequest::new(fa.clone(), &tool.tt.to_string());
+                let mut options = tool.options.clone();
+                for (k, v) in &mut options {
+                    *v = self.parse_template(k, v)?;
+                }
+                toolset.add_version(tvr, options);
+            }
+        }
+        Ok(toolset)
     }
 
     fn aliases(&self) -> AliasMap {
@@ -475,7 +329,7 @@ impl ConfigFile for MiseToml {
 
 impl Debug for MiseToml {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let tools = self.toolset.to_string();
+        let tools = self.to_toolset().unwrap().to_string();
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
@@ -507,15 +361,16 @@ impl Clone for MiseToml {
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
-            toolset: self.toolset.clone(),
             env_file: self.env_file.clone(),
             env: self.env.clone(),
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
             doc: self.doc.clone(),
+            tools: self.tools.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
+            settings: self.settings.clone(),
         }
     }
 }
@@ -667,6 +522,113 @@ impl<'de> de::Deserialize<'de> for EnvList {
     }
 }
 
+impl<'de> de::Deserialize<'de> for MiseTomlToolList {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct MiseTomlToolListVisitor;
+
+        impl<'de> Visitor<'de> for MiseTomlToolListVisitor {
+            type Value = MiseTomlToolList;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("tool list")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let tt: ToolVersionType = v
+                    .parse()
+                    .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
+                Ok(MiseTomlToolList(vec![MiseTomlTool {
+                    tt,
+                    options: Default::default(),
+                }]))
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut options: BTreeMap<String, String> =
+                    de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                let tt: ToolVersionType = options
+                    .remove("version")
+                    .or_else(|| options.remove("path").map(|p| format!("path:{p}")))
+                    .or_else(|| options.remove("prefix").map(|p| format!("prefix:{p}")))
+                    .or_else(|| options.remove("ref").map(|p| format!("ref:{p}")))
+                    .ok_or_else(|| de::Error::custom("missing version"))?
+                    .parse()
+                    .map_err(de::Error::custom)?;
+                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options }]))
+            }
+
+            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+            where
+                S: de::SeqAccess<'de>,
+            {
+                let mut tools = vec![];
+                while let Some(tool) = seq.next_element::<MiseTomlTool>()? {
+                    tools.push(tool);
+                }
+                Ok(MiseTomlToolList(tools))
+            }
+        }
+
+        deserializer.deserialize_any(MiseTomlToolListVisitor)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for MiseTomlTool {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct MiseTomlToolVisitor;
+
+        impl<'de> Visitor<'de> for MiseTomlToolVisitor {
+            type Value = MiseTomlTool;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("tool definition")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let tt: ToolVersionType = v
+                    .parse()
+                    .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
+                Ok(MiseTomlTool {
+                    tt,
+                    options: Default::default(),
+                })
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut options: BTreeMap<String, String> =
+                    de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                let tt: ToolVersionType = options
+                    .remove("version")
+                    .or_else(|| options.remove("path").map(|p| format!("path:{p}")))
+                    .or_else(|| options.remove("prefix").map(|p| format!("prefix:{p}")))
+                    .or_else(|| options.remove("ref").map(|p| format!("ref:{p}")))
+                    .ok_or_else(|| de::Error::custom("missing version"))?
+                    .parse()
+                    .map_err(de::Error::custom)?;
+                Ok(MiseTomlTool { tt, options })
+            }
+        }
+
+        deserializer.deserialize_any(MiseTomlToolVisitor)
+    }
+}
+
 impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -748,6 +710,31 @@ impl<'de> de::Deserialize<'de> for Tasks {
     }
 }
 
+impl<'de> de::Deserialize<'de> for ForgeArg {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct ForgeArgVisitor;
+
+        impl<'de> Visitor<'de> for ForgeArgVisitor {
+            type Value = ForgeArg;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("forge argument")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                v.parse().map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(ForgeArgVisitor)
+    }
+}
+
 fn deserialize_alias<'de, D>(deserializer: D) -> Result<AliasMap, D::Error>
 where
     D: Deserializer<'de>,
@@ -781,9 +768,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use dirs::CWD;
+
     use crate::dirs;
     use crate::test::replace_path;
-    use dirs::CWD;
 
     use super::*;
 
@@ -793,7 +781,7 @@ mod tests {
 
         assert_debug_snapshot!(cf.env_entries());
         assert_debug_snapshot!(cf.plugins());
-        assert_snapshot!(replace_path(&format!("{:#?}", cf.toolset)));
+        assert_snapshot!(replace_path(&format!("{:#?}", cf.to_toolset().unwrap())));
         assert_debug_snapshot!(cf.alias);
 
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
@@ -998,7 +986,7 @@ mod tests {
         cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()])
             .unwrap();
 
-        assert_debug_snapshot!(cf.toolset);
+        assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf.dump().unwrap());
         assert_display_snapshot!(cf);
@@ -1019,7 +1007,7 @@ mod tests {
         let mut cf = MiseToml::from_file(&p).unwrap();
         cf.remove_plugin(&"node".parse().unwrap()).unwrap();
 
-        assert_debug_snapshot!(cf.toolset);
+        assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf.dump().unwrap());
         assert_display_snapshot!(cf);
@@ -1028,12 +1016,10 @@ mod tests {
 
     #[test]
     fn test_fail_with_unknown_key() {
-        let mut cf = MiseToml::init(PathBuf::from("/tmp/.mise.toml").as_path());
-        let _ = cf
-            .parse(&formatdoc! {r#"
+        let _ = toml::from_str::<MiseToml>(&formatdoc! {r#"
         invalid_key = true
         "#})
-            .unwrap_err();
+        .unwrap_err();
     }
 
     #[test]

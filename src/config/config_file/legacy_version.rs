@@ -57,7 +57,7 @@ impl ConfigFile for LegacyVersionFile {
         unimplemented!()
     }
 
-    fn to_toolset(&self) -> &Toolset {
-        &self.toolset
+    fn to_toolset(&self) -> Result<Toolset> {
+        Ok(self.toolset.clone())
     }
 }
