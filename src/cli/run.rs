@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
 use std::os::unix::prelude::ExitStatusExt;
@@ -12,6 +12,7 @@ use clap::ValueHint;
 use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
+use either::Either;
 use eyre::Result;
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
@@ -215,9 +216,20 @@ impl Run {
             return Ok(());
         }
 
+        let string_env = task.env.iter().filter_map(|(k, v)| match &v.0 {
+            Either::Left(v) => Some((k, v)),
+            _ => None,
+        });
+        let rm_env = task
+            .env
+            .iter()
+            .filter(|(_, v)| v.0 == Either::Right(false))
+            .map(|(k, _)| k)
+            .collect::<HashSet<_>>();
         let env: BTreeMap<String, String> = env
             .iter()
-            .chain(task.env.iter())
+            .chain(string_env)
+            .filter(|(k, _)| !rm_env.contains(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
