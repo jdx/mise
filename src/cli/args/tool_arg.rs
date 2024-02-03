@@ -69,6 +69,19 @@ impl FromStr for ToolVersionType {
     }
 }
 
+impl Display for ToolVersionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Path(p) => write!(f, "path:{}", p.to_string_lossy()),
+            Self::Prefix(p) => write!(f, "prefix:{}", p),
+            Self::Ref(r) => write!(f, "ref:{}", r),
+            Self::Sub { sub, orig_version } => write!(f, "sub-{}:{}", sub, orig_version),
+            Self::System => write!(f, "system"),
+            Self::Version(v) => write!(f, "{}", v),
+        }
+    }
+}
+
 impl ToolArg {
     /// this handles the case where the user typed in:
     /// mise local node 20.0.0

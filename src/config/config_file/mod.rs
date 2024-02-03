@@ -74,7 +74,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> Result<()>;
     fn save(&self) -> Result<()>;
     fn dump(&self) -> Result<String>;
-    fn to_toolset(&self) -> &Toolset;
+    fn to_toolset(&self) -> Result<Toolset>;
     fn aliases(&self) -> AliasMap {
         Default::default()
     }
@@ -87,7 +87,7 @@ pub trait ConfigFile: Debug + Send + Sync {
 impl dyn ConfigFile {
     pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
-        let mut ts = self.to_toolset().to_owned();
+        let mut ts = self.to_toolset()?.to_owned();
         ts.resolve();
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
@@ -133,7 +133,7 @@ impl dyn ConfigFile {
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let fa = &runtimes[0].forge;
             let tvl = self
-                .to_toolset()
+                .to_toolset()?
                 .versions
                 .get(fa)
                 .ok_or_else(|| {
@@ -313,7 +313,7 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
 
 impl Display for dyn ConfigFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let toolset = self.to_toolset().to_string();
+        let toolset = self.to_toolset().unwrap().to_string();
         write!(f, "{}: {toolset}", &display_path(self.get_path()))
     }
 }
