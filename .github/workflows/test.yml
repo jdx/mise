@@ -78,7 +78,7 @@ jobs:
         with:
           tool: cargo-llvm-cov,just
       - name: Test w/ coverage
-        uses: nick-fields/retry@v2
+        uses: nick-fields/retry@v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
