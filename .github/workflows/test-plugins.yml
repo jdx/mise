@@ -103,7 +103,7 @@ jobs:
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
       - name: ${{matrix.command}}
-        uses: nick-fields/retry@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 20
           max_attempts: 3
@@ -182,7 +182,7 @@ jobs:
       - run: tar -C "$HOME" -xvJf dist/mise-*-linux-x64.tar.xz
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - name: mise install ${{matrix.plugins}}@latest
-        uses: nick-fields/retry@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 20
           max_attempts: 3
