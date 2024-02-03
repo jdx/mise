@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+if [ "${RTX_TINY_LIST_ALL_FAIL:-}" = "1" ]; then
+  echo "RTX_TINY_LIST_ALL_FAIL is set to 1, failing"
+  exit 1
+fi
+
+echo 1.0.0
+echo 1.1.0
+echo 1.0.1
+echo 2.0.0
+echo 2.0.1
+echo 2.1.0
+echo 3.0.0
+echo 3.0.1
+echo 3.1.0
+
