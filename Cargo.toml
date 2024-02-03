@@ -42,7 +42,7 @@ base64 = "0.21.7"
 chrono = { version = "0.4.33", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.4.18", features = ["env", "derive", "string"] }
 clap_complete = { version = "4.4.9", optional = true }
-clap_mangen = { version = "0.2.17", optional = true }
+clap_mangen = { version = "0.2.19", optional = true }
 color-eyre = "0.6.2"
 color-print = "0.3.5"
 confique = { version = "0.2.5", default-features = false }
