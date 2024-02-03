@@ -113,7 +113,7 @@ jobs:
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
       - name: Run e2e tests
-        uses: nick-fields/retry@v2
+        uses: nick-fields/retry@v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
