@@ -712,7 +712,7 @@ impl<'de> de::Deserialize<'de> for ForgeArg {
             where
                 E: de::Error,
             {
-                Ok(v.parse().map_err(de::Error::custom)?)
+                v.parse().map_err(de::Error::custom)
             }
         }
 
