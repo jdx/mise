@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 
+use eyre::WrapErr;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -20,7 +21,7 @@ use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::task::Task;
-use crate::tera::BASE_CONTEXT;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolVersionRequest, Toolset};
 use crate::{dirs, file};
 
@@ -175,6 +176,18 @@ impl MiseToml {
         env_tbl.remove(key);
         Ok(())
     }
+
+    fn parse_template(&self, k: &str, input: &str) -> eyre::Result<String> {
+        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+            return Ok(input.to_string());
+        }
+        trust_check(&self.path)?;
+        let dir = self.path.parent();
+        let output = get_tera(dir)
+            .render_str(input, &self.context)
+            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
+        Ok(output)
+    }
 }
 
 impl ConfigFile for MiseToml {
@@ -294,10 +307,12 @@ impl ConfigFile for MiseToml {
                 if let ToolVersionType::Path(_) = &tool.tt {
                     trust_check(&self.path)?;
                 }
-                toolset.add_version(
-                    ToolVersionRequest::new(fa.clone(), &tool.tt.to_string()),
-                    tool.options.clone(),
-                );
+                let tvr = ToolVersionRequest::new(fa.clone(), &tool.tt.to_string());
+                let mut options = tool.options.clone();
+                for (k, v) in &mut options {
+                    *v = self.parse_template(k, v)?;
+                }
+                toolset.add_version(tvr, options);
             }
         }
         Ok(toolset)
@@ -753,9 +768,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use dirs::CWD;
+
     use crate::dirs;
     use crate::test::replace_path;
-    use dirs::CWD;
 
     use super::*;
 
