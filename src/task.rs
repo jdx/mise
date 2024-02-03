@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use console::truncate_str;
+use either::Either;
 use eyre::Result;
 use globset::Glob;
 use itertools::Itertools;
@@ -38,7 +39,7 @@ pub struct Task {
     #[serde(default)]
     pub depends: Vec<String>,
     #[serde(default)]
-    pub env: HashMap<String, String>,
+    pub env: HashMap<String, EitherStringOrBool>,
     #[serde(default)]
     pub dir: Option<PathBuf>,
     #[serde(default)]
@@ -66,6 +67,9 @@ pub struct Task {
     #[serde(default)]
     pub file: Option<PathBuf>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct EitherStringOrBool(#[serde(with = "either::serde_untagged")] pub Either<String, bool>);
 
 impl Task {
     pub fn new(name: String, config_source: PathBuf) -> Task {
@@ -105,7 +109,7 @@ impl Task {
             outputs: p.parse_array("outputs")?.unwrap_or_default(),
             depends: p.parse_array("depends")?.unwrap_or_default(),
             dir: p.parse_str("dir")?,
-            env: p.parse_hashmap("env")?.unwrap_or_default(),
+            env: p.parse_env("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
             ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
         };
