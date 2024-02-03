@@ -55,7 +55,7 @@ struct Row {
 impl From<&dyn ConfigFile> for Row {
     fn from(cf: &dyn ConfigFile) -> Self {
         let path = display_path(cf.get_path());
-        let ts = cf.to_toolset();
+        let ts = cf.to_toolset().unwrap();
         let plugins = ts.list_plugins().into_iter().join(", ");
         let plugins = format_plugin_cell(plugins);
         Self { path, plugins }

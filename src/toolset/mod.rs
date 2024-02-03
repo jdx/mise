@@ -85,16 +85,16 @@ impl Toolset {
             .or_insert_with(|| ToolVersionList::new(fa.clone(), self.source.clone().unwrap()));
         tvl.requests.push((tvr, opts));
     }
-    pub fn merge(&mut self, other: &Toolset) {
-        let mut versions = other.versions.clone();
+    pub fn merge(&mut self, other: Toolset) {
+        let mut versions = other.versions;
         for (plugin, tvl) in self.versions.clone() {
-            if !other.versions.contains_key(&plugin) {
+            if !versions.contains_key(&plugin) {
                 versions.insert(plugin, tvl);
             }
         }
         versions.retain(|_, tvl| !self.disable_tools.contains(&tvl.forge));
         self.versions = versions;
-        self.source = other.source.clone();
+        self.source = other.source;
     }
     pub fn resolve(&mut self) {
         self.list_missing_plugins();
