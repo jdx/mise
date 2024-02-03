@@ -64,7 +64,7 @@ indenter = "0.3.3"
 indexmap = { version = "2.2.2", features = ["serde"] }
 indicatif = { version = "0.17.7", features = ["default", "improved_unicode"] }
 indoc = "2.0.4"
-itertools = "0.12.0"
+itertools = "0.12.1"
 log = "0.4.20"
 num_cpus = "1.16.0"
 once_cell = "1.19.0"
