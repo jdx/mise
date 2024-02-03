@@ -4,6 +4,7 @@ pub use forge_arg::ForgeArg;
 pub use log_level_arg::{DebugArg, LogLevelArg, TraceArg};
 pub use quiet_arg::QuietArg;
 pub use tool_arg::ToolArg;
+pub use tool_arg::ToolVersionType;
 pub use verbose_arg::VerboseArg;
 pub use yes_arg::YesArg;
 
