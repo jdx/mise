@@ -283,13 +283,13 @@ enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
-    Symlink(String, PathBuf, bool),
+    Symlink(String, bool),
 }
 
 impl From<(&dyn Forge, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
     fn from((p, tv, source): (&dyn Forge, &ToolVersion, &Option<ToolSource>)) -> Self {
-        if let Some(symlink_path) = p.symlink_path(tv) {
-            VersionStatus::Symlink(tv.version.clone(), symlink_path, source.is_some())
+        if p.symlink_path(tv).is_some() {
+            VersionStatus::Symlink(tv.version.clone(), source.is_some())
         } else if !p.is_version_installed(tv) {
             VersionStatus::Missing(tv.version.clone())
         } else if source.is_some() {
@@ -322,7 +322,7 @@ impl Display for VersionStatus {
                 style(version).strikethrough().red(),
                 style("(missing)").red()
             ),
-            VersionStatus::Symlink(version, _, active) => {
+            VersionStatus::Symlink(version, active) => {
                 write!(
                     f,
                     "{} {}",
