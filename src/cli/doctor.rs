@@ -33,7 +33,7 @@ impl Doctor {
         miseprintln!("{}", mise_version());
         miseprintln!("{}", build_info());
         miseprintln!("{}", shell());
-        miseprintln!("{}", mise_data_dir());
+        miseprintln!("{}", mise_dirs());
         miseprintln!("{}", mise_env_vars());
 
         match Settings::try_get() {
@@ -78,6 +78,16 @@ impl Doctor {
 
     fn analyze_config(&mut self, config: impl AsRef<Config>) -> Result<()> {
         let config = config.as_ref();
+
+        let yn = |b| {
+            if b {
+                style("yes").green()
+            } else {
+                style("no").red()
+            }
+        };
+        miseprintln!("activated: {}", yn(config.is_activated()));
+        miseprintln!("shims_on_path: {}", yn(shims_on_path()));
 
         miseprintln!("{}", render_config_files(config));
         miseprintln!("{}", render_plugins());
@@ -143,9 +153,13 @@ fn shims_on_path() -> bool {
     env::PATH.contains(&*dirs::SHIMS)
 }
 
-fn mise_data_dir() -> String {
-    let mut s = style("mise data directory:\n").bold().to_string();
-    s.push_str(&format!("  {}\n", env::MISE_DATA_DIR.to_string_lossy()));
+fn mise_dirs() -> String {
+    let mut s = style("mise dirs:\n").bold().to_string();
+    s.push_str(&format!("  data: {}\n", dirs::DATA.to_string_lossy()));
+    s.push_str(&format!("  config: {}\n", dirs::CONFIG.to_string_lossy()));
+    s.push_str(&format!("  cache: {}\n", dirs::CACHE.to_string_lossy()));
+    s.push_str(&format!("  state: {}\n", dirs::STATE.to_string_lossy()));
+    s.push_str(&format!("  shims: {}\n", dirs::SHIMS.to_string_lossy()));
     s
 }
 
