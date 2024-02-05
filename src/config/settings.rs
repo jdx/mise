@@ -13,6 +13,7 @@ use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
+use crate::file::FindUp;
 use crate::{config, dirs, env, file};
 
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -353,6 +354,19 @@ impl Settings {
                     dirs::CONFIG.join("config.toml")
                 }
             })
+    }
+
+    pub fn env_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![];
+        if let Some(cwd) = &*dirs::CWD {
+            if let Some(env_file) = &self.env_file {
+                let env_file = env_file.to_string_lossy().to_string();
+                for p in FindUp::new(cwd, &[env_file]) {
+                    files.push(p);
+                }
+            }
+        }
+        files.into_iter().rev().collect()
     }
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
