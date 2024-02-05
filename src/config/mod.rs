@@ -108,8 +108,8 @@ impl Config {
         self.env_with_sources.get_or_try_init(|| {
             let mut env = self.env_results()?.env.clone();
             let settings = Settings::get();
-            if let Some(env_file) = &settings.env_file {
-                match dotenvy::from_filename_iter(env_file) {
+            for env_file in settings.env_files() {
+                match dotenvy::from_path_iter(&env_file) {
                     Ok(iter) => {
                         for item in iter {
                             let (k, v) = item.unwrap_or_else(|err| {
@@ -331,12 +331,13 @@ impl Config {
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 
-    pub fn watch_files(&self) -> eyre::Result<BTreeSet<&Path>> {
+    pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
         Ok(self
             .config_files
             .keys()
-            .chain(self.env_results()?.env_files.iter())
-            .map(|p| p.as_path())
+            .map(|p| p.to_path_buf())
+            .chain(self.env_results()?.env_files.clone())
+            .chain(Settings::get().env_files())
             .collect())
     }
 
