@@ -509,7 +509,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::Str(s) => {
                                     env.push(EnvDirective::Val(key, s));
                                 }
-                                Val::Bool(_) => env.push(EnvDirective::Rm(key)),
+                                Val::Bool(_b) => env.push(EnvDirective::Rm(key)),
                             }
                         }
                     }
