@@ -15,7 +15,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file, forge};
 
-/// Change the active version of a tool locally or globally.
+/// Install tool version and add it to config
 ///
 /// This will install the tool if it is not already installed.
 /// By default, this will use an `.mise.toml` file in the current directory.
