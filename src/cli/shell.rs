@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::shell::get_shell;
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 
-/// Sets a tool version for the current shell session
+/// Sets a tool version for the current session
 ///
 /// Only works in a session where mise is already activated.
 #[derive(Debug, clap::Args)]

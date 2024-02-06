@@ -20,7 +20,7 @@ use crate::{cli, cmd, dirs, forge};
 use crate::{duration, env};
 use crate::{file, shims};
 
-/// Check mise installation for possible problems.
+/// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {

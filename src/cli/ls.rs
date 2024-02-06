@@ -18,7 +18,13 @@ use crate::forge::Forge;
 use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::table;
 
-/// List installed and/or currently selected tool versions
+/// List installed and active tool versions
+///
+/// This command lists tools that mise "knows about".
+/// These may be tools that are currently installed, or those
+/// that are in a config file (active) but may or may not be installed.
+///
+/// It's a useful command to get the current state of your tools.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
