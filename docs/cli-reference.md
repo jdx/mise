@@ -291,7 +291,7 @@ Examples:
 **Aliases:** `dr`
 
 ```text
-Check mise installation for possible problems.
+Check mise installation for possible problems
 
 Usage: doctor
 
@@ -503,7 +503,13 @@ Examples:
 **Aliases:** `list`
 
 ```text
-List installed and/or currently selected tool versions
+List installed and active tool versions
+
+This command lists tools that mise "knows about".
+These may be tools that are currently installed, or those
+that are in a config file (active) but may or may not be installed.
+
+It's a useful command to get the current state of your tools.
 
 Usage: ls [OPTIONS] [PLUGIN]...
 
@@ -1107,7 +1113,7 @@ Examples:
 **Aliases:** `sh`
 
 ```text
-Sets a tool version for the current shell session
+Sets a tool version for the current session
 
 Only works in a session where mise is already activated.
 
@@ -1472,7 +1478,7 @@ Options:
 **Aliases:** `u`
 
 ```text
-Change the active version of a tool locally or globally.
+Install tool version and add it to config
 
 This will install the tool if it is not already installed.
 By default, this will use an `.mise.toml` file in the current directory.
