@@ -63,7 +63,7 @@ If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build scrip
 ```bash
 #!/bin/sh
 curl https://mise.run | sh
-export PATH="$HOME/.local/bin/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 mise install # Installs the tools in .mise.toml
 eval "$(mise activate bash --shims)" # Addds the activated tools to $PATH
