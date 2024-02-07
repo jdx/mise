@@ -27,7 +27,7 @@ impl TasksEdit {
 
         let task = config
             .tasks_with_aliases()?
-            .get(&self.task)
+            .remove(&self.task)
             .cloned()
             .map_or_else(
                 || {

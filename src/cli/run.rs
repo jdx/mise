@@ -140,7 +140,12 @@ impl Run {
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| {
-                let tasks = config.tasks_with_aliases()?.get_matching(&t)?;
+                let tasks = config
+                    .tasks_with_aliases()?
+                    .get_matching(&t)?
+                    .into_iter()
+                    .cloned()
+                    .collect_vec();
                 if tasks.is_empty() {
                     ensure!(t == "default", "no tasks {} found", style::ered(t));
 
