@@ -132,7 +132,7 @@ impl Use {
             cf.remove_plugin(plugin_name)?;
         }
         cf.save()?;
-        self.render_success_message(cf.as_ref(), &versions);
+        self.render_success_message(cf.as_ref(), &versions)?;
         Ok(())
     }
 
@@ -168,14 +168,15 @@ impl Use {
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) {
+    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) -> Result<()> {
         let path = display_path(cf.get_path());
         let tools = versions.iter().map(|t| t.style()).join(", ");
         miseprintln!(
             "{} {} tools: {tools}",
             style("mise").green(),
             style(path).cyan().for_stderr(),
-        );
+        )?;
+        Ok(())
     }
 }
 

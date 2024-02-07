@@ -21,7 +21,7 @@ impl AliasGet {
         let config = Config::try_get()?;
         match config.get_all_aliases().get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
-                Some(alias) => Ok(miseprintln!("{}", alias)),
+                Some(alias) => Ok(miseprintln!("{}", alias)?),
                 None => Err(eyre!("Unknown alias: {}", &self.alias)),
             },
             None => Err(eyre!("Unknown plugin: {}", &self.plugin)),

@@ -21,9 +21,9 @@ impl Deactivate {
 
         let shell = get_shell(None).expect("no shell detected");
 
-        miseprint!("{}", hook_env::clear_old_env(&*shell));
+        miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let output = shell.deactivate();
-        miseprint!("{output}");
+        miseprint!("{output}")?;
 
         Ok(())
     }

@@ -34,7 +34,7 @@ impl Cache {
             Some(cmd) => cmd.run(),
             None => {
                 // just show the cache dir
-                miseprintln!("{}", env::MISE_CACHE_DIR.display());
+                miseprintln!("{}", env::MISE_CACHE_DIR.display())?;
                 Ok(())
             }
         }

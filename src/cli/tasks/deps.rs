@@ -92,7 +92,7 @@ impl TasksDeps {
         });
         // iterate over selected graph nodes and print tree
         for idx in start_indexes {
-            print_tree(&(&deps.graph, idx));
+            print_tree(&(&deps.graph, idx))?;
         }
         Ok(())
     }
@@ -127,7 +127,7 @@ impl TasksDeps {
                 &|_, _| String::new(),
                 &|_, nr| format!("label = \"{}\"", nr.1.name),
             ),
-        );
+        )?;
         Ok(())
     }
 

@@ -24,7 +24,7 @@ impl Completion {
             Shell::Fish => include_str!("../../completions/mise.fish"),
             Shell::Zsh => include_str!("../../completions/_mise"),
         };
-        miseprintln!("{}", c.trim());
+        miseprintln!("{}", c.trim())?;
 
         Ok(())
     }

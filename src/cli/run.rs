@@ -252,7 +252,7 @@ impl Run {
                 "{} finished in {}",
                 prefix,
                 format_duration(timer.elapsed())
-            );
+            )?;
         }
 
         self.save_checksum(task)?;

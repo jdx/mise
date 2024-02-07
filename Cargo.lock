@@ -226,6 +226,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
+name = "calm_io"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ea0608700fe42d90ec17ad0f86335cf229b67df2e34e7f463e8241ce7b8fa5f"
+dependencies = [
+ "calmio_filters",
+]
+
+[[package]]
+name = "calmio_filters"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "846501f4575cd66766a40bb7ab6d8e960adc7eb49f753c8232bd8e0e09cf6ca2"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1300,6 +1319,7 @@ version = "2024.2.5"
 dependencies = [
  "base64",
  "built",
+ "calm_io",
  "chrono",
  "clap",
  "clap_complete",
