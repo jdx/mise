@@ -11,7 +11,9 @@ expression: output
       "source": {
         "type": ".tool-versions",
         "path": "~/.test-tool-versions"
-      }
+      },
+      "installed": true,
+      "active": true
     }
   ],
   "tiny": [
@@ -22,7 +24,9 @@ expression: output
       "source": {
         "type": ".tool-versions",
         "path": "~/cwd/.test-tool-versions"
-      }
+      },
+      "installed": true,
+      "active": true
     }
   ]
 }
