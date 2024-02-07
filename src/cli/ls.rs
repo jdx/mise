@@ -239,6 +239,8 @@ struct JSONToolVersion {
     source: Option<IndexMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinked_to: Option<PathBuf>,
+    installed: bool,
+    active: bool,
 }
 
 type RuntimeRow = (Arc<dyn Forge>, ToolVersion, Option<ToolSource>);
@@ -276,12 +278,15 @@ impl Row {
 impl From<RuntimeRow> for JSONToolVersion {
     fn from(row: RuntimeRow) -> Self {
         let (p, tv, source) = row;
+        let vs: VersionStatus = (p.as_ref(), &tv, &source).into();
         JSONToolVersion {
             symlinked_to: p.symlink_path(&tv),
             install_path: tv.install_path(),
             version: tv.version,
             requested_version: source.as_ref().map(|_| tv.request.version()),
             source: source.map(|source| source.as_json()),
+            installed: !matches!(vs, VersionStatus::Missing(_)),
+            active: matches!(vs, VersionStatus::Active(_, _)),
         }
     }
 }

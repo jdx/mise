@@ -10,6 +10,8 @@ expression: output
     "source": {
       "type": ".tool-versions",
       "path": "~/cwd/.test-tool-versions"
-    }
+    },
+    "installed": true,
+    "active": true
   }
 ]
