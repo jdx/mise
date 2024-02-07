@@ -82,7 +82,12 @@ test:e2e                                                     ~/src/mise/.mise.to
 
 ## Setup
 
-Shouldn't require anything special I'm aware of, but `just build` is a good sanity check to run and make sure it's all working.
+Shouldn't require anything special I'm aware of, but `mise run build` is a good sanity check to run and make sure it's all working.
+
+## Pre-commit hook
+
+You can optionally run a pre-commit hook which lints the codebase and updates generated code.
+To do this, install [lefthook](https://github.com/evilmartians/lefthook) and run `lefthook install`.
 
 ## Running the CLI
 
