@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use either::Either;
 use eyre::{Context, Result};
@@ -44,9 +44,9 @@ pub struct Config {
     pub project_root: Option<PathBuf>,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    all_aliases: OnceCell<AliasMap>,
+    all_aliases: OnceLock<AliasMap>,
     repo_urls: HashMap<String, String>,
-    shorthands: OnceCell<HashMap<String, String>>,
+    shorthands: OnceLock<HashMap<String, String>>,
     tasks_with_aliases: OnceCell<BTreeMap<String, Task>>,
 }
 
@@ -83,8 +83,8 @@ impl Config {
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             aliases: load_aliases(&config_files),
-            all_aliases: OnceCell::new(),
-            shorthands: OnceCell::new(),
+            all_aliases: OnceLock::new(),
+            shorthands: OnceLock::new(),
             tasks_with_aliases: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
