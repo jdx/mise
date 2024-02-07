@@ -57,9 +57,15 @@ function __mise_env_eval_2 --on-event fish_preexec --description 'Update mise en
 
     functions --erase __mise_cd_hook;
 end;
+if functions -q fish_command_not_found
+    functions -c fish_command_not_found __mise_fish_command_not_found
+end
+
 function fish_command_not_found
     if /some/dir/mise hook-not-found -s fish -- $argv[1]
         /some/dir/mise hook-env --status -s fish | source
+    else if functions -q __mise_fish_command_not_found
+        __mise_fish_command_not_found $argv
     else
         __fish_default_command_not_found_handler $argv
     end
