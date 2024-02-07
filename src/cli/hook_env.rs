@@ -41,7 +41,7 @@ impl HookEnv {
         }
         let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
-        miseprint!("{}", hook_env::clear_old_env(&*shell));
+        miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let mut env = ts.env(&config)?;
         let env_path = env.remove("PATH");
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
@@ -60,7 +60,7 @@ impl HookEnv {
         patches.push(self.build_watch_operation(&watch_files)?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
-        miseprint!("{output}");
+        miseprint!("{output}")?;
         self.display_status(&config, &ts)?;
 
         Ok(())

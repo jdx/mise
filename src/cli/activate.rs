@@ -67,20 +67,21 @@ impl Activate {
             env::MISE_BIN.clone()
         };
         match self.shims {
-            true => self.activate_shims(shell.as_ref(), &mise_bin),
-            false => self.activate(shell.as_ref(), &mise_bin),
+            true => self.activate_shims(shell.as_ref(), &mise_bin)?,
+            false => self.activate(shell.as_ref(), &mise_bin)?,
         }
 
         Ok(())
     }
 
-    fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) {
+    fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
-        miseprint!("{}", self.prepend_path(shell, exe_dir));
-        miseprint!("{}", self.prepend_path(shell, &dirs::SHIMS));
+        miseprint!("{}", self.prepend_path(shell, exe_dir))?;
+        miseprint!("{}", self.prepend_path(shell, &dirs::SHIMS))?;
+        Ok(())
     }
 
-    fn activate(&self, shell: &dyn Shell, mise_bin: &Path) {
+    fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
         let mut flags = vec![];
         if self.quiet {
@@ -89,8 +90,9 @@ impl Activate {
         if self.status {
             flags.push(" --status");
         }
-        miseprint!("{}", self.prepend_path(shell, exe_dir));
-        miseprint!("{}", shell.activate(mise_bin, flags.join("")));
+        miseprint!("{}", self.prepend_path(shell, exe_dir))?;
+        miseprint!("{}", shell.activate(mise_bin, flags.join("")))?;
+        Ok(())
     }
 
     fn prepend_path(&self, shell: &dyn Shell, p: &Path) -> String {

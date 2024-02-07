@@ -1,9 +1,9 @@
-use std::{borrow::Cow, f32::INFINITY};
+use std::borrow::Cow;
 
 pub trait TreeItem: Clone {
     type Child: TreeItem;
 
-    fn write_self(&self);
+    fn write_self(&self) -> std::io::Result<()>;
 
     fn children(&self) -> Cow<[Self::Child]>;
 }
@@ -58,7 +58,7 @@ impl TreeItemIndent {
     }
 }
 
-pub fn print_tree<T: TreeItem>(item: &T) {
+pub fn print_tree<T: TreeItem>(item: &T) -> std::io::Result<()> {
     let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
     print_tree_item(item, String::from(""), String::from(""), &indent, 0)
 }
@@ -69,25 +69,27 @@ fn print_tree_item<T: TreeItem>(
     child_prefix: String,
     indent: &TreeItemIndent,
     level: u32,
-) {
-    miseprint!("{}", prefix);
-    item.write_self();
-    miseprintln!("");
+) -> std::io::Result<()> {
+    miseprint!("{}", prefix)?;
+    item.write_self()?;
+    miseprintln!("")?;
 
-    if level < INFINITY as u32 {
+    if level < u32::MAX {
         let children = item.children();
         if let Some((last_child, children)) = children.split_last() {
             let rp = child_prefix.clone() + &indent.regular_prefix;
             let cp = child_prefix.clone() + &indent.child_prefix;
 
             for c in children {
-                print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1);
+                print_tree_item(c, rp.clone(), cp.clone(), indent, level + 1)?;
             }
 
             let rp = child_prefix.clone() + &indent.last_regular_prefix;
             let cp = child_prefix.clone() + &indent.last_child_prefix;
 
-            print_tree_item(last_child, rp, cp, indent, level + 1);
+            print_tree_item(last_child, rp, cp, indent, level + 1)?;
         }
     }
+
+    Ok(())
 }

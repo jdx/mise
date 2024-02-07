@@ -7,18 +7,19 @@ macro_rules! miseprintln {
     ($($arg:tt)*) => {{
         let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
         stdout.push(format!($($arg)*));
-    }};
+        std::io::Result::Ok(())
+    }}
 }
 
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! miseprintln {
     () => {
-        miseprint!("\n")
+        calm_io::stdoutln!("\n")
     };
     ($($arg:tt)*) => {{
-        println!($($arg)*);
-    }};
+        calm_io::stdoutln!($($arg)*)
+    }}
 }
 
 #[cfg(test)]
@@ -28,15 +29,16 @@ macro_rules! miseprint {
         let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
         let cur = stdout.pop().unwrap_or_default();
         stdout.push(cur + &format!($($arg)*));
-    }};
+        std::io::Result::Ok(())
+    }}
 }
 
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! miseprint {
     ($($arg:tt)*) => {{
-        print!($($arg)*);
-    }};
+        calm_io::stdout!($($arg)*)
+    }}
 }
 
 #[cfg(test)]

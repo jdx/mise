@@ -76,7 +76,7 @@ impl ConfigGenerate {
             info!("writing to {}", display_path(output));
             file::write(output, doc)?;
         } else {
-            miseprintln!("{doc}");
+            miseprintln!("{doc}")?;
         }
 
         Ok(())

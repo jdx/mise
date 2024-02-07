@@ -85,10 +85,10 @@ impl PluginsLs {
                 .with(Margin::new(0, 0, 0, 0))
                 .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
                 .with(Modify::new(Columns::last()).with(Padding::zero()));
-            miseprintln!("{table}");
+            miseprintln!("{table}")?;
         } else {
             for tool in tools {
-                miseprintln!("{tool}");
+                miseprintln!("{tool}")?;
             }
         }
         Ok(())
