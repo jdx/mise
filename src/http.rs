@@ -55,6 +55,11 @@ impl Client {
         }
         let resp = req.send()?;
         debug!("GET {url} {}", resp.status());
+        if url.scheme() == "http" && resp.error_for_status_ref().is_err() {
+            // try with https since http may be blocked
+            let url = url.to_string().replace("http://", "https://");
+            return self.get(url);
+        }
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -64,6 +69,11 @@ impl Client {
         let resp = self.get(url.clone())?;
         let text = resp.text()?;
         if text.starts_with("<!DOCTYPE html>") {
+            if url.scheme() == "http" {
+                // try with https since http may be blocked
+                let url = url.to_string().replace("http://", "https://");
+                return self.get_text(url);
+            }
             bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
