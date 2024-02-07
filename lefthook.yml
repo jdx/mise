@@ -1,0 +1,5 @@
+pre-commit:
+  commands:
+    pre-commit:
+      interactive: true
+      run: mise run pre-commit
