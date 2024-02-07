@@ -48,7 +48,7 @@ impl TasksDeps {
     fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
         Ok(config
             .tasks()?
-            .into_values()
+            .values()
             .filter(|t| !t.hide)
             .cloned()
             .collect())
@@ -132,8 +132,11 @@ impl TasksDeps {
     }
 
     fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
-        let tasks = config.tasks().unwrap_or_default();
-        let task_names = tasks.keys().sorted().map(style::ecyan).join(", ");
+        let tasks = config
+            .tasks()
+            .map(|t| t.keys().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let task_names = tasks.into_iter().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();
         eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
     }

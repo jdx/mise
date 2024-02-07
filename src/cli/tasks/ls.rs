@@ -33,7 +33,7 @@ impl TasksLs {
         settings.ensure_experimental("`mise tasks ls`")?;
         let rows = config
             .tasks()?
-            .into_values()
+            .values()
             .filter(|t| self.hidden || !t.hide)
             .map(|t| t.into())
             .collect::<Vec<Row>>();

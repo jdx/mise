@@ -240,6 +240,16 @@ pub fn make_executable(path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn all_dirs() -> Result<Vec<PathBuf>> {
+    let mut output = vec![];
+    let mut cwd = dirs::CWD.as_ref().map(|p| p.as_path());
+    while let Some(dir) = cwd {
+        output.push(dir.to_path_buf());
+        cwd = dir.parent();
+    }
+    Ok(output)
+}
+
 fn is_empty_dir(path: &Path) -> Result<bool> {
     path.read_dir()
         .map(|mut i| i.next().is_none())

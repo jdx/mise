@@ -4,12 +4,10 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use either::Either;
 use eyre::{Context, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
-use path_absolutize::Absolutize;
 use rayon::prelude::*;
 
 pub use settings::Settings;
@@ -47,7 +45,7 @@ pub struct Config {
     all_aliases: OnceLock<AliasMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceLock<HashMap<String, String>>,
-    tasks_with_aliases: OnceCell<BTreeMap<String, Task>>,
+    tasks: OnceCell<BTreeMap<String, Task>>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -85,7 +83,7 @@ impl Config {
             aliases: load_aliases(&config_files),
             all_aliases: OnceLock::new(),
             shorthands: OnceLock::new(),
-            tasks_with_aliases: OnceCell::new(),
+            tasks: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
             repo_urls,
@@ -148,17 +146,22 @@ impl Config {
         self.all_aliases.get_or_init(|| self.load_all_aliases())
     }
 
-    pub fn tasks(&self) -> Result<BTreeMap<&String, &Task>> {
-        Ok(self
-            .tasks_with_aliases()?
-            .iter()
-            .filter(|(n, t)| **n == *t.name)
-            .collect())
+    pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
+        self.tasks.get_or_try_init(|| self.load_all_tasks())
     }
 
-    pub fn tasks_with_aliases(&self) -> Result<&BTreeMap<String, Task>> {
-        self.tasks_with_aliases
-            .get_or_try_init(|| self.load_all_tasks())
+    pub fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
+        Ok(self
+            .tasks()?
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t))
+                    .chain(once((t.name.clone(), t)))
+                    .collect::<Vec<_>>()
+            })
+            .collect())
     }
 
     pub fn is_activated(&self) -> bool {
@@ -208,66 +211,64 @@ impl Config {
     }
 
     pub fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
-        Ok(self
-            .config_files
-            .values()
+        Ok(file::all_dirs()?
+            .into_iter()
             .collect_vec()
             .into_par_iter()
-            .map(|cf| {
-                Ok(cf
-                    .task_config()
-                    .includes
-                    .clone()
-                    .unwrap_or_else(|| default_task_includes(cf.as_ref()))
-                    .iter()
-                    .map(|p| {
-                        if let Some(pr) = cf.project_root() {
-                            if p.is_relative() {
-                                return Ok(file::replace_path(p)
-                                    .absolutize_from(pr)
-                                    .map(|p| p.to_path_buf())?);
-                            }
-                        }
-                        Ok(p.to_path_buf())
-                    })
-                    .collect::<Result<Vec<PathBuf>>>()?
-                    .into_par_iter()
-                    .flat_map(|dir| {
-                        file::recursive_ls(&dir).map_err(|err| warn!("load_all_tasks: {err}"))
-                    })
-                    .flatten()
-                    .map(Either::Right)
-                    .chain(rayon::iter::once(Either::Left(cf)))
-                    .collect::<Vec<Either<_, _>>>())
-            })
+            .map(|d| self.load_tasks_in_dir(&d))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
+            .chain(self.load_global_tasks())
             .rev()
-            .unique()
-            .collect_vec()
-            .into_par_iter()
-            .flat_map(|either| match either {
-                Either::Left(cf) => cf.tasks().into_iter().cloned().collect(),
-                Either::Right(path) => match Task::from_path(&path) {
-                    Ok(task) => vec![task],
-                    Err(err) => {
-                        warn!("Error loading task {}: {err:#}", display_path(&path));
-                        vec![]
-                    }
-                },
+            .inspect(|t| {
+                trace!(
+                    "loading task {} from {}",
+                    t.name,
+                    display_path(&t.config_source)
+                )
             })
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
+            .map(|t| (t.name.clone(), t))
             .collect())
+    }
+
+    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
+        let configs = self.configs_at_root(dir);
+        let config_tasks = configs.iter().flat_map(|cf| cf.tasks()).cloned();
+        let includes = configs
+            .iter()
+            .find_map(|cf| cf.task_config().includes.clone())
+            .unwrap_or_else(default_task_includes);
+        let file_tasks = includes
+            .iter()
+            .map(|p| match p.is_absolute() {
+                true => file::recursive_ls(p),
+                false => file::recursive_ls(&dir.join(p)),
+            })
+            .flatten_ok()
+            .map_ok(|path| Task::from_path(&path))
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()?;
+        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+    }
+
+    fn load_global_tasks(&self) -> Vec<Task> {
+        // TODO: add global file tasks
+        self.config_files
+            .get(&*env::MISE_GLOBAL_CONFIG_FILE)
+            .map(|cf| cf.tasks())
+            .unwrap_or_default()
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    fn configs_at_root(&self, dir: &Path) -> Vec<&dyn ConfigFile> {
+        DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .map(|f| dir.join(f))
+            .filter_map(|f| self.config_files.get(&f).map(|cf| cf.as_ref()))
+            .collect()
     }
 
     pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
@@ -548,7 +549,7 @@ impl Debug for Config {
             .collect::<Vec<_>>();
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
-        if let Some(tasks) = self.tasks_with_aliases.get() {
+        if let Some(tasks) = self.tasks.get() {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
@@ -571,11 +572,8 @@ impl Debug for Config {
     }
 }
 
-fn default_task_includes(cf: &dyn ConfigFile) -> Vec<PathBuf> {
-    match cf.project_root() {
-        Some(pr) => vec![pr.join(".mise/tasks"), pr.join(".config/mise/tasks")],
-        None => vec![],
-    }
+fn default_task_includes() -> Vec<PathBuf> {
+    vec![".mise/tasks".into(), ".config/mise/tasks".into()]
 }
 
 #[cfg(test)]

@@ -154,7 +154,7 @@ impl Task {
         let tasks = config.tasks_with_aliases()?;
         self.depends
             .iter()
-            .map(|pat| match_tasks(tasks, pat))
+            .map(|pat| match_tasks(tasks.clone(), pat))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect()
@@ -177,8 +177,8 @@ fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<Stri
         .join(":"))
 }
 
-fn match_tasks<'a>(tasks: &'a BTreeMap<String, Task>, pat: &str) -> Result<Vec<&'a Task>> {
-    let matches = tasks.get_matching(pat)?;
+fn match_tasks<'a>(tasks: BTreeMap<String, &'a Task>, pat: &str) -> Result<Vec<&'a Task>> {
+    let matches = tasks.get_matching(pat)?.into_iter().cloned().collect_vec();
     if matches.is_empty() {
         return Err(eyre!("task not found: {pat}"));
     };
