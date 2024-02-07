@@ -317,10 +317,11 @@ impl Deps {
 impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     type Child = Self;
 
-    fn write_self(&self) {
+    fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.name);
+            miseprint!("{}", w.name)?;
         }
+        std::io::Result::Ok(())
     }
 
     fn children(&self) -> Cow<[Self::Child]> {

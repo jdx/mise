@@ -35,13 +35,13 @@ impl Outdated {
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else {
-            self.display(outdated);
+            self.display(outdated)?;
         }
 
         Ok(())
     }
 
-    fn display(&self, outdated: OutputVec) {
+    fn display(&self, outdated: OutputVec) -> Result<()> {
         // TODO: make a generic table printer in src/ui/table
         let plugins = outdated.iter().map(|(t, _, _)| t.id()).collect::<Vec<_>>();
         let requests = outdated
@@ -92,7 +92,7 @@ impl Outdated {
             style(pad_requested("Requested")).dim(),
             style(pad_current("Current")).dim(),
             style("Latest").dim(),
-        );
+        )?;
         for i in 0..outdated.len() {
             miseprintln!(
                 "{} {} {} {}",
@@ -100,8 +100,9 @@ impl Outdated {
                 pad_requested(&requests[i]),
                 pad_current(&currents[i]),
                 latests[i]
-            );
+            )?;
         }
+        Ok(())
     }
 }
 

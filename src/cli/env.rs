@@ -41,7 +41,7 @@ impl Env {
 
     fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(config)?;
-        miseprintln!("{}", serde_json::to_string_pretty(&env)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&env)?)?;
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl Env {
         for (k, v) in ts.env_with_path(config)? {
             let k = k.to_string();
             let v = v.to_string();
-            miseprint!("{}", shell.set_env(&k, &v));
+            miseprint!("{}", shell.set_env(&k, &v))?;
         }
         Ok(())
     }

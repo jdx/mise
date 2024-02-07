@@ -80,14 +80,21 @@ fn main() -> eyre::Result<()> {
 
     match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
-        Err(err) if log::max_level() < log::LevelFilter::Debug => {
-            display_friendly_err(err);
-            exit(1);
-        }
-        Err(err) => {
-            Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
+        Err(err) => handle_err(err),
+    }
+}
+
+fn handle_err(err: Report) -> eyre::Result<()> {
+    if let Some(err) = err.downcast_ref::<std::io::Error>() {
+        if err.kind() == std::io::ErrorKind::BrokenPipe {
+            return Ok(());
         }
     }
+    if log::max_level() < log::LevelFilter::Debug {
+        display_friendly_err(err);
+        exit(1);
+    }
+    Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
 }
 
 fn display_friendly_err(err: Report) {
