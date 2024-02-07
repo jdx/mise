@@ -19,7 +19,7 @@ impl SettingsLs {
         for k in Settings::hidden_configs() {
             settings.remove(*k);
         }
-        miseprintln!("{}", settings);
+        miseprintln!("{}", settings)?;
         Ok(())
     }
 }

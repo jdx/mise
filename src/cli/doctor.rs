@@ -30,11 +30,11 @@ pub struct Doctor {
 
 impl Doctor {
     pub fn run(mut self) -> Result<()> {
-        miseprintln!("{}", mise_version());
-        miseprintln!("{}", build_info());
-        miseprintln!("{}", shell());
-        miseprintln!("{}", mise_dirs());
-        miseprintln!("{}", mise_env_vars());
+        miseprintln!("{}", mise_version())?;
+        miseprintln!("{}", build_info())?;
+        miseprintln!("{}", shell())?;
+        miseprintln!("{}", mise_dirs())?;
+        miseprintln!("{}", mise_env_vars())?;
 
         match Settings::try_get() {
             Ok(settings) => {
@@ -42,7 +42,7 @@ impl Doctor {
                     "{}\n{}\n",
                     style("settings:").bold(),
                     indent(settings.to_string())
-                );
+                )?;
             }
             Err(err) => warn!("failed to load settings: {}", err),
         }
@@ -62,13 +62,13 @@ impl Doctor {
         }
 
         if self.checks.is_empty() {
-            miseprintln!("No problems found");
+            miseprintln!("No problems found")?;
         } else {
             let checks_plural = if self.checks.len() == 1 { "" } else { "s" };
             let summary = format!("{} problem{checks_plural} found:", self.checks.len());
-            miseprintln!("{}", style(summary).red().bold());
+            miseprintln!("{}", style(summary).red().bold())?;
             for check in &self.checks {
-                miseprintln!("{}\n", check);
+                miseprintln!("{}\n", check)?;
             }
             exit(1);
         }
@@ -86,11 +86,11 @@ impl Doctor {
                 style("no").red()
             }
         };
-        miseprintln!("activated: {}", yn(config.is_activated()));
-        miseprintln!("shims_on_path: {}", yn(shims_on_path()));
+        miseprintln!("activated: {}", yn(config.is_activated()))?;
+        miseprintln!("shims_on_path: {}", yn(shims_on_path()))?;
 
-        miseprintln!("{}", render_config_files(config));
-        miseprintln!("{}", render_plugins());
+        miseprintln!("{}", render_config_files(config))?;
+        miseprintln!("{}", render_plugins())?;
 
         for plugin in forge::list() {
             if !plugin.is_installed() {
@@ -116,7 +116,7 @@ impl Doctor {
             Ok(ts) => {
                 self.analyze_shims(&ts);
 
-                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()));
+                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))?;
             }
             Err(err) => self.checks.push(format!("failed to load toolset: {}", err)),
         }

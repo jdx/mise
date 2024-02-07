@@ -34,7 +34,7 @@ impl DirenvExec {
         let w: DirenvWatches = serde_json::from_str(&json)?;
         cmd = cmd.env("DIRENV_WATCHES", w.watches);
 
-        miseprint!("{}", cmd.read()?);
+        miseprint!("{}", cmd.read()?)?;
         Ok(())
     }
 }

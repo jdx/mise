@@ -43,25 +43,27 @@ pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VE
 
 impl Version {
     pub fn run(self) -> Result<()> {
-        show_version();
+        show_version()?;
         Ok(())
     }
 }
 
-pub fn print_version_if_requested(args: &[String]) {
+pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
     if args.len() == 2 && *env::MISE_BIN_NAME == "mise" {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
-            show_version();
+            show_version()?;
             std::process::exit(0);
         }
     }
     debug!("Version: {}", *VERSION);
+    Ok(())
 }
 
-fn show_version() {
-    miseprintln!("{}", *VERSION);
+fn show_version() -> std::io::Result<()> {
+    miseprintln!("{}", *VERSION)?;
     show_latest();
+    Ok(())
 }
 
 fn show_latest() {

@@ -122,7 +122,7 @@ impl Ls {
                 .filter(|(p, _, _)| plugins.contains(p.fa()))
                 .map(|row| row.into())
                 .collect();
-            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?)?;
             return Ok(());
         }
 
@@ -134,25 +134,26 @@ impl Ls {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
-        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?)?;
         Ok(())
     }
 
     fn display_parseable(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
         warn!("The parseable output format is deprecated and will be removed in a future release.");
         warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
-        runtimes
+        let tvs = runtimes
             .into_iter()
             .map(|(p, tv, _)| (p, tv))
             .filter(|(p, tv)| p.is_version_installed(tv))
-            .for_each(|(_, tv)| {
-                if self.plugin.is_some() {
-                    // only displaying 1 plugin so only show the version
-                    miseprintln!("{}", tv.version);
-                } else {
-                    miseprintln!("{} {}", &tv.forge, tv.version);
-                }
-            });
+            .map(|(_, tv)| tv);
+        for tv in tvs {
+            if self.plugin.is_some() {
+                // only displaying 1 plugin so only show the version
+                miseprintln!("{}", tv.version)?;
+            } else {
+                miseprintln!("{} {}", &tv.forge, tv.version)?;
+            }
+        }
         Ok(())
     }
 
@@ -172,7 +173,7 @@ impl Ls {
         });
         let mut table = Table::new(rows);
         table::default_style(&mut table, self.no_header);
-        miseprintln!("{}", table.to_string());
+        miseprintln!("{}", table.to_string())?;
         Ok(())
     }
 

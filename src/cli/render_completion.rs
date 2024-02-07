@@ -35,7 +35,7 @@ impl RenderCompletion {
                 String::from_utf8(c.into_inner()).unwrap()
             }
         };
-        miseprintln!("{}", script.trim());
+        miseprintln!("{}", script.trim())?;
 
         Ok(())
     }
