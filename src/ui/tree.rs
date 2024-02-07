@@ -1,4 +1,4 @@
-use std::{borrow::Cow};
+use std::borrow::Cow;
 
 pub trait TreeItem: Clone {
     type Child: TreeItem;
