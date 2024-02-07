@@ -70,6 +70,9 @@ outputs = ["README.md"]
 alias = "render"
 depends = ["render:*"]
 
+[tasks.pre-commit]
+depends = ["render", "lint"]
+
 [tasks.snapshots]
 description = "Update test snapshots"
 run = "cargo insta test --accept --unreferenced delete"
