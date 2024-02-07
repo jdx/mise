@@ -213,21 +213,22 @@ impl Config {
     pub fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
         Ok(file::all_dirs()?
             .into_iter()
+            .filter(|d| {
+                if cfg!(test) {
+                    d.starts_with(*dirs::HOME)
+                } else {
+                    true
+                }
+            })
             .collect_vec()
             .into_par_iter()
             .map(|d| self.load_tasks_in_dir(&d))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
-            .chain(self.load_global_tasks())
+            .chain(self.load_global_tasks()?)
             .rev()
-            .inspect(|t| {
-                trace!(
-                    "loading task {} from {}",
-                    t.name,
-                    display_path(&t.config_source)
-                )
-            })
+            .inspect(|t| trace!("loading task {t} from {}", display_path(&t.config_source)))
             .map(|t| (t.name.clone(), t))
             .collect())
     }
@@ -240,27 +241,50 @@ impl Config {
             .find_map(|cf| cf.task_config().includes.clone())
             .unwrap_or_else(default_task_includes);
         let file_tasks = includes
-            .iter()
-            .map(|p| match p.is_absolute() {
-                true => file::recursive_ls(p),
-                false => file::recursive_ls(&dir.join(p)),
+            .into_iter()
+            .map(|p| {
+                self.load_tasks_includes(match p.is_absolute() {
+                    true => p,
+                    false => dir.join(p),
+                })
             })
-            .flatten_ok()
-            .map_ok(|path| Task::from_path(&path))
             .flatten_ok()
             .collect::<Result<Vec<_>>>()?;
         Ok(file_tasks.into_iter().chain(config_tasks).collect())
     }
 
-    fn load_global_tasks(&self) -> Vec<Task> {
-        // TODO: add global file tasks
-        self.config_files
-            .get(&*env::MISE_GLOBAL_CONFIG_FILE)
+    fn load_global_tasks(&self) -> Result<Vec<Task>> {
+        let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
+        let config_tasks = cf
             .map(|cf| cf.tasks())
             .unwrap_or_default()
             .into_iter()
-            .cloned()
-            .collect()
+            .cloned();
+        let includes = cf
+            .map(|cf| {
+                cf.task_config()
+                    .includes
+                    .clone()
+                    .unwrap_or(vec!["tasks".into()])
+                    .into_iter()
+                    .map(|p| cf.get_path().parent().unwrap().join(p))
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![dirs::CONFIG.join("tasks")]);
+        let file_tasks = includes
+            .into_iter()
+            .map(|p| self.load_tasks_includes(p))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten();
+        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+    }
+
+    fn load_tasks_includes(&self, root: PathBuf) -> Result<Vec<Task>> {
+        file::recursive_ls(&root)?
+            .into_iter()
+            .map(|path| Task::from_path(&path))
+            .collect::<Result<Vec<_>>>()
     }
 
     fn configs_at_root(&self, dir: &Path) -> Vec<&dyn ConfigFile> {
