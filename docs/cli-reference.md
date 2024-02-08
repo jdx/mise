@@ -1117,6 +1117,10 @@ Sets a tool version for the current session
 
 Only works in a session where mise is already activated.
 
+This works by setting environment variables for the current shell session
+such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created
+by `mise activate`.
+
 Usage: shell [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
