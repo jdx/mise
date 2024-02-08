@@ -24,10 +24,6 @@ $ python3.11 -V
 3.11.0
 ```
 
-## Requirements
-
-mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to install python runtimes, you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python.
-
 ## Configuration
 
 `python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
@@ -109,6 +105,29 @@ pipenv
 
 You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
 
+## Precompiled python binaries
+
+By default, mise will download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
+for python instead of compiling them with python-build. This makes installing python much faster.
+
+In addition to being faster, it also means you don't have to install all of the system dependencies either.
+
+That said, there are some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
+with the precompiled binaries to be aware of.
+
+If you'd like to disable these binaries, set [`python_compile`](#python_compile) to `true`.
+
+These binaries may not work on older CPUs however you may opt into binaries which
+are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
+a different version. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information
+on this option. Set it to "x86_64" for the most compatible binaries.
+
+## python-build
+
+Optionally, mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to compile python runtimes,
+you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python with
+python-build.
+
 ## Troubleshooting errors with Homebrew
 
 If you normally use Homebrew and you see errors regarding OpenSSL,
@@ -161,25 +180,3 @@ python = {version="3.11", virtualenv="{{env.HOME}}/.cache/venv/myproj"} # can us
 
 The venv will need to be created manually with `python -m venv /path/to/venv`.
 Alternatively, set `MISE_PYTHON_VENV_AUTO_CREATE` to `true` to create virtualenv's automatically when they do not exist.
-
-## Precompiled python binaries <Badge type="warning" text="experimental" />
-
-In experimental mode, mise will download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
-for python instead of compiling them
-with python-build. This makes installing python much faster. The plan is once
-we have enough users using precompiled binaries successfully, we'll make
-that the default behavior in mise.
-
-In addition to being faster, it also means you don't have to install
-all of the system dependencies either.
-
-That said, there are some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
-with the precompiled binaries to be aware of.
-
-If you'd like to disable these binaries, set `MISE_PYTHON_COMPILE` to `1`.
-
-These binaries may not work on older CPUs however you may opt into binaries which
-are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
-a different version. The default is "x86_64_v3" which should run on anything
-built in the last 10 years. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information
-on this option. Set to "x86_64" for the most compatible binaries.
