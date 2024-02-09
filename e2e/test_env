@@ -11,3 +11,9 @@ eval "$(mise env -s bash node@18.0.0)"
 assert "node -v" "v18.0.0"
 assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
 MISE_ENV_FILE=.test-env2 assert "mise x -- env | grep TEST_ENV2" "TEST_ENV2=foo"
+
+cat <<EOF >.e2e.mise.toml
+[env]
+ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
+EOF
+assert "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
