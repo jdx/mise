@@ -5,6 +5,7 @@ use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
+#[must_use]
 #[derive(Debug)]
 pub struct HandleGuard(Handle);
 

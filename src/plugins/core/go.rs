@@ -1,15 +1,15 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use eyre::Result;
 use itertools::Itertools;
+use tempfile::tempdir_in;
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::forge::Forge;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -30,15 +30,15 @@ impl GoPlugin {
         }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
         match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
+        let settings = Settings::get();
         CorePlugin::run_fetch_task_with_timeout(move || {
-            let repo = &*env::MISE_GO_REPO;
-            let output = cmd!("git", "ls-remote", "--tags", repo, "go*").read()?;
+            let output = cmd!("git", "ls-remote", "--tags", &settings.go_repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
@@ -50,18 +50,21 @@ impl GoPlugin {
         })
     }
 
-    fn goroot(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("go")
-    }
     fn go_bin(&self, tv: &ToolVersion) -> PathBuf {
-        self.goroot(tv).join("bin/go")
+        tv.install_path().join("bin/go")
     }
     fn gopath(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("packages")
     }
 
-    fn install_default_packages(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
-        let body = file::read_to_string(&*env::MISE_GO_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+    fn install_default_packages(
+        &self,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> eyre::Result<()> {
+        let settings = Settings::get();
+        let default_packages_file = file::replace_path(&settings.go_default_packages_file);
+        let body = file::read_to_string(default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -73,24 +76,17 @@ impl GoPlugin {
             } else {
                 format!("{}@latest", package)
             };
-            let mut env = HashMap::new();
-            if *env::MISE_GO_SET_GOROOT != Some(false) {
-                env.insert("GOROOT", self.goroot(tv));
-            }
-            if *env::MISE_GO_SET_GOPATH != Some(false) {
-                env.insert("GOPATH", self.gopath(tv));
-            }
             CmdLineRunner::new(self.go_bin(tv))
                 .with_pr(pr)
                 .arg("install")
                 .arg(package)
-                .envs(env)
+                .envs(self._exec_env(tv)?)
                 .execute()?;
         }
         Ok(())
     }
 
-    fn test_go(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_go(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
         pr.set_message("go version".into());
         CmdLineRunner::new(self.go_bin(tv))
             .with_pr(pr)
@@ -98,9 +94,10 @@ impl GoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
+        let settings = Settings::get();
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
-        let tarball_url = format!("{}/{}", &*env::MISE_GO_DOWNLOAD_MIRROR, &filename);
+        let tarball_url = format!("{}/{}", &settings.go_download_mirror, &filename);
         let tarball_path = tv.download_path().join(&filename);
 
         thread::scope(|s| {
@@ -111,7 +108,7 @@ impl GoPlugin {
             pr.set_message(format!("downloading {filename}"));
             HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
 
-            if !*env::MISE_GO_SKIP_CHECKSUM {
+            if !settings.go_skip_checksum {
                 pr.set_message(format!("verifying {filename}"));
                 let checksum = checksum_handle.join().unwrap()?;
                 hash::ensure_checksum_sha256(&tarball_path, &checksum, Some(pr))?;
@@ -120,19 +117,52 @@ impl GoPlugin {
         })
     }
 
-    fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
+    fn install(
+        &self,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+        tarball_path: &Path,
+    ) -> eyre::Result<()> {
         let tarball = tarball_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy();
         pr.set_message(format!("installing {}", tarball));
-        file::untar(tarball_path, &tv.install_path())?;
+        let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
+        file::untar(tarball_path, tmp_extract_path.path())?;
+        file::remove_all(tv.install_path())?;
+        file::rename(tmp_extract_path.path().join("go"), tv.install_path())?;
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
         self.test_go(tv, pr)?;
-        self.install_default_packages(tv, pr)
+        self.install_default_packages(tv, pr)?;
+        let settings = Settings::get();
+        if settings.go_set_gopath {
+            warn!("setting go_set_gopath is deprecated");
+        }
+        Ok(())
+    }
+
+    fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<BTreeMap<String, String>> {
+        let mut map = BTreeMap::new();
+        let mut set = |k: &str, v: PathBuf| {
+            map.insert(k.to_string(), v.to_string_lossy().to_string());
+        };
+        let settings = Settings::get();
+        let gobin = settings.go_set_gobin;
+        let gobin_env_is_set = env::PRISTINE_ENV.contains_key("GOBIN");
+        if gobin == Some(true) || (gobin.is_none() && !gobin_env_is_set) {
+            set("GOBIN", tv.install_path().join("bin"));
+        }
+        if settings.go_set_goroot {
+            set("GOROOT", tv.install_path());
+        }
+        if settings.go_set_gopath {
+            set("GOPATH", self.gopath(tv));
+        }
+        Ok(map)
     }
 }
 
@@ -140,17 +170,17 @@ impl Forge for GoPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
-    fn list_remote_versions(&self) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
         self.verify(&ctx.tv, ctx.pr.as_ref())?;
@@ -158,7 +188,7 @@ impl Forge for GoPlugin {
         Ok(())
     }
 
-    fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> eyre::Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;
@@ -166,13 +196,19 @@ impl Forge for GoPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         if let ToolVersionRequest::System(_) = tv.request {
             return Ok(vec![]);
         }
         // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT
-        let mut paths = vec![self.goroot(tv).join("bin")];
-        if *env::MISE_GO_SET_GOPATH != Some(false) {
+        let mut paths = vec![
+            tv.install_path().join("bin"),
+            // TODO: this can be removed at some point since go is not installed here anymore
+            tv.install_path().join("go/bin"),
+        ];
+        let settings = Settings::get();
+        if settings.go_set_gopath {
+            // TODO: this can be removed at some point since things are installed to GOBIN instead
             paths.push(self.gopath(tv).join("bin"));
         }
         Ok(paths)
@@ -184,22 +220,7 @@ impl Forge for GoPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let mut map = BTreeMap::new();
-        match (*env::MISE_GO_SET_GOROOT, env::PRISTINE_ENV.get("GOROOT")) {
-            (Some(false), _) | (None, Some(_)) => {}
-            (Some(true), _) | (None, None) => {
-                let goroot = self.goroot(tv).to_string_lossy().to_string();
-                map.insert("GOROOT".to_string(), goroot);
-            }
-        };
-        match (*env::MISE_GO_SET_GOPATH, env::PRISTINE_ENV.get("GOPATH")) {
-            (Some(false), _) | (None, Some(_)) => {}
-            (Some(true), _) | (None, None) => {
-                let gopath = self.gopath(tv).to_string_lossy().to_string();
-                map.insert("GOPATH".to_string(), gopath);
-            }
-        };
-        Ok(map)
+        self._exec_env(tv)
     }
 }
 

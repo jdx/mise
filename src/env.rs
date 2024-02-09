@@ -219,21 +219,6 @@ pub static MISE_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
 });
 
-// go
-pub static MISE_GO_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_GO_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-go-packages"))
-});
-pub static MISE_GO_SKIP_CHECKSUM: Lazy<bool> = Lazy::new(|| var_is_true("MISE_GO_SKIP_CHECKSUM"));
-pub static MISE_GO_REPO: Lazy<String> =
-    Lazy::new(|| var("MISE_GO_REPO").unwrap_or_else(|_| "https://github.com/golang/go".into()));
-pub static MISE_GO_DOWNLOAD_MIRROR: Lazy<String> = Lazy::new(|| {
-    var("MISE_GO_DOWNLOAD_MIRROR").unwrap_or_else(|_| "https://dl.google.com/go".into())
-});
-pub static MISE_GO_SET_GOROOT: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("MISE_GO_SET_GOROOT"));
-pub static MISE_GO_SET_GOPATH: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("MISE_GO_SET_GOPATH"));
-
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
