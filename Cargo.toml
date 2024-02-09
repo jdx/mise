@@ -21,7 +21,7 @@ include = [
     "/build.rs",
     "/zipsign.pub",
 ]
-rust-version = "1.70.0"
+rust-version = "1.74.0"
 build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
