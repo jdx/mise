@@ -30,6 +30,13 @@ impl SettingsSet {
             "disable_default_shorthands" => parse_bool(&self.value)?,
             "disable_tools" => self.value.split(',').map(|s| s.to_string()).collect(),
             "experimental" => parse_bool(&self.value)?,
+            "go_default_packages_file" => self.value.into(),
+            "go_download_mirror" => self.value.into(),
+            "go_repo" => self.value.into(),
+            "go_set_gobin" => parse_bool(&self.value)?,
+            "go_set_gopath" => parse_bool(&self.value)?,
+            "go_set_goroot" => parse_bool(&self.value)?,
+            "go_skip_checksum" => parse_bool(&self.value)?,
             "jobs" => parse_i64(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
             "node_compile" => parse_bool(&self.value)?,
@@ -126,6 +133,12 @@ pub mod tests {
         disable_default_shorthands = false
         disable_tools = []
         experimental = true
+        go_default_packages_file = "~/.default-go-packages"
+        go_download_mirror = "https://dl.google.com/go"
+        go_repo = "https://github.com/golang/go"
+        go_set_gopath = false
+        go_set_goroot = true
+        go_skip_checksum = false
         jobs = 2
         legacy_version_file = false
         legacy_version_file_disable_tools = []
