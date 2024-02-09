@@ -177,7 +177,7 @@ impl MiseToml {
         Ok(())
     }
 
-    fn parse_template(&self, k: &str, input: &str) -> eyre::Result<String> {
+    fn parse_template(&self, input: &str) -> eyre::Result<String> {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
@@ -185,7 +185,10 @@ impl MiseToml {
         let dir = self.path.parent();
         let output = get_tera(dir)
             .render_str(input, &self.context)
-            .wrap_err_with(|| eyre!("failed to parse template: {k}='{input}'"))?;
+            .wrap_err_with(|| {
+                let p = display_path(&self.path);
+                eyre!("failed to parse template {input} in {p}")
+            })?;
         Ok(output)
     }
 }
@@ -307,10 +310,11 @@ impl ConfigFile for MiseToml {
                 if let ToolVersionType::Path(_) = &tool.tt {
                     trust_check(&self.path)?;
                 }
-                let tvr = ToolVersionRequest::new(fa.clone(), &tool.tt.to_string());
+                let version = self.parse_template(&tool.tt.to_string())?;
+                let tvr = ToolVersionRequest::new(fa.clone(), &version);
                 let mut options = tool.options.clone();
-                for (k, v) in &mut options {
-                    *v = self.parse_template(k, v)?;
+                for v in options.values_mut() {
+                    *v = self.parse_template(v)?;
                 }
                 toolset.add_version(tvr, options);
             }
