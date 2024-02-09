@@ -16,6 +16,7 @@ use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
 use crate::file::FindUp;
 use crate::{config, dirs, env, file};
 
+#[rustfmt::skip]
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
@@ -45,6 +46,34 @@ pub struct Settings {
     pub disable_tools: BTreeSet<String>,
     #[config(env = "MISE_EXPERIMENTAL", default = false)]
     pub experimental: bool,
+    /// after installing a go version, run `go install` on packages listed in this file
+    #[config(env = "MISE_GO_DEFAULT_PACKAGES_FILE", default = "~/.default-go-packages")]
+    pub go_default_packages_file: PathBuf,
+    /// url to fetch go sdks from
+    #[config(env = "MISE_GO_DOWNLOAD_MIRROR", default = "https://dl.google.com/go")]
+    pub go_download_mirror: String,
+    /// used for fetching go versions
+    #[config(env = "MISE_GO_REPO", default = "https://github.com/golang/go")]
+    pub go_repo: String,
+    /// changes where `go install` installs binaries to
+    /// defaults to ~/.local/share/mise/installs/go/.../bin
+    /// set to true to override GOBIN if previously set
+    /// set to false to not set GOBIN (default is ${GOPATH:-$HOME/go}/bin)
+    #[config(env = "MISE_GO_SET_GOBIN")]
+    pub go_set_gobin: Option<bool>,
+    /// [deprecated] set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages
+    /// use to make mise behave like asdf but there are no known use-cases where this is necessary.
+    /// See https://github.com/jdx/mise/discussions/1638
+    #[config(env = "MISE_GO_SET_GOPATH", default = false)]
+    pub go_set_gopath: bool,
+    /// sets GOROOT=~/.local/share/mise/installs/go/.../
+    /// you probably always want this set to be set unless you want GOROOT to point to something
+    /// other than the sdk mise is currently set to
+    #[config(env = "MISE_GO_SET_GOROOT", default = true)]
+    pub go_set_goroot: bool,
+    /// set to true to skip checksum verification when downloading go sdk tarballs
+    #[config(env = "MISE_GO_SKIP_CHECKSUM", default = false)]
+    pub go_skip_checksum: bool,
     #[config(env = "MISE_JOBS", default = 4)]
     pub jobs: usize,
     #[config(env = "MISE_LEGACY_VERSION_FILE", default = true)]
@@ -71,10 +100,7 @@ pub struct Settings {
     pub python_precompiled_arch: Option<String>,
     #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
     pub python_precompiled_os: Option<String>,
-    #[config(
-        env = "MISE_PYENV_REPO",
-        default = "https://github.com/pyenv/pyenv.git"
-    )]
+    #[config(env = "MISE_PYENV_REPO", default = "https://github.com/pyenv/pyenv.git")]
     pub python_pyenv_repo: String,
     #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
     pub python_venv_auto_create: bool,
