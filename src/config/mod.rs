@@ -240,51 +240,65 @@ impl Config {
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
             .unwrap_or_else(default_task_includes);
-        let file_tasks = includes
-            .into_iter()
-            .map(|p| {
-                self.load_tasks_includes(match p.is_absolute() {
-                    true => p,
-                    false => dir.join(p),
-                })
+        let file_tasks = includes.into_iter().flat_map(|p| {
+            let p = match p.is_absolute() {
+                true => p,
+                false => dir.join(p),
+            };
+            self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                warn!("loading tasks in {}: {err}", display_path(&p));
+                vec![]
             })
-            .flatten_ok()
-            .collect::<Result<Vec<_>>>()?;
+        });
         Ok(file_tasks.into_iter().chain(config_tasks).collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
         let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
-        let config_tasks = cf
-            .map(|cf| cf.tasks())
+        Ok(self
+            .load_global_config_tasks(&cf)
+            .into_iter()
+            .chain(self.load_global_file_tasks(&cf))
+            .collect())
+    }
+    #[allow(clippy::borrowed_box)]
+    fn load_global_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+        cf.map(|cf| cf.tasks())
             .unwrap_or_default()
             .into_iter()
-            .cloned();
-        let includes = cf
-            .map(|cf| {
-                cf.task_config()
-                    .includes
-                    .clone()
-                    .unwrap_or(vec!["tasks".into()])
-                    .into_iter()
-                    .map(|p| cf.get_path().parent().unwrap().join(p))
-                    .collect()
+            .cloned()
+            .collect()
+    }
+    #[allow(clippy::borrowed_box)]
+    fn load_global_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+        let includes = match cf {
+            Some(cf) => cf
+                .task_config()
+                .includes
+                .clone()
+                .unwrap_or(vec!["tasks".into()])
+                .into_iter()
+                .map(|p| cf.get_path().parent().unwrap().join(p))
+                .collect(),
+            None => vec![dirs::CONFIG.join("tasks")],
+        };
+        includes
+            .into_iter()
+            .flat_map(|p| {
+                self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(&p));
+                    vec![]
+                })
             })
-            .unwrap_or_else(|| vec![dirs::CONFIG.join("tasks")]);
-        let file_tasks = includes
-            .into_iter()
-            .map(|p| self.load_tasks_includes(p))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten();
-        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+            .collect()
     }
 
-    fn load_tasks_includes(&self, root: PathBuf) -> Result<Vec<Task>> {
-        file::recursive_ls(&root)?
+    fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
+        file::recursive_ls(root)?
             .into_iter()
+            .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
-            .collect::<Result<Vec<_>>>()
+            .collect()
     }
 
     fn configs_at_root(&self, dir: &Path) -> Vec<&dyn ConfigFile> {
