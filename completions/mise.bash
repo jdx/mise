@@ -1,9 +1,14 @@
 _mise() {
+    if ! command -v usage &> /dev/null; then
+        echo "Error: usage not found. This is required for completions to work in mise." >&2
+        return 1
+    fi
+
     if [[ -z ${_USAGE_SPEC_MISE:-} ]]; then
         _USAGE_SPEC_MISE="$(mise usage)"
     fi
-
-    COMPREPLY=( $(/Users/jdx/src/usage/target/debug/usage complete-word -s "${_USAGE_SPEC_MISE}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
+    
+    COMPREPLY=( $(usage complete-word -s "${_USAGE_SPEC_MISE}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
     if [[ $? -ne 0 ]]; then
         unset COMPREPLY
     fi
