@@ -200,19 +200,20 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # set the current version of node to 20.x in .mise.toml of current directory
-  # will write the fuzzy version (e.g.: 20)
-  $ <bold>mise use node@20</bold>
 
-  # set the current version of node to 20.x in ~/.config/mise/config.toml
-  # will write the precise version (e.g.: 20.0.0)
-  $ <bold>mise use -g --pin node@20</bold>
+    # set the current version of node to 20.x in .mise.toml of current directory
+    # will write the fuzzy version (e.g.: 20)
+    $ <bold>mise use node@20</bold>
 
-  # sets .mise.local.toml (which is intended not to be committed to a project)
-  $ <bold>mise use --env local node@20</bold>
+    # set the current version of node to 20.x in ~/.config/mise/config.toml
+    # will write the precise version (e.g.: 20.0.0)
+    $ <bold>mise use -g --pin node@20</bold>
 
-  # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-  $ <bold>mise use --env staging node@20</bold>
+    # sets .mise.local.toml (which is intended not to be committed to a project)
+    $ <bold>mise use --env local node@20</bold>
+
+    # sets .mise.staging.toml (which is used if MISE_ENV=staging)
+    $ <bold>mise use --env staging node@20</bold>
 "#
 );
 

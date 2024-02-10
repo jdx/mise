@@ -62,8 +62,9 @@ struct Row {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise aliases</bold>
-  node    lts-hydrogen   20.0.0
+
+    $ <bold>mise aliases</bold>
+    node    lts-hydrogen   20.0.0
 "#
 );
 

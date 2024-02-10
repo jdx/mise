@@ -59,10 +59,11 @@ impl Env {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>eval "$(mise env -s bash)"</bold>
-  $ <bold>eval "$(mise env -s zsh)"</bold>
-  $ <bold>mise env -s fish | source</bold>
-  $ <bold>execx($(mise env -s xonsh))</bold>
+
+    $ <bold>eval "$(mise env -s bash)"</bold>
+    $ <bold>eval "$(mise env -s zsh)"</bold>
+    $ <bold>mise env -s fish | source</bold>
+    $ <bold>execx($(mise env -s xonsh))</bold>
 "#
 );
 

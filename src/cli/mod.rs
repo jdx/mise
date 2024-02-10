@@ -50,6 +50,7 @@ mod trust;
 mod uninstall;
 mod unset;
 mod upgrade;
+mod usage;
 mod r#use;
 pub mod version;
 mod watch;
@@ -96,8 +97,9 @@ pub enum Commands {
     Tasks(tasks::Tasks),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
-    Upgrade(upgrade::Upgrade),
     Unset(unset::Unset),
+    Upgrade(upgrade::Upgrade),
+    Usage(usage::Usage),
     Use(r#use::Use),
     Version(version::Version),
     Watch(watch::Watch),
@@ -155,6 +157,7 @@ impl Commands {
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
             Self::Upgrade(cmd) => cmd.run(),
+            Self::Usage(cmd) => cmd.run(),
             Self::Use(cmd) => cmd.run(),
             Self::Version(cmd) => cmd.run(),
             Self::Watch(cmd) => cmd.run(),
@@ -232,31 +235,32 @@ https://asdf-vm.com/"};
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise install node@20.0.0</bold>       Install a specific node version
-  $ <bold>mise install node@20</bold>           Install a version matching a prefix
-  $ <bold>mise install node</bold>              Install the node version defined in config
-  $ <bold>mise install</bold>                   Install all plugins/tools defined in config
+
+    $ <bold>mise install node@20.0.0</bold>       Install a specific node version
+    $ <bold>mise install node@20</bold>           Install a version matching a prefix
+    $ <bold>mise install node</bold>              Install the node version defined in config
+    $ <bold>mise install</bold>                   Install all plugins/tools defined in config
   
-  $ <bold>mise install cargo:ripgrep            Install something via cargo
-  $ <bold>mise install npm:prettier             Install something via npm
+    $ <bold>mise install cargo:ripgrep            Install something via cargo
+    $ <bold>mise install npm:prettier             Install something via npm
 
-  $ <bold>mise use node@20</bold>               Use node-20.x in current project
-  $ <bold>mise use -g node@20</bold>            Use node-20.x as default
-  $ <bold>mise use node@latest</bold>           Use latest node in current directory
-  $ <bold>mise use -g node@system</bold>        Use system node everywhere unless overridden
+    $ <bold>mise use node@20</bold>               Use node-20.x in current project
+    $ <bold>mise use -g node@20</bold>            Use node-20.x as default
+    $ <bold>mise use node@latest</bold>           Use latest node in current directory
+    $ <bold>mise use -g node@system</bold>        Use system node everywhere unless overridden
 
-  $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
+    $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
 
-  $ <bold>mise x -- npm install</bold>          `npm install` w/ config loaded into PATH
-  $ <bold>mise x node@20 -- node app.js</bold>  `node app.js` w/ config + node-20.x on PATH
+    $ <bold>mise x -- npm install</bold>          `npm install` w/ config loaded into PATH
+    $ <bold>mise x node@20 -- node app.js</bold>  `node app.js` w/ config + node-20.x on PATH
 
-  $ <bold>mise set NODE_ENV=production</bold>   Set NODE_ENV=production in config
+    $ <bold>mise set NODE_ENV=production</bold>   Set NODE_ENV=production in config
 
-  $ <bold>mise run build</bold>                 Run `build` tasks
-  $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
+    $ <bold>mise run build</bold>                 Run `build` tasks
+    $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
 
-  $ <bold>mise settings</bold>                  Show settings in use
-  $ <bold>mise settings set color 0</bold>      Disable color by modifying global config file
+    $ <bold>mise settings</bold>                  Show settings in use
+    $ <bold>mise settings set color 0</bold>      Disable color by modifying global config file
 "#
 );
 

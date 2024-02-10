@@ -128,11 +128,14 @@ Marks a config file as trusted
 mise\-uninstall(1)
 Removes runtime versions
 .TP
+mise\-unset(1)
+Remove environment variable(s) from the config file
+.TP
 mise\-upgrade(1)
 Upgrades outdated tool versions
 .TP
-mise\-unset(1)
-Remove environment variable(s) from the config file
+mise\-usage(1)
+Generate a usage CLI spec
 .TP
 mise\-use(1)
 Install tool version and add it to config
@@ -153,31 +156,32 @@ mise\-help(1)
 Print this message or the help of the given subcommand(s)
 .SH EXTRA
 Examples:
-  $ mise install node@20.0.0       Install a specific node version
-  $ mise install node@20           Install a version matching a prefix
-  $ mise install node              Install the node version defined in config
-  $ mise install                   Install all plugins/tools defined in config
+
+    $ mise install node@20.0.0       Install a specific node version
+    $ mise install node@20           Install a version matching a prefix
+    $ mise install node              Install the node version defined in config
+    $ mise install                   Install all plugins/tools defined in config
   
-  $ mise install cargo:ripgrep            Install something via cargo
-  $ mise install npm:prettier             Install something via npm
+    $ mise install cargo:ripgrep            Install something via cargo
+    $ mise install npm:prettier             Install something via npm
 
-  $ mise use node@20               Use node\-20.x in current project
-  $ mise use \-g node@20            Use node\-20.x as default
-  $ mise use node@latest           Use latest node in current directory
-  $ mise use \-g node@system        Use system node everywhere unless overridden
+    $ mise use node@20               Use node\-20.x in current project
+    $ mise use \-g node@20            Use node\-20.x as default
+    $ mise use node@latest           Use latest node in current directory
+    $ mise use \-g node@system        Use system node everywhere unless overridden
 
-  $ mise up \-\-interactive          Show a menu to upgrade tools
+    $ mise up \-\-interactive          Show a menu to upgrade tools
 
-  $ mise x \-\- npm install          `npm install` w/ config loaded into PATH
-  $ mise x node@20 \-\- node app.js  `node app.js` w/ config + node\-20.x on PATH
+    $ mise x \-\- npm install          `npm install` w/ config loaded into PATH
+    $ mise x node@20 \-\- node app.js  `node app.js` w/ config + node\-20.x on PATH
 
-  $ mise set NODE_ENV=production   Set NODE_ENV=production in config
+    $ mise set NODE_ENV=production   Set NODE_ENV=production in config
 
-  $ mise run build                 Run `build` tasks
-  $ mise watch build               Run `build` tasks repeatedly when files change
+    $ mise run build                 Run `build` tasks
+    $ mise watch build               Run `build` tasks repeatedly when files change
 
-  $ mise settings                  Show settings in use
-  $ mise settings set color 0      Disable color by modifying global config file
+    $ mise settings                  Show settings in use
+    $ mise settings set color 0      Disable color by modifying global config file
 .SH VERSION
 v2024.2.9
 .SH AUTHORS

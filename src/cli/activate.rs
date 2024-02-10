@@ -120,9 +120,10 @@ fn is_dir_not_in_nix(dir: &Path) -> bool {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>eval "$(mise activate bash)"</bold>
-  $ <bold>eval "$(mise activate zsh)"</bold>
-  $ <bold>mise activate fish | source</bold>
-  $ <bold>execx($(mise activate xonsh))</bold>
+
+    $ <bold>eval "$(mise activate bash)"</bold>
+    $ <bold>eval "$(mise activate zsh)"</bold>
+    $ <bold>mise activate fish | source</bold>
+    $ <bold>execx($(mise activate xonsh))</bold>
 "#
 );

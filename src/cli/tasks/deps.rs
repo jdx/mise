@@ -144,14 +144,15 @@ impl TasksDeps {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise tasks deps</bold>
-  Shows dependencies for all tasks
 
-  $ <bold>mise tasks deps lint test check</bold>
-  Shows dependencies for the "lint", "test" and "check" tasks
+    # Show dependencies for all tasks
+    $ <bold>mise tasks deps</bold>
 
-  $ <bold>mise tasks deps --dot</bold>
-  Shows dependencies in DOT format
+    # Show dependencies for the "lint", "test" and "check" tasks
+    $ <bold>mise tasks deps lint test check</bold>
+
+    # Show dependencies in DOT format
+    $ <bold>mise tasks deps --dot</bold>
 "#
 );
 

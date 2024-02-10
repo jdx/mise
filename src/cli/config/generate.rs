@@ -86,8 +86,9 @@ impl ConfigGenerate {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise cf generate > .mise.toml</bold>
-  $ <bold>mise cf generate --output=.mise.toml</bold>
+
+    $ <bold>mise cf generate > .mise.toml</bold>
+    $ <bold>mise cf generate --output=.mise.toml</bold>
 "#
 );
 
