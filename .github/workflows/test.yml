@@ -35,7 +35,7 @@ jobs:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
-      - run: cargo install usage
+      - run: cargo install usage-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -78,7 +78,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,just
-      - run: cargo install usage
+      - run: cargo install usage-cli
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
