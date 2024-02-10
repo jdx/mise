@@ -32,10 +32,10 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete
+          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
-      - run: cargo install usage-cli
+      - run: cargo binstall usage-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -77,8 +77,7 @@ jobs:
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,just
-      - run: cargo install usage-cli
+          tool: cargo-llvm-cov,just,usage-cli
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
