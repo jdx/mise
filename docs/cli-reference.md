@@ -44,10 +44,11 @@ Options:
           Suppress non-error messages
 
 Examples:
-  $ eval "$(mise activate bash)"
-  $ eval "$(mise activate zsh)"
-  $ mise activate fish | source
-  $ execx($(mise activate xonsh))
+
+    $ eval "$(mise activate bash)"
+    $ eval "$(mise activate zsh)"
+    $ mise activate fish | source
+    $ execx($(mise activate xonsh))
 ```
 
 ## `mise alias get <PLUGIN> <ALIAS>`
@@ -67,8 +68,8 @@ Arguments:
           The alias to show
 
 Examples:
- $ mise alias get node lts-hydrogen
- 20.0.0
+   $ mise alias get node lts-hydrogen
+   20.0.0
 ```
 
 ## `mise alias ls [OPTIONS] [PLUGIN]`
@@ -96,8 +97,9 @@ Options:
           Don't show table header
 
 Examples:
-  $ mise aliases
-  node    lts-hydrogen   20.0.0
+
+    $ mise aliases
+    node    lts-hydrogen   20.0.0
 ```
 
 ## `mise alias set <PLUGIN> <ALIAS> <VALUE>`
@@ -122,7 +124,8 @@ Arguments:
           The value to set the alias to
 
 Examples:
-  $ mise alias set node lts-hydrogen 18.0.0
+
+    $ mise alias set node lts-hydrogen 18.0.0
 ```
 
 ## `mise alias unset <PLUGIN> <ALIAS>`
@@ -144,7 +147,8 @@ Arguments:
           The alias to remove
 
 Examples:
-  $ mise alias unset node lts-hydrogen
+
+    $ mise alias unset node lts-hydrogen
 ```
 
 ## `mise bin-paths`
@@ -169,12 +173,12 @@ Arguments:
           Plugin(s) to clear cache for e.g.: node, python
 ```
 
-## `mise completion [SHELL]`
+## `mise completion [OPTIONS] [SHELL]`
 
 ```text
 Generate shell completions
 
-Usage: completion [SHELL]
+Usage: completion [OPTIONS] [SHELL]
 
 Arguments:
   [SHELL]
@@ -182,10 +186,18 @@ Arguments:
 
           [possible values: bash, fish, zsh]
 
+Options:
+      --usage
+          Use usage for completions
+
+          Requires `usage` CLI to be installed.
+          https://usage.jdx.dev
+
 Examples:
-  $ mise completion bash > /etc/bash_completion.d/mise
-  $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
-  $ mise completion fish > ~/.config/fish/completions/mise.fish
+
+    $ mise completion bash > /etc/bash_completion.d/mise
+    $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
+    $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
 ## `mise config ls [OPTIONS]`
@@ -200,7 +212,8 @@ Options:
           Do not print table header
 
 Examples:
-  $ mise config ls
+
+    $ mise config ls
 ```
 
 ## `mise config generate [OPTIONS]`
@@ -217,8 +230,9 @@ Options:
           Output to file instead of stdout
 
 Examples:
-  $ mise cf generate > .mise.toml
-  $ mise cf generate --output=.mise.toml
+
+    $ mise cf generate > .mise.toml
+    $ mise cf generate --output=.mise.toml
 ```
 
 ## `mise current [PLUGIN]`
@@ -236,19 +250,19 @@ Arguments:
           Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc
 
 Examples:
-  # outputs `.tool-versions` compatible format
-  $ mise current
-  python 3.11.0 3.10.0
-  shfmt 3.6.0
-  shellcheck 0.9.0
-  node 20.0.0
+    # outputs `.tool-versions` compatible format
+    $ mise current
+    python 3.11.0 3.10.0
+    shfmt 3.6.0
+    shellcheck 0.9.0
+    node 20.0.0
 
-  $ mise current node
-  20.0.0
+    $ mise current node
+    20.0.0
 
-  # can output multiple versions
-  $ mise current python
-  3.11.0 3.10.0
+    # can output multiple versions
+    $ mise current python
+    3.11.0 3.10.0
 ```
 
 ## `mise deactivate`
@@ -261,10 +275,11 @@ This can be used to temporarily disable mise in a shell session.
 Usage: deactivate
 
 Examples:
-  $ mise deactivate bash
-  $ mise deactivate zsh
-  $ mise deactivate fish
-  $ execx($(mise deactivate xonsh))
+
+    $ mise deactivate bash
+    $ mise deactivate zsh
+    $ mise deactivate fish
+    $ execx($(mise deactivate xonsh))
 ```
 
 ## `mise direnv activate`
@@ -281,9 +296,10 @@ direnv may not know to update environment variables when legacy file versions ch
 Usage: direnv activate
 
 Examples:
-  $ mise direnv activate > ~/.config/direnv/lib/use_mise.sh
-  $ echo 'use mise' > .envrc
-  $ direnv allow
+
+    $ mise direnv activate > ~/.config/direnv/lib/use_mise.sh
+    $ echo 'use mise' > .envrc
+    $ direnv allow
 ```
 
 ## `mise doctor`
@@ -296,8 +312,9 @@ Check mise installation for possible problems
 Usage: doctor
 
 Examples:
-  $ mise doctor
-  [WARN] plugin node is not installed
+
+    $ mise doctor
+    [WARN] plugin node is not installed
 ```
 
 ## `mise env [OPTIONS] [TOOL@VERSION]...`
@@ -326,10 +343,11 @@ Options:
           [possible values: bash, fish, nu, xonsh, zsh]
 
 Examples:
-  $ eval "$(mise env -s bash)"
-  $ eval "$(mise env -s zsh)"
-  $ mise env -s fish | source
-  $ execx($(mise env -s xonsh))
+
+    $ eval "$(mise env -s bash)"
+    $ eval "$(mise env -s zsh)"
+    $ mise env -s fish | source
+    $ execx($(mise env -s xonsh))
 ```
 
 ## `mise exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
@@ -370,14 +388,15 @@ Options:
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
-  $ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-  $ mise x node@20 -- node ./app.js     # shorter alias
 
-  # Specify command as a string:
-  $ mise exec node@20 python@3.11 --command "node -v && python -V"
+    $ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
+    $ mise x node@20 -- node ./app.js     # shorter alias
 
-  # Run a command in a different directory:
-  $ mise x -C /path/to/project node@20 -- node ./app.js
+    # Specify command as a string:
+    $ mise exec node@20 python@3.11 --command "node -v && python -V"
+
+    # Run a command in a different directory:
+    $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
 ## `mise implode [OPTIONS]`
@@ -434,10 +453,11 @@ Options:
           Show installation output
 
 Examples:
-  $ mise install node@20.0.0  # install specific node version
-  $ mise install node@20      # install fuzzy node version
-  $ mise install node         # install version specified in .tool-versions or .mise.toml
-  $ mise install              # installs everything specified in .tool-versions or .mise.toml
+
+    $ mise install node@20.0.0  # install specific node version
+    $ mise install node@20      # install fuzzy node version
+    $ mise install node         # install version specified in .tool-versions or .mise.toml
+    $ mise install              # installs everything specified in .tool-versions or .mise.toml
 ```
 
 ## `mise latest [OPTIONS] <TOOL@VERSION>`
@@ -456,11 +476,12 @@ Options:
           Show latest installed instead of available version
 
 Examples:
-  $ mise latest node@20  # get the latest version of node 20
-  20.0.0
 
-  $ mise latest node     # get the latest stable version of node
-  20.0.0
+    $ mise latest node@20  # get the latest version of node 20
+    20.0.0
+
+    $ mise latest node     # get the latest stable version of node
+    20.0.0
 ```
 
 ## `mise link [OPTIONS] <TOOL@VERSION> <PATH>`
@@ -488,14 +509,14 @@ Options:
           Overwrite an existing tool version if it exists
 
 Examples:
-  # build node-20.0.0 with node-build and link it into mise
-  $ node-build 20.0.0 ~/.nodes/20.0.0
-  $ mise link node@20.0.0 ~/.nodes/20.0.0
+    # build node-20.0.0 with node-build and link it into mise
+    $ node-build 20.0.0 ~/.nodes/20.0.0
+    $ mise link node@20.0.0 ~/.nodes/20.0.0
 
-  # have mise use the python version provided by Homebrew
-  $ brew install node
-  $ mise link node@brew $(brew --prefix node)
-  $ mise use node@brew
+    # have mise use the python version provided by Homebrew
+    $ brew install node
+    $ mise link node@brew $(brew --prefix node)
+    $ mise use node@brew
 ```
 
 ## `mise ls [OPTIONS] [PLUGIN]...`
@@ -540,29 +561,30 @@ Options:
           Don't display headers
 
 Examples:
-  $ mise ls
-  node    20.0.0 ~/src/myapp/.tool-versions latest
-  python  3.11.0 ~/.tool-versions           3.10
-  python  3.10.0
 
-  $ mise ls --current
-  node    20.0.0 ~/src/myapp/.tool-versions 20
-  python  3.11.0 ~/.tool-versions           3.11.0
+    $ mise ls
+    node    20.0.0 ~/src/myapp/.tool-versions latest
+    python  3.11.0 ~/.tool-versions           3.10
+    python  3.10.0
 
-  $ mise ls --json
-  {
-    "node": [
-      {
-        "version": "20.0.0",
-        "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-        "source": {
-          "type": ".mise.toml",
-          "path": "/Users/jdx/.mise.toml"
+    $ mise ls --current
+    node    20.0.0 ~/src/myapp/.tool-versions 20
+    python  3.11.0 ~/.tool-versions           3.11.0
+
+    $ mise ls --json
+    {
+      "node": [
+        {
+          "version": "20.0.0",
+          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
+          "source": {
+            "type": ".mise.toml",
+            "path": "/Users/jdx/.mise.toml"
+          }
         }
-      }
-    ],
-    "python": [...]
-  }
+      ],
+      "python": [...]
+    }
 ```
 
 ## `mise ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
@@ -588,17 +610,18 @@ Options:
           Show all installed plugins and versions
 
 Examples:
-  $ mise ls-remote node
-  18.0.0
-  20.0.0
 
-  $ mise ls-remote node@20
-  20.0.0
-  20.1.0
+    $ mise ls-remote node
+    18.0.0
+    20.0.0
 
-  $ mise ls-remote node 20
-  20.0.0
-  20.1.0
+    $ mise ls-remote node@20
+    20.0.0
+    20.1.0
+
+    $ mise ls-remote node 20
+    20.0.0
+    20.1.0
 ```
 
 ## `mise outdated [TOOL@VERSION]...`
@@ -615,14 +638,15 @@ Arguments:
           If not specified, all tools in global and local configs will be shown
 
 Examples:
-  $ mise outdated
-  Plugin  Requested  Current  Latest
-  python  3.11       3.11.0   3.11.1
-  node    20         20.0.0   20.1.0
 
-  $ mise outdated node
-  Plugin  Requested  Current  Latest
-  node    20         20.0.0   20.1.0
+    $ mise outdated
+    Plugin  Requested  Current  Latest
+    python  3.11       3.11.0   3.11.1
+    node    20         20.0.0   20.1.0
+
+    $ mise outdated node
+    Plugin  Requested  Current  Latest
+    node    20         20.0.0   20.1.0
 ```
 
 ## `mise plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
@@ -661,18 +685,18 @@ Options:
           Show installation output
 
 Examples:
-  # install the node via shorthand
-  $ mise plugins install node
+    # install the node via shorthand
+    $ mise plugins install node
 
-  # install the node plugin using a specific git url
-  $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git
+    # install the node plugin using a specific git url
+    $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git
 
-  # install the node plugin using the git url only
-  # (node is inferred from the url)
-  $ mise plugins install https://github.com/mise-plugins/rtx-nodejs.git
+    # install the node plugin using the git url only
+    # (node is inferred from the url)
+    $ mise plugins install https://github.com/mise-plugins/rtx-nodejs.git
 
-  # install the node plugin using a specific ref
-  $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0
+    # install the node plugin using a specific ref
+    $ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0
 ```
 
 ## `mise plugins link [OPTIONS] <NAME> [PATH]`
@@ -700,11 +724,11 @@ Options:
           Overwrite existing plugin
 
 Examples:
-  # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
-  $ mise plugins link node ./mise-node
+    # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
+    $ mise plugins link node ./mise-node
 
-  # infer plugin name as "node"
-  $ mise plugins link ./mise-node
+    # infer plugin name as "node"
+    $ mise plugins link ./mise-node
 ```
 
 ## `mise plugins ls [OPTIONS]`
@@ -734,13 +758,14 @@ Options:
           e.g.: https://github.com/asdf-vm/asdf-nodejs.git
 
 Examples:
-  $ mise plugins ls
-  node
-  ruby
 
-  $ mise plugins ls --urls
-  node    https://github.com/asdf-vm/asdf-nodejs.git
-  ruby    https://github.com/asdf-vm/asdf-ruby.git
+    $ mise plugins ls
+    node
+    ruby
+
+    $ mise plugins ls --urls
+    node    https://github.com/asdf-vm/asdf-nodejs.git
+    ruby    https://github.com/asdf-vm/asdf-ruby.git
 ```
 
 ## `mise plugins ls-remote [OPTIONS]`
@@ -787,7 +812,8 @@ Options:
           Remove all plugins
 
 Examples:
-  $ mise uninstall node
+
+    $ mise uninstall node
 ```
 
 ## `mise plugins update [OPTIONS] [PLUGIN]...`
@@ -811,9 +837,10 @@ Options:
           Default: 4
 
 Examples:
-  $ mise plugins update            # update all plugins
-  $ mise plugins update node       # update only node
-  $ mise plugins update node#beta  # specify a ref
+
+    $ mise plugins update            # update all plugins
+    $ mise plugins update node       # update only node
+    $ mise plugins update node#beta  # specify a ref
 ```
 
 ## `mise prune [OPTIONS] [PLUGIN]...`
@@ -837,9 +864,10 @@ Options:
           Do not actually delete anything
 
 Examples:
-  $ mise prune --dry-run
-  rm -rf ~/.local/share/mise/versions/node/20.0.0
-  rm -rf ~/.local/share/mise/versions/node/20.0.1
+
+    $ mise prune --dry-run
+    rm -rf ~/.local/share/mise/versions/node/20.0.0
+    rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
 ## `mise reshim`
@@ -864,9 +892,10 @@ npm() {
 Usage: reshim
 
 Examples:
-  $ mise reshim
-  $ ~/.local/share/mise/shims/node -v
-  v20.0.0
+
+    $ mise reshim
+    $ ~/.local/share/mise/shims/node -v
+    v20.0.0
 ```
 
 ## `mise run [OPTIONS] [TASK] [ARGS]...`
@@ -950,22 +979,23 @@ Options:
           Shows elapsed time after each tasks
 
 Examples:
-  $ mise run lint
-  Runs the "lint" tasks. This needs to either be defined in .mise.toml
-  or as a standalone script. See the project README for more information.
 
-  $ mise run build --force
-  Forces the "build" tasks to run even if its sources are up-to-date.
+    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # or as a standalone script. See the project README for more information.
+    $ mise run lint
 
-  $ mise run test --raw
-  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
-  This forces `--jobs=1` to prevent interleaving of output.
+    # Forces the "build" tasks to run even if its sources are up-to-date.
+    $ mise run build --force
 
-  $ mise run lint ::: test ::: check
-  Runs the "lint", "test", and "check" tasks in parallel.
+    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
+    # This forces `--jobs=1` to prevent interleaving of output.
+    $ mise run test --raw
 
-  $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-  Execute multiple tasks each with their own arguments.
+    # Runs the "lint", "test", and "check" tasks in parallel.
+    $ mise run lint ::: test ::: check
+
+    # Execute multiple tasks each with their own arguments.
+    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```
 
 ## `mise self-update [OPTIONS] [VERSION]`
@@ -1017,14 +1047,15 @@ Options:
           Set the environment variable in the global config file
 
 Examples:
-  $ mise set NODE_ENV=production
 
-  $ mise set NODE_ENV
-  production
+    $ mise set NODE_ENV=production
 
-  $ mise set
-  key       value       source
-  NODE_ENV  production  ~/.config/mise/config.toml
+    $ mise set NODE_ENV
+    production
+
+    $ mise set
+    key       value       source
+    NODE_ENV  production  ~/.config/mise/config.toml
 ```
 
 ## `mise settings get <SETTING>`
@@ -1044,11 +1075,12 @@ Arguments:
           The setting to show
 
 Examples:
-  $ mise settings get legacy_version_file
-  true
+
+    $ mise settings get legacy_version_file
+    true
 ```
 
-## `mise settings ls`
+## `mise settings ls [OPTIONS]`
 
 **Aliases:** `list`
 
@@ -1060,11 +1092,16 @@ This is the contents of ~/.config/mise/config.toml
 Note that aliases are also stored in this file
 but managed separately with `mise aliases`
 
-Usage: settings ls
+Usage: settings ls [OPTIONS]
+
+Options:
+      --keys
+          Only display key names for each setting
 
 Examples:
-  $ mise settings
-  legacy_version_file = false
+
+    $ mise settings
+    legacy_version_file = false
 ```
 
 ## `mise settings set <SETTING> <VALUE>`
@@ -1086,7 +1123,8 @@ Arguments:
           The value to set
 
 Examples:
-  $ mise settings set legacy_version_file true
+
+    $ mise settings set legacy_version_file true
 ```
 
 ## `mise settings unset <SETTING>`
@@ -1105,7 +1143,8 @@ Arguments:
           The setting to remove
 
 Examples:
-  $ mise settings unset legacy_version_file
+
+    $ mise settings unset legacy_version_file
 ```
 
 ## `mise shell [OPTIONS] [TOOL@VERSION]...`
@@ -1141,9 +1180,10 @@ Options:
           Removes a previously set version
 
 Examples:
-  $ mise shell node@20
-  $ node -v
-  v20.0.0
+
+    $ mise shell node@20
+    $ node -v
+    v20.0.0
 ```
 
 ## `mise sync node <--brew|--nvm|--nodenv>`
@@ -1166,9 +1206,10 @@ Options:
           Get tool versions from nodenv
 
 Examples:
-  $ brew install node@18 node@20
-  $ mise sync node --brew
-  $ mise use -g node@18 - uses Homebrew-provided node
+
+    $ brew install node@18 node@20
+    $ mise sync node --brew
+    $ mise use -g node@18 - uses Homebrew-provided node
 ```
 
 ## `mise sync python --pyenv`
@@ -1185,9 +1226,10 @@ Options:
           Get tool versions from pyenv
 
 Examples:
-  $ pyenv install 3.11.0
-  $ mise sync python --pyenv
-  $ mise use -g python@3.11.0 - uses pyenv-provided python
+
+    $ pyenv install 3.11.0
+    $ mise sync python --pyenv
+    $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
 ## `mise tasks deps [OPTIONS] [TASKS]...`
@@ -1208,14 +1250,15 @@ Options:
           Display dependencies in DOT format
 
 Examples:
-  $ mise tasks deps
-  Shows dependencies for all tasks
 
-  $ mise tasks deps lint test check
-  Shows dependencies for the "lint", "test" and "check" tasks
+    # Show dependencies for all tasks
+    $ mise tasks deps
 
-  $ mise tasks deps --dot
-  Shows dependencies in DOT format
+    # Show dependencies for the "lint", "test" and "check" tasks
+    $ mise tasks deps lint test check
+
+    # Show dependencies in DOT format
+    $ mise tasks deps --dot
 ```
 
 ## `mise tasks edit [OPTIONS] <TASK>`
@@ -1236,8 +1279,9 @@ Options:
           Display the path to the tasks instead of editing it
 
 Examples:
-  $ mise tasks edit build
-  $ mise tasks edit test
+
+    $ mise tasks edit build
+    $ mise tasks edit test
 ```
 
 ## `mise tasks ls [OPTIONS]`
@@ -1261,7 +1305,8 @@ Options:
           Show hidden tasks
 
 Examples:
-  $ mise tasks ls
+
+    $ mise tasks ls
 ```
 
 ## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
@@ -1345,22 +1390,23 @@ Options:
           Shows elapsed time after each tasks
 
 Examples:
-  $ mise run lint
-  Runs the "lint" tasks. This needs to either be defined in .mise.toml
-  or as a standalone script. See the project README for more information.
 
-  $ mise run build --force
-  Forces the "build" tasks to run even if its sources are up-to-date.
+    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # or as a standalone script. See the project README for more information.
+    $ mise run lint
 
-  $ mise run test --raw
-  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
-  This forces `--jobs=1` to prevent interleaving of output.
+    # Forces the "build" tasks to run even if its sources are up-to-date.
+    $ mise run build --force
 
-  $ mise run lint ::: test ::: check
-  Runs the "lint", "test", and "check" tasks in parallel.
+    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
+    # This forces `--jobs=1` to prevent interleaving of output.
+    $ mise run test --raw
 
-  $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-  Execute multiple tasks each with their own arguments.
+    # Runs the "lint", "test", and "check" tasks in parallel.
+    $ mise run lint ::: test ::: check
+
+    # Execute multiple tasks each with their own arguments.
+    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```
 
 ## `mise trust [OPTIONS] [CONFIG_FILE]`
@@ -1390,11 +1436,11 @@ Options:
           No longer trust this config
 
 Examples:
-  # trusts ~/some_dir/.mise.toml
-  $ mise trust ~/some_dir/.mise.toml
+    # trusts ~/some_dir/.mise.toml
+    $ mise trust ~/some_dir/.mise.toml
 
-  # trusts .mise.toml in the current or parent directory
-  $ mise trust
+    # trusts .mise.toml in the current or parent directory
+    $ mise trust
 ```
 
 ## `mise uninstall [OPTIONS] [TOOL@VERSION]...`
@@ -1418,9 +1464,10 @@ Options:
           Do not actually delete anything
 
 Examples:
-  $ mise uninstall node@18.0.0 # will uninstall specific version
-  $ mise uninstall node        # will uninstall current node version
-  $ mise uninstall --all node@18.0.0 # will uninstall all node versions
+
+    $ mise uninstall node@18.0.0 # will uninstall specific version
+    $ mise uninstall node        # will uninstall current node version
+    $ mise uninstall --all node@18.0.0 # will uninstall all node versions
 ```
 
 ## `mise unset [OPTIONS] [KEYS]...`
@@ -1475,6 +1522,16 @@ Options:
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+```
+
+## `mise usage`
+
+```text
+Generate a usage CLI spec
+
+See https://usage.jdx.dev for more information
+
+Usage: usage
 ```
 
 ## `mise use [OPTIONS] [TOOL@VERSION]...`
@@ -1533,19 +1590,20 @@ Options:
           Set MISE_ASDF_COMPAT=1 to make this the default behavior
 
 Examples:
-  # set the current version of node to 20.x in .mise.toml of current directory
-  # will write the fuzzy version (e.g.: 20)
-  $ mise use node@20
 
-  # set the current version of node to 20.x in ~/.config/mise/config.toml
-  # will write the precise version (e.g.: 20.0.0)
-  $ mise use -g --pin node@20
+    # set the current version of node to 20.x in .mise.toml of current directory
+    # will write the fuzzy version (e.g.: 20)
+    $ mise use node@20
 
-  # sets .mise.local.toml (which is intended not to be committed to a project)
-  $ mise use --env local node@20
+    # set the current version of node to 20.x in ~/.config/mise/config.toml
+    # will write the precise version (e.g.: 20.0.0)
+    $ mise use -g --pin node@20
 
-  # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-  $ mise use --env staging node@20
+    # sets .mise.local.toml (which is intended not to be committed to a project)
+    $ mise use --env local node@20
+
+    # sets .mise.staging.toml (which is used if MISE_ENV=staging)
+    $ mise use --env staging node@20
 ```
 
 ## `mise version`
@@ -1580,16 +1638,16 @@ Options:
           Defaults to sources from the tasks(s)
 
 Examples:
-  $ mise watch -t build
-  Runs the "build" tasks. Will re-run the tasks when any of its sources change.
-  Uses "sources" from the tasks definition to determine which files to watch.
+    $ mise watch -t build
+    Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+    Uses "sources" from the tasks definition to determine which files to watch.
 
-  $ mise watch -t build --glob src/**/*.rs
-  Runs the "build" tasks but specify the files to watch with a glob pattern.
-  This overrides the "sources" from the tasks definition.
+    $ mise watch -t build --glob src/**/*.rs
+    Runs the "build" tasks but specify the files to watch with a glob pattern.
+    This overrides the "sources" from the tasks definition.
 
-  $ mise run -t build --clear
-  Extra arguments are passed to watchexec. See `watchexec --help` for details.
+    $ mise run -t build --clear
+    Extra arguments are passed to watchexec. See `watchexec --help` for details.
 ```
 
 ## `mise where <TOOL@VERSION>`
@@ -1610,15 +1668,15 @@ Arguments:
           otherwise, it will show the current, active installed version
 
 Examples:
-  # Show the latest installed version of node
-  # If it is is not installed, errors
-  $ mise where node@20
-  /home/jdx/.local/share/mise/installs/node/20.0.0
+    # Show the latest installed version of node
+    # If it is is not installed, errors
+    $ mise where node@20
+    /home/jdx/.local/share/mise/installs/node/20.0.0
 
-  # Show the current, active install directory of node
-  # Errors if node is not referenced in any .tool-version file
-  $ mise where node
-  /home/jdx/.local/share/mise/installs/node/20.0.0
+    # Show the current, active install directory of node
+    # Errors if node is not referenced in any .tool-version file
+    $ mise where node
+    /home/jdx/.local/share/mise/installs/node/20.0.0
 ```
 
 ## `mise which [OPTIONS] <BIN_NAME>`
@@ -1644,12 +1702,13 @@ Options:
           e.g.: `mise which npm --tool=node@20`
 
 Examples:
-  $ mise which node
-  /home/username/.local/share/mise/installs/node/20.0.0/bin/node
-  $ mise which node --plugin
-  node
-  $ mise which node --version
-  20.0.0
+
+    $ mise which node
+    /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+    $ mise which node --plugin
+    node
+    $ mise which node --version
+    20.0.0
 ```
 
 <!-- MISE:COMMANDS -->

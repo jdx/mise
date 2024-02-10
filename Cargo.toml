@@ -14,6 +14,7 @@ categories = ["command-line-utilities"]
 include = [
     "src/**/*.rs",
     "src/plugins/core/assets/**",
+    "src/assets/**",
     "/completions/*",
     "/Cargo.lock",
     "/LICENSE",
@@ -101,6 +102,7 @@ thiserror = "1.0.56"
 toml = { version = "0.8.10", features = ["parse"] }
 toml_edit = { version = "0.22.4", features = ["parse"] }
 url = "2.5.0"
+usage-lib = { version="0.1.5-beta", features = ["clap"] }
 versions = { version = "6.1.0" , features=["serde"]}
 walkdir = "2.4.0"
 which = "6.0.0"

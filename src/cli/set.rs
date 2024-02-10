@@ -112,14 +112,15 @@ struct Row {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise set NODE_ENV=production</bold>
 
-  $ <bold>mise set NODE_ENV</bold>
-  production
+    $ <bold>mise set NODE_ENV=production</bold>
 
-  $ <bold>mise set</bold>
-  key       value       source
-  NODE_ENV  production  ~/.config/mise/config.toml
+    $ <bold>mise set NODE_ENV</bold>
+    production
+
+    $ <bold>mise set</bold>
+    key       value       source
+    NODE_ENV  production  ~/.config/mise/config.toml
 "#
 );
 

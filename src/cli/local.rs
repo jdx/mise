@@ -136,23 +136,23 @@ pub fn local(
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # set the current version of node to 20.x for the current directory
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ <bold>mise local node@20</bold>
+    # set the current version of node to 20.x for the current directory
+    # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+    $ <bold>mise local node@20</bold>
 
-  # set node to 20.x for the current project (recurses up to find .tool-versions)
-  $ <bold>mise local -p node@20</bold>
+    # set node to 20.x for the current project (recurses up to find .tool-versions)
+    $ <bold>mise local -p node@20</bold>
 
-  # set the current version of node to 20.x for the current directory
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ <bold>mise local --fuzzy node@20</bold>
+    # set the current version of node to 20.x for the current directory
+    # will use a fuzzy version (e.g.: 20) in .tool-versions file
+    $ <bold>mise local --fuzzy node@20</bold>
 
-  # removes node from .tool-versions
-  $ <bold>mise local --remove=node</bold>
+    # removes node from .tool-versions
+    $ <bold>mise local --remove=node</bold>
 
-  # show the current version of node in .tool-versions
-  $ <bold>mise local node</bold>
-  20.0.0
+    # show the current version of node in .tool-versions
+    $ <bold>mise local node</bold>
+    20.0.0
 "#
 );
 

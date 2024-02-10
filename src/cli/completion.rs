@@ -15,11 +15,34 @@ pub struct Completion {
     /// Shell type to generate completions for
     #[clap(long = "shell", short = 's', hide = true)]
     shell_type: Option<Shell>,
+
+    /// Use usage for completions
+    ///
+    /// Requires `usage` CLI to be installed.
+    /// https://usage.jdx.dev
+    #[clap(long, verbatim_doc_comment)]
+    usage: bool,
 }
 
 impl Completion {
     pub fn run(self) -> Result<()> {
-        let c = match self.shell.or(self.shell_type).unwrap() {
+        let shell = self.shell.or(self.shell_type).unwrap();
+
+        if self.usage {
+            cmd!(
+                "usage",
+                "generate",
+                "completion",
+                shell.to_string(),
+                "mise",
+                "--usage-cmd",
+                "mise usage"
+            )
+            .run()?;
+            return Ok(());
+        }
+
+        let c = match shell {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
             Shell::Zsh => include_str!("../../completions/_mise"),
@@ -32,9 +55,10 @@ impl Completion {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise completion bash > /etc/bash_completion.d/mise</bold>
-  $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
-  $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
+
+    $ <bold>mise completion bash > /etc/bash_completion.d/mise</bold>
+    $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
+    $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
 "#
 );
 

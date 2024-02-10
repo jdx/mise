@@ -41,10 +41,11 @@ fn err_inactive() -> Result<()> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise deactivate bash</bold>
-  $ <bold>mise deactivate zsh</bold>
-  $ <bold>mise deactivate fish</bold>
-  $ <bold>execx($(mise deactivate xonsh))</bold>
+
+    $ <bold>mise deactivate bash</bold>
+    $ <bold>mise deactivate zsh</bold>
+    $ <bold>mise deactivate fish</bold>
+    $ <bold>execx($(mise deactivate xonsh))</bold>
 "#
 );
 

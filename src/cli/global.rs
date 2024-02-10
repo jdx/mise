@@ -60,17 +60,17 @@ impl Global {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  # set the current version of node to 20.x
-  # will use a fuzzy version (e.g.: 20) in .tool-versions file
-  $ <bold>mise global --fuzzy node@20</bold>
+    # set the current version of node to 20.x
+    # will use a fuzzy version (e.g.: 20) in .tool-versions file
+    $ <bold>mise global --fuzzy node@20</bold>
 
-  # set the current version of node to 20.x
-  # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-  $ <bold>mise global --pin node@20</bold>
+    # set the current version of node to 20.x
+    # will use a precise version (e.g.: 20.0.0) in .tool-versions file
+    $ <bold>mise global --pin node@20</bold>
 
-  # show the current version of node in ~/.tool-versions
-  $ <bold>mise global node</bold>
-  20.0.0
+    # show the current version of node in ~/.tool-versions
+    $ <bold>mise global node</bold>
+    20.0.0
 "#
 );
 

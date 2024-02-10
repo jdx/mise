@@ -28,7 +28,8 @@ impl AliasSet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise alias set node lts-hydrogen 18.0.0</bold>
+
+    $ <bold>mise alias set node lts-hydrogen 18.0.0</bold>
 "#
 );
 

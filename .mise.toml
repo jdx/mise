@@ -3,6 +3,7 @@
 min_version = "2024.1.1"
 [env]
 _.file = [".env"]
+_.path = ["./target/debug"]
 FOO = "bar"
 FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
@@ -30,8 +31,8 @@ run = "cargo clean"
 [tasks.build]
 alias = "b"
 run = "cargo build --color always --all-features"
-sources = ["Cargo.*", "src/**/*.rs"]
-outputs = ["target/debug/mise"]
+#sources = ["Cargo.*", "src/**/*.rs"]
+#outputs = ["target/debug/mise"]
 
 [tasks.ci]
 depends = [
@@ -40,30 +41,35 @@ depends = [
     "test"
 ]
 
-[tasks."render:completions"]
+[tasks."render:usage"]
 depends = ["build"]
+env = { CLICOLOR_FORCE = "0" }
+run = "mise usage > mise.usage.kdl"
+
+[tasks."render:completions"]
+depends = ["build", "render:usage"]
 env = { NO_COLOR = "1" }
 run = '''
 #!/usr/bin/env bash
 set -xeuo pipefail
-target/debug/mise render-completion bash > completions/mise.bash
-target/debug/mise render-completion zsh > completions/_mise
-target/debug/mise render-completion fish > completions/mise.fish
+mise render-completion bash > completions/mise.bash
+mise render-completion zsh > completions/_mise
+mise render-completion fish > completions/mise.fish
 '''
 
 [tasks."render:mangen"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-run = "target/debug/mise render-mangen"
+run = "mise render-mangen"
 
 [tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = [
-  "target/debug/mise render-help",
+  "mise render-help",
   "mise x node@latest -- npx markdown-magic",
 ]
-sources = ["target/debug/mise"]
+sources = ["mise"]
 outputs = ["README.md"]
 
 [tasks.render]

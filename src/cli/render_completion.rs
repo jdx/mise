@@ -18,6 +18,13 @@ pub struct RenderCompletion {
     /// Shell type to generate completions for
     #[clap(long = "shell", short = 's', hide = true)]
     shell_type: Option<clap_complete::Shell>,
+
+    /// Use usage for completions
+    ///
+    /// Requires `usage` CLI to be installed.
+    /// https://usage.jdx.dev
+    #[clap(long, verbatim_doc_comment)]
+    usage: bool,
 }
 
 impl RenderCompletion {
@@ -25,6 +32,21 @@ impl RenderCompletion {
         let shell = self.shell.or(self.shell_type).unwrap();
 
         let mut cmd = crate::cli::Cli::command();
+
+        if self.usage {
+            let shell = shell.to_string();
+            cmd!(
+                "usage",
+                "generate",
+                "completion",
+                &shell,
+                "mise",
+                "--usage-cmd",
+                "mise usage"
+            )
+            .run()?;
+            return Ok(());
+        }
 
         let script = match shell {
             clap_complete::Shell::Zsh => completions::zsh_complete(&cmd)?,

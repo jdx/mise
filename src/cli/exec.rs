@@ -122,14 +122,15 @@ fn parse_command(
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
-  $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
 
-  # Specify command as a string:
-  $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
+    $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
+    $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
 
-  # Run a command in a different directory:
-  $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
+    # Specify command as a string:
+    $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
+
+    # Run a command in a different directory:
+    $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
 "#
 );
 
