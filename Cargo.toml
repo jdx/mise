@@ -64,7 +64,7 @@ home = "0.5.9"
 humantime = "2.1.0"
 indenter = "0.3.3"
 indexmap = { version = "2.2.2", features = ["serde"] }
-indicatif = { version = "0.17.7", features = ["default", "improved_unicode"] }
+indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
 indoc = "2.0.4"
 itertools = "0.12.1"
 log = "0.4.20"
