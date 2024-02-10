@@ -52,9 +52,9 @@ env = { NO_COLOR = "1" }
 run = '''
 #!/usr/bin/env bash
 set -xeuo pipefail
-mise render-completion bash > completions/mise.bash
-mise render-completion zsh > completions/_mise
-mise render-completion fish > completions/mise.fish
+mise completion bash > completions/mise.bash
+mise completion zsh > completions/_mise
+mise completion fish > completions/mise.fish
 '''
 
 [tasks."render:mangen"]
