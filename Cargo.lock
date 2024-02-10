@@ -1140,9 +1140,9 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.17.7"
+version = "0.17.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb28741c9db9a713d93deb3bb9515c20788cef5815265bee4980e87bde7e0f25"
+checksum = "763a5a8f45087d6bcea4222e7b72c291a054edf80e4ef6efd2a4979878c7bea3"
 dependencies = [
  "console",
  "instant",
@@ -3213,11 +3213,13 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "0.2.1"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "846a62538e6f30c0b450a936b9c711a11579803d41e6b4f959318693a7041bdc"
+checksum = "c6c82f8a59dddf27110090af5ef62f75f44d20d15d15b46113e5aee214ae5fd9"
 dependencies = [
+ "log",
  "miette",
+ "regex",
  "thiserror",
 ]
 
