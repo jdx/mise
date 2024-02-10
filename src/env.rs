@@ -73,6 +73,8 @@ pub static MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
     var_duration("MISE_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
 });
 
+pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
+
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
