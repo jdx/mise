@@ -54,6 +54,7 @@ _mise() {
         (remove|rm|uninstall) __mise_uninstall_cmd && ret=0 ;;
         (unset) __mise_unset_cmd && ret=0 ;;
         (up|upgrade) __mise_upgrade_cmd && ret=0 ;;
+        (usage) __mise_usage_cmd && ret=0 ;;
         (u|use) __mise_use_cmd && ret=0 ;;
         (v|version) __mise_version_cmd && ret=0 ;;
         (w|watch) __mise_watch_cmd && ret=0 ;;
@@ -193,6 +194,7 @@ __mise_cache_clear_cmd() {
 __mise_completion_cmd() {
   _arguments -s -S \
     '::shell:(bash fish zsh)' \
+    '--usage[Use usage for completions]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -614,6 +616,7 @@ __mise_set_cmd() {
 (( $+functions[__mise_settings_cmd] )) ||
 __mise_settings_cmd() {
   _arguments -s -S \
+    '--keys[Only display key names for each setting]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -647,6 +650,7 @@ __mise_settings_get_cmd() {
 (( $+functions[__mise_settings_ls_cmd] )) ||
 __mise_settings_ls_cmd() {
   _arguments -s -S \
+    '--keys[Only display key names for each setting]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -845,6 +849,14 @@ __mise_upgrade_cmd() {
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
     '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
 }
+(( $+functions[__mise_usage_cmd] )) ||
+__mise_usage_cmd() {
+  _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
+}
 (( $+functions[__mise_use_cmd] )) ||
 __mise_use_cmd() {
   _arguments -s -S \
@@ -939,6 +951,7 @@ __mise_cmds() {
     {remove,rm,uninstall}':Removes runtime versions'
     'unset:Remove environment variable(s) from the config file'
     {up,upgrade}':Upgrades outdated tool versions'
+    'usage:Generate a usage CLI spec'
     {u,use}':Install tool version and add it to config'
     'version:Show mise version'
     {w,watch}':\[experimental\] Run a tasks watching for changes'

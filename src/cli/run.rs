@@ -534,22 +534,23 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise run lint</bold>
-  Runs the "lint" tasks. This needs to either be defined in .mise.toml
-  or as a standalone script. See the project README for more information.
 
-  $ <bold>mise run build --force</bold>
-  Forces the "build" tasks to run even if its sources are up-to-date.
+    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # or as a standalone script. See the project README for more information.
+    $ <bold>mise run lint</bold>
 
-  $ <bold>mise run test --raw</bold>
-  Runs "test" with stdin/stdout/stderr all connected to the current terminal.
-  This forces `--jobs=1` to prevent interleaving of output.
+    # Forces the "build" tasks to run even if its sources are up-to-date.
+    $ <bold>mise run build --force</bold>
 
-  $ <bold>mise run lint ::: test ::: check</bold>
-  Runs the "lint", "test", and "check" tasks in parallel.
+    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
+    # This forces `--jobs=1` to prevent interleaving of output.
+    $ <bold>mise run test --raw</bold>
 
-  $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
-  Execute multiple tasks each with their own arguments.
+    # Runs the "lint", "test", and "check" tasks in parallel.
+    $ <bold>mise run lint ::: test ::: check</bold>
+
+    # Execute multiple tasks each with their own arguments.
+    $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );
 

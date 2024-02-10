@@ -38,8 +38,9 @@ impl SettingsGet {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise settings get legacy_version_file</bold>
-  true
+
+    $ <bold>mise settings get legacy_version_file</bold>
+    true
 "#
 );
 

@@ -77,7 +77,8 @@ fn truncate(s: &str, len: usize) -> String {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise tasks ls</bold>
+    
+    $ <bold>mise tasks ls</bold>
 "#
 );
 

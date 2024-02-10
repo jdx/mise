@@ -1,0 +1,30 @@
+complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
+complete "config_file" type="file"
+complete "new_plugin" run="mise plugins --all"
+complete "plugin" run="mise plugins --core --user"
+complete "prefix" run="mise ls-remote {{words[PREV]}}"
+complete "setting" run="mise settings --keys"
+complete "task" run="mise tasks | awk '{print $1}'"
+
+complete "tool@version" run=r#"
+cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    IFS='@' read -r -a parts <<< "$cur"
+    tool="${parts[0]}"
+    prefix="${parts[1]}"
+
+    versions=$(mise ls-remote $tool $prefix | tail -r)
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise plugins --all)
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac
+"#

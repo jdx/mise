@@ -106,13 +106,14 @@ struct Row {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise plugins ls</bold>
-  node
-  ruby
 
-  $ <bold>mise plugins ls --urls</bold>
-  node    https://github.com/asdf-vm/asdf-nodejs.git
-  ruby    https://github.com/asdf-vm/asdf-ruby.git
+    $ <bold>mise plugins ls</bold>
+    node
+    ruby
+
+    $ <bold>mise plugins ls --urls</bold>
+    node    https://github.com/asdf-vm/asdf-nodejs.git
+    ruby    https://github.com/asdf-vm/asdf-ruby.git
 "#
 );
 

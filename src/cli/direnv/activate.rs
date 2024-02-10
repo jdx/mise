@@ -29,8 +29,9 @@ impl DirenvActivate {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise direnv activate > ~/.config/direnv/lib/use_mise.sh</bold>
-  $ <bold>echo 'use mise' > .envrc</bold>
-  $ <bold>direnv allow</bold>
+
+    $ <bold>mise direnv activate > ~/.config/direnv/lib/use_mise.sh</bold>
+    $ <bold>echo 'use mise' > .envrc</bold>
+    $ <bold>direnv allow</bold>
 "#
 );

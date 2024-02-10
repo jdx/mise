@@ -39,8 +39,9 @@ impl Reshim {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise reshim</bold>
-  $ <bold>~/.local/share/mise/shims/node -v</bold>
-  v20.0.0
+
+    $ <bold>mise reshim</bold>
+    $ <bold>~/.local/share/mise/shims/node -v</bold>
+    v20.0.0
 "#
 );

@@ -26,7 +26,8 @@ impl AliasUnset {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>mise alias unset node lts-hydrogen</bold>
+
+    $ <bold>mise alias unset node lts-hydrogen</bold>
 "#
 );
 

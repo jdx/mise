@@ -42,9 +42,10 @@ impl SyncPython {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-  $ <bold>pyenv install 3.11.0</bold>
-  $ <bold>mise sync python --pyenv</bold>
-  $ <bold>mise use -g python@3.11.0</bold> - uses pyenv-provided python
+
+    $ <bold>pyenv install 3.11.0</bold>
+    $ <bold>mise sync python --pyenv</bold>
+    $ <bold>mise use -g python@3.11.0</bold> - uses pyenv-provided python
 "#
 );
 
