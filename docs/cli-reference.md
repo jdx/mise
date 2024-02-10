@@ -188,9 +188,11 @@ Arguments:
 
 Options:
       --usage
-          Use usage for completions
+          Always use usage for completions.
+          Currently, usage is the default for fish and bash but not zsh since it has a few quirks
+          to work out first.
 
-          Requires `usage` CLI to be installed.
+          This requires the `usage` CLI to be installed.
           https://usage.jdx.dev
 
 Examples:

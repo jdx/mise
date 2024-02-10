@@ -194,7 +194,7 @@ __mise_cache_clear_cmd() {
 __mise_completion_cmd() {
   _arguments -s -S \
     '::shell:(bash fish zsh)' \
-    '--usage[Use usage for completions]' \
+    '--usage[Always use usage for completions.]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \

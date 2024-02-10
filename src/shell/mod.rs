@@ -9,7 +9,6 @@ mod nushell;
 mod xonsh;
 mod zsh;
 
-#[cfg(feature = "clap_complete")]
 pub mod completions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]

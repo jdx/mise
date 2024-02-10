@@ -4,6 +4,8 @@ use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use eyre::Result;
 
+use crate::shell::completions;
+
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -16,9 +18,11 @@ pub struct Completion {
     #[clap(long = "shell", short = 's', hide = true)]
     shell_type: Option<Shell>,
 
-    /// Use usage for completions
+    /// Always use usage for completions.
+    /// Currently, usage is the default for fish and bash but not zsh since it has a few quirks
+    /// to work out first.
     ///
-    /// Requires `usage` CLI to be installed.
+    /// This requires the `usage` CLI to be installed.
     /// https://usage.jdx.dev
     #[clap(long, verbatim_doc_comment)]
     usage: bool,
@@ -28,12 +32,13 @@ impl Completion {
     pub fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
-        if self.usage {
+        if self.usage || matches!(shell, Shell::Bash | Shell::Fish) {
+            let shell = shell.to_string();
             cmd!(
                 "usage",
                 "generate",
                 "completion",
-                shell.to_string(),
+                &shell,
                 "mise",
                 "--usage-cmd",
                 "mise usage"
@@ -42,12 +47,12 @@ impl Completion {
             return Ok(());
         }
 
-        let c = match shell {
-            Shell::Bash => include_str!("../../completions/mise.bash"),
-            Shell::Fish => include_str!("../../completions/mise.fish"),
-            Shell::Zsh => include_str!("../../completions/_mise"),
+        let cmd = crate::cli::Cli::command();
+        let script = match shell {
+            Shell::Zsh => completions::zsh_complete(&cmd)?,
+            _ => unreachable!("unsupported shell: {shell}"),
         };
-        miseprintln!("{}", c.trim())?;
+        miseprintln!("{}", script.trim())?;
 
         Ok(())
     }
