@@ -1186,7 +1186,7 @@ case $cur in
     tool="${parts[0]}"
     prefix="${parts[1]}"
 
-    versions=$(mise ls-remote $tool $prefix | tail -r)
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
 
     for version in $versions; do
       echo "$tool@$version"
