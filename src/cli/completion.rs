@@ -33,17 +33,19 @@ impl Completion {
         let shell = self.shell.or(self.shell_type).unwrap();
 
         if self.usage || matches!(shell, Shell::Bash | Shell::Fish) {
-            let shell = shell.to_string();
-            cmd!(
+            let res = cmd!(
                 "usage",
                 "generate",
                 "completion",
-                &shell,
+                shell.to_string(),
                 "mise",
                 "--usage-cmd",
                 "mise usage"
             )
-            .run()?;
+            .run();
+            if res.is_err() {
+                return self.prerendered(shell);
+            }
             return Ok(());
         }
 
@@ -54,6 +56,16 @@ impl Completion {
         };
         miseprintln!("{}", script.trim())?;
 
+        Ok(())
+    }
+
+    fn prerendered(&self, shell: Shell) -> Result<()> {
+        let script = match shell {
+            Shell::Bash => include_str!("../../completions/mise.bash"),
+            Shell::Fish => include_str!("../../completions/mise.fish"),
+            Shell::Zsh => include_str!("../../completions/_mise"),
+        };
+        miseprintln!("{}", script.trim())?;
         Ok(())
     }
 }
@@ -67,7 +79,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum Shell {
     Bash,
     Fish,
