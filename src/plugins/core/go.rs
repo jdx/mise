@@ -157,7 +157,7 @@ impl GoPlugin {
             set("GOBIN", tv.install_path().join("bin"));
         }
         if settings.go_set_goroot {
-            set("GOROOT", tv.install_path());
+            set("GOROOT", tv.install_path().join("go"));
         }
         if settings.go_set_gopath {
             set("GOPATH", self.gopath(tv));
