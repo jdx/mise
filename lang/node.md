@@ -54,6 +54,6 @@ mise uses a `.tool-versions` or `.mise.toml` file for auto-switching between sof
 
 ## "nodejs" -> "node" Alias
 
-You cannot install/use a plugin named "nodejs". If you attempt this, mise will just renamed it to
+You cannot install/use a plugin named "nodejs". If you attempt this, mise will just rename it to
 "node". See the [FAQ](https://github.com/jdx/mise#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
 for an explanation.
