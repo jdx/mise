@@ -31,7 +31,9 @@ mise 2024.x.x
 this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
 commands with `mise exec` or run tasks with `mise run` in order to use tools managed with mise.
 
-Make sure you restart your shell session after modifying your rc file in order for it to take effect.
+Make sure you restart your shell session after modifying your rc file in order for it to take effect. Also note that
+this uses `~/.local/bin/mise` as the binary location since that's what https://mise.run uses by default. If you've
+installed mise by some other means it may be on PATH or somewhere different.
 
 ::: code-group
 ```sh [bash]
