@@ -10,9 +10,8 @@ complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"
 case $cur in
   *@*)
-    IFS='@' read -r -a parts <<< "$cur"
-    tool="${parts[0]}"
-    prefix="${parts[1]}"
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
 
     versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
 
