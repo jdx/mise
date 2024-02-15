@@ -66,7 +66,7 @@ pub struct Settings {
     /// See https://github.com/jdx/mise/discussions/1638
     #[config(env = "MISE_GO_SET_GOPATH", default = false)]
     pub go_set_gopath: bool,
-    /// sets GOROOT=~/.local/share/mise/installs/go/.../go
+    /// sets GOROOT=~/.local/share/mise/installs/go/...
     /// you probably always want this set to be set unless you want GOROOT to point to something
     /// other than the sdk mise is currently set to
     #[config(env = "MISE_GO_SET_GOROOT", default = true)]
