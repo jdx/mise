@@ -50,11 +50,28 @@ impl GoPlugin {
         })
     }
 
+    // Represents go binary path
     fn go_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/go")
     }
+
+    // Represents GOPATH environment variable
     fn gopath(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("packages")
+    }
+
+    // Represents GOROOT environment variable
+    fn goroot(&self, tv: &ToolVersion) -> PathBuf {
+        let old_path = tv.install_path().join("go");
+        if old_path.exists() {
+            return old_path;
+        }
+        tv.install_path()
+    }
+
+    // Represents GOBIN environment variable
+    fn gobin(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join("bin")
     }
 
     fn install_default_packages(
@@ -154,10 +171,10 @@ impl GoPlugin {
         let gobin = settings.go_set_gobin;
         let gobin_env_is_set = env::PRISTINE_ENV.contains_key("GOBIN");
         if gobin == Some(true) || (gobin.is_none() && !gobin_env_is_set) {
-            set("GOBIN", tv.install_path().join("bin"));
+            set("GOBIN", self.gobin(tv));
         }
         if settings.go_set_goroot {
-            set("GOROOT", tv.install_path());
+            set("GOROOT", self.goroot(tv));
         }
         if settings.go_set_gopath {
             set("GOPATH", self.gopath(tv));
@@ -202,7 +219,7 @@ impl Forge for GoPlugin {
         }
         // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT
         let mut paths = vec![
-            tv.install_path().join("bin"),
+            self.gobin(tv),
             // TODO: this can be removed at some point since go is not installed here anymore
             tv.install_path().join("go/bin"),
         ];
