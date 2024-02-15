@@ -62,7 +62,11 @@ impl GoPlugin {
 
     // Represents GOROOT environment variable
     fn goroot(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("go")
+        let old_path = tv.install_path().join("go");
+        if old_path.exists() {
+            return old_path;
+        }
+        tv.install_path()
     }
 
     // Represents GOBIN environment variable
