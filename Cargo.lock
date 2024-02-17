@@ -537,9 +537,9 @@ dependencies = [
 
 [[package]]
 name = "demand"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11b1d1a3335f59757d77c86d2ede00d6955747da2dbc70e581eb74e4774f0a54"
+checksum = "05dadf80ef994f53e7ce0f2664ab1553750119ead1d84077baf3196afbbe222e"
 dependencies = [
  "console",
  "once_cell",
