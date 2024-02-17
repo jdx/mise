@@ -42,7 +42,7 @@ lto = true
 base64 = "0.21.7"
 calm_io = "0.1.1"
 chrono = { version = "0.4.34", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.5.0", features = ["env", "derive", "string"] }
+clap = { version = "4.5.1", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
 color-eyre = "0.6.2"
 color-print = "0.3.5"
