@@ -29,18 +29,18 @@ impl Forge for GoForge {
                 let mut mod_path = Some(self.name());
 
                 while let Some(cur_mod_path) = mod_path {
-                    let raw =
-                        cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path).read()?;
-
-                    let result = serde_json::from_str::<GoModInfo>(&raw);
-                    if let Ok(mod_info) = result {
-                        return Ok(mod_info.versions);
-                    }
+                    let res = cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path).read();
+                    if let Ok(raw) = res {
+                        let res = serde_json::from_str::<GoModInfo>(&raw);
+                        if let Ok(mod_info) = res {
+                            return Ok(mod_info.versions);
+                        }
+                    };
 
                     mod_path = trim_after_last_slash(cur_mod_path);
                 }
 
-                Err(eyre!("couldn't find module versions"))
+                Ok(vec![])
             })
             .cloned()
     }
