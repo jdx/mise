@@ -16,7 +16,7 @@ You can see the core plugins with `mise plugin ls --core`.
 
 - [Bun](/lang/bun)
 - [Deno](/lang/deno)
-- [Erlang](/lang/erlang)
+- [Erlang](/lang/erlang) <Badge type="warning" text="experimental" />
 - [Go](/lang/go)
 - [Java](/lang/java)
 - [NodeJS](/lang/node)

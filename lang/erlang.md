@@ -1,4 +1,4 @@
-# Erlang
+# Erlang <Badge type="warning" text="experimental" />
 
 The following are instructions for using the erlang core plugin.
 This is used when there isn't a git plugin installed named "erlang".
