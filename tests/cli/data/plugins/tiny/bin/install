@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+echo "$ASDF_INSTALL_VERSION" > "$ASDF_INSTALL_PATH/VERSION"
+bin_path="$ASDF_INSTALL_PATH/bin"
+mkdir -p "$bin_path"
+cat <<EOF >"$bin_path/rtx-tiny"
+#!/usr/bin/env bash
+echo rtx-tiny: v"$ASDF_INSTALL_VERSION" args: "\$@"
+EOF
+chmod +x "$bin_path/rtx-tiny"

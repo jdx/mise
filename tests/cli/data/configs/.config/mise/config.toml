@@ -1,0 +1,2 @@
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
