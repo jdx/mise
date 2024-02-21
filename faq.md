@@ -220,5 +220,9 @@ honors the [clicolors spec](https://bixense.com/clicolors/):
 
 ### Is mise secure?
 
-Not as much as it should be, though currently a bit more secure than asdf. Work will happen in this area as secure
-supply chains are incredibly important. See [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md) for more information.
+Providing a secure supply chain is incredibly important. mise already provides a more secure
+experience when compared to asdf. Security-oriented evaluations and contributions are welcome.
+We also urge users to look after the plugins they use, and urge plugin authors to look after
+the users they serve.
+
+For more details see [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
