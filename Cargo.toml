@@ -69,7 +69,7 @@ itertools = "0.12.1"
 log = "0.4.20"
 num_cpus = "1.16.0"
 once_cell = "1.19.0"
-openssl = { version = "0.10.63", optional = true }
+openssl = { version = "0.10.63", optional = true, features = ["vendored"] }
 path-absolutize = "3.1.1"
 petgraph = "0.6.4"
 rand = "0.8.5"
