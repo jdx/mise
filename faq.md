@@ -124,12 +124,8 @@ It's not a near-term goal and it would require plugin modifications, but it shou
 
 Short answer: just set `http_proxy` and `https_proxy` environment variables. These should be lowercase.
 
-mise doesn't really do anything with http itself. The only exception to that is checking for new versions
-and `mise self-update`. It uses `git` to clone plugins and the plugins themselves generally will download
-files with `curl` or `wget`.
-
-However this is really up to the plugin. If you're having a proxy-related issue installing something
-you should post an issue on the plugin's repository.
+This may not work with all plugins if they are not configured to use these env vars.
+If you're having a proxy-related issue installing something specific you should post an issue on the plugin's repository.
 
 ### How do the shorthand plugin names map to repositories?
 
