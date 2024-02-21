@@ -16,7 +16,7 @@ use crate::shell::ShellType;
 use crate::toolset::Toolset;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::style;
-use crate::{cli, cmd, dirs, forge};
+use crate::{cmd, dirs, forge};
 use crate::{duration, env};
 use crate::{file, shims};
 
@@ -54,7 +54,7 @@ impl Doctor {
             }
         }
 
-        if let Some(latest) = cli::version::check_for_new_version(duration::HOURLY) {
+        if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
             self.checks.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
@@ -101,9 +101,9 @@ impl Doctor {
         }
 
         if !config.is_activated() && !shims_on_path() {
-            let cmd = style::estyle("mise help activate");
-            let url = style::eunderline("https://mise.jdx.dev");
-            let shims = style::ecyan(dirs::SHIMS.display());
+            let cmd = style::nyellow("mise help activate");
+            let url = style::nunderline("https://mise.jdx.dev");
+            let shims = style::ncyan(dirs::SHIMS.display());
             self.checks.push(formatdoc!(
                 r#"mise is not activated, run {cmd} or
                     read documentation at {url} for activation instructions.
@@ -115,8 +115,19 @@ impl Doctor {
         match ToolsetBuilder::new().build(config) {
             Ok(ts) => {
                 self.analyze_shims(&ts);
+                let tools = ts
+                    .list_current_versions()
+                    .into_iter()
+                    .map(
+                        |(forge, version)| match forge.is_version_installed(&version) {
+                            true => version.to_string(),
+                            false => format!("{version} (missing)"),
+                        },
+                    )
+                    .collect::<Vec<String>>()
+                    .join("\n");
 
-                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(ts.to_string()))?;
+                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(tools))?;
             }
             Err(err) => self.checks.push(format!("failed to load toolset: {}", err)),
         }
@@ -128,7 +139,7 @@ impl Doctor {
         let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
         if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset) {
-            let cmd = style::eyellow("mise reshim");
+            let cmd = style::nyellow("mise reshim");
 
             if !missing.is_empty() {
                 self.checks.push(formatdoc!(
