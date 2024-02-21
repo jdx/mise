@@ -1,5 +1,6 @@
 <div align="center">
-<h1><a href="https://mise.jdx.dev">mise-en-place</a></h1>
+<h1><img src="https://github.com/jdx/mise/assets/216188/27a8ea18-9383-4d86-a445-305b9a6248c1" width="400" /><br />
+<a href="https://mise.jdx.dev">mise-en-place</a></h1>
 <!-- <a href="https://mise.jdx.dev"><picture> -->
 <!--   <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png"> -->
 <!--   <img alt="mise logo" width="617" src="./docs/logo-light@2x.png"> -->
