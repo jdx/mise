@@ -49,9 +49,21 @@ pub fn nstyle<D>(val: D) -> StyledObject<D> {
 }
 
 pub fn nblue<D>(val: D) -> StyledObject<D> {
+    nstyle(val).blue()
+}
+
+pub fn ncyan<D>(val: D) -> StyledObject<D> {
     nstyle(val).cyan()
 }
 
 pub fn nbold<D>(val: D) -> StyledObject<D> {
     nstyle(val).bold()
+}
+
+pub fn nunderline<D>(val: D) -> StyledObject<D> {
+    nstyle(val).underlined()
+}
+
+pub fn nyellow<D>(val: D) -> StyledObject<D> {
+    nstyle(val).yellow()
 }
