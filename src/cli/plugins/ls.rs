@@ -55,7 +55,8 @@ impl PluginsLs {
                 ep.repo_url = Some(url.to_string());
                 tools.insert(Arc::new(ep));
             }
-        } else if self.user && self.core {} else if self.core {
+        } else if self.user && self.core {
+        } else if self.core {
             tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Core));
         } else {
             tools.retain(|p| matches!(p.get_plugin_type(), PluginType::External));

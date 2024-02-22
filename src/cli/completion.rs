@@ -42,7 +42,7 @@ impl Completion {
                 "--usage-cmd",
                 "mise usage"
             )
-                .run();
+            .run();
             if res.is_err() {
                 return self.prerendered(shell);
             }

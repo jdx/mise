@@ -28,9 +28,9 @@ pub struct Use {
     /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
     /// If no version is specified, it will default to @latest
     #[clap(
-    value_name = "TOOL@VERSION",
-    verbatim_doc_comment,
-    required_unless_present = "remove"
+        value_name = "TOOL@VERSION",
+        verbatim_doc_comment,
+        required_unless_present = "remove"
     )]
     tool: Vec<ToolArg>,
 
