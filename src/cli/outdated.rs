@@ -92,7 +92,7 @@ impl Outdated {
             style(pad_requested("Requested")).dim(),
             style(pad_current("Current")).dim(),
             style("Latest").dim(),
-        )?;
+        );
         for i in 0..outdated.len() {
             miseprintln!(
                 "{} {} {} {}",
@@ -100,7 +100,7 @@ impl Outdated {
                 pad_requested(&requests[i]),
                 pad_current(&currents[i]),
                 latests[i]
-            )?;
+            );
         }
         Ok(())
     }

@@ -32,7 +32,7 @@ impl ConfigLs {
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
         table.with(Modify::new(Columns::last()).with(Width::truncate(40).suffix("…")));
-        miseprintln!("{table}")?;
+        miseprintln!("{table}");
 
         Ok(())
     }

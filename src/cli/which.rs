@@ -34,12 +34,12 @@ impl Which {
         match ts.which(&self.bin_name) {
             Some((p, tv)) => {
                 if self.version {
-                    miseprintln!("{}", tv.version)?;
+                    miseprintln!("{}", tv.version);
                 } else if self.plugin {
-                    miseprintln!("{p}")?;
+                    miseprintln!("{p}");
                 } else {
                     let path = p.which(&tv, &self.bin_name)?;
-                    miseprintln!("{}", path.unwrap().display())?;
+                    miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
             }

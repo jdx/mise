@@ -42,7 +42,7 @@ impl Completion {
                 "--usage-cmd",
                 "mise usage"
             )
-            .run();
+                .run();
             if res.is_err() {
                 return self.prerendered(shell);
             }
@@ -54,7 +54,7 @@ impl Completion {
             Shell::Zsh => completions::zsh_complete(&cmd)?,
             _ => unreachable!("unsupported shell: {shell}"),
         };
-        miseprintln!("{}", script.trim())?;
+        miseprintln!("{}", script.trim());
 
         Ok(())
     }
@@ -65,7 +65,7 @@ impl Completion {
             Shell::Fish => include_str!("../../completions/mise.fish"),
             Shell::Zsh => include_str!("../../completions/_mise"),
         };
-        miseprintln!("{}", script.trim())?;
+        miseprintln!("{}", script.trim());
         Ok(())
     }
 }

@@ -64,7 +64,7 @@ impl Shell {
                 } else {
                     shell.set_env(&k, &tv.version)
                 };
-                miseprintln!("{op}")?;
+                miseprintln!("{op}");
             }
         }
 

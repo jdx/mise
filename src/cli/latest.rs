@@ -47,7 +47,7 @@ impl Latest {
             plugin.latest_version(prefix)?
         };
         if let Some(version) = latest_version {
-            miseprintln!("{}", version)?;
+            miseprintln!("{}", version);
         }
         Ok(())
     }

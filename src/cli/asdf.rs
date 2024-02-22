@@ -44,7 +44,7 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
             all: false,
             plugin: args.get(3).map(|s| s.parse()).transpose()?,
         }
-        .run();
+            .run();
     }
     let ts = ToolsetBuilder::new().build(config)?;
     let mut versions = ts.list_installed_versions()?;
@@ -55,13 +55,13 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
     if let Some(plugin) = plugin {
         versions.retain(|(_, v)| &v.forge.to_string() == plugin);
         for (_, version) in versions {
-            miseprintln!("{}", version.version)?;
+            miseprintln!("{}", version.version);
         }
     } else {
         for (plugin, versions) in &versions.into_iter().group_by(|(_, v)| v.forge.clone()) {
-            miseprintln!("{}", plugin)?;
+            miseprintln!("{}", plugin);
             for (_, tv) in versions {
-                miseprintln!("  {}", tv.version)?;
+                miseprintln!("  {}", tv.version);
             }
         }
     }

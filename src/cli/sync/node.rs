@@ -62,7 +62,7 @@ impl SyncNode {
             }
             let v = entry.trim_start_matches("node@");
             tool.create_symlink(v, &brew_prefix.join(&entry))?;
-            miseprintln!("Synced node@{} from Homebrew", v)?;
+            miseprintln!("Synced node@{} from Homebrew", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -80,7 +80,7 @@ impl SyncNode {
         for entry in sorted(subdirs) {
             let v = entry.trim_start_matches('v');
             tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
-            miseprintln!("Synced node@{} from nvm", v)?;
+            miseprintln!("Synced node@{} from nvm", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
@@ -97,7 +97,7 @@ impl SyncNode {
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
         for v in sorted(subdirs) {
             tool.create_symlink(&v, &nodenv_versions_path.join(&v))?;
-            miseprintln!("Synced node@{} from nodenv", v)?;
+            miseprintln!("Synced node@{} from nodenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()

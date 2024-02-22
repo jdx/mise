@@ -147,7 +147,7 @@ impl dyn ConfigFile {
                 .iter()
                 .map(|(tvr, _)| tvr.version())
                 .collect::<Vec<_>>();
-            miseprintln!("{}", tvl.join(" "))?;
+            miseprintln!("{}", tvl.join(" "));
             return Ok(true);
         }
         // check for something like `mise local node python@latest` which is invalid

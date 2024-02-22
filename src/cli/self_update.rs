@@ -39,9 +39,9 @@ impl SelfUpdate {
 
         if status.updated() {
             let version = style(status.version()).bright().yellow();
-            miseprintln!("Updated mise to {version}")?;
+            miseprintln!("Updated mise to {version}");
         } else {
-            miseprintln!("mise is already up to date")?;
+            miseprintln!("mise is already up to date");
         }
         if !self.no_plugins {
             cmd!(&*env::MISE_BIN, "plugins", "update").run()?;

@@ -14,7 +14,7 @@ impl BinPaths {
         let ts = ToolsetBuilder::new().build(&config)?;
         ts.notify_if_versions_missing();
         for p in ts.list_paths() {
-            miseprintln!("{}", p.display())?;
+            miseprintln!("{}", p.display());
         }
         Ok(())
     }

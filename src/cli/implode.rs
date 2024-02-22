@@ -30,7 +30,7 @@ impl Implode {
         }
         for f in files.into_iter().filter(|d| d.exists()) {
             if self.dry_run {
-                miseprintln!("rm -rf {}", f.display())?;
+                miseprintln!("rm -rf {}", f.display());
             }
 
             if self.confirm_remove(f)? {

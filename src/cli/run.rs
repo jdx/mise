@@ -257,7 +257,7 @@ impl Run {
                 "{} finished in {}",
                 prefix,
                 format_duration(timer.elapsed())
-            )?;
+            );
         }
 
         self.save_checksum(task)?;
@@ -519,7 +519,7 @@ fn last_modified_glob_match(
     last_modified_file(files)
 }
 
-fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option<SystemTime>> {
+fn last_modified_file(files: impl IntoIterator<Item=PathBuf>) -> Result<Option<SystemTime>> {
     Ok(files
         .into_iter()
         .unique()

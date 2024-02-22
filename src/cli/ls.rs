@@ -122,7 +122,7 @@ impl Ls {
                 .filter(|(p, _, _)| plugins.contains(p.fa()))
                 .map(|row| row.into())
                 .collect();
-            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?)?;
+            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
             return Ok(());
         }
 
@@ -134,7 +134,7 @@ impl Ls {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
         }
-        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?)?;
+        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 
@@ -149,9 +149,9 @@ impl Ls {
         for tv in tvs {
             if self.plugin.is_some() {
                 // only displaying 1 plugin so only show the version
-                miseprintln!("{}", tv.version)?;
+                miseprintln!("{}", tv.version);
             } else {
-                miseprintln!("{} {}", &tv.forge, tv.version)?;
+                miseprintln!("{} {}", &tv.forge, tv.version);
             }
         }
         Ok(())
@@ -173,7 +173,7 @@ impl Ls {
         });
         let mut table = Table::new(rows);
         table::default_style(&mut table, self.no_header);
-        miseprintln!("{}", table.to_string())?;
+        miseprintln!("{}", table.to_string());
         Ok(())
     }
 

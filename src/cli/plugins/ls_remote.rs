@@ -49,7 +49,7 @@ impl PluginsLsRemote {
             };
             let url = if self.urls { repo } else { "" };
             let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
-            miseprintln!("{} {}{}", plugin, installed, url)?;
+            miseprintln!("{} {}{}", plugin, installed, url);
         }
 
         Ok(())

@@ -55,8 +55,7 @@ impl PluginsLs {
                 ep.repo_url = Some(url.to_string());
                 tools.insert(Arc::new(ep));
             }
-        } else if self.user && self.core {
-        } else if self.core {
+        } else if self.user && self.core {} else if self.core {
             tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Core));
         } else {
             tools.retain(|p| matches!(p.get_plugin_type(), PluginType::External));
@@ -85,10 +84,10 @@ impl PluginsLs {
                 .with(Margin::new(0, 0, 0, 0))
                 .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
                 .with(Modify::new(Columns::last()).with(Padding::zero()));
-            miseprintln!("{table}")?;
+            miseprintln!("{table}");
         } else {
             for tool in tools {
-                miseprintln!("{tool}")?;
+                miseprintln!("{tool}");
             }
         }
         Ok(())
@@ -120,6 +119,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::cli::tests::grep;
+
     #[test]
     fn test_plugin_list() {
         assert_cli_snapshot!("plugin", "list");

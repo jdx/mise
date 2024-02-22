@@ -54,14 +54,14 @@ impl Doctor {
         }
 
         if self.checks.is_empty() {
-            miseprintln!("No problems found")?;
+            miseprintln!("No problems found");
         } else {
             let checks_plural = if self.checks.len() == 1 { "" } else { "s" };
             let summary = format!("{} problem{checks_plural} found:", self.checks.len());
-            miseprintln!("{}\n", style(summary).red().bold())?;
+            miseprintln!("{}\n", style(summary).red().bold());
             for (i, check) in self.checks.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
-                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start())?;
+                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start());
             }
             exit(1);
         }
@@ -185,9 +185,9 @@ fn mise_dirs() -> String {
         ("state", &*dirs::STATE),
         ("shims", &dirs::SHIMS.as_path()),
     ]
-    .iter()
-    .map(|(k, p)| format!("{k}: {}", display_path(p)))
-    .join("\n")
+        .iter()
+        .map(|(k, p)| format!("{k}: {}", display_path(p)))
+        .join("\n")
 }
 
 fn mise_env_vars() -> String {
@@ -285,11 +285,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "))?;
+    miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "));
     Ok(())
 }
 
 fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    miseprintln!("{}: {body}", style(header).bold())?;
+    miseprintln!("{}: {body}", style(header).bold());
     Ok(())
 }
