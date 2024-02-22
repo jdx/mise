@@ -362,6 +362,10 @@ fn is_ninja_on_path() -> bool {
     which::which("ninja").is_ok()
 }
 
+pub fn is_activated() -> bool {
+    var("__MISE_DIFF").is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

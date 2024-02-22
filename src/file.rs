@@ -105,8 +105,9 @@ pub fn basename(path: &Path) -> Option<String> {
 }
 
 /// replaces $HOME with "~"
-pub fn display_path(path: &Path) -> String {
+pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     let home = dirs::HOME.to_string_lossy();
+    let path = path.as_ref();
     match path.starts_with(home.as_ref()) && home != "/" {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
@@ -299,11 +300,13 @@ impl Iterator for FindUp {
 pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH)
 }
+
 /// returns the first executable in PATH
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
+
 fn _which<P: AsRef<Path>>(name: P, paths: &Vec<PathBuf>) -> Option<PathBuf> {
     for path in paths {
         let bin = path.join(name.as_ref());

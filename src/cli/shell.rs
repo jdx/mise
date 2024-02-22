@@ -3,6 +3,7 @@ use console::style;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::env;
 use crate::shell::get_shell;
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 
@@ -38,7 +39,7 @@ pub struct Shell {
 impl Shell {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        if !config.is_activated() {
+        if !env::is_activated() {
             err_inactive()?;
         }
 
