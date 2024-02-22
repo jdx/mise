@@ -1,9 +1,8 @@
 use eyre::Result;
 
-use crate::config::Config;
-use crate::hook_env;
 use crate::shell::get_shell;
 use crate::ui::style;
+use crate::{env, hook_env};
 
 /// Disable mise for current shell session
 ///
@@ -14,8 +13,7 @@ pub struct Deactivate {}
 
 impl Deactivate {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        if !config.is_activated() {
+        if !env::is_activated() {
             err_inactive()?;
         }
 
@@ -51,10 +49,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
     use crate::env;
 
     #[test]
     fn test_deactivate() {
+        let _config = Config::try_get().unwrap(); // hack: prevents error parsing __MISE_DIFF
         let err = assert_cli_err!("deactivate");
         assert_display_snapshot!(err);
         env::set_var("__MISE_DIFF", "");

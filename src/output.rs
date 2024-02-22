@@ -15,7 +15,7 @@ macro_rules! miseprintln {
 #[macro_export]
 macro_rules! miseprintln {
     () => {
-        calm_io::stdoutln!("\n")
+        calm_io::stdoutln!()
     };
     ($($arg:tt)*) => {{
         calm_io::stdoutln!($($arg)*)
