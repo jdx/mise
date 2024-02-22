@@ -164,10 +164,6 @@ impl Config {
             .collect())
     }
 
-    pub fn is_activated(&self) -> bool {
-        env::var("__MISE_DIFF").is_ok()
-    }
-
     pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.aliases.get(forge.fa()) {
             if let Some(alias) = plugin_aliases.get(v) {

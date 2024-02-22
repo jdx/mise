@@ -1,9 +1,9 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::process::exit;
 
 use console::{pad_str, style, Alignment};
-use eyre::Result;
 use indenter::indented;
+use itertools::Itertools;
 
 use crate::build_time::built_info;
 use crate::cli::version;
@@ -29,30 +29,22 @@ pub struct Doctor {
 }
 
 impl Doctor {
-    pub fn run(mut self) -> Result<()> {
-        miseprintln!("{}", mise_version())?;
-        miseprintln!("{}", build_info())?;
-        miseprintln!("{}", shell())?;
-        miseprintln!("{}", mise_dirs())?;
-        miseprintln!("{}", mise_env_vars())?;
+    pub fn run(mut self) -> eyre::Result<()> {
+        inline_section("version", &*VERSION)?;
+        inline_section("activated", yn(env::is_activated()))?;
+        inline_section("shims_on_path", yn(shims_on_path()))?;
 
-        match Settings::try_get() {
-            Ok(settings) => {
-                miseprintln!(
-                    "{}\n{}\n",
-                    style("settings:").bold(),
-                    indent(settings.to_string())
-                )?;
-            }
-            Err(err) => warn!("failed to load settings: {}", err),
-        }
+        section("build_info", build_info())?;
+        section("shell", shell())?;
+        section("dirs", mise_dirs())?;
 
         match Config::try_get() {
             Ok(config) => self.analyze_config(config)?,
-            Err(err) => {
-                self.checks.push(format!("failed to load config: {}", err));
-            }
+            Err(err) => self.checks.push(format!("failed to load config: {err}")),
         }
+
+        section("env_vars", mise_env_vars())?;
+        self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
             self.checks.push(format!(
@@ -66,9 +58,10 @@ impl Doctor {
         } else {
             let checks_plural = if self.checks.len() == 1 { "" } else { "s" };
             let summary = format!("{} problem{checks_plural} found:", self.checks.len());
-            miseprintln!("{}", style(summary).red().bold())?;
-            for check in &self.checks {
-                miseprintln!("{}\n", check)?;
+            miseprintln!("{}\n", style(summary).red().bold())?;
+            for (i, check) in self.checks.iter().enumerate() {
+                let num = style::nred(format!("{}.", i + 1));
+                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start())?;
             }
             exit(1);
         }
@@ -76,21 +69,20 @@ impl Doctor {
         Ok(())
     }
 
-    fn analyze_config(&mut self, config: impl AsRef<Config>) -> Result<()> {
+    fn analyze_settings(&mut self) -> eyre::Result<()> {
+        match Settings::try_get() {
+            Ok(settings) => {
+                section("settings", settings)?;
+            }
+            Err(err) => self.checks.push(format!("failed to load settings: {err}")),
+        }
+        Ok(())
+    }
+    fn analyze_config(&mut self, config: impl AsRef<Config>) -> eyre::Result<()> {
         let config = config.as_ref();
 
-        let yn = |b| {
-            if b {
-                style("yes").green()
-            } else {
-                style("no").red()
-            }
-        };
-        miseprintln!("activated: {}", yn(config.is_activated()))?;
-        miseprintln!("shims_on_path: {}", yn(shims_on_path()))?;
-
-        miseprintln!("{}", render_config_files(config))?;
-        miseprintln!("{}", render_plugins())?;
+        section("config_files", render_config_files(config))?;
+        section("plugins", render_plugins())?;
 
         for plugin in forge::list() {
             if !plugin.is_installed() {
@@ -100,7 +92,7 @@ impl Doctor {
             }
         }
 
-        if !config.is_activated() && !shims_on_path() {
+        if !env::is_activated() && !shims_on_path() {
             let cmd = style::nyellow("mise help activate");
             let url = style::nunderline("https://mise.jdx.dev");
             let shims = style::ncyan(dirs::SHIMS.display());
@@ -115,23 +107,36 @@ impl Doctor {
         match ToolsetBuilder::new().build(config) {
             Ok(ts) => {
                 self.analyze_shims(&ts);
-                let tools = ts
-                    .list_current_versions()
-                    .into_iter()
-                    .map(
-                        |(forge, version)| match forge.is_version_installed(&version) {
-                            true => version.to_string(),
-                            false => format!("{version} (missing)"),
-                        },
-                    )
-                    .collect::<Vec<String>>()
-                    .join("\n");
-
-                miseprintln!("{}\n{}\n", style("toolset:").bold(), indent(tools))?;
+                self.analyze_toolset(&ts)?;
             }
             Err(err) => self.checks.push(format!("failed to load toolset: {}", err)),
         }
 
+        Ok(())
+    }
+
+    fn analyze_toolset(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let tools = ts
+            .list_current_versions()
+            .into_iter()
+            .map(|(f, tv)| match f.is_version_installed(&tv) {
+                true => (tv.to_string(), style::nstyle("")),
+                false => (tv.to_string(), style::ndim("(missing)")),
+            })
+            .collect_vec();
+        let max_tool_len = tools
+            .iter()
+            .map(|(t, _)| t.len())
+            .max()
+            .unwrap_or(0)
+            .min(20);
+        let tools = tools
+            .into_iter()
+            .map(|(t, s)| format!("{}  {s}", pad_str(&t, max_tool_len, Alignment::Left, None)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        section("toolset", tools)?;
         Ok(())
     }
 
@@ -164,48 +169,61 @@ fn shims_on_path() -> bool {
     env::PATH.contains(&*dirs::SHIMS)
 }
 
+fn yn(b: bool) -> String {
+    if b {
+        style("yes").green().to_string()
+    } else {
+        style("no").red().to_string()
+    }
+}
+
 fn mise_dirs() -> String {
-    let mut s = style("mise dirs:\n").bold().to_string();
-    s.push_str(&format!("  data: {}\n", dirs::DATA.to_string_lossy()));
-    s.push_str(&format!("  config: {}\n", dirs::CONFIG.to_string_lossy()));
-    s.push_str(&format!("  cache: {}\n", dirs::CACHE.to_string_lossy()));
-    s.push_str(&format!("  state: {}\n", dirs::STATE.to_string_lossy()));
-    s.push_str(&format!("  shims: {}\n", dirs::SHIMS.to_string_lossy()));
-    s
+    [
+        ("data", &*dirs::DATA),
+        ("config", &*dirs::CONFIG),
+        ("cache", &*dirs::CACHE),
+        ("state", &*dirs::STATE),
+        ("shims", &dirs::SHIMS.as_path()),
+    ]
+    .iter()
+    .map(|(k, p)| format!("{k}: {}", display_path(p)))
+    .join("\n")
 }
 
 fn mise_env_vars() -> String {
     let vars = env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .collect::<Vec<(String, String)>>();
-    let mut s = style("mise environment variables:\n").bold().to_string();
     if vars.is_empty() {
-        s.push_str("  (none)\n");
+        return "(none)".to_string();
     }
-    for (k, v) in vars {
-        s.push_str(&format!("  {}={}\n", k, v));
-    }
-    s
+    vars.iter().map(|(k, v)| format!("{k}={v}")).join("\n")
 }
 
 fn render_config_files(config: &Config) -> String {
-    let mut s = style("config files:\n").bold().to_string();
-    for f in config.config_files.keys().rev() {
-        s.push_str(&format!("  {}\n", display_path(f)));
-    }
-    s
+    config
+        .config_files
+        .keys()
+        .rev()
+        .map(display_path)
+        .join("\n")
 }
 
 fn render_plugins() -> String {
-    let mut s = style("plugins:\n").bold().to_string();
+    let mut s = vec![];
     let plugins = forge::list()
         .into_iter()
         .filter(|p| p.is_installed())
         .collect::<Vec<_>>();
-    let max_plugin_name_len = plugins.iter().map(|p| p.id().len()).max().unwrap_or(0) + 2;
+    let max_plugin_name_len = plugins
+        .iter()
+        .map(|p| p.id().len())
+        .max()
+        .unwrap_or(0)
+        .min(40);
     for p in plugins {
         let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
-        let si = match p.get_plugin_type() {
+        let extra = match p.get_plugin_type() {
             PluginType::External => {
                 let git = Git::new(dirs::PLUGINS.join(p.id()));
                 match git.get_remote_url() {
@@ -213,36 +231,29 @@ fn render_plugins() -> String {
                         let sha = git
                             .current_sha_short()
                             .unwrap_or_else(|_| "(unknown)".to_string());
-                        format!("  {padded_name} {url}#{sha}\n")
+                        format!("{url}#{sha}")
                     }
-                    None => format!("  {padded_name}\n"),
+                    None => "".to_string(),
                 }
             }
-            PluginType::Core => format!("  {padded_name} (core)\n"),
+            PluginType::Core => "(core)".to_string(),
         };
-        s.push_str(&si);
+        s.push(format!("{padded_name}  {}", style::ndim(extra)));
     }
-    s
-}
-
-fn mise_version() -> String {
-    let mut s = style("mise version:\n").bold().to_string();
-    s.push_str(&format!("  {}\n", *VERSION));
-    s
+    s.join("\n")
 }
 
 fn build_info() -> String {
-    let mut s = style("build:\n").bold().to_string();
-    s.push_str(&format!("  Target: {}\n", built_info::TARGET));
-    s.push_str(&format!("  Features: {}\n", built_info::FEATURES_STR));
-    s.push_str(&format!("  Built: {}\n", built_info::BUILT_TIME_UTC));
-    s.push_str(&format!("  Rust Version: {}\n", built_info::RUSTC_VERSION));
-    s.push_str(&format!("  Profile: {}\n", built_info::PROFILE));
-    s
+    let mut s = vec![];
+    s.push(format!("Target: {}", built_info::TARGET));
+    s.push(format!("Features: {}", built_info::FEATURES_STR));
+    s.push(format!("Built: {}", built_info::BUILT_TIME_UTC));
+    s.push(format!("Rust Version: {}", built_info::RUSTC_VERSION));
+    s.push(format!("Profile: {}", built_info::PROFILE));
+    s.join("\n")
 }
 
 fn shell() -> String {
-    let mut s = style("shell:\n").bold().to_string();
     match ShellType::load().map(|s| s.to_string()) {
         Some(shell) => {
             let shell_cmd = if env::SHELL.ends_with(shell.as_str()) {
@@ -253,17 +264,15 @@ fn shell() -> String {
             let version = cmd!(shell_cmd, "--version")
                 .read()
                 .unwrap_or_else(|e| format!("failed to get shell version: {}", e));
-            let out = format!("{}\n{}\n", shell_cmd, version);
-            s.push_str(&indent(out));
+            format!("{shell_cmd}\n{version}")
         }
-        None => s.push_str("  (unknown)\n"),
+        None => "(unknown)".to_string(),
     }
-    s
 }
 
-fn indent(s: String) -> String {
+fn indent_by<S: Display>(s: S, ind: &'static str) -> String {
     let mut out = String::new();
-    write!(indented(&mut out).with_str("  "), "{}", s).unwrap();
+    write!(indented(&mut out).with_str(ind), "{s}").unwrap();
     out
 }
 
@@ -274,3 +283,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     [WARN] plugin node is not installed
 "#
 );
+
+fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "))?;
+    Ok(())
+}
+
+fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    miseprintln!("{}: {body}", style(header).bold())?;
+    Ok(())
+}
