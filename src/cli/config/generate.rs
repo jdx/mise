@@ -71,7 +71,7 @@ impl ConfigGenerate {
 # # setup a custom alias so you can run `mise use -g node@work` for node-16.x
 # work = '16'
 "#
-            .trim();
+        .trim();
         if let Some(output) = &self.output {
             info!("writing to {}", display_path(output));
             file::write(output, doc)?;

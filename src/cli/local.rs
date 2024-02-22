@@ -301,8 +301,8 @@ mod tests {
     }
 
     fn run_test<T>(test: T)
-        where
-            T: FnOnce() + panic::UnwindSafe,
+    where
+        T: FnOnce() + panic::UnwindSafe,
     {
         let _ = file::remove_file(env::current_dir().unwrap().join(".test.mise.toml"));
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
