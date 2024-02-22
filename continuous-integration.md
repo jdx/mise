@@ -66,7 +66,7 @@ curl https://mise.run | sh
 export PATH="$HOME/.local/bin:$PATH"
 
 mise install # Installs the tools in .mise.toml
-eval "$(mise activate bash --shims)" # Addds the activated tools to $PATH
+eval "$(mise activate bash --shims)" # Adds the activated tools to $PATH
 
 swiftlint {args}
 ```
