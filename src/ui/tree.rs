@@ -72,7 +72,7 @@ fn print_tree_item<T: TreeItem>(
 ) -> std::io::Result<()> {
     miseprint!("{}", prefix)?;
     item.write_self()?;
-    miseprintln!("")?;
+    miseprintln!("");
 
     if level < u32::MAX {
         let children = item.children();

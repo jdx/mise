@@ -2,12 +2,11 @@
 #[macro_export]
 macro_rules! miseprintln {
     () => {
-        miseprint!("\n")
+        miseprint!("\n")?;
     };
     ($($arg:tt)*) => {{
         let mut stdout = $crate::output::tests::STDOUT.lock().unwrap();
         stdout.push(format!($($arg)*));
-        std::io::Result::Ok(())
     }}
 }
 
@@ -15,10 +14,10 @@ macro_rules! miseprintln {
 #[macro_export]
 macro_rules! miseprintln {
     () => {
-        calm_io::stdoutln!()
+        calm_io::stdoutln!()?;
     };
     ($($arg:tt)*) => {{
-        calm_io::stdoutln!($($arg)*)
+        calm_io::stdoutln!($($arg)*)?;
     }}
 }
 

@@ -56,7 +56,7 @@ impl Where {
             .map(|tvr| tvr.resolve(plugin.as_ref(), Default::default(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
-                miseprintln!("{}", tv.install_path().to_string_lossy())?;
+                miseprintln!("{}", tv.install_path().to_string_lossy());
                 Ok(())
             }
             _ => Err(VersionNotInstalled(

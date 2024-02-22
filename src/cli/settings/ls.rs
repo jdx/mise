@@ -26,16 +26,16 @@ impl SettingsLs {
         if self.keys {
             return self.print_keys(&settings);
         }
-        miseprintln!("{}", settings)?;
+        miseprintln!("{}", settings);
         Ok(())
     }
 
     fn print_keys(&self, settings: &toml::Table) -> Result<()> {
         for (k, v) in settings {
-            miseprintln!("{k}")?;
+            miseprintln!("{k}");
             if let toml::Value::Table(t) = v {
                 for (subkey, _) in t {
-                    miseprintln!("{k}.{subkey}")?;
+                    miseprintln!("{k}.{subkey}");
                 }
             }
         }

@@ -49,7 +49,7 @@ impl Envrc {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 
-        miseprintln!("{}", envrc_path.to_string_lossy())?;
+        miseprintln!("{}", envrc_path.to_string_lossy());
         Ok(())
     }
 }

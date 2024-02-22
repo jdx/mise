@@ -48,7 +48,7 @@ impl TasksEdit {
             file::make_executable(file)?;
         }
         if self.path {
-            miseprintln!("{}", file.display())?;
+            miseprintln!("{}", file.display());
         } else {
             cmd!(&*env::EDITOR, &file).run()?;
         }

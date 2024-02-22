@@ -33,7 +33,7 @@ impl SyncPython {
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
         for v in sorted(subdirs) {
             python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
-            miseprintln!("Synced python@{} from pyenv", v)?;
+            miseprintln!("Synced python@{} from pyenv", v);
         }
 
         config.rebuild_shims_and_runtime_symlinks()
