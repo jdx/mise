@@ -236,7 +236,7 @@ fn render_plugins() -> String {
                     None => "".to_string(),
                 }
             }
-            PluginType::Core => format!("(core)"),
+            PluginType::Core => "(core)".to_string(),
         };
         s.push(format!("{padded_name}  {}", style::ndim(extra)));
     }

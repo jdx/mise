@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn test_display_path() {
         let path = dirs::HOME.join("cwd");
-        assert_eq!(display_path(&path), "~/cwd");
+        assert_eq!(display_path(path), "~/cwd");
 
         let path = Path::new("/tmp")
             .join(dirs::HOME.deref().strip_prefix("/").unwrap())

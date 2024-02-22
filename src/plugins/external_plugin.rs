@@ -180,7 +180,7 @@ impl ExternalPlugin {
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);
-            eyre!("Failed to run {}", display_path(&script))
+            eyre!("Failed to run {}", display_path(script))
         })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
