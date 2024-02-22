@@ -373,7 +373,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn get_program(&self) -> String {
-        display_path(&PathBuf::from(self.cmd.get_program()))
+        display_path(PathBuf::from(self.cmd.get_program()))
     }
 
     fn get_args(&self) -> Vec<String> {

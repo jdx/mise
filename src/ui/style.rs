@@ -67,3 +67,11 @@ pub fn nunderline<D>(val: D) -> StyledObject<D> {
 pub fn nyellow<D>(val: D) -> StyledObject<D> {
     nstyle(val).yellow()
 }
+
+pub fn nred<D>(val: D) -> StyledObject<D> {
+    nstyle(val).red()
+}
+
+pub fn ndim<D>(val: D) -> StyledObject<D> {
+    nstyle(val).dim()
+}

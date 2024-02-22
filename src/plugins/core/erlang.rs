@@ -60,7 +60,7 @@ impl ErlangPlugin {
     }
 
     fn install_kerl(&self) -> Result<()> {
-        debug!("Installing kerl to {}", display_path(&self.kerl_path()));
+        debug!("Installing kerl to {}", display_path(self.kerl_path()));
         HTTP_FETCH.download_file(
             format!("https://raw.githubusercontent.com/kerl/kerl/{KERL_VERSION}/kerl"),
             &self.kerl_path(),
