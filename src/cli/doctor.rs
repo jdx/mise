@@ -185,9 +185,9 @@ fn mise_dirs() -> String {
         ("state", &*dirs::STATE),
         ("shims", &dirs::SHIMS.as_path()),
     ]
-        .iter()
-        .map(|(k, p)| format!("{k}: {}", display_path(p)))
-        .join("\n")
+    .iter()
+    .map(|(k, p)| format!("{k}: {}", display_path(p)))
+    .join("\n")
 }
 
 fn mise_env_vars() -> String {

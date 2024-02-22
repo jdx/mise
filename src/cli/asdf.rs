@@ -44,7 +44,7 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
             all: false,
             plugin: args.get(3).map(|s| s.parse()).transpose()?,
         }
-            .run();
+        .run();
     }
     let ts = ToolsetBuilder::new().build(config)?;
     let mut versions = ts.list_installed_versions()?;

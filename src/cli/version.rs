@@ -23,7 +23,7 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
         "aarch64" => "arm64",
         _ => std::env::consts::ARCH,
     }
-        .to_string()
+    .to_string()
 });
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
