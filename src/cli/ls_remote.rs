@@ -59,7 +59,7 @@ impl LsRemote {
         };
 
         for version in versions {
-            miseprintln!("{}", version)?;
+            miseprintln!("{}", version);
         }
 
         Ok(())
@@ -78,7 +78,7 @@ impl LsRemote {
             .collect::<Vec<_>>();
         for (plugin, versions) in versions {
             for v in versions {
-                miseprintln!("{}@{v}", plugin)?;
+                miseprintln!("{}@{v}", plugin);
             }
         }
         Ok(())

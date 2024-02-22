@@ -55,7 +55,7 @@ impl Set {
                 .collect::<Vec<_>>();
             let mut table = tabled::Table::new(rows);
             table::default_style(&mut table, false);
-            miseprintln!("{table}")?;
+            miseprintln!("{table}");
             return Ok(());
         }
 
@@ -76,7 +76,7 @@ impl Set {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
                 match config.env()?.get(key) {
-                    Some(value) => miseprintln!("{value}")?,
+                    Some(value) => miseprintln!("{value}"),
                     None => bail!("Environment variable {key} not found"),
                 }
                 return Ok(());

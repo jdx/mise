@@ -23,7 +23,7 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
         "aarch64" => "arm64",
         _ => std::env::consts::ARCH,
     }
-    .to_string()
+        .to_string()
 });
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
@@ -61,7 +61,7 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
 }
 
 fn show_version() -> std::io::Result<()> {
-    miseprintln!("{}", *VERSION)?;
+    miseprintln!("{}", *VERSION);
     show_latest();
     Ok(())
 }

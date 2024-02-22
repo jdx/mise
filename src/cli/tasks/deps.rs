@@ -127,7 +127,7 @@ impl TasksDeps {
                 &|_, _| String::new(),
                 &|_, nr| format!("label = \"{}\"", nr.1.name),
             ),
-        )?;
+        );
         Ok(())
     }
 

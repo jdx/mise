@@ -99,7 +99,7 @@ pub fn local(
     let settings = Settings::try_get()?;
     let mut cf = config_file::parse_or_init(path)?;
     if show_path {
-        miseprintln!("{}", path.display())?;
+        miseprintln!("{}", path.display());
         return Ok(());
     }
 
@@ -111,7 +111,7 @@ pub fn local(
             .iter()
             .map(|r| style(r).blue().for_stderr().to_string())
             .join(" ");
-        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path))?;
+        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
 
     if !runtime.is_empty() {
@@ -122,7 +122,7 @@ pub fn local(
         let pin = pin || (settings.asdf_compat && !fuzzy);
         cf.add_runtimes(&runtimes, pin)?;
         let tools = runtimes.iter().map(|t| t.style()).join(" ");
-        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path))?;
+        miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
 
     if !runtime.is_empty() || remove.is_some() {
@@ -301,8 +301,8 @@ mod tests {
     }
 
     fn run_test<T>(test: T)
-    where
-        T: FnOnce() + panic::UnwindSafe,
+        where
+            T: FnOnce() + panic::UnwindSafe,
     {
         let _ = file::remove_file(env::current_dir().unwrap().join(".test.mise.toml"));
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");

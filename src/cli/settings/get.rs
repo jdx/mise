@@ -30,7 +30,7 @@ impl SettingsGet {
                 bail!("Unknown setting: {}", self.setting);
             }
         }
-        miseprintln!("{}", value)?;
+        miseprintln!("{}", value);
 
         Ok(())
     }

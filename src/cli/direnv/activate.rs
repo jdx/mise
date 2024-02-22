@@ -21,7 +21,7 @@ impl DirenvActivate {
                   direnv_load mise direnv exec
                 }}
             "#}
-        )?;
+        );
 
         Ok(())
     }

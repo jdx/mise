@@ -54,7 +54,7 @@ impl Current {
                         .map(|v| v.version.to_string())
                         .collect::<Vec<_>>()
                         .join(" ")
-                )?;
+                );
             }
             None => {
                 warn!(
@@ -88,7 +88,7 @@ impl Current {
                     .map(|v| v.version.to_string())
                     .collect::<Vec<_>>()
                     .join(" ")
-            )?;
+            );
         }
         Ok(())
     }
