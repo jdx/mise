@@ -343,8 +343,9 @@
           "properties": {
             "missing_tools": {
               "description": "display warning when a tool is not installed",
-              "type": "boolean",
-              "default": true
+              "type": "string"
+              "enum": ["if_other_versions_installed", "always", "never"],
+              "default": "if_other_versions_installed"
             },
             "show_env": {
               "description": "display configured mise environment variables",
