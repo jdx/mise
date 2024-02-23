@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use indoc::formatdoc;
-
 use crate::config::Settings;
 use crate::shell::Shell;
+use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 #[derive(Default)]
 pub struct Fish {}
@@ -107,20 +107,20 @@ impl Shell for Fish {
         "#}
     }
 
-    fn set_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
+    fn set_env(&self, key: &str, v: &str) -> String {
+        let k = escape(key.into());
+        let v = escape(v.into());
         format!("set -gx {k} {v}\n")
     }
 
-    fn prepend_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
+    fn prepend_env(&self, key: &str, v: &str) -> String {
+        let k = escape(key.into());
+        let v = escape(v.into());
         format!("set -gx {k} {v} ${k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
-        format!("set -e {k}\n", k = shell_escape::unix::escape(k.into()))
+        format!("set -e {k}\n", k = escape(k.into()))
     }
 }
 

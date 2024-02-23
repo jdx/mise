@@ -343,6 +343,30 @@ cmd "doctor" help="Check mise installation for possible problems" {
     [WARN] plugin node is not installed
 "
 }
+cmd "en" help="[experimental] starts a new shell with the mise environment built from the current configuration" {
+    long_help r"[experimental] starts a new shell with the mise environment built from the current configuration
+
+This is an alternative to `mise activate` that allows you to explicitly start a mise session.
+It will have the tools and environment variables in the configs loaded.
+Note that changing directories will not update the mise environment."
+    after_long_help r#"Examples:
+
+    $ mise en .
+    $ node -v
+    v20.0.0
+
+    Skip loading bashrc:
+    $ mise en -s "bash --norc"
+
+    Skip loading zshrc:
+    $ mise en -s "zsh -f"
+"#
+    flag "-s --shell" help="Shell to start" {
+        long_help "Shell to start\n\nDefaults to $SHELL"
+        arg "<SHELL>"
+    }
+    arg "[DIR]" help="Directory to start the shell in" default="."
+}
 cmd "env" help="Exports env vars to activate mise a single time" {
     alias "e"
     long_help r"Exports env vars to activate mise a single time

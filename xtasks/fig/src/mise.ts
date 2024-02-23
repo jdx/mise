@@ -836,6 +836,36 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "en"
+            ],
+            "description": "[experimental] starts a new shell with the mise environment built from the current configuration",
+            "options": [
+                {
+                    "name": [
+                        "-s",
+                        "--shell"
+                    ],
+                    "description": "Shell to start",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                }
+            ],
+            "args": [
+                {
+                    "name": "dir",
+                    "description": "Directory to start the shell in",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "template": "folders"
+                }
+            ]
+        },
+        {
+            "name": [
                 "env",
                 "e"
             ],
