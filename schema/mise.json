@@ -343,7 +343,7 @@
           "properties": {
             "missing_tools": {
               "description": "display warning when a tool is not installed",
-              "type": "string"
+              "type": "string",
               "enum": ["if_other_versions_installed", "always", "never"],
               "default": "if_other_versions_installed"
             },
