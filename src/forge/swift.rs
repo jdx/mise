@@ -32,20 +32,16 @@ impl Forge for SwiftForge {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+        // TODO
+        // 1. Check that the Swift Package Manager is installed.
+        // 2. Clone the package into a temporary directory.
+        // 3. Use `swift build` there to compile the tool.
+        // 4. Copy the right artifacts to the install path.
+        //      Note that as part of this, we need to ensure we copy any dynamic frameworks that are required for the CLI to function.
+        //      We can start simple, and copy all the dynamic frameworks and libraries from the build directory.
         let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental("swift backend")?;
-
-        CmdLineRunner::new("npm")
-            .arg("install")
-            .arg("-g")
-            .arg(&format!("{}@{}", self.name(), ctx.tv.version))
-            .arg("--prefix")
-            .arg(ctx.tv.install_path())
-            .with_pr(ctx.pr.as_ref())
-            .envs(config.env()?)
-            .prepend_path(ctx.ts.list_paths())?
-            .execute()?;
 
         Ok(())
     }
