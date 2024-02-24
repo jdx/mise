@@ -16,7 +16,7 @@ pub struct SwiftForge {
 
 impl Forge for SwiftForge {
     fn get_type(&self) -> ForgeType {
-        ForgeType::Npm
+        ForgeType::Swift
     }
 
     fn fa(&self) -> &ForgeArg {
