@@ -7,12 +7,14 @@ export MISE_EXPERIMENTAL=1
 export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
 
 cat >.e2e.mise.toml <<EOF
+[env._.python]
+venv = {path = "{{env.MISE_DATA_DIR}}/venv", create=true}
 [tools]
-python = {version = "{{exec(command='echo 3.12.0')}}", virtualenv="{{env.MISE_DATA_DIR}}/venv"}
+python = "{{exec(command='echo 3.12.0')}}"
 EOF
 
 mise i
-mise x -- python -m venv "$MISE_DATA_DIR/venv"
+#mise x -- python -m venv "$MISE_DATA_DIR/venv"
 assert_contains "mise x python@3.12.0 -- python --version" "Python 3.12.0"
 assert_contains "mise env -s bash | grep VIRTUAL_ENV" "$MISE_DATA_DIR/venv"
 assert "mise x -- which python" "$MISE_DATA_DIR/venv/bin/python"

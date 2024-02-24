@@ -426,6 +426,18 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            struct EnvDirectivePythonVenv {
+                                path: PathBuf,
+                                create: bool,
+                            }
+
+                            #[derive(Deserialize, Default)]
+                            #[serde(deny_unknown_fields)]
+                            struct EnvDirectivePython {
+                                #[serde(default)]
+                                venv: Option<EnvDirectivePythonVenv>,
+                            }
+
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
@@ -435,7 +447,77 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 file: Vec<PathBuf>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 source: Vec<PathBuf>,
+                                #[serde(default)]
+                                python: EnvDirectivePython,
                             }
+
+                            impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                                where
+                                    D: Deserializer<'de>,
+                                {
+                                    struct EnvDirectivePythonVenvVisitor;
+
+                                    impl<'de> Visitor<'de> for EnvDirectivePythonVenvVisitor {
+                                        type Value = EnvDirectivePythonVenv;
+                                        fn expecting(
+                                            &self,
+                                            formatter: &mut Formatter,
+                                        ) -> std::fmt::Result
+                                        {
+                                            formatter.write_str("python venv directive")
+                                        }
+
+                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                                        where
+                                            E: de::Error,
+                                        {
+                                            Ok(EnvDirectivePythonVenv {
+                                                path: v.into(),
+                                                create: false,
+                                            })
+                                        }
+
+                                        fn visit_map<M>(
+                                            self,
+                                            mut map: M,
+                                        ) -> Result<Self::Value, M::Error>
+                                        where
+                                            M: de::MapAccess<'de>,
+                                        {
+                                            let mut path = None;
+                                            let mut create = false;
+                                            while let Some(key) = map.next_key::<String>()? {
+                                                match key.as_str() {
+                                                    "path" => {
+                                                        path = Some(map.next_value()?);
+                                                    }
+                                                    "create" => {
+                                                        create = map.next_value()?;
+                                                    }
+                                                    _ => {
+                                                        return Err(de::Error::unknown_field(
+                                                            &key,
+                                                            &["path", "create"],
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            let path = path
+                                                .ok_or_else(|| de::Error::missing_field("path"))?;
+                                            Ok(EnvDirectivePythonVenv { path, create })
+                                        }
+                                    }
+
+                                    const FIELDS: &[&str] = &["path", "create"];
+                                    deserializer.deserialize_struct(
+                                        "PythonVenv",
+                                        FIELDS,
+                                        EnvDirectivePythonVenvVisitor,
+                                    )
+                                }
+                            }
+
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
                             for path in directives.path {
@@ -446,6 +528,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
                             for source in directives.source {
                                 env.push(EnvDirective::Source(source));
+                            }
+                            if let Some(venv) = directives.python.venv {
+                                env.push(EnvDirective::PythonVenv {
+                                    path: venv.path,
+                                    create: venv.create,
+                                });
                             }
                         }
                         _ => {

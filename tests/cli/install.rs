@@ -196,12 +196,12 @@ fn test_python() -> Result<()> {
 fn python_config_fixture() -> File {
     File {
         path: ".mise.toml".into(),
-        content: toml::toml!{
-            [settings]
-            python_venv_auto_create = true
+        content: toml::toml! {
+            [env]
+            "_".python.venv = {path="{{env.MISE_DATA_DIR}}/venv", create=true}
 
             [tools]
-            python = {version = "{{exec(command='echo 3.12.0')}}", virtualenv="{{env.MISE_DATA_DIR}}/venv"}
+            python = "{{exec(command='echo 3.12.0')}}"
         }.to_string(),
     }
 }

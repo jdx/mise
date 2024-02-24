@@ -249,8 +249,6 @@ impl PythonPlugin {
                 } else {
                     warn!(
                         "no venv found at: {p}\n\n\
-                        To have mise automatically create virtualenvs, run:\n\
-                        mise settings set python_venv_auto_create true\n\n\
                         To create a virtualenv manually, run:\n\
                         python -m venv {p}",
                         p = display_path(&virtualenv)
