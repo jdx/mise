@@ -86,8 +86,8 @@ lint:
 lint-fix:
     cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
     cargo fmt --all
-    mise x shellcheck@latest -- shellcheck -x {{ scripts }}
-    mise x shfmt@latest -- shfmt -w {{ scripts }}
+    mise x -y shellcheck@latest -- shellcheck -x {{ scripts }}
+    mise x -y shfmt@latest -- shfmt -w {{ scripts }}
     just --unstable --fmt
     MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
     MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint --fix .
