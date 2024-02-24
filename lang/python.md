@@ -1,9 +1,11 @@
 # Python
 
-The following are instructions for using the python mise core plugin. The core plugin will be used so long as no plugin is manually
+The following are instructions for using the python mise core plugin. The core plugin will be used
+so long as no plugin is manually
 installed named "python" using `mise plugins install python [GIT_URL]`.
 
-The code for this is inside of the mise repository at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
+The code for this is inside of the mise repository
+at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
 
 ## Usage
 
@@ -26,7 +28,8 @@ $ python3.11 -V
 
 ## Configuration
 
-`python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
+`python-build` already has
+a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
 additional to that python in mise has a few extra configuration variables.
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
@@ -45,7 +48,8 @@ The pyenv repo to get python-build from.
 * Env: `MISE_PYTHON_COMPILE`
 * Default: `false`
 
-Set to `true` to always use python-build instead of [precompiled binaries](#precompiled-python-binaries).
+Set to `true` to always use python-build instead
+of [precompiled binaries](#precompiled-python-binaries).
 
 ### `python_precompiled_os`
 
@@ -61,16 +65,10 @@ Specify the OS to use for precompiled binaries.
 * Env: `MISE_PYTHON_PRECOMPILED_ARCH`
 * Default: `"x86_64_v3" | "aarch64"`
 
-Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to
-`"x86_64"` for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
-
-### `python_venv_auto_create`
-
-* Type: `bool`
-* Env: `MISE_PYTHON_VENV_AUTO_CREATE`
-* Default: `false`
-
-Set to `true` to create virtualenv's automatically when they do not exist.
+Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this
+to
+`"x86_64"` for the most compatible binaries.
+See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
 
 ### `python_patch_url`
 
@@ -96,36 +94,47 @@ Packages list to install with pip after installing a Python version.
 
 ## Default Python packages
 
-mise can automatically install a default set of Python packages with pip right after installing a Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
+mise can automatically install a default set of Python packages with pip right after installing a
+Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists
+one package per line, for example:
 
 ```text
 ansible
 pipenv
 ```
 
-You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
+You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE`
+variable.
 
 ## Precompiled python binaries
 
-By default, mise will download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
+By default, mise will
+download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
 for python instead of compiling them with python-build. This makes installing python much faster.
 
-In addition to being faster, it also means you don't have to install all of the system dependencies either.
+In addition to being faster, it also means you don't have to install all of the system dependencies
+either.
 
-That said, there are some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
+That said, there are
+some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
 with the precompiled binaries to be aware of.
 
 If you'd like to disable these binaries, set [`python_compile`](#python_compile) to `true`.
 
 These binaries may not work on older CPUs however you may opt into binaries which
 are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
-a different version. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information
+a different version. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for
+more information
 on this option. Set it to "x86_64" for the most compatible binaries.
 
 ## python-build
 
-Optionally, mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to compile python runtimes,
-you need to ensure its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python with
+Optionally, mise
+uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv)
+to compile python runtimes,
+you need to ensure
+its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed
+before installing python with
 python-build.
 
 ## Troubleshooting errors with Homebrew
@@ -166,17 +175,20 @@ CFLAGS="-I$(brew --prefix openssl)/include" \
 brew link pkg-config
 ```
 
-## Automatic virtualenv activation <Badge type="warning" text="experimental" />
+## Automatic virtualenv activation
 
 Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
 one of the following:
 
 ```toml
 [tools]
-python = {version="3.11", virtualenv=".venv"} # relative to this file's directory
-python = {version="3.11", virtualenv="/root/.venv"} # can be absolute
-python = {version="3.11", virtualenv="{{env.HOME}}/.cache/venv/myproj"} # can use templates
+python = "3.11" # [optional] will be used for the venv
+
+[env]
+_.python.venv = ".venv" # relative to this file's directory
+_.python.venv = "/root/.venv" # can be absolute
+_.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
+_.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
 ```
 
-The venv will need to be created manually with `python -m venv /path/to/venv`.
-Alternatively, set `MISE_PYTHON_VENV_AUTO_CREATE` to `true` to create virtualenv's automatically when they do not exist.
+The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
