@@ -114,7 +114,7 @@ exec = "0.3.1"
 built = { version = "0.7.1", features = ["chrono", "git2"] }
 
 [dev-dependencies]
-assert_cmd = "2.0.13"
+assert_cmd = "2.0.14"
 ctor = "0.2.6"
 insta = { version = "1.34.0", features = ["filters", "json"] }
 predicates = "3.1.0"
