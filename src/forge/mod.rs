@@ -29,6 +29,7 @@ use crate::{dirs, file};
 mod cargo;
 mod go;
 mod npm;
+mod swift;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
@@ -41,6 +42,7 @@ pub enum ForgeType {
     Cargo,
     Go,
     Npm,
+    Swift
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
@@ -80,6 +82,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
+                ForgeType::Swift => Arc::new(swift::SwiftForge::new(fa.clone())),
             })
             .clone()
     }
