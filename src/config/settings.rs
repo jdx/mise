@@ -102,8 +102,6 @@ pub struct Settings {
     pub python_precompiled_os: Option<String>,
     #[config(env = "MISE_PYENV_REPO", default = "https://github.com/pyenv/pyenv.git")]
     pub python_pyenv_repo: String,
-    #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
-    pub python_venv_auto_create: bool,
     #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
     #[config(env = "MISE_SHORTHANDS_FILE")]
@@ -135,6 +133,8 @@ pub struct Settings {
     pub trace: bool,
     #[config(env = "MISE_LOG_LEVEL", default = "info")]
     pub log_level: String,
+    #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
+    pub python_venv_auto_create: bool,
 }
 
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -349,8 +349,18 @@ impl Settings {
     }
 
     pub fn hidden_configs() -> &'static HashSet<&'static str> {
-        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
-            Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
+        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+            [
+                "ci",
+                "cd",
+                "debug",
+                "env_file",
+                "trace",
+                "log_level",
+                "python_venv_auto_create",
+            ]
+            .into()
+        });
         &HIDDEN_CONFIGS
     }
 
