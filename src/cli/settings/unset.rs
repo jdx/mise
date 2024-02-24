@@ -67,7 +67,6 @@ mod tests {
         python_compile = false
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
-        python_venv_auto_create = false
         quiet = false
         raw = false
         trusted_config_paths = []

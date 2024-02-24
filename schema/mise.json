@@ -104,6 +104,33 @@
                   }
                 }
               ]
+            },
+            "python": {
+              "type": "object",
+              "description": "python environment",
+              "properties": {
+                "venv": {
+                  "oneOf": [
+                    {"description": "path to python virtual environment to use", "type": "string"},
+                    {
+                      "description": "virtualenv options",
+                      "type": "object",
+                      "required": ["path"],
+                      "properties": {
+                        "path": {
+                          "description": "path to python virtual environment to use",
+                          "type": "string"
+                        },
+                        "create": {
+                          "description": "create a new virtual environment if one does not exist",
+                          "type": "boolean",
+                          "default": false
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
             }
           }
         }

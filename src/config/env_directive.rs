@@ -1,14 +1,18 @@
-use crate::config::config_file::trust_check;
-use crate::config::Settings;
-use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::file::display_path;
-use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::{dirs, env};
-use eyre::Context;
-use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+
+use eyre::Context;
+use indexmap::IndexMap;
+
+use crate::cmd::CmdLineRunner;
+use crate::config::config_file::trust_check;
+use crate::config::{Config, Settings};
+use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::file::display_path;
+use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::toolset::ToolsetBuilder;
+use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
 pub enum EnvDirective {
@@ -22,6 +26,10 @@ pub enum EnvDirective {
     Path(PathBuf),
     /// run a bash script and apply the resulting env diff
     Source(PathBuf),
+    PythonVenv {
+        path: PathBuf,
+        create: bool,
+    },
 }
 
 impl From<(String, String)> for EnvDirective {
@@ -44,6 +52,13 @@ impl Display for EnvDirective {
             EnvDirective::File(path) => write!(f, "dotenv {}", display_path(path)),
             EnvDirective::Path(path) => write!(f, "path_add {}", display_path(path)),
             EnvDirective::Source(path) => write!(f, "source {}", display_path(path)),
+            EnvDirective::PythonVenv { path, create } => {
+                write!(f, "python venv path={}", display_path(path))?;
+                if *create {
+                    write!(f, " create")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -143,6 +158,53 @@ impl EnvResults {
                         }
                     }
                 }
+                EnvDirective::PythonVenv { path, create } => {
+                    trace!("python venv: {} create={create}", display_path(&path));
+                    trust_check(&source)?;
+                    let venv = r.parse_template(&ctx, &source, path.to_string_lossy().as_ref())?;
+                    let venv = normalize_path(venv.into());
+                    if !venv.exists() && create {
+                        // TODO: the toolset stuff doesn't feel like it's in the right place here
+                        let config = Config::get();
+                        let ts = ToolsetBuilder::new().build(&config)?;
+                        let path = ts
+                            .list_paths()
+                            .into_iter()
+                            .chain(env::split_paths(&env_vars["PATH"]))
+                            .collect::<Vec<_>>();
+                        let cmd = CmdLineRunner::new("python3")
+                            .args(["-m", "venv", &venv.to_string_lossy()])
+                            .envs(&env_vars)
+                            .env(
+                                "PATH",
+                                env::join_paths(&path)?.to_string_lossy().to_string(),
+                            );
+                        if ts
+                            .list_missing_versions()
+                            .iter()
+                            .any(|tv| tv.forge.name == "python")
+                        {
+                            debug!("python not installed, skipping venv creation");
+                        } else {
+                            info!("creating venv at: {}", display_path(&venv));
+                            cmd.execute()?;
+                        }
+                    }
+                    if venv.exists() {
+                        r.env_paths.push(venv.join("bin"));
+                        env.insert(
+                            "VIRTUAL_ENV".into(),
+                            (venv.to_string_lossy().to_string(), Some(source.clone())),
+                        );
+                    } else {
+                        warn!(
+                            "no venv found at: {p}\n\n\
+                            To create a virtualenv manually, run:\n\
+                            python -m venv {p}",
+                            p = display_path(&venv)
+                        );
+                    }
+                }
             };
         }
         for (k, (v, source)) in env {
@@ -173,8 +235,9 @@ impl EnvResults {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_env_path() {
