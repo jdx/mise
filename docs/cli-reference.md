@@ -425,12 +425,12 @@ Options:
 ```text
 Install a tool version
 
-This will install a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
-It won't be used simply by being installed, however.
-For that, you must set up a `.mise.toml`/`.tool-version` file manually or with `mise use`.
-Or you can call a tool version explicitly with `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
+`install` will install a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+Tools are inactive without being enabled, however.
+To enable a tool, set up a `.mise.toml`/`.tool-version` file or `mise use`.
+Another way is to use a tool explicitly with `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 
-Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
+`install` installs tools in parallel, by default. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
 Usage: install [OPTIONS] [TOOL@VERSION]...
 
@@ -452,7 +452,9 @@ Options:
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
   -v, --verbose...
-          Show installation output
+          Show installation output. This argument will print plugins' logs.
+          When plugin downloads assets, mise will show download logs.
+          When plugin configures and compiles tools, mise will show configuration and compilation logs.
 
 Examples:
 
