@@ -22,24 +22,20 @@ nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 [alias.tiny]
 abc = '1'
 
-[tasks.format]
-run = "cargo fmt -- --emit=files"
-
-[tasks.clean]
-run = "cargo clean"
+[tasks]
+format = "cargo fmt -- --emit=files"
+clean = "cargo clean"
+release = "cargo release"
+signal-test = "node ./test/fixtures/signal-test.js"
+e2e = "just test-e2e"
+ci = {depends = [ "format", "build", "test" ]}
+pre-commit = {depends = ["render", "lint"]}
 
 [tasks.build]
 alias = "b"
 run = "cargo build --color always --all-features"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
-
-[tasks.ci]
-depends = [
-    "format",
-    "build",
-    "test"
-]
 
 [tasks."render:usage"]
 depends = ["build"]
@@ -76,22 +72,13 @@ outputs = ["README.md"]
 alias = "render"
 depends = ["render:*"]
 
-[tasks.pre-commit]
-depends = ["render", "lint"]
-
 [tasks.snapshots]
 description = "Update test snapshots"
 run = "cargo insta test --accept --unreferenced delete"
 
-[tasks.release]
-run = "cargo release"
-
 [tasks."lint:fix"]
 alias = "lint-fix"
 run = "just lint-fix"
-
-[tasks.signal-test]
-run = "node ./test/fixtures/signal-test.js"
 
 [tasks.test]
 alias = 't'
@@ -104,8 +91,6 @@ run = [
 run = "cargo test"
 env = { CARGO_TERM_COLOR = "always" }
 
-[tasks."test:e2e"]
-run = "just test-e2e"
 # TODO: make this work when we have task args
 #run = '''
 #set -euo pipefail
