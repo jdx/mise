@@ -111,7 +111,10 @@
               "properties": {
                 "venv": {
                   "oneOf": [
-                    {"description": "path to python virtual environment to use", "type": "string"},
+                    {
+                      "description": "path to python virtual environment to use",
+                      "type": "string"
+                    },
                     {
                       "description": "virtualenv options",
                       "type": "object",
