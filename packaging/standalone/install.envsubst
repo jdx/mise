@@ -44,7 +44,7 @@ get_arch() {
 	musl=""
 	if type ldd >/dev/null 2>/dev/null; then
 		libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
-		if [ -z "$libc" ]; then
+		if [ -n "$libc" ]; then
 			musl="-musl"
 		fi
 	fi
