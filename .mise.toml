@@ -27,9 +27,9 @@ format = "cargo fmt -- --emit=files"
 clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
-e2e = "just test-e2e"
 ci = {depends = [ "format", "build", "test" ]}
 pre-commit = {depends = ["render", "lint"]}
+'test:e2e' = "just test-e2e"
 
 [tasks.build]
 alias = "b"
