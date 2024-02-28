@@ -266,7 +266,7 @@ impl JavaPlugin {
     }
 
     fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v = self.tv_to_java_version(tv);
+        let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let m = self
             .fetch_java_metadata(&release_type)?
@@ -354,7 +354,27 @@ impl Forge for JavaPlugin {
                 .split_once('=')
                 .unwrap_or_default()
                 .1;
-            Ok(version.to_string())
+            if !version.contains('-') {
+                return Ok(version.to_string());
+            }
+            let (version, vendor) = version.rsplit_once('-').unwrap_or_default();
+            let vendor = match vendor {
+                "amzn" => "corretto",
+                "graalce" => "graalvm-community",
+                "librca" => "liberica",
+                "open" => "openjdk",
+                "ms" => "microsoft",
+                "sapmchn" => "sapmachine",
+                "sem" => "semeru-openj9",
+                "tem" => "temurin",
+                _ => vendor, // either same vendor name or unsupported
+            };
+            let mut version = version.split(['+', '-'].as_ref()).collect::<Vec<&str>>()[0];
+            // if vendor is zulu, we can only match the major version
+            if vendor == "zulu" {
+                version = version.split_once('.').unwrap_or_default().0;
+            }
+            Ok(format!("{}-{}", vendor, version))
         } else {
             Ok(contents)
         }

@@ -376,7 +376,7 @@ fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<St
     if query == "latest" {
         query = "[0-9].*";
     }
-    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
     let versions = versions
         .into_iter()
         .filter(|v| {
