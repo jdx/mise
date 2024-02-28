@@ -1,6 +1,5 @@
 set shell := ["bash", "-uc"]
 
-export MISE_DATA_DIR := "/tmp/mise"
 export PATH := env_var_or_default("CARGO_TARGET_DIR", justfile_directory() / "target") / "debug:" + env_var("PATH")
 export RUST_TEST_THREADS := "1"
 
@@ -76,11 +75,11 @@ scripts := "scripts/*.sh e2e/{test_,run_}* e2e/*.sh"
 lint:
     cargo clippy -- -Dwarnings
     cargo fmt --all -- --check
-    mise x shellcheck@latest -- shellcheck -x {{ scripts }}
-    mise x shfmt@latest -- shfmt -d {{ scripts }}
+    mise x -y shellcheck@latest -- shellcheck -x {{ scripts }}
+    mise x -y shfmt@latest -- shfmt -d {{ scripts }}
     just --unstable --fmt --check
-    MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -c $(git ls-files '*.yml' '*.yaml')
-    MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint .
+    MISE_EXPERIMENTAL=1 mise x -y npm:prettier@latest -- prettier -c $(git ls-files '*.yml' '*.yaml')
+    MISE_EXPERIMENTAL=1 mise x -y npm:markdownlint-cli@latest -- markdownlint .
 
 # runs linters but makes fixes when possible
 lint-fix:
@@ -89,5 +88,5 @@ lint-fix:
     mise x -y shellcheck@latest -- shellcheck -x {{ scripts }}
     mise x -y shfmt@latest -- shfmt -w {{ scripts }}
     just --unstable --fmt
-    MISE_EXPERIMENTAL=1 mise x npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
-    MISE_EXPERIMENTAL=1 mise x npm:markdownlint-cli@latest -- markdownlint --fix .
+    MISE_EXPERIMENTAL=1 mise x -y npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
+    MISE_EXPERIMENTAL=1 mise x -y npm:markdownlint-cli@latest -- markdownlint --fix .
