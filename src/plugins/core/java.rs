@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
@@ -18,6 +19,7 @@ use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
+use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash};
@@ -301,6 +303,16 @@ impl Forge for JavaPlugin {
         &self.core.fa
     }
 
+    fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_installed_versions()?;
+        fuzzy_match_filter(versions, query)
+    }
+
+    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions()?;
+        fuzzy_match_filter(versions, query)
+    }
+
     fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
@@ -399,6 +411,27 @@ fn arch() -> &'static str {
     } else {
         &ARCH
     }
+}
+
+fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    let mut query = query;
+    if query == "latest" {
+        query = "[0-9].*";
+    }
+    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+    let versions = versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            query_regex.is_match(v)
+        })
+        .collect();
+    Ok(versions)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
