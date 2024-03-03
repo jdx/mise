@@ -45,10 +45,10 @@ impl Which {
             }
             None => {
                 if self.has_shim(&self.bin_name) {
-                    bail!("{} is an mise bin however it is not currently active. Use `mise use` to activate it in this directory.", self.bin_name)
+                    bail!("{} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory.", self.bin_name)
                 } else {
                     bail!(
-                        "{} is not an mise bin. Perhaps you need to install it first.",
+                        "{} is not a mise bin. Perhaps you need to install it first.",
                         self.bin_name
                     )
                 }
