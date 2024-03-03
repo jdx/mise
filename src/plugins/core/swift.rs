@@ -68,11 +68,12 @@ impl SwiftPlugin {
         //    * When the architecture is x86_64, the {arch} is omitted
         // macOS:
         //  https://download.swift.org/swift-{swift-version}-release/xcode/swift-{swift-version}-RELEASE/swift-{swift-version}-RELEASE-osx.pkg
+        //       Example: https://download.swift.org/swift-5.9.2-release/xcode/swift-5.9.2-RELEASE/swift-5.9.2-RELEASE-osx.pkg
         //  Notes:
         //    * It's distributed as a pkg installer
         let os = os();
         format!(
-            "https://download.swift.org/swift-{}-release/{}/swift-{}-RELEASE/swift-{}-RELEASE-{}.{}",
+            "https://download.swift.org/swift-{}-release/{}/swift-{}-RELEASE/swift-{}-RELEASE-{}{}.{}",
             tv.version,
             match os.as_str() {
                 "osx" => "xcode".to_string(), // Apple uses "xcode" instead of "osx" for this path segment
@@ -81,6 +82,10 @@ impl SwiftPlugin {
             tv.version,
             tv.version,
             os,
+            match os.as_str() {
+                "osx" => "",
+                _ => arch(),
+            },
             match os.as_str() {
                 "osx" => "pkg",
                 _ => "tar.gz",
@@ -110,7 +115,7 @@ impl SwiftPlugin {
             .arg("-pkg")
             .arg(download_path)
             .arg("-target")
-            .arg(&bin_directory)
+            .arg("CurrentUserHomeDirectory")
             .execute()?;
         } else {
             file::unzip(download_path, &ctx.tv.download_path())?;
@@ -202,13 +207,9 @@ fn os() -> String {
 
 fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
-        if cfg!(target_feature = "avx2") {
-            "x64"
-        } else {
-            "x64-baseline"
-        }
+        ""
     } else if cfg!(target_arch = "aarch64") || cfg!(target_arch = "arm64") {
-        "aarch64"
+        "arm64"
     } else {
         &ARCH
     }

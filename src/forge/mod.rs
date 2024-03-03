@@ -29,7 +29,6 @@ use crate::{dirs, file};
 mod cargo;
 mod go;
 mod npm;
-mod swift;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
