@@ -33,3 +33,9 @@ sudo ln -s ~/.local/share/mise/installs/java/openjdk-20/Contents /Library/Java/J
 ```
 
 > Note: Not all distributions of the Java SDK support this integration (e.g liberica).
+
+## Legacy version files
+
+The Java core plugin supports the legacy version files `.java-version` and `.sdkmanrc`.
+
+For `.sdkmanrc` files, mise will try to map the vendor and version to the appropriate version string. For example, the version `20.0.2-tem` will be mapped to `temurin-20.0.2`. Due to Azul's Zulu versioning, the version `11.0.12-zulu` will be mapped to the major version `zulu-11`. Not all vendors available in SDKMAN are supported by mise. The following vendors are NOT supported: `bsg` (Bisheng), `graal` (GraalVM), `nik` (Liberica NIK).
