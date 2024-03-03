@@ -15,6 +15,7 @@ use crate::config::Settings;
 use crate::env;
 use crate::forge::{Forge, ForgeList, ForgeType};
 use crate::http::HTTP_FETCH;
+use crate::plugins::core::swift::SwiftPlugin;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::erlang::ErlangPlugin;
@@ -26,6 +27,7 @@ use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
 mod bun;
+mod swift;
 mod deno;
 mod erlang;
 mod go;
@@ -36,6 +38,7 @@ mod ruby;
 
 pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Forge>> = vec![
+        Arc::new(SwiftPlugin::new()),
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
