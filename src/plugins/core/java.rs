@@ -372,6 +372,7 @@ impl Forge for JavaPlugin {
             let (version, vendor) = version.rsplit_once('-').unwrap_or_default();
             let vendor = match vendor {
                 "amzn" => "corretto",
+                "albba" => "dragonwell",
                 "graalce" => "graalvm-community",
                 "librca" => "liberica",
                 "open" => "openjdk",
