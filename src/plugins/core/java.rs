@@ -228,8 +228,8 @@ impl JavaPlugin {
                 "{}",
                 formatdoc! {r#"
                 To enable macOS integration, run the following commands:
-                sudo mkdir /Library/Java/JavaVirtualMachines/{version}.jdk
-                sudo ln -s {path}/Contents /Library/Java/JavaVirtualMachines/{version}.jdk/Contents
+                sudo mkdir ~/Library/Java/JavaVirtualMachines/{version}.jdk
+                sudo ln -s {path}/Contents ~/Library/Java/JavaVirtualMachines/{version}.jdk/Contents
                 "#,
                     version = tv.version,
                     path = tv.install_path().display(),
