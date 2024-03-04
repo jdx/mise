@@ -39,7 +39,7 @@ path = "src/main.rs"
 lto = true
 
 [dependencies]
-base64 = "0.21.7"
+base64 = "0.22.0"
 calm_io = "0.1.1"
 chrono = { version = "0.4.34", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.5.1", features = ["env", "derive", "string"] }
