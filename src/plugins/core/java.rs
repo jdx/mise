@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
@@ -18,6 +19,7 @@ use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
+use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash};
@@ -266,7 +268,7 @@ impl JavaPlugin {
     }
 
     fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v = self.tv_to_java_version(tv);
+        let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let m = self
             .fetch_java_metadata(&release_type)?
@@ -299,6 +301,16 @@ impl JavaPlugin {
 impl Forge for JavaPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
+    }
+
+    fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_installed_versions()?;
+        fuzzy_match_filter(versions, query)
+    }
+
+    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions()?;
+        fuzzy_match_filter(versions, query)
     }
 
     fn list_remote_versions(&self) -> Result<Vec<String>> {
@@ -354,7 +366,28 @@ impl Forge for JavaPlugin {
                 .split_once('=')
                 .unwrap_or_default()
                 .1;
-            Ok(version.to_string())
+            if !version.contains('-') {
+                return Ok(version.to_string());
+            }
+            let (version, vendor) = version.rsplit_once('-').unwrap_or_default();
+            let vendor = match vendor {
+                "amzn" => "corretto",
+                "albba" => "dragonwell",
+                "graalce" => "graalvm-community",
+                "librca" => "liberica",
+                "open" => "openjdk",
+                "ms" => "microsoft",
+                "sapmchn" => "sapmachine",
+                "sem" => "semeru-openj9",
+                "tem" => "temurin",
+                _ => vendor, // either same vendor name or unsupported
+            };
+            let mut version = version.split(['+', '-'].as_ref()).collect::<Vec<&str>>()[0];
+            // if vendor is zulu, we can only match the major version
+            if vendor == "zulu" {
+                version = version.split_once('.').unwrap_or_default().0;
+            }
+            Ok(format!("{}-{}", vendor, version))
         } else {
             Ok(contents)
         }
@@ -379,6 +412,27 @@ fn arch() -> &'static str {
     } else {
         &ARCH
     }
+}
+
+fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    let mut query = query;
+    if query == "latest" {
+        query = "[0-9].*";
+    }
+    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+    let versions = versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            query_regex.is_match(v)
+        })
+        .collect();
+    Ok(versions)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

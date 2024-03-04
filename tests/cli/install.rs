@@ -7,6 +7,7 @@ use test_case::test_case;
 #[test_case("bun", ".bun-version", "1.0.17", &["bun", "-v"], "1.0.17", false)]
 #[test_case("deno", ".deno-version", "1.35.3", &["deno", "-V"], "1.35.3", false)]
 #[test_case("java", ".sdkmanrc", "java=17.0.2", &["java", "-version"], "openjdk version \"17.0.2\"", true)]
+#[test_case("java", ".sdkmanrc", "java=20.0.2-tem", &["java", "-version"], "openjdk version \"20.0.2\"", true)]
 #[test_case("java", ".java-version", "17.0.2", &["java", "-version"], "openjdk version \"17.0.2\"", true)]
 fn test_tool_specific_version_files(
     tool: &str,
@@ -202,7 +203,8 @@ fn python_config_fixture() -> File {
 
             [tools]
             python = "{{exec(command='echo 3.12.0')}}"
-        }.to_string(),
+        }
+        .to_string(),
     }
 }
 
