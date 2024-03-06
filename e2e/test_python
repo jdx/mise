@@ -19,6 +19,23 @@ assert_contains "mise x python@3.12.0 -- python --version" "Python 3.12.0"
 assert_contains "mise env -s bash | grep VIRTUAL_ENV" "$MISE_DATA_DIR/venv"
 assert "mise x -- which python" "$MISE_DATA_DIR/venv/bin/python"
 
+# verify nested virtualenv is used
+mkdir -p subdir
+cat >subdir/.e2e.mise.toml <<EOF
+[env._.python]
+venv = {path = "{{env.MISE_DATA_DIR}}/subvenv", create=true}
+[tools]
+python = "{{exec(command='echo 3.12.0')}}"
+EOF
+
+cd subdir
+mise i
+assert_contains "mise x python@3.12.0 -- python --version" "Python 3.12.0"
+assert_contains "mise env -s bash | grep VIRTUAL_ENV" "$MISE_DATA_DIR/subvenv"
+assert "mise x -- which python" "$MISE_DATA_DIR/subvenv/bin/python"
+
+rm -rf subdir
+
 if [ "${TEST_ALL:-}" != 1 ]; then
 	exit
 fi
