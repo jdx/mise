@@ -7,11 +7,13 @@ use crate::config::{Config, Settings};
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
+use serde_json::Value;
 
 #[derive(Debug)]
 pub struct NPMForge {
     fa: ForgeArg,
     remote_version_cache: CacheManager<Vec<String>>,
+    latest_version_cache: CacheManager<Option<String>>,
 }
 
 impl Forge for NPMForge {
@@ -29,6 +31,20 @@ impl Forge for NPMForge {
                 let raw = cmd!("npm", "view", self.name(), "versions", "--json").read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
+            })
+            .cloned()
+    }
+
+    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+        self.latest_version_cache
+            .get_or_try_init(|| {
+                let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json").read()?;
+                let dist_tags: Value = serde_json::from_str(&raw)?;
+                let latest = match dist_tags["latest"] {
+                    Value::String(ref s) => Some(s.clone()),
+                    _ => self.latest_version(Some("latest".into())).unwrap(),
+                };
+                Ok(latest)
             })
             .cloned()
     }
@@ -59,6 +75,7 @@ impl NPMForge {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
             ),
+            latest_version_cache: CacheManager::new(fa.cache_path.join("latest_version.msgpack.z")),
             fa,
         }
     }
