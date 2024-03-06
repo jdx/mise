@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use regex::Regex;
+
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
@@ -32,7 +34,13 @@ impl Forge for GoForge {
                     let res = cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path).read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
-                        if let Ok(mod_info) = res {
+                        if let Ok(mut mod_info) = res {
+                            // remove the leading v from the versions
+                            mod_info.versions = mod_info
+                                .versions
+                                .into_iter()
+                                .map(|v| v.trim_start_matches('v').to_string())
+                                .collect();
                             return Ok(mod_info.versions);
                         }
                     };
@@ -50,9 +58,17 @@ impl Forge for GoForge {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
+        // if the (semantic) version has no v prefix, add it
+        let version_regex = Regex::new(r"^\d+(\.\d+)*([+-.].+)?$").unwrap();
+        let version = if version_regex.is_match(&ctx.tv.version) {
+            format!("v{}", ctx.tv.version)
+        } else {
+            ctx.tv.version.clone()
+        };
+
         CmdLineRunner::new("go")
             .arg("install")
-            .arg(&format!("{}@{}", self.name(), ctx.tv.version))
+            .arg(&format!("{}@{}", self.name(), version))
             .with_pr(ctx.pr.as_ref())
             .envs(config.env()?)
             .env("GOBIN", ctx.tv.install_path().join("bin"))

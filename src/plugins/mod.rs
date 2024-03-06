@@ -30,6 +30,9 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
+pub static VERSION_V_PREFIX_REGEX: Lazy<regex::Regex> =
+    Lazy::new(|| Regex::new(r"^v(\d+(\.\d+)*([+-.].+)?)$").unwrap());
+
 pub fn get(name: &str) -> Arc<dyn Forge> {
     let fa = ForgeArg::new(ForgeType::Asdf, name);
     forge::get(&fa)
