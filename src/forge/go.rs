@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use regex::Regex;
-
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
@@ -59,8 +57,7 @@ impl Forge for GoForge {
         settings.ensure_experimental("go backend")?;
 
         // if the (semantic) version has no v prefix, add it
-        let version_regex = Regex::new(r"^\d+(\.\d+)*([+-.].+)?$").unwrap();
-        let version = if version_regex.is_match(&ctx.tv.version) {
+        let version = if regex!(r"^\d+(\.\d+)*([+-.].+)?$").is_match(&ctx.tv.version) {
             format!("v{}", ctx.tv.version)
         } else {
             ctx.tv.version.clone()

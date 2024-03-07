@@ -14,7 +14,6 @@ use crate::config::Config;
 use crate::forge;
 use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
-use crate::plugins::VERSION_V_PREFIX_REGEX;
 use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
@@ -35,7 +34,7 @@ impl ToolVersion {
     ) -> Self {
         ToolVersion {
             forge: tool.fa().clone(),
-            version: VERSION_V_PREFIX_REGEX
+            version: regex!(r"^v(\d+(\.\d+)*([+-.].+)?)$")
                 .replace(&version, |caps: &Captures| format!("{}", &caps[1]))
                 .to_string(),
             request,
