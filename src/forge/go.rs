@@ -57,7 +57,8 @@ impl Forge for GoForge {
         settings.ensure_experimental("go backend")?;
 
         // if the (semantic) version has no v prefix, add it
-        let version = if regex!(r"^\d+(\.\d+)*([+-.].+)?$").is_match(&ctx.tv.version) {
+        // we allow max. 6 digits for the major version to prevent clashes with Git commit hashes
+        let version = if regex!(r"^\d{1,6}(\.\d+)*([+-.].+)?$").is_match(&ctx.tv.version) {
             format!("v{}", ctx.tv.version)
         } else {
             ctx.tv.version.clone()
