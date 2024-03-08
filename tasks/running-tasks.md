@@ -1,6 +1,10 @@
 # Running Tasks
 
-See available tasks with `mise tasks`. Run a task with `mise task run`, `mise run`, or just `mise r`.
+See available tasks with `mise tasks`. To show tasks hidden with property `hide=true`, use the option `--hidden`.
+
+List dependencies of tasks with `mise task deps [tasks]...`.
+
+Run a task with `mise task run`, `mise run`, or just `mise r`.
 You might even want to make a shell alias like `alias mr='mise run --'` since this is likely a common command.
 
 By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,

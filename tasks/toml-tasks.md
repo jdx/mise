@@ -3,7 +3,13 @@
 Tasks can also be defined in `.mise.toml` files in different ways. This is a more "traditional" method of defining tasks:
 
 ```toml
-tasks.clean = 'cargo clean && rm -rf .cache' # runs as a shell command
+[tasks.cleancache]
+run = "rm -rf .cache"
+hide = true # hide this task from the list
+
+[tasks.clean]
+depends = ['cleancache']
+run = "cargo clean" # runs as a shell command
 
 [tasks.build]
 description = 'Build the CLI'
