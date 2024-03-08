@@ -240,6 +240,10 @@
                 ]
               }
             },
+            "hide": {
+              "description": "do not display this task",
+              "type": "boolean"
+            },
             "quiet": {
               "description": "do not display mise information for this task",
               "type": "boolean"
