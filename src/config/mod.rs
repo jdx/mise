@@ -367,11 +367,13 @@ impl Config {
     }
 
     pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
+        let env_results = self.env_results()?;
         Ok(self
             .config_files
             .keys()
             .map(|p| p.to_path_buf())
-            .chain(self.env_results()?.env_files.clone())
+            .chain(env_results.env_files.clone())
+            .chain(env_results.env_scripts.clone())
             .chain(Settings::get().env_files())
             .collect())
     }
