@@ -170,12 +170,12 @@ mod tests {
     #[test]
     fn test_plugin_install_invalid_url() {
         let err = assert_cli_err!("plugin", "add", "tiny*");
-        assert_display_snapshot!(err, @"No repository found for plugin tiny*");
+        assert_snapshot!(err, @"No repository found for plugin tiny*");
     }
 
     #[test]
     fn test_plugin_install_core_plugin() {
         let err = assert_cli_err!("plugin", "add", "node");
-        assert_display_snapshot!(err, @"node is a core plugin and does not need to be installed");
+        assert_snapshot!(err, @"node is a core plugin and does not need to be installed");
     }
 }

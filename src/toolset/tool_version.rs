@@ -35,7 +35,7 @@ impl ToolVersion {
         ToolVersion {
             forge: tool.fa().clone(),
             version: regex!(r"^v(\d+(\.\d+)*([+-.].+)?)$")
-                .replace(&version, |caps: &Captures| format!("{}", &caps[1]))
+                .replace(&version, |caps: &Captures| caps[1].to_string())
                 .to_string(),
             request,
             opts,
