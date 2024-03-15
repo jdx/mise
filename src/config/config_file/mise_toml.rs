@@ -898,7 +898,7 @@ mod tests {
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(cf.dump().unwrap());
-            assert_display_snapshot!(cf);
+            assert_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
     }
@@ -1029,7 +1029,7 @@ mod tests {
 
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_display_snapshot!(cf);
+        assert_snapshot!(cf);
         file::remove_file(&p).unwrap();
     }
 
@@ -1057,7 +1057,7 @@ mod tests {
         assert_debug_snapshot!(cf.alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf.dump().unwrap());
-        assert_display_snapshot!(cf);
+        assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
         file::remove_file(&p).unwrap();
     }
@@ -1081,7 +1081,7 @@ mod tests {
         assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf.dump().unwrap());
-        assert_display_snapshot!(cf);
+        assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
     }
 
@@ -1102,7 +1102,7 @@ mod tests {
         assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf.dump().unwrap());
-        assert_display_snapshot!(cf);
+        assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
     }
 

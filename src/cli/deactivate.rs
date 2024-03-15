@@ -56,7 +56,7 @@ mod tests {
     fn test_deactivate() {
         let _config = Config::try_get().unwrap(); // hack: prevents error parsing __MISE_DIFF
         let err = assert_cli_err!("deactivate");
-        assert_display_snapshot!(err);
+        assert_snapshot!(err);
         env::set_var("__MISE_DIFF", "");
         env::set_var("MISE_SHELL", "zsh");
         assert_cli_snapshot!("deactivate");

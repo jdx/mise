@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_exec_fail() {
         let err = assert_cli_err!("exec", "--", "exit", "1");
-        assert_display_snapshot!(err);
+        assert_snapshot!(err);
     }
 
     #[test]

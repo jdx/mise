@@ -55,12 +55,12 @@ mod tests {
     #[test]
     fn test_alias_get_plugin_unknown() {
         let err = assert_cli_err!("alias", "get", "unknown", "unknown");
-        assert_display_snapshot!(err, @"Unknown plugin: unknown");
+        assert_snapshot!(err, @"Unknown plugin: unknown");
     }
 
     #[test]
     fn test_alias_get_alias_unknown() {
         let err = assert_cli_err!("alias", "get", "tiny", "unknown");
-        assert_display_snapshot!(err, @"Unknown alias: unknown");
+        assert_snapshot!(err, @"Unknown alias: unknown");
     }
 }

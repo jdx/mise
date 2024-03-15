@@ -69,6 +69,6 @@ mod tests {
             .filter(|l| !l.starts_with("export REMOTE_"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_display_snapshot!(envrc);
+        assert_snapshot!(envrc);
     }
 }
