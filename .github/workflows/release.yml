@@ -229,7 +229,7 @@ jobs:
         run: git push
         working-directory: mise-docs
       - name: GitHub Release Assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.event.ref, 'refs/tags/v')
         with:
           fail_on_unmatched_files: true
