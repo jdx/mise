@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use console::style;
 use eyre::Result;
+use regex::Captures;
 use versions::{Chunk, Version};
 
 use crate::cli::args::ForgeArg;
@@ -33,7 +34,9 @@ impl ToolVersion {
     ) -> Self {
         ToolVersion {
             forge: tool.fa().clone(),
-            version,
+            version: regex!(r"^v(\d+(\.\d+)*([+-.].+)?)$")
+                .replace(&version, |caps: &Captures| format!("{}", &caps[1]))
+                .to_string(),
             request,
             opts,
         }
