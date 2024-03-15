@@ -6,7 +6,10 @@ use petgraph::dot::Dot;
 use crate::{
     config::{Config, Settings},
     task::{Deps, Task},
-    ui::{style, tree::print_tree},
+    ui::{
+        style::{self},
+        tree::print_tree,
+    },
 };
 
 /// [experimental] Display a tree visualization of a dependency graph
@@ -18,6 +21,10 @@ pub struct TasksDeps {
     /// e.g.: mise tasks deps lint test check
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
+
+    /// Show hidden tasks
+    #[clap(long, verbatim_doc_comment)]
+    pub hidden: bool,
 
     /// Display dependencies in DOT format
     #[clap(long, alias = "dot", verbatim_doc_comment)]
@@ -49,7 +56,7 @@ impl TasksDeps {
         Ok(config
             .tasks()?
             .values()
-            .filter(|t| !t.hide)
+            .filter(|t| self.hidden || !t.hide)
             .cloned()
             .collect())
     }
