@@ -191,7 +191,7 @@ impl EnvResults {
                         }
                     }
                     if venv.exists() {
-                        r.env_paths.push(venv.join("bin"));
+                        r.env_paths.insert(0, venv.join("bin"));
                         env.insert(
                             "VIRTUAL_ENV".into(),
                             (venv.to_string_lossy().to_string(), Some(source.clone())),
@@ -275,6 +275,41 @@ mod tests {
             "~/foo/1",
             "~/cwd/rel/1",
             "~/cwd/rel2/2",
+        ]
+        "###
+        );
+    }
+
+    #[test]
+    fn test_venv_path() {
+        let env = HashMap::new();
+        let results = EnvResults::resolve(
+            &env,
+            vec![
+                (
+                    EnvDirective::PythonVenv {
+                        path: PathBuf::from("/"),
+                        create: false,
+                    },
+                    Default::default(),
+                ),
+                (
+                    EnvDirective::PythonVenv {
+                        path: PathBuf::from("./"),
+                        create: false,
+                    },
+                    Default::default(),
+                ),
+            ],
+        )
+        .unwrap();
+        // expect order to be reversed as it processes directives from global to dir specific
+        assert_debug_snapshot!(
+            results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
+            @r###"
+        [
+            "~/cwd/bin",
+            "/bin",
         ]
         "###
         );
