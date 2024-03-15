@@ -912,6 +912,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
     # Show dependencies in DOT format
     $ mise tasks deps --dot
 "#
+        flag "--hidden" help="Show hidden tasks"
         flag "--dot" help="Display dependencies in DOT format"
         arg "[TASKS]..." help="Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check" var=true
     }

@@ -759,6 +759,7 @@ return ret
 __mise_tasks_deps_cmd() {
   _arguments -s -S \
     '*::tasks:' \
+    '--hidden[Show hidden tasks]' \
     '--dot[Display dependencies in DOT format]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
