@@ -1248,6 +1248,9 @@ Arguments:
           e.g.: mise tasks deps lint test check
 
 Options:
+      --hidden
+          Show hidden tasks
+
       --dot
           Display dependencies in DOT format
 
