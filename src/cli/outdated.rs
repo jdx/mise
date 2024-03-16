@@ -18,6 +18,10 @@ pub struct Outdated {
     /// If not specified, all tools in global and local configs will be shown
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
+
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 impl Outdated {
@@ -34,6 +38,8 @@ impl Outdated {
         let outdated = ts.list_outdated_versions();
         if outdated.is_empty() {
             info!("All tools are up to date");
+        } else if self.json {
+            self.display_json(outdated)?;
         } else {
             self.display(outdated)?;
         }
@@ -104,6 +110,20 @@ impl Outdated {
         }
         Ok(())
     }
+
+    fn display_json(&self, outdated: OutputVec) -> Result<()> {
+        let mut map = serde_json::Map::new();
+        for (t, tv, c) in outdated {
+            let mut inner = serde_json::Map::new();
+            inner.insert("requested".to_string(), tv.request.version().into());
+            inner.insert("current".to_string(), tv.version.clone().into());
+            inner.insert("latest".to_string(), c.into());
+            map.insert(t.id().to_string(), serde_json::Value::Object(inner));
+        }
+        let json = serde_json::Value::Object(map);
+        miseprintln!("{}", serde_json::to_string_pretty(&json)?);
+        Ok(())
+    }
 }
 
 type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
@@ -119,11 +139,16 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise outdated node</bold>
     Plugin  Requested  Current  Latest
     node    20         20.0.0   20.1.0
+
+    $ <bold>mise outdated --json</bold>
+    {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 "#
 );
 
 #[cfg(test)]
 mod tests {
+    use crate::test::change_installed_version;
+
     #[test]
     fn test_current() {
         assert_cli_snapshot!("outdated");
@@ -132,5 +157,12 @@ mod tests {
     #[test]
     fn test_current_with_runtimes() {
         assert_cli_snapshot!("outdated", "tiny");
+    }
+
+    #[test]
+    fn test_current_json() {
+        change_installed_version("tiny", "3.1.0", "3.0.0");
+        assert_cli_snapshot!("outdated", "tiny", "--json");
+        change_installed_version("tiny", "3.0.0", "3.1.0");
     }
 }

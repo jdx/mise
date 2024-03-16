@@ -147,17 +147,13 @@ type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::test::reset_config;
-    use crate::{dirs, file};
+    use crate::dirs;
+    use crate::test::{change_installed_version, reset_config};
 
     #[test]
     fn test_upgrade() {
         reset_config();
-        file::rename(
-            dirs::INSTALLS.join("tiny").join("3.1.0"),
-            dirs::INSTALLS.join("tiny").join("3.0.0"),
-        )
-        .unwrap();
+        change_installed_version("tiny", "3.1.0", "3.0.0");
         assert_cli_snapshot!("upgrade", "--dry-run");
         assert_cli_snapshot!("upgrade");
         assert!(dirs::INSTALLS.join("tiny").join("3.1.0").exists());
