@@ -23,6 +23,7 @@ DISABLE_LINTERS:
   - REPOSITORY_DEVSKIM
   - REPOSITORY_KICS
   - REPOSITORY_TRIVY
+  - REPOSITORY_TRUFFLEHOG
 
 PRE_COMMANDS:
   - command: apk add --no-cache zlib-dev zlib-static openssl-dev libffi-dev
