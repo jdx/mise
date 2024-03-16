@@ -127,17 +127,6 @@ native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
 
-[package.metadata.release]
-allow-branch = ["main"]
-sign-tag = true
-sign-commit = true
-pre-release-hook = "./scripts/pre-release-hook.sh"
-pre-release-replacements = [
-    { file = "README.md", search = "^mise [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "mise {{version}}", exactly = 1 },
-    { file = "packaging/rpm/mise.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
-    { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
-]
-
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"
 [package.metadata.binstall.overrides.aarch64-apple-darwin]
