@@ -10,11 +10,16 @@ THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-"cargo:eza" = "0.17.0"
+"cargo:git-cliff" = "latest"
 tiny = { version = "1", foo = "bar" }
 golang = { version = "prefix:1.21", foo = "bar" }
-python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
-ruby = "3.1"
+python = { version = "latest" }
+shellcheck = "0.10"
+shfmt = "3"
+"npm:prettier" = "3"
+"npm:markdownlint-cli" = "0.38"
+#python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
+#ruby = "3.1"
 
 [plugins]
 nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
@@ -27,8 +32,8 @@ format = "cargo fmt -- --emit=files"
 clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
-ci = {depends = [ "format", "build", "test" ]}
-pre-commit = {depends = ["render", "lint"]}
+ci = { depends = ["format", "build", "test"] }
+pre-commit = { depends = ["render", "lint"] }
 'test:e2e' = "just test-e2e"
 
 [tasks.build]
@@ -75,10 +80,6 @@ depends = ["render:*"]
 [tasks.snapshots]
 description = "Update test snapshots"
 run = "cargo insta test --accept --unreferenced delete"
-
-[tasks."lint:fix"]
-alias = "lint-fix"
-run = "just lint-fix"
 
 [tasks.test]
 alias = 't'
