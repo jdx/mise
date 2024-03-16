@@ -550,7 +550,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("qdns", "https://github.com/moritz-makandra/asdf-plugin-qdns.git"),
     ("quarkus", "https://github.com/asdf-community/asdf-quarkus.git"),
     ("r", "https://github.com/asdf-community/asdf-r.git"),
-    ("rabbitmq", "https://github.com/w-sanches/asdf-rabbitmq.git"),
+    ("rabbitmq", "https://github.com/mise-plugins/asdf-rabbitmq.git"),
     ("racket", "https://github.com/asdf-community/asdf-racket.git"),
     ("raku", "https://github.com/m-dango/asdf-raku.git"),
     ("rancher", "https://github.com/abinet/asdf-rancher.git"),
