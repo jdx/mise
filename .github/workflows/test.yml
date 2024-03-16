@@ -55,6 +55,7 @@ jobs:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
+      - run: ./target/debug/mise install
       - run: ./target/debug/mise run lint
 
   coverage:
