@@ -52,7 +52,7 @@ pub struct Ls {
     #[clap(long, hide = true, conflicts_with = "json")]
     parseable: bool,
 
-    /// Output in json format
+    /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "parseable")]
     json: bool,
 
