@@ -1,5 +1,5 @@
 use eyre::Result;
-use toml_edit::Document;
+use toml_edit::DocumentMut;
 
 use crate::config::settings::SettingsFile;
 
@@ -61,7 +61,7 @@ impl SettingsSet {
         let path = &*env::MISE_GLOBAL_CONFIG_FILE;
         file::create_dir_all(path.parent().unwrap())?;
         let raw = file::read_to_string(path).unwrap_or_default();
-        let mut config: Document = raw.parse()?;
+        let mut config: DocumentMut = raw.parse()?;
         if !config.contains_key("settings") {
             config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }

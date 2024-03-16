@@ -10,7 +10,7 @@ use serde::de::Visitor;
 use serde::{de, Deserializer};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, Document, Item, Value};
+use toml_edit::{table, value, Array, DocumentMut, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::{ForgeArg, ToolVersionType};
@@ -43,7 +43,7 @@ pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
-    doc: OnceCell<Document>,
+    doc: OnceCell<DocumentMut>,
     #[serde(default)]
     tools: IndexMap<ForgeArg, MiseTomlToolList>,
     #[serde(default)]
@@ -97,14 +97,14 @@ impl MiseToml {
         Ok(rf)
     }
 
-    fn doc(&self) -> eyre::Result<&Document> {
+    fn doc(&self) -> eyre::Result<&DocumentMut> {
         self.doc.get_or_try_init(|| {
             let body = file::read_to_string(&self.path).unwrap_or_default();
             Ok(body.parse()?)
         })
     }
 
-    fn doc_mut(&mut self) -> eyre::Result<&mut Document> {
+    fn doc_mut(&mut self) -> eyre::Result<&mut DocumentMut> {
         self.doc()?;
         Ok(self.doc.get_mut().unwrap())
     }
@@ -640,6 +640,17 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 }]))
             }
 
+            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+            where
+                S: de::SeqAccess<'de>,
+            {
+                let mut tools = vec![];
+                while let Some(tool) = seq.next_element::<MiseTomlTool>()? {
+                    tools.push(tool);
+                }
+                Ok(MiseTomlToolList(tools))
+            }
+
             fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -655,17 +666,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                     .parse()
                     .map_err(de::Error::custom)?;
                 Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options }]))
-            }
-
-            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-            where
-                S: de::SeqAccess<'de>,
-            {
-                let mut tools = vec![];
-                while let Some(tool) = seq.next_element::<MiseTomlTool>()? {
-                    tools.push(tool);
-                }
-                Ok(MiseTomlToolList(tools))
             }
         }
 
