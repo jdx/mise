@@ -12,15 +12,15 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "src/**/*.rs",
-    "src/plugins/core/assets/**",
-    "src/assets/**",
-    "/completions/*",
-    "/Cargo.lock",
-    "/LICENSE",
-    "/README.md",
-    "/build.rs",
-    "/zipsign.pub",
+  "src/**/*.rs",
+  "src/plugins/core/assets/**",
+  "src/assets/**",
+  "/completions/*",
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/zipsign.pub",
 ]
 rust-version = "1.74.0"
 build = "build.rs"
@@ -78,9 +78,9 @@ regex = "1.10.3"
 reqwest = { version = "0.11.26", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 self_update = { version = "0.39.0", default-features = false, features = [
-    "archive-tar",
-    "compression-flate2",
-    "signatures",
+  "archive-tar",
+  "compression-flate2",
+  "signatures",
 ] }
 serde = "1.0.197"
 serde_derive = "1.0.197"
@@ -101,8 +101,8 @@ thiserror = "1.0.58"
 toml = { version = "0.8.11", features = ["parse"] }
 toml_edit = { version = "0.22.7", features = ["parse"] }
 url = "2.5.0"
-usage-lib = { version="0.1.9", features = ["clap"] }
-versions = { version = "6.1.0" , features=["serde"]}
+usage-lib = { version = "0.1.9", features = ["clap"] }
+versions = { version = "6.1.0", features = ["serde"] }
 walkdir = "2.5.0"
 which = "6.0.0"
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
