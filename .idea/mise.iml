@@ -11,6 +11,7 @@
       <sourceFolder url="file://$MODULE_DIR$/usage/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/usage/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/usage/cli/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/usage/lib/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/test/data" />
       <excludeFolder url="file://$MODULE_DIR$/plugins" />
