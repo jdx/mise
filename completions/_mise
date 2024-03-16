@@ -432,7 +432,7 @@ __mise_ls_cmd() {
     '(-c --current)'{-c,--current}'[Only show tool versions currently specified in a .tool-versions/.mise.toml]' \
     '(-g --global)'{-g,--global}'[Only show tool versions currently specified in a the global .tool-versions/.mise.toml]' \
     '(-i --installed)'{-i,--installed}'[Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)]' \
-    '(-J --json)'{-J,--json}'[Output in json format]' \
+    '(-J --json)'{-J,--json}'[Output in JSON format]' \
     '(-m --missing)'{-m,--missing}'[Display missing tool versions]' \
     '--prefix=[Display versions matching this prefix]:prefix:__mise_prefixes' \
     '--no-header[Don'\''t display headers]' \
@@ -456,6 +456,7 @@ __mise_ls_remote_cmd() {
 __mise_outdated_cmd() {
   _arguments -s -S \
     '*::tool:__mise_tool_versions' \
+    '(-J --json)'{-J,--json}'[Output in JSON format]' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \

@@ -479,7 +479,7 @@ It's a useful command to get the current state of your tools."#
     flag "-g --global" help="Only show tool versions currently specified in a the global .tool-versions/.mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)"
     flag "--parseable" help="Output in an easily parseable format" hide=true
-    flag "-J --json" help="Output in json format"
+    flag "-J --json" help="Output in JSON format"
     flag "-m --missing" help="Display missing tool versions"
     flag "--prefix" help="Display versions matching this prefix" {
         arg "<PREFIX>"
@@ -512,7 +512,7 @@ run `mise cache clean` to clear the cache and get fresh results"
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\""
 }
 cmd "outdated" help="Shows outdated tool versions" {
-    after_long_help r"Examples:
+    after_long_help r#"Examples:
 
     $ mise outdated
     Plugin  Requested  Current  Latest
@@ -522,7 +522,11 @@ cmd "outdated" help="Shows outdated tool versions" {
     $ mise outdated node
     Plugin  Requested  Current  Latest
     node    20         20.0.0   20.1.0
-"
+
+    $ mise outdated --json
+    {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
+"#
+    flag "-J --json" help="Output in JSON format"
     arg "[TOOL@VERSION]..." help="Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown" var=true
 }
 cmd "plugins" help="Manage plugins" {

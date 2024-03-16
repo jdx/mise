@@ -1,0 +1,11 @@
+---
+source: src/cli/outdated.rs
+expression: output
+---
+{
+  "tiny": {
+    "current": "3.0.0",
+    "latest": "3.1.0",
+    "requested": "3"
+  }
+}
