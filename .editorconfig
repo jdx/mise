@@ -2,7 +2,7 @@
 indent_style = space
 indent_size = 2
 
-[*.sh]
+[{*.sh,.mise/tasks/**/*}]
 indent_style = space
 indent_size = 2
 
