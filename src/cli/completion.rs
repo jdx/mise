@@ -44,6 +44,8 @@ impl Completion {
             )
             .run();
             if res.is_err() {
+                debug!("usage command failed, falling back to prerendered completions");
+                debug!("error: {:?}", res);
                 return self.prerendered(shell);
             }
             return Ok(());
