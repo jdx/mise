@@ -1,14 +1,14 @@
-let i = 3;
+let i = 3
 
-process.on("SIGINT", function () {
+process.on('SIGINT', function () {
   if (i > 0) {
-    console.log(`Got SIGINT.  Press Control-D to exit. ${i} times left`);
-    i--;
+    console.log(`Got SIGINT.  Press Control-D to exit. ${i} times left`)
+    i--
   } else {
-    process.exit();
+    process.exit()
   }
-});
+})
 
 // wait for 60 seconds
-setTimeout(function () {}, 60000);
-console.log("Running.  Press Control-C to test.");
+setTimeout(function () {}, 60000)
+console.log('Running.  Press Control-C to test.')
