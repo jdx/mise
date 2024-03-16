@@ -44,7 +44,7 @@ calm_io = "0.1.1"
 chrono = { version = "0.4.35", default-features = false, features = ["std", "clock"] }
 clap = { version = "4.5.3", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
-color-eyre = "0.6.2"
+color-eyre = "0.6.3"
 color-print = "0.3.5"
 confique = { version = "0.2.5", default-features = false }
 console = "0.15.8"
