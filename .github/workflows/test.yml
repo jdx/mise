@@ -46,6 +46,7 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - run: cargo build --all-features
       - run: ./target/debug/mise settings set experimental true
+      - run: ./target/debug/mise install
       - run: ./target/debug/mise run render
       - run: ./target/debug/mise run lint-fix
       - run: git diff HEAD
@@ -55,7 +56,6 @@ jobs:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
-      - run: ./target/debug/mise install
       - run: ./target/debug/mise run lint
 
   coverage:
