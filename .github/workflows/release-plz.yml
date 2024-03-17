@@ -20,15 +20,15 @@ jobs:
   release-plz:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
       - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
