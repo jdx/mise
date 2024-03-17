@@ -15,8 +15,8 @@ fi
 
 cargo set-version --bump patch
 version="$(cargo pkgid mise | cut -d# -f2)"
-git cliff --tag "$version" -o CHANGELOG.md
-changelog="$(git cliff --tag "$version" --unreleased --strip all)"
+git cliff --tag "v$version" -o CHANGELOG.md
+changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
 sed -i.bak "s/^mise [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/mise $version/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
