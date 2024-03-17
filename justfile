@@ -62,7 +62,8 @@ test-coverage:
         mise implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         echo "::group::Self update"
-        mise self-update -fy
+        # TODO: enable this when release-plz is working right
+        #mise self-update -fy
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
