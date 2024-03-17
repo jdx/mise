@@ -10,14 +10,16 @@ THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-"cargo:git-cliff" = "latest"
 tiny = { version = "1", foo = "bar" }
 golang = { version = "prefix:1.21", foo = "bar" }
 python = { version = "latest" }
 shellcheck = "0.10"
 shfmt = "3"
-"npm:prettier" = "3"
+"cargo:cargo-edit" = "latest"
+"cargo:cargo-show" = "latest"
+"cargo:git-cliff" = "latest"
 "npm:markdownlint-cli" = "0.38"
+"npm:prettier" = "3"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 
