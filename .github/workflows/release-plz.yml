@@ -24,8 +24,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
-          #save-if: false TODO: add this back later
-          cache-on-failure: true
+          save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: |
           set -euxo pipefail
