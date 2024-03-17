@@ -9,8 +9,10 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
 fi
 
 version="$(git cliff --bumped-version)"
-changelog="$(git cliff --unreleased --strip all)"
+changelog="$(git cliff --bump --unreleased --strip all)"
 
+git cliff --bump -o CHANGELOG.md
+cargo set-version "${version#v}"
 sed -i.bak "s/^mise [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/mise ${version#v}/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: ${version#v}/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"${version#v}\";/" default.nix
@@ -20,8 +22,6 @@ mise run render ::: lint-fix
 
 git config user.name mise-en-dev
 git config user.email 123107610+mise-en-dev@users.noreply.github.com
-git cliff --bump -o CHANGELOG.md
-cargo set-version "${version#v}"
 cargo update
 git add \
   Cargo.lock \
