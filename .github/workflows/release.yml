@@ -252,7 +252,8 @@ jobs:
   bump-aur:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    needs: [e2e-linux]
+    needs: [release]
+    if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -266,6 +267,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     needs: [release]
+    if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
