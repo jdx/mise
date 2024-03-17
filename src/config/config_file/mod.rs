@@ -222,9 +222,6 @@ pub fn is_trusted(path: &Path) -> bool {
             return true;
         }
     }
-    if !trust_path(path).exists() {
-        return false;
-    }
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
@@ -233,6 +230,10 @@ pub fn is_trusted(path: &Path) -> bool {
         if !trusted {
             return false;
         }
+    } else if !(trust_path(path).exists() || ci_info::is_ci() && !cfg!(test)) {
+        // the file isn't trusted, and we're not on a CI system where we generally assume we can
+        // trust config files
+        return false;
     }
     cached.insert(path.to_path_buf());
     true

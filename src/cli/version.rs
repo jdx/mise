@@ -67,7 +67,7 @@ fn show_version() -> std::io::Result<()> {
 }
 
 fn show_latest() {
-    if *env::CI {
+    if ci_info::is_ci() && !cfg!(test) {
         return;
     }
     if let Some(latest) = check_for_new_version(duration::DAILY) {

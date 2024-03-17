@@ -115,7 +115,6 @@ pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("
         .ok(),
     _ => None,
 });
-pub static CI: Lazy<bool> = Lazy::new(|| var_is_true("CI"));
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
