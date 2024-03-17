@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+released_versions="$(cargo show mise --json | jq -r '.versions.[].num')"
+cur_version="$(cargo pkgid mise | cut -d# -f2)"
+if ! echo "$released_versions" | grep -q "^$cur_version$"; then
+  echo "Releasing $cur_version"
+  cargo publish
+fi
+
+version="$(git cliff --bumped-version)"
+changelog="$(git cliff --unreleased --strip all)"
+
+sed -i.bak "s/^mise [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/mise ${version#v}/" README.md
+sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: ${version#v}/" packaging/rpm/mise.spec
+sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"${version#v}\";/" default.nix
+
+mise run update-shorthand-repo
+mise run render ::: lint-fix
+
+git config user.name mise-en-dev
+git config user.email 123107610+mise-en-dev@users.noreply.github.com
+git cliff --bump -o CHANGELOG.md
+cargo set-version "${version#v}"
+cargo update
+git add \
+  Cargo.lock \
+  Cargo.toml \
+  CHANGELOG.md \
+  README.md \
+  default.nix \
+  packaging/rpm/mise.spec \
+  src/default_shorthands.rs \
+  mise.usage.kdl \
+  completions \
+  man/
+git clean -df
+git checkout -B release
+git commit -m "Release $version"
+git push origin release --force
+gh pr create --title "Release $version" --body "$changelog" --label "release" ||
+  gh pr edit --title "Release $version" --body "$changelog"
