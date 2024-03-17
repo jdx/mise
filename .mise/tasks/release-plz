@@ -10,9 +10,9 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
   cargo publish
   changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
-  git tag "$cur_version" -s -m "$changelog"
+  git tag "v$cur_version" -s -m "$changelog"
   git push --tags
-  gh release create "$cur_version" --title "$cur_version" --notes "$changelog"
+  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog"
   exit 0
 fi
 
