@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
+git config user.name mise-en-dev
+git config user.email 123107610+mise-en-dev@users.noreply.github.com
+
 released_versions="$(cargo show mise --json | jq -r '.versions.[].num')"
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
   cargo publish
+  git tag "$cur_version" -s -m "Release $cur_version"
+  git push --tags
 fi
 
 version="$(git cliff --bumped-version)"
@@ -20,8 +25,6 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 mise run update-shorthand-repo
 mise run render ::: lint-fix
 
-git config user.name mise-en-dev
-git config user.email 123107610+mise-en-dev@users.noreply.github.com
 cargo update
 git add \
   Cargo.lock \
