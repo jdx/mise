@@ -14,7 +14,10 @@ All notable changes to this project will be documented in this file.\n
 # template for the changelog body
 # https://keats.github.io/tera/docs/#introduction
 body = """
----
+{% macro user(commit) %}\
+{% if commit.github.username %}[@{{commit.github.username}}](https://github.com/{{commit.github.username}})\
+{% else %}{{commit.author.name}}{% endif %}\
+{% endmacro user %}\
 {% if version %}\
     {% if previous.version %}\
         ## [{{ version | trim_start_matches(pat="v") }}]($REPO/compare/{{ previous.version }}..{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
@@ -30,14 +33,14 @@ body = """
     | filter(attribute="scope")
     | sort(attribute="scope") %}
         - **({{commit.scope}})**{% if commit.breaking %} [**breaking**]{% endif %} \
-            {{ commit.message }} - ([{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})) - {{ commit.github.username | default(value=commit.author.name) }}
+            {{ commit.message }} - [{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }}) - {{ self::user(commit=commit) }}
     {%- endfor -%}
     {% raw %}\n{% endraw %}\
     {%- for commit in commits %}
         {%- if commit.scope -%}
         {% else -%}
             - {% if commit.breaking %} [**breaking**]{% endif %}\
-                {{ commit.message }} - ([{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})) - {{ commit.github.username | default(value=commit.author.name) }}
+                {{ commit.message }} - [{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }}) - {{ self::user(commit=commit) }}
         {% endif -%}
     {% endfor -%}
 {% endfor %}\n
