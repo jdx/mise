@@ -23,6 +23,8 @@ jobs:
       - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
