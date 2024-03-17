@@ -13,6 +13,9 @@ on:
 concurrency:
   group: release-plz
 
+env:
+  MISE_EXPERIMENTAL: 1
+
 jobs:
   release-plz:
     runs-on: ubuntu-latest
@@ -26,12 +29,7 @@ jobs:
           shared-key: unit
           save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: |
-          set -euxo pipefail
-          cargo build --all-features
-          cp target/debug/mise "$HOME"/bin
-          mise trust --all
-          mise settings set experimental true
+      - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache/restore@v4
         with:
           path: |
