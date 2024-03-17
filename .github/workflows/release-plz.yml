@@ -20,6 +20,9 @@ jobs:
   release-plz:
     runs-on: ubuntu-latest
     steps:
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
