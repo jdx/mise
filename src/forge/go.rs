@@ -7,6 +7,7 @@ use crate::config::{Config, Settings};
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
+use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
 pub struct GoForge {
@@ -21,6 +22,10 @@ impl Forge for GoForge {
 
     fn fa(&self) -> &ForgeArg {
         &self.fa
+    }
+
+    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+        Ok(vec!["go".into()])
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
