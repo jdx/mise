@@ -103,6 +103,10 @@ sort_commits = "oldest"
 # limit the number of commits included in the changelog.
 # limit_commits = 42
 
+[bump]
+features_always_bump_minor = false
+breaking_always_bump_major = false
+
 [remote.github]
 owner = "jdx"
 repo = "mise"
