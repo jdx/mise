@@ -36,7 +36,6 @@ jobs:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
-      - run: cargo binstall usage-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -46,6 +45,13 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - run: cargo build --all-features
       - run: ./target/debug/mise settings set experimental true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: v0-mise-tools
       - run: ./target/debug/mise install
       - run: ./target/debug/mise run render
       - run: ./target/debug/mise run lint-fix
