@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ---
-## [2024.3.4](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.4) - 2024-03-17
+## [2024.3.5](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.5) - 2024-03-17
 
 ### 🚀 Features
 
@@ -45,6 +45,8 @@ All notable changes to this project will be documented in this file.
 - **(release-plz)** make logic work for calver - ([bb5a178](https://github.com/jdx/mise/commit/bb5a178b0642416d0e3dac8a9162a9f0732cf146)) - jdx
 - **(release-plz)** fix git diffs - ([6c7e779](https://github.com/jdx/mise/commit/6c7e77944a24b289aaba887f64b7f3c63cb9e5ab)) - jdx
 - **(release-plz)** create gh release - ([f9ff369](https://github.com/jdx/mise/commit/f9ff369eb1176e31044fc463fdca08397def5a81)) - jdx
+- **(release-plz)** fixing gpg key - ([8286ded](https://github.com/jdx/mise/commit/8286ded8297b858e7136831e75e4c37fa49e6186)) - jdx
+- **(release-plz)** fixing gpg key - ([abb1dfe](https://github.com/jdx/mise/commit/abb1dfed78e49cf2bee4a137e92879ffd7f2fb03)) - jdx
 - **(test)** cache mise installed tools - ([0e433b9](https://github.com/jdx/mise/commit/0e433b975a5d8c28ae5c0cbd86d3b19e03146a83)) - jdx
 - cargo update - ([6391239](https://github.com/jdx/mise/commit/639123930eec8e057de7da790cb71d4a2b9e17a2)) - jdx
 - install tools before unit tests - ([f7456eb](https://github.com/jdx/mise/commit/f7456ebc539a4b27ec067bc480bc0aba1466e55b)) - jdx
