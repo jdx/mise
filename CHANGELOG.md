@@ -3,6 +3,59 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [2024.3.3](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.3) - 2024-03-17
+
+### 🚀 Features
+
+- very basic dependency support (#1788) - ([7a53a44](https://github.com/jdx/mise/commit/7a53a44c5bbbea7eed281536d869ec4f39de2527)) - jdx
+
+### 🐛 Bug Fixes
+
+- update shorthand for rabbitmq (#1784) - ([d232859](https://github.com/jdx/mise/commit/d232859b5334462a84df8f1f0b4189576712f571)) - roele
+- display error message from calling usage (#1786) - ([63fc69b](https://github.com/jdx/mise/commit/63fc69bc751e6ed182243a6021995821d5f4611e)) - jdx
+- automatically trust config files in CI (#1791) - ([80b340d](https://github.com/jdx/mise/commit/80b340d8f4a548caa71685a6fca925e2657345dc)) - jdx
+
+### 🚜 Refactor
+
+- move lint tasks from just to mise - ([4f78a8c](https://github.com/jdx/mise/commit/4f78a8cb648246e3f204b426c57662076cc17d5d)) - jdx
+
+### 📚 Documentation
+
+- **(changelog)** use github handles - ([b5ef2f7](https://github.com/jdx/mise/commit/b5ef2f7976e04bf11889062181fc32574eff834a)) - jdx
+
+### 🎨 Styling
+
+- add mise tasks to editorconfig - ([dae8ece](https://github.com/jdx/mise/commit/dae8ece2d891100f86cecea5920bc423e0f4d053)) - jdx
+- run lint-fix which has changed slightly - ([6e8dd2f](https://github.com/jdx/mise/commit/6e8dd2fe24adf6d44a17a460c1054738e58f4306)) - jdx
+- apply editorconfig changes - ([962bed0](https://github.com/jdx/mise/commit/962bed061ab9218f679f20aa5c53e905981133e0)) - jdx
+- new git-cliff format - ([854a4fa](https://github.com/jdx/mise/commit/854a4fae9255968887dc0b0647c993f633666442)) - jdx
+- ignore CHANGELOG.md style - ([790cb91](https://github.com/jdx/mise/commit/790cb91a210f5d1d37f4c933798c1802583db753)) - jdx
+
+### 🧪 Testing
+
+- **(mega-linter)** do not use js-standard linter - ([6b63346](https://github.com/jdx/mise/commit/6b63346bdd985964bc824eff03973d2d58d1ad28)) - jdx
+- **(mega-linter)** ignore CHANGELOG.md - ([b63b3ac](https://github.com/jdx/mise/commit/b63b3aca3c597ee95db80613b2ea8ca19f0e74c3)) - jdx
+
+### ⚙️ Miscellaneous Tasks
+
+- **(release-plz)** removed some debugging logic - ([f7d7bea](https://github.com/jdx/mise/commit/f7d7bea616c13b31318f2e7da287aa71face8e57)) - jdx
+- **(release-plz)** show actual version in PR body - ([e1ef708](https://github.com/jdx/mise/commit/e1ef708745e79bd019c77740820daefca5491b2e)) - jdx
+- **(release-plz)** tweaking logic to prevent extra PR - ([8673000](https://github.com/jdx/mise/commit/86730008cd2f60d2767296f97175805225c83951)) - jdx
+- **(release-plz)** make logic work for calver - ([890c919](https://github.com/jdx/mise/commit/890c919081f984f3d506c2b1d2712c8cff6f5e6b)) - jdx
+- **(release-plz)** make logic work for calver - ([bb5a178](https://github.com/jdx/mise/commit/bb5a178b0642416d0e3dac8a9162a9f0732cf146)) - jdx
+- **(release-plz)** fix git diffs - ([6c7e779](https://github.com/jdx/mise/commit/6c7e77944a24b289aaba887f64b7f3c63cb9e5ab)) - jdx
+- **(test)** cache mise installed tools - ([0e433b9](https://github.com/jdx/mise/commit/0e433b975a5d8c28ae5c0cbd86d3b19e03146a83)) - jdx
+- cargo update - ([6391239](https://github.com/jdx/mise/commit/639123930eec8e057de7da790cb71d4a2b9e17a2)) - jdx
+- install tools before unit tests - ([f7456eb](https://github.com/jdx/mise/commit/f7456ebc539a4b27ec067bc480bc0aba1466e55b)) - jdx
+- added git-cliff - ([0ccdf36](https://github.com/jdx/mise/commit/0ccdf36df153ddc3ac1a2714ee9b4a2116dfc918)) - jdx
+- ensure `mise install` is run before lint-fix - ([e8a172f](https://github.com/jdx/mise/commit/e8a172f98ebc837619f3766777e489f3b99f36f4)) - jdx
+- added release-plz workflow (#1787) - ([83fe1ec](https://github.com/jdx/mise/commit/83fe1ecc266caf094fc1cfb251ef1c0cc35afe1b)) - jdx
+
+### Outdated
+
+- add --json flag (#1785) - ([ec8dbdf](https://github.com/jdx/mise/commit/ec8dbdf0659a73ba64ca8a5bd1bf0e021fce0b4b)) - jdx
+
+---
 ## [2024.3.2](https://github.com/jdx/mise/compare/v2024.3.1..v2024.3.2) - 2024-03-15
 
 ### 🚀 Features
@@ -576,5 +629,24 @@ All notable changes to this project will be documented in this file.
 - tuck away - ([4361f03](https://github.com/jdx/mise/commit/4361f0385a82da470cfe47a5044a00ca783c9ddc)) - jdx
 - disable dashboard - ([2c569fc](https://github.com/jdx/mise/commit/2c569fc01a77987e6823dc749eb917f1fe5a0cf0)) - jdx
 - disable dashboard - ([400ac0a](https://github.com/jdx/mise/commit/400ac0a0ff64cf5a6846f662df5dc432237e87b2)) - jdx
+
+---
+## [2024.0.0] - 2023-12-31
+
+### 📚 Documentation
+
+- reference new docs url - ([5532b2a](https://github.com/jdx/mise/commit/5532b2a1c2824537e6e03928f5dafd559bd46455)) - jdx
+
+### ⚙️ Miscellaneous Tasks
+
+- Release rtx-cli version 2024.0.0 - ([adc8160](https://github.com/jdx/mise/commit/adc8160213e55c10b0842a4e68fc223daad27d41)) - jdx
+
+### Node
+
+- remove node-build support (#1304) - ([be5226f](https://github.com/jdx/mise/commit/be5226fb7eed5c0d2e5fa34c88021d11e9702448)) - jdx
+
+### Task
+
+- read RTX_TASK_OUTPUT as lowercase (#1288) - ([1186a6b](https://github.com/jdx/mise/commit/1186a6bc430483bc55b4b904c298b8c462e0cceb)) - jdx
 
 <!-- generated by git-cliff -->
