@@ -29,6 +29,7 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
+          git_tag_gpgsign: true
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
