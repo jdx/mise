@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ---
-## [2024.3.5](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.5) - 2024-03-17
+## [2024.3.6](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.6) - 2024-03-17
 
 ### 🚀 Features
 
@@ -47,6 +47,8 @@ All notable changes to this project will be documented in this file.
 - **(release-plz)** create gh release - ([f9ff369](https://github.com/jdx/mise/commit/f9ff369eb1176e31044fc463fdca08397def5a81)) - jdx
 - **(release-plz)** fixing gpg key - ([8286ded](https://github.com/jdx/mise/commit/8286ded8297b858e7136831e75e4c37fa49e6186)) - jdx
 - **(release-plz)** fixing gpg key - ([abb1dfe](https://github.com/jdx/mise/commit/abb1dfed78e49cf2bee4a137e92879ffd7f2fb03)) - jdx
+- **(release-plz)** do not publish a new release PR immediately - ([b3ae753](https://github.com/jdx/mise/commit/b3ae753fdde1fef17b4f13a1ecc8b23cb1da575c)) - jdx
+- **(release-plz)** prefix versions with "v" - ([3354b55](https://github.com/jdx/mise/commit/3354b551adab7082d5cc533e5d9d0bfe272958b4)) - jdx
 - **(test)** cache mise installed tools - ([0e433b9](https://github.com/jdx/mise/commit/0e433b975a5d8c28ae5c0cbd86d3b19e03146a83)) - jdx
 - cargo update - ([6391239](https://github.com/jdx/mise/commit/639123930eec8e057de7da790cb71d4a2b9e17a2)) - jdx
 - install tools before unit tests - ([f7456eb](https://github.com/jdx/mise/commit/f7456ebc539a4b27ec067bc480bc0aba1466e55b)) - jdx
@@ -54,6 +56,7 @@ All notable changes to this project will be documented in this file.
 - ensure `mise install` is run before lint-fix - ([e8a172f](https://github.com/jdx/mise/commit/e8a172f98ebc837619f3766777e489f3b99f36f4)) - jdx
 - added release-plz workflow (#1787) - ([83fe1ec](https://github.com/jdx/mise/commit/83fe1ecc266caf094fc1cfb251ef1c0cc35afe1b)) - jdx
 - set gpg key - ([467097f](https://github.com/jdx/mise/commit/467097f925053a27f0ede2a506e894562d191a09)) - jdx
+- temporarily disable self-update test - ([5cb39a4](https://github.com/jdx/mise/commit/5cb39a4259f332e5bccec082f1d7cd6127da5f55)) - jdx
 
 ### Outdated
 
