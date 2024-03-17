@@ -1,6 +1,8 @@
 _mise() {
     if ! command -v usage &> /dev/null; then
-        echo "Error: usage not found. This is required for completions to work in mise. https://usage.jdx.dev" >&2
+        echo >&2
+        echo "Error: usage CLI not found. This is required for completions to work in mise." >&2
+        echo "See https://usage.jdx.dev for more information." >&2
         return 1
     fi
 
