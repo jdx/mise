@@ -444,6 +444,16 @@ impl Forge for ExternalPlugin {
     fn get_plugin_type(&self) -> PluginType {
         PluginType::External
     }
+
+    fn get_dependencies(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let out = match tv.forge.name.as_str() {
+            "poetry" | "pipenv" => vec!["python"],
+            "elixir" => vec!["erlang"],
+            _ => vec![],
+        };
+        Ok(out.into_iter().map(|s| s.into()).collect())
+    }
+
     fn list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())

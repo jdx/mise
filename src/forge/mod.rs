@@ -99,6 +99,11 @@ pub trait Forge: Debug + Send + Sync {
     fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
+    /// If any of these tools are installing in parallel, we should wait for them to finish
+    /// before installing this tool.
+    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+        Ok(vec![])
+    }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version(Some("latest".into()))

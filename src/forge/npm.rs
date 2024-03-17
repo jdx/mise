@@ -7,6 +7,7 @@ use crate::config::{Config, Settings};
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
+use crate::toolset::ToolVersion;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -23,6 +24,10 @@ impl Forge for NPMForge {
 
     fn fa(&self) -> &ForgeArg {
         &self.fa
+    }
+
+    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+        Ok(vec!["node".into()])
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
