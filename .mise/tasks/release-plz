@@ -2,7 +2,7 @@
 set -euxo pipefail
 
 git config user.name mise-en-dev
-git config user.email 123107610+mise-en-dev@users.noreply.github.com
+git config user.email release@mise.jdx.dev
 
 released_versions="$(cargo show mise --json | jq -r '.versions.[].num')"
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
