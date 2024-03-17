@@ -1,0 +1,47 @@
+name: release-plz
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+      - release-plz
+
+concurrency:
+  group: release-plz
+
+jobs:
+  release-plz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unit
+          #save-if: false TODO: add this back later
+          cache-on-failure: true
+      - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: |
+          set -euxo pipefail
+          cargo build --all-features
+          cp target/debug/mise "$HOME"/bin
+          mise trust --all
+          mise settings set experimental true
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: v0-mise-tools
+      - run: mise install
+      - run: mise run release-plz
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
