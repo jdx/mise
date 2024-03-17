@@ -94,7 +94,7 @@ jobs:
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
-          TEST_FULL: ${{github.ref_name == 'main' && '1' || '0'}}
+          TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
           max_attempts: 2
