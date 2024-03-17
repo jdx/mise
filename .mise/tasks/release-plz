@@ -13,6 +13,7 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   git tag "$cur_version" -s -m "$changelog"
   git push --tags
   gh release create "$cur_version" --title "$cur_version" --notes "$changelog"
+  exit 0
 fi
 
 cargo set-version --bump patch
