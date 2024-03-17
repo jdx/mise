@@ -9,8 +9,10 @@ cur_version="$(cargo pkgid mise | cut -d# -f2)"
 if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
   cargo publish
-  git tag "$cur_version" -s -m "Release $cur_version"
+  changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
+  git tag "$cur_version" -s -m "$changelog"
   git push --tags
+  gh release create "$cur_version" --title "$cur_version" --notes "$changelog"
 fi
 
 cargo set-version --bump patch
