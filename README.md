@@ -220,7 +220,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | firebase                      | [jthegedus/asdf-firebase](https://github.com/jthegedus/asdf-firebase)                                             |
 | fission                       | [virtualstaticvoid/asdf-fission](https://github.com/virtualstaticvoid/asdf-fission)                               |
 | Flamingo                      | [log2/asdf-flamingo](https://github.com/log2/asdf-flamingo)                                                       |
-| flarectl                      | [ORCID/asdf-flarectl](https://github.com/ORCID/asdf-flarectl)                                                     |
+| flarectl                      | [mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl)                                       |
 | flatc                         | [TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc)                                   |
 | Flutter                       | [oae/asdf-flutter](https://github.com/oae/asdf-flutter)                                                           |
 | Flux2                         | [tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2)                                                       |
