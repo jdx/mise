@@ -27,30 +27,29 @@ impl Shell for Nushell {
         formatdoc! {r#"
           export-env {{
             $env.MISE_SHELL = "nu"
-            
-            $env.config = ($env.config | upsert hooks {{
-                pre_prompt: ($env.config.hooks.pre_prompt ++
-                [{{
-                condition: {{|| "MISE_SHELL" in $env }}
-                code: {{|| mise_hook }}
-                }}])
-                env_change: {{
-                    PWD: ($env.config.hooks.env_change.PWD ++
-                    [{{
-                    condition: {{|| "MISE_SHELL" in $env }}
-                    code: {{|| mise_hook }}
-                    }}])
-                }}
-            }})
+            add-hook pre_prompt {{
+              condition: {{ "MISE_SHELL" in $env }}
+              code: {{ mise_hook }}
+            }}
+            add-hook env_change.PWD {{
+              condition: {{ "MISE_SHELL" in $env }}
+              code: {{ mise_hook }}
+            }}
           }}
-            
+
+          def --env add-hook [field hook] {{
+            let field = $field | split row . | prepend hooks | into cell-path
+            let hooks = $env.config | get --ignore-errors $field | default []
+            $env.config = ($env.config | upsert $field ($hooks ++ $hook))
+          }}
+
           def "parse vars" [] {{
             $in | lines | parse "{{op}},{{name}},{{value}}"
           }}
-            
-          def --wrapped mise [command?: string, --help, ...rest: string] {{
+
+          export def --wrapped main [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
-            
+
             if ($command == null) {{
               ^"{exe}"
             }} else if ($command == "activate") {{
@@ -63,7 +62,7 @@ impl Shell for Nushell {
               ^"{exe}" $command ...$rest
             }}
           }}
-            
+
           def --env "update-env" [] {{
             for $var in $in {{
               if $var.op == "set" {{
