@@ -11,6 +11,7 @@ use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
 pub struct CargoForge {
@@ -25,6 +26,10 @@ impl Forge for CargoForge {
 
     fn fa(&self) -> &ForgeArg {
         &self.fa
+    }
+
+    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+        Ok(vec!["cargo".into(), "rust".into()])
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {

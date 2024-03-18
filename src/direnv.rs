@@ -117,7 +117,7 @@ mod tests {
     fn test_parse() {
         let input = r#"eJys0c1yojAAwPF3ybmWaLB-zPSAGCqIQCGgeGGIELDlM2BEOr77zs7szr7AXv-H3-X_Axqw_gGabYM1qPk1A88XUP1OW93FVhBtdReswURq-FXEfSqJmEusLpKUdxLspALRJY1Yt2Bifk8aLhf5iiZIhhDCjEtE6svmteGuSJVHAV7-qppuYrAG_0WVXtNK8Ms__KgQdYc9sAapMXRj1-9XW8VX7A16UA4NPIs9xCK5WO51XnvfwWBT1R9N7zIcHvvJbZF5g8pk0V2c5CboIw8_NjOUWDK5qcxIcaFrp3anhwdr5FeKJmfd9stgqvuVZqcXsXHYJ-kSGWpoxyZLzf0a0LUcMgv17exenXXunfOTZZfybiVmb9OAhjDtHEcOk0lrRWG84OrRobW6IgGGZqwelglTq8UmJrbP9p0x9pTW5t3L21P1mZfL7_pMtIW599v-Cx_dmzEdCcZ1TAzkz7dvfO4QAefO6Y4VxYmijzgP_Oz9Hbz8uU5jDp7PXwEAAP__wB6qKg=="#;
         let diff = DirenvDiff::parse(input).unwrap();
-        assert_display_snapshot!(diff);
+        assert_snapshot!(diff);
     }
 
     #[test]
@@ -127,9 +127,9 @@ mod tests {
             new: HashMap::from([("c".to_string(), "d".to_string())]),
         };
         let output = diff.dump().unwrap();
-        assert_display_snapshot!(&output);
+        assert_snapshot!(&output);
         let diff = DirenvDiff::parse(&output).unwrap();
-        assert_display_snapshot!(diff);
+        assert_snapshot!(diff);
     }
 
     #[test]
@@ -140,8 +140,8 @@ mod tests {
         };
         let path = PathBuf::from("/tmp");
         diff.add_path_to_old_and_new(&path).unwrap();
-        assert_display_snapshot!(diff.old.get("PATH").unwrap());
-        assert_display_snapshot!(diff.new.get("PATH").unwrap());
+        assert_snapshot!(diff.old.get("PATH").unwrap());
+        assert_snapshot!(diff.new.get("PATH").unwrap());
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod tests {
         };
         let path = PathBuf::from("/tmp");
         diff.add_path_to_old_and_new(&path).unwrap();
-        assert_display_snapshot!(diff.old.get("PATH").unwrap());
-        assert_display_snapshot!(diff.new.get("PATH").unwrap());
+        assert_snapshot!(diff.old.get("PATH").unwrap());
+        assert_snapshot!(diff.new.get("PATH").unwrap());
     }
 }

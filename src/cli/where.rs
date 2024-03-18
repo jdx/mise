@@ -116,6 +116,6 @@ mod tests {
     #[test]
     fn test_where_not_found() {
         let err = assert_cli_err!("where", "tiny@1111");
-        assert_display_snapshot!(err, @"tiny@1111 not installed");
+        assert_snapshot!(err, @"tiny@1111 not installed");
     }
 }

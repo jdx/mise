@@ -226,7 +226,7 @@ pub(crate) mod tests {
             tv.path,
             env::current_dir().unwrap().join(".test-tool-versions")
         );
-        assert_display_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
+        assert_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
     }
 
     #[test]
@@ -278,6 +278,6 @@ pub(crate) mod tests {
         "};
         let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
-        assert_display_snapshot!(tv.to_toolset().unwrap(), @"ruby@3.0.5 ruby@3.1");
+        assert_snapshot!(tv.to_toolset().unwrap(), @"ruby@3.0.5 ruby@3.1");
     }
 }

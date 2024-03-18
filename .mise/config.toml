@@ -1,1 +1,1 @@
-tasks.lint = "just lint"
+tasks.l = "mise run lint"

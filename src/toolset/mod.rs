@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::sleep;
+use std::time::Duration;
 
 use console::truncate_str;
 use eyre::Result;
@@ -154,15 +156,28 @@ impl Toolset {
             true => 1,
             false => opts.jobs.unwrap_or(settings.jobs),
         };
+        let installing: HashSet<String> = HashSet::new();
+        let installing = Arc::new(Mutex::new(installing));
         thread::scope(|s| {
             (0..jobs)
                 .map(|_| {
                     let queue = queue.clone();
+                    let installing = installing.clone();
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
                         while let Some((t, versions)) = next_job() {
+                            installing.lock().unwrap().insert(t.id().into());
                             for tv in versions {
+                                for dep in t.get_dependencies(&tv)? {
+                                    while installing.lock().unwrap().contains(dep.as_str()) {
+                                        trace!(
+                                            "{tv} waiting for dependency {} to finish installing",
+                                            dep
+                                        );
+                                        sleep(Duration::from_millis(100));
+                                    }
+                                }
                                 let tv = tv.request.resolve(
                                     t.as_ref(),
                                     tv.opts.clone(),
@@ -177,6 +192,7 @@ impl Toolset {
                                 };
                                 t.install_version(ctx)?;
                             }
+                            installing.lock().unwrap().remove(t.id());
                         }
                         Ok(())
                     })

@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn test_latest_system() {
         let err = assert_cli_err!("latest", "dummy@system");
-        assert_display_snapshot!(err);
+        assert_snapshot!(err);
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_latest_missing_plugin() {
         let stdout = assert_cli_err!("latest", "invalid_plugin");
-        assert_display_snapshot!(stdout);
+        assert_snapshot!(stdout);
     }
 
     #[test]

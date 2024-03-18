@@ -113,6 +113,14 @@ pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Ok((stdout, stderr))
 }
 
+pub fn change_installed_version(tool: &str, cur: &str, new: &str) {
+    file::rename(
+        dirs::INSTALLS.join(tool).join(cur),
+        dirs::INSTALLS.join(tool).join(new),
+    )
+    .unwrap()
+}
+
 fn clean_output(output: String) -> String {
     let output = output.trim().to_string();
     let output = console::strip_ansi_codes(&output).to_string();

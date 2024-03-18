@@ -1,0 +1,50 @@
+name: release-plz
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+      - release-plz
+
+concurrency:
+  group: release-plz
+
+env:
+  MISE_EXPERIMENTAL: 1
+
+jobs:
+  release-plz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          git_tag_gpgsign: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unit
+          save-if: false
+      - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: v0-mise-tools
+      - run: mise install
+      - run: mise run release-plz
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

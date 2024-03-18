@@ -26,6 +26,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
@@ -35,7 +36,6 @@ jobs:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
-      - run: cargo binstall usage-cli
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -45,8 +45,16 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - run: cargo build --all-features
       - run: ./target/debug/mise settings set experimental true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: v0-mise-tools
+      - run: ./target/debug/mise install
       - run: ./target/debug/mise run render
-      - run: ./target/debug/mise run lint:fix
+      - run: ./target/debug/mise run lint-fix
       - run: git diff HEAD
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         uses: EndBug/add-and-commit@v9
@@ -86,7 +94,7 @@ jobs:
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
-          TEST_FULL: ${{github.ref_name == 'main' && '1' || '0'}}
+          TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
           max_attempts: 2

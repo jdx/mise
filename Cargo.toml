@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.3.1"
+version = "2024.3.6"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -12,15 +12,15 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "src/**/*.rs",
-    "src/plugins/core/assets/**",
-    "src/assets/**",
-    "/completions/*",
-    "/Cargo.lock",
-    "/LICENSE",
-    "/README.md",
-    "/build.rs",
-    "/zipsign.pub",
+  "src/**/*.rs",
+  "src/plugins/core/assets/**",
+  "src/assets/**",
+  "/completions/*",
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/zipsign.pub",
 ]
 rust-version = "1.74.0"
 build = "build.rs"
@@ -42,9 +42,10 @@ lto = true
 base64 = "0.22.0"
 calm_io = "0.1.1"
 chrono = { version = "0.4.35", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.5.2", features = ["env", "derive", "string"] }
+ci_info = "0.14.14"
+clap = { version = "4.5.3", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
-color-eyre = "0.6.2"
+color-eyre = "0.6.3"
 color-print = "0.3.5"
 confique = { version = "0.2.5", default-features = false }
 console = "0.15.8"
@@ -75,12 +76,12 @@ petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.9.0"
 regex = "1.10.3"
-reqwest = { version = "0.11.24", default-features = false, features = ["blocking", "json", "gzip"] }
+reqwest = { version = "0.11.26", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 self_update = { version = "0.39.0", default-features = false, features = [
-    "archive-tar",
-    "compression-flate2",
-    "signatures",
+  "archive-tar",
+  "compression-flate2",
+  "signatures",
 ] }
 serde = "1.0.197"
 serde_derive = "1.0.197"
@@ -89,20 +90,20 @@ sha2 = "0.10.8"
 shell-escape = "0.1.5"
 shell-words = "1.1.0"
 signal-hook = "0.3.17"
-simplelog = { version = "0.12.1" }
-strum = { version = "0.26.1", features = ["derive"] }
+simplelog = { version = "0.12.2" }
+strum = { version = "0.26.2", features = ["derive"] }
 sys-info = "0.9.1"
 tabled = { version = "0.15.0", features = ["ansi"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
 tera = { version = "1.19.1", default-features = false }
 terminal_size = "0.3.0"
-thiserror = "1.0.57"
-toml = { version = "0.8.10", features = ["parse"] }
-toml_edit = { version = "0.22.6", features = ["parse"] }
+thiserror = "1.0.58"
+toml = { version = "0.8.11", features = ["parse"] }
+toml_edit = { version = "0.22.7", features = ["parse"] }
 url = "2.5.0"
-usage-lib = { version="0.1.9", features = ["clap"] }
-versions = { version = "6.1.0" , features=["serde"]}
+usage-lib = { version = "0.1.12", features = ["clap"] }
+versions = { version = "6.1.0", features = ["serde"] }
 walkdir = "2.5.0"
 which = "6.0.0"
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
@@ -126,17 +127,6 @@ default = ["native-tls"]
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
-
-[package.metadata.release]
-allow-branch = ["main"]
-sign-tag = true
-sign-commit = true
-pre-release-hook = "./scripts/pre-release-hook.sh"
-pre-release-replacements = [
-    { file = "README.md", search = "^mise [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "mise {{version}}", exactly = 1 },
-    { file = "packaging/rpm/mise.spec", search = "^Version: [0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?$", replace = "Version: {{version}}", exactly = 1 },
-    { file = "default.nix", search = "version = \"[0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?\";$", replace = "version = \"{{version}}\";", exactly = 1 },
-]
 
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"

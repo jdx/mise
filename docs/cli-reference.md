@@ -551,7 +551,7 @@ Options:
           Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
 
   -J, --json
-          Output in json format
+          Output in JSON format
 
   -m, --missing
           Display missing tool versions
@@ -626,18 +626,22 @@ Examples:
     20.1.0
 ```
 
-## `mise outdated [TOOL@VERSION]...`
+## `mise outdated [OPTIONS] [TOOL@VERSION]...`
 
 ```text
 Shows outdated tool versions
 
-Usage: outdated [TOOL@VERSION]...
+Usage: outdated [OPTIONS] [TOOL@VERSION]...
 
 Arguments:
   [TOOL@VERSION]...
           Tool(s) to show outdated versions for
           e.g.: node@20 python@3.10
           If not specified, all tools in global and local configs will be shown
+
+Options:
+  -J, --json
+          Output in JSON format
 
 Examples:
 
@@ -649,6 +653,9 @@ Examples:
     $ mise outdated node
     Plugin  Requested  Current  Latest
     node    20         20.0.0   20.1.0
+
+    $ mise outdated --json
+    {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 ```
 
 ## `mise plugins install [OPTIONS] [NEW_PLUGIN] [GIT_URL]`
@@ -1248,6 +1255,9 @@ Arguments:
           e.g.: mise tasks deps lint test check
 
 Options:
+      --hidden
+          Show hidden tasks
+
       --dot
           Display dependencies in DOT format
 

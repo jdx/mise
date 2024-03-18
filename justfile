@@ -9,15 +9,13 @@ default: test
 alias b := build
 alias e := test-e2e
 alias t := test
-alias l := lint
-alias lf := lint-fix
 
 # just `cargo build`
 build *args:
     cargo build --all-features {{ args }}
 
 # run all test types
-test *args: (test-unit args) test-e2e lint
+test *args: (test-unit args) test-e2e
 
 # run the rust "unit" tests
 test-unit *args:
@@ -64,29 +62,8 @@ test-coverage:
         mise implode
     elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
         echo "::group::Self update"
-        mise self-update -fy
+        # TODO: enable this when release-plz is working right
+        #mise self-update -fy
     fi
     echo "::group::Render lcov report"
     cargo llvm-cov report --lcov --output-path lcov.info
-
-scripts := "scripts/*.sh e2e/{test_,run_}* e2e/*.sh"
-
-# clippy, cargo fmt --check, and just --fmt
-lint:
-    cargo clippy -- -Dwarnings
-    cargo fmt --all -- --check
-    mise x -y shellcheck@latest -- shellcheck -x {{ scripts }}
-    mise x -y shfmt@latest -- shfmt -d {{ scripts }}
-    just --unstable --fmt --check
-    MISE_EXPERIMENTAL=1 mise x -y npm:prettier@latest -- prettier -c $(git ls-files '*.yml' '*.yaml')
-    MISE_EXPERIMENTAL=1 mise x -y npm:markdownlint-cli@latest -- markdownlint .
-
-# runs linters but makes fixes when possible
-lint-fix:
-    cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
-    cargo fmt --all
-    mise x -y shellcheck@latest -- shellcheck -x {{ scripts }}
-    mise x -y shfmt@latest -- shfmt -w {{ scripts }}
-    just --unstable --fmt
-    MISE_EXPERIMENTAL=1 mise x -y npm:prettier@latest -- prettier -w $(git ls-files '*.yml' '*.yaml')
-    MISE_EXPERIMENTAL=1 mise x -y npm:markdownlint-cli@latest -- markdownlint --fix .
