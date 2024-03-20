@@ -223,6 +223,7 @@ impl Config {
             .into_iter()
             .flatten()
             .chain(self.load_global_tasks()?)
+            .chain(self.load_system_tasks()?)
             .rev()
             .inspect(|t| trace!("loading task {t} from {}", display_path(&t.config_source)))
             .map(|t| (t.name.clone(), t))
@@ -252,21 +253,32 @@ impl Config {
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
         let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
         Ok(self
-            .load_global_config_tasks(&cf)
+            .load_config_tasks(&cf)
             .into_iter()
-            .chain(self.load_global_file_tasks(&cf))
+            .chain(self.load_file_tasks(&cf))
             .collect())
     }
+
+    fn load_system_tasks(&self) -> Result<Vec<Task>> {
+        let cf = self.config_files.get(&dirs::SYSTEM.join("config.toml"));
+        Ok(self
+            .load_config_tasks(&cf)
+            .into_iter()
+            .chain(self.load_file_tasks(&cf))
+            .collect())
+    }
+
     #[allow(clippy::borrowed_box)]
-    fn load_global_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+    fn load_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
         cf.map(|cf| cf.tasks())
             .unwrap_or_default()
             .into_iter()
             .cloned()
             .collect()
     }
+
     #[allow(clippy::borrowed_box)]
-    fn load_global_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+    fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
         let includes = match cf {
             Some(cf) => cf
                 .task_config()
