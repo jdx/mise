@@ -344,7 +344,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("jless", "https://github.com/jc00ke/asdf-jless.git"),
     ("jmespath", "https://github.com/skyzyx/asdf-jmespath.git"),
     ("jmeter", "https://github.com/comdotlinux/asdf-jmeter"),
-    ("jq", "https://github.com/lsanwick/asdf-jq.git"),
+    ("jq", "https://github.com/mise-plugins/asdf-jq.git"),
     ("jqp", "https://gitlab.com/wt0f/asdf-jqp.git"),
     ("jreleaser", "https://github.com/joschi/asdf-jreleaser.git"),
     ("jsonnet", "https://github.com/Banno/asdf-jsonnet.git"),
