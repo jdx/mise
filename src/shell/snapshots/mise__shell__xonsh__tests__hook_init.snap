@@ -2,10 +2,22 @@
 source: src/shell/xonsh.rs
 expression: "xonsh.activate(exe, \" --status\".into())"
 ---
+from os               import environ
+import subprocess
 from xonsh.built_ins  import XSH
 
 def listen_prompt(): # Hook Events
   execx($(/some/dir/mise hook-env --status -s xonsh))
 
+envx = XSH.env
+envx[   'MISE_SHELL'] = 'xonsh'
+environ['MISE_SHELL'] = envx.get_detyped('MISE_SHELL')
 XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
 
+def _mise(args):
+  if args and args[0] in ('deactivate', 'shell', 'sh'):
+    execx(subprocess.run(['command', 'mise', *args], stdout=subprocess.PIPE).stdout.decode())
+  else:
+    subprocess.run(['command', 'mise', *args])
+
+XSH.aliases['mise'] = _mise

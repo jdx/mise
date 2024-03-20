@@ -2,6 +2,7 @@
 source: src/shell/xonsh.rs
 expression: replace_path(&deactivate)
 ---
+import os
 from xonsh.built_ins  import XSH
 
 hooks = {
@@ -16,3 +17,6 @@ for   hook_type in hooks:
         hndl.remove(fn)
         break
 
+del XSH.aliases['mise']
+del XSH.env['MISE_SHELL']
+del os.environ['MISE_SHELL']
