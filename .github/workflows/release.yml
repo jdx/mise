@@ -77,7 +77,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: build-tarball-${{matrix.name}}
+          shared-key: build-tarball
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
