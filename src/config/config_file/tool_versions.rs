@@ -9,7 +9,7 @@ use tera::Context;
 
 use crate::cli::args::ForgeArg;
 use crate::config::config_file;
-use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -151,10 +151,6 @@ impl Display for ToolVersions {
 }
 
 impl ConfigFile for ToolVersions {
-    fn get_type(&self) -> ConfigFileType {
-        ConfigFileType::ToolVersions
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
