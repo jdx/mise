@@ -44,17 +44,31 @@ impl Shell for Xonsh {
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
         // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
         formatdoc! {r#"
+            from os               import environ
+            import subprocess
             from xonsh.built_ins  import XSH
 
             def listen_prompt(): # Hook Events
               execx($({exe} hook-env{flags} -s xonsh))
 
+            envx = XSH.env
+            envx[   'MISE_SHELL'] = 'xonsh'
+            environ['MISE_SHELL'] = envx.get_detyped('MISE_SHELL')
             XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+
+            def _mise(args):
+              if args and args[0] in ('deactivate', 'shell', 'sh'):
+                execx(subprocess.run(['command', 'mise', *args], stdout=subprocess.PIPE).stdout.decode())
+              else:
+                subprocess.run(['command', 'mise', *args])
+
+            XSH.aliases['mise'] = _mise
         "#}
     }
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
+            import os
             from xonsh.built_ins  import XSH
 
             hooks = {{
@@ -68,6 +82,10 @@ impl Shell for Xonsh {
                   if fn.__name__ == hook_fn:
                     hndl.remove(fn)
                     break
+
+            del XSH.aliases['mise']
+            del XSH.env['MISE_SHELL']
+            del os.environ['MISE_SHELL']
             "#}
     }
 
