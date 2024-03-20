@@ -33,11 +33,10 @@ pub mod tool_versions;
 pub enum ConfigFileType {
     MiseToml,
     ToolVersions,
-    LegacyVersion,
+    // LegacyVersion,
 }
 
 pub trait ConfigFile: Debug + Send + Sync {
-    fn get_type(&self) -> ConfigFileType;
     fn get_path(&self) -> &Path;
     fn min_version(&self) -> &Option<Versioning> {
         &None

@@ -14,9 +14,7 @@ use either::Either;
 use eyre::Result;
 use globset::Glob;
 use itertools::Itertools;
-use petgraph::graph::DiGraph;
 use petgraph::prelude::*;
-use petgraph::{Direction, Graph};
 use serde_derive::Deserialize;
 
 use crate::config::config_file::toml::deserialize_arr;

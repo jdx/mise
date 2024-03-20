@@ -284,7 +284,7 @@ impl Iterator for FindUp {
                 return Some(path);
             }
         }
-        self.current_dir_filenames = self.filenames.clone();
+        self.current_dir_filenames.clone_from(&self.filenames);
         if cfg!(test) && self.current_dir == *dirs::HOME {
             return None; // in tests, do not recurse further than ./test
         }
