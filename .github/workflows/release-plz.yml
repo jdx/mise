@@ -33,7 +33,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
-          save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache/restore@v4
