@@ -1,5 +1,4 @@
 use std::ffi::OsString;
-use std::iter::Iterator;
 
 use std::sync::Arc;
 

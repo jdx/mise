@@ -52,7 +52,7 @@ impl HookEnv {
             paths.extend(split_paths(&p).collect_vec());
         }
         paths.extend(ts.list_paths()); // load the active runtime paths
-        diff.path = paths.clone(); // update __MISE_DIFF with the new paths for the next run
+        diff.path.clone_from(&paths); // update __MISE_DIFF with the new paths for the next run
 
         let settings = Settings::try_get()?;
         patches.extend(self.build_path_operations(&settings, &paths, &__MISE_DIFF.path)?);

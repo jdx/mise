@@ -1,4 +1,3 @@
-use std::string::ToString;
 use std::time::Duration;
 
 use console::style;

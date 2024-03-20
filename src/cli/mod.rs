@@ -190,7 +190,7 @@ impl Cli {
     }
 
     pub fn run(args: &Vec<String>) -> Result<()> {
-        *crate::env::ARGS.write().unwrap() = args.clone();
+        crate::env::ARGS.write().unwrap().clone_from(args);
         shims::handle_shim()?;
         version::print_version_if_requested(args)?;
 
