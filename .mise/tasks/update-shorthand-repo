@@ -58,7 +58,6 @@ echo "]));" >>src/default_shorthands.rs
 
 cat <<EOF >>src/default_shorthands.rs
 
-#[rustfmt::skip]
 pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> =
     Lazy::new(|| HashSet::from([
 EOF
