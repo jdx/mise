@@ -75,7 +75,7 @@ impl Upgrade {
             .iter()
             .map(|(_, tv, latest)| {
                 let mut tv = tv.clone();
-                tv.version = latest.clone();
+                tv.version.clone_from(latest);
                 tv
             })
             .collect();

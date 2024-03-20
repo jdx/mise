@@ -15,7 +15,7 @@ use versions::Versioning;
 
 use crate::cli::args::{ForgeArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
-use crate::config::config_file::{trust_check, ConfigFile, ConfigFileType, TaskConfig};
+use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
@@ -91,7 +91,7 @@ impl MiseToml {
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
         rf.path = path.to_path_buf();
         for task in rf.tasks.0.values_mut() {
-            task.config_source = rf.path.clone();
+            task.config_source.clone_from(&rf.path);
         }
         trace!("{}", rf.dump()?);
         Ok(rf)
@@ -194,9 +194,6 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
-    fn get_type(&self) -> ConfigFileType {
-        ConfigFileType::MiseToml
-    }
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -791,7 +788,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                 let mut tasks = BTreeMap::new();
                 while let Some(name) = map.next_key::<String>()? {
                     let mut task = map.next_value::<TaskDef>()?.0;
-                    task.name = name.clone();
+                    task.name.clone_from(&name);
                     tasks.insert(name, task);
                 }
                 Ok(Tasks(tasks))

@@ -1,10 +1,9 @@
-use std::default::Default;
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
 use crate::cli::args::ForgeArg;
-use crate::config::config_file::{ConfigFile, ConfigFileType};
+use crate::config::config_file::ConfigFile;
 use crate::forge::ForgeList;
 use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
 
@@ -33,10 +32,6 @@ impl LegacyVersionFile {
 }
 
 impl ConfigFile for LegacyVersionFile {
-    fn get_type(&self) -> ConfigFileType {
-        ConfigFileType::LegacyVersion
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }

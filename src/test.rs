@@ -103,7 +103,7 @@ pub fn replace_path(input: &str) -> String {
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
     forge::reset();
-    *env::ARGS.write().unwrap() = args.clone();
+    env::ARGS.write().unwrap().clone_from(args);
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
     Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
