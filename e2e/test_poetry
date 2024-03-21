@@ -19,8 +19,7 @@ python = "3.12.0"
 poetry = {version="1.7.1", pyproject="pyproject.toml"}
 EOF
 # TODO: get poetry to work with precompiled python
-MISE_PYTHON_COMPILE=1 mise i python -f && _mise_hook
-mise i poetry && _mise_hook
+MISE_PYTHON_COMPILE=1 mise i python poetry -f && _mise_hook
 
 assert "poetry --version" "Poetry (version 1.7.1)"
 python3 -V
