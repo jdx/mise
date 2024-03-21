@@ -227,7 +227,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("firebase", "https://github.com/jthegedus/asdf-firebase.git"),
     ("fission", "https://github.com/virtualstaticvoid/asdf-fission.git"),
     ("flamingo", "https://github.com/log2/asdf-flamingo.git"),
-    ("flarectl", "https://github.com/ORCID/asdf-flarectl.git"),
+    ("flarectl", "https://github.com/mise-plugins/asdf-flarectl.git"),
     ("flatc", "https://github.com/TheOpenDictionary/asdf-flatc.git"),
     ("flutter", "https://github.com/oae/asdf-flutter.git"),
     ("flux2", "https://github.com/tablexi/asdf-flux2.git"),
