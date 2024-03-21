@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024.3.7](https://github.com/jdx/mise/compare/v2024.3.6..v2024.3.7) - 2024-03-21
+
+### 🐛 Bug Fixes
+
+- **(task)** tasks not working in system config (#1803) - [d5df98c](https://github.com/jdx/mise/commit/d5df98cd0b05a5bc0f0cb1cb83883138f56a109d) - [@roele](https://github.com/roele)
+- **(xonsh)** `shell` subcommand for xonsh (#1801) - [9153411](https://github.com/jdx/mise/commit/9153411b1e8a5bff8de4f71dda5656e297d4b79e) - [@yggdr](https://github.com/yggdr)
+- jq Installed Using x86_64 on Apple Silicon using mise (#1804) - [2ea978d](https://github.com/jdx/mise/commit/2ea978d0f16ae06fa0749dcbee837662dc0484e6) - [@roele](https://github.com/roele)
+
+### 📚 Documentation
+
+- **(changelog)** improve styling - [403033d](https://github.com/jdx/mise/commit/403033d269f88aa0c1e571e5613231eca84fbaac) - [@jdx](https://github.com/jdx)
+- **(changelog)** improve styling - [cf4811b](https://github.com/jdx/mise/commit/cf4811b0cfa16d7c002e155539eac7a8d5c3912a) - [@jdx](https://github.com/jdx)
+
+### 🎨 Styling
+
+- format default_shorthands.rs - [a8ea813](https://github.com/jdx/mise/commit/a8ea81337ffd9cfd9201cc49d6a64ba93e10a9a7) - [@jdx](https://github.com/jdx)
+
+### 🧪 Testing
+
+- install python/poetry at the same time - [08a3304](https://github.com/jdx/mise/commit/08a33048b92a8ce3b551d0f7e39a28ac0bc29f07) - [@jdx](https://github.com/jdx)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(release-plz)** use different bot email - [59b814f](https://github.com/jdx/mise/commit/59b814fae7eedd6565286a6865b6539e2c058a36) - [@jdx](https://github.com/jdx)
+- **(release-plz)** sign release git tags - [8ce5d37](https://github.com/jdx/mise/commit/8ce5d371515d287b8e5a5ccdbddeafa6e5d18952) - [@jdx](https://github.com/jdx)
+- **(test)** run all e2e tests on the release pr - [f21c84b](https://github.com/jdx/mise/commit/f21c84b5683e986b93cf2f3f16c120a7168aacba) - [@jdx](https://github.com/jdx)
+- **(test)** run all e2e tests on the release pr - [cf19dc5](https://github.com/jdx/mise/commit/cf19dc5eac9245a780a9135f7483e431ef686f69) - [@jdx](https://github.com/jdx)
+- **(test)** skip aur/aur-bin on release PR - [9ddb424](https://github.com/jdx/mise/commit/9ddb424c133452d4cb1e4304c263ff74ca65811b) - [@jdx](https://github.com/jdx)
+- rust 1.78 deprecation warning fixes (#1805) - [cdc7ba0](https://github.com/jdx/mise/commit/cdc7ba0aafdc467451be667a038c01af9c79a981) - [@jdx](https://github.com/jdx)
+- fix caching - [62cb250](https://github.com/jdx/mise/commit/62cb250007c443dc25e72292b178c5f51cda413c) - [@jdx](https://github.com/jdx)
+
 ## [2024.3.6](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.6) - 2024-03-17
 
 ### 🚀 Features

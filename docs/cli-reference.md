@@ -425,10 +425,11 @@ Options:
 ```text
 Install a tool version
 
-This will install a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
-It won't be used simply by being installed, however.
-For that, you must set up a `.mise.toml`/`.tool-version` file manually or with `mise use`.
-Or you can call a tool version explicitly with `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
+Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+Installing alone will not activate the tools so they won't be in PATH.
+To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
+in the current directory to activate this tool when inside the directory.
+Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
@@ -453,6 +454,8 @@ Options:
 
   -v, --verbose...
           Show installation output
+
+          This argument will print plugin output such as download, configuration, and compilation output.
 
 Examples:
 
