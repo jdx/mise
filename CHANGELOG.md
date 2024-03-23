@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024.3.8](https://github.com/jdx/mise/compare/v2024.3.7..v2024.3.8) - 2024-03-23
+
+### 🚀 Features
+
+- use http2 for reqwest (#1825) - [7ac7198](https://github.com/jdx/mise/commit/7ac71985e1a7060e2adfc0c1d9a3e70a2fba09c9) - [@jdx](https://github.com/jdx)
+
+### 🐛 Bug Fixes
+
+- **(nu)** Gracefully handle missing `$env.config` (#1809) - [770e00b](https://github.com/jdx/mise/commit/770e00b8a541097544de1d1ef1c753acd0fdbf21) - [@texastoland](https://github.com/texastoland)
+- Apple x64 version of mise doesn't work (#1821) - [0c0074a](https://github.com/jdx/mise/commit/0c0074a1607f55fbff33115bd33dc1c4f8c7cf4e) - [@roele](https://github.com/roele)
+
+### 🧪 Testing
+
+- fix warnings - [f0604a3](https://github.com/jdx/mise/commit/f0604a3224d5081012101d5266879c6d0af0d39d) - [@jdx](https://github.com/jdx)
+
+### ⚙️ Miscellaneous Tasks
+
+- automatically bump minor version if month/year changes - [96ad08d](https://github.com/jdx/mise/commit/96ad08d8acb6b7a4eff0be2f49022080d10b9b71) - [@mise-en-dev](https://github.com/mise-en-dev)
+- updated cargo-deny config (#1824) - [02c7e5c](https://github.com/jdx/mise/commit/02c7e5c262a428477d8c12db2d6c59b8d90b367f) - [@jdx](https://github.com/jdx)
+
+### Release
+
+- fix version set - [2be7fe5](https://github.com/jdx/mise/commit/2be7fe51c0fb9f66c43cd6e940f4eb18ee83c822) - [@jdx](https://github.com/jdx)
+
 ## [2024.3.7](https://github.com/jdx/mise/compare/v2024.3.6..v2024.3.7) - 2024-03-21
 
 ### 🐛 Bug Fixes
