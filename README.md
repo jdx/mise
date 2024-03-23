@@ -6,7 +6,7 @@ The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable 
 mise plugin install <name>
 ```
 
-See the [org's readme](https://github.com/mise-plugins) for more information.
+See the [org's readme](https://github.com/mise-plugins) for more information.
 
 ## Plugin List
 
@@ -426,6 +426,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Logtalk                       | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk)                                       |
 | Loki-Logcli                   | [comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli)                                   |
 | ls-lint                       | [ameausoone/asdf-ls-lint](https://github.com/ameausoone/asdf-ls-lint)                                             |
+| lsd                           | [mise-plugins/asdf-lsd](https://github.com/mise-plugins/asdf-lsd)                                                 |
 | Lua                           | [Stratus3D/asdf-lua](https://github.com/Stratus3D/asdf-lua)                                                       |
 | LuaJIT                        | [smashedtoatoms/asdf-luaJIT](https://github.com/smashedtoatoms/asdf-luaJIT)                                       |
 | lua-language-server           | [bellini666/asdf-lua-language-server](https://github.com/bellini666/asdf-lua-language-server)                     |
