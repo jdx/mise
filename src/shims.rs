@@ -24,7 +24,7 @@ use crate::{fake_asdf, forge};
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if bin_name == "mise" || bin_name == "rtx" || cfg!(test) {
+    if regex!(r"^(mise|rtx)(\-.*)?$").is_match(bin_name) || cfg!(test) {
         return Ok(());
     }
     logger::init();
