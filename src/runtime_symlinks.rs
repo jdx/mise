@@ -110,7 +110,6 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
     use crate::plugins::ExternalPlugin;
 
     use super::*;

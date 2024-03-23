@@ -52,8 +52,6 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 mod tests {
     use std::ops::Deref;
 
-    use crate::config::settings::Settings;
-
     use super::*;
 
     #[test]

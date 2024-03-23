@@ -367,11 +367,6 @@ pub fn is_activated() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use crate::env::apply_patches;
-    use crate::env_diff::EnvDiffOperation;
-
     use super::*;
 
     #[test]
