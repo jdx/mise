@@ -331,21 +331,15 @@ Since Nu does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_
 ```nushell
 '
 let mise_path = $nu.default-config-dir | path join scripts mise.nu
-if $nu.is-interactive {
-  ^mise activate nu | save $mise_path --force
-}' | save $nu.env-path --append
-'
-if $nu.is-interactive {
-  use mise.nu
-}' | save $nu.config-path --append
+^mise activate nu | save $mise_path --force
+' | save $nu.env-path --append
+"\nuse mise.nu" | save $nu.config-path --append
 ```
 
 If you prefer to keep your dotfiles clean you can save it to a different directory then update `$env.NU_LIB_DIRS`:
 
 ```nushell
-'
-$env.NU_LIB_DIRS ++= ($mise_path | path dirname | to nuon)
-' | save $nu.env-path --append
+"\n$env.NU_LIB_DIRS ++= ($mise_path | path dirname | to nuon)" | save $nu.env-path --append
 ```
 
 #### Xonsh
