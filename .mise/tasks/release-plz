@@ -16,7 +16,16 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   exit 0
 fi
 
-cargo set-version --bump patch
+year="$(date +%Y)"
+month="$(date +%-m)"
+if echo "$cur_version" | grep -e "^$year\.$month\."; then
+  echo cargo set-version --bump patch
+elif echo "$cur_version" | grep -e "^$year\."; then
+  echo cargo set-version --bump minor
+else
+  cargo set-version "$year.1.0"
+fi
+
 version="$(cargo pkgid mise | cut -d# -f2)"
 git cliff --tag "v$version" -o CHANGELOG.md
 changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
