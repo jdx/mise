@@ -859,7 +859,6 @@ where
 mod tests {
     use dirs::CWD;
 
-    use crate::dirs;
     use crate::test::replace_path;
 
     use super::*;
