@@ -11,6 +11,9 @@
 
 # Root options
 
+# The graph table configures how the dependency graph is constructed and thus
+# which crates the checks are performed against
+[graph]
 # If 1 or more target triples (and optionally, target_features) are specified,
 # only the specified targets will be checked when running `cargo deny check`.
 # This means, if a particular package is only ever used as a target specific
@@ -22,7 +25,7 @@
 targets = [
   # The triple can be any string, but only the target triples built in to
   # rustc (as of 1.40) can be checked against actual config expressions
-  #{ triple = "x86_64-unknown-linux-musl" },
+  #"x86_64-unknown-linux-musl",
   # You can also specify which target_features you promise are enabled for a
   # particular target. target_features are currently not validated against
   # the actual valid features supported by the target architecture.
@@ -46,6 +49,9 @@ no-default-features = false
 # If set, these feature will be enabled when collecting metadata. If `--features`
 # is specified on the cmd line they will take precedence over this option.
 #features = []
+
+# The output table provides options for how/if diagnostics are outputted
+[output]
 # When outputting inclusion graphs in diagnostics that include features, this
 # option can be used to specify the depth at which feature edges will be added.
 # This option is included since the graphs can be quite large and the addition
@@ -57,35 +63,18 @@ feature-depth = 1
 # More documentation for the advisories section can be found here:
 # https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
 [advisories]
-# The path where the advisory database is cloned/fetched into
-db-path = "~/.cargo/advisory-db"
+# The path where the advisory databases are cloned/fetched into
+#db-path = "$CARGO_HOME/advisory-dbs"
 # The url(s) of the advisory databases to use
-db-urls = ["https://github.com/rustsec/advisory-db"]
-# The lint level for security vulnerabilities
-vulnerability = "deny"
-# The lint level for unmaintained crates
-unmaintained = "warn"
-# The lint level for crates that have been yanked from their source registry
-yanked = "warn"
-# The lint level for crates with security notices. Note that as of
-# 2019-12-17 there are no security notice advisories in
-# https://github.com/rustsec/advisory-db
-notice = "warn"
+#db-urls = ["https://github.com/rustsec/advisory-db"]
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-  "RUSTSEC-2023-0052", # webpki
+  #"RUSTSEC-0000-0000",
+  #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
+  #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
+  #{ crate = "a-crate-that-is-yanked@0.1.1", reason = "you can specify why you are ignoring the yanked crate" },
 ]
-# Threshold for security vulnerabilities, any vulnerability with a CVSS score
-# lower than the range specified will be ignored. Note that ignored advisories
-# will still output a note when they are encountered.
-# * None - CVSS Score 0.0
-# * Low - CVSS Score 0.1 - 3.9
-# * Medium - CVSS Score 4.0 - 6.9
-# * High - CVSS Score 7.0 - 8.9
-# * Critical - CVSS Score 9.0 - 10.0
-#severity-threshold =
-
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.
 # Setting this to true can be helpful if you have special authentication requirements that cargo-deny does not support.
@@ -96,41 +85,19 @@ ignore = [
 # More documentation for the licenses section can be found here:
 # https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
 [licenses]
-# The lint level for crates which do not have a detectable license
-unlicensed = "deny"
 # List of explicitly allowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 allow = [
-  "MIT",
-  "ISC",
-  "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
-  "Unicode-DFS-2016",
+  "Apache-2.0",
   "BSD-3-Clause",
-  "OpenSSL",
+  "ISC",
+  "MIT",
   "MPL-2.0",
+  "OpenSSL",
+  "Unicode-DFS-2016",
 ]
-# List of explicitly disallowed licenses
-# See https://spdx.org/licenses/ for list of possible licenses
-# [possible values: any SPDX 3.11 short identifier (+ optional exception)].
-deny = [
-  #"Nokia",
-]
-# Lint level for licenses considered copyleft
-copyleft = "deny"
-# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
-# * both - The license will be approved if it is both OSI-approved *AND* FSF
-# * either - The license will be approved if it is either OSI-approved *OR* FSF
-# * osi-only - The license will be approved if is OSI-approved *AND NOT* FSF
-# * fsf-only - The license will be approved if is FSF *AND NOT* OSI-approved
-# * neither - This predicate is ignored and the default lint level is used
-allow-osi-fsf-free = "neither"
-# Lint level used when no other predicates are matched
-# 1. License isn't in the allow or deny lists
-# 2. License isn't copyleft
-# 3. License isn't OSI/FSF, or allow-osi-fsf-free = "neither"
-default = "deny"
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
 # canonical license text of a valid SPDX license file.
@@ -141,16 +108,15 @@ confidence-threshold = 0.8
 exceptions = [
   # Each entry is the crate and version constraint, and its specific allow
   # list
+  #{ allow = ["Zlib"], crate = "adler32" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
 [[licenses.clarify]]
-# The name of the crate the clarification applies to
-name = "ring"
-# The optional version constraint for the crate
-version = "*"
+# The package spec the clarification applies to
+crate = "ring"
 # The SPDX expression for the license requirements of the crate
 expression = "MIT AND ISC AND OpenSSL"
 # One or more files in the crate's source used as the "source of truth" for
@@ -159,8 +125,8 @@ expression = "MIT AND ISC AND OpenSSL"
 # and the crate will be checked normally, which may produce warnings or errors
 # depending on the rest of your configuration
 license-files = [
-# Each entry is a crate relative path, and the (opaque) hash of its contents
-{ path = "LICENSE", hash = 0xbd0eed23 }
+  # Each entry is a crate relative path, and the (opaque) hash of its contents
+  { path = "LICENSE", hash = 0xbd0eed23 }
 ]
 
 [licenses.private]
@@ -200,24 +166,23 @@ workspace-default-features = "allow"
 external-default-features = "allow"
 # List of crates that are allowed. Use with care!
 allow = [
-  #{ name = "ansi_term", version = "=0.11.0" },
+  #"ansi_term@0.11.0",
+  #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason it is allowed" },
 ]
 # List of crates to deny
 deny = [
-  # Each entry the name of a crate and a version range. If version is
-  # not specified, all versions will be matched.
-  #{ name = "ansi_term", version = "=0.11.0" },
-  #
+  #"ansi_term@0.11.0",
+  #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason it is banned" },
   # Wrapper crates can optionally be specified to allow the crate when it
   # is a direct dependency of the otherwise banned crate
-  #{ name = "ansi_term", version = "=0.11.0", wrappers = [] },
+  #{ crate = "ansi_term@0.11.0", wrappers = ["this-crate-directly-depends-on-ansi_term"] },
 ]
 
 # List of features to allow/deny
 # Each entry the name of a crate and a version range. If version is
 # not specified, all versions will be matched.
 #[[bans.features]]
-#name = "reqwest"
+#crate = "reqwest"
 # Features to not allow
 #deny = ["json"]
 # Features to allow
@@ -238,14 +203,16 @@ deny = [
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
 skip = [
-  #{ name = "ansi_term", version = "=0.11.0" },
+  #"ansi_term@0.11.0",
+  #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason why it can't be updated/removed" },
 ]
 # Similarly to `skip` allows you to skip certain crates during duplicate
 # detection. Unlike skip, it also includes the entire tree of transitive
 # dependencies starting at the specified crate, up to a certain depth, which is
 # by default infinite.
 skip-tree = [
-  #{ name = "ansi_term", version = "=0.11.0", depth = 20 },
+  #"ansi_term@0.11.0", # will be skipped along with _all_ of its direct and transitive dependencies
+  #{ crate = "ansi_term@0.11.0", depth = 20 },
 ]
 
 # This section is considered when running `cargo deny check sources`.
@@ -263,11 +230,3 @@ unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
 allow-git = []
-
-# [sources.allow-org]
-# # 1 or more github.com organizations to allow git sources for
-# github = [""]
-# # 1 or more gitlab.com organizations to allow git sources for
-# gitlab = [""]
-# # 1 or more bitbucket.org organizations to allow git sources for
-# bitbucket = [""]
