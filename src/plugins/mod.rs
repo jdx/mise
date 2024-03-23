@@ -51,8 +51,6 @@ pub fn list_external() -> ForgeList {
 
 #[cfg(test)]
 mod tests {
-    use crate::forge::Forge;
-
     use super::*;
 
     #[test]
