@@ -63,7 +63,7 @@ globwalk = "0.9.1"
 home = "0.5.9"
 humantime = "2.1.0"
 indenter = "0.3.3"
-indexmap = { version = "2.2.5", features = ["serde"] }
+indexmap = { version = "2.2.6", features = ["serde"] }
 indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
 indoc = "2.0.4"
 itertools = "0.12.1"
