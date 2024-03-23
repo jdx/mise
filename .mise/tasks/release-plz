@@ -19,9 +19,9 @@ fi
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-  echo cargo set-version --bump patch
+  cargo set-version --bump patch
 elif echo "$cur_version" | grep -e "^$year\."; then
-  echo cargo set-version --bump minor
+  cargo set-version --bump minor
 else
   cargo set-version "$year.1.0"
 fi
