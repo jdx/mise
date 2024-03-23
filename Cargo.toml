@@ -65,7 +65,7 @@ humantime = "2.1.0"
 indenter = "0.3.3"
 indexmap = { version = "2.2.5", features = ["serde"] }
 indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
-indoc = "2.0.4"
+indoc = "2.0.5"
 itertools = "0.12.1"
 log = "0.4.21"
 num_cpus = "1.16.0"
