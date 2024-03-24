@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# mise alias=["ft"]
 # mise description="This is a test build script"
 # mise depends=["lint", "test"]
 # mise sources=[".test-tool-versions"]
