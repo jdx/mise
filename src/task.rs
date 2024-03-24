@@ -102,6 +102,9 @@ impl Task {
 
         let task = Task {
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
+            aliases: p
+                .parse_array("alias")?
+                .unwrap_or(vec![p.parse_str("alias")?.unwrap_or_default()]),
             description: p.parse_str("description")?.unwrap_or_default(),
             sources: p.parse_array("sources")?.unwrap_or_default(),
             outputs: p.parse_array("outputs")?.unwrap_or_default(),
@@ -371,7 +374,20 @@ where
 mod tests {
     use std::path::Path;
 
+    use crate::task::Task;
+
     use super::{config_root, name_from_path};
+
+    #[test]
+    fn test_from_path() {
+        let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
+
+        for (path, name, aliases) in test_cases {
+            let t = Task::from_path(Path::new(path)).unwrap();
+            assert_eq!(t.name, name);
+            assert_eq!(t.aliases, aliases);
+        }
+    }
 
     #[test]
     fn test_name_from_path() {
