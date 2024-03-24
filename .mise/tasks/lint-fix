@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise aliases=["lint:fix"]
+# mise alias=["lint:fix"]
 set -euxo pipefail
 
 scripts=("$PWD"/scripts/*.sh "$PWD"/e2e/{test_,run_}* "$PWD"/e2e/*.sh)
