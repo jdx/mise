@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024.3.9](https://github.com/jdx/mise/compare/v2024.3.8..v2024.3.9) - 2024-03-24
+
+### 🐛 Bug Fixes
+
+- **(task)** script tasks don't pick up alias from comments (#1828) - [7e9b4b7](https://github.com/jdx/mise/commit/7e9b4b7fe17530fd9f5358bb4ccbaabc58576c3a) - [@roele](https://github.com/roele)
+- downgrade reqwest to fix self-update - [2f0820b](https://github.com/jdx/mise/commit/2f0820b8b0438f5224c6b2689f51f43b7f907bf5) - [@jdx](https://github.com/jdx)
+
 ## [2024.3.8](https://github.com/jdx/mise/compare/v2024.3.7..v2024.3.8) - 2024-03-23
 
 ### 🚀 Features
