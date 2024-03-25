@@ -27,6 +27,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
 
 mod cargo;
+mod gem;
 mod go;
 mod npm;
 
@@ -39,6 +40,7 @@ pub type ForgeList = Vec<AForge>;
 pub enum ForgeType {
     Asdf,
     Cargo,
+    Gem,
     Go,
     Npm,
 }
@@ -80,6 +82,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
+                ForgeType::Gem => Arc::new(gem::GemForge::new(fa.clone())),
             })
             .clone()
     }

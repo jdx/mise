@@ -89,12 +89,14 @@ mod tests {
         };
         let asdf = |s, id, name| t(s, id, name, ForgeType::Asdf);
         let cargo = |s, id, name| t(s, id, name, ForgeType::Cargo);
+        let gem = |s, id, name| t(s, id, name, ForgeType::Gem);
         let npm = |s, id, name| t(s, id, name, ForgeType::Npm);
 
         asdf("asdf:node", "node", "node");
         asdf("node", "node", "node");
         asdf("", "", "");
         cargo("cargo:eza", "cargo:eza", "eza");
+        gem("gem:cocoapods", "gem:cocoapods", "cocoapods");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
     }
@@ -111,6 +113,7 @@ mod tests {
         t("node", "node");
         t("", "");
         t("cargo:eza", "cargo-eza");
+        t("gem:cocoapods", "gem-cocoapods");
         t("npm:@antfu/ni", "npm-@antfu-ni");
         t("npm:prettier", "npm-prettier");
     }
