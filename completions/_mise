@@ -27,6 +27,7 @@ _mise() {
         (deactivate) __mise_deactivate_cmd && ret=0 ;;
         (direnv) __mise_direnv_cmd && ret=0 ;;
         (dr|doctor) __mise_doctor_cmd && ret=0 ;;
+        (en) __mise_en_cmd && ret=0 ;;
         (e|env) __mise_env_cmd && ret=0 ;;
         (x|exec) __mise_exec_cmd && ret=0 ;;
         (g|global) __mise_global_cmd && ret=0 ;;
@@ -308,6 +309,16 @@ __mise_direnv_exec_cmd() {
 (( $+functions[__mise_doctor_cmd] )) ||
 __mise_doctor_cmd() {
   _arguments -s -S \
+    '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
+    '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
+    '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
+    '(-y --yes)'{-y,--yes}'[Answer yes to all confirmation prompts]'
+}
+(( $+functions[__mise_en_cmd] )) ||
+__mise_en_cmd() {
+  _arguments -s -S \
+    '::dir:_files' \
+    '(-s --shell)'{-s,--shell}'=[Shell to start]:shell:' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -930,6 +941,7 @@ __mise_cmds() {
     'deactivate:Disable mise for current shell session'
     'direnv:Output direnv function to use mise inside direnv'
     {dr,doctor}':Check mise installation for possible problems'
+    'en:\[experimental\] starts a new shell with the mise environment built from the current configuration'
     {e,env}':Exports env vars to activate mise a single time'
     {x,exec}':Execute a command with tool(s) set'
     'implode:Removes mise CLI and all related data'
