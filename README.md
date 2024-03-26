@@ -117,7 +117,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | cilium-cli                    | [carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli)                                         |
 | cilium-hubble                 | [NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble)                                       |
 | Clarinet                      | [alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet)                                             |
-| Clickhouse                    | [tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse)                                             |
+| Clickhouse                    | [tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse)                                       |
 | clj-kondo                     | [rynkowsg/asdf-clj-kondo](https://github.com/rynkowsg/asdf-clj-kondo)                                             |
 | Clojure                       | [asdf-community/asdf-clojure](https://github.com/asdf-community/asdf-clojure)                                     |
 | Cloudflared                   | [threkk/asdf-cloudflared](https://github.com/threkk/asdf-cloudflared)                                             |
@@ -594,6 +594,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Sentinel                      | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | Serf                          | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | serverless                    | [pdemagny/asdf-serverless](https://github.com/pdemagny/asdf-serverless)                                           |
+| setup-envtest                 | [pmalek/mise-setup-envtest](https://github.com/pmalek/mise-setup-envtest)                                         |
 | shell2http                    | [ORCID/asdf-shell2http](https://github.com/ORCID/asdf-shell2http)                                                 |
 | Shellcheck                    | [luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck)                                                 |
 | Shellspec                     | [poikilotherm/asdf-shellspec](https://github.com/poikilotherm/asdf-shellspec)                                     |
