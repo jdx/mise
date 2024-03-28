@@ -130,6 +130,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | CocoaPods                     | [ronnnnn/asdf-cocoapods](https://github.com/ronnnnn/asdf-cocoapods)                                               |
 | Codefresh                     | [gurukulkarni/asdf-codefresh](https://github.com/gurukulkarni/asdf-codefresh)                                     |
 | CodeQL                        | [bored-engineer/asdf-codeql](https://github.com/bored-engineer/asdf-codeql)                                       |
+| Coder                         | [mise-plugins/asdf-coder](https://github.com/mise-plugins/asdf-coder)                                             |
 | Colima                        | [CrouchingMuppet/asdf-colima](https://github.com/CrouchingMuppet/asdf-colima)                                     |
 | Conan                         | [amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp)                                                           |
 | Concourse                     | [mattysweeps/asdf-concourse](https://github.com/mattysweeps/asdf-concourse)                                       |
