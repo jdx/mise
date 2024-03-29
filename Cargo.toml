@@ -41,9 +41,9 @@ lto = true
 [dependencies]
 base64 = "0.22.0"
 calm_io = "0.1.1"
-chrono = { version = "0.4.35", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4.37", default-features = false, features = ["std", "clock"] }
 ci_info = "0.14.14"
-clap = { version = "4.5.3", features = ["env", "derive", "string"] }
+clap = { version = "4.5.4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
 color-eyre = "0.6.3"
 color-print = "0.3.5"
@@ -76,7 +76,7 @@ petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.10.0"
 regex = "1.10.4"
-reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "gzip"] }
+reqwest = { version = "<0.12", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.1.2"
 self_update = { version = "0.39.0", default-features = false, features = [
   "archive-tar",
@@ -85,7 +85,7 @@ self_update = { version = "0.39.0", default-features = false, features = [
 ] }
 serde = "1.0.197"
 serde_derive = "1.0.197"
-serde_json = { version = "1.0.114", features = [] }
+serde_json = { version = "1.0.115", features = [] }
 sha2 = "0.10.8"
 shell-escape = "0.1.5"
 shell-words = "1.1.0"
@@ -117,7 +117,7 @@ built = { version = "0.7.1", features = ["chrono", "git2"] }
 [dev-dependencies]
 assert_cmd = "2.0.14"
 ctor = "0.2.7"
-insta = { version = "1.36.1", features = ["filters", "json"] }
+insta = { version = "1.38.0", features = ["filters", "json"] }
 predicates = "3.1.0"
 pretty_assertions = "1.4.0"
 test-case = "3.3.1"

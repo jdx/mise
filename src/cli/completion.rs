@@ -1,9 +1,8 @@
-use std::fmt::Display;
-
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use eyre::Result;
 
+use crate::cli::Cli;
 use crate::shell::completions;
 
 /// Generate shell completions
@@ -29,46 +28,47 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub fn run(self) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
-
-        if self.usage || matches!(shell, Shell::Bash | Shell::Fish) {
-            let res = cmd!(
-                "usage",
-                "generate",
-                "completion",
-                shell.to_string(),
-                "mise",
-                "--usage-cmd",
-                "mise usage"
-            )
-            .run();
-            if res.is_err() {
-                debug!("usage command failed, falling back to prerendered completions");
-                debug!("error: {:?}", res);
-                return self.prerendered(shell);
-            }
-            return Ok(());
+        if let Shell::Bash | Shell::Fish = shell {
+            self.usage = true;
         }
 
-        let cmd = crate::cli::Cli::command();
-        let script = match shell {
-            Shell::Zsh => completions::zsh_complete(&cmd)?,
-            _ => unreachable!("unsupported shell: {shell}"),
+        let script = if self.usage {
+            match self.call_usage(shell) {
+                Ok(script) => script,
+                Err(e) => {
+                    debug!("usage command failed, falling back to prerendered completions");
+                    debug!("error: {e:?}");
+                    self.prerendered(shell)
+                }
+            }
+        } else {
+            completions::zsh_complete(&Cli::command())?
         };
         miseprintln!("{}", script.trim());
 
         Ok(())
     }
 
-    fn prerendered(&self, shell: Shell) -> Result<()> {
-        let script = match shell {
+    fn call_usage(&self, shell: Shell) -> std::io::Result<String> {
+        cmd!(
+            "usage",
+            "generate",
+            "completion",
+            shell.to_string(),
+            "mise",
+            "--usage-cmd",
+            "mise usage"
+        ).read()
+    }
+
+    fn prerendered(&self, shell: Shell) -> String {
+        match shell {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
             Shell::Zsh => include_str!("../../completions/_mise"),
-        };
-        miseprintln!("{}", script.trim());
-        Ok(())
+        }.to_string()
     }
 }
 
@@ -81,7 +81,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, EnumString, Display)]
+#[strum(serialize_all = "snake_case")]
 enum Shell {
     Bash,
     Fish,
@@ -92,26 +93,8 @@ impl ValueEnum for Shell {
     fn value_variants<'a>() -> &'a [Self] {
         &[Self::Bash, Self::Fish, Self::Zsh]
     }
-    fn from_str(input: &str, _ignore_case: bool) -> std::result::Result<Self, String> {
-        match input {
-            "bash" => Ok(Self::Bash),
-            "fish" => Ok(Self::Fish),
-            "zsh" => Ok(Self::Zsh),
-            _ => Err(format!("unknown shell type: {}", input)),
-        }
-    }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(PossibleValue::new(self.to_string()))
-    }
-}
-
-impl Display for Shell {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Bash => write!(f, "bash"),
-            Self::Fish => write!(f, "fish"),
-            Self::Zsh => write!(f, "zsh"),
-        }
     }
 }
 
