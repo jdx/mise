@@ -60,7 +60,8 @@ impl Completion {
             "mise",
             "--usage-cmd",
             "mise usage"
-        ).read()
+        )
+        .read()
     }
 
     fn prerendered(&self, shell: Shell) -> String {
@@ -68,7 +69,8 @@ impl Completion {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
             Shell::Zsh => include_str!("../../completions/_mise"),
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
