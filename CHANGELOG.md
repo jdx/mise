@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 ### 🔍 Other Changes
 
 - Release 2024.3.9 (#1829) by [@mise-en-dev](https://github.com/mise-en-dev) in [#1829](https://github.com/jdx/mise/pull/1829)
+
+---
 ## [2024.3.8](https://github.com/jdx/mise/compare/v2024.3.7..v2024.3.8) - 2024-03-23
 
 ### 🚀 Features
@@ -52,6 +54,8 @@ All notable changes to this project will be documented in this file.
 
 - automatically bump minor version if month/year changes by [@mise-en-dev](https://github.com/mise-en-dev) in [96ad08d](https://github.com/jdx/mise/commit/96ad08d8acb6b7a4eff0be2f49022080d10b9b71)
 - updated cargo-deny config (#1824) by [@jdx](https://github.com/jdx) in [#1824](https://github.com/jdx/mise/pull/1824)
+
+---
 ## [2024.3.7](https://github.com/jdx/mise/compare/v2024.3.6..v2024.3.7) - 2024-03-21
 
 ### 🐛 Bug Fixes
@@ -89,11 +93,13 @@ All notable changes to this project will be documented in this file.
 - rust 1.78 deprecation warning fixes (#1805) by [@jdx](https://github.com/jdx) in [#1805](https://github.com/jdx/mise/pull/1805)
 - fix caching by [@jdx](https://github.com/jdx) in [62cb250](https://github.com/jdx/mise/commit/62cb250007c443dc25e72292b178c5f51cda413c)
 
-
-## New Contributors
+### New Contributors
 
 * @erickguan made their first contribution in [#1712](https://github.com/jdx/mise/pull/1712)
-* @yggdr made their first contribution in [#1801](https://github.com/jdx/mise/pull/1801)## [2024.3.6](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.6) - 2024-03-17
+* @yggdr made their first contribution in [#1801](https://github.com/jdx/mise/pull/1801)
+
+---
+## [2024.3.6](https://github.com/jdx/mise/compare/v2024.3.2..v2024.3.6) - 2024-03-17
 
 ### 🚀 Features
 
@@ -167,6 +173,8 @@ All notable changes to this project will be documented in this file.
 - added release-plz workflow (#1787) by [@jdx](https://github.com/jdx) in [#1787](https://github.com/jdx/mise/pull/1787)
 - set gpg key by [@jdx](https://github.com/jdx) in [467097f](https://github.com/jdx/mise/commit/467097f925053a27f0ede2a506e894562d191a09)
 - temporarily disable self-update test by [@jdx](https://github.com/jdx) in [5cb39a4](https://github.com/jdx/mise/commit/5cb39a4259f332e5bccec082f1d7cd6127da5f55)
+
+---
 ## [2024.3.2](https://github.com/jdx/mise/compare/v2024.3.1..v2024.3.2) - 2024-03-15
 
 ### 🚀 Features
@@ -193,11 +201,13 @@ All notable changes to this project will be documented in this file.
 
 - bump rust version by [@jdx](https://github.com/jdx) in [0cd890c](https://github.com/jdx/mise/commit/0cd890c04a511b8b82e1e605810ae1081e44fccc)
 
-
-## New Contributors
+### New Contributors
 
 * @kalvinnchau made their first contribution in [#1751](https://github.com/jdx/mise/pull/1751)
-* @nicolas-geniteau made their first contribution in [#1770](https://github.com/jdx/mise/pull/1770)## [2024.3.1](https://github.com/jdx/mise/compare/v2024.2.19..v2024.3.1) - 2024-03-04
+* @nicolas-geniteau made their first contribution in [#1770](https://github.com/jdx/mise/pull/1770)
+
+---
+## [2024.3.1](https://github.com/jdx/mise/compare/v2024.2.19..v2024.3.1) - 2024-03-04
 
 ### 🐛 Bug Fixes
 
@@ -220,16 +230,20 @@ All notable changes to this project will be documented in this file.
 - added back "test:e2e" task by [@jdx](https://github.com/jdx) in [16e7da0](https://github.com/jdx/mise/commit/16e7da08fc135166e0f44e64d44fb3b3325943aa)
 - Tiny grammar fix (#1744) by [@MartyBeGood](https://github.com/MartyBeGood) in [#1744](https://github.com/jdx/mise/pull/1744)
 
+### New Contributors
 
-## New Contributors
+* @MartyBeGood made their first contribution in [#1744](https://github.com/jdx/mise/pull/1744)
 
-* @MartyBeGood made their first contribution in [#1744](https://github.com/jdx/mise/pull/1744)## [2024.2.19](https://github.com/jdx/mise/compare/v2024.2.18..v2024.2.19) - 2024-02-28
+---
+## [2024.2.19](https://github.com/jdx/mise/compare/v2024.2.18..v2024.2.19) - 2024-02-28
 
 ### 🔍 Other Changes
 
 - simplify tasks in .mise.toml by [@jdx](https://github.com/jdx) in [5e371e1](https://github.com/jdx/mise/commit/5e371e1d911a08e12ead28dcb14f8436ee4b5ef3)
 - Fix MUSL check (#1717) by [@splinter98](https://github.com/splinter98) in [#1717](https://github.com/jdx/mise/pull/1717)
 - use normal mise data dir in justfile (#1718) by [@jdx](https://github.com/jdx) in [#1718](https://github.com/jdx/mise/pull/1718)
+
+---
 ## [2024.2.18](https://github.com/jdx/mise/compare/v2024.2.17..v2024.2.18) - 2024-02-24
 
 ### 📦️ Dependency Updates
@@ -251,10 +265,12 @@ All notable changes to this project will be documented in this file.
 
 - make README logo link to site (#1695) by [@booniepepper](https://github.com/booniepepper) in [#1695](https://github.com/jdx/mise/pull/1695)
 
+### New Contributors
 
-## New Contributors
+* @fxsalazar made their first contribution in [#1699](https://github.com/jdx/mise/pull/1699)
 
-* @fxsalazar made their first contribution in [#1699](https://github.com/jdx/mise/pull/1699)## [2024.2.17](https://github.com/jdx/mise/compare/v2024.2.16..v2024.2.17) - 2024-02-22
+---
+## [2024.2.17](https://github.com/jdx/mise/compare/v2024.2.16..v2024.2.17) - 2024-02-22
 
 ### 🐛 Bug Fixes
 
@@ -293,16 +309,20 @@ All notable changes to this project will be documented in this file.
 
 - **(integration)** introduce rust based integration suite (#1612) by [@Ajpantuso](https://github.com/Ajpantuso) in [#1612](https://github.com/jdx/mise/pull/1612)
 
-
-## New Contributors
+### New Contributors
 
 * @grant0417 made their first contribution in [#1690](https://github.com/jdx/mise/pull/1690)
-* @wheinze made their first contribution in [#1691](https://github.com/jdx/mise/pull/1691)## [2024.2.16](https://github.com/jdx/mise/compare/v2024.2.15..v2024.2.16) - 2024-02-15
+* @wheinze made their first contribution in [#1691](https://github.com/jdx/mise/pull/1691)
+
+---
+## [2024.2.16](https://github.com/jdx/mise/compare/v2024.2.15..v2024.2.16) - 2024-02-15
 
 ### 🔍 Other Changes
 
 - use dash compatible syntax by [@jdx](https://github.com/jdx) in [10dbf54](https://github.com/jdx/mise/commit/10dbf54650b9ed90eb4a9ba86fe5499db23357d8)
 - cargo up by [@jdx](https://github.com/jdx) in [7a02ac3](https://github.com/jdx/mise/commit/7a02ac3cfe4de715f807a0c1f27ac63cf840cf55)
+
+---
 ## [2024.2.15](https://github.com/jdx/mise/compare/v2024.2.14..v2024.2.15) - 2024-02-13
 
 ### 📦️ Dependency Updates
@@ -315,6 +335,8 @@ All notable changes to this project will be documented in this file.
 - cargo up by [@jdx](https://github.com/jdx) in [122a9b2](https://github.com/jdx/mise/commit/122a9b25994adf081e25c15df7b22c80c5517126)
 - run commit hook on main branch by [@jdx](https://github.com/jdx) in [7ced699](https://github.com/jdx/mise/commit/7ced699f638716387a3a35935c946d3df26eac49)
 - Revert "run commit hook on main branch" by [@jdx](https://github.com/jdx) in [5ec8a5e](https://github.com/jdx/mise/commit/5ec8a5e343b7a6c181f92cb2d5650fe1b0bc5d50)
+
+---
 ## [2024.2.14](https://github.com/jdx/mise/compare/v2024.2.13..v2024.2.14) - 2024-02-11
 
 ### 🐛 Bug Fixes
@@ -324,11 +346,15 @@ All notable changes to this project will be documented in this file.
 ### 📦️ Dependency Updates
 
 - update rust crate chrono to 0.4.34 (#1654) by [@renovate[bot]](https://github.com/renovate[bot]) in [#1654](https://github.com/jdx/mise/pull/1654)
+
+---
 ## [2024.2.13](https://github.com/jdx/mise/compare/v2024.2.12..v2024.2.13) - 2024-02-11
 
 ### 🐛 Bug Fixes
 
 - fix completion generators if usage is not installed by [@jdx](https://github.com/jdx) in [e46fe04](https://github.com/jdx/mise/commit/e46fe04d1c50f893b6c2aa55222792faf16be64c)
+
+---
 ## [2024.2.12](https://github.com/jdx/mise/compare/v2024.2.11..v2024.2.12) - 2024-02-11
 
 ### 📦️ Dependency Updates
@@ -338,6 +364,8 @@ All notable changes to this project will be documented in this file.
 ### 🔍 Other Changes
 
 - install usage via cargo-binstall by [@jdx](https://github.com/jdx) in [f3a0117](https://github.com/jdx/mise/commit/f3a0117fea9307d11f2df1540efe6761eec13b66)
+
+---
 ## [2024.2.11](https://github.com/jdx/mise/compare/v2024.2.10..v2024.2.11) - 2024-02-10
 
 ### 📦️ Dependency Updates
@@ -349,6 +377,8 @@ All notable changes to this project will be documented in this file.
 - default fish+bash to use usage for completions by [@jdx](https://github.com/jdx) in [8399b1f](https://github.com/jdx/mise/commit/8399b1fdbc7e7b507f6e2137d77c685f70b4345d)
 - add usage to CI by [@jdx](https://github.com/jdx) in [0bc48ed](https://github.com/jdx/mise/commit/0bc48eddb7ca38f1e13bcbf2286d4e01041a9fc8)
 - add usage to CI by [@jdx](https://github.com/jdx) in [4eba7c0](https://github.com/jdx/mise/commit/4eba7c026baa52055d5b5925bb9e5acf37f209af)
+
+---
 ## [2024.2.10](https://github.com/jdx/mise/compare/v2024.2.9..v2024.2.10) - 2024-02-10
 
 ### 📦️ Dependency Updates
@@ -365,11 +395,15 @@ All notable changes to this project will be documented in this file.
 
 - usage (#1652) by [@jdx](https://github.com/jdx) in [#1652](https://github.com/jdx/mise/pull/1652)
 - cargo up by [@jdx](https://github.com/jdx) in [4292537](https://github.com/jdx/mise/commit/42925377ba5b06d9d9f5402fca3b197b60acda82)
+
+---
 ## [2024.2.9](https://github.com/jdx/mise/compare/v2024.2.8..v2024.2.9) - 2024-02-09
 
 ### 🔍 Other Changes
 
 - bump msrv for clap compatibility by [@jdx](https://github.com/jdx) in [8a9a284](https://github.com/jdx/mise/commit/8a9a284f1520500a361c1bc2f4db09648a49acd2)
+
+---
 ## [2024.2.8](https://github.com/jdx/mise/compare/v2024.2.7..v2024.2.8) - 2024-02-09
 
 ### 🐛 Bug Fixes
@@ -386,6 +420,8 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - docs by [@jdx](https://github.com/jdx) in [e291cc3](https://github.com/jdx/mise/commit/e291cc3802d027d9738b5060d9c68be8b20269e3)
+
+---
 ## [2024.2.7](https://github.com/jdx/mise/compare/v2024.2.6..v2024.2.7) - 2024-02-08
 
 ### 🐛 Bug Fixes
@@ -397,6 +433,8 @@ All notable changes to this project will be documented in this file.
 - support global file tasks (#1627) by [@jdx](https://github.com/jdx) in [#1627](https://github.com/jdx/mise/pull/1627)
 - add installed/active flags (#1629) by [@jdx](https://github.com/jdx) in [#1629](https://github.com/jdx/mise/pull/1629)
 - fix command not found handler by [@jdx](https://github.com/jdx) in [a30842b](https://github.com/jdx/mise/commit/a30842b5062caca6d07b68307d66ebf376ff01c8)
+
+---
 ## [2024.2.6](https://github.com/jdx/mise/compare/v2024.2.5..v2024.2.6) - 2024-02-07
 
 ### 🔍 Other Changes
@@ -406,6 +444,8 @@ All notable changes to this project will be documented in this file.
 - automatically try https if http fails (#1622) by [@jdx](https://github.com/jdx) in [#1622](https://github.com/jdx/mise/pull/1622)
 - added optional pre-commit hook by [@jdx](https://github.com/jdx) in [ec03744](https://github.com/jdx/mise/commit/ec0374480d2b94e49fa8e06edbe929e6f6981951)
 - reuse existing command_not_found handler (#1624) by [@jdx](https://github.com/jdx) in [#1624](https://github.com/jdx/mise/pull/1624)
+
+---
 ## [2024.2.5](https://github.com/jdx/mise/compare/v2024.2.4..v2024.2.5) - 2024-02-06
 
 ### 🐛 Bug Fixes
@@ -432,6 +472,8 @@ All notable changes to this project will be documented in this file.
 
 - add some info (#1614) by [@jdx](https://github.com/jdx) in [#1614](https://github.com/jdx/mise/pull/1614)
 - cli help by [@jdx](https://github.com/jdx) in [6a004a7](https://github.com/jdx/mise/commit/6a004a723d93cc3a253321ab9b83058dea6c6c89)
+
+---
 ## [2024.2.4](https://github.com/jdx/mise/compare/v2024.2.3..v2024.2.4) - 2024-02-03
 
 ### 🐛 Bug Fixes
@@ -444,6 +486,8 @@ All notable changes to this project will be documented in this file.
 - update rust crate clap_complete to 4.4.10 (#1597) by [@renovate[bot]](https://github.com/renovate[bot]) in [#1597](https://github.com/jdx/mise/pull/1597)
 - update rust crate eyre to 0.6.12 (#1601) by [@renovate[bot]](https://github.com/renovate[bot]) in [#1601](https://github.com/jdx/mise/pull/1601)
 - update rust crate indexmap to 2.2.2 (#1602) by [@renovate[bot]](https://github.com/renovate[bot]) in [#1602](https://github.com/jdx/mise/pull/1602)
+
+---
 ## [2024.2.3](https://github.com/jdx/mise/compare/v2024.2.2..v2024.2.3) - 2024-02-02
 
 ### 🔍 Other Changes
@@ -458,6 +502,8 @@ All notable changes to this project will be documented in this file.
 - use serde to parse tasks (#1592) by [@jdx](https://github.com/jdx) in [#1592](https://github.com/jdx/mise/pull/1592)
 - skip running glob if no patterns by [@jdx](https://github.com/jdx) in [0eae892](https://github.com/jdx/mise/commit/0eae892c67598c788b7ca6311aaaac075279717b)
 - lazy-load toml_edit (#1594) by [@jdx](https://github.com/jdx) in [#1594](https://github.com/jdx/mise/pull/1594)
+
+---
 ## [2024.2.2](https://github.com/jdx/mise/compare/v2024.2.1..v2024.2.2) - 2024-02-02
 
 ### 🔍 Other Changes
@@ -467,6 +513,8 @@ All notable changes to this project will be documented in this file.
 - clear cache on mise.run by [@jdx](https://github.com/jdx) in [1d00fbd](https://github.com/jdx/mise/commit/1d00fbdb904ce83737898e4dc2f8ba5edbf2a568)
 - download progress bars (#1586) by [@jdx](https://github.com/jdx) in [#1586](https://github.com/jdx/mise/pull/1586)
 - improve output of shorthand update script by [@jdx](https://github.com/jdx) in [0633c07](https://github.com/jdx/mise/commit/0633c0790e0858919f0ac2b2c27a3d2d7b836c8a)
+
+---
 ## [2024.2.1](https://github.com/jdx/mise/compare/v2024.2.0..v2024.2.1) - 2024-02-01
 
 ### 🐛 Bug Fixes
@@ -490,11 +538,13 @@ All notable changes to this project will be documented in this file.
 
 - use m1 macs by [@jdx](https://github.com/jdx) in [98a6d1f](https://github.com/jdx/mise/commit/98a6d1f2441a8fb839f65a5a66d7053bdffef36b)
 
-
-## New Contributors
+### New Contributors
 
 * @tlockney made their first contribution in [#1562](https://github.com/jdx/mise/pull/1562)
-* @sirenkovladd made their first contribution in [#1578](https://github.com/jdx/mise/pull/1578)## [2024.2.0](https://github.com/jdx/mise/compare/v2024.1.35..v2024.2.0) - 2024-02-01
+* @sirenkovladd made their first contribution in [#1578](https://github.com/jdx/mise/pull/1578)
+
+---
+## [2024.2.0](https://github.com/jdx/mise/compare/v2024.1.35..v2024.2.0) - 2024-02-01
 
 ### 🚀 Features
 
@@ -527,11 +577,15 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - skip checkout for homebrew bump by [@jdx](https://github.com/jdx) in [de5e5b6](https://github.com/jdx/mise/commit/de5e5b6b33063e577f53ceb8f8de14b5035c1c4d)
+
+---
 ## [2024.1.35](https://github.com/jdx/mise/compare/v2024.1.34..v2024.1.35) - 2024-01-31
 
 ### 🔍 Other Changes
 
 - use activate_agressive setting by [@jdx](https://github.com/jdx) in [c8837fe](https://github.com/jdx/mise/commit/c8837fea7605167c9be2e964acbb29a6ba4e48aa)
+
+---
 ## [2024.1.34](https://github.com/jdx/mise/compare/v2024.1.33..v2024.1.34) - 2024-01-31
 
 ### 🐛 Bug Fixes
@@ -546,11 +600,15 @@ All notable changes to this project will be documented in this file.
 - label experimental error by [@jdx](https://github.com/jdx) in [0e38477](https://github.com/jdx/mise/commit/0e3847791d59df8eb36249ff8faf2eb13c287aa3)
 - convert more things to mise tasks from just (#1566) by [@jdx](https://github.com/jdx) in [#1566](https://github.com/jdx/mise/pull/1566)
 - use Cargo.* as source by [@jdx](https://github.com/jdx) in [ee10dba](https://github.com/jdx/mise/commit/ee10dba7712acb7420ab807331dc5b37216db080)
+
+---
 ## [2024.1.33](https://github.com/jdx/mise/compare/v2024.1.32..v2024.1.33) - 2024-01-30
 
 ### 🔍 Other Changes
 
 - treat anything not rtx/mise as a shim by [@jdx](https://github.com/jdx) in [fae51a7](https://github.com/jdx/mise/commit/fae51a7ef38890fbf3f864957e0c0c6f1be0cf65)
+
+---
 ## [2024.1.32](https://github.com/jdx/mise/compare/v2024.1.31..v2024.1.32) - 2024-01-30
 
 ### 🔍 Other Changes
@@ -558,6 +616,8 @@ All notable changes to this project will be documented in this file.
 - added "plugins up" alias" by [@jdx](https://github.com/jdx) in [f68bf52](https://github.com/jdx/mise/commit/f68bf520fd726544bfbc09ce8fd1035ffc0d7e20)
 - fix settings env vars by [@jdx](https://github.com/jdx) in [b122c19](https://github.com/jdx/mise/commit/b122c19935297a3220c438607798fc7fe52df1c1)
 - use compiled python by [@jdx](https://github.com/jdx) in [d3020cc](https://github.com/jdx/mise/commit/d3020cc26575864a38dbffd530ad1f7ebff64f64)
+
+---
 ## [2024.1.31](https://github.com/jdx/mise/compare/v2024.1.30..v2024.1.31) - 2024-01-30
 
 ### 🚀 Features
@@ -588,6 +648,8 @@ All notable changes to this project will be documented in this file.
 - only show precompiled warning if going to use precompiled by [@jdx](https://github.com/jdx) in [74fd185](https://github.com/jdx/mise/commit/74fd1852bef8244f2cb4c51b58f11116d10d0c11)
 - fix linux precompiled (#1559) by [@jdx](https://github.com/jdx) in [#1559](https://github.com/jdx/mise/pull/1559)
 - clean up e2e tests by [@jdx](https://github.com/jdx) in [2660406](https://github.com/jdx/mise/commit/2660406a4744e789ab39a58e1732f880dcd26b4d)
+
+---
 ## [2024.1.30](https://github.com/jdx/mise/compare/v2024.1.29..v2024.1.30) - 2024-01-27
 
 ### 🐛 Bug Fixes
@@ -597,12 +659,16 @@ All notable changes to this project will be documented in this file.
 ### 🔍 Other Changes
 
 - default to precompiled python by [@jdx](https://github.com/jdx) in [0fac002](https://github.com/jdx/mise/commit/0fac002dbeba699ae8949c3d94e89d08128dae57)
+
+---
 ## [2024.1.29](https://github.com/jdx/mise/compare/v2024.1.28..v2024.1.29) - 2024-01-27
 
 ### 🔍 Other Changes
 
 - use nodejs/golang for writing to .tool-versions by [@jdx](https://github.com/jdx) in [14fb790](https://github.com/jdx/mise/commit/14fb790ac9953430794719b38b83c8c2242f1759)
 - read system and local config settings (#1541) by [@jdx](https://github.com/jdx) in [#1541](https://github.com/jdx/mise/pull/1541)
+
+---
 ## [2024.1.28](https://github.com/jdx/mise/compare/v2024.1.27..v2024.1.28) - 2024-01-27
 
 ### 📦️ Dependency Updates
@@ -614,6 +680,8 @@ All notable changes to this project will be documented in this file.
 
 - added `env._.source` feature (#1538) by [@jdx](https://github.com/jdx) in [#1538](https://github.com/jdx/mise/pull/1538)
 - force update alpine by [@jdx](https://github.com/jdx) in [633c3ff](https://github.com/jdx/mise/commit/633c3ffe139c1201f20ce0e7145cb361d547a39a)
+
+---
 ## [2024.1.27](https://github.com/jdx/mise/compare/v2024.1.26..v2024.1.27) - 2024-01-26
 
 ### 🚀 Features
@@ -635,6 +703,8 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - display missing/extra shims (#1529) by [@jdx](https://github.com/jdx) in [#1529](https://github.com/jdx/mise/pull/1529)
+
+---
 ## [2024.1.26](https://github.com/jdx/mise/compare/v2024.1.25..v2024.1.26) - 2024-01-25
 
 ### 🚀 Features
@@ -654,6 +724,8 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 
 - env parsing (#1515) by [@jdx](https://github.com/jdx) in [#1515](https://github.com/jdx/mise/pull/1515)
+
+---
 ## [2024.1.25](https://github.com/jdx/mise/compare/v2024.1.24..v2024.1.25) - 2024-01-24
 
 ### 🚀 Features
@@ -678,10 +750,12 @@ All notable changes to this project will be documented in this file.
 - Delete lefthook.yml by [@jdx](https://github.com/jdx) in [a756db4](https://github.com/jdx/mise/commit/a756db4a34afee4d6ce0fcfea4bc016025d1d188)
 - turn back on `cargo update` on release by [@jdx](https://github.com/jdx) in [51f269a](https://github.com/jdx/mise/commit/51f269a8d07cf1f34f0d237b17b493986aaa864d)
 
+### New Contributors
 
-## New Contributors
+* @yossydev made their first contribution in [#1510](https://github.com/jdx/mise/pull/1510)
 
-* @yossydev made their first contribution in [#1510](https://github.com/jdx/mise/pull/1510)## [2024.1.24](https://github.com/jdx/mise/compare/v2024.1.23..v2024.1.24) - 2024-01-20
+---
+## [2024.1.24](https://github.com/jdx/mise/compare/v2024.1.23..v2024.1.24) - 2024-01-20
 
 ### 🐛 Bug Fixes
 
@@ -701,6 +775,8 @@ All notable changes to this project will be documented in this file.
 - use `sort -r` instead of `tac` (#1486) by [@jdx](https://github.com/jdx) in [#1486](https://github.com/jdx/mise/pull/1486)
 - Update README.md by [@jdx](https://github.com/jdx) in [f3291d1](https://github.com/jdx/mise/commit/f3291d15f94c0a0cc602c01d5b7b6ef7c3cb60bf)
 - fix conflicts by [@jdx](https://github.com/jdx) in [729de0c](https://github.com/jdx/mise/commit/729de0cb6c27646e30ee7be99d2f478f3431258c)
+
+---
 ## [2024.1.23](https://github.com/jdx/mise/compare/v2024.1.22..v2024.1.23) - 2024-01-18
 
 ### 🐛 Bug Fixes
@@ -714,6 +790,8 @@ All notable changes to this project will be documented in this file.
 - only show select if no task specified (#1481) by [@jdx](https://github.com/jdx) in [#1481](https://github.com/jdx/mise/pull/1481)
 - show cursor on ctrl-c by [@jdx](https://github.com/jdx) in [ebc5fe7](https://github.com/jdx/mise/commit/ebc5fe78bc97ecf99251438e6f305908bb134833)
 - fix project_root when using .config/mise.toml or .mise/config.toml (#1482) by [@jdx](https://github.com/jdx) in [#1482](https://github.com/jdx/mise/pull/1482)
+
+---
 ## [2024.1.22](https://github.com/jdx/mise/compare/v2024.1.21..v2024.1.22) - 2024-01-17
 
 ### 🐛 Bug Fixes
@@ -732,10 +810,12 @@ All notable changes to this project will be documented in this file.
 - add support for installing directly with go modules (#1470) by [@endigma](https://github.com/endigma) in [#1470](https://github.com/jdx/mise/pull/1470)
 - ensure forge type matches (#1476) by [@jdx](https://github.com/jdx) in [#1476](https://github.com/jdx/mise/pull/1476)
 
+### New Contributors
 
-## New Contributors
+* @tamasfe made their first contribution in [#1466](https://github.com/jdx/mise/pull/1466)
 
-* @tamasfe made their first contribution in [#1466](https://github.com/jdx/mise/pull/1466)## [2024.1.21](https://github.com/jdx/mise/compare/v2024.1.20..v2024.1.21) - 2024-01-15
+---
+## [2024.1.21](https://github.com/jdx/mise/compare/v2024.1.20..v2024.1.21) - 2024-01-15
 
 ### 🐛 Bug Fixes
 
@@ -747,6 +827,8 @@ All notable changes to this project will be documented in this file.
 ### 🔍 Other Changes
 
 - Update README.md by [@jdx](https://github.com/jdx) in [74c5210](https://github.com/jdx/mise/commit/74c5210b9f35bd05ac53a417ac5e152dda256a9e)
+
+---
 ## [2024.1.20](https://github.com/jdx/mise/compare/v2024.1.19..v2024.1.20) - 2024-01-14
 
 ### 🚀 Features
@@ -762,6 +844,8 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - re-enable standalone test by [@jdx](https://github.com/jdx) in [7e4e79b](https://github.com/jdx/mise/commit/7e4e79bcdcc541027bc3ea2fccc11fb0f0c07a5d)
+
+---
 ## [2024.1.19](https://github.com/jdx/mise/compare/v2024.1.18..v2024.1.19) - 2024-01-13
 
 ### 🐛 Bug Fixes
@@ -788,16 +872,20 @@ All notable changes to this project will be documented in this file.
 
 - document npm/cargo by [@jdx](https://github.com/jdx) in [d1e6e4b](https://github.com/jdx/mise/commit/d1e6e4b951637762d3562a89996a2bb3422c3341)
 
+### New Contributors
 
-## New Contributors
+* @bnheise made their first contribution in [#1441](https://github.com/jdx/mise/pull/1441)
 
-* @bnheise made their first contribution in [#1441](https://github.com/jdx/mise/pull/1441)## [2024.1.18](https://github.com/jdx/mise/compare/v2024.1.17..v2024.1.18) - 2024-01-12
+---
+## [2024.1.18](https://github.com/jdx/mise/compare/v2024.1.17..v2024.1.18) - 2024-01-12
 
 ### 🔍 Other Changes
 
 - Revert "miette (#1368)" by [@jdx](https://github.com/jdx) in [#1446](https://github.com/jdx/mise/pull/1446)
 - fix mise-docs publishing by [@jdx](https://github.com/jdx) in [1dcac6d](https://github.com/jdx/mise/commit/1dcac6d4e05c80b56d1371f434776057d3ca9dc7)
 - temporarily disable standalone test by [@jdx](https://github.com/jdx) in [d4f54ad](https://github.com/jdx/mise/commit/d4f54adbbf840599aeb4229c9330262569b563b5)
+
+---
 ## [2024.1.17](https://github.com/jdx/mise/compare/v2024.1.16..v2024.1.17) - 2024-01-12
 
 ### 🔍 Other Changes
@@ -815,10 +903,12 @@ All notable changes to this project will be documented in this file.
 - refactor env_var arg (#1443) by [@jdx](https://github.com/jdx) in [#1443](https://github.com/jdx/mise/pull/1443)
 - refactor ToolArg by [@jdx](https://github.com/jdx) in [5b66532](https://github.com/jdx/mise/commit/5b665325e4474f3247242a2d81c860ac17b8af5f)
 
+### New Contributors
 
-## New Contributors
+* @deriamis made their first contribution in [#1437](https://github.com/jdx/mise/pull/1437)
 
-* @deriamis made their first contribution in [#1437](https://github.com/jdx/mise/pull/1437)## [2024.1.16](https://github.com/jdx/mise/compare/v2024.1.15..v2024.1.16) - 2024-01-11
+---
+## [2024.1.16](https://github.com/jdx/mise/compare/v2024.1.15..v2024.1.16) - 2024-01-11
 
 ### 🐛 Bug Fixes
 
@@ -828,6 +918,8 @@ All notable changes to this project will be documented in this file.
 
 - do not panic if precompiled arch/os is not supported (#1434) by [@jdx](https://github.com/jdx) in [#1434](https://github.com/jdx/mise/pull/1434)
 - improvements (#1435) by [@jdx](https://github.com/jdx) in [#1435](https://github.com/jdx/mise/pull/1435)
+
+---
 ## [2024.1.15](https://github.com/jdx/mise/compare/v2024.1.14..v2024.1.15) - 2024-01-10
 
 ### 🐛 Bug Fixes
@@ -839,6 +931,8 @@ All notable changes to this project will be documented in this file.
 - Update README.md by [@jdx](https://github.com/jdx) in [e3ff351](https://github.com/jdx/mise/commit/e3ff351bce362ec5d8bddd9fb9bb13827fce083d)
 - rename rtx-vm -> mise-en-dev by [@jdx](https://github.com/jdx) in [03061f9](https://github.com/jdx/mise/commit/03061f973543c54b5076b26b8611f3ec378e6a61)
 - fix some precompiled issues (#1431) by [@jdx](https://github.com/jdx) in [#1431](https://github.com/jdx/mise/pull/1431)
+
+---
 ## [2024.1.14](https://github.com/jdx/mise/compare/v2024.1.13..v2024.1.14) - 2024-01-09
 
 ### 🔍 Other Changes
@@ -847,10 +941,12 @@ All notable changes to this project will be documented in this file.
 - downgrade rpm dockerfile by [@jdx](https://github.com/jdx) in [5a0cbe7](https://github.com/jdx/mise/commit/5a0cbe7f250a5d7586c45264e0d4bb1914325748)
 - loosen regex for runtime symlink generation (#1392) by [@jdx](https://github.com/jdx) in [#1392](https://github.com/jdx/mise/pull/1392)
 
+### New Contributors
 
-## New Contributors
+* @alikefia made their first contribution in [#1395](https://github.com/jdx/mise/pull/1395)
 
-* @alikefia made their first contribution in [#1395](https://github.com/jdx/mise/pull/1395)## [2024.1.13](https://github.com/jdx/mise/compare/v2024.1.12..v2024.1.13) - 2024-01-08
+---
+## [2024.1.13](https://github.com/jdx/mise/compare/v2024.1.12..v2024.1.13) - 2024-01-08
 
 ### 🔍 Other Changes
 
@@ -861,15 +957,19 @@ All notable changes to this project will be documented in this file.
 - disallow [settings] header in settings.toml (#1410) by [@jdx](https://github.com/jdx) in [#1410](https://github.com/jdx/mise/pull/1410)
 - use ~/.tool-versions globally (#1414) by [@jdx](https://github.com/jdx) in [#1414](https://github.com/jdx/mise/pull/1414)
 
+### New Contributors
 
-## New Contributors
+* @defhacks made their first contribution in [#1400](https://github.com/jdx/mise/pull/1400)
 
-* @defhacks made their first contribution in [#1400](https://github.com/jdx/mise/pull/1400)## [2024.1.12](https://github.com/jdx/mise/compare/v2024.1.11..v2024.1.12) - 2024-01-07
+---
+## [2024.1.12](https://github.com/jdx/mise/compare/v2024.1.11..v2024.1.12) - 2024-01-07
 
 ### 🔍 Other Changes
 
 - added missing settings from `mise settings set` by [@jdx](https://github.com/jdx) in [8a7880b](https://github.com/jdx/mise/commit/8a7880bc912bbcef874d7428d6b0f7d772715fc5)
 - fixed python_compile and all_compile settings by [@jdx](https://github.com/jdx) in [5ddbf68](https://github.com/jdx/mise/commit/5ddbf68af1f32abbf8cff406a6d17d0898d4c81f)
+
+---
 ## [2024.1.11](https://github.com/jdx/mise/compare/v2024.1.10..v2024.1.11) - 2024-01-07
 
 ### 🔍 Other Changes
@@ -877,6 +977,8 @@ All notable changes to this project will be documented in this file.
 - check min_version field by [@jdx](https://github.com/jdx) in [8de42a0](https://github.com/jdx/mise/commit/8de42a0be94098c722ba8b9eef8eca505f5838c2)
 - add to doctor and fix warning by [@jdx](https://github.com/jdx) in [fcf9173](https://github.com/jdx/mise/commit/fcf91739bc0241114242afb9e8de6bdf819cd7ba)
 - publish schema to r2 by [@jdx](https://github.com/jdx) in [3576984](https://github.com/jdx/mise/commit/3576984b0ce89910c7bb4ae63a41b8c82381cc44)
+
+---
 ## [2024.1.10](https://github.com/jdx/mise/compare/v2024.1.9..v2024.1.10) - 2024-01-07
 
 ### 🐛 Bug Fixes
@@ -887,10 +989,12 @@ All notable changes to this project will be documented in this file.
 
 - do not display error if settings is missing by [@jdx](https://github.com/jdx) in [21cb004](https://github.com/jdx/mise/commit/21cb004402a7bfad2c50dbd56e584555715f1597)
 
+### New Contributors
 
-## New Contributors
+* @nokazn made their first contribution in [#1390](https://github.com/jdx/mise/pull/1390)
 
-* @nokazn made their first contribution in [#1390](https://github.com/jdx/mise/pull/1390)## [2024.1.9](https://github.com/jdx/mise/compare/v2024.1.8..v2024.1.9) - 2024-01-07
+---
+## [2024.1.9](https://github.com/jdx/mise/compare/v2024.1.8..v2024.1.9) - 2024-01-07
 
 ### 🔍 Other Changes
 
@@ -898,6 +1002,8 @@ All notable changes to this project will be documented in this file.
 - clean up community-developed plugin warning by [@jdx](https://github.com/jdx) in [92b5188](https://github.com/jdx/mise/commit/92b51884a522dc7991824594e0228f014c7a1413)
 - use ~/.config/mise/settings.toml (#1386) by [@jdx](https://github.com/jdx) in [#1386](https://github.com/jdx/mise/pull/1386)
 - add support for precompiled binaries (#1388) by [@jdx](https://github.com/jdx) in [#1388](https://github.com/jdx/mise/pull/1388)
+
+---
 ## [2024.1.8](https://github.com/jdx/mise/compare/v2024.1.7..v2024.1.8) - 2024-01-06
 
 ### 🐛 Bug Fixes
@@ -911,6 +1017,8 @@ All notable changes to this project will be documented in this file.
 - added ideavim config by [@jdx](https://github.com/jdx) in [15cfa1e](https://github.com/jdx/mise/commit/15cfa1eebd18ee77b931b5e4343a4ef1d7c2473f)
 - paranoid (#1382) by [@jdx](https://github.com/jdx) in [#1382](https://github.com/jdx/mise/pull/1382)
 - miette (#1368) by [@jdx](https://github.com/jdx) in [#1368](https://github.com/jdx/mise/pull/1368)
+
+---
 ## [2024.1.7](https://github.com/jdx/mise/compare/v2024.1.6..v2024.1.7) - 2024-01-05
 
 ### 🐛 Bug Fixes
@@ -922,6 +1030,8 @@ All notable changes to this project will be documented in this file.
 
 - show better error when attemping to install core plugin (#1366) by [@jdx](https://github.com/jdx) in [#1366](https://github.com/jdx/mise/pull/1366)
 - read rtx.plugin.toml if it exists by [@jdx](https://github.com/jdx) in [db19252](https://github.com/jdx/mise/commit/db19252f3c5f23426f2d8c5a899939a575453779)
+
+---
 ## [2024.1.6](https://github.com/jdx/mise/compare/v2024.1.5..v2024.1.6) - 2024-01-04
 
 ### 🔍 Other Changes
@@ -932,6 +1042,8 @@ All notable changes to this project will be documented in this file.
 ### 🧪 Testing
 
 - fixed elixir test case by [@jdx](https://github.com/jdx) in [9b596c6](https://github.com/jdx/mise/commit/9b596c6dadcf0f54b3637d10e1885281e1a1b534)
+
+---
 ## [2024.1.5](https://github.com/jdx/mise/compare/v2024.1.4..v2024.1.5) - 2024-01-04
 
 ### 🐛 Bug Fixes
@@ -947,11 +1059,13 @@ All notable changes to this project will be documented in this file.
 - prevent loading multiple times (#1358) by [@jdx](https://github.com/jdx) in [#1358](https://github.com/jdx/mise/pull/1358)
 - use `mise.file`/`mise.path` config (#1361) by [@jdx](https://github.com/jdx) in [#1361](https://github.com/jdx/mise/pull/1361)
 
-
-## New Contributors
+### New Contributors
 
 * @silasb made their first contribution in [#1352](https://github.com/jdx/mise/pull/1352)
-* @pdecat made their first contribution in [#1353](https://github.com/jdx/mise/pull/1353)## [2024.1.4](https://github.com/jdx/mise/compare/v2024.1.3..v2024.1.4) - 2024-01-04
+* @pdecat made their first contribution in [#1353](https://github.com/jdx/mise/pull/1353)
+
+---
+## [2024.1.4](https://github.com/jdx/mise/compare/v2024.1.3..v2024.1.4) - 2024-01-04
 
 ### 🐛 Bug Fixes
 
@@ -967,10 +1081,12 @@ All notable changes to this project will be documented in this file.
 - demo (#1348) by [@jdx](https://github.com/jdx) in [#1348](https://github.com/jdx/mise/pull/1348)
 - fix ssh urls (#1349) by [@jdx](https://github.com/jdx) in [#1349](https://github.com/jdx/mise/pull/1349)
 
+### New Contributors
 
-## New Contributors
+* @inverse made their first contribution in [#1346](https://github.com/jdx/mise/pull/1346)
 
-* @inverse made their first contribution in [#1346](https://github.com/jdx/mise/pull/1346)## [2024.1.3](https://github.com/jdx/mise/compare/v2024.1.2..v2024.1.3) - 2024-01-03
+---
+## [2024.1.3](https://github.com/jdx/mise/compare/v2024.1.2..v2024.1.3) - 2024-01-03
 
 ### 🔍 Other Changes
 
@@ -980,11 +1096,15 @@ All notable changes to this project will be documented in this file.
 
 - use mise docker containers by [@jdx](https://github.com/jdx) in [d5d2d39](https://github.com/jdx/mise/commit/d5d2d39aa1a44a6421dff150da42083c4247cff9)
 - skip committing docs if no changes by [@jdx](https://github.com/jdx) in [7f6545c](https://github.com/jdx/mise/commit/7f6545c2630a1f54b864903851c24e68b3da3d2f)
+
+---
 ## [2024.1.2](https://github.com/jdx/mise/compare/v2024.1.1..v2024.1.2) - 2024-01-03
 
 ### 🔍 Other Changes
 
 - fix venv python path by [@jdx](https://github.com/jdx) in [e2d50a2](https://github.com/jdx/mise/commit/e2d50a2f25c0c64c207f82e957e691671d52ddbd)
+
+---
 ## [2024.1.1](https://github.com/jdx/mise/compare/v2024.1.0..v2024.1.1) - 2024-01-03
 
 ### 🐛 Bug Fixes
@@ -1008,6 +1128,8 @@ All notable changes to this project will be documented in this file.
 
 - tweak cli reference by [@jdx](https://github.com/jdx) in [ba5f610](https://github.com/jdx/mise/commit/ba5f6108b1b91952295e4871f63c559ff01c7c64)
 - fixed reading settings from config by [@jdx](https://github.com/jdx) in [a30a5f1](https://github.com/jdx/mise/commit/a30a5f104da41794aa8a2813919f046945ed9ae6)
+
+---
 ## [2024.1.0] - 2024-01-02
 
 ### 📦️ Dependency Updates
@@ -1043,4 +1165,5 @@ All notable changes to this project will be documented in this file.
 
 - Configure Renovate (#1307) by [@renovate[bot]](https://github.com/renovate[bot]) in [#1307](https://github.com/jdx/mise/pull/1307)
 - disable auto package updates by [@jdx](https://github.com/jdx) in [e00fb1f](https://github.com/jdx/mise/commit/e00fb1fde649ecc85aa40ac8846f71316d679e54)
+
 <!-- generated by git-cliff -->
