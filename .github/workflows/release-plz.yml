@@ -39,7 +39,7 @@ jobs:
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
           key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: v0-mise-tools
+          restore-keys: mise-tools
       - run: mise install
       - run: mise run release-plz
         env:
