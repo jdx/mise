@@ -27,10 +27,9 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          shared-key: unit
-          save-if: ${{ github.ref_name == 'main' }}
+          components: rustfmt
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
@@ -50,8 +49,8 @@ jobs:
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: v0-mise-tools
+          key: mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools
       - run: ./target/debug/mise install
       - run: ./target/debug/mise run render
       - run: ./target/debug/mise run lint-fix
@@ -62,6 +61,7 @@ jobs:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
+      - uses: actions-rust-lang/rustfmt@v1
       - run: ./target/debug/mise run lint
 
   coverage:
@@ -77,7 +77,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      #- run: rustup toolchain install nightly --component llvm-tools-preview --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
