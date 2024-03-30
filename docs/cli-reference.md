@@ -1316,8 +1316,21 @@ Options:
       --no-header
           Do not print table header
 
+  -x, --extended
+          Show all columns
+
       --hidden
           Show hidden tasks
+
+      --sort <COLUMN>
+          Sort by column. Default is name.
+
+          [possible values: name, alias, description, source]
+
+      --sort-order <SORT_ORDER>
+          Sort order. Default is asc.
+
+          [possible values: asc, desc]
 
 Examples:
 
