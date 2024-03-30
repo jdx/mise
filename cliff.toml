@@ -80,8 +80,8 @@ filter_unconventional = false
 split_commits = false
 # regex for preprocessing the commit messages
 commit_preprocessors = [
-    # remove issue numbers from commits
-    #{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" },
+    # remove PR labels from commits
+    { pattern = '\(#([0-9]+)\)', replace = "" },
     # Check spelling of the commit with https://github.com/crate-ci/typos
     # If the spelling is incorrect, it will be automatically fixed.
     #{ pattern = '.*', replace_command = 'typos --write-changes -' },
