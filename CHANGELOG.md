@@ -1,6 +1,23 @@
 # Changelog
 
 ---
+## [2024.3.10](https://github.com/jdx/mise/compare/v2024.3.9..v2024.3.10) - 2024-03-30
+
+### 🐛 Bug Fixes
+
+- use correct type for --cd by [@jdx](https://github.com/jdx) in [cf4f03e](https://github.com/jdx/mise/commit/cf4f03ed0145c5678e1ecbdb98c4426c9428d29a)
+
+### 🚜 Refactor
+
+- completions command by [@jdx](https://github.com/jdx) in [#1838](https://github.com/jdx/mise/pull/1838)
+
+### 📚 Documentation
+
+- improve CHANGELOG by [@jdx](https://github.com/jdx) in [#1839](https://github.com/jdx/mise/pull/1839)
+- improve CHANGELOG by [@jdx](https://github.com/jdx) in [#1841](https://github.com/jdx/mise/pull/1841)
+- remove duplicate PR labels in CHANGELOG by [@jdx](https://github.com/jdx) in [a3b27ef](https://github.com/jdx/mise/commit/a3b27efc37191f8be106345586cab08055ea476f)
+
+---
 ## [2024.3.9](https://github.com/jdx/mise/compare/v2024.3.8..v2024.3.9) - 2024-03-24
 
 ### 🐛 Bug Fixes
