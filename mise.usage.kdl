@@ -906,7 +906,14 @@ cmd "tasks" help="[experimental] Manage tasks" {
     $ mise tasks ls
 "
     flag "--no-header" help="Do not print table header"
+    flag "-x --extended" help="Show all columns"
     flag "--hidden" help="Show hidden tasks"
+    flag "--sort" help="Sort by column. Default is name." {
+        arg "<COLUMN>"
+    }
+    flag "--sort-order" help="Sort order. Default is asc." {
+        arg "<SORT_ORDER>"
+    }
     cmd "deps" help="[experimental] Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
@@ -948,7 +955,14 @@ tasks will override the global ones if they have the same name."
     $ mise tasks ls
 "
         flag "--no-header" help="Do not print table header"
+        flag "-x --extended" help="Show all columns"
         flag "--hidden" help="Show hidden tasks"
+        flag "--sort" help="Sort by column. Default is name." {
+            arg "<COLUMN>"
+        }
+        flag "--sort-order" help="Sort order. Default is asc." {
+            arg "<SORT_ORDER>"
+        }
     }
     cmd "run" help="[experimental] Run a tasks" {
         alias "r"

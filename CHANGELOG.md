@@ -1,6 +1,10 @@
 # Changelog
 
-## [unreleased]
+## [2024.3.11](https://github.com/jdx/mise/compare/v2024.3.10..v2024.3.11) - 2024-03-30
+
+### 🚀 Features
+
+- **(task)** extend mise tasks output by [@roele](https://github.com/roele) in [#1845](https://github.com/jdx/mise/pull/1845)
 
 ### 🐛 Bug Fixes
 
@@ -10,6 +14,16 @@
 
 - **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [646df55](https://github.com/jdx/mise/commit/646df55f0627c80099026849dc235a8c3076a8e3)
 - **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [00d8728](https://github.com/jdx/mise/commit/00d87283181467e73b01b27179c096bb08203619)
+- **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [c5612f9](https://github.com/jdx/mise/commit/c5612f90b4e47bdf12ee74e7d33412e3c0b6184c)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(audit)** added workflow by [@jdx](https://github.com/jdx) in [9263fb4](https://github.com/jdx/mise/commit/9263fb4e1bc374145d9eff609e025559f9d4d7d1)
+- **(deny)** remove multiple-versions warnings by [@jdx](https://github.com/jdx) in [efa133e](https://github.com/jdx/mise/commit/efa133e1fad5bc97c44f04494e5ce7cb9ccc3033)
+- **(release-plz)** improve caching by [@jdx](https://github.com/jdx) in [97c79ee](https://github.com/jdx/mise/commit/97c79ee394c4ae3106cfd4dcfe5ed771b4330d19)
+- **(release-plz)** use actions-rust-lang/setup-rust-toolchain@v1 by [@jdx](https://github.com/jdx) in [4813288](https://github.com/jdx/mise/commit/481328895a91eeae0d9a03fc1f0c18b211b491ab)
+- **(test)** improve caching by [@jdx](https://github.com/jdx) in [ac919a1](https://github.com/jdx/mise/commit/ac919a1db9e8c03fc92a3077cf04edfda6bb971c)
+- **(test)** only run lint-fix on main repo by [@jdx](https://github.com/jdx) in [aee7694](https://github.com/jdx/mise/commit/aee7694b47341baaba9fa5ef628f9540c6f93d72)
 
 ## [2024.3.10](https://github.com/jdx/mise/compare/v2024.3.9..v2024.3.10) - 2024-03-30
 
