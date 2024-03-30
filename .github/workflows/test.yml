@@ -53,8 +53,8 @@ jobs:
           restore-keys: mise-tools
       - run: ./target/debug/mise install
       - run: ./target/debug/mise run render
-      - run: ./target/debug/mise run lint-fix
-      - run: git diff HEAD
+      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
+        run: ./target/debug/mise run lint-fix && git diff HEAD
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         uses: EndBug/add-and-commit@v9
         with:
