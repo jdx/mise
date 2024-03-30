@@ -5,6 +5,7 @@ use self_update::update::Release;
 use self_update::{cargo_crate_version, Status};
 
 use crate::cli::version::{ARCH, OS};
+use crate::config::Settings;
 use crate::{cmd, env};
 
 /// Updates mise itself
@@ -69,6 +70,7 @@ impl SelfUpdate {
     }
 
     fn do_update(&self) -> Result<Status> {
+        let settings = Settings::try_get();
         let v = self
             .version
             .clone()
@@ -92,7 +94,7 @@ impl SelfUpdate {
             .target(&target)
             .bin_path_in_archive("mise/bin/mise")
             .identifier(&format!("mise-{v}-{target}.tar.gz"))
-            .no_confirm(self.yes)
+            .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
         Ok(status)
