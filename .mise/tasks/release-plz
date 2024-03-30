@@ -50,7 +50,7 @@ git add \
   man/
 git clean -df
 git checkout -B release
-git commit -m "Release $version"
+git commit -m "chore: release $version"
 git push origin release --force
-gh pr create --title "Release $version" --body "$changelog" --label "release" ||
-  gh pr edit --title "Release $version" --body "$changelog"
+gh pr create --title "chore: release $version" --body "$changelog" --label "release" ||
+  gh pr edit --title "chore: release $version" --body "$changelog"
