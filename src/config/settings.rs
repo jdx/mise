@@ -124,7 +124,7 @@ pub struct Settings {
     #[config(env = "CI", default = false)]
     pub ci: bool,
     #[config(env = "MISE_CD")]
-    pub cd: Option<String>,
+    pub cd: Option<PathBuf>,
     #[config(env = "MISE_DEBUG", default = false)]
     pub debug: bool,
     #[config(env = "MISE_ENV_FILE")]
@@ -262,8 +262,8 @@ impl Settings {
                 s.raw = Some(true);
             }
         }
-        if let Some(cd) = m.get_one::<String>("cd") {
-            s.cd = Some(cd.to_string());
+        if let Some(cd) = m.get_one::<PathBuf>("cd") {
+            s.cd = Some(cd.clone());
         }
         if let Some(true) = m.get_one::<bool>("yes") {
             s.yes = Some(true);
