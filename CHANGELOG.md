@@ -1,14 +1,21 @@
 # Changelog
 
+## [unreleased]
+
+### 🐛 Bug Fixes
+
+- **(self-update)** respect yes setting in config by [@jdx](https://github.com/jdx) in [b4c4608](https://github.com/jdx/mise/commit/b4c4608ff2dbbde071e10acf6931204acf6d7d40)
+
+### 📚 Documentation
+
+- **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [646df55](https://github.com/jdx/mise/commit/646df55f0627c80099026849dc235a8c3076a8e3)
+- **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [00d8728](https://github.com/jdx/mise/commit/00d87283181467e73b01b27179c096bb08203619)
+
 ## [2024.3.10](https://github.com/jdx/mise/compare/v2024.3.9..v2024.3.10) - 2024-03-30
 
 ### 🐛 Bug Fixes
 
 - use correct type for --cd by [@jdx](https://github.com/jdx) in [cf4f03e](https://github.com/jdx/mise/commit/cf4f03ed0145c5678e1ecbdb98c4426c9428d29a)
-
-### 🔍 Other Changes
-
-- Release 2024.3.10 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1840](https://github.com/jdx/mise/pull/1840)
 
 ### 🚜 Refactor
 
@@ -30,10 +37,6 @@
 ### 📦️ Dependency Updates
 
 - update rust crate rayon to 1.10.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1827](https://github.com/jdx/mise/pull/1827)
-
-### 🔍 Other Changes
-
-- Release 2024.3.9 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1829](https://github.com/jdx/mise/pull/1829)
 
 ## [2024.3.8](https://github.com/jdx/mise/compare/v2024.3.7..v2024.3.8) - 2024-03-23
 
@@ -61,7 +64,6 @@
 ### 🔍 Other Changes
 
 - fix version set by [@jdx](https://github.com/jdx) in [2be7fe5](https://github.com/jdx/mise/commit/2be7fe51c0fb9f66c43cd6e940f4eb18ee83c822)
-- Release 2024.3.8 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1826](https://github.com/jdx/mise/pull/1826)
 
 ### 🧪 Testing
 
@@ -84,7 +86,6 @@
 
 - Refactor Nushell script by [@texastoland](https://github.com/texastoland) in [#1763](https://github.com/jdx/mise/pull/1763)
 - Update a few phrases for mise install by [@erickguan](https://github.com/erickguan) in [#1712](https://github.com/jdx/mise/pull/1712)
-- Release 2024.3.7 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1796](https://github.com/jdx/mise/pull/1796)
 
 ### 📚 Documentation
 
@@ -141,10 +142,6 @@
 
 - Update .mega-linter.yml by [@jdx](https://github.com/jdx) in [831831c](https://github.com/jdx/mise/commit/831831c057d37826b9c34edec659e9836e616ad2)
 - add --json flag by [@jdx](https://github.com/jdx) in [#1785](https://github.com/jdx/mise/pull/1785)
-- Release 2024.3.3 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1789](https://github.com/jdx/mise/pull/1789)
-- Release 2024.3.4 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1793](https://github.com/jdx/mise/pull/1793)
-- Release 2024.3.5 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1794](https://github.com/jdx/mise/pull/1794)
-- Release 2024.3.6 by [@mise-en-dev](https://github.com/mise-en-dev) in [#1795](https://github.com/jdx/mise/pull/1795)
 
 ### 🚜 Refactor
 
