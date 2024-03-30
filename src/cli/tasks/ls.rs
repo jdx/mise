@@ -23,8 +23,8 @@ pub struct TasksLs {
     pub no_header: bool,
 
     /// Show all columns
-    #[clap(long, verbatim_doc_comment)]
-    pub full: bool,
+    #[clap(short = 'x', long, verbatim_doc_comment)]
+    pub extended: bool,
 
     /// Show hidden tasks
     #[clap(long, verbatim_doc_comment)]
@@ -69,7 +69,7 @@ impl TasksLs {
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
         // hide columns alias
-        if !self.full {
+        if !self.extended {
             table::disable_columns(&mut table, vec![1]);
         }
         miseprintln!("{table}");
