@@ -4,6 +4,6 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 mise settings set experimental true
-mise r configtask arg1 arg2 ::: filetask arg1 arg2
+mise r --cd "$PWD" configtask arg1 arg2 ::: filetask arg1 arg2
 assert "cat test-e2e/test-build-output.txt" "TEST_BUILDSCRIPT_ENV_VAR: VALID
 ARGS: arg1 arg2"

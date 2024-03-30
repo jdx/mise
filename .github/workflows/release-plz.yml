@@ -30,9 +30,7 @@ jobs:
           git_user_signingkey: true
           git_commit_gpgsign: true
           git_tag_gpgsign: true
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unit
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache/restore@v4
@@ -40,8 +38,8 @@ jobs:
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: v0-mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: v0-mise-tools
+          key: mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools
       - run: mise install
       - run: mise run release-plz
         env:

@@ -136,6 +136,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("cocoapods", "https://github.com/ronnnnn/asdf-cocoapods.git"),
     ("codefresh", "https://github.com/gurukulkarni/asdf-codefresh.git"),
     ("codeql", "https://github.com/bored-engineer/asdf-codeql.git"),
+    ("coder", "https://github.com/mise-plugins/asdf-coder"),
     ("colima", "https://github.com/CrouchingMuppet/asdf-colima.git"),
     ("conan", "https://github.com/amrox/asdf-pyapp.git"),
     ("concourse", "https://github.com/mattysweeps/asdf-concourse.git"),
@@ -599,6 +600,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("sentinel", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("serf", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("serverless", "https://github.com/pdemagny/asdf-serverless.git"),
+    ("setup-envtest", "https://github.com/pmalek/mise-setup-envtest.git"),
     ("shell2http", "https://github.com/ORCID/asdf-shell2http.git"),
     ("shellcheck", "https://github.com/luizm/asdf-shellcheck.git"),
     ("shellspec", "https://github.com/poikilotherm/asdf-shellspec.git"),
@@ -768,6 +770,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 pub static TRUSTED_SHORTHANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     HashSet::from([
         "boundary",
+        "coder",
         "consul",
         "dt",
         "elixir",
