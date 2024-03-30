@@ -37,3 +37,9 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
         .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
         .with(Modify::new(Columns::last()).with(Padding::zero()));
 }
+
+pub fn disable_columns(table: &mut Table, col_idxs: Vec<usize>) {
+    for idx in col_idxs {
+        table.with(Disable::column(Columns::single(idx)));
+    }
+}
