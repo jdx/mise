@@ -734,7 +734,10 @@ __mise_sync_python_cmd() {
 __mise_tasks_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '(-x --extended)'{-x,--extended}'[Show all columns]' \
     '--hidden[Show hidden tasks]' \
+    '--sort=[Sort by column. Default is name.]:sort:(name alias description source)' \
+    '--sort-order=[Sort order. Default is asc.]:sort_order:(asc desc)' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
@@ -781,7 +784,10 @@ __mise_tasks_edit_cmd() {
 __mise_tasks_ls_cmd() {
   _arguments -s -S \
     '--no-header[Do not print table header]' \
+    '(-x --extended)'{-x,--extended}'[Show all columns]' \
     '--hidden[Show hidden tasks]' \
+    '--sort=[Sort by column. Default is name.]:sort:(name alias description source)' \
+    '--sort-order=[Sort order. Default is asc.]:sort_order:(asc desc)' \
     '(-C --cd)'{-C,--cd}'=[Change directory before running command]:cd:_directories' \
     '(-q --quiet)'{-q,--quiet}'[Suppress non-error messages]' \
     '*'{-v,--verbose}'[Show extra output (use -vv for even more)]' \
