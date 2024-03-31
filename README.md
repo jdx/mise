@@ -528,6 +528,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | odo                           | [rm3l/asdf-odo](https://github.com/rm3l/asdf-odo)                                                                 |
 | okta-aws-cli                  | [bennythejudge/asdf-plugin-okta-aws-cli](https://github.com/bennythejudge/asdf-plugin-okta-aws-cli)               |
 | Okteto                        | [BradenM/asdf-okteto](https://github.com/BradenM/asdf-okteto)                                                     |
+| ollama                        | [virtualstaticvoid/asdf-ollama](https://github.com/virtualstaticvoid/asdf-ollama)                                 |
 | om                            | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
 | Onyx                          | [jtakakura/asdf-onyx](https://github.com/jtakakura/asdf-onyx)                                                     |
 | OPA                           | [tochukwuvictor/asdf-opa](https://github.com/tochukwuvictor/asdf-opa)                                             |
