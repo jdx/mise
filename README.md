@@ -744,6 +744,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | tuist                         | [asdf-community/asdf-tuist](https://github.com/asdf-community/asdf-tuist)                                         |
 | tx                            | [ORCID/asdf-transifex](https://github.com/ORCID/asdf-transifex)                                                   |
 | typos                         | [aschiavon91/asdf-typos](https://github.com/aschiavon91/asdf-typos)                                               |
+| typst                         | [stephane-klein/asdf-typst](https://github.com/stephane-klein/asdf-typst)                                         |
 | uaa-cli                       | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
 | Unison                        | [susurri/asdf-unison](https://github.com/susurri/asdf-unison)                                                     |
 | updatecli                     | [updatecli/asdf-updatecli](https://github.com/updatecli/asdf-updatecli)                                           |
