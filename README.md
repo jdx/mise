@@ -787,6 +787,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | yadm                          | [particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm)                                             |
 | yamlfmt                       | [kachick/asdf-yamlfmt](https://github.com/kachick/asdf-yamlfmt)                                                   |
 | yamllint                      | [ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint)                                 |
+| yamlscript                    | [FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript)                                               |
 | Yarn                          | [twuni/asdf-yarn](https://github.com/twuni/asdf-yarn)                                                             |
 | yay                           | [aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay)                                                       |
 | Yor                           | [ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor)                                           |
