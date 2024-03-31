@@ -125,6 +125,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Bundler                       | [jonathanmorley/asdf-bundler](https://github.com/jonathanmorley/asdf-bundler)                                     |
 | Cabal                         | [sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup)                                                   |
 | Caddy                         | [salasrod/asdf-caddy](https://github.com/salasrod/asdf-caddy)                                                     |
+| CalendarSync                  | [FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync)                                           |
 | Calicoctl                     | [FairwindsOps/asdf-calicoctl](https://github.com/FairwindsOps/asdf-calicoctl)                                     |
 | Camunda Modeler               | [barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler)                                     |
 | cargo-make                    | [kachick/asdf-cargo-make](https://github.com/kachick/asdf-cargo-make)                                             |
