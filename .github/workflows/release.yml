@@ -78,6 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build-tarball
+          save-if: ${{ matrix.name == 'linux-x64' }}
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
