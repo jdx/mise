@@ -351,7 +351,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | hledger-flow                  | [airtonix/hledger-flow](https://github.com/airtonix/asdf-hledger-flow)                                            |
 | hostctl                       | [svenluijten/asdf-hostctl](https://github.com/svenluijten/asdf-hostctl)                                           |
 | httpie-go                     | [abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go)                                               |
-| Hub                           | [vixus0/asdf-hub](https://github.com/vixus0/asdf-hub)                                                             |
+| Hub                           | [claygorman/asdf-hub](https://github.com/claygorman/asdf-hub)                                                     |
 | Hugo                          | [NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo)                                                           |
 | Hurl                          | [raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl)                                                       |
 | hwatch                        | [chessmango/asdf-hwatch](https://github.com/chessmango/asdf-hwatch)                                               |
