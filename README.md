@@ -621,6 +621,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | sccache                       | [emersonmx/asdf-sccache](https://github.com/emersonmx/asdf-sccache)                                               |
 | Scenery                       | [skyzyx/asdf-scenery](https://github.com/skyzyx/asdf-scenery)                                                     |
 | schemacrawler                 | [davidecavestro/asdf-schemacrawler](https://github.com/davidecavestro/asdf-schemacrawler)                         |
+| scie-pants                    | [robzr/asdf-scie-pants](https://github.com/robzr/asdf-scie-pants)                                                 |
 | Seed7                         | [susurri/asdf-seed7](https://github.com/susurri/asdf-seed7)                                                       |
 | Semgrep                       | [brentjanderson/asdf-semgrep](https://github.com/brentjanderson/asdf-semgrep)                                     |
 | semtag                        | [junminahn/asdf-semtag](https://github.com/junminahn/asdf-semtag)                                                 |
