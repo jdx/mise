@@ -190,6 +190,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | cyclonedx                     | [xeedio/asdf-cyclonedx](https://github.com/xeedio/asdf-cyclonedx)                                                 |
 | D (DMD)                       | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd)                                                           |
 | dagger                        | [virtualstaticvoid/asdf-dagger](https://github.com/virtualstaticvoid/asdf-dagger)                                 |
+| dapr                          | [asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli.git)                               |
 | Dart                          | [PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart)                                               |
 | Dasel                         | [asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel)                                         |
 | datree                        | [lukeab/asdf-datree](https://github.com/lukeab/asdf-datree)                                                       |
