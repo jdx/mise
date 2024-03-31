@@ -90,6 +90,7 @@ impl Config {
         };
 
         config.validate()?;
+        config.env()?;
 
         debug!("{config:#?}");
 
