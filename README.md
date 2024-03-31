@@ -388,6 +388,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | k0sctl                        | [Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl)                                     |
 | k2tf                          | [carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf)                                                   |
 | k3d                           | [spencergilbert/asdf-k3d](https://github.com/spencergilbert/asdf-k3d)                                             |
+| k3kcli                        | [xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli)                                               |
 | k3s                           | [dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s)                                                                 |
 | k3sup                         | [cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup)                                                 |
 | k6                            | [gr1m0h/asdf-k6](https://github.com/gr1m0h/asdf-k6)                                                               |
