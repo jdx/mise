@@ -165,6 +165,7 @@ impl PythonPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg(ctx.tv.version.as_str())
             .arg(&ctx.tv.install_path())
+            .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env()?);
         if settings.verbose {
             cmd = cmd.arg("--verbose");
@@ -209,6 +210,7 @@ impl PythonPlugin {
             .arg("--upgrade")
             .arg("-r")
             .arg(packages_file)
+            .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env()?)
             .execute()
     }
