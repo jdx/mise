@@ -103,6 +103,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Batect                        | [johnlayton/asdf-batect](https://github.com/johnlayton/asdf-batect)                                               |
 | Bats (Bash unittest)          | [timgluz/asdf-bats](https://github.com/timgluz/asdf-bats)                                                         |
 | Bazel                         | [rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel)                                                     |
+| bazelisk                      | [josephtate/asdf-bazelisk](https://github.com/josephtate/asdf-bazelisk)                                           |
 | bbr                           | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
 | bbr-s3-config-validator       | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
 | benthos                       | [benthosdev/benthos-asdf](https://github.com/benthosdev/benthos-asdf)                                             |
