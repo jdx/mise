@@ -90,7 +90,7 @@ impl Config {
         };
 
         config.validate()?;
-        config.env()?;
+        config.init_env()?;
 
         debug!("{config:#?}");
 
@@ -124,8 +124,17 @@ impl Config {
             Ok(env)
         })
     }
+    pub fn init_env(&self) -> eyre::Result<()> {
+        let env = self.load_env()?;
+        self.env
+            .set(env)
+            .map_err(|_| eyre::eyre!("Environment already initialized"))?;
+        Ok(())
+    }
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        self.env.get_or_try_init(|| self.load_env())
+        self.env
+            .get()
+            .ok_or_else(|| eyre::eyre!("Environment not initialized"))
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results()?.env_paths)
