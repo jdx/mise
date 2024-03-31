@@ -48,7 +48,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | .Net                          | [hensou/asdf-dotnet](https://github.com/hensou/asdf-dotnet)                                                       |
 | .Net Core                     | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core)                               |
 | 1password-cli                 | [NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli)                                         |
-| act                           | [grimoh/asdf-act](https://github.com/grimoh/asdf-act)                                                             |
+| act                           | [gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act)                                                             |
 | action-validator              | [mpalmer/action-validator](https://github.com/mpalmer/action-validator)                                           |
 | actionlint                    | [crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint)                                       |
 | adr-tools                     | [td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools)                                                     |
@@ -383,7 +383,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | k2tf                          | [carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf)                                                   |
 | k3d                           | [spencergilbert/asdf-k3d](https://github.com/spencergilbert/asdf-k3d)                                             |
 | k3sup                         | [cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup)                                                 |
-| k6                            | [grimoh/asdf-k6](https://github.com/grimoh/asdf-k6)                                                               |
+| k6                            | [gr1m0h/asdf-k6](https://github.com/gr1m0h/asdf-k6)                                                               |
 | k9s                           | [looztra/asdf-k9s](https://github.com/looztra/asdf-k9s)                                                           |
 | kafka                         | [ueisele/asdf-kafka](https://github.com/ueisele/asdf-kafka)                                                       |
 | kafkactl                      | [anweber/asdf-kafkactl](https://github.com/anweber/asdf-kafkactl)                                                 |
@@ -642,7 +642,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Sonobuoy                      | [Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy)                                       |
 | Sops                          | [feniix/asdf-sops](https://github.com/feniix/asdf-sops)                                                           |
 | sopstool                      | [elementalvoid/asdf-sopstool](https://github.com/elementalvoid/asdf-sopstool)                                     |
-| soracom-cli                   | [grimoh/asdf-soracom](https://github.com/grimoh/asdf-soracom)                                                     |
+| soracom-cli                   | [gr1m0h/asdf-soracom](https://github.com/gr1m0h/asdf-soracom)                                                     |
 | Sourcery                      | [younke/asdf-sourcery](https://github.com/younke/asdf-sourcery)                                                   |
 | spacectl                      | [bodgit/asdf-spacectl](https://github.com/bodgit/asdf-spacectl)                                                   |
 | Spago                         | [jrrom/asdf-spago](https://github.com/jrrom/asdf-spago)                                                           |
@@ -658,7 +658,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | starboard                     | [zufardhiyaulhaq/asdf-starboard](https://github.com/zufardhiyaulhaq/asdf-starboard)                               |
 | Starknet Foundry              | [foundry-rs/asdf-starknet-foundry](https://github.com/foundry-rs/asdf-starknet-foundry)                           |
 | starport                      | [nikever/asdf-starport](https://github.com/nikever/asdf-starport)                                                 |
-| starship                      | [grimoh/asdf-starship](https://github.com/grimoh/asdf-starship)                                                   |
+| starship                      | [gr1m0h/asdf-starship](https://github.com/gr1m0h/asdf-starship)                                                   |
 | Staticcheck                   | [pbr0ck3r/asdf-staticcheck](https://github.com/pbr0ck3r/asdf-staticcheck)                                         |
 | steampipe                     | [carnei-ro/asdf-steampipe](https://github.com/carnei-ro/asdf-steampipe)                                           |
 | Steel Bank Common Lisp (sbcl) | [smashedtoatoms/asdf-sbcl](https://github.com/smashedtoatoms/asdf-sbcl)                                           |
@@ -695,7 +695,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | terraform-ls                  | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | terraform-lsp                 | [bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp)                       |
 | Terraform-validator           | [looztra/asdf-terraform-validator](https://github.com/looztra/asdf-terraform-validator)                           |
-| Terraformer                   | [grimoh/asdf-terraformer](https://github.com/grimoh/asdf-terraformer)                                             |
+| Terraformer                   | [gr1m0h/asdf-terraformer](https://github.com/gr1m0h/asdf-terraformer)                                             |
 | Terragrunt                    | [ohmer/asdf-terragrunt](https://github.com/ohmer/asdf-terragrunt)                                                 |
 | Terramate                     | [martinlindner/asdf-terramate](https://github.com/martinlindner/asdf-terramate)                                   |
 | Terrascan                     | [hpdobrica/asdf-terrascan](https://github.com/hpdobrica/asdf-terrascan)                                           |
