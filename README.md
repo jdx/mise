@@ -746,6 +746,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | upt                           | [ORCID/asdf-upt](https://github.com/ORCID/asdf-upt)                                                               |
 | upx                           | [jimmidyson/asdf-upx](https://github.com/jimmidyson/asdf-upx)                                                     |
 | usql                          | [itspngu/asdf-usql](https://github.com/itspngu/asdf-usql)                                                         |
+| uv                            | [asdf-community/asdf-uv](https://github.com/asdf-community/asdf-uv)                                               |
 | V                             | [jthegedus/asdf-v](https://github.com/jthegedus/asdf-v)                                                           |
 | vale                          | [pdemagny/asdf-vale](https://github.com/pdemagny/asdf-vale)                                                       |
 | vals                          | [dex4er/asdf-vals](https://github.com/dex4er/asdf-vals)                                                           |
