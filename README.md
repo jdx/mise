@@ -449,6 +449,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Lefthook                      | [jtzero/asdf-lefthook](https://github.com/jtzero/asdf-lefthook)                                                   |
 | Levant                        | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | LFE                           | [asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe)                                             |
+| libsql-server                 | [jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server)                                         |
 | Lima                          | [CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima)                                         |
 | Link (system tools)           | [asdf-community/asdf-link](https://github.com/asdf-community/asdf-link)                                           |
 | Linkerd                       | [kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd)                                         |
