@@ -377,6 +377,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | jiq                           | [chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq)                                                     |
 | jless                         | [jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless)                                                         |
 | JMESPath                      | [skyzyx/asdf-jmespath](https://github.com/skyzyx/asdf-jmespath)                                                   |
+| jnv                           | [raimon49/asdf-jnv](https://github.com/raimon49/asdf-jnv)                                                         |
 | jq                            | [lsanwick/asdf-jq](https://github.com/lsanwick/asdf-jq)                                                           |
 | jqp                           | [wt0f/asdf-jqp](https://gitlab.com/wt0f/asdf-jqp)                                                                 |
 | JReleaser                     | [joschi/asdf-jreleaser](https://github.com/joschi/asdf-jreleaser)                                                 |
