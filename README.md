@@ -412,6 +412,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | Kotlin                        | [asdf-community/asdf-kotlin](https://github.com/asdf-community/asdf-kotlin)                                       |
 | Kpt                           | [nlamirault/asdf-kpt](https://github.com/nlamirault/asdf-kpt)                                                     |
 | kp                            | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
+| kpack                         | [asdf-community/asdf-kpack-cli](https://github.com/asdf-community/asdf-kpack-cli)                                 |
 | kscript                       | [edgelevel/asdf-kscript](https://github.com/edgelevel/asdf-kscript)                                               |
 | krab                          | [ohkrab/asdf-krab](https://github.com/ohkrab/asdf-krab)                                                           |
 | krew                          | [bjw-s/asdf-krew](https://github.com/bjw-s/asdf-krew)                                                             |
