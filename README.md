@@ -231,6 +231,7 @@ The `asdf` core provides a [security policy](https://github.com/asdf-vm/asdf/sec
 | dust                          | [looztra/asdf-dust](https://github.com/looztra/asdf-dust)                                                         |
 | DVC                           | [fwfurtado/asdf-dvc](https://github.com/fwfurtado/asdf-dvc)                                                       |
 | dyff                          | [wt0f/asdf-dyff](https://gitlab.com/wt0f/asdf-dyff)                                                               |
+| dynatrace-monaco              | [nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco)                                                   |
 | earthly                       | [YR-ZR0/asdf-earthly](https://github.com/YR-ZR0/asdf-earthly)                                                     |
 | ecspresso                     | [kayac/asdf-ecspresso](https://github.com/kayac/asdf-ecspresso)                                                   |
 | editorconfig-checker          | [gabitchov/asdf-editorconfig-checker](https://github.com/gabitchov/asdf-editorconfig-checker)                     |
