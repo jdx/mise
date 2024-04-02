@@ -594,6 +594,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | semtag                        | [junminahn/asdf-semtag](https://github.com/junminahn/asdf-semtag)                                                 |
 | semver                        | [mathew-fleisch/asdf-semver](https://github.com/mathew-fleisch/asdf-semver)                                       |
 | Sentinel                      | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
+| sentry-cli                    | [MacPaw/asdf-sentry-cli](https://github.com/MacPaw/asdf-sentry-cli)                                               |
 | Serf                          | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | serverless                    | [pdemagny/asdf-serverless](https://github.com/pdemagny/asdf-serverless)                                           |
 | setup-envtest                 | [pmalek/mise-setup-envtest](https://github.com/pmalek/mise-setup-envtest)                                         |
