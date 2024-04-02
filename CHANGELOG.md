@@ -1,5 +1,25 @@
 # Changelog
 
+## [2024.4.0](https://github.com/jdx/mise/compare/v2024.3.11..v2024.4.0) - 2024-04-02
+
+### 🐛 Bug Fixes
+
+- **(python)** install python when pip is disabled outside virtualenv by [@GabDug](https://github.com/GabDug) in [#1847](https://github.com/jdx/mise/pull/1847)
+
+### 🔍 Other Changes
+
+- Move logic to set current directory before loading other config by [@joshbode](https://github.com/joshbode) in [#1848](https://github.com/jdx/mise/pull/1848)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(release)** only save 1 build cache by [@jdx](https://github.com/jdx) in [f37f11d](https://github.com/jdx/mise/commit/f37f11dd56cb30c1df30d4a2a3df37290ce95a0b)
+- **(release-plz)** rebuild release branch daily by [@jdx](https://github.com/jdx) in [3606d96](https://github.com/jdx/mise/commit/3606d9687ec205754269f7402a7f8095533627ae)
+
+### New Contributors
+
+* @GabDug made their first contribution in [#1847](https://github.com/jdx/mise/pull/1847)
+* @joshbode made their first contribution in [#1848](https://github.com/jdx/mise/pull/1848)
+
 ## [2024.3.11](https://github.com/jdx/mise/compare/v2024.3.10..v2024.3.11) - 2024-03-30
 
 ### 🚀 Features
