@@ -633,7 +633,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | soft-serve                    | [chessmango/asdf-soft-serve](https://github.com/chessmango/asdf-soft-serve)                                       |
 | Solidity                      | [diegodorado/asdf-solidity](https://github.com/diegodorado/asdf-solidity)                                         |
 | Sonobuoy                      | [Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy)                                       |
-| Sops                          | [feniix/asdf-sops](https://github.com/feniix/asdf-sops)                                                           |
+| Sops                          | [mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops)                                                           |
 | sopstool                      | [elementalvoid/asdf-sopstool](https://github.com/elementalvoid/asdf-sopstool)                                     |
 | soracom-cli                   | [gr1m0h/asdf-soracom](https://github.com/gr1m0h/asdf-soracom)                                                     |
 | Sourcery                      | [younke/asdf-sourcery](https://github.com/younke/asdf-sourcery)                                                   |
