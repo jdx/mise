@@ -5,10 +5,12 @@ permissions:
   contents: write
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-      - release-plz
+  schedule:
+    - cron: "0 0 * * *"
 
 concurrency:
   group: release-plz
