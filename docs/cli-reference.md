@@ -1471,17 +1471,17 @@ Examples:
     $ mise trust
 ```
 
-## `mise uninstall [OPTIONS] [TOOL@VERSION]...`
+## `mise uninstall [OPTIONS] [INSTALLED_TOOL@VERSION]...`
 
 **Aliases:** `remove, rm`
 
 ```text
 Removes runtime versions
 
-Usage: uninstall [OPTIONS] [TOOL@VERSION]...
+Usage: uninstall [OPTIONS] [INSTALLED_TOOL@VERSION]...
 
 Arguments:
-  [TOOL@VERSION]...
+  [INSTALLED_TOOL@VERSION]...
           Tool(s) to remove
 
 Options:
