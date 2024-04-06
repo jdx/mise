@@ -1059,7 +1059,7 @@ cmd "uninstall" help="Removes runtime versions" {
 "
     flag "-a --all" help="Delete all installed versions"
     flag "-n --dry-run" help="Do not actually delete anything"
-    arg "[TOOL@VERSION]..." help="Tool(s) to remove" var=true
+    arg "[INSTALLED_TOOL@VERSION]..." help="Tool(s) to remove" var=true
 }
 cmd "unset" help="Remove environment variable(s) from the config file" {
     long_help r#"Remove environment variable(s) from the config file
@@ -1215,6 +1215,31 @@ case $cur in
     ;;
   *)
     plugins=$(mise plugins --all)
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac
+"#
+
+complete "installed_tool@version" run=r#"
+cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    if [ ! -z "$prefix" ]; then
+      prefix="--prefix $prefix"
+    fi
+    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise plugins --core --user)
     for plugin in $plugins; do
       echo "$plugin@"
     done
