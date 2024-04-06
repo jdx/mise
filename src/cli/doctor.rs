@@ -150,7 +150,7 @@ impl Doctor {
                 self.checks.push(formatdoc!(
                     "shims are missing, run {cmd} to create them
                      Missing shims: {missing}",
-                    missing = missing.join(", ")
+                    missing = missing.into_iter().join(", ")
                 ));
             }
 
@@ -158,7 +158,7 @@ impl Doctor {
                 self.checks.push(formatdoc!(
                     "unused shims are present, run {cmd} to remove them
                      Unused shims: {extra}",
-                    extra = extra.join(", ")
+                    extra = extra.into_iter().join(", ")
                 ));
             }
         }

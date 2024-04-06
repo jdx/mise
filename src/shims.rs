@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -137,7 +137,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 pub fn get_shim_diffs(
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
-) -> Result<(Vec<String>, Vec<String>)> {
+) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     let actual_shims = get_actual_shims(&mise_bin)?;
     let desired_shims = get_desired_shims(toolset)?;
 
