@@ -173,27 +173,18 @@ Arguments:
           Plugin(s) to clear cache for e.g.: node, python
 ```
 
-## `mise completion [OPTIONS] [SHELL]`
+## `mise completion [SHELL]`
 
 ```text
 Generate shell completions
 
-Usage: completion [OPTIONS] [SHELL]
+Usage: completion [SHELL]
 
 Arguments:
   [SHELL]
           Shell type to generate completions for
 
           [possible values: bash, fish, zsh]
-
-Options:
-      --usage
-          Always use usage for completions.
-          Currently, usage is the default for fish and bash but not zsh since it has a few quirks
-          to work out first.
-
-          This requires the `usage` CLI to be installed.
-          https://usage.jdx.dev
 
 Examples:
 

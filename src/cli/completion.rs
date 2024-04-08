@@ -2,9 +2,6 @@ use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use eyre::Result;
 
-use crate::cli::Cli;
-use crate::shell::completions;
-
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -23,28 +20,21 @@ pub struct Completion {
     ///
     /// This requires the `usage` CLI to be installed.
     /// https://usage.jdx.dev
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment, hide = true)]
     usage: bool,
 }
 
 impl Completion {
-    pub fn run(mut self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
-        if let Shell::Bash | Shell::Fish = shell {
-            self.usage = true;
-        }
 
-        let script = if self.usage {
-            match self.call_usage(shell) {
-                Ok(script) => script,
-                Err(e) => {
-                    debug!("usage command failed, falling back to prerendered completions");
-                    debug!("error: {e:?}");
-                    self.prerendered(shell)
-                }
+        let script = match self.call_usage(shell) {
+            Ok(script) => script,
+            Err(e) => {
+                debug!("usage command failed, falling back to prerendered completions");
+                debug!("error: {e:?}");
+                self.prerendered(shell)
             }
-        } else {
-            completions::zsh_complete(&Cli::command())?
         };
         miseprintln!("{}", script.trim());
 
