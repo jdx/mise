@@ -320,7 +320,7 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let program = program.to_executable();
-        let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
+        let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env).current_dir(env["MISE_PROJECT_ROOT"].clone());
         cmd.with_pass_signals();
         match &self.output(task)? {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
