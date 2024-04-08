@@ -70,7 +70,7 @@ depends = ["build"]
 env = { NO_COLOR = "1" }
 run = [
   "mise render-help",
-  "mise x node@latest -- npx markdown-magic",
+  "mise x node@latest -- npx markdown-magic || exit 0",
 ]
 sources = ["mise"]
 outputs = ["README.md"]
