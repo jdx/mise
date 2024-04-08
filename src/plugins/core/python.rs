@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
 use itertools::Itertools;
 
 use crate::build_time::built_info;
@@ -42,14 +41,14 @@ impl PythonPlugin {
         self.python_build_path()
             .join("plugins/python-build/bin/python-build")
     }
-    fn install_or_update_python_build(&self) -> Result<()> {
+    fn install_or_update_python_build(&self) -> eyre::Result<()> {
         if self.python_build_path().exists() {
             self.update_python_build()
         } else {
             self.install_python_build()
         }
     }
-    fn install_python_build(&self) -> Result<()> {
+    fn install_python_build(&self) -> eyre::Result<()> {
         if self.python_build_path().exists() {
             return Ok(());
         }
@@ -61,7 +60,7 @@ impl PythonPlugin {
         git.clone(&settings.python_pyenv_repo)?;
         Ok(())
     }
-    fn update_python_build(&self) -> Result<()> {
+    fn update_python_build(&self) -> eyre::Result<()> {
         // TODO: do not update if recently updated
         debug!(
             "Updating python-build in {}",
@@ -72,7 +71,7 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
         match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
@@ -95,7 +94,7 @@ impl PythonPlugin {
         tv.install_short_path().join("bin/python")
     }
 
-    fn fetch_precompiled_remote_versions(&self) -> Result<&Vec<(String, String, String)>> {
+    fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
             let settings = Settings::get();
             let raw = HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled")?;
@@ -119,15 +118,20 @@ impl PythonPlugin {
         })
     }
 
-    fn install_precompiled(&self, ctx: &InstallContext) -> Result<()> {
-        let precompile_info = self
-            .fetch_precompiled_remote_versions()?
+    fn install_precompiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
+        let precompiled_versions = self.fetch_precompiled_remote_versions()?;
+        let precompile_info = precompiled_versions
             .iter()
             .rev()
             .find(|(v, _, _)| &ctx.tv.version == v);
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
-            None => return self.install_compiled(ctx),
+            None => {
+                debug!("no precompiled python found for {}", ctx.tv.version);
+                let mut available = precompiled_versions.iter().map(|(v, _, _)| v);
+                trace!("available precompiled versions: {}", available.join(", "));
+                return self.install_compiled(ctx);
+            }
         };
 
         warn!("installing precompiled python from indygreg/python-build-standalone");
@@ -153,7 +157,7 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn install_compiled(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_compiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::get();
         self.install_or_update_python_build()?;
@@ -197,7 +201,7 @@ impl PythonPlugin {
         packages_file: &Path,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
-    ) -> Result<()> {
+    ) -> eyre::Result<()> {
         if !packages_file.exists() {
             return Ok(());
         }
@@ -220,7 +224,7 @@ impl PythonPlugin {
         config: &Config,
         tv: &ToolVersion,
         pr: Option<&dyn SingleReport>,
-    ) -> Result<Option<PathBuf>> {
+    ) -> eyre::Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.opts.get("virtualenv") {
             let settings = Settings::try_get()?;
             if !settings.experimental {
@@ -266,7 +270,7 @@ impl PythonPlugin {
         }
     }
 
-    // fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> Result<()> {
+    // fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> eyre::Result<()> {
     //     let symlink = virtualenv.join("bin/python");
     //     let target = self.python_path(tv);
     //     let symlink_target = symlink.read_link().unwrap_or_default();
@@ -280,7 +284,12 @@ impl PythonPlugin {
     //     Ok(())
     // }
 
-    fn test_python(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_python(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> eyre::Result<()> {
         pr.set_message("python --version".into());
         CmdLineRunner::new(self.python_path(tv))
             .with_pr(pr)
@@ -295,18 +304,18 @@ impl Forge for PythonPlugin {
         &self.core.fa
     }
 
-    fn list_remote_versions(&self) -> Result<Vec<String>> {
+    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
         if settings.python_compile {
