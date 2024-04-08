@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.4.1](https://github.com/jdx/mise/compare/v2024.4.0..v2024.4.1) - 2024-04-08
+
+### 🐛 Bug Fixes
+
+- **(doctor)** sort missing shims by [@jdx](https://github.com/jdx) in [f12d335](https://github.com/jdx/mise/commit/f12d3359b054c9b31a785ed9fdc41e20b317ddb4)
+- **(uninstall)** fix uninstall completions by [@jdx](https://github.com/jdx) in [#1869](https://github.com/jdx/mise/pull/1869)
+
+### 📦️ Dependency Updates
+
+- bump h2 from 0.3.25 to 0.3.26 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#1866](https://github.com/jdx/mise/pull/1866)
+
+### 🧪 Testing
+
+- **(audit)** removed workflow since dependabot is already doing this by [@jdx](https://github.com/jdx) in [9138e2e](https://github.com/jdx/mise/commit/9138e2e6ec09a36c7791c9a6b4e5f7ab138fcb63)
+- **(mega-linter)** disable RUST_CLIPPY (slow) by [@jdx](https://github.com/jdx) in [8c64153](https://github.com/jdx/mise/commit/8c64153f7c5b3990d3b857b55fb0a94e7c11a6fc)
+
 ## [2024.4.0](https://github.com/jdx/mise/compare/v2024.3.11..v2024.4.0) - 2024-04-02
 
 ### 🐛 Bug Fixes
