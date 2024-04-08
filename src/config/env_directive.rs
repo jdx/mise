@@ -74,6 +74,7 @@ pub struct EnvResults {
 
 impl EnvResults {
     pub fn resolve(
+        config: &Config,
         initial: &HashMap<String, String>,
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
@@ -165,8 +166,7 @@ impl EnvResults {
                     let venv = normalize_path(venv.into());
                     if !venv.exists() && create {
                         // TODO: the toolset stuff doesn't feel like it's in the right place here
-                        let config = Config::get();
-                        let ts = ToolsetBuilder::new().build(&config)?;
+                        let ts = ToolsetBuilder::new().build(config)?;
                         let path = ts
                             .list_paths()
                             .into_iter()
@@ -241,10 +241,12 @@ mod tests {
 
     #[test]
     fn test_env_path() {
+        let config = Config::default();
         let mut env = HashMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
         let results = EnvResults::resolve(
+            &config,
             &env,
             vec![
                 (
@@ -282,8 +284,10 @@ mod tests {
 
     #[test]
     fn test_venv_path() {
+        let config = Config::default();
         let env = HashMap::new();
         let results = EnvResults::resolve(
+            &config,
             &env,
             vec![
                 (

@@ -385,7 +385,7 @@ impl Config {
             .rev()
             .flat_map(|(source, cf)| cf.env_entries().into_iter().map(|e| (e, source.clone())))
             .collect();
-        EnvResults::resolve(&env::PRISTINE_ENV, entries)
+        EnvResults::resolve(self, &env::PRISTINE_ENV, entries)
     }
 
     pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
