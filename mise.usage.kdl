@@ -144,7 +144,7 @@ cmd "completion" help="Generate shell completions" {
     flag "-s --shell" help="Shell type to generate completions for" hide=true {
         arg "<SHELL_TYPE>"
     }
-    flag "--usage" help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." {
+    flag "--usage" help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." hide=true {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
     arg "[SHELL]" help="Shell type to generate completions for"
