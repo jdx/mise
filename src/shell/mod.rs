@@ -9,8 +9,6 @@ mod nushell;
 mod xonsh;
 mod zsh;
 
-pub mod completions;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum ShellType {
     Bash,
