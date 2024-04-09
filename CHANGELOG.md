@@ -1,14 +1,30 @@
 # Changelog
 
+## [2024.4.3](https://github.com/jdx/mise/compare/v2024.4.2..v2024.4.3) - 2024-04-09
+
+### 🐛 Bug Fixes
+
+- **(docker)** repo fetch by [@jdx](https://github.com/jdx) in [bb68fc3](https://github.com/jdx/mise/commit/bb68fc33f98e5fe4518478f963d448bca61d54fe)
+- **(docker)** repo fetch by [@jdx](https://github.com/jdx) in [#1878](https://github.com/jdx/mise/pull/1878)
+- asdf-yarn by [@jdx](https://github.com/jdx) in [fc8de34](https://github.com/jdx/mise/commit/fc8de34e2e535ed7262c079087ff444a44dd5731)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(release-plz)** clean up PR/release description by [@jdx](https://github.com/jdx) in [14b4fc5](https://github.com/jdx/mise/commit/14b4fc5525e06cc150ae160c406ee06b58d95ce5)
+- **(release-plz)** clean up PR/release description by [@jdx](https://github.com/jdx) in [769e7fe](https://github.com/jdx/mise/commit/769e7fe16e4f4df7380414f91e67345148e059de)
+- **(release-plz)** disable subtree push by [@jdx](https://github.com/jdx) in [c74a12c](https://github.com/jdx/mise/commit/c74a12c3c31ba087a154d7b328374670a675f00a)
+- **(sync)** added workflow by [@jdx](https://github.com/jdx) in [b773033](https://github.com/jdx/mise/commit/b7730335949235085001b23ddc382a7c44b18f12)
+- **(sync)** pull and push changes by [@jdx](https://github.com/jdx) in [52bb0ae](https://github.com/jdx/mise/commit/52bb0aee4a91c66bb2966cf462c23eedfc0c5058)
+- **(sync)** pull and push changes by [@jdx](https://github.com/jdx) in [28b9a52](https://github.com/jdx/mise/commit/28b9a52fce891ab28e9e4d2f7fc1207de07d0a84)
+- **(sync)** pull and push changes by [@jdx](https://github.com/jdx) in [202c900](https://github.com/jdx/mise/commit/202c90051a81eff9ed12ef1483bc86cee355371c)
+- **(sync)** pull and push changes by [@jdx](https://github.com/jdx) in [e3aefb1](https://github.com/jdx/mise/commit/e3aefb1eb915387ca08b484158e5f13c069912d1)
+- **(sync)** pull and push changes by [@jdx](https://github.com/jdx) in [60f5b7a](https://github.com/jdx/mise/commit/60f5b7a44479385650e563d234ceb2ac0e135994)
+
 ## [2024.4.2](https://github.com/jdx/mise/compare/v2024.4.1..v2024.4.2) - 2024-04-09
 
 ### 🚀 Features
 
 - **(completions)** switch to usage for zsh completions by [@jdx](https://github.com/jdx) in [#1875](https://github.com/jdx/mise/pull/1875)
-
-### 🐛 Bug Fixes
-
-- asdf-yarn by Jeff Dickey in [fc8de34](https://github.com/jdx/mise/commit/fc8de34e2e535ed7262c079087ff444a44dd5731)
 
 ### 🚜 Refactor
 
@@ -29,7 +45,6 @@
 - **(release)** fixing registry autosync by [@jdx](https://github.com/jdx) in [266004b](https://github.com/jdx/mise/commit/266004b038588d791d3cefb11ab0094cdf79a929)
 - **(release-plz)** push registry subtree changes by [@jdx](https://github.com/jdx) in [076c822](https://github.com/jdx/mise/commit/076c82228b3d79d7e9926c602825d9dbd101bd06)
 - **(renovate)** disable lock file maintenance by [@jdx](https://github.com/jdx) in [f919db4](https://github.com/jdx/mise/commit/f919db4588f11b7bd2ba951b77ecf70c15ecbcc4)
-- **(sync)** added workflow by Jeff Dickey in [b773033](https://github.com/jdx/mise/commit/b7730335949235085001b23ddc382a7c44b18f12)
 - Add 'registry/' from commit 'c5d91ebfbf1b7a03203e8442a3f6348c41ce086d' by [@jdx](https://github.com/jdx) in [d6d46d0](https://github.com/jdx/mise/commit/d6d46d004b02b8dd2947da2314604c870f1221c8)
 
 ## [2024.4.1](https://github.com/jdx/mise/compare/v2024.4.0..v2024.4.1) - 2024-04-08
