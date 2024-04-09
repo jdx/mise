@@ -34,5 +34,5 @@ SHOW_ELAPSED_TIME: true
 
 #FILEIO_REPORTER: false
 
-FILTER_REGEX_EXCLUDE: "(completions/|target/|CHANGELOG.md)"
+FILTER_REGEX_EXCLUDE: "(completions/|target/|registry/|CHANGELOG.md)"
 JSON_JSONLINT_FILTER_REGEX_EXCLUDE: '(\.devcontainer/)'
