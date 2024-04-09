@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-name="$1"
+repo_name="$1"
+name="${repo_name##*-}"
 owner="${2:-mise-plugins}"
 
 # TODO: transfer from jdx -> mise-plugins
@@ -8,4 +9,4 @@ owner="${2:-mise-plugins}"
 # TODO: add github issues
 # TODO: squash commits on PRs
 
-echo "repository = https://github.com/$owner/$name.git" > "plugins/$name"
+echo "repository = https://github.com/$owner/$repo_name.git" > "plugins/$name"
