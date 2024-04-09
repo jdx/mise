@@ -100,6 +100,7 @@ commit_parsers = [
     { message = '^chore\(pull\)', skip = true },
     { message = '^chore: (release|Release)', skip = true },
     { message = '^Release', skip = true },
+    { message = "^Merge commit", skip = true },
     { message = '^chore|^ci', group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
     { body = '.*security', group = "<!-- 8 -->🛡️ Security" },
     { message = '^revert', group = "<!-- 9 -->◀️ Revert" },
