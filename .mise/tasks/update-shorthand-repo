@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-rm -rf asdf-plugins
-git clone --depth 1 https://github.com/mise-plugins/registry asdf-plugins
+git subtree pull --prefix registry https://github.com/mise-plugins/registry.git main
 rm -f src/default_shorthands.rs
 
-asdf_plugins=$(ls asdf-plugins/plugins)
+asdf_plugins=$(ls registry/plugins)
 num_plugins=$(echo "$asdf_plugins" | wc -l | tr -d ' ')
 trusted=()
 
@@ -36,7 +35,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
 EOF
 count=0
 for plugin in $asdf_plugins; do
-  file="asdf-plugins/plugins/$plugin"
+  file="registry/plugins/$plugin"
   repository=$(grep -e '^repository = ' "$file")
   repository="${repository/#repository = /}"
   printf "\033[2K[%03d/%d] %s\r" $((++count)) "$num_plugins" "$repository"
@@ -77,5 +76,3 @@ echo "]));" >>src/default_shorthands.rs
 #echo "]));" >>src/default_shorthands.rs
 
 rustfmt src/default_shorthands.rs
-
-rm -rf asdf-plugins
