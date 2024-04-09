@@ -26,7 +26,7 @@ jobs:
           path: mise
       - run: |
           cd mise
-          git push --ff-only https://github.com/mise-plugins/registry main
+          git push https://github.com/mise-plugins/registry main
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
