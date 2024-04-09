@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-git subtree pull --prefix registry https://github.com/mise-plugins/registry.git main
 rm -f src/default_shorthands.rs
 
 asdf_plugins=$(ls registry/plugins)
