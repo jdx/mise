@@ -1,5 +1,37 @@
 # Changelog
 
+## [2024.4.2](https://github.com/jdx/mise/compare/v2024.4.1..v2024.4.2) - 2024-04-09
+
+### 🚀 Features
+
+- **(completions)** switch to usage for zsh completions by [@jdx](https://github.com/jdx) in [#1875](https://github.com/jdx/mise/pull/1875)
+
+### 🐛 Bug Fixes
+
+- asdf-yarn by Jeff Dickey in [fc8de34](https://github.com/jdx/mise/commit/fc8de34e2e535ed7262c079087ff444a44dd5731)
+
+### 🚜 Refactor
+
+- **(default_shorthands)** automatically mark mise-plugins as trusted by [@jdx](https://github.com/jdx) in [538a90f](https://github.com/jdx/mise/commit/538a90f04447b306c0ea6d8009cdef3f92cd4735)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(cliff)** ignore previous registry commits by [@jdx](https://github.com/jdx) in [64f326d](https://github.com/jdx/mise/commit/64f326d903e13a104b88eb4b0986285ad2411f19)
+- **(cliff)** ignore merge commits by [@jdx](https://github.com/jdx) in [d54b0a2](https://github.com/jdx/mise/commit/d54b0a2cd4d4bd02816719101cbe77905818d07a)
+- **(default_shorthands)** fix count by [@jdx](https://github.com/jdx) in [a098228](https://github.com/jdx/mise/commit/a0982283273b4126c2d9b22ac2395de5cd3f73eb)
+- **(homebrew)** delete unused script by [@jdx](https://github.com/jdx) in [f3b092f](https://github.com/jdx/mise/commit/f3b092fdaf2bcfc789485543770cc2374a469523)
+- **(markdown-magic)** do not fail if markdown-magic fails by [@jdx](https://github.com/jdx) in [073fce7](https://github.com/jdx/mise/commit/073fce750dbe97818db6de5a7ae6482904730de2)
+- **(markdownlint)** ignore registry/ files by [@jdx](https://github.com/jdx) in [dd8f47e](https://github.com/jdx/mise/commit/dd8f47e31574e103215b81ee07d19456066c4dfc)
+- **(mega-linter)** ignore registry/ files by [@jdx](https://github.com/jdx) in [427574f](https://github.com/jdx/mise/commit/427574f31f976ee6868306807f54db9169b3140d)
+- **(prettier)** ignore registry/ files by [@jdx](https://github.com/jdx) in [188c0e4](https://github.com/jdx/mise/commit/188c0e4480dc52eaf4ee782d887bd136f0c6dc42)
+- **(python)** added debug info when no precompiled version is found by [@jdx](https://github.com/jdx) in [#1874](https://github.com/jdx/mise/pull/1874)
+- **(registry)** auto-update registry subtree by [@jdx](https://github.com/jdx) in [fba690c](https://github.com/jdx/mise/commit/fba690c2185e6c66256203f42ee538e13fba6b83)
+- **(release)** fixing registry autosync by [@jdx](https://github.com/jdx) in [266004b](https://github.com/jdx/mise/commit/266004b038588d791d3cefb11ab0094cdf79a929)
+- **(release-plz)** push registry subtree changes by [@jdx](https://github.com/jdx) in [076c822](https://github.com/jdx/mise/commit/076c82228b3d79d7e9926c602825d9dbd101bd06)
+- **(renovate)** disable lock file maintenance by [@jdx](https://github.com/jdx) in [f919db4](https://github.com/jdx/mise/commit/f919db4588f11b7bd2ba951b77ecf70c15ecbcc4)
+- **(sync)** added workflow by Jeff Dickey in [b773033](https://github.com/jdx/mise/commit/b7730335949235085001b23ddc382a7c44b18f12)
+- Add 'registry/' from commit 'c5d91ebfbf1b7a03203e8442a3f6348c41ce086d' by [@jdx](https://github.com/jdx) in [d6d46d0](https://github.com/jdx/mise/commit/d6d46d004b02b8dd2947da2314604c870f1221c8)
+
 ## [2024.4.1](https://github.com/jdx/mise/compare/v2024.4.0..v2024.4.1) - 2024-04-08
 
 ### 🐛 Bug Fixes
