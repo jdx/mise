@@ -32,7 +32,7 @@ use std::collections::{HashSet, HashMap};
 pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     Lazy::new(|| HashMap::from([
 EOF
-count=0
+count=1
 for plugin in $asdf_plugins; do
   file="registry/plugins/$plugin"
   repository=$(grep -e '^repository = ' "$file")
