@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 name="$1"
-owner="${2:mise-plugins}"
+owner="${2:-mise-plugins}"
 
 # TODO: transfer from jdx -> mise-plugins
 # TODO: remove collaborators
