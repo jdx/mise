@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+name="$1"
+owner="${2:mise-plugins}"
+echo "repository = https://github.com/$owner/$name.git" > "plugins/$name"
