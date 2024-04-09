@@ -548,6 +548,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Popeye                        | [nlamirault/asdf-popeye](https://github.com/nlamirault/asdf-popeye)                                               |
 | Postgres                      | [smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres)                                   |
 | powerline-go                  | [dex4er/asdf-powerline-go](https://github.com/dex4er/asdf-powerline-go)                                           |
+| powerpipe                     | [jc00ke/asdf-powerpipe](https://github.com/jc00ke/asdf-powerpipe)                                                 |
 | PowerShell                    | [daveneeley/asdf-powershell-core](https://github.com/daveneeley/asdf-powershell-core)                             |
 | pre-commit                    | [jonathanmorley/asdf-pre-commit](https://github.com/jonathanmorley/asdf-pre-commit)                               |
 | promtool                      | [asdf-community/asdf-promtool](https://github.com/asdf-community/asdf-promtool)                                   |
