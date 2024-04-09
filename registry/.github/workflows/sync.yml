@@ -3,6 +3,9 @@ name: Sync Fork
 on:
   schedule:
     - cron: '0 8 * * *'
+  push:
+    paths:
+      - '.github/workflows/sync.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,11 +16,22 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - run: |
+          git config --global user.name mise-en-dev
+          git config --global user.email 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          repository: jdx/mise
+          path: mise
       - run: |
-          git config user.name mise-en-dev
-          git config user.email 123107610+mise-en-dev@users.noreply.github.com
+          cd mise
+          # git subtree push --prefix registry https://github.com/mise-plugins/registry main
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: registry
+      - run: |
+          cd registry
           git pull --ff-only https://github.com/asdf-vm/asdf-plugins master
           git push origin main
