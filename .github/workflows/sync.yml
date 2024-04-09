@@ -1,0 +1,23 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          git config user.name mise-en-dev
+          git config user.email 123107610+mise-en-dev@users.noreply.github.com
+          git pull --ff-only https://github.com/asdf-vm/asdf-plugins master
+          git push origin main
