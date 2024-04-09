@@ -2,4 +2,10 @@
 
 name="$1"
 owner="${2:mise-plugins}"
+
+# TODO: transfer from jdx -> mise-plugins
+# TODO: remove collaborators
+# TODO: add github issues
+# TODO: squash commits on PRs
+
 echo "repository = https://github.com/$owner/$name.git" > "plugins/$name"
