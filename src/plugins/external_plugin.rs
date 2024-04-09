@@ -512,7 +512,8 @@ impl Forge for ExternalPlugin {
                 let is_shorthand = DEFAULT_SHORTHANDS
                     .get(self.name.as_str())
                     .is_some_and(|s| s == &url);
-                let is_trusted = !is_shorthand || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
+                let is_mise_url = url.starts_with("https://github.com/mise-plugins/");
+                let is_trusted = !is_shorthand || is_mise_url || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
                 if !is_trusted {
                     warn!(
                         "⚠️ {} is a community-developed plugin",
