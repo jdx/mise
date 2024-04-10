@@ -9,6 +9,7 @@ use clap::Command;
 use console::style;
 use eyre::WrapErr;
 use itertools::Itertools;
+use rayon::prelude::*;
 use regex::Regex;
 use versions::Versioning;
 
@@ -52,6 +53,7 @@ fn load_forges() -> ForgeMap {
     }
     let mut plugins = CORE_PLUGINS.clone();
     plugins.extend(ExternalPlugin::list().expect("failed to list plugins"));
+    plugins.extend(list_installed_forges().expect("failed to list forges"));
     let settings = Settings::get();
     plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
     let plugins: ForgeMap = plugins
@@ -60,6 +62,22 @@ fn load_forges() -> ForgeMap {
         .collect();
     *forges = Some(plugins.clone());
     plugins
+}
+
+fn list_installed_forges() -> eyre::Result<ForgeList> {
+    Ok(file::dir_subdirs(&dirs::INSTALLS)?
+        .into_par_iter()
+        .map(|name| {
+            let fa = ForgeArg::from_pathname(name.as_str());
+            match fa.forge_type {
+                ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)) as AForge,
+                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())) as AForge,
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())) as AForge,
+                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())) as AForge,
+            }
+        })
+        .filter(|f| f.fa().forge_type != ForgeType::Asdf)
+        .collect())
 }
 
 pub fn list() -> ForgeList {

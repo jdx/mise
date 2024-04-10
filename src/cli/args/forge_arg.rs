@@ -47,6 +47,11 @@ impl ForgeArg {
             downloads_path: dirs::DOWNLOADS.join(&pathname),
         }
     }
+
+    pub fn from_pathname(name: &str) -> Self {
+        let fa_name = name.replacen('-', ":", 1);
+        ForgeArg::from_str(&fa_name).unwrap()
+    }
 }
 
 impl Display for ForgeArg {
