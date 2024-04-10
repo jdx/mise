@@ -543,6 +543,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Please                        | [asdf-community/asdf-please](https://github.com/asdf-community/asdf-please)                                       |
 | Pluto                         | [FairwindsOps/asdf-pluto](https://github.com/FairwindsOps/asdf-pluto)                                             |
 | pnpm                          | [jonathanmorley/asdf-pnpm](https://github.com/jonathanmorley/asdf-pnpm)                                           |
+| Podman                        | [tvon/asdf-podman](https://github.com/tvon/asdf-podman.git)                                                       |
 | Poetry                        | [mise-plugins/mise-poetry](https://github.com/mise-plugins/mise-poetry)                                           |
 | Polaris                       | [particledecay/asdf-polaris](https://github.com/particledecay/asdf-polaris)                                       |
 | Popeye                        | [nlamirault/asdf-popeye](https://github.com/nlamirault/asdf-popeye)                                               |
@@ -634,7 +635,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | soft-serve                    | [chessmango/asdf-soft-serve](https://github.com/chessmango/asdf-soft-serve)                                       |
 | Solidity                      | [diegodorado/asdf-solidity](https://github.com/diegodorado/asdf-solidity)                                         |
 | Sonobuoy                      | [Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy)                                       |
-| Sops                          | [mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops)                                                           |
+| Sops                          | [mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops)                                               |
 | sopstool                      | [elementalvoid/asdf-sopstool](https://github.com/elementalvoid/asdf-sopstool)                                     |
 | soracom-cli                   | [gr1m0h/asdf-soracom](https://github.com/gr1m0h/asdf-soracom)                                                     |
 | Sourcery                      | [younke/asdf-sourcery](https://github.com/younke/asdf-sourcery)                                                   |
