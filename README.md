@@ -317,7 +317,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | helm-docs                     | [sudermanjr/asdf-helm-docs](https://github.com/sudermanjr/asdf-helm-docs)                                         |
 | Helmfile                      | [feniix/asdf-helmfile](https://github.com/feniix/asdf-helmfile)                                                   |
 | Helmsman                      | [luisdavim/asdf-helmsman](https://github.com/luisdavim/asdf-helmsman)                                             |
-| heroku-cli                    | [treilly94/asdf-heroku-cli](https://github.com/treilly94/asdf-heroku-cli)                                         |
+| heroku-cli                    | [mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli)                                   |
 | hey                           | [raimon49/asdf-hey](https://github.com/raimon49/asdf-hey)                                                         |
 | hishtory                      | [asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory)                                   |
 | hledger                       | [airtonix/hledger](https://github.com/airtonix/asdf-hledger)                                                      |
@@ -772,7 +772,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | yamlfmt                       | [kachick/asdf-yamlfmt](https://github.com/kachick/asdf-yamlfmt)                                                   |
 | yamllint                      | [ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint)                                 |
 | yamlscript                    | [FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript)                                               |
-| Yarn                          | [twuni/asdf-yarn](https://github.com/twuni/asdf-yarn)                                                             |
+| Yarn                          | [mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn)                                               |
 | yay                           | [aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay)                                                       |
 | Yor                           | [ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor)                                           |
 | youtube-dl                    | [iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl)                                               |
