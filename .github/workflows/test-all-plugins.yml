@@ -3,7 +3,7 @@ name: test
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - plugins/*
       - README.md
