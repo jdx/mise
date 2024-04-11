@@ -350,18 +350,11 @@ impl Forge for RubyPlugin {
         Ok(v)
     }
 
+    #[requires(matches!(ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         if let Err(err) = self.update_build_tool() {
             warn!("{err}");
         }
-        assert!(
-            matches!(
-                &ctx.tv.request,
-                ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }
-            ),
-            "unsupported tool version request type"
-        );
-
         ctx.pr.set_message("running ruby-build".into());
         let config = Config::get();
         self.install_cmd(&config, &ctx.tv, ctx.pr.as_ref())?
