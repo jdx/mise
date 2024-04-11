@@ -280,7 +280,7 @@ jobs:
         run: ./scripts/release-aur-bin.sh
   bump-alpine:
     runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/rtx:alpine
+    container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
     needs: [e2e-linux]
     if: startsWith(github.event.ref, 'refs/tags/v')
