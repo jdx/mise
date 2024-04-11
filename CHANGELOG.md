@@ -1,5 +1,31 @@
 # Changelog
 
+## [2024.4.4](https://github.com/jdx/mise/compare/v2024.4.3..v2024.4.4) - 2024-04-11
+
+### 🚀 Features
+
+- add option to list installed (backend) binaries by [@roele](https://github.com/roele) in [#1885](https://github.com/jdx/mise/pull/1885)
+- add powerpipe by Jesse Cooke in [7369b74](https://github.com/jdx/mise/commit/7369b74550b28b45d7195d0b11c11e98cf5e4d29)
+- add xcresultparser by Vitalii Budnik in [92b4aeb](https://github.com/jdx/mise/commit/92b4aeb13e8350a76a9ceae9df1bb6270a2b2182)
+
+### 🐛 Bug Fixes
+
+- **(heroku-cli)** use mise-plugins fork by Jeff Dickey in [2a92d9d](https://github.com/jdx/mise/commit/2a92d9d1bd0b275c7d27ca020f63e3089d789c8c)
+- enable markdown-magic since it is working again by [@jdx](https://github.com/jdx) in [2b7b943](https://github.com/jdx/mise/commit/2b7b943d33ac91ea6eaded7f2fe84b472f73e073)
+- mise panics if prefix: is used on certain core plugins by [@roele](https://github.com/roele) in [#1889](https://github.com/jdx/mise/pull/1889)
+
+### 🔍 Other Changes
+
+- added podman plugin by Carlos Fernandes in [24155e8](https://github.com/jdx/mise/commit/24155e8b9d5f342d52ccdd212f187243022efa0b)
+
+### 🧪 Testing
+
+- fix github action branch by Jeff Dickey in [39eb2ab](https://github.com/jdx/mise/commit/39eb2abbdb7b136c541f84696dc038637280d8a7)
+
+### ⚙️ Miscellaneous Tasks
+
+- **(move)** added TODO by Jeff Dickey in [5ffbcc1](https://github.com/jdx/mise/commit/5ffbcc134f27800109bb65335b4b9423742b6807)
+
 ## [2024.4.3](https://github.com/jdx/mise/compare/v2024.4.2..v2024.4.3) - 2024-04-09
 
 ### 🐛 Bug Fixes
