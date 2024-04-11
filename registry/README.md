@@ -317,7 +317,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | helm-docs                     | [sudermanjr/asdf-helm-docs](https://github.com/sudermanjr/asdf-helm-docs)                                         |
 | Helmfile                      | [feniix/asdf-helmfile](https://github.com/feniix/asdf-helmfile)                                                   |
 | Helmsman                      | [luisdavim/asdf-helmsman](https://github.com/luisdavim/asdf-helmsman)                                             |
-| heroku-cli                    | [treilly94/asdf-heroku-cli](https://github.com/treilly94/asdf-heroku-cli)                                         |
+| heroku-cli                    | [mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli)                                   |
 | hey                           | [raimon49/asdf-hey](https://github.com/raimon49/asdf-hey)                                                         |
 | hishtory                      | [asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory)                                   |
 | hledger                       | [airtonix/hledger](https://github.com/airtonix/asdf-hledger)                                                      |
@@ -543,11 +543,13 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Please                        | [asdf-community/asdf-please](https://github.com/asdf-community/asdf-please)                                       |
 | Pluto                         | [FairwindsOps/asdf-pluto](https://github.com/FairwindsOps/asdf-pluto)                                             |
 | pnpm                          | [jonathanmorley/asdf-pnpm](https://github.com/jonathanmorley/asdf-pnpm)                                           |
+| Podman                        | [tvon/asdf-podman](https://github.com/tvon/asdf-podman.git)                                                       |
 | Poetry                        | [mise-plugins/mise-poetry](https://github.com/mise-plugins/mise-poetry)                                           |
 | Polaris                       | [particledecay/asdf-polaris](https://github.com/particledecay/asdf-polaris)                                       |
 | Popeye                        | [nlamirault/asdf-popeye](https://github.com/nlamirault/asdf-popeye)                                               |
 | Postgres                      | [smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres)                                   |
 | powerline-go                  | [dex4er/asdf-powerline-go](https://github.com/dex4er/asdf-powerline-go)                                           |
+| powerpipe                     | [jc00ke/asdf-powerpipe](https://github.com/jc00ke/asdf-powerpipe)                                                 |
 | PowerShell                    | [daveneeley/asdf-powershell-core](https://github.com/daveneeley/asdf-powershell-core)                             |
 | pre-commit                    | [jonathanmorley/asdf-pre-commit](https://github.com/jonathanmorley/asdf-pre-commit)                               |
 | promtool                      | [asdf-community/asdf-promtool](https://github.com/asdf-community/asdf-promtool)                                   |
@@ -633,7 +635,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | soft-serve                    | [chessmango/asdf-soft-serve](https://github.com/chessmango/asdf-soft-serve)                                       |
 | Solidity                      | [diegodorado/asdf-solidity](https://github.com/diegodorado/asdf-solidity)                                         |
 | Sonobuoy                      | [Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy)                                       |
-| Sops                          | [mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops)                                                           |
+| Sops                          | [mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops)                                               |
 | sopstool                      | [elementalvoid/asdf-sopstool](https://github.com/elementalvoid/asdf-sopstool)                                     |
 | soracom-cli                   | [gr1m0h/asdf-soracom](https://github.com/gr1m0h/asdf-soracom)                                                     |
 | Sourcery                      | [younke/asdf-sourcery](https://github.com/younke/asdf-sourcery)                                                   |
@@ -766,12 +768,13 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | xc                            | [airtonix/asdf-xc](https://github.com/airtonix/asdf-xc)                                                           |
 | xcbeautify                    | [MacPaw/asdf-xcbeautify](https://github.com/MacPaw/asdf-xcbeautify)                                               |
 | xcodes                        | [younke/asdf-xcodes](https://github.com/younke/asdf-xcodes)                                                       |
+| xcresultparser                | [MacPaw/asdf-xcresultparser](https://github.com/MacPaw/asdf-xcresultparser)                                       |
 | xh                            | [NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh)                                                               |
 | yadm                          | [particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm)                                             |
 | yamlfmt                       | [kachick/asdf-yamlfmt](https://github.com/kachick/asdf-yamlfmt)                                                   |
 | yamllint                      | [ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint)                                 |
 | yamlscript                    | [FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript)                                               |
-| Yarn                          | [twuni/asdf-yarn](https://github.com/twuni/asdf-yarn)                                                             |
+| Yarn                          | [mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn)                                               |
 | yay                           | [aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay)                                                       |
 | Yor                           | [ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor)                                           |
 | youtube-dl                    | [iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl)                                               |
