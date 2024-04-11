@@ -326,10 +326,13 @@ impl Forge for JavaPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        assert!(matches!(
-            &ctx.tv.request,
-            ToolVersionRequest::Version { .. }
-        ));
+        assert!(
+            matches!(
+                &ctx.tv.request,
+                ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }
+            ),
+            "unsupported tool version request type"
+        );
 
         let metadata = self.tv_to_metadata(&ctx.tv)?;
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;

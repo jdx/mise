@@ -354,10 +354,13 @@ impl Forge for RubyPlugin {
         if let Err(err) = self.update_build_tool() {
             warn!("{err}");
         }
-        assert!(matches!(
-            &ctx.tv.request,
-            ToolVersionRequest::Version { .. }
-        ));
+        assert!(
+            matches!(
+                &ctx.tv.request,
+                ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }
+            ),
+            "unsupported tool version request type"
+        );
 
         ctx.pr.set_message("running ruby-build".into());
         let config = Config::get();

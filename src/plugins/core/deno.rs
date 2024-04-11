@@ -112,10 +112,13 @@ impl Forge for DenoPlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        assert!(matches!(
-            &ctx.tv.request,
-            ToolVersionRequest::Version { .. }
-        ));
+        assert!(
+            matches!(
+                &ctx.tv.request,
+                ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }
+            ),
+            "unsupported tool version request type"
+        );
 
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
