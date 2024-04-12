@@ -1,8 +1,7 @@
 # Shims
 
 ::: tip
-Read the [beginner's guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4)
-for an overview of what shims are and how they function.
+The [beginner's guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4), and my [blog post](https://jdx.dev/posts/2024-04-13-shims-how-they-work-in-mise-en-place/) are helpful resources to dive deeper into shims.
 :::
 
 While the PATH design of mise works great in most cases, there are some situations where shims are
