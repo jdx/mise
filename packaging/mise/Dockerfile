@@ -1,12 +1,12 @@
-# syntax=docker/dockerfile:1
-FROM rust as builder
+# syntax=docker/dockerfile:1@sha256:dbbd5e059e8a07ff7ea6233b213b36aa516b4c53c645f1817a4dd18b83cbea56
+FROM rust@sha256:da23629cc6826f0c395c8697994cdce0b5ac6850a695c448a101c3cc9cd6a59b as builder
 LABEL maintainer="jdx"
 
 WORKDIR /usr/src/mise
 COPY . /usr/src/mise/
 RUN cargo build --release
 
-FROM rust as runtime
+FROM rust@sha256:da23629cc6826f0c395c8697994cdce0b5ac6850a695c448a101c3cc9cd6a59b as runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV MISE_DATA_DIR="/mise"

@@ -22,20 +22,20 @@ jobs:
   release-plz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
         with:
           fetch-depth: 0
           token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
-      - uses: crazy-max/ghaction-import-gpg@v6
+      - uses: crazy-max/ghaction-import-gpg@01dd5d3ca463c7f10f7f4f7b4f177225ac661ee4 # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
           git_tag_gpgsign: true
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@b113a30d27a8e59c969077c0a0168cc13dab5ffc # v1
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: |
             ~/.local/share/mise/installs

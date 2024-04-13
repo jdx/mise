@@ -22,15 +22,15 @@ jobs:
     #container: ghcr.io/jdx/mise:github-actions
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@b113a30d27a8e59c969077c0a0168cc13dab5ffc # v1
         with:
           components: rustfmt
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@dd9c3a30915700b12ff7aa4d9e2492417156fde1 # v2
         with:
           tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
@@ -44,7 +44,7 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - run: cargo build --all-features
       - run: ./target/debug/mise settings set experimental true
-      - uses: actions/cache@v4
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: |
             ~/.local/share/mise/installs
@@ -56,12 +56,12 @@ jobs:
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         run: ./target/debug/mise run lint-fix && git diff HEAD
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # v9
         with:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
-      - uses: actions-rust-lang/rustfmt@v1
+      - uses: actions-rust-lang/rustfmt@2d1d4e9f72379428552fa1def0b898733fb8472d # v1
       - run: ./target/debug/mise run lint
 
   coverage:
@@ -74,19 +74,19 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
         with:
           fetch-depth: 0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84 # v2
         with:
           shared-key: coverage
           save-if: ${{ github.ref_name == 'main' }}
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@dd9c3a30915700b12ff7aa4d9e2492417156fde1 # v2
         with:
           tool: cargo-llvm-cov,just,usage-cli
       - name: Test w/ coverage
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e # v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
@@ -99,7 +99,7 @@ jobs:
           max_attempts: 2
           command: just test-coverage
       - name: Run codacy-coverage-reporter
-        uses: codacy/codacy-coverage-reporter-action@v1
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1
         continue-on-error: true
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}

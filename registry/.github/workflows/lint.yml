@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
 
       - name: Install asdf dependencies
-        uses: asdf-vm/actions/install@v3
+        uses: asdf-vm/actions/install@05e0d2ed97b598bfce82fd30daf324ae0c4570e6 # v3
 
       - name: lint
         run: scripts/lint.bash
@@ -23,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
 
       - name: Check workflow files
-        uses: docker://rhysd/actionlint:1.6.23
+        uses: docker://rhysd/actionlint:1.6.23@sha256:93834930f56ca380be3e9a3377670d7aa5921be251b9c774891a39b3629b83b8
         with:
           args: -color

@@ -68,14 +68,14 @@ jobs:
     #            target: universal2-apple-darwin
     #            runs-on: macos-12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: ~/.cargo/bin/zipsign
           key: ${{ runner.os }}-cargo-zipsign
       - run: rustup target add ${{matrix.target}}
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84 # v2
         with:
           shared-key: build-tarball
           save-if: ${{ matrix.name == 'linux-x64' }}
@@ -85,7 +85,7 @@ jobs:
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
       - run: scripts/build-tarball.sh mise --release --features openssl/vendored --target ${{matrix.target}}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -103,21 +103,21 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@dd9c3a30915700b12ff7aa4d9e2492417156fde1 # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvJf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.xz"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
       - name: Run e2e tests
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e # v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
@@ -132,46 +132,46 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-tarball]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm
+    container: ghcr.io/jdx/mise:rpm@sha256:5ac792289d41b79457c5ba4ab432def5be2a67fdc9093bf4feb434a96d9c0d11
     steps:
-      - uses: actions/checkout@v4
-      - uses: crazy-max/ghaction-import-gpg@v6
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+      - uses: crazy-max/ghaction-import-gpg@01dd5d3ca463c7f10f7f4f7b4f177225ac661ee4 # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-rpm.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4
         with:
           name: rpm
           path: dist/rpmrepo
           if-no-files-found: error
   deb:
     runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/mise:deb
+    container: ghcr.io/jdx/mise:deb@sha256:d40ab9b9f12e6308f469c67c964ceecbc019814163f1321b12a1e3284bcdd147
     timeout-minutes: 10
     needs: [build-tarball]
     steps:
-      - uses: actions/checkout@v4
-      - uses: crazy-max/ghaction-import-gpg@v6
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+      - uses: crazy-max/ghaction-import-gpg@01dd5d3ca463c7f10f7f4f7b4f177225ac661ee4 # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-deb.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4
         with:
           name: deb
           path: dist/deb
@@ -188,10 +188,10 @@ jobs:
       - rpm
       - deb
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
         with:
           path: mise
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
         with:
           repository: jdx/mise-docs
           path: mise-docs
@@ -203,7 +203,7 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4
         with:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
@@ -211,13 +211,13 @@ jobs:
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
           known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
-      - uses: crazy-max/ghaction-import-gpg@v6
+      - uses: crazy-max/ghaction-import-gpg@01dd5d3ca463c7f10f7f4f7b4f177225ac661ee4 # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
           workdir: mise-docs
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4
         with: { path: artifacts }
       - run: mise/scripts/release.sh
         env:
@@ -230,7 +230,7 @@ jobs:
         run: git push
         working-directory: mise-docs
       - name: GitHub Release Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2
         if: startsWith(github.event.ref, 'refs/tags/v')
         with:
           fail_on_unmatched_files: true
@@ -246,7 +246,7 @@ jobs:
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Bump Homebrew formula
-        uses: dawidd6/action-homebrew-bump-formula@v3
+        uses: dawidd6/action-homebrew-bump-formula@baf2b60c51fc1f8453c884b0c61052668a71bd1d # v3
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: mise
@@ -257,7 +257,7 @@ jobs:
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
@@ -271,7 +271,7 @@ jobs:
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
@@ -280,13 +280,13 @@ jobs:
         run: ./scripts/release-aur-bin.sh
   bump-alpine:
     runs-on: ubuntu-22.04
-    container: ghcr.io/jdx/mise:alpine
+    container: ghcr.io/jdx/mise:alpine@sha256:f39c14f70340cedecdb783b974fc9132617fb0f4121ec8a64421927577ee4e39
     timeout-minutes: 30
     needs: [e2e-linux]
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - name: Bump APKBUILD
         run: sudo -Eu packager ./scripts/release-alpine.sh
         env:
