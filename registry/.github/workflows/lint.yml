@@ -26,6 +26,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check workflow files
-        uses: docker://rhysd/actionlint:1.6.23
+        uses: docker://rhysd/actionlint:1.6.27@sha256:d84eca815fc24f72546ec1f2f416d9500ad3349ce7db098cf7a52256f5fd4384
         with:
           args: -color
