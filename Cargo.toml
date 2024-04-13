@@ -112,7 +112,7 @@ zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
 exec = "0.3.1"
 
 [build-dependencies]
-built = { version = "0.7.1", features = ["chrono", "git2"] }
+built = { version = "0.7.2", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
