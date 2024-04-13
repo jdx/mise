@@ -102,7 +102,7 @@ thiserror = "1.0.58"
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.9", features = ["parse"] }
 url = "2.5.0"
-usage-lib = { version = "0.1.17", features = ["clap"] }
+usage-lib = { version = "0.1.18", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 walkdir = "2.5.0"
 which = "6.0.1"
