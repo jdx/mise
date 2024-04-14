@@ -11,6 +11,7 @@ use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::git::Git;
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::Toolset;
@@ -42,6 +43,8 @@ impl Doctor {
             Ok(config) => self.analyze_config(config)?,
             Err(err) => self.checks.push(format!("failed to load config: {err}")),
         }
+
+        self.analyze_plugins();
 
         section("env_vars", mise_env_vars())?;
         self.analyze_settings()?;
@@ -160,6 +163,18 @@ impl Doctor {
                      Unused shims: {extra}",
                     extra = extra.into_iter().join(", ")
                 ));
+            }
+        }
+    }
+
+    fn analyze_plugins(&mut self) {
+        for plugin in forge::list() {
+            let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
+            let plugin_type = plugin.get_plugin_type();
+
+            if is_core && plugin_type == PluginType::External {
+                self.checks
+                    .push(format!("plugin {} overrides a core plugin", &plugin.id()));
             }
         }
     }
