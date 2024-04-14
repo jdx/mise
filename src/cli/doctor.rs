@@ -11,6 +11,7 @@ use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::git::Git;
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::Toolset;
@@ -25,7 +26,9 @@ use crate::{file, shims};
 #[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {
     #[clap(skip)]
-    checks: Vec<String>,
+    errors: Vec<String>,
+    #[clap(skip)]
+    warnings: Vec<String>,
 }
 
 impl Doctor {
@@ -40,26 +43,41 @@ impl Doctor {
 
         match Config::try_get() {
             Ok(config) => self.analyze_config(config)?,
-            Err(err) => self.checks.push(format!("failed to load config: {err}")),
+            Err(err) => self.errors.push(format!("failed to load config: {err}")),
         }
+
+        self.analyze_plugins();
 
         section("env_vars", mise_env_vars())?;
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
-            self.checks.push(format!(
+            self.errors.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
             ));
         }
 
-        if self.checks.is_empty() {
+        if self.warnings.is_empty() {
+            miseprintln!("No warnings found");
+        } else {
+            let warnings_plural = if self.warnings.len() == 1 { "" } else { "s" };
+            let warning_summary =
+                format!("{} warning{warnings_plural} found:", self.warnings.len());
+            miseprintln!("{}\n", style(warning_summary).yellow().bold());
+            for (i, check) in self.warnings.iter().enumerate() {
+                let num = style::nyellow(format!("{}.", i + 1));
+                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start());
+            }
+        }
+
+        if self.errors.is_empty() {
             miseprintln!("No problems found");
         } else {
-            let checks_plural = if self.checks.len() == 1 { "" } else { "s" };
-            let summary = format!("{} problem{checks_plural} found:", self.checks.len());
-            miseprintln!("{}\n", style(summary).red().bold());
-            for (i, check) in self.checks.iter().enumerate() {
+            let errors_plural = if self.errors.len() == 1 { "" } else { "s" };
+            let error_summary = format!("{} problem{errors_plural} found:", self.errors.len());
+            miseprintln!("{}\n", style(error_summary).red().bold());
+            for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
                 miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start());
             }
@@ -74,7 +92,7 @@ impl Doctor {
             Ok(settings) => {
                 section("settings", settings)?;
             }
-            Err(err) => self.checks.push(format!("failed to load settings: {err}")),
+            Err(err) => self.errors.push(format!("failed to load settings: {err}")),
         }
         Ok(())
     }
@@ -86,7 +104,7 @@ impl Doctor {
 
         for plugin in forge::list() {
             if !plugin.is_installed() {
-                self.checks
+                self.errors
                     .push(format!("plugin {} is not installed", &plugin.id()));
                 continue;
             }
@@ -96,7 +114,7 @@ impl Doctor {
             let cmd = style::nyellow("mise help activate");
             let url = style::nunderline("https://mise.jdx.dev");
             let shims = style::ncyan(dirs::SHIMS.display());
-            self.checks.push(formatdoc!(
+            self.errors.push(formatdoc!(
                 r#"mise is not activated, run {cmd} or
                     read documentation at {url} for activation instructions.
                     Alternatively, add the shims directory {shims} to PATH.
@@ -109,7 +127,7 @@ impl Doctor {
                 self.analyze_shims(&ts);
                 self.analyze_toolset(&ts)?;
             }
-            Err(err) => self.checks.push(format!("failed to load toolset: {}", err)),
+            Err(err) => self.errors.push(format!("failed to load toolset: {}", err)),
         }
 
         Ok(())
@@ -147,7 +165,7 @@ impl Doctor {
             let cmd = style::nyellow("mise reshim");
 
             if !missing.is_empty() {
-                self.checks.push(formatdoc!(
+                self.errors.push(formatdoc!(
                     "shims are missing, run {cmd} to create them
                      Missing shims: {missing}",
                     missing = missing.into_iter().join(", ")
@@ -155,11 +173,23 @@ impl Doctor {
             }
 
             if !extra.is_empty() {
-                self.checks.push(formatdoc!(
+                self.errors.push(formatdoc!(
                     "unused shims are present, run {cmd} to remove them
                      Unused shims: {extra}",
                     extra = extra.into_iter().join(", ")
                 ));
+            }
+        }
+    }
+
+    fn analyze_plugins(&mut self) {
+        for plugin in forge::list() {
+            let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
+            let plugin_type = plugin.get_plugin_type();
+
+            if is_core && plugin_type == PluginType::External {
+                self.warnings
+                    .push(format!("plugin {} overrides a core plugin", &plugin.id()));
             }
         }
     }
