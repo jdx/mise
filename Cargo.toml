@@ -53,7 +53,7 @@ contracts = "0.6.3"
 demand = "1.1.0"
 dotenvy = "0.15.7"
 duct = "0.13.7"
-either = { version = "1.10.0", features = ["serde"] }
+either = { version = "1.11.0", features = ["serde"] }
 eyre = "0.6.12"
 filetime = "0.2.23"
 flate2 = "1.0.28"
