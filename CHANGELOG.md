@@ -1,30 +1,44 @@
 # Changelog
 
-## [2024.4.4](https://github.com/jdx/mise/compare/v2024.4.3..v2024.4.4) - 2024-04-11
+## [2024.4.5](https://github.com/jdx/mise/compare/v2024.4.3..v2024.4.5) - 2024-04-15
 
 ### 🚀 Features
 
+- **(doctor)** warn if a plugin overwrites a core plugin by [@roele](https://github.com/roele) in [#1900](https://github.com/jdx/mise/pull/1900)
 - add option to list installed (backend) binaries by [@roele](https://github.com/roele) in [#1885](https://github.com/jdx/mise/pull/1885)
-- add powerpipe by Jesse Cooke in [7369b74](https://github.com/jdx/mise/commit/7369b74550b28b45d7195d0b11c11e98cf5e4d29)
-- add xcresultparser by Vitalii Budnik in [92b4aeb](https://github.com/jdx/mise/commit/92b4aeb13e8350a76a9ceae9df1bb6270a2b2182)
+- add powerpipe by [@jc00ke](https://github.com/jc00ke) in [7369b74](https://github.com/jdx/mise/commit/7369b74550b28b45d7195d0b11c11e98cf5e4d29)
+- add xcresultparser by [@nekrich](https://github.com/nekrich) in [92b4aeb](https://github.com/jdx/mise/commit/92b4aeb13e8350a76a9ceae9df1bb6270a2b2182)
 
 ### 🐛 Bug Fixes
 
-- **(heroku-cli)** use mise-plugins fork by Jeff Dickey in [2a92d9d](https://github.com/jdx/mise/commit/2a92d9d1bd0b275c7d27ca020f63e3089d789c8c)
+- **(alpine)** use mise docker image by [@jdx](https://github.com/jdx) in [db65c3f](https://github.com/jdx/mise/commit/db65c3f5de1b1117bc6708b881de86f490057b68)
+- **(heroku-cli)** use mise-plugins fork by [@jdx](https://github.com/jdx) in [2a92d9d](https://github.com/jdx/mise/commit/2a92d9d1bd0b275c7d27ca020f63e3089d789c8c)
 - enable markdown-magic since it is working again by [@jdx](https://github.com/jdx) in [2b7b943](https://github.com/jdx/mise/commit/2b7b943d33ac91ea6eaded7f2fe84b472f73e073)
 - mise panics if prefix: is used on certain core plugins by [@roele](https://github.com/roele) in [#1889](https://github.com/jdx/mise/pull/1889)
+- go backend naming inconsistency (in mise ls and mise prune) by [@roele](https://github.com/roele) in [#1905](https://github.com/jdx/mise/pull/1905)
+
+### 📦️ Dependency Updates
+
+- update rust crate built to 0.7.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1895](https://github.com/jdx/mise/pull/1895)
+- update rust crate either to 1.11.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1899](https://github.com/jdx/mise/pull/1899)
 
 ### 🔍 Other Changes
 
-- added podman plugin by Carlos Fernandes in [24155e8](https://github.com/jdx/mise/commit/24155e8b9d5f342d52ccdd212f187243022efa0b)
+- added podman plugin by [@carlosrtf](https://github.com/carlosrtf) in [24155e8](https://github.com/jdx/mise/commit/24155e8b9d5f342d52ccdd212f187243022efa0b)
 
 ### 🧪 Testing
 
-- fix github action branch by Jeff Dickey in [39eb2ab](https://github.com/jdx/mise/commit/39eb2abbdb7b136c541f84696dc038637280d8a7)
+- fix github action branch by [@jdx](https://github.com/jdx) in [39eb2ab](https://github.com/jdx/mise/commit/39eb2abbdb7b136c541f84696dc038637280d8a7)
 
 ### ⚙️ Miscellaneous Tasks
 
-- **(move)** added TODO by Jeff Dickey in [5ffbcc1](https://github.com/jdx/mise/commit/5ffbcc134f27800109bb65335b4b9423742b6807)
+- **(move)** added TODO by [@jdx](https://github.com/jdx) in [5ffbcc1](https://github.com/jdx/mise/commit/5ffbcc134f27800109bb65335b4b9423742b6807)
+- **(pre-commit)** added pre-commit by [@jdx](https://github.com/jdx) in [b2ff8cd](https://github.com/jdx/mise/commit/b2ff8cd88c5951326781fcc5c1405d3883ef21c1)
+- **(pre-commit)** check json and toml files by [@jdx](https://github.com/jdx) in [5281712](https://github.com/jdx/mise/commit/5281712f63bb673b301be139274b5f2eab64c205)
+
+### New Contributors
+
+* @carlosrtf made their first contribution
 
 ## [2024.4.3](https://github.com/jdx/mise/compare/v2024.4.2..v2024.4.3) - 2024-04-09
 
