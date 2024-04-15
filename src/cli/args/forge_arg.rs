@@ -49,7 +49,18 @@ impl ForgeArg {
     }
 
     pub fn from_pathname(name: &str) -> Self {
-        let fa_name = name.replacen('-', ":", 1);
+        let mut fa_name = name.replacen('-', ":", 1);
+        let forge_type = name.split('-').next().unwrap_or_default();
+        // Go packages cannot have dashes in their name.
+        // - Simply replace dashes with slashes
+        if ForgeType::Go.as_ref() == forge_type {
+            fa_name = fa_name.replace('-', "/");
+        }
+        // NPM packages can have dashes and slashes in their name.
+        // - If scoped, replace first dash after the @ with a slash. Will not work for scopes using dashes
+        if ForgeType::Npm.as_ref() == forge_type && fa_name.contains('@') {
+            fa_name = fa_name.replacen('-', "/", 1);
+        }
         ForgeArg::from_str(&fa_name).unwrap()
     }
 }
