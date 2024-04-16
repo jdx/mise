@@ -41,7 +41,7 @@ lto = true
 [dependencies]
 base64 = "0.22.0"
 calm_io = "0.1.1"
-chrono = { version = "0.4.37", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4.38", default-features = false, features = ["std", "clock"] }
 ci_info = "0.14.14"
 clap = { version = "4.5.4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
