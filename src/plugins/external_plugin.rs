@@ -89,6 +89,11 @@ impl ExternalPlugin {
             fa,
         }
     }
+
+    pub fn from_dirname(dirname: String) -> Self {
+        ExternalPlugin::new(dirname)
+    }
+
     pub fn list() -> Result<ForgeList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()

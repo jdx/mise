@@ -82,7 +82,8 @@ impl Forge for GoForge {
 }
 
 impl GoForge {
-    pub fn new(fa: ForgeArg) -> Self {
+    pub fn new(name: String) -> Self {
+        let fa = ForgeArg::new(ForgeType::Go, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
@@ -90,6 +91,14 @@ impl GoForge {
             fa,
         }
     }
+
+    pub fn from_dirname(dirname: String) -> Self {
+        GoForge::new(un_dirname(dirname))
+    }
+}
+
+fn un_dirname(dirname: String) -> String {
+    dirname.replace('-', "/")
 }
 
 fn trim_after_last_slash(s: &str) -> Option<&str> {
@@ -103,4 +112,22 @@ fn trim_after_last_slash(s: &str) -> Option<&str> {
 #[serde(rename_all = "PascalCase")]
 pub struct GoModInfo {
     versions: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_dirname() {
+        let dirnames = vec![
+            ("github.com-user-repo", "github.com/user/repo"),
+            ("github.com-user-repo-new", "github.com/user/repo/new"),
+        ];
+        for (dirname, name) in dirnames {
+            let npm_forge = GoForge::from_dirname(dirname.to_string());
+            assert_eq!(npm_forge.fa().forge_type, ForgeType::Go);
+            assert_eq!(npm_forge.fa().name, name);
+        }
+    }
 }

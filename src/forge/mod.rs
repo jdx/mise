@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use clap::Command;
@@ -67,13 +68,13 @@ fn load_forges() -> ForgeMap {
 fn list_installed_forges() -> eyre::Result<ForgeList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
-        .map(|name| {
-            let fa = ForgeArg::from_pathname(name.as_str());
+        .map(|dir| {
+            let fa = ForgeArg::from_str(&dir.replacen('-', ":", 1)).unwrap();
             match fa.forge_type {
-                ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)) as AForge,
-                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())) as AForge,
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())) as AForge,
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())) as AForge,
+                ForgeType::Asdf => Arc::new(ExternalPlugin::from_dirname(fa.name)) as AForge,
+                ForgeType::Cargo => Arc::new(CargoForge::from_dirname(fa.name)) as AForge,
+                ForgeType::Npm => Arc::new(npm::NPMForge::from_dirname(fa.name)) as AForge,
+                ForgeType::Go => Arc::new(go::GoForge::from_dirname(fa.name)) as AForge,
             }
         })
         .filter(|f| f.fa().forge_type != ForgeType::Asdf)
@@ -95,9 +96,9 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .entry(fa.clone())
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
-                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
+                ForgeType::Cargo => Arc::new(CargoForge::new(name)),
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
+                ForgeType::Go => Arc::new(go::GoForge::new(name)),
             })
             .clone()
     }
