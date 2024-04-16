@@ -82,10 +82,6 @@ impl CargoForge {
             fa,
         }
     }
-
-    pub fn from_dirname(dirname: String) -> Self {
-        CargoForge::new(dirname)
-    }
 }
 
 fn get_crate_url(n: &str) -> eyre::Result<Url> {

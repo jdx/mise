@@ -1,4 +1,4 @@
-use crate::dirs;
+use crate::{dirs, file};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
@@ -46,6 +46,21 @@ impl ForgeArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
         }
+    }
+
+    pub fn from_metadata(dirname: &str) -> Self {
+        let id = dirname.replacen('-', ":", 1);
+        let meta_path = &dirs::INSTALLS.join(dirname).join(".mise.metadata");
+        let meta_id = file::read_to_string(meta_path).unwrap_or(id);
+        ForgeArg::from_str(&meta_id).unwrap()
+    }
+
+    pub fn write_metadata(&self) -> eyre::Result<()> {
+        if self.forge_type != ForgeType::Asdf {
+            let meta_path = &self.installs_path.join(".mise.metadata");
+            return file::write(meta_path, &self.id);
+        }
+        Ok(())
     }
 }
 

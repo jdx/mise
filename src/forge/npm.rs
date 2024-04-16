@@ -85,35 +85,4 @@ impl NPMForge {
             fa,
         }
     }
-
-    pub fn from_dirname(dirname: String) -> Self {
-        NPMForge::new(un_dirname(dirname))
-    }
-}
-
-// NPM packages can have dashes and slashes in their name.
-// - If scoped, replace first dash after the @ with a slash. Will not work for scopes using dashes
-fn un_dirname(dirname: String) -> String {
-    if dirname.contains('@') {
-        return dirname.replacen('-', "/", 1);
-    }
-    dirname
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_from_dirname() {
-        let dirnames = vec![
-            ("@scope-my-package", "@scope/my-package"),
-            ("my-package", "my-package"),
-        ];
-        for (dirname, name) in dirnames {
-            let npm_forge = NPMForge::from_dirname(dirname.to_string());
-            assert_eq!(npm_forge.fa().forge_type, ForgeType::Npm);
-            assert_eq!(npm_forge.fa().name, name);
-        }
-    }
 }

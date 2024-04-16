@@ -3,7 +3,6 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use clap::Command;
@@ -69,12 +68,12 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
-            let fa = ForgeArg::from_str(&dir.replacen('-', ":", 1)).unwrap();
+            let fa = ForgeArg::from_metadata(&dir);
             match fa.forge_type {
-                ForgeType::Asdf => Arc::new(ExternalPlugin::from_dirname(fa.name)) as AForge,
-                ForgeType::Cargo => Arc::new(CargoForge::from_dirname(fa.name)) as AForge,
-                ForgeType::Npm => Arc::new(npm::NPMForge::from_dirname(fa.name)) as AForge,
-                ForgeType::Go => Arc::new(go::GoForge::from_dirname(fa.name)) as AForge,
+                ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
+                ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
+                ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
             }
         })
         .filter(|f| f.fa().forge_type != ForgeType::Asdf)
@@ -277,6 +276,9 @@ pub trait Forge: Debug + Send + Sync {
             self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
             return Err(e);
         }
+
+        ctx.tv.forge.write_metadata()?;
+
         self.cleanup_install_dirs(&settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
