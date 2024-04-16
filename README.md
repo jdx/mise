@@ -263,7 +263,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Gitsign                       | [spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign)                                     |
 | gitui                         | [looztra/asdf-gitui](https://github.com/looztra/asdf-gitui)                                                       |
 | GLab                          | [particledecay/asdf-glab](https://github.com/particledecay/asdf-glab)                                             |
-| Gleam                         | [vic/asdf-gleam](https://github.com/vic/asdf-gleam)                                                               |
+| Gleam                         | [asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam)                                         |
 | Glen                          | [bradym/asdf-glen](https://github.com/bradym/asdf-glen)                                                           |
 | glooctl                       | [halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl)                                               |
 | glow                          | [chessmango/asdf-glow](https://github.com/chessmango/asdf-glow)                                                   |
