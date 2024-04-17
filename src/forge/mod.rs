@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use clap::Command;
@@ -27,7 +28,10 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
 
+use self::forge_meta::ForgeMeta;
+
 mod cargo;
+mod forge_meta;
 mod go;
 mod npm;
 
@@ -68,7 +72,8 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
-            let fa = ForgeArg::from_metadata(&dir);
+            let id = ForgeMeta::read(&dir).id;
+            let fa = ForgeArg::from_str(&id).unwrap();
             match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
@@ -277,7 +282,7 @@ pub trait Forge: Debug + Send + Sync {
             return Err(e);
         }
 
-        ctx.tv.forge.write_metadata()?;
+        ForgeMeta::write(&ctx.tv.forge)?;
 
         self.cleanup_install_dirs(&settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
