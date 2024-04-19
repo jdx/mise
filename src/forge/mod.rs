@@ -41,7 +41,7 @@ pub enum ForgeType {
     Asdf,
     Cargo,
     Go,
-    Npm,
+    Npm
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
@@ -97,7 +97,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
+                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone()))
             })
             .clone()
     }
