@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use clap::Command;
@@ -27,7 +28,10 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
 
+use self::forge_meta::ForgeMeta;
+
 mod cargo;
+mod forge_meta;
 mod go;
 mod npm;
 
@@ -67,13 +71,14 @@ fn load_forges() -> ForgeMap {
 fn list_installed_forges() -> eyre::Result<ForgeList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
-        .map(|name| {
-            let fa = ForgeArg::from_pathname(name.as_str());
+        .map(|dir| {
+            let id = ForgeMeta::read(&dir).id;
+            let fa = ForgeArg::from_str(&id).unwrap();
             match fa.forge_type {
-                ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)) as AForge,
-                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())) as AForge,
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())) as AForge,
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())) as AForge,
+                ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
+                ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
+                ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
             }
         })
         .filter(|f| f.fa().forge_type != ForgeType::Asdf)
@@ -95,9 +100,9 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .entry(fa.clone())
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
-                ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
+                ForgeType::Cargo => Arc::new(CargoForge::new(name)),
+                ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
+                ForgeType::Go => Arc::new(go::GoForge::new(name)),
             })
             .clone()
     }
@@ -276,6 +281,9 @@ pub trait Forge: Debug + Send + Sync {
             self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
             return Err(e);
         }
+
+        ForgeMeta::write(&ctx.tv.forge)?;
+
         self.cleanup_install_dirs(&settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
