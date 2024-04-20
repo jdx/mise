@@ -75,7 +75,8 @@ impl Forge for NPMForge {
 }
 
 impl NPMForge {
-    pub fn new(fa: ForgeArg) -> Self {
+    pub fn new(name: String) -> Self {
+        let fa = ForgeArg::new(ForgeType::Npm, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
