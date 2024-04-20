@@ -116,7 +116,7 @@ built = { version = "0.7.2", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
-ctor = "0.2.7"
+ctor = "0.2.8"
 insta = { version = "1.38.0", features = ["filters", "json"] }
 predicates = "3.1.0"
 pretty_assertions = "1.4.0"
