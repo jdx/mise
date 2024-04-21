@@ -52,6 +52,7 @@ impl Forge for PIPXForge {
         let settings = Settings::get();
         settings.ensure_experimental("pipx backend")?;
         let project_name = transform_project_name(ctx, self.name());
+
         // Get environmental variable PATH and append to it
         // Path is listed correctly /Users/zph/.local/share/mise/installs/pipx-zph-runbook/latest/bin
         CmdLineRunner::new("pipx")
@@ -70,7 +71,7 @@ impl Forge for PIPXForge {
 
 impl PIPXForge {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Cargo, &name);
+        let fa = ForgeArg::new(ForgeType::Pipx, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
