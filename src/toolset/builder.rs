@@ -93,9 +93,6 @@ impl ToolsetBuilder {
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
                     arg_ts.add_version(tvr.clone(), Default::default());
-                } else {
-                    let tvr = ToolVersionRequest::new(arg.forge.clone(), "latest".into());
-                    arg_ts.add_version(tvr.clone(), Default::default());
                 }
             }
             ts.merge(arg_ts);
