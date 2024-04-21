@@ -33,9 +33,7 @@ impl Forge for PIPXForge {
     // from a git repo, in which case it could fetch git refs and read tags for semvar tags
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| {
-                Ok(vec!["latest".to_string()])
-            })
+            .get_or_try_init(|| Ok(vec!["latest".to_string()]))
             .cloned()
     }
 
