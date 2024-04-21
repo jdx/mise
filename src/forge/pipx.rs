@@ -89,13 +89,9 @@ impl PIPXForge {
 // If given a non-shorthand we treat it as intentional and do not transform it
 fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
     let parts: Vec<&str> = name.split('/').collect();
-    if parts.len() == 2 {
-        if ctx.tv.version != "latest" {
-            return format!("{}@{}", name, ctx.tv.version);
-        } else {
-            return format!("git+https://github.com/{}", name)
-        }
-    } else {
-        return name.to_string();
+    match (parts.len(), ctx.tv.version.as_str()) {
+        (2, "latest") => format!("git+https://github.com/{}", name),
+        (2, v) => format!("git+https://github.com/{}@{}", name, v),
+        _ => name.to_string(),
     }
 }
