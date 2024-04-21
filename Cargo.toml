@@ -98,7 +98,7 @@ tar = "0.4.40"
 tempfile = "3.10.1"
 tera = { version = "1.19.1", default-features = false }
 terminal_size = "0.3.0"
-thiserror = "1.0.58"
+thiserror = "1.0.59"
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
