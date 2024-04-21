@@ -93,6 +93,21 @@ impl ToolsetBuilder {
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
                     arg_ts.add_version(tvr.clone(), Default::default());
+                } else {
+                    let versions_by_plugin = ts.list_versions_by_plugin();
+                    let set_as_latest = versions_by_plugin
+                    .iter()
+                    .find(|(_ta, fa)|
+                         fa.iter().find(|f|
+                             // Same forget type and same forgeArg name
+                             f.forge.forge_type == arg.forge.forge_type &&
+                             f.forge.name == arg.forge.name
+                        ).is_none()
+                     );
+
+                    if let Some((_ta, _fa)) = set_as_latest {
+                        arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest".into()), Default::default());
+                    }
                 }
             }
             ts.merge(arg_ts);
