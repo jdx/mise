@@ -16,7 +16,6 @@ use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolVersion, ToolVersionRequest};
 use crate::ui::progress_report::SingleReport;
 
-
 #[derive(Debug)]
 pub struct ZigPlugin {
     core: CorePlugin,
@@ -30,7 +29,6 @@ impl ZigPlugin {
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("zig")
     }
-
 
     fn test_zig(&self, ctx: &InstallContext) -> Result<()> {
         ctx.pr.set_message("zig version".into());
@@ -52,15 +50,21 @@ impl ZigPlugin {
             HTTP_FETCH.json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")?;
         let versions = releases
             .into_iter()
-            .map(|r| r.tag_name).unique()
+            .map(|r| r.tag_name)
+            .unique()
             .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
         Ok(versions)
     }
 
     fn downlaod(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let url = format!("https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz", tv.version, os(), arch(), tv.version);
-
+        let url = format!(
+            "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+            tv.version,
+            os(),
+            arch(),
+            tv.version
+        );
 
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -82,17 +86,18 @@ impl ZigPlugin {
             ctx.tv.install_path(),
         )?;
         file::create_dir_all(ctx.tv.install_path().join("bin"))?;
-        file::make_symlink(self.zig_bin(&ctx.tv).as_path(), &ctx.tv.install_path().join("bin/zig"))?;
+        file::make_symlink(
+            self.zig_bin(&ctx.tv).as_path(),
+            &ctx.tv.install_path().join("bin/zig"),
+        )?;
 
         Ok(())
     }
-
 
     fn verify(&self, ctx: &InstallContext) -> Result<()> {
         self.test_zig(ctx)
     }
 }
-
 
 impl Forge for ZigPlugin {
     fn fa(&self) -> &ForgeArg {
@@ -106,7 +111,6 @@ impl Forge for ZigPlugin {
             .cloned()
     }
 
-
     fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
@@ -119,7 +123,6 @@ impl Forge for ZigPlugin {
     }
 }
 
-
 fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "macos"
@@ -131,7 +134,6 @@ fn os() -> &'static str {
         &OS
     }
 }
-
 
 fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
@@ -150,10 +152,13 @@ fn arch() -> &'static str {
     }
 }
 
-
 pub fn untar_xy(archive: &Path, dest: &Path) -> Result<()> {
-    let archive = archive.to_str().ok_or(eyre::eyre!("Failed to read archive path"))?;
-    let dest = dest.to_str().ok_or(eyre::eyre!("Failed to read destination path"))?;
+    let archive = archive
+        .to_str()
+        .ok_or(eyre::eyre!("Failed to read archive path"))?;
+    let dest = dest
+        .to_str()
+        .ok_or(eyre::eyre!("Failed to read destination path"))?;
 
     let output = std::process::Command::new("tar")
         .arg("-xf")
