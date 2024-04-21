@@ -81,7 +81,6 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
-                // TODO: update instantiation to take fa.name
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
             }
         })

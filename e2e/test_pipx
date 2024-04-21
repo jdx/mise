@@ -15,6 +15,7 @@ if ! command -v pipx > /dev/null; then
     python3 -m venv "$PIPX_VENV" > /dev/null
   fi
 
+  # shellcheck source=/dev/null
   source "$PIPX_VENV/bin/activate" > /dev/null
 
   python3 -m pip install pipx > /dev/null
