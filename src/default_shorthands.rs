@@ -791,7 +791,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("zbctl", "https://github.com/camunda-community-hub/asdf-zbctl.git"),
     ("zellij", "https://github.com/chessmango/asdf-zellij.git"),
     ("zephyr", "https://github.com/nsaunders/asdf-zephyr.git"),
-    ("zig", "https://github.com/cheetah/asdf-zig.git"),
+    // ("zig", "https://github.com/cheetah/asdf-zig.git"),
     ("zigmod", "https://github.com/kachick/asdf-zigmod.git"),
     ("zola", "https://github.com/salasrod/asdf-zola.git"),
     ("zoxide", "https://github.com/nyrst/asdf-zoxide"),
