@@ -7,7 +7,7 @@ export MISE_EXPERIMENTAL=1
 
 INSTALLED_PIPX="false"
 
-readonly PIPX_VENV="$TMPDIR/mise-pipx-venv-testing/pipx"
+readonly PIPX_VENV="${TMPDIR:-/tmp}/mise-pipx-venv-testing/pipx"
 
 if ! command -v pipx > /dev/null; then
   INSTALLED_PIPX="true"
