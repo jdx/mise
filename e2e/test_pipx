@@ -6,3 +6,4 @@ source "$(dirname "$0")/assert.sh"
 export MISE_EXPERIMENTAL=1
 
 assert "mise x pipx:psf/black@24.3.0 -- black --version | head -1" "black, 24.3.0 (compiled: no)"
+assert "mise x pipx:git+https://github.com/psf/black@24.2.0 -- black --version | head -1" "black, 24.2.0 (compiled: no)"
