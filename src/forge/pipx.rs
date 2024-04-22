@@ -95,7 +95,12 @@ impl PIPXForge {
 fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
     debug!("transform_project_name: name={} ctx={:?}", name, ctx.tv);
     let parts: Vec<&str> = name.split('/').collect();
-    match (name, name.starts_with("git+http"), parts.len(), ctx.tv.version.as_str()) {
+    match (
+        name,
+        name.starts_with("git+http"),
+        parts.len(),
+        ctx.tv.version.as_str(),
+    ) {
         (_, false, 2, "latest") => format!("git+https://github.com/{}.git", name),
         (_, false, 2, v) => format!("git+https://github.com/{}.git@{}", name, v),
         (_, true, _, "latest") => name.to_string(),
