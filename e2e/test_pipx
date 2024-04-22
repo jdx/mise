@@ -8,8 +8,9 @@ export MISE_EXPERIMENTAL=1
 INSTALLED_PIPX="false"
 
 # Needed for linux/mac compatibility (https://unix.stackexchange.com/a/84980)
-readonly temp_dir=$(mktemp -d 2>/dev/null || mktemp -d -t 'mise-pipx-venv-testing')
-readonly PIPX_VENV="$temp_dir/pipx"
+declare PIPX_TEMP_DIR
+PIPX_TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mise-pipx-venv-testing')
+readonly PIPX_VENV="$PIPX_TEMP_DIR/pipx"
 
 if ! command -v pipx >/dev/null; then
 	INSTALLED_PIPX="true"
