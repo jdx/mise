@@ -162,6 +162,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | cyclonedx                     | [xeedio/asdf-cyclonedx](https://github.com/xeedio/asdf-cyclonedx)                                                 |
 | D (DMD)                       | [sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd)                                                           |
 | dagger                        | [virtualstaticvoid/asdf-dagger](https://github.com/virtualstaticvoid/asdf-dagger)                                 |
+| danger-js                     | [MontakOleg/asdf-danger-js](https://github.com/MontakOleg/asdf-danger-js.git)                                     |
 | dapr                          | [asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli.git)                               |
 | Dart                          | [PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart)                                               |
 | Dasel                         | [asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel)                                         |
