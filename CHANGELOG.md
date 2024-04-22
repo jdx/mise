@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.4.7](https://github.com/jdx/mise/compare/v2024.4.6..v2024.4.7) - 2024-04-22
+
+### 🐛 Bug Fixes
+
+- **(zig)** make zig core plugin experimental by [@jdx](https://github.com/jdx) in [45274bc](https://github.com/jdx/mise/commit/45274bc1415ac5dc307a82a93db952a1cf811210)
+
 ## [2024.4.6](https://github.com/jdx/mise/compare/v2024.4.5..v2024.4.6) - 2024-04-22
 
 ### 🚀 Features
@@ -9,7 +15,7 @@
 
 ### 🐛 Bug Fixes
 
-- **(gleam)** use asdf-community fork by Jesse Cooke in [06599d8](https://github.com/jdx/mise/commit/06599d8977baaa2a2db7e2d144939049bbe9d20b)
+- **(gleam)** use asdf-community fork by [@jc00ke](https://github.com/jc00ke) in [06599d8](https://github.com/jdx/mise/commit/06599d8977baaa2a2db7e2d144939049bbe9d20b)
 
 ### 📦️ Dependency Updates
 
