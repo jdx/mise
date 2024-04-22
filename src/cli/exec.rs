@@ -51,7 +51,10 @@ pub struct Exec {
 impl Exec {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_default_to_latest(true)
+            .build(&config)?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
