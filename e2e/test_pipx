@@ -29,6 +29,8 @@ if ! command -v pipx >/dev/null; then
   trap 'pipx_cleanup' EXIT
 fi
 
-assert "mise x pipx:black@22.6.0 -- black --version | head -1" "black, 22.6.0 (compiled: no)"
-assert "mise x pipx:psf/black@24.3.0 -- black --version | head -1" "black, 24.3.0 (compiled: no)"
-assert "mise x pipx:git+https://github.com/psf/black.git@24.2.0 -- black --version | head -1" "black, 24.2.0 (compiled: no)"
+# Using final grep because different platforms pull compiled or non-compiled packages
+# which changes the output of the command.
+assert "mise x pipx:black@22.6.0 -- black --version | head -1 | grep -o 22.6.0" "22.6.0"
+assert "mise x pipx:psf/black@24.3.0 -- black --version | head -1 | grep -o 24.3.0" "24.3.0"
+assert "mise x pipx:git+https://github.com/psf/black.git@24.2.0 -- black --version | head -1 | grep -o 24.2.0" "24.2.0"
