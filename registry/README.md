@@ -532,6 +532,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | peco                          | [asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco)                                           |
 | pdm                           | [1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm)                                                           |
 | Perl                          | [ouest/asdf-perl](https://github.com/ouest/asdf-perl)                                                             |
+| Periphery                     | [MontakOleg/asdf-periphery](https://github.com/MontakOleg/asdf-periphery)                                         |
 | PHP                           | [asdf-community/asdf-php](https://github.com/asdf-community/asdf-php)                                             |
 | pint                          | [sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint)                                                 |
 | pipectl                       | [pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl)                                                   |
@@ -766,7 +767,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | XCTestHTMLReport              | [younke/asdf-xchtmlreport](https://github.com/younke/asdf-xchtmlreport)                                           |
 | XcodeGen                      | [younke/asdf-xcodegen](https://github.com/younke/asdf-xcodegen)                                                   |
 | xc                            | [airtonix/asdf-xc](https://github.com/airtonix/asdf-xc)                                                           |
-| xcbeautify                    | [MacPaw/asdf-xcbeautify](https://github.com/MacPaw/asdf-xcbeautify)                                               |
+| xcbeautify                    | [mise-plugins/asdf-xcbeautify](https://github.com/mise-plugins/asdf-xcbeautify)                                   |
 | xcodes                        | [younke/asdf-xcodes](https://github.com/younke/asdf-xcodes)                                                       |
 | xcresultparser                | [MacPaw/asdf-xcresultparser](https://github.com/MacPaw/asdf-xcresultparser)                                       |
 | xh                            | [NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh)                                                               |
