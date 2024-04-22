@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+export MISE_EXPERIMENTAL=1
+
+INSTALLED_PIPX="false"
+
+# Needed for linux/mac compatibility (https://unix.stackexchange.com/a/84980)
+declare PIPX_TEMP_DIR
+PIPX_TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mise-pipx-venv-testing')
+readonly PIPX_VENV="$PIPX_TEMP_DIR/pipx"
+
+if ! command -v pipx >/dev/null; then
+	INSTALLED_PIPX="true"
+	if [[ ! -d "$PIPX_VENV" ]]; then
+		python3 -m venv "$PIPX_VENV" >/dev/null
+	fi
+
+	# shellcheck source=/dev/null
+	source "$PIPX_VENV/bin/activate" >/dev/null
+
+	python3 -m pip install pipx >/dev/null
+
+	pipx_cleanup() {
+		if [[ "$INSTALLED_PIPX" = "true" ]]; then
+			rm -rf "$PIPX_VENV"
+		fi
+	}
+
+	trap 'pipx_cleanup' EXIT
+fi
+
+# Using final grep because different platforms pull compiled or non-compiled packages
+# which changes the output of the command.
+assert "mise x pipx:black@22.6.0 -- black --version | head -1 | grep -o 22.6.0" "22.6.0"
+assert "mise x pipx:psf/black@24.3.0 -- black --version | head -1 | grep -o 24.3.0" "24.3.0"
+assert "mise x pipx:git+https://github.com/psf/black.git@24.2.0 -- black --version | head -1 | grep -o 24.2.0" "24.2.0"
