@@ -532,6 +532,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | peco                          | [asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco)                                           |
 | pdm                           | [1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm)                                                           |
 | Perl                          | [ouest/asdf-perl](https://github.com/ouest/asdf-perl)                                                             |
+| Periphery                     | [MontakOleg/asdf-periphery](https://github.com/MontakOleg/asdf-periphery)                                         |
 | PHP                           | [asdf-community/asdf-php](https://github.com/asdf-community/asdf-php)                                             |
 | pint                          | [sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint)                                                 |
 | pipectl                       | [pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl)                                                   |
