@@ -10,23 +10,23 @@ INSTALLED_PIPX="false"
 readonly PIPX_VENV="${TMPDIR:-/tmp}/mise-pipx-venv-testing/pipx"
 
 if ! command -v pipx >/dev/null; then
-  INSTALLED_PIPX="true"
-  if [[ ! -d "$PIPX_VENV" ]]; then
-    python3 -m venv "$PIPX_VENV" >/dev/null
-  fi
+	INSTALLED_PIPX="true"
+	if [[ ! -d "$PIPX_VENV" ]]; then
+		python3 -m venv "$PIPX_VENV" >/dev/null
+	fi
 
-  # shellcheck source=/dev/null
-  source "$PIPX_VENV/bin/activate" >/dev/null
+	# shellcheck source=/dev/null
+	source "$PIPX_VENV/bin/activate" >/dev/null
 
-  python3 -m pip install pipx >/dev/null
+	python3 -m pip install pipx >/dev/null
 
-  pipx_cleanup() {
-    if [[ "$INSTALLED_PIPX" = "true" ]]; then
-      rm -rf "$PIPX_VENV"
-    fi
-  }
+	pipx_cleanup() {
+		if [[ "$INSTALLED_PIPX" = "true" ]]; then
+			rm -rf "$PIPX_VENV"
+		fi
+	}
 
-  trap 'pipx_cleanup' EXIT
+	trap 'pipx_cleanup' EXIT
 fi
 
 # Using final grep because different platforms pull compiled or non-compiled packages
