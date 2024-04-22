@@ -9,6 +9,6 @@ scripts_dirs=("$PWD"/scripts "$PWD"/e2e)
 cargo clippy -- -Dwarnings
 cargo fmt --all -- --check
 shellcheck -x "${scripts[@]}"
-shfmt -d "${scripts_dirs[@]}"
+shfmt -d -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -c $(git ls-files '*.yml' '*.yaml')
 markdownlint .
