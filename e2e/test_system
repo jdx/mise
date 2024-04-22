@@ -9,4 +9,4 @@ system_node="$(which node)"
 mise_node="$(mise which node)"
 
 assert "mise x node@system nodejs@system -- which node" "$system_node"
-assert "mise x node -- which node" "$mise_node"
+assert "mise x -- which node" "$mise_node"
