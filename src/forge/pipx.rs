@@ -86,11 +86,24 @@ impl PIPXForge {
 // eg when passing user/project it should create git+https://github.com/user/project
 // NOT git+https://github.com/user/project@latest because pipx cannot handle that directive
 // If given a non-shorthand we treat it as intentional and do not transform it
+/*
+ * Supports the following formats
+ * - git+https://github.com/psf/black.git@24.2.0 => github longhand and version
+ * - psf/black@24.2.0 => github shorthand and version
+ * - black@24.2.0 => pypi shorthand and version
+ */
 fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
+    debug!("transform_project_name: name={} ctx={:?}", name, ctx.tv);
     let parts: Vec<&str> = name.split('/').collect();
-    match (parts.len(), ctx.tv.version.as_str()) {
-        (2, "latest") => format!("git+https://github.com/{}", name),
-        (2, v) => format!("git+https://github.com/{}@{}", name, v),
+    match (name, name.starts_with("git+http"), parts.len(), ctx.tv.version.as_str()) {
+        (_, false, 2, "latest") => format!("git+https://github.com/{}.git", name),
+        (_, false, 2, v) => format!("git+https://github.com/{}.git@{}", name, v),
+        (_, true, _, "latest") => name.to_string(),
+        (_, true, _, v) => format!("{}@{}", name, v),
+        (".", false, _, _) => name.to_string(),
+        (_, false, _, "latest") => name.to_string(),
+        // Treat this as a pypi package@version
+        (_, false, 1, v) => format!("{}=={}", name, v),
         _ => name.to_string(),
     }
 }
