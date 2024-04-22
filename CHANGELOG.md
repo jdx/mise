@@ -1,5 +1,49 @@
 # Changelog
 
+## [2024.4.7](https://github.com/jdx/mise/compare/v2024.4.6..v2024.4.7) - 2024-04-22
+
+### 🐛 Bug Fixes
+
+- **(zig)** make zig core plugin experimental by [@jdx](https://github.com/jdx) in [45274bc](https://github.com/jdx/mise/commit/45274bc1415ac5dc307a82a93db952a1cf811210)
+
+## [2024.4.6](https://github.com/jdx/mise/compare/v2024.4.5..v2024.4.6) - 2024-04-22
+
+### 🚀 Features
+
+- Pipx Backend by [@zph](https://github.com/zph) in [#1923](https://github.com/jdx/mise/pull/1923)
+- ubi backend by [@zph](https://github.com/zph) in [#1932](https://github.com/jdx/mise/pull/1932)
+
+### 🐛 Bug Fixes
+
+- **(gleam)** use asdf-community fork by [@jc00ke](https://github.com/jc00ke) in [06599d8](https://github.com/jdx/mise/commit/06599d8977baaa2a2db7e2d144939049bbe9d20b)
+
+### 📦️ Dependency Updates
+
+- update rust crate chrono to 0.4.38 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1907](https://github.com/jdx/mise/pull/1907)
+- update rust crate serde_json to 1.0.116 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1908](https://github.com/jdx/mise/pull/1908)
+- update rust crate toml_edit to 0.22.11 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1921](https://github.com/jdx/mise/pull/1921)
+- bump rustls from 0.21.10 to 0.21.11 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#1922](https://github.com/jdx/mise/pull/1922)
+- update rust crate rmp-serde to 1.2.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1917](https://github.com/jdx/mise/pull/1917)
+- update rust crate toml_edit to 0.22.12 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1924](https://github.com/jdx/mise/pull/1924)
+- update rust crate usage-lib to 0.1.18 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1896](https://github.com/jdx/mise/pull/1896)
+- update rust crate ctor to 0.2.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1913](https://github.com/jdx/mise/pull/1913)
+- update serde monorepo to 1.0.198 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1914](https://github.com/jdx/mise/pull/1914)
+- update rust crate thiserror to 1.0.59 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1929](https://github.com/jdx/mise/pull/1929)
+- update rust crate zip to v1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1930](https://github.com/jdx/mise/pull/1930)
+
+### 🔍 Other Changes
+
+- Add Zig language plugin by [@MustCodeAl](https://github.com/MustCodeAl) in [#1927](https://github.com/jdx/mise/pull/1927)
+
+### 🚜 Refactor
+
+- use a metadata file for forges by [@roele](https://github.com/roele) in [#1909](https://github.com/jdx/mise/pull/1909)
+
+### New Contributors
+
+* @zph made their first contribution in [#1932](https://github.com/jdx/mise/pull/1932)
+* @MustCodeAl made their first contribution in [#1927](https://github.com/jdx/mise/pull/1927)
+
 ## [2024.4.5](https://github.com/jdx/mise/compare/v2024.4.3..v2024.4.5) - 2024-04-15
 
 ### 🚀 Features

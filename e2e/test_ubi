@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+export MISE_EXPERIMENTAL=1
+
+# Needed for linux/mac compatibility (https://unix.stackexchange.com/a/84980)
+declare BIN_BACKEND_TEMP_DIR
+BIN_BACKEND_TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mise-bin-backend-testing')
+export PATH="${BIN_BACKEND_TEMP_DIR}:${PATH}"
+
+# Install ubi as the dependency for bin backend
+if ! command -v ubi >/dev/null 2>&1; then
+	curl --silent --location \
+		https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh |
+		TARGET="${BIN_BACKEND_TEMP_DIR}" sh
+fi
+
+uninstall_ubi() {
+	rm -rf "$BIN_BACKEND_TEMP_DIR"
+}
+
+trap uninstall_ubi EXIT
+
+assert "mise x ubi:goreleaser/goreleaser@v1.25.0 -- goreleaser -v | grep -o 1.25.0" "1.25.0"

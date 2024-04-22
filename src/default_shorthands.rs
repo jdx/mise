@@ -270,7 +270,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("gitsign", "https://github.com/spencergilbert/asdf-gitsign.git"),
     ("gitui", "https://github.com/looztra/asdf-gitui.git"),
     ("glab", "https://github.com/particledecay/asdf-glab.git"),
-    ("gleam", "https://github.com/vic/asdf-gleam.git"),
+    ("gleam", "https://github.com/asdf-community/asdf-gleam.git"),
     ("glen", "https://github.com/bradym/asdf-glen"),
     ("glooctl", "https://github.com/halilkaya/asdf-glooctl.git"),
     ("glow", "https://github.com/chessmango/asdf-glow.git"),

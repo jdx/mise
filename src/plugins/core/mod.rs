@@ -21,6 +21,7 @@ use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
+use crate::plugins::core::zig::ZigPlugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
@@ -32,6 +33,7 @@ mod java;
 mod node;
 mod python;
 mod ruby;
+mod zig;
 
 pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Forge>> = vec![
@@ -46,6 +48,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let settings = Settings::get();
     if settings.experimental {
         plugins.push(Arc::new(ErlangPlugin::new()));
+        plugins.push(Arc::new(ZigPlugin::new()));
     }
     plugins
 });
