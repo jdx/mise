@@ -17,6 +17,14 @@
 
 - **(gleam)** use asdf-community fork by [@jc00ke](https://github.com/jc00ke) in [06599d8](https://github.com/jdx/mise/commit/06599d8977baaa2a2db7e2d144939049bbe9d20b)
 
+### 🚜 Refactor
+
+- use a metadata file for forges by [@roele](https://github.com/roele) in [#1909](https://github.com/jdx/mise/pull/1909)
+
+### 🔍 Other Changes
+
+- Add Zig language plugin by [@MustCodeAl](https://github.com/MustCodeAl) in [#1927](https://github.com/jdx/mise/pull/1927)
+
 ### 📦️ Dependency Updates
 
 - update rust crate chrono to 0.4.38 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1907](https://github.com/jdx/mise/pull/1907)
@@ -30,14 +38,6 @@
 - update serde monorepo to 1.0.198 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1914](https://github.com/jdx/mise/pull/1914)
 - update rust crate thiserror to 1.0.59 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1929](https://github.com/jdx/mise/pull/1929)
 - update rust crate zip to v1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1930](https://github.com/jdx/mise/pull/1930)
-
-### 🔍 Other Changes
-
-- Add Zig language plugin by [@MustCodeAl](https://github.com/MustCodeAl) in [#1927](https://github.com/jdx/mise/pull/1927)
-
-### 🚜 Refactor
-
-- use a metadata file for forges by [@roele](https://github.com/roele) in [#1909](https://github.com/jdx/mise/pull/1909)
 
 ### New Contributors
 
@@ -61,24 +61,21 @@
 - mise panics if prefix: is used on certain core plugins by [@roele](https://github.com/roele) in [#1889](https://github.com/jdx/mise/pull/1889)
 - go backend naming inconsistency (in mise ls and mise prune) by [@roele](https://github.com/roele) in [#1905](https://github.com/jdx/mise/pull/1905)
 
-### 📦️ Dependency Updates
-
-- update rust crate built to 0.7.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1895](https://github.com/jdx/mise/pull/1895)
-- update rust crate either to 1.11.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1899](https://github.com/jdx/mise/pull/1899)
-
-### 🔍 Other Changes
-
-- added podman plugin by [@carlosrtf](https://github.com/carlosrtf) in [24155e8](https://github.com/jdx/mise/commit/24155e8b9d5f342d52ccdd212f187243022efa0b)
-
 ### 🧪 Testing
 
 - fix github action branch by [@jdx](https://github.com/jdx) in [39eb2ab](https://github.com/jdx/mise/commit/39eb2abbdb7b136c541f84696dc038637280d8a7)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(move)** added TODO by [@jdx](https://github.com/jdx) in [5ffbcc1](https://github.com/jdx/mise/commit/5ffbcc134f27800109bb65335b4b9423742b6807)
 - **(pre-commit)** added pre-commit by [@jdx](https://github.com/jdx) in [b2ff8cd](https://github.com/jdx/mise/commit/b2ff8cd88c5951326781fcc5c1405d3883ef21c1)
 - **(pre-commit)** check json and toml files by [@jdx](https://github.com/jdx) in [5281712](https://github.com/jdx/mise/commit/5281712f63bb673b301be139274b5f2eab64c205)
+- added podman plugin by [@carlosrtf](https://github.com/carlosrtf) in [24155e8](https://github.com/jdx/mise/commit/24155e8b9d5f342d52ccdd212f187243022efa0b)
+
+### 📦️ Dependency Updates
+
+- update rust crate built to 0.7.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1895](https://github.com/jdx/mise/pull/1895)
+- update rust crate either to 1.11.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1899](https://github.com/jdx/mise/pull/1899)
 
 ### New Contributors
 
@@ -92,7 +89,7 @@
 - **(docker)** repo fetch by [@jdx](https://github.com/jdx) in [#1878](https://github.com/jdx/mise/pull/1878)
 - asdf-yarn by [@jdx](https://github.com/jdx) in [fc8de34](https://github.com/jdx/mise/commit/fc8de34e2e535ed7262c079087ff444a44dd5731)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(release-plz)** clean up PR/release description by [@jdx](https://github.com/jdx) in [14b4fc5](https://github.com/jdx/mise/commit/14b4fc5525e06cc150ae160c406ee06b58d95ce5)
 - **(release-plz)** clean up PR/release description by [@jdx](https://github.com/jdx) in [769e7fe](https://github.com/jdx/mise/commit/769e7fe16e4f4df7380414f91e67345148e059de)
@@ -114,7 +111,7 @@
 
 - **(default_shorthands)** automatically mark mise-plugins as trusted by [@jdx](https://github.com/jdx) in [538a90f](https://github.com/jdx/mise/commit/538a90f04447b306c0ea6d8009cdef3f92cd4735)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(cliff)** ignore previous registry commits by [@jdx](https://github.com/jdx) in [64f326d](https://github.com/jdx/mise/commit/64f326d903e13a104b88eb4b0986285ad2411f19)
 - **(cliff)** ignore merge commits by [@jdx](https://github.com/jdx) in [d54b0a2](https://github.com/jdx/mise/commit/d54b0a2cd4d4bd02816719101cbe77905818d07a)
@@ -138,14 +135,14 @@
 - **(doctor)** sort missing shims by [@jdx](https://github.com/jdx) in [f12d335](https://github.com/jdx/mise/commit/f12d3359b054c9b31a785ed9fdc41e20b317ddb4)
 - **(uninstall)** fix uninstall completions by [@jdx](https://github.com/jdx) in [#1869](https://github.com/jdx/mise/pull/1869)
 
-### 📦️ Dependency Updates
-
-- bump h2 from 0.3.25 to 0.3.26 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#1866](https://github.com/jdx/mise/pull/1866)
-
 ### 🧪 Testing
 
 - **(audit)** removed workflow since dependabot is already doing this by [@jdx](https://github.com/jdx) in [9138e2e](https://github.com/jdx/mise/commit/9138e2e6ec09a36c7791c9a6b4e5f7ab138fcb63)
 - **(mega-linter)** disable RUST_CLIPPY (slow) by [@jdx](https://github.com/jdx) in [8c64153](https://github.com/jdx/mise/commit/8c64153f7c5b3990d3b857b55fb0a94e7c11a6fc)
+
+### 📦️ Dependency Updates
+
+- bump h2 from 0.3.25 to 0.3.26 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#1866](https://github.com/jdx/mise/pull/1866)
 
 ## [2024.4.0](https://github.com/jdx/mise/compare/v2024.3.11..v2024.4.0) - 2024-04-02
 
@@ -155,12 +152,9 @@
 
 ### 🔍 Other Changes
 
-- Move logic to set current directory before loading other config by [@joshbode](https://github.com/joshbode) in [#1848](https://github.com/jdx/mise/pull/1848)
-
-### ⚙️ Miscellaneous Tasks
-
 - **(release)** only save 1 build cache by [@jdx](https://github.com/jdx) in [f37f11d](https://github.com/jdx/mise/commit/f37f11dd56cb30c1df30d4a2a3df37290ce95a0b)
 - **(release-plz)** rebuild release branch daily by [@jdx](https://github.com/jdx) in [3606d96](https://github.com/jdx/mise/commit/3606d9687ec205754269f7402a7f8095533627ae)
+- Move logic to set current directory before loading other config by [@joshbode](https://github.com/joshbode) in [#1848](https://github.com/jdx/mise/pull/1848)
 
 ### New Contributors
 
@@ -183,7 +177,7 @@
 - **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [00d8728](https://github.com/jdx/mise/commit/00d87283181467e73b01b27179c096bb08203619)
 - **(changelog)** fix commit message for releases by [@jdx](https://github.com/jdx) in [c5612f9](https://github.com/jdx/mise/commit/c5612f90b4e47bdf12ee74e7d33412e3c0b6184c)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(audit)** added workflow by [@jdx](https://github.com/jdx) in [9263fb4](https://github.com/jdx/mise/commit/9263fb4e1bc374145d9eff609e025559f9d4d7d1)
 - **(deny)** remove multiple-versions warnings by [@jdx](https://github.com/jdx) in [efa133e](https://github.com/jdx/mise/commit/efa133e1fad5bc97c44f04494e5ce7cb9ccc3033)
@@ -230,6 +224,16 @@
 - **(nu)** Gracefully handle missing `$env.config` by [@texastoland](https://github.com/texastoland) in [#1809](https://github.com/jdx/mise/pull/1809)
 - Apple x64 version of mise doesn't work by [@roele](https://github.com/roele) in [#1821](https://github.com/jdx/mise/pull/1821)
 
+### 🧪 Testing
+
+- fix warnings by [@jdx](https://github.com/jdx) in [f0604a3](https://github.com/jdx/mise/commit/f0604a3224d5081012101d5266879c6d0af0d39d)
+
+### 🔍 Other Changes
+
+- automatically bump minor version if month/year changes by [@mise-en-dev](https://github.com/mise-en-dev) in [96ad08d](https://github.com/jdx/mise/commit/96ad08d8acb6b7a4eff0be2f49022080d10b9b71)
+- updated cargo-deny config by [@jdx](https://github.com/jdx) in [#1824](https://github.com/jdx/mise/pull/1824)
+- fix version set by [@jdx](https://github.com/jdx) in [2be7fe5](https://github.com/jdx/mise/commit/2be7fe51c0fb9f66c43cd6e940f4eb18ee83c822)
+
 ### 📦️ Dependency Updates
 
 - update rust crate toml_edit to 0.22.9 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1814](https://github.com/jdx/mise/pull/1814)
@@ -242,19 +246,6 @@
 - update rust crate versions to 6.2.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1819](https://github.com/jdx/mise/pull/1819)
 - update rust crate reqwest to 0.12.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1822](https://github.com/jdx/mise/pull/1822)
 
-### 🔍 Other Changes
-
-- fix version set by [@jdx](https://github.com/jdx) in [2be7fe5](https://github.com/jdx/mise/commit/2be7fe51c0fb9f66c43cd6e940f4eb18ee83c822)
-
-### 🧪 Testing
-
-- fix warnings by [@jdx](https://github.com/jdx) in [f0604a3](https://github.com/jdx/mise/commit/f0604a3224d5081012101d5266879c6d0af0d39d)
-
-### ⚙️ Miscellaneous Tasks
-
-- automatically bump minor version if month/year changes by [@mise-en-dev](https://github.com/mise-en-dev) in [96ad08d](https://github.com/jdx/mise/commit/96ad08d8acb6b7a4eff0be2f49022080d10b9b71)
-- updated cargo-deny config by [@jdx](https://github.com/jdx) in [#1824](https://github.com/jdx/mise/pull/1824)
-
 ## [2024.3.7](https://github.com/jdx/mise/compare/v2024.3.6..v2024.3.7) - 2024-03-21
 
 ### 🐛 Bug Fixes
@@ -262,11 +253,6 @@
 - **(task)** tasks not working in system config by [@roele](https://github.com/roele) in [#1803](https://github.com/jdx/mise/pull/1803)
 - **(xonsh)** `shell` subcommand for xonsh by [@yggdr](https://github.com/yggdr) in [#1801](https://github.com/jdx/mise/pull/1801)
 - jq Installed Using x86_64 on Apple Silicon using mise by [@roele](https://github.com/roele) in [#1804](https://github.com/jdx/mise/pull/1804)
-
-### 🔍 Other Changes
-
-- Refactor Nushell script by [@texastoland](https://github.com/texastoland) in [#1763](https://github.com/jdx/mise/pull/1763)
-- Update a few phrases for mise install by [@erickguan](https://github.com/erickguan) in [#1712](https://github.com/jdx/mise/pull/1712)
 
 ### 📚 Documentation
 
@@ -281,14 +267,16 @@
 
 - install python/poetry at the same time by [@jdx](https://github.com/jdx) in [08a3304](https://github.com/jdx/mise/commit/08a33048b92a8ce3b551d0f7e39a28ac0bc29f07)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(release-plz)** use different bot email by [@jdx](https://github.com/jdx) in [59b814f](https://github.com/jdx/mise/commit/59b814fae7eedd6565286a6865b6539e2c058a36)
 - **(release-plz)** sign release git tags by [@jdx](https://github.com/jdx) in [8ce5d37](https://github.com/jdx/mise/commit/8ce5d371515d287b8e5a5ccdbddeafa6e5d18952)
 - **(test)** run all e2e tests on the release pr by [@jdx](https://github.com/jdx) in [f21c84b](https://github.com/jdx/mise/commit/f21c84b5683e986b93cf2f3f16c120a7168aacba)
 - **(test)** run all e2e tests on the release pr by [@jdx](https://github.com/jdx) in [cf19dc5](https://github.com/jdx/mise/commit/cf19dc5eac9245a780a9135f7483e431ef686f69)
 - **(test)** skip aur/aur-bin on release PR by [@jdx](https://github.com/jdx) in [9ddb424](https://github.com/jdx/mise/commit/9ddb424c133452d4cb1e4304c263ff74ca65811b)
+- Refactor Nushell script by [@texastoland](https://github.com/texastoland) in [#1763](https://github.com/jdx/mise/pull/1763)
 - rust 1.78 deprecation warning fixes by [@jdx](https://github.com/jdx) in [#1805](https://github.com/jdx/mise/pull/1805)
+- Update a few phrases for mise install by [@erickguan](https://github.com/erickguan) in [#1712](https://github.com/jdx/mise/pull/1712)
 - fix caching by [@jdx](https://github.com/jdx) in [62cb250](https://github.com/jdx/mise/commit/62cb250007c443dc25e72292b178c5f51cda413c)
 
 ### New Contributors
@@ -307,22 +295,6 @@
 - update shorthand for rabbitmq by [@roele](https://github.com/roele) in [#1784](https://github.com/jdx/mise/pull/1784)
 - display error message from calling usage by [@jdx](https://github.com/jdx) in [#1786](https://github.com/jdx/mise/pull/1786)
 - automatically trust config files in CI by [@jdx](https://github.com/jdx) in [#1791](https://github.com/jdx/mise/pull/1791)
-
-### 📦️ Dependency Updates
-
-- update rust crate clap to 4.5.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1778](https://github.com/jdx/mise/pull/1778)
-- update rust crate color-eyre to 0.6.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1779](https://github.com/jdx/mise/pull/1779)
-- update rust crate thiserror to 1.0.58 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1781](https://github.com/jdx/mise/pull/1781)
-- update rust crate strum to 0.26.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1780](https://github.com/jdx/mise/pull/1780)
-- update rust crate toml_edit to 0.22.7 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1783](https://github.com/jdx/mise/pull/1783)
-- update rust crate toml to 0.8.11 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1782](https://github.com/jdx/mise/pull/1782)
-- update rust crate usage-lib to 0.1.10 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1790](https://github.com/jdx/mise/pull/1790)
-- update rust crate usage-lib to 0.1.12 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1792](https://github.com/jdx/mise/pull/1792)
-
-### 🔍 Other Changes
-
-- Update .mega-linter.yml by [@jdx](https://github.com/jdx) in [831831c](https://github.com/jdx/mise/commit/831831c057d37826b9c34edec659e9836e616ad2)
-- add --json flag by [@jdx](https://github.com/jdx) in [#1785](https://github.com/jdx/mise/pull/1785)
 
 ### 🚜 Refactor
 
@@ -345,7 +317,7 @@
 - **(mega-linter)** do not use js-standard linter by [@jdx](https://github.com/jdx) in [6b63346](https://github.com/jdx/mise/commit/6b63346bdd985964bc824eff03973d2d58d1ad28)
 - **(mega-linter)** ignore CHANGELOG.md by [@jdx](https://github.com/jdx) in [b63b3ac](https://github.com/jdx/mise/commit/b63b3aca3c597ee95db80613b2ea8ca19f0e74c3)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
 - **(release-plz)** removed some debugging logic by [@jdx](https://github.com/jdx) in [f7d7bea](https://github.com/jdx/mise/commit/f7d7bea616c13b31318f2e7da287aa71face8e57)
 - **(release-plz)** show actual version in PR body by [@jdx](https://github.com/jdx) in [e1ef708](https://github.com/jdx/mise/commit/e1ef708745e79bd019c77740820daefca5491b2e)
@@ -359,6 +331,8 @@
 - **(release-plz)** do not publish a new release PR immediately by [@jdx](https://github.com/jdx) in [b3ae753](https://github.com/jdx/mise/commit/b3ae753fdde1fef17b4f13a1ecc8b23cb1da575c)
 - **(release-plz)** prefix versions with "v" by [@jdx](https://github.com/jdx) in [3354b55](https://github.com/jdx/mise/commit/3354b551adab7082d5cc533e5d9d0bfe272958b4)
 - **(test)** cache mise installed tools by [@jdx](https://github.com/jdx) in [0e433b9](https://github.com/jdx/mise/commit/0e433b975a5d8c28ae5c0cbd86d3b19e03146a83)
+- Update .mega-linter.yml by [@jdx](https://github.com/jdx) in [831831c](https://github.com/jdx/mise/commit/831831c057d37826b9c34edec659e9836e616ad2)
+- add --json flag by [@jdx](https://github.com/jdx) in [#1785](https://github.com/jdx/mise/pull/1785)
 - cargo update by [@jdx](https://github.com/jdx) in [6391239](https://github.com/jdx/mise/commit/639123930eec8e057de7da790cb71d4a2b9e17a2)
 - install tools before unit tests by [@jdx](https://github.com/jdx) in [f7456eb](https://github.com/jdx/mise/commit/f7456ebc539a4b27ec067bc480bc0aba1466e55b)
 - added git-cliff by [@jdx](https://github.com/jdx) in [0ccdf36](https://github.com/jdx/mise/commit/0ccdf36df153ddc3ac1a2714ee9b4a2116dfc918)
@@ -366,6 +340,17 @@
 - added release-plz workflow by [@jdx](https://github.com/jdx) in [#1787](https://github.com/jdx/mise/pull/1787)
 - set gpg key by [@jdx](https://github.com/jdx) in [467097f](https://github.com/jdx/mise/commit/467097f925053a27f0ede2a506e894562d191a09)
 - temporarily disable self-update test by [@jdx](https://github.com/jdx) in [5cb39a4](https://github.com/jdx/mise/commit/5cb39a4259f332e5bccec082f1d7cd6127da5f55)
+
+### 📦️ Dependency Updates
+
+- update rust crate clap to 4.5.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1778](https://github.com/jdx/mise/pull/1778)
+- update rust crate color-eyre to 0.6.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1779](https://github.com/jdx/mise/pull/1779)
+- update rust crate thiserror to 1.0.58 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1781](https://github.com/jdx/mise/pull/1781)
+- update rust crate strum to 0.26.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1780](https://github.com/jdx/mise/pull/1780)
+- update rust crate toml_edit to 0.22.7 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1783](https://github.com/jdx/mise/pull/1783)
+- update rust crate toml to 0.8.11 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1782](https://github.com/jdx/mise/pull/1782)
+- update rust crate usage-lib to 0.1.10 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1790](https://github.com/jdx/mise/pull/1790)
+- update rust crate usage-lib to 0.1.12 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1792](https://github.com/jdx/mise/pull/1792)
 
 ## [2024.3.2](https://github.com/jdx/mise/compare/v2024.3.1..v2024.3.2) - 2024-03-15
 
@@ -381,6 +366,10 @@
 - watch env._.source files by [@nicolas-geniteau](https://github.com/nicolas-geniteau) in [#1770](https://github.com/jdx/mise/pull/1770)
 - prepend virtualenv path rather than append by [@kalvinnchau](https://github.com/kalvinnchau) in [#1751](https://github.com/jdx/mise/pull/1751)
 
+### 🔍 Other Changes
+
+- bump rust version by [@jdx](https://github.com/jdx) in [0cd890c](https://github.com/jdx/mise/commit/0cd890c04a511b8b82e1e605810ae1081e44fccc)
+
 ### 📦️ Dependency Updates
 
 - update rust crate chrono to 0.4.35 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1757](https://github.com/jdx/mise/pull/1757)
@@ -388,10 +377,6 @@
 - update softprops/action-gh-release action to v2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1761](https://github.com/jdx/mise/pull/1761)
 - update rust crate simplelog to 0.12.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1760](https://github.com/jdx/mise/pull/1760)
 - update rust crate reqwest to 0.11.26 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1759](https://github.com/jdx/mise/pull/1759)
-
-### 🔍 Other Changes
-
-- bump rust version by [@jdx](https://github.com/jdx) in [0cd890c](https://github.com/jdx/mise/commit/0cd890c04a511b8b82e1e605810ae1081e44fccc)
 
 ### New Contributors
 
@@ -404,6 +389,11 @@
 
 - **(java)** sdkmanrc zulu JVMs are missing in mise by [@roele](https://github.com/roele) in [#1719](https://github.com/jdx/mise/pull/1719)
 
+### 🔍 Other Changes
+
+- added back "test:e2e" task by [@jdx](https://github.com/jdx) in [16e7da0](https://github.com/jdx/mise/commit/16e7da08fc135166e0f44e64d44fb3b3325943aa)
+- Tiny grammar fix by [@MartyBeGood](https://github.com/MartyBeGood) in [#1744](https://github.com/jdx/mise/pull/1744)
+
 ### 📦️ Dependency Updates
 
 - bump mio from 0.8.10 to 0.8.11 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#1747](https://github.com/jdx/mise/pull/1747)
@@ -415,11 +405,6 @@
 - update rust crate rayon to 1.9.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1735](https://github.com/jdx/mise/pull/1735)
 - update rust crate base64 to 0.22.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1734](https://github.com/jdx/mise/pull/1734)
 - update rust crate ctor to 0.2.7 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1729](https://github.com/jdx/mise/pull/1729)
-
-### 🔍 Other Changes
-
-- added back "test:e2e" task by [@jdx](https://github.com/jdx) in [16e7da0](https://github.com/jdx/mise/commit/16e7da08fc135166e0f44e64d44fb3b3325943aa)
-- Tiny grammar fix by [@MartyBeGood](https://github.com/MartyBeGood) in [#1744](https://github.com/jdx/mise/pull/1744)
 
 ### New Contributors
 
@@ -435,6 +420,16 @@
 
 ## [2024.2.18](https://github.com/jdx/mise/compare/v2024.2.17..v2024.2.18) - 2024-02-24
 
+### 📚 Documentation
+
+- make README logo link to site by [@booniepepper](https://github.com/booniepepper) in [#1695](https://github.com/jdx/mise/pull/1695)
+
+### 🔍 Other Changes
+
+- Update mise.json - fix missing_tools type by [@fxsalazar](https://github.com/fxsalazar) in [#1699](https://github.com/jdx/mise/pull/1699)
+- added env._.python.venv directive by [@jdx](https://github.com/jdx) in [#1706](https://github.com/jdx/mise/pull/1706)
+- auto-install plugins by [@jdx](https://github.com/jdx) in [3b665e2](https://github.com/jdx/mise/commit/3b665e238baad818aef8f66c74733d6c4e518312)
+
 ### 📦️ Dependency Updates
 
 - update rust crate assert_cmd to 2.0.14 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1700](https://github.com/jdx/mise/pull/1700)
@@ -443,16 +438,6 @@
 - update rust crate demand to 1.1.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1705](https://github.com/jdx/mise/pull/1705)
 - update serde monorepo to 1.0.197 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1704](https://github.com/jdx/mise/pull/1704)
 - update rust crate insta to 1.35.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1701](https://github.com/jdx/mise/pull/1701)
-
-### 🔍 Other Changes
-
-- Update mise.json - fix missing_tools type by [@fxsalazar](https://github.com/fxsalazar) in [#1699](https://github.com/jdx/mise/pull/1699)
-- added env._.python.venv directive by [@jdx](https://github.com/jdx) in [#1706](https://github.com/jdx/mise/pull/1706)
-- auto-install plugins by [@jdx](https://github.com/jdx) in [3b665e2](https://github.com/jdx/mise/commit/3b665e238baad818aef8f66c74733d6c4e518312)
-
-### 📚 Documentation
-
-- make README logo link to site by [@booniepepper](https://github.com/booniepepper) in [#1695](https://github.com/jdx/mise/pull/1695)
 
 ### New Contributors
 
@@ -465,23 +450,6 @@
 - **(bun)** install bunx symlink by [@booniepepper](https://github.com/booniepepper) in [#1688](https://github.com/jdx/mise/pull/1688)
 - **(go)** reflect on proper path for `GOROOT` by [@wheinze](https://github.com/wheinze) in [#1661](https://github.com/jdx/mise/pull/1661)
 - allow go forge to install SHA versions when no tagged versions present by [@Ajpantuso](https://github.com/Ajpantuso) in [#1683](https://github.com/jdx/mise/pull/1683)
-
-### 📦️ Dependency Updates
-
-- update rust crate usage-lib to 0.1.9 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1679](https://github.com/jdx/mise/pull/1679)
-- update rust crate indexmap to 2.2.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1677](https://github.com/jdx/mise/pull/1677)
-- update rust crate toml_edit to 0.22.6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1678](https://github.com/jdx/mise/pull/1678)
-- update rust crate demand to 1.0.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1676](https://github.com/jdx/mise/pull/1676)
-- update rust crate clap to 4.5.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1675](https://github.com/jdx/mise/pull/1675)
-
-### 🔍 Other Changes
-
-- Update README.md by [@jdx](https://github.com/jdx) in [05869d9](https://github.com/jdx/mise/commit/05869d986f9b8543aec760f14a8539ce9ba288b3)
-- cargo up by [@jdx](https://github.com/jdx) in [0d716d8](https://github.com/jdx/mise/commit/0d716d862600e0c59b8d4269e48385bf911164b1)
-- downgrade openssl due to build failures by [@jdx](https://github.com/jdx) in [8c282b8](https://github.com/jdx/mise/commit/8c282b8a8786c726ed93a733aaf605529e19b172)
-- Revert "cargo up" by [@jdx](https://github.com/jdx) in [6fb1fa7](https://github.com/jdx/mise/commit/6fb1fa75cdf8abf6e344e30308685238e9dd5570)
-- cargo up (minus cc) by [@jdx](https://github.com/jdx) in [6142403](https://github.com/jdx/mise/commit/6142403894db91b39279e3544bef595bd17c631a)
-- Retry with https if request fails by [@grant0417](https://github.com/grant0417) in [#1690](https://github.com/jdx/mise/pull/1690)
 
 ### 🚜 Refactor
 
@@ -497,6 +465,23 @@
 
 - **(integration)** introduce rust based integration suite by [@Ajpantuso](https://github.com/Ajpantuso) in [#1612](https://github.com/jdx/mise/pull/1612)
 
+### 🔍 Other Changes
+
+- Update README.md by [@jdx](https://github.com/jdx) in [05869d9](https://github.com/jdx/mise/commit/05869d986f9b8543aec760f14a8539ce9ba288b3)
+- cargo up by [@jdx](https://github.com/jdx) in [0d716d8](https://github.com/jdx/mise/commit/0d716d862600e0c59b8d4269e48385bf911164b1)
+- downgrade openssl due to build failures by [@jdx](https://github.com/jdx) in [8c282b8](https://github.com/jdx/mise/commit/8c282b8a8786c726ed93a733aaf605529e19b172)
+- Revert "cargo up" by [@jdx](https://github.com/jdx) in [6fb1fa7](https://github.com/jdx/mise/commit/6fb1fa75cdf8abf6e344e30308685238e9dd5570)
+- cargo up (minus cc) by [@jdx](https://github.com/jdx) in [6142403](https://github.com/jdx/mise/commit/6142403894db91b39279e3544bef595bd17c631a)
+- Retry with https if request fails by [@grant0417](https://github.com/grant0417) in [#1690](https://github.com/jdx/mise/pull/1690)
+
+### 📦️ Dependency Updates
+
+- update rust crate usage-lib to 0.1.9 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1679](https://github.com/jdx/mise/pull/1679)
+- update rust crate indexmap to 2.2.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1677](https://github.com/jdx/mise/pull/1677)
+- update rust crate toml_edit to 0.22.6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1678](https://github.com/jdx/mise/pull/1678)
+- update rust crate demand to 1.0.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1676](https://github.com/jdx/mise/pull/1676)
+- update rust crate clap to 4.5.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1675](https://github.com/jdx/mise/pull/1675)
+
 ### New Contributors
 
 * @grant0417 made their first contribution in [#1690](https://github.com/jdx/mise/pull/1690)
@@ -511,16 +496,16 @@
 
 ## [2024.2.15](https://github.com/jdx/mise/compare/v2024.2.14..v2024.2.15) - 2024-02-13
 
-### 📦️ Dependency Updates
-
-- update rust crate thiserror to 1.0.57 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1659](https://github.com/jdx/mise/pull/1659)
-
 ### 🔍 Other Changes
 
 - fish command_not_found handler fix by [@jdx](https://github.com/jdx) in [#1665](https://github.com/jdx/mise/pull/1665)
 - cargo up by [@jdx](https://github.com/jdx) in [122a9b2](https://github.com/jdx/mise/commit/122a9b25994adf081e25c15df7b22c80c5517126)
 - run commit hook on main branch by [@jdx](https://github.com/jdx) in [7ced699](https://github.com/jdx/mise/commit/7ced699f638716387a3a35935c946d3df26eac49)
 - Revert "run commit hook on main branch" by [@jdx](https://github.com/jdx) in [5ec8a5e](https://github.com/jdx/mise/commit/5ec8a5e343b7a6c181f92cb2d5650fe1b0bc5d50)
+
+### 📦️ Dependency Updates
+
+- update rust crate thiserror to 1.0.57 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1659](https://github.com/jdx/mise/pull/1659)
 
 ## [2024.2.14](https://github.com/jdx/mise/compare/v2024.2.13..v2024.2.14) - 2024-02-11
 
@@ -540,19 +525,15 @@
 
 ## [2024.2.12](https://github.com/jdx/mise/compare/v2024.2.11..v2024.2.12) - 2024-02-11
 
-### 📦️ Dependency Updates
-
-- update rust crate usage-lib to 0.1.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1653](https://github.com/jdx/mise/pull/1653)
-
 ### 🔍 Other Changes
 
 - install usage via cargo-binstall by [@jdx](https://github.com/jdx) in [f3a0117](https://github.com/jdx/mise/commit/f3a0117fea9307d11f2df1540efe6761eec13b66)
 
-## [2024.2.11](https://github.com/jdx/mise/compare/v2024.2.10..v2024.2.11) - 2024-02-10
-
 ### 📦️ Dependency Updates
 
-- update rust crate indicatif to 0.17.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1651](https://github.com/jdx/mise/pull/1651)
+- update rust crate usage-lib to 0.1.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1653](https://github.com/jdx/mise/pull/1653)
+
+## [2024.2.11](https://github.com/jdx/mise/compare/v2024.2.10..v2024.2.11) - 2024-02-10
 
 ### 🔍 Other Changes
 
@@ -560,7 +541,16 @@
 - add usage to CI by [@jdx](https://github.com/jdx) in [0bc48ed](https://github.com/jdx/mise/commit/0bc48eddb7ca38f1e13bcbf2286d4e01041a9fc8)
 - add usage to CI by [@jdx](https://github.com/jdx) in [4eba7c0](https://github.com/jdx/mise/commit/4eba7c026baa52055d5b5925bb9e5acf37f209af)
 
+### 📦️ Dependency Updates
+
+- update rust crate indicatif to 0.17.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1651](https://github.com/jdx/mise/pull/1651)
+
 ## [2024.2.10](https://github.com/jdx/mise/compare/v2024.2.9..v2024.2.10) - 2024-02-10
+
+### 🔍 Other Changes
+
+- usage by [@jdx](https://github.com/jdx) in [#1652](https://github.com/jdx/mise/pull/1652)
+- cargo up by [@jdx](https://github.com/jdx) in [4292537](https://github.com/jdx/mise/commit/42925377ba5b06d9d9f5402fca3b197b60acda82)
 
 ### 📦️ Dependency Updates
 
@@ -571,11 +561,6 @@
 - update rust crate either to 1.10.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1649](https://github.com/jdx/mise/pull/1649)
 - update rust crate toml to 0.8.10 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1648](https://github.com/jdx/mise/pull/1648)
 - update rust crate toml_edit to 0.22.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1650](https://github.com/jdx/mise/pull/1650)
-
-### 🔍 Other Changes
-
-- usage by [@jdx](https://github.com/jdx) in [#1652](https://github.com/jdx/mise/pull/1652)
-- cargo up by [@jdx](https://github.com/jdx) in [4292537](https://github.com/jdx/mise/commit/42925377ba5b06d9d9f5402fca3b197b60acda82)
 
 ## [2024.2.9](https://github.com/jdx/mise/compare/v2024.2.8..v2024.2.9) - 2024-02-09
 
@@ -589,16 +574,16 @@
 
 - fix support for tera templates in tool version strings by [@jdx](https://github.com/jdx) in [#1643](https://github.com/jdx/mise/pull/1643)
 
+### 📚 Documentation
+
+- docs by [@jdx](https://github.com/jdx) in [e291cc3](https://github.com/jdx/mise/commit/e291cc3802d027d9738b5060d9c68be8b20269e3)
+
 ### 🔍 Other Changes
 
 - ignore non-executable tasks by [@jdx](https://github.com/jdx) in [#1642](https://github.com/jdx/mise/pull/1642)
 - save space by [@jdx](https://github.com/jdx) in [638a426](https://github.com/jdx/mise/commit/638a426e636d65f83f7cd1e415c8aba2a71fe562)
 - GOROOT/GOBIN/GOPATH changes by [@jdx](https://github.com/jdx) in [#1641](https://github.com/jdx/mise/pull/1641)
 - save space by [@jdx](https://github.com/jdx) in [0c59c59](https://github.com/jdx/mise/commit/0c59c5980987f300ef6f3468c9a4d7cead2e1995)
-
-### 📚 Documentation
-
-- docs by [@jdx](https://github.com/jdx) in [e291cc3](https://github.com/jdx/mise/commit/e291cc3802d027d9738b5060d9c68be8b20269e3)
 
 ## [2024.2.7](https://github.com/jdx/mise/compare/v2024.2.6..v2024.2.7) - 2024-02-08
 
@@ -628,6 +613,17 @@
 
 - fix lint issues in rust 1.77.0-beta.1 by [@jdx](https://github.com/jdx) in [cb9ab2d](https://github.com/jdx/mise/commit/cb9ab2de6c6d99cb747a3ef1b90dc2e4e84d0a0a)
 
+### 📚 Documentation
+
+- add some info by [@jdx](https://github.com/jdx) in [#1614](https://github.com/jdx/mise/pull/1614)
+- cli help by [@jdx](https://github.com/jdx) in [6a004a7](https://github.com/jdx/mise/commit/6a004a723d93cc3a253321ab9b83058dea6c6c89)
+
+### 🔍 Other Changes
+
+- use serde to parse tools by [@jdx](https://github.com/jdx) in [#1599](https://github.com/jdx/mise/pull/1599)
+- support "false" env vars by [@jdx](https://github.com/jdx) in [#1603](https://github.com/jdx/mise/pull/1603)
+- add dotenv paths to watch files by [@jdx](https://github.com/jdx) in [#1615](https://github.com/jdx/mise/pull/1615)
+
 ### 📦️ Dependency Updates
 
 - update rust crate itertools to 0.12.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1604](https://github.com/jdx/mise/pull/1604)
@@ -637,17 +633,6 @@
 - update peter-evans/create-pull-request action to v6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1611](https://github.com/jdx/mise/pull/1611)
 - update rust crate serde_json to 1.0.113 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1607](https://github.com/jdx/mise/pull/1607)
 - update rust crate reqwest to 0.11.24 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1605](https://github.com/jdx/mise/pull/1605)
-
-### 🔍 Other Changes
-
-- use serde to parse tools by [@jdx](https://github.com/jdx) in [#1599](https://github.com/jdx/mise/pull/1599)
-- support "false" env vars by [@jdx](https://github.com/jdx) in [#1603](https://github.com/jdx/mise/pull/1603)
-- add dotenv paths to watch files by [@jdx](https://github.com/jdx) in [#1615](https://github.com/jdx/mise/pull/1615)
-
-### 📚 Documentation
-
-- add some info by [@jdx](https://github.com/jdx) in [#1614](https://github.com/jdx/mise/pull/1614)
-- cli help by [@jdx](https://github.com/jdx) in [6a004a7](https://github.com/jdx/mise/commit/6a004a723d93cc3a253321ab9b83058dea6c6c89)
 
 ## [2024.2.4](https://github.com/jdx/mise/compare/v2024.2.3..v2024.2.4) - 2024-02-03
 
@@ -693,22 +678,19 @@
 
 - fixed ctrlc handler by [@jdx](https://github.com/jdx) in [#1584](https://github.com/jdx/mise/pull/1584)
 
+### 📚 Documentation
+
+- add "dr" alias by [@jdx](https://github.com/jdx) in [67e9e30](https://github.com/jdx/mise/commit/67e9e302c979ca16e8e1160e3a7123f08dd1ab82)
+
 ### 🔍 Other Changes
 
+- use m1 macs by [@jdx](https://github.com/jdx) in [98a6d1f](https://github.com/jdx/mise/commit/98a6d1f2441a8fb839f65a5a66d7053bdffef36b)
 - add env.mise.source to schame by [@sirenkovladd](https://github.com/sirenkovladd) in [#1578](https://github.com/jdx/mise/pull/1578)
 - improve set/ls commands by [@jdx](https://github.com/jdx) in [#1579](https://github.com/jdx/mise/pull/1579)
 - Update README.md by [@jdx](https://github.com/jdx) in [3412fa1](https://github.com/jdx/mise/commit/3412fa19e40ca66c4a1811a226b29804ed1f4d3b)
 - added mise.run by [@jdx](https://github.com/jdx) in [9ab7159](https://github.com/jdx/mise/commit/9ab71597c6c3cda0ce500fe9174263ed0c940d44)
 - use a bodged loop to handle go forge submodules by [@endigma](https://github.com/endigma) in [#1583](https://github.com/jdx/mise/pull/1583)
 - Additional arch install by [@tlockney](https://github.com/tlockney) in [#1562](https://github.com/jdx/mise/pull/1562)
-
-### 📚 Documentation
-
-- add "dr" alias by [@jdx](https://github.com/jdx) in [67e9e30](https://github.com/jdx/mise/commit/67e9e302c979ca16e8e1160e3a7123f08dd1ab82)
-
-### ⚙️ Miscellaneous Tasks
-
-- use m1 macs by [@jdx](https://github.com/jdx) in [98a6d1f](https://github.com/jdx/mise/commit/98a6d1f2441a8fb839f65a5a66d7053bdffef36b)
 
 ### New Contributors
 
@@ -725,13 +707,6 @@
 
 - **(tasks)** prevent dependency cycles by [@Ajpantuso](https://github.com/Ajpantuso) in [#1575](https://github.com/jdx/mise/pull/1575)
 
-### 🔍 Other Changes
-
-- tag version in docker by [@jdx](https://github.com/jdx) in [fda1be6](https://github.com/jdx/mise/commit/fda1be6c61a23361606ce9e87c10d92b5f619344)
-- refactor to use BTreeMap instead of sorting by [@jdx](https://github.com/jdx) in [438e6a4](https://github.com/jdx/mise/commit/438e6a4dec10e17b0cffca1d921acedf7d6db324)
-- make missing tool warning more granular by [@jdx](https://github.com/jdx) in [#1577](https://github.com/jdx/mise/pull/1577)
-- default --quiet to error level by [@jdx](https://github.com/jdx) in [50c1468](https://github.com/jdx/mise/commit/50c146802aaf4f5f0046ccac620712a5338b1860)
-
 ### 🚜 Refactor
 
 - refactor task_config by [@jdx](https://github.com/jdx) in [7568969](https://github.com/jdx/mise/commit/7568969f281a428c07144d79643b31699b068c54)
@@ -745,9 +720,13 @@
 - fix test runner by [@jdx](https://github.com/jdx) in [779c484](https://github.com/jdx/mise/commit/779c48491dfc223c2a7c8c80b8396ba9050ec54d)
 - fix dev test by [@jdx](https://github.com/jdx) in [b92566f](https://github.com/jdx/mise/commit/b92566ffc2ccf2336fafddff3bb5dd62536b1f5f)
 
-### ⚙️ Miscellaneous Tasks
+### 🔍 Other Changes
 
+- tag version in docker by [@jdx](https://github.com/jdx) in [fda1be6](https://github.com/jdx/mise/commit/fda1be6c61a23361606ce9e87c10d92b5f619344)
+- refactor to use BTreeMap instead of sorting by [@jdx](https://github.com/jdx) in [438e6a4](https://github.com/jdx/mise/commit/438e6a4dec10e17b0cffca1d921acedf7d6db324)
 - skip checkout for homebrew bump by [@jdx](https://github.com/jdx) in [de5e5b6](https://github.com/jdx/mise/commit/de5e5b6b33063e577f53ceb8f8de14b5035c1c4d)
+- make missing tool warning more granular by [@jdx](https://github.com/jdx) in [#1577](https://github.com/jdx/mise/pull/1577)
+- default --quiet to error level by [@jdx](https://github.com/jdx) in [50c1468](https://github.com/jdx/mise/commit/50c146802aaf4f5f0046ccac620712a5338b1860)
 
 ## [2024.1.35](https://github.com/jdx/mise/compare/v2024.1.34..v2024.1.35) - 2024-01-31
 
@@ -795,14 +774,6 @@
 - properly handle executable shims when getting diffs by [@Ajpantuso](https://github.com/Ajpantuso) in [#1545](https://github.com/jdx/mise/pull/1545)
 - fix bash not_found handler by [@jdx](https://github.com/jdx) in [#1558](https://github.com/jdx/mise/pull/1558)
 
-### 📦️ Dependency Updates
-
-- update rust crate serde_json to 1.0.112 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1542](https://github.com/jdx/mise/pull/1542)
-- update serde monorepo to 1.0.196 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1543](https://github.com/jdx/mise/pull/1543)
-- update rust crate strum to 0.26.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1546](https://github.com/jdx/mise/pull/1546)
-- update rust crate strum to 0.26.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1547](https://github.com/jdx/mise/pull/1547)
-- update rust crate indexmap to 2.2.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1548](https://github.com/jdx/mise/pull/1548)
-
 ### 🔍 Other Changes
 
 - updated indexmap by [@jdx](https://github.com/jdx) in [d7cb481](https://github.com/jdx/mise/commit/d7cb4816e9165cde5ac715126a004f924898af0f)
@@ -814,6 +785,14 @@
 - only show precompiled warning if going to use precompiled by [@jdx](https://github.com/jdx) in [74fd185](https://github.com/jdx/mise/commit/74fd1852bef8244f2cb4c51b58f11116d10d0c11)
 - fix linux precompiled by [@jdx](https://github.com/jdx) in [#1559](https://github.com/jdx/mise/pull/1559)
 - clean up e2e tests by [@jdx](https://github.com/jdx) in [2660406](https://github.com/jdx/mise/commit/2660406a4744e789ab39a58e1732f880dcd26b4d)
+
+### 📦️ Dependency Updates
+
+- update rust crate serde_json to 1.0.112 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1542](https://github.com/jdx/mise/pull/1542)
+- update serde monorepo to 1.0.196 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1543](https://github.com/jdx/mise/pull/1543)
+- update rust crate strum to 0.26.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1546](https://github.com/jdx/mise/pull/1546)
+- update rust crate strum to 0.26.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1547](https://github.com/jdx/mise/pull/1547)
+- update rust crate indexmap to 2.2.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1548](https://github.com/jdx/mise/pull/1548)
 
 ## [2024.1.30](https://github.com/jdx/mise/compare/v2024.1.29..v2024.1.30) - 2024-01-27
 
@@ -834,15 +813,15 @@
 
 ## [2024.1.28](https://github.com/jdx/mise/compare/v2024.1.27..v2024.1.28) - 2024-01-27
 
-### 📦️ Dependency Updates
-
-- update rust crate chrono to 0.4.33 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1539](https://github.com/jdx/mise/pull/1539)
-- update rust crate clap_complete to 4.4.9 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1540](https://github.com/jdx/mise/pull/1540)
-
 ### 🔍 Other Changes
 
 - added `env._.source` feature by [@jdx](https://github.com/jdx) in [#1538](https://github.com/jdx/mise/pull/1538)
 - force update alpine by [@jdx](https://github.com/jdx) in [633c3ff](https://github.com/jdx/mise/commit/633c3ffe139c1201f20ce0e7145cb361d547a39a)
+
+### 📦️ Dependency Updates
+
+- update rust crate chrono to 0.4.33 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1539](https://github.com/jdx/mise/pull/1539)
+- update rust crate clap_complete to 4.4.9 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1540](https://github.com/jdx/mise/pull/1540)
 
 ## [2024.1.27](https://github.com/jdx/mise/compare/v2024.1.26..v2024.1.27) - 2024-01-26
 
@@ -855,6 +834,10 @@
 
 - fix global config with asdf_compat by [@jdx](https://github.com/jdx) in [#1534](https://github.com/jdx/mise/pull/1534)
 
+### 📚 Documentation
+
+- display missing/extra shims by [@jdx](https://github.com/jdx) in [#1529](https://github.com/jdx/mise/pull/1529)
+
 ### 🔍 Other Changes
 
 - pass signals to tasks by [@jdx](https://github.com/jdx) in [#1527](https://github.com/jdx/mise/pull/1527)
@@ -862,16 +845,16 @@
 - resolve env vars in order by [@jdx](https://github.com/jdx) in [#1519](https://github.com/jdx/mise/pull/1519)
 - parse alias + plugins with serde by [@jdx](https://github.com/jdx) in [#1537](https://github.com/jdx/mise/pull/1537)
 
-### 📚 Documentation
-
-- display missing/extra shims by [@jdx](https://github.com/jdx) in [#1529](https://github.com/jdx/mise/pull/1529)
-
 ## [2024.1.26](https://github.com/jdx/mise/compare/v2024.1.25..v2024.1.26) - 2024-01-25
 
 ### 🚀 Features
 
 - **(doctor)** identify missing/extra shims by [@Ajpantuso](https://github.com/Ajpantuso) in [#1524](https://github.com/jdx/mise/pull/1524)
 - **(tasks)** infer bash task topics from folder structure by [@Ajpantuso](https://github.com/Ajpantuso) in [#1520](https://github.com/jdx/mise/pull/1520)
+
+### 🚜 Refactor
+
+- env parsing by [@jdx](https://github.com/jdx) in [#1515](https://github.com/jdx/mise/pull/1515)
 
 ### 🔍 Other Changes
 
@@ -881,10 +864,6 @@
 - sort env vars coming back from exec-env by [@jdx](https://github.com/jdx) in [#1518](https://github.com/jdx/mise/pull/1518)
 - order flags in docs by [@jdx](https://github.com/jdx) in [1018b56](https://github.com/jdx/mise/commit/1018b5622c3bda4d0d9fa36b4fa9c1143aabd676)
 - demand 1.0.0 by [@jdx](https://github.com/jdx) in [c97bb79](https://github.com/jdx/mise/commit/c97bb7993aa9432ad38879cdc0ab17f251715feb)
-
-### 🚜 Refactor
-
-- env parsing by [@jdx](https://github.com/jdx) in [#1515](https://github.com/jdx/mise/pull/1515)
 
 ## [2024.1.25](https://github.com/jdx/mise/compare/v2024.1.24..v2024.1.25) - 2024-01-24
 
@@ -899,16 +878,16 @@
 - **(tasks)** prevent implicit globbing of sources/outputs by [@Ajpantuso](https://github.com/Ajpantuso) in [#1509](https://github.com/jdx/mise/pull/1509)
 - fix release script by [@jdx](https://github.com/jdx) in [59498ea](https://github.com/jdx/mise/commit/59498ea5a312507535d139957bac90fad2d96ebf)
 
-### 📦️ Dependency Updates
-
-- update rust crate regex to 1.10.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1496](https://github.com/jdx/mise/pull/1496)
-
 ### 🔍 Other Changes
 
 - updated clap_complete by [@jdx](https://github.com/jdx) in [4034674](https://github.com/jdx/mise/commit/4034674436f786691e767c6ac09921b06e968a86)
 - allow cargo-binstall from mise itself by [@jdx](https://github.com/jdx) in [#1507](https://github.com/jdx/mise/pull/1507)
 - Delete lefthook.yml by [@jdx](https://github.com/jdx) in [a756db4](https://github.com/jdx/mise/commit/a756db4a34afee4d6ce0fcfea4bc016025d1d188)
 - turn back on `cargo update` on release by [@jdx](https://github.com/jdx) in [51f269a](https://github.com/jdx/mise/commit/51f269a8d07cf1f34f0d237b17b493986aaa864d)
+
+### 📦️ Dependency Updates
+
+- update rust crate regex to 1.10.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1496](https://github.com/jdx/mise/pull/1496)
 
 ### New Contributors
 
@@ -920,12 +899,6 @@
 
 - fix cwd error by [@jdx](https://github.com/jdx) in [1c0bc12](https://github.com/jdx/mise/commit/1c0bc1236fce943ed9b012e95e3cc047cdc38ab0)
 
-### 📦️ Dependency Updates
-
-- update actions/cache action to v4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1488](https://github.com/jdx/mise/pull/1488)
-- update rust crate which to v6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1489](https://github.com/jdx/mise/pull/1489)
-- update rust crate which to v6 by [@jdx](https://github.com/jdx) in [#1490](https://github.com/jdx/mise/pull/1490)
-
 ### 🔍 Other Changes
 
 - bump demand by [@jdx](https://github.com/jdx) in [5231179](https://github.com/jdx/mise/commit/523117975bbb9c3211f0f438f55d1d7dc392f8b2)
@@ -934,6 +907,12 @@
 - use `sort -r` instead of `tac` by [@jdx](https://github.com/jdx) in [#1486](https://github.com/jdx/mise/pull/1486)
 - Update README.md by [@jdx](https://github.com/jdx) in [f3291d1](https://github.com/jdx/mise/commit/f3291d15f94c0a0cc602c01d5b7b6ef7c3cb60bf)
 - fix conflicts by [@jdx](https://github.com/jdx) in [729de0c](https://github.com/jdx/mise/commit/729de0cb6c27646e30ee7be99d2f478f3431258c)
+
+### 📦️ Dependency Updates
+
+- update actions/cache action to v4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1488](https://github.com/jdx/mise/pull/1488)
+- update rust crate which to v6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1489](https://github.com/jdx/mise/pull/1489)
+- update rust crate which to v6 by [@jdx](https://github.com/jdx) in [#1490](https://github.com/jdx/mise/pull/1490)
 
 ## [2024.1.23](https://github.com/jdx/mise/compare/v2024.1.22..v2024.1.23) - 2024-01-18
 
@@ -995,9 +974,6 @@
 ### 🔍 Other Changes
 
 - enable stdin under interleaved by [@jdx](https://github.com/jdx) in [b6dfb31](https://github.com/jdx/mise/commit/b6dfb311e412e119e137186d6143644d018a6cfc)
-
-### ⚙️ Miscellaneous Tasks
-
 - re-enable standalone test by [@jdx](https://github.com/jdx) in [7e4e79b](https://github.com/jdx/mise/commit/7e4e79bcdcc541027bc3ea2fccc11fb0f0c07a5d)
 
 ## [2024.1.19](https://github.com/jdx/mise/compare/v2024.1.18..v2024.1.19) - 2024-01-13
@@ -1005,15 +981,6 @@
 ### 🐛 Bug Fixes
 
 - fix loading npm from mise by [@jdx](https://github.com/jdx) in [#1453](https://github.com/jdx/mise/pull/1453)
-
-### 🔍 Other Changes
-
-- Update nushell.rs - Add explicit spread by [@bnheise](https://github.com/bnheise) in [#1441](https://github.com/jdx/mise/pull/1441)
-- allow using "env._.file|env._.path" instead of "env.mise.file|env.mise.path" by [@jdx](https://github.com/jdx) in [cf93693](https://github.com/jdx/mise/commit/cf936931201d6597ad556bd17556d47dc3d125c6)
-- added "forge" infra by [@jdx](https://github.com/jdx) in [#1450](https://github.com/jdx/mise/pull/1450)
-- added support for installing directly from npm by [@jdx](https://github.com/jdx) in [#1452](https://github.com/jdx/mise/pull/1452)
-- testing by [@jdx](https://github.com/jdx) in [2ee66cb](https://github.com/jdx/mise/commit/2ee66cb91837fde144bf7acbb1028372c1cd7d9a)
-- skip slow cargo test if TEST_ALL is not set by [@jdx](https://github.com/jdx) in [#1455](https://github.com/jdx/mise/pull/1455)
 
 ### 🚜 Refactor
 
@@ -1025,6 +992,15 @@
 ### 📚 Documentation
 
 - document npm/cargo by [@jdx](https://github.com/jdx) in [d1e6e4b](https://github.com/jdx/mise/commit/d1e6e4b951637762d3562a89996a2bb3422c3341)
+
+### 🔍 Other Changes
+
+- Update nushell.rs - Add explicit spread by [@bnheise](https://github.com/bnheise) in [#1441](https://github.com/jdx/mise/pull/1441)
+- allow using "env._.file|env._.path" instead of "env.mise.file|env.mise.path" by [@jdx](https://github.com/jdx) in [cf93693](https://github.com/jdx/mise/commit/cf936931201d6597ad556bd17556d47dc3d125c6)
+- added "forge" infra by [@jdx](https://github.com/jdx) in [#1450](https://github.com/jdx/mise/pull/1450)
+- added support for installing directly from npm by [@jdx](https://github.com/jdx) in [#1452](https://github.com/jdx/mise/pull/1452)
+- testing by [@jdx](https://github.com/jdx) in [2ee66cb](https://github.com/jdx/mise/commit/2ee66cb91837fde144bf7acbb1028372c1cd7d9a)
+- skip slow cargo test if TEST_ALL is not set by [@jdx](https://github.com/jdx) in [#1455](https://github.com/jdx/mise/pull/1455)
 
 ### New Contributors
 
@@ -1040,6 +1016,11 @@
 
 ## [2024.1.17](https://github.com/jdx/mise/compare/v2024.1.16..v2024.1.17) - 2024-01-12
 
+### 🚜 Refactor
+
+- refactor env_var arg by [@jdx](https://github.com/jdx) in [#1443](https://github.com/jdx/mise/pull/1443)
+- refactor ToolArg by [@jdx](https://github.com/jdx) in [5b66532](https://github.com/jdx/mise/commit/5b665325e4474f3247242a2d81c860ac17b8af5f)
+
 ### 🔍 Other Changes
 
 - Fix missing ASDF_PLUGIN_PATH environment variable by [@deriamis](https://github.com/deriamis) in [#1437](https://github.com/jdx/mise/pull/1437)
@@ -1049,11 +1030,6 @@
 - use less aggressive PATH modifications by default by [@jdx](https://github.com/jdx) in [07e1921](https://github.com/jdx/mise/commit/07e19212053bdaf4ea2ca3968e3f3559d6f49668)
 - move release from justfile by [@jdx](https://github.com/jdx) in [89c9271](https://github.com/jdx/mise/commit/89c927198cfa66f332929acb9e692296dda13e2e)
 - bump local version of shfmt by [@jdx](https://github.com/jdx) in [d4be898](https://github.com/jdx/mise/commit/d4be89844aa462e199d5c7278661650c22d126da)
-
-### 🚜 Refactor
-
-- refactor env_var arg by [@jdx](https://github.com/jdx) in [#1443](https://github.com/jdx/mise/pull/1443)
-- refactor ToolArg by [@jdx](https://github.com/jdx) in [5b66532](https://github.com/jdx/mise/commit/5b665325e4474f3247242a2d81c860ac17b8af5f)
 
 ### New Contributors
 
@@ -1175,14 +1151,14 @@
 
 ## [2024.1.6](https://github.com/jdx/mise/compare/v2024.1.5..v2024.1.6) - 2024-01-04
 
+### 🧪 Testing
+
+- fixed elixir test case by [@jdx](https://github.com/jdx) in [9b596c6](https://github.com/jdx/mise/commit/9b596c6dadcf0f54b3637d10e1885281e1a1b534)
+
 ### 🔍 Other Changes
 
 - set CLICOLOR_FORCE=1 and FORCE_COLOR=1 by [@jdx](https://github.com/jdx) in [#1364](https://github.com/jdx/mise/pull/1364)
 - set --interleaved if graph is linear by [@jdx](https://github.com/jdx) in [#1365](https://github.com/jdx/mise/pull/1365)
-
-### 🧪 Testing
-
-- fixed elixir test case by [@jdx](https://github.com/jdx) in [9b596c6](https://github.com/jdx/mise/commit/9b596c6dadcf0f54b3637d10e1885281e1a1b534)
 
 ## [2024.1.5](https://github.com/jdx/mise/compare/v2024.1.4..v2024.1.5) - 2024-01-04
 
@@ -1228,12 +1204,9 @@
 
 ### 🔍 Other Changes
 
-- use ~/.local/bin/mise instead of ~/.local/share/mise/bin/mise by [@jdx](https://github.com/jdx) in [cd2045d](https://github.com/jdx/mise/commit/cd2045d793c76b9dcf7d26c567cf163a6138f408)
-
-### ⚙️ Miscellaneous Tasks
-
 - use mise docker containers by [@jdx](https://github.com/jdx) in [d5d2d39](https://github.com/jdx/mise/commit/d5d2d39aa1a44a6421dff150da42083c4247cff9)
 - skip committing docs if no changes by [@jdx](https://github.com/jdx) in [7f6545c](https://github.com/jdx/mise/commit/7f6545c2630a1f54b864903851c24e68b3da3d2f)
+- use ~/.local/bin/mise instead of ~/.local/share/mise/bin/mise by [@jdx](https://github.com/jdx) in [cd2045d](https://github.com/jdx/mise/commit/cd2045d793c76b9dcf7d26c567cf163a6138f408)
 
 ## [2024.1.2](https://github.com/jdx/mise/compare/v2024.1.1..v2024.1.2) - 2024-01-03
 
@@ -1248,6 +1221,11 @@
 - fixed email addresses by [@jdx](https://github.com/jdx) in [b5e9d3c](https://github.com/jdx/mise/commit/b5e9d3cc3a2500c932593d7931647fbc3d972708)
 - fixed crate badge by [@jdx](https://github.com/jdx) in [c4bb224](https://github.com/jdx/mise/commit/c4bb224acb197e9f67eda56a4be3c7f3c5bdcee6)
 
+### 📚 Documentation
+
+- tweak cli reference by [@jdx](https://github.com/jdx) in [ba5f610](https://github.com/jdx/mise/commit/ba5f6108b1b91952295e4871f63c559ff01c7c64)
+- fixed reading settings from config by [@jdx](https://github.com/jdx) in [a30a5f1](https://github.com/jdx/mise/commit/a30a5f104da41794aa8a2813919f046945ed9ae6)
+
 ### 🔍 Other Changes
 
 - rtx -> mise by [@jdx](https://github.com/jdx) in [9b7975e](https://github.com/jdx/mise/commit/9b7975e5cd43121d22436893acdc7dbfe36ee960)
@@ -1260,12 +1238,24 @@
 - fix MISE_ASDF_COMPAT=1 by [@jdx](https://github.com/jdx) in [#1340](https://github.com/jdx/mise/pull/1340)
 - migrate improvements by [@jdx](https://github.com/jdx) in [2c0ccf4](https://github.com/jdx/mise/commit/2c0ccf43fd23de03c25a872fe6d91f1d63c77c1a)
 
-### 📚 Documentation
-
-- tweak cli reference by [@jdx](https://github.com/jdx) in [ba5f610](https://github.com/jdx/mise/commit/ba5f6108b1b91952295e4871f63c559ff01c7c64)
-- fixed reading settings from config by [@jdx](https://github.com/jdx) in [a30a5f1](https://github.com/jdx/mise/commit/a30a5f104da41794aa8a2813919f046945ed9ae6)
-
 ## [2024.1.0] - 2024-01-02
+
+### 🔍 Other Changes
+
+- added "ev" alias by [@jdx](https://github.com/jdx) in [8d98b91](https://github.com/jdx/mise/commit/8d98b9158b6dc4d6c36332a5f52061e81cc87d91)
+- added "ev" alias by [@jdx](https://github.com/jdx) in [4bfe580](https://github.com/jdx/mise/commit/4bfe580eef8a8192f621ea729c8013ef141dacf3)
+- added RTX_ENV_FILE config by [@jdx](https://github.com/jdx) in [#1305](https://github.com/jdx/mise/pull/1305)
+- Update CONTRIBUTING.md by [@jdx](https://github.com/jdx) in [0737393](https://github.com/jdx/mise/commit/0737393b7b167fd57d168dfbf886405bb0a8cecb)
+- Configure Renovate by [@renovate[bot]](https://github.com/renovate[bot]) in [#1307](https://github.com/jdx/mise/pull/1307)
+- consistent dependency versions by [@jdx](https://github.com/jdx) in [43b37bc](https://github.com/jdx/mise/commit/43b37bc2296460e8b222ab0cbb815ac457717074)
+- ignore asdf/nodejs by [@jdx](https://github.com/jdx) in [acc9a68](https://github.com/jdx/mise/commit/acc9a6803d6d3087a847529baa7d7e341ef46cc2)
+- ignore nodenv by [@jdx](https://github.com/jdx) in [4d921c7](https://github.com/jdx/mise/commit/4d921c7608e4807ae765383253e100763d04bd75)
+- tuck away by [@jdx](https://github.com/jdx) in [4361f03](https://github.com/jdx/mise/commit/4361f0385a82da470cfe47a5044a00ca783c9ddc)
+- disable dashboard by [@jdx](https://github.com/jdx) in [2c569fc](https://github.com/jdx/mise/commit/2c569fc01a77987e6823dc749eb917f1fe5a0cf0)
+- disable auto package updates by [@jdx](https://github.com/jdx) in [e00fb1f](https://github.com/jdx/mise/commit/e00fb1fde649ecc85aa40ac8846f71316d679e54)
+- disable dashboard by [@jdx](https://github.com/jdx) in [400ac0a](https://github.com/jdx/mise/commit/400ac0a0ff64cf5a6846f662df5dc432237e87b2)
+- updated description by [@jdx](https://github.com/jdx) in [83c0ffc](https://github.com/jdx/mise/commit/83c0ffcf210c51228f82e9eb586d09a5ea7933f4)
+- rtx -> mise by [@jdx](https://github.com/jdx) in [e5897d0](https://github.com/jdx/mise/commit/e5897d097c1f90c8a263f0e685a56908e2c023da)
 
 ### 📦️ Dependency Updates
 
@@ -1280,25 +1270,5 @@
 - update mcr.microsoft.com/devcontainers/rust docker tag to v1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1323](https://github.com/jdx/mise/pull/1323)
 - update stefanzweifel/git-auto-commit-action action to v5 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1324](https://github.com/jdx/mise/pull/1324)
 - update actions/checkout action to v4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1318](https://github.com/jdx/mise/pull/1318)
-
-### 🔍 Other Changes
-
-- added "ev" alias by [@jdx](https://github.com/jdx) in [8d98b91](https://github.com/jdx/mise/commit/8d98b9158b6dc4d6c36332a5f52061e81cc87d91)
-- added "ev" alias by [@jdx](https://github.com/jdx) in [4bfe580](https://github.com/jdx/mise/commit/4bfe580eef8a8192f621ea729c8013ef141dacf3)
-- added RTX_ENV_FILE config by [@jdx](https://github.com/jdx) in [#1305](https://github.com/jdx/mise/pull/1305)
-- Update CONTRIBUTING.md by [@jdx](https://github.com/jdx) in [0737393](https://github.com/jdx/mise/commit/0737393b7b167fd57d168dfbf886405bb0a8cecb)
-- consistent dependency versions by [@jdx](https://github.com/jdx) in [43b37bc](https://github.com/jdx/mise/commit/43b37bc2296460e8b222ab0cbb815ac457717074)
-- ignore asdf/nodejs by [@jdx](https://github.com/jdx) in [acc9a68](https://github.com/jdx/mise/commit/acc9a6803d6d3087a847529baa7d7e341ef46cc2)
-- ignore nodenv by [@jdx](https://github.com/jdx) in [4d921c7](https://github.com/jdx/mise/commit/4d921c7608e4807ae765383253e100763d04bd75)
-- tuck away by [@jdx](https://github.com/jdx) in [4361f03](https://github.com/jdx/mise/commit/4361f0385a82da470cfe47a5044a00ca783c9ddc)
-- disable dashboard by [@jdx](https://github.com/jdx) in [2c569fc](https://github.com/jdx/mise/commit/2c569fc01a77987e6823dc749eb917f1fe5a0cf0)
-- disable dashboard by [@jdx](https://github.com/jdx) in [400ac0a](https://github.com/jdx/mise/commit/400ac0a0ff64cf5a6846f662df5dc432237e87b2)
-- updated description by [@jdx](https://github.com/jdx) in [83c0ffc](https://github.com/jdx/mise/commit/83c0ffcf210c51228f82e9eb586d09a5ea7933f4)
-- rtx -> mise by [@jdx](https://github.com/jdx) in [e5897d0](https://github.com/jdx/mise/commit/e5897d097c1f90c8a263f0e685a56908e2c023da)
-
-### ⚙️ Miscellaneous Tasks
-
-- Configure Renovate by [@renovate[bot]](https://github.com/renovate[bot]) in [#1307](https://github.com/jdx/mise/pull/1307)
-- disable auto package updates by [@jdx](https://github.com/jdx) in [e00fb1f](https://github.com/jdx/mise/commit/e00fb1fde649ecc85aa40ac8846f71316d679e54)
 
 <!-- generated by git-cliff -->
