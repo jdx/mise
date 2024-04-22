@@ -13,7 +13,7 @@ use serde_json::Value;
 use url::Url;
 
 #[derive(Debug)]
-pub struct BinForge {
+pub struct UbiForge {
     fa: ForgeArg,
     remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
@@ -22,9 +22,9 @@ pub struct BinForge {
 // Uses ubi for installations https://github.com/houseabsolute/ubi
 // it can be installed via mise install cargo:ubi
 // TODO: doesn't currently work when ubi installed via mise :-/
-impl Forge for BinForge {
+impl Forge for UbiForge {
     fn get_type(&self) -> ForgeType {
-        ForgeType::Bin
+        ForgeType::Ubi
     }
 
     fn fa(&self) -> &ForgeArg {
@@ -97,9 +97,9 @@ impl Forge for BinForge {
     }
 }
 
-impl BinForge {
+impl UbiForge {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Bin, &name);
+        let fa = ForgeArg::new(ForgeType::Ubi, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
