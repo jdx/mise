@@ -9,5 +9,5 @@ set -euxo pipefail
 cd "$MISE_PROJECT_ROOT" || exit 1
 echo "running test-build script"
 mkdir -p test-e2e
-echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-e2e/test-build-output.txt
-echo "ARGS: $*" >> test-e2e/test-build-output.txt
+echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" >test-e2e/test-build-output.txt
+echo "ARGS: $*" >>test-e2e/test-build-output.txt
