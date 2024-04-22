@@ -12,6 +12,7 @@ use crate::{config, env};
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     global_only: bool,
+    default_to_latest: bool,
 }
 
 impl ToolsetBuilder {
@@ -26,6 +27,11 @@ impl ToolsetBuilder {
 
     pub fn with_global_only(mut self, global_only: bool) -> Self {
         self.global_only = global_only;
+        self
+    }
+
+    pub fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
+        self.default_to_latest = default_to_latest;
         self
     }
 
@@ -93,6 +99,25 @@ impl ToolsetBuilder {
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
                     arg_ts.add_version(tvr.clone(), Default::default());
+                } else if self.default_to_latest {
+                    // TODO: see if there is a cleaner way to handle this scenario
+                    // this logic is required for `mise x` because with that specific command mise
+                    // should default to installing the "latest" version if no version is specified
+                    // in .mise.toml
+                    let versions_by_plugin = ts.list_versions_by_plugin();
+                    let set_as_latest = versions_by_plugin.iter().find(|(_ta, fa)| {
+                        !fa.iter().any(|f|
+                            // Same forget type and same forgeArg name
+                            f.forge.forge_type == arg.forge.forge_type &&
+                                f.forge.name == arg.forge.name)
+                    });
+
+                    if let Some((_ta, _fa)) = set_as_latest {
+                        arg_ts.add_version(
+                            ToolVersionRequest::new(arg.forge.clone(), "latest"),
+                            Default::default(),
+                        );
+                    }
                 }
             }
             ts.merge(arg_ts);
