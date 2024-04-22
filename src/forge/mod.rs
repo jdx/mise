@@ -30,12 +30,12 @@ use crate::{dirs, file};
 
 use self::forge_meta::ForgeMeta;
 
-mod ubi;
 mod cargo;
 mod forge_meta;
 mod go;
 mod npm;
 mod pipx;
+mod ubi;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
