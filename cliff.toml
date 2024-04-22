@@ -87,24 +87,23 @@ commit_preprocessors = [
 ]
 # regex for parsing and grouping commits
 commit_parsers = [
-    { message = '^(chore|fix)\(deps\):', group = "<!-- 10 -->📦️ Dependency Updates", scope = "" },
-    { message = '^feat', group = "<!-- 0 -->🚀 Features" },
-    { message = '^fix', group = "<!-- 1 -->🐛 Bug Fixes" },
-    { message = '^doc', group = "<!-- 3 -->📚 Documentation" },
-    { message = '^perf', group = "<!-- 4 -->⚡ Performance" },
-    { message = '^refactor', group = "<!-- 2 -->🚜 Refactor" },
-    { message = '^style', group = "<!-- 5 -->🎨 Styling" },
-    { message = '^test', group = "<!-- 6 -->🧪 Testing" },
     { message = '^chore\(release\): prepare for', skip = true },
     { message = '^chore\(pr\)', skip = true },
     { message = '^chore\(pull\)', skip = true },
     { message = '^chore: (release|Release)', skip = true },
     { message = '^Release', skip = true },
     { message = "^Merge commit", skip = true },
-    { message = '^chore|^ci', group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
-    { body = '.*security', group = "<!-- 8 -->🛡️ Security" },
-    { message = '^revert', group = "<!-- 9 -->◀️ Revert" },
-    { message = '.', group = "<!-- 11 -->🔍 Other Changes" },
+    { body = '.*security', group = "<!-- 08 -->🛡️ Security" },
+    { message = '^(chore|fix)\(deps\):', group = "<!-- 99 -->📦️ Dependency Updates", scope = "" },
+    { message = '^feat', group = "<!-- 00 -->🚀 Features" },
+    { message = '^fix', group = "<!-- 01 -->🐛 Bug Fixes" },
+    { message = '^refactor', group = "<!-- 02 -->🚜 Refactor" },
+    { message = '^doc', group = "<!-- 03 -->📚 Documentation" },
+    { message = '^style', group = "<!-- 05 -->🎨 Styling" },
+    { message = '^perf', group = "<!-- 04 -->⚡ Performance" },
+    { message = '^test', group = "<!-- 06 -->🧪 Testing" },
+    { message = '^revert', group = "<!-- 09 -->◀️ Revert" },
+    { message = '.', group = "<!-- 10 -->🔍 Other Changes" },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = false
