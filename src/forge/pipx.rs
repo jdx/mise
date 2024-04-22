@@ -29,15 +29,16 @@ impl Forge for PIPXForge {
         Ok(vec!["pipx".into()])
     }
 
-    // NOTE: there isn't as sensible a 'list versions' unless we assume it's reading
-    // from a git repo, in which case it could fetch git refs and read tags for semvar tags
+    /*
+     * Pipx doesn't have a remote version concept across its backends, so
+     * we return a single version.
+     */
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| Ok(vec!["latest".to_string()]))
             .cloned()
     }
 
-    // NOTE: see note above about irrelevance of a list_stable_version
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
@@ -53,8 +54,6 @@ impl Forge for PIPXForge {
         settings.ensure_experimental("pipx backend")?;
         let project_name = transform_project_name(ctx, self.name());
 
-        // Get environmental variable PATH and append to it
-        // Path is listed correctly /Users/zph/.local/share/mise/installs/pipx-zph-runbook/latest/bin
         CmdLineRunner::new("pipx")
             .arg("install")
             .arg(project_name)
@@ -82,18 +81,14 @@ impl PIPXForge {
     }
 }
 
-// Used to normalize name because when `latest` the name should not include a ref for pipx
-// eg when passing user/project it should create git+https://github.com/user/project
-// NOT git+https://github.com/user/project@latest because pipx cannot handle that directive
-// If given a non-shorthand we treat it as intentional and do not transform it
 /*
  * Supports the following formats
  * - git+https://github.com/psf/black.git@24.2.0 => github longhand and version
  * - psf/black@24.2.0 => github shorthand and version
  * - black@24.2.0 => pypi shorthand and version
+ * - black => pypi shorthand and latest
  */
 fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
-    debug!("transform_project_name: name={} ctx={:?}", name, ctx.tv);
     let parts: Vec<&str> = name.split('/').collect();
     match (
         name,
@@ -107,7 +102,7 @@ fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
         (_, true, _, v) => format!("{}@{}", name, v),
         (".", false, _, _) => name.to_string(),
         (_, false, _, "latest") => name.to_string(),
-        // Treat this as a pypi package@version
+        // Treat this as a pypi package@version and translate the version syntax
         (_, false, 1, v) => format!("{}=={}", name, v),
         _ => name.to_string(),
     }
