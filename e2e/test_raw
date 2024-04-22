@@ -2,12 +2,12 @@
 set -euo pipefail
 
 assert() {
-	local actual
-	actual="$($1)"
-	if [[ "$actual" != "$2" ]]; then
-		echo "Expected '$2' but got '$actual'"
-		exit 1
-	fi
+  local actual
+  actual="$($1)"
+  if [[ "$actual" != "$2" ]]; then
+    echo "Expected '$2' but got '$actual'"
+    exit 1
+  fi
 }
 
 mise i --raw -f tiny@1 tiny@2 tiny@3

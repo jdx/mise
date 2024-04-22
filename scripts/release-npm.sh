@@ -2,52 +2,52 @@
 set -euxo pipefail
 
 error() {
-	echo "$@" >&2
-	exit 1
+  echo "$@" >&2
+  exit 1
 }
 
 if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
-	echo "NODE_AUTH_TOKEN must be set" >&2
-	exit 0
+  echo "NODE_AUTH_TOKEN must be set" >&2
+  exit 0
 fi
 
 mkdir -p "$RELEASE_DIR/npm"
 
 dist_tag_from_version() {
-	IFS="-" read -r -a version_split <<<"$1"
-	IFS="." read -r -a version_split <<<"${version_split[1]:-latest}"
-	echo "${version_split[0]}"
+  IFS="-" read -r -a version_split <<<"$1"
+  IFS="." read -r -a version_split <<<"${version_split[1]:-latest}"
+  echo "${version_split[0]}"
 }
 dist_tag="$(dist_tag_from_version "$MISE_VERSION")"
 
 platforms=(
-	linux-x64
-	linux-x64-musl
-	linux-arm64
-	linux-arm64-musl
-	linux-armv6
-	linux-armv6-musl
-	linux-armv7
-	linux-armv7-musl
-	macos-x64
-	macos-arm64
+  linux-x64
+  linux-x64-musl
+  linux-arm64
+  linux-arm64-musl
+  linux-armv6
+  linux-armv6-musl
+  linux-armv7
+  linux-armv7-musl
+  macos-x64
+  macos-arm64
 )
 for platform in "${platforms[@]}"; do
-	# shellcheck disable=SC2206
-	platform_split=(${platform//-/ })
-	os="${platform_split[0]}"
-	arch="${platform_split[1]}"
+  # shellcheck disable=SC2206
+  platform_split=(${platform//-/ })
+  os="${platform_split[0]}"
+  arch="${platform_split[1]}"
 
-	if [[ "$os" == "macos" ]]; then
-		os="darwin"
-	fi
+  if [[ "$os" == "macos" ]]; then
+    os="darwin"
+  fi
 
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
-	tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
-	rm -rf "$RELEASE_DIR/npm"
-	mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
-	cat <<EOF >"$RELEASE_DIR/npm/package.json"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+  tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
+  rm -rf "$RELEASE_DIR/npm"
+  mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
+  cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "$NPM_PREFIX-$os-$arch",
   "version": "$MISE_VERSION",
@@ -68,16 +68,16 @@ for platform in "${platforms[@]}"; do
   "cpu": "$arch"
 }
 EOF
-	pushd "$RELEASE_DIR/npm"
-	tree || true
-	if [ "$DRY_RUN" != "0" ]; then
-		echo DRY_RUN
-		echo npm publish --access public --tag "$dist_tag"
-		echo DRY_RUN
-	else
-		npm publish --access public --tag "$dist_tag" || true
-	fi
-	popd
+  pushd "$RELEASE_DIR/npm"
+  tree || true
+  if [ "$DRY_RUN" != "0" ]; then
+    echo DRY_RUN
+    echo npm publish --access public --tag "$dist_tag"
+    echo DRY_RUN
+  else
+    npm publish --access public --tag "$dist_tag" || true
+  fi
+  popd
 done
 
 cat <<EOF >"$RELEASE_DIR/npm/installArchSpecificPackage.js"
@@ -168,10 +168,10 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 EOF
 pushd "$RELEASE_DIR/npm"
 if [ "$DRY_RUN" != "0" ]; then
-	echo DRY_RUN
-	echo npm publish --access public --tag "$dist_tag"
-	echo DRY_RUN
+  echo DRY_RUN
+  echo npm publish --access public --tag "$dist_tag"
+  echo DRY_RUN
 else
-	npm publish --access public --tag "$dist_tag" || true
+  npm publish --access public --tag "$dist_tag" || true
 fi
 popd

@@ -12,13 +12,13 @@ export PATH="${BIN_BACKEND_TEMP_DIR}:${PATH}"
 
 # Install ubi as the dependency for bin backend
 if ! command -v ubi >/dev/null 2>&1; then
-	curl --silent --location \
-		https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh |
-		TARGET="${BIN_BACKEND_TEMP_DIR}" sh
+  curl --silent --location \
+    https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh |
+    TARGET="${BIN_BACKEND_TEMP_DIR}" sh
 fi
 
 uninstall_ubi() {
-	rm -rf "$BIN_BACKEND_TEMP_DIR"
+  rm -rf "$BIN_BACKEND_TEMP_DIR"
 }
 
 trap uninstall_ubi EXIT

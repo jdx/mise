@@ -6,7 +6,7 @@ MISE_VERSION=$(./scripts/get-version.sh)
 SHA512=$(curl -fsSL "https://github.com/jdx/mise/archive/$MISE_VERSION.tar.gz" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur ]; then
-	git clone ssh://aur@aur.archlinux.org/mise.git aur
+  git clone ssh://aur@aur.archlinux.org/mise.git aur
 fi
 git -C aur pull
 
@@ -79,11 +79,11 @@ git config user.name mise-en-dev
 git config user.email 123107610+mise-en-dev@users.noreply.github.com
 git add .SRCINFO PKGBUILD
 if git diff-index --quiet HEAD --; then
-	echo "No changes to PKGBUILD or .SRCINFO"
-	exit 0
+  echo "No changes to PKGBUILD or .SRCINFO"
+  exit 0
 fi
 git diff --cached
 git commit -m "mise ${MISE_VERSION#v}"
 if [ "$DRY_RUN" == 0 ]; then
-	git push
+  git push
 fi
