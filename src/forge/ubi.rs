@@ -68,7 +68,7 @@ impl Forge for UbiForge {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::get();
-        settings.ensure_experimental("bin backend")?;
+        settings.ensure_experimental("ubi backend")?;
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let matching_version = self
             .list_remote_versions()?
