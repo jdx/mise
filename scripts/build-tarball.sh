@@ -16,10 +16,10 @@ for arg in "$@"; do
     continue
   fi
   case "$arg" in
-  --target)
-    next_target=1
-    ;;
-  *) ;;
+    --target)
+      next_target=1
+      ;;
+    *) ;;
 
   esac
 done
@@ -28,48 +28,48 @@ RUST_TRIPLE=${TARGET:-$(rustc -vV | grep ^host: | cut -d ' ' -f2)}
 #region os/arch
 get_os() {
   case "$RUST_TRIPLE" in
-  *-apple-darwin*)
-    echo "macos"
-    ;;
-  *-linux-*)
-    echo "linux"
-    ;;
-  *)
-    error "unsupported OS: $RUST_TRIPLE"
-    ;;
+    *-apple-darwin*)
+      echo "macos"
+      ;;
+    *-linux-*)
+      echo "linux"
+      ;;
+    *)
+      error "unsupported OS: $RUST_TRIPLE"
+      ;;
   esac
 }
 
 get_arch() {
   case "$RUST_TRIPLE" in
-  aarch64-*)
-    echo "arm64"
-    ;;
-  arm-*)
-    echo "armv6"
-    ;;
-  armv7-*)
-    echo "armv7"
-    ;;
-  x86_64-*)
-    echo "x64"
-    ;;
-  universal2-*)
-    echo "universal"
-    ;;
-  *)
-    error "unsupported arch: $RUST_TRIPLE"
-    ;;
+    aarch64-*)
+      echo "arm64"
+      ;;
+    arm-*)
+      echo "armv6"
+      ;;
+    armv7-*)
+      echo "armv7"
+      ;;
+    x86_64-*)
+      echo "x64"
+      ;;
+    universal2-*)
+      echo "universal"
+      ;;
+    *)
+      error "unsupported arch: $RUST_TRIPLE"
+      ;;
   esac
 }
 get_suffix() {
   case "$RUST_TRIPLE" in
-  *-musl | *-musleabi | *-musleabihf)
-    echo "-musl"
-    ;;
-  *)
-    echo ""
-    ;;
+    *-musl | *-musleabi | *-musleabihf)
+      echo "-musl"
+      ;;
+    *)
+      echo ""
+      ;;
   esac
 }
 #endregion
