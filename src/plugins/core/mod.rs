@@ -44,11 +44,11 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
-        Arc::new(ZigPlugin::new()),
     ];
     let settings = Settings::get();
     if settings.experimental {
         plugins.push(Arc::new(ErlangPlugin::new()));
+        plugins.push(Arc::new(ZigPlugin::new()));
     }
     plugins
 });
