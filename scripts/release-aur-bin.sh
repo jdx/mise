@@ -8,7 +8,7 @@ TAR_GZ_URI="https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MI
 SHA512=$(curl -fsSL "$TAR_GZ_URI" | sha512sum | awk '{print $1}')
 
 if [ ! -d aur-bin ]; then
-	git clone ssh://aur@aur.archlinux.org/mise-bin.git aur-bin
+  git clone ssh://aur@aur.archlinux.org/mise-bin.git aur-bin
 fi
 git -C aur-bin pull
 
@@ -74,11 +74,11 @@ git config user.name mise-en-dev
 git config user.email 123107610+mise-en-dev@users.noreply.github.com
 git add .SRCINFO PKGBUILD
 if git diff-index --quiet HEAD --; then
-	echo "No changes to PKGBUILD or .SRCINFO"
-	exit 0
+  echo "No changes to PKGBUILD or .SRCINFO"
+  exit 0
 fi
 git diff --cached
 git commit -m "mise ${MISE_VERSION#v}"
 if [[ "$DRY_RUN" == 0 ]]; then
-	git push
+  git push
 fi

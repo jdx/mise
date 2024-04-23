@@ -6,8 +6,8 @@ source "$(dirname "$0")/assert.sh"
 export MISE_EXPERIMENTAL=1
 
 if [[ "${MISE_DISABLE_TOOLS:-}" = *deno* ]]; then
-	echo "Skipping deno tests"
-	exit 0
+  echo "Skipping deno tests"
+  exit 0
 fi
 
 cat <<EOF >.deno-version

@@ -2,22 +2,22 @@
 set -euo pipefail
 
 assert_not_contains() {
-	actual="$($1)"
-	actual="${actual%$'\n'}"
-	expected="${2%$'\n'}"
-	if [[ "$actual" == *"$expected"* ]]; then
-		echo "assertion failed, expected not '$expected', got '$actual'"
-		exit 1
-	fi
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" == *"$expected"* ]]; then
+    echo "assertion failed, expected not '$expected', got '$actual'"
+    exit 1
+  fi
 }
 assert_contains() {
-	actual="$($1)"
-	actual="${actual%$'\n'}"
-	expected="${2%$'\n'}"
-	if [[ "$actual" != *"$expected"* ]]; then
-		echo "assertion failed, expected '$expected', got '$actual'"
-		exit 1
-	fi
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != *"$expected"* ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
 }
 
 # install/uninstall multiple

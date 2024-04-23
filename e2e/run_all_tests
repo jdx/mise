@@ -6,22 +6,22 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FILES=$(find e2e -name 'test_*' -type f -not -path "*/.mise/*" | sort)
 test_count=0
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-	{
-		echo "| Test | Duration | Result |"
-		echo "| ---- | -------- | ------ |"
-	} >>"$GITHUB_STEP_SUMMARY"
+  {
+    echo "| Test | Duration | Result |"
+    echo "| ---- | -------- | ------ |"
+  } >>"$GITHUB_STEP_SUMMARY"
 fi
 for f in $FILES; do
-	# split tests into two tranches to reduce test time
-	if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
-		char_count=${#f}
-		if [[ $((char_count % "$TEST_TRANCHE_COUNT")) -ne "$TEST_TRANCHE" ]]; then
-			continue
-		fi
-	fi
-	"$ROOT/e2e/run_test" "$f"
-	echo
-	test_count=$((test_count + 1))
+  # split tests into two tranches to reduce test time
+  if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
+    char_count=${#f}
+    if [[ $((char_count % "$TEST_TRANCHE_COUNT")) -ne "$TEST_TRANCHE" ]]; then
+      continue
+    fi
+  fi
+  "$ROOT/e2e/run_test" "$f"
+  echo
+  test_count=$((test_count + 1))
 done
 
 echo "e2e: $test_count tests passed"

@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 if [ "${TEST_ALL:-}" != 1 ]; then
-	exit
+  exit
 fi
 
 export MISE_EXPERIMENTAL=1

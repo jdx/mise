@@ -8,29 +8,29 @@ touch mise/lib/.disable-self-update
 
 tar -xvJf "dist/mise-$MISE_VERSION-linux-x64.tar.xz"
 fpm -s dir -t rpm \
-	--name mise \
-	--license MIT \
-	--version "${MISE_VERSION#v*}" \
-	--architecture x86_64 \
-	--description "The front-end to your dev env" \
-	--url "https://github.com/jdx/mise" \
-	--maintainer "Jeff Dickey @jdx" \
-	mise/bin/mise=/usr/bin/mise \
-	mise/lib/.disable-self-update=/usr/lib/mise/.disable-self-update \
-	mise/man/man1/mise.1=/usr/share/man/man1/mise.1
+  --name mise \
+  --license MIT \
+  --version "${MISE_VERSION#v*}" \
+  --architecture x86_64 \
+  --description "The front-end to your dev env" \
+  --url "https://github.com/jdx/mise" \
+  --maintainer "Jeff Dickey @jdx" \
+  mise/bin/mise=/usr/bin/mise \
+  mise/lib/.disable-self-update=/usr/lib/mise/.disable-self-update \
+  mise/man/man1/mise.1=/usr/share/man/man1/mise.1
 
 tar -xvJf "dist/mise-$MISE_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t rpm \
-	--name mise \
-	--license MIT \
-	--version "${MISE_VERSION#v*}" \
-	--architecture aarch64 \
-	--description "The front-end to your dev env" \
-	--url "https://github.com/jdx/mise" \
-	--maintainer "Jeff Dickey @jdx" \
-	mise/bin/mise=/usr/bin/mise \
-	mise/lib/.disable-self-update=/usr/lib/mise/.disable-self-update \
-	mise/man/man1/mise.1=/usr/share/man/man1/mise.1
+  --name mise \
+  --license MIT \
+  --version "${MISE_VERSION#v*}" \
+  --architecture aarch64 \
+  --description "The front-end to your dev env" \
+  --url "https://github.com/jdx/mise" \
+  --maintainer "Jeff Dickey @jdx" \
+  mise/bin/mise=/usr/bin/mise \
+  mise/lib/.disable-self-update=/usr/lib/mise/.disable-self-update \
+  mise/man/man1/mise.1=/usr/share/man/man1/mise.1
 
 cat <<EOF >~/.rpmmacros
 %_signature gpg
