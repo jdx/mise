@@ -1,5 +1,34 @@
 # Changelog
 
+## [2024.4.8](https://github.com/jdx/mise/compare/v2024.4.7..v2024.4.8) - 2024-04-23
+
+### 🚀 Features
+
+- add periphery by [@MontakOleg](https://github.com/MontakOleg) in [7f51540](https://github.com/jdx/mise/commit/7f51540695664412dab4008b0d061bfaca5b0bc2)
+- add danger-js by [@MontakOleg](https://github.com/MontakOleg) in [6e61cf7](https://github.com/jdx/mise/commit/6e61cf7c97d03094a6ac86656b64fdeb85e84df5)
+
+### 🐛 Bug Fixes
+
+- **(exec)** default to @latest version by [@zph](https://github.com/zph) in [#1926](https://github.com/jdx/mise/pull/1926)
+- rename bin -> ubi by [@jdx](https://github.com/jdx) in [0843b78](https://github.com/jdx/mise/commit/0843b78e6ab9a3dd2965f0218760c1a3336c4ca5)
+
+### 📚 Documentation
+
+- **(changelog)** reorder changelog topics by [@jdx](https://github.com/jdx) in [#1939](https://github.com/jdx/mise/pull/1939)
+- fixed asdf-xcbeautify url by [@jdx](https://github.com/jdx) in [d4134bc](https://github.com/jdx/mise/commit/d4134bcb399a8d9da4e9670500e01d832b9a8e46)
+
+### 🔍 Other Changes
+
+- use https to get gpgkey by [@sjpalf](https://github.com/sjpalf) in [#1936](https://github.com/jdx/mise/pull/1936)
+- Update xcbeautify by [@jdx](https://github.com/jdx) in [cb48b68](https://github.com/jdx/mise/commit/cb48b68bb6a0c7962b1ef95641514ba64ac63bd1)
+- Include e2e folder in shfmt editorconfig for 2 spaces indenting by [@zph](https://github.com/zph) in [#1937](https://github.com/jdx/mise/pull/1937)
+- disable megalinter by [@jdx](https://github.com/jdx) in [3dd1006](https://github.com/jdx/mise/commit/3dd1006a8367a852a6f415256b8301771f8fa8d6)
+
+### New Contributors
+
+* @MontakOleg made their first contribution
+* @sjpalf made their first contribution in [#1936](https://github.com/jdx/mise/pull/1936)
+
 ## [2024.4.7](https://github.com/jdx/mise/compare/v2024.4.6..v2024.4.7) - 2024-04-22
 
 ### 🐛 Bug Fixes
@@ -41,7 +70,6 @@
 
 ### New Contributors
 
-* @zph made their first contribution in [#1932](https://github.com/jdx/mise/pull/1932)
 * @MustCodeAl made their first contribution in [#1927](https://github.com/jdx/mise/pull/1927)
 
 ## [2024.4.5](https://github.com/jdx/mise/compare/v2024.4.3..v2024.4.5) - 2024-04-15
