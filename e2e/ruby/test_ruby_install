@@ -8,7 +8,7 @@ export MISE_EXPERIMENTAL=1
 export MISE_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
 export MISE_RUBY_INSTALL=1
 
-echo "ruby-3.2.1" > .ruby-version
+echo "ruby-3.2.1" >.ruby-version
 
 # disable this slow test for now
 #mise i ruby

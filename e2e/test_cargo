@@ -11,7 +11,7 @@ v0.17.0 [+git]
 https://github.com/eza-community/eza"
 
 if [ "${TEST_ALL:-}" != 1 ]; then
-	exit
+  exit
 fi
 
 export MISE_CARGO_BINSTALL=0

@@ -37,7 +37,7 @@ assert "mise x -- which python" "$MISE_DATA_DIR/subvenv/bin/python"
 rm -rf subdir
 
 if [ "${TEST_ALL:-}" != 1 ]; then
-	exit
+  exit
 fi
 
 export MISE_ALL_COMPILE=1

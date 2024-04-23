@@ -11,17 +11,17 @@ EOF
 mise i shfmt
 mise exec -- shfmt --version >&2
 if [[ "$(mise exec -- shfmt --version)" != "v3.5.0" ]]; then
-	exit 1
+  exit 1
 fi
 
 assert() {
-	actual="$($1)"
-	actual="${actual%$'\n'}"
-	expected="${2%$'\n'}"
-	if [[ "$actual" != "$expected" ]]; then
-		echo "assertion failed, expected '$expected', got '$actual'"
-		exit 1
-	fi
+  actual="$($1)"
+  actual="${actual%$'\n'}"
+  expected="${2%$'\n'}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "assertion failed, expected '$expected', got '$actual'"
+    exit 1
+  fi
 }
 
 assert "mise local" "shfmt 3.5.0"
@@ -31,7 +31,7 @@ assert "mise local -p" "shfmt 3.6.0"
 
 mise exec -- shfmt --version >&2
 if [[ "$(mise exec -- shfmt --version)" != "v3.6.0" ]]; then
-	exit 1
+  exit 1
 fi
 
 mise local -p shfmt@3.5.0
