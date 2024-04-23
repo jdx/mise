@@ -2,13 +2,13 @@
 set -euo pipefail
 
 assert() {
-	local actual
-	# shellcheck disable=SC2048
-	actual="$($*)"
-	if [[ "$actual" != "$2" ]]; then
-		echo "Expected '$2' but got '$actual'"
-		exit 1
-	fi
+  local actual
+  # shellcheck disable=SC2048
+  actual="$($*)"
+  if [[ "$actual" != "$2" ]]; then
+    echo "Expected '$2' but got '$actual'"
+    exit 1
+  fi
 }
 
 mise plugins install poetry && mise i

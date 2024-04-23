@@ -2,12 +2,12 @@
 set -euxo pipefail
 
 if [ -z "$ZIPSIGN" ]; then
-	echo "ZIPSIGN is not defined"
-	exit 0
+  echo "ZIPSIGN is not defined"
+  exit 0
 fi
 
 if ! command -v zipsign >/dev/null 2>&1; then
-	cargo install zipsign
+  cargo install zipsign
 fi
 
 mkdir -p ~/.zipsign

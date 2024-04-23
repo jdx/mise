@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 if [ "${TEST_ALL:-}" != 1 ]; then
-	exit
+  exit
 fi
 
 rm -rf "$MISE_DATA_DIR/cache/poetry"

@@ -9,13 +9,13 @@ orig_path="$PATH"
 eval "$(mise activate bash --status)" && _mise_hook
 
 assert() {
-	local actual="$1"
-	local expected="$2"
-	if [[ "$actual" != "$expected" ]]; then
-		echo "actual: $actual"
-		echo "expected: $expected"
-		exit 1
-	fi
+  local actual="$1"
+  local expected="$2"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "actual: $actual"
+    echo "expected: $expected"
+    exit 1
+  fi
 }
 
 assert_path() {

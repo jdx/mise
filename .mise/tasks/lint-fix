@@ -2,10 +2,13 @@
 # mise alias=["lint:fix"]
 set -euxo pipefail
 
+# Used for shellcheck which needs explicit args
 scripts=("$PWD"/scripts/*.sh "$PWD"/e2e/{test_,run_}* "$PWD"/e2e/*.sh)
+# Used for shfmt which will run only on files it can
+scripts_dirs=("$PWD"/scripts "$PWD"/e2e)
 cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
 cargo fmt --all
 shellcheck -x "${scripts[@]}"
-shfmt -w "${scripts[@]}"
+shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -w $(git ls-files '*.yml' '*.yaml')
 markdownlint --fix .

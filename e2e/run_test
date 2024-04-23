@@ -6,52 +6,52 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 TEST="$1"
 
 setup_env() {
-	export ROOT
-	export PATH="$ROOT/target/debug:$PATH"
-	export MISE_USE_TOML="0"
-	export MISE_DATA_DIR="$HOME/.mise/e2e"
-	export MISE_STATE_DIR="$HOME/.mise/e2e"
-	export MISE_CACHE_DIR="$HOME/.mise/e2e/cache"
-	export MISE_CONFIG_DIR="$HOME/.mise/e2e/config"
-	export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
-	export MISE_DEFAULT_CONFIG_FILENAME=.e2e.mise.toml
-	export MISE_GLOBAL_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
-	export MISE_ALWAYS_KEEP_DOWNLOAD="1"
-	export MISE_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
-	export MISE_YES="1"
-	export NPM_CONFIG_FUND="false"
-	unset GOPATH
+  export ROOT
+  export PATH="$ROOT/target/debug:$PATH"
+  export MISE_USE_TOML="0"
+  export MISE_DATA_DIR="$HOME/.mise/e2e"
+  export MISE_STATE_DIR="$HOME/.mise/e2e"
+  export MISE_CACHE_DIR="$HOME/.mise/e2e/cache"
+  export MISE_CONFIG_DIR="$HOME/.mise/e2e/config"
+  export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
+  export MISE_DEFAULT_CONFIG_FILENAME=.e2e.mise.toml
+  export MISE_GLOBAL_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
+  export MISE_ALWAYS_KEEP_DOWNLOAD="1"
+  export MISE_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
+  export MISE_YES="1"
+  export NPM_CONFIG_FUND="false"
+  unset GOPATH
 }
 
 setup_config_files() {
-	mkdir -p "$ROOT/e2e/cd/18"
-	cp "$ROOT/e2e/config/".e2e.* "$ROOT/e2e/"
-	cp "$ROOT/e2e/config/"{.node-version,.alternate-tool-versions,.test-env,pyproject.toml} "$ROOT/e2e/"
-	cp "$ROOT/e2e/config/cd/".e2e.* "$ROOT/e2e/cd/"
-	cp "$ROOT/e2e/config/cd/18/".e2e.* "$ROOT/e2e/cd/18"
+  mkdir -p "$ROOT/e2e/cd/18"
+  cp "$ROOT/e2e/config/".e2e.* "$ROOT/e2e/"
+  cp "$ROOT/e2e/config/"{.node-version,.alternate-tool-versions,.test-env,pyproject.toml} "$ROOT/e2e/"
+  cp "$ROOT/e2e/config/cd/".e2e.* "$ROOT/e2e/cd/"
+  cp "$ROOT/e2e/config/cd/18/".e2e.* "$ROOT/e2e/cd/18"
 }
 
 run_test() {
-	echo "::group::E2E $TEST"
-	rm -f "$MISE_GLOBAL_CONFIG_FILE"
-	cd "$(dirname "$TEST")"
+  echo "::group::E2E $TEST"
+  rm -f "$MISE_GLOBAL_CONFIG_FILE"
+  cd "$(dirname "$TEST")"
 
-	START=$(date +%s)
-	local status=0
-	"./$(basename "$TEST")" || status=$?
-	END=$(date +%s)
+  START=$(date +%s)
+  local status=0
+  "./$(basename "$TEST")" || status=$?
+  END=$(date +%s)
 
-	if [[ "$status" == 0 ]]; then
-		STATUS_MSG=":white_check_mark:"
-	else
-		echo "::error file=$TEST::E2E Test Failed (code: $status)"
-		STATUS_MSG=":x:"
-	fi
-	echo "$TEST: $((END - START))s"
-	if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-		echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
-	fi
-	return "$status"
+  if [[ "$status" == 0 ]]; then
+    STATUS_MSG=":white_check_mark:"
+  else
+    echo "::error file=$TEST::E2E Test Failed (code: $status)"
+    STATUS_MSG=":x:"
+  fi
+  echo "$TEST: $((END - START))s"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  return "$status"
 }
 
 setup_env
