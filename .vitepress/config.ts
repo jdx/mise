@@ -48,6 +48,8 @@ export default defineConfig({
               { text: 'cargo', link: '/dev-tools/backends/cargo' },
               { text: 'go', link: '/dev-tools/backends/go' },
               { text: 'npm', link: '/dev-tools/backends/npm' },
+              { text: 'pipx', link: '/dev-tools/backends/pipx' },
+              { text: 'ubi', link: '/dev-tools/backends/ubi' },
             ]
           }
         ],
