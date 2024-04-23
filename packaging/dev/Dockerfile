@@ -20,6 +20,7 @@ RUN    apt-get update \
        direnv \
        fd-find \
        fish \
+       python3-venv \
     && ln -s /usr/bin/{fdfind,fd} \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
@@ -44,6 +45,7 @@ RUN    apt-get update \
     && cargo -V \
     && node -v \
     && npm -v \
+    && python3 -v \
     && just --version
 #    && mkdir -p $dev/cargo \
 #    && mv "$CARGO_HOME/registry" $dev/cargo/registry && ln -s $dev/cargo/registry "$CARGO_HOME/registry" \
