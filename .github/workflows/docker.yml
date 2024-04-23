@@ -22,7 +22,6 @@ jobs:
         flavor:
           - alpine
           - deb
-          - mise
           - rpm
     runs-on: ubuntu-latest
     permissions:
