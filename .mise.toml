@@ -86,8 +86,8 @@ run = "cargo insta test --accept --unreferenced delete"
 description = "run all tests"
 alias = 't'
 run = [
-  "mise run test:unit",
-  "mise run test:e2e",
+  "mise tasks run test:unit",
+  "mise tasks run test:e2e",
 ]
 
 [tasks."test:unit"]
@@ -107,8 +107,8 @@ depends = ["docker:image"]
 
 [tasks."docker:mise"]
 description = "run mise inside of development docker container"
-run = "mise run -- docker:cargo run --"
+run = "mise tasks run -- docker:cargo run --"
 
 [tasks."docker:e2e"]
 description = "run e2e tests inside of development docker container"
-run = "mise run docker:mise run test:e2e"
+run = "mise tasks run docker:mise run test:e2e"
