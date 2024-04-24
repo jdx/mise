@@ -36,7 +36,6 @@ release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
 pre-commit = { depends = ["render", "lint"] }
-'test:e2e' = "just test-e2e"
 
 [tasks.build]
 alias = "b"
@@ -80,10 +79,11 @@ alias = "render"
 depends = ["render:*"]
 
 [tasks.snapshots]
-description = "Update test snapshots"
+description = "update test snapshots"
 run = "cargo insta test --accept --unreferenced delete"
 
 [tasks.test]
+description = "run all tests"
 alias = 't'
 run = [
   "mise run test:unit",
@@ -91,20 +91,10 @@ run = [
 ]
 
 [tasks."test:unit"]
+description = "run unit tests"
 run = "cargo test"
-env = { CARGO_TERM_COLOR = "always" }
-
-# TODO: make this work when we have task args
-#run = '''
-#set -euo pipefail
-#TEST="$1"
-#if [ "TEST" = all ]; then
-#    echo ./e2e/run_all_tests
-#else
-#    FILES="$(fd TEST e2e/)"
-#    echo ./e2e/run_test "$FILES"
-#fi
-#'''
+env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
+depends = ["build"]
 
 [tasks."docker:image"]
 description = "build docker image from Dockerfile"
@@ -112,7 +102,8 @@ run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:
 
 [tasks."docker:cargo"]
 description = "run cargo inside of development docker container"
-run = 'docker run -ti --rm -e "GITHUB_API_TOKEN=${GITHUB_API_TOKEN:-}" -v $root:/mise -w /mise ghcr.io/jdx/mise:dev cargo'
+run = 'docker run -ti --rm -e GITHUB_API_TOKEN -v $root:/mise -w /mise ghcr.io/jdx/mise:dev cargo'
+depends = ["docker:image"]
 
 [tasks."docker:mise"]
 description = "run mise inside of development docker container"

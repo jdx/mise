@@ -97,7 +97,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 2
-          command: just test-coverage
+          command: mise tasks run test:coverage
       - name: Run codacy-coverage-reporter
         uses: codacy/codacy-coverage-reporter-action@v1
         continue-on-error: true
