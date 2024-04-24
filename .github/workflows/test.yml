@@ -84,20 +84,21 @@ jobs:
       - run: sudo apt-get update; sudo apt-get install zsh fish direnv
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,just,usage-cli
+          tool: cargo-llvm-cov,mise,usage-cli
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: "1"
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          MISE_EXPERIMENTAL: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
           TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
           max_attempts: 2
-          command: just test-coverage
+          command: mise tasks run test:coverage
       - name: Run codacy-coverage-reporter
         uses: codacy/codacy-coverage-reporter-action@v1
         continue-on-error: true

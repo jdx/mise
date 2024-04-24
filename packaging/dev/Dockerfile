@@ -37,7 +37,6 @@ RUN    apt-get update \
       # cargo-msrv \ this is very slow to compile
         cargo-nextest \
         cross \
-        just \
         zipsign \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
@@ -45,8 +44,7 @@ RUN    apt-get update \
     && cargo -V \
     && node -v \
     && npm -v \
-    && python3 -v \
-    && just --version
+    && python3 -v
 #    && mkdir -p $dev/cargo \
 #    && mv "$CARGO_HOME/registry" $dev/cargo/registry && ln -s $dev/cargo/registry "$CARGO_HOME/registry" \
 #    && mkdir $dev/cargo/git && ln -s $dev/cargo/git "$CARGO_HOME/git"
