@@ -40,7 +40,6 @@ impl ZigPlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        // let json = HTTP_FETCH.get_text("https://ziglang.org/download/index.json")?;
         match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
@@ -59,7 +58,7 @@ impl ZigPlugin {
     }
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let url = if tv.version == "master" {
+        let url = if tv.version == "ref:master" {
             format!(
                 "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
                 os(),
@@ -95,7 +94,7 @@ impl ZigPlugin {
                 "zig-{}-{}-{}",
                 os(),
                 arch(),
-                if ctx.tv.version == "master" {
+                if ctx.tv.version == "ref:master" {
                     self.get_master_version()?
                 } else {
                     ctx.tv.version.clone()
@@ -142,7 +141,7 @@ impl Forge for ZigPlugin {
     fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
-    #[requires(matches ! (ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
+    #[requires(matches ! (ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. } | ToolVersionRequest::Ref { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(ctx, &tarball_path)?;
