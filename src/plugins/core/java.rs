@@ -415,7 +415,17 @@ fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<St
     if query == "latest" {
         query = "[0-9].*";
     }
-    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+
+    // check for major versions (e.g. openjdk-17)
+    // for which we fuzzy match the exact version without minor/patch (see #1887)
+    let major_version_regex = Regex::new(r"[a-z]-\d{1,}$")?;
+    let query_regex_str = if major_version_regex.is_match(query) {
+        format!("^{}([+-].+)?$", query)
+    } else {
+        format!("^{}([+-.].+)?$", query)
+    };
+
+    let query_regex = Regex::new(&query_regex_str)?;
     let versions = versions
         .into_iter()
         .filter(|v| {
