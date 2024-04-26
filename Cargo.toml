@@ -78,7 +78,7 @@ rayon = "1.10.0"
 regex = "1.10.4"
 reqwest = { version = "<0.12", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.2.0"
-self_update = { version = "0.39.0", default-features = false, features = [
+self_update = { version = "0.40.0", default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
