@@ -58,11 +58,20 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 
 ## emacs
 
+- Traditional shims way
+
 ```lisp
 ;; CLI tools installed by Mise
 ;; See: https://www.emacswiki.org/emacs/ExecPath
 (setenv "PATH" (concat (getenv "PATH") ":/home/user/.local/share/mise/shims"))
 (setq exec-path (append exec-path '("/home/user/.local/share/mise/shims")))
+```
+
+- Use with package [mise.el](https://github.com/liuyinz/mise.el)
+
+```lisp
+(require 'mise)
+(add-hook 'after-init-hook #'global-mise-mode)
 ```
 
 ## Xcode
