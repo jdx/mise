@@ -26,6 +26,7 @@ impl ZigPlugin {
         let core = CorePlugin::new("zig");
         Self { core }
     }
+
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("zig")
     }
@@ -57,14 +58,23 @@ impl ZigPlugin {
         Ok(versions)
     }
 
-    fn downlaod(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let url = format!(
-            "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
-            tv.version,
-            os(),
-            arch(),
-            tv.version
-        );
+    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let url = if tv.version == "master" {
+            format!(
+                "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
+                os(),
+                arch(),
+                self.get_master_version()?
+            )
+        } else {
+            format!(
+                "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+                tv.version,
+                os(),
+                arch(),
+                tv.version
+            )
+        };
 
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -74,15 +84,23 @@ impl ZigPlugin {
 
         Ok(tarball_path)
     }
+
     fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("installing {filename}"));
         file::remove_all(ctx.tv.install_path())?;
         untar_xy(tarball_path, &ctx.tv.download_path())?;
         file::rename(
-            ctx.tv
-                .download_path()
-                .join(format!("zig-{}-{}-{}", os(), arch(), ctx.tv.version)),
+            ctx.tv.download_path().join(format!(
+                "zig-{}-{}-{}",
+                os(),
+                arch(),
+                if ctx.tv.version == "master" {
+                    self.get_master_version()?
+                } else {
+                    ctx.tv.version.clone()
+                }
+            )),
             ctx.tv.install_path(),
         )?;
         file::create_dir_all(ctx.tv.install_path().join("bin"))?;
@@ -96,6 +114,16 @@ impl ZigPlugin {
 
     fn verify(&self, ctx: &InstallContext) -> Result<()> {
         self.test_zig(ctx)
+    }
+
+    fn get_master_version(&self) -> Result<String> {
+        let version_json: serde_json::Value =
+            HTTP_FETCH.json("https://ziglang.org/download/index.json")?;
+        let master_version = version_json
+            .pointer("/master/version")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| eyre::eyre!("Failed to get master version"))?;
+        Ok(master_version.to_string())
     }
 }
 
@@ -116,7 +144,7 @@ impl Forge for ZigPlugin {
     }
     #[requires(matches ! (ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.downlaod(&ctx.tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(ctx, &tarball_path)?;
         self.verify(ctx)?;
         Ok(())
