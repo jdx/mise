@@ -18,8 +18,7 @@ env:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
-    #container: ghcr.io/jdx/mise:github-actions
+    runs-on: arc-runner-set
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -30,11 +29,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
-      - name: Install direnv
-        run: sudo apt-get update; sudo apt-get install direnv
       - run: cargo nextest run --all-features
         env:
           RUST_BACKTRACE: "1"
@@ -66,13 +60,12 @@ jobs:
 
   coverage:
     name: coverage-${{matrix.tranche}}
-    #container: ghcr.io/jdx/mise:github-actions
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        tranche: [0, 1, 2, 3]
+        tranche: [0, 1]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,10 +74,6 @@ jobs:
         with:
           shared-key: coverage
           save-if: ${{ github.ref_name == 'main' }}
-      - run: sudo apt-get update; sudo apt-get install zsh fish direnv
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov,mise,usage-cli
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
@@ -93,11 +82,12 @@ jobs:
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           MISE_EXPERIMENTAL: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
-          TEST_TRANCHE_COUNT: 4
+          TEST_TRANCHE_COUNT: 2
           TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
-          max_attempts: 2
+          max_attempts: 1
+#          max_attempts: 2
           command: mise tasks run test:coverage
       - name: Run codacy-coverage-reporter
         uses: codacy/codacy-coverage-reporter-action@v1
