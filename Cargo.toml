@@ -83,8 +83,8 @@ self_update = { version = "0.40.0", default-features = false, features = [
   "compression-flate2",
   "signatures",
 ] }
-serde = "1.0.198"
-serde_derive = "1.0.198"
+serde = "1.0.199"
+serde_derive = "1.0.199"
 serde_json = { version = "1.0.116", features = [] }
 sha2 = "0.10.8"
 shell-escape = "0.1.5"
