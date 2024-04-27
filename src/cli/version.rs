@@ -5,7 +5,7 @@ use eyre::Result;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
-use crate::build_time::{built_info, BUILD_TIME};
+use crate::build_time::{git_sha, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
 use crate::env;
 use crate::file::modified_duration;
@@ -31,7 +31,7 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
         v.push_str("-DEBUG");
     };
     let build_time = BUILD_TIME.format("%Y-%m-%d");
-    let extra = match &built_info::GIT_COMMIT_HASH_SHORT {
+    let extra = match git_sha() {
         Some(sha) => format!("({} {})", sha, build_time),
         _ => format!("({})", build_time),
     };

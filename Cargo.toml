@@ -112,7 +112,7 @@ zip = { version = "1.1.1", default-features = false, features = ["deflate"] }
 exec = "0.3.1"
 
 [build-dependencies]
-built = { version = "0.7.2", features = ["chrono", "git2"] }
+built = { version = "0.7.2", features = ["chrono"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
@@ -124,6 +124,7 @@ test-case = "3.3.1"
 
 [features]
 default = ["native-tls"]
+git2 = ["built/git2"]
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
