@@ -9,6 +9,7 @@ ENV MISE_DATA_DIR="$dev/mise"
 ENV MISE_STATE_DIR="$dev/mise"
 ENV MISE_CONFIG_DIR="$dev/mise"
 ENV MISE_CACHE_DIR="$dev/mise/cache"
+ENV CARGO_TARGET_DIR="/tmp/mise/target"
 
 # TODO: deno does not currently support linux/arm64 making it hard to use this on macs
 ENV MISE_DISABLE_TOOLS="deno"
@@ -17,10 +18,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
-       direnv \
-       fd-find \
-       fish \
-       python3-venv \
+    direnv \
+    fd-find \
+    fish \
+    python3-venv \
     && ln -s /usr/bin/{fdfind,fd} \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
@@ -30,21 +31,19 @@ RUN    apt-get update \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
     && rustup toolchain install nightly --component llvm-tools-preview \
     && cargo binstall -y \
-        cargo-deny \
-        cargo-insta \
-        cargo-llvm-cov \
-        cargo-machete \
-      # cargo-msrv \ this is very slow to compile
-        cargo-nextest \
-        cross \
-        zipsign \
+    cargo-deny \
+    cargo-insta \
+    cargo-llvm-cov \
+    cargo-machete \
+    # cargo-msrv \ this is very slow to compile
+    cargo-nextest \
+    cross \
+    zipsign \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rustc -vV \
     && cargo -V \
     && node -v \
     && npm -v \
-    && python3 -v
-#    && mkdir -p $dev/cargo \
-#    && mv "$CARGO_HOME/registry" $dev/cargo/registry && ln -s $dev/cargo/registry "$CARGO_HOME/registry" \
-#    && mkdir $dev/cargo/git && ln -s $dev/cargo/git "$CARGO_HOME/git"
+    && python3 -v \
+    && rm -rf "$CARGO_HOME/registry" && ln -sv "/tmp/mise/registry" "$CARGO_HOME/registry"
