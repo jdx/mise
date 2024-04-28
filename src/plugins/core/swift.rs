@@ -72,24 +72,27 @@ impl SwiftPlugin {
         //  Notes:
         //    * It's distributed as a pkg installer
         let os = os();
+        let arch = match os.as_str() {
+            "osx" => "",
+            _ => arch(),
+        };
+        let file_extension = match os.as_str() {
+            "osx" => "pkg",
+            _ => "tar.gz",
+        };
+        let distribution = match os.as_str() {
+            "osx" => "xcode".to_string(), // Apple uses "xcode" instead of "osx" for this path segment
+            os => os.replace(".", "").to_string(),
+        };
         format!(
             "https://download.swift.org/swift-{}-release/{}/swift-{}-RELEASE/swift-{}-RELEASE-{}{}.{}",
             tv.version,
-            match os.as_str() {
-                "osx" => "xcode".to_string(), // Apple uses "xcode" instead of "osx" for this path segment
-                os => os.replace(".", "").to_string(),
-            },
+            distribution,
             tv.version,
             tv.version,
             os,
-            match os.as_str() {
-                "osx" => "",
-                _ => arch(),
-            },
-            match os.as_str() {
-                "osx" => "pkg",
-                _ => "tar.gz",
-            }
+            arch,
+            file_extension
         )
     }
 
