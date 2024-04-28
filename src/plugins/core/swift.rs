@@ -109,7 +109,7 @@ impl SwiftPlugin {
         let bin_directory = ctx.tv.install_path().join("bin");
         file::create_dir_all(&bin_directory)?;
 
-        if os() == "osx" {
+        if cfg!(target_os = "macos") {
             CmdLineRunner::new("/usr/sbin/installer")
             .with_pr(ctx.pr.as_ref())
             .arg("-pkg")
