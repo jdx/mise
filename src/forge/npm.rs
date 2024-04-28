@@ -5,6 +5,7 @@ use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 
+use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
@@ -30,7 +31,7 @@ impl Forge for NPMForge {
         Ok(vec!["node".into()])
     }
 
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
                 let raw = cmd!("npm", "view", self.name(), "versions", "--json").read()?;
@@ -54,6 +55,16 @@ impl Forge for NPMForge {
             .cloned()
     }
 
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        if !is_npm_installed() {
+            bail!(
+                "npm is not installed. Please install it in order to install {}",
+                self.name()
+            );
+        }
+        Ok(())
+    }
+
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
         let settings = Settings::get();
@@ -72,6 +83,10 @@ impl Forge for NPMForge {
 
         Ok(())
     }
+}
+
+fn is_npm_installed() -> bool {
+    file::which("npm").is_some()
 }
 
 impl NPMForge {

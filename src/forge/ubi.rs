@@ -5,6 +5,7 @@ use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 
+use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -36,7 +37,7 @@ impl Forge for UbiForge {
     }
 
     // TODO: v0.0.3 is stripped of 'v' such that it reports incorrectly in tool :-/
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         if name_is_url(self.name()) {
             Ok(vec!["latest".to_string()])
         } else {
@@ -53,6 +54,16 @@ impl Forge for UbiForge {
                 })
                 .cloned()
         }
+    }
+
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        if !is_ubi_installed() {
+            bail!(
+                "ubi is not installed. Please install it in order to install {}",
+                self.name()
+            );
+        }
+        Ok(())
     }
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -125,4 +136,8 @@ fn get_binary_url(n: &str) -> eyre::Result<Url> {
 
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
+}
+
+fn is_ubi_installed() -> bool {
+    file::which("ubi").is_some()
 }
