@@ -4,6 +4,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::file;
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
@@ -33,7 +34,7 @@ impl Forge for PIPXForge {
      * Pipx doesn't have a remote version concept across its backends, so
      * we return a single version.
      */
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| Ok(vec!["latest".to_string()]))
             .cloned()
@@ -46,6 +47,16 @@ impl Forge for PIPXForge {
                 Ok(latest)
             })
             .cloned()
+    }
+
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        if !is_pipx_installed() {
+            bail!(
+                "pipx is not installed. Please install it in order to install {}",
+                self.name()
+            );
+        }
+        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -108,4 +119,8 @@ fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
         (_, false, 1, v) => format!("{}=={}", name, v),
         _ => name.to_string(),
     }
+}
+
+fn is_pipx_installed() -> bool {
+    file::which("pipx").is_some()
 }
