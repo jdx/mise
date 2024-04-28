@@ -245,10 +245,8 @@ pub fn trust(path: &Path) -> Result<()> {
         file::make_symlink(path, &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
-    if !trust_hash_path.exists() {
-        let hash = file_hash_sha256(path)?;
-        file::write(&trust_hash_path, hash)?;
-    }
+    let hash = file_hash_sha256(path)?;
+    file::write(trust_hash_path, hash)?;
     Ok(())
 }
 
