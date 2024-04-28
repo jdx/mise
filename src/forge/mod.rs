@@ -40,7 +40,7 @@ pub enum ForgeType {
     Asdf,
     Cargo,
     Go,
-    Npm
+    Npm,
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
@@ -79,7 +79,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.clone())),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.clone())),
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone()))
+                ForgeType::Go => Arc::new(go::GoForge::new(fa.clone())),
             })
             .clone()
     }
@@ -126,7 +126,7 @@ pub trait Forge: Debug + Send + Sync {
     fn list_all_versions(&self) -> eyre::Result<Vec<String>> {
         let mut versions = self.list_installed_versions()?;
         versions.extend(self.list_system_managed_versions()?);
-        return Ok(versions)
+        return Ok(versions);
     }
 
     fn is_version_installed(&self, tv: &ToolVersion) -> bool {

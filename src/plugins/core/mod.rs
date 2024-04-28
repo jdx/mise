@@ -15,7 +15,6 @@ use crate::config::Settings;
 use crate::env;
 use crate::forge::{Forge, ForgeList, ForgeType};
 use crate::http::HTTP_FETCH;
-use crate::plugins::core::swift::SwiftPlugin;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::erlang::ErlangPlugin;
@@ -23,11 +22,11 @@ use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
+use crate::plugins::core::swift::SwiftPlugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
 mod bun;
-mod swift;
 mod deno;
 mod erlang;
 mod go;
@@ -35,6 +34,7 @@ mod java;
 mod node;
 mod python;
 mod ruby;
+mod swift;
 
 pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Forge>> = vec![
@@ -44,7 +44,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
         Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
-        Arc::new(RubyPlugin::new())
+        Arc::new(RubyPlugin::new()),
     ];
     let settings = Settings::get();
     if settings.experimental {
