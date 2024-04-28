@@ -7,7 +7,7 @@ TEST="$1"
 
 setup_env() {
   export ROOT
-  export PATH="$ROOT/target/debug:$PATH"
+  export PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$PATH"
   export MISE_USE_TOML="0"
   export MISE_DATA_DIR="$HOME/.mise/e2e"
   export MISE_STATE_DIR="$HOME/.mise/e2e"

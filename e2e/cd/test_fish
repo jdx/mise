@@ -1,7 +1,6 @@
 #!/usr/bin/env fish
 # shellcheck disable=SC1072,SC1065,SC1064,SC1073,SC2103
 
-set -gx PATH $ROOT/target/debug:$PATH
 set -l orig_node (node -v)
 
 #set -l fish_trace 1
