@@ -455,7 +455,7 @@ impl Forge for ExternalPlugin {
         Ok(out.into_iter().map(|s| s.into()).collect())
     }
 
-    fn list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .wrap_err_with(|| {

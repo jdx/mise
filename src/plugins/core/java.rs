@@ -303,6 +303,13 @@ impl Forge for JavaPlugin {
         &self.core.fa
     }
 
+    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+        self.core
+            .remote_version_cache
+            .get_or_try_init(|| self.fetch_remote_versions())
+            .cloned()
+    }
+
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
         fuzzy_match_filter(versions, query)
@@ -313,39 +320,9 @@ impl Forge for JavaPlugin {
         fuzzy_match_filter(versions, query)
     }
 
-    fn list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
-    }
-
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "21".into())]);
         Ok(aliases)
-    }
-
-    #[requires(matches!(ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let metadata = self.tv_to_metadata(&ctx.tv)?;
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;
-        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
-        self.verify(&ctx.tv, ctx.pr.as_ref())?;
-
-        Ok(())
-    }
-
-    fn exec_env(
-        &self,
-        _config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> eyre::Result<BTreeMap<String, String>> {
-        let map = BTreeMap::from([(
-            "JAVA_HOME".into(),
-            tv.install_path().to_string_lossy().into(),
-        )]);
-        Ok(map)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {
@@ -387,6 +364,29 @@ impl Forge for JavaPlugin {
         } else {
             Ok(contents)
         }
+    }
+
+    #[requires(matches!(ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
+    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        let metadata = self.tv_to_metadata(&ctx.tv)?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;
+        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.verify(&ctx.tv, ctx.pr.as_ref())?;
+
+        Ok(())
+    }
+
+    fn exec_env(
+        &self,
+        _config: &Config,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let map = BTreeMap::from([(
+            "JAVA_HOME".into(),
+            tv.install_path().to_string_lossy().into(),
+        )]);
+        Ok(map)
     }
 }
 

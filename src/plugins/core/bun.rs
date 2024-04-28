@@ -101,7 +101,7 @@ impl Forge for BunPlugin {
         &self.core.fa
     }
 
-    fn list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
