@@ -67,10 +67,7 @@ run = "mise render-mangen"
 [tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-run = [
-  "mise render-help",
-  "mise x node@latest -- npx markdown-magic",
-]
+run = ["mise render-help", "mise x node@latest -- npx markdown-magic"]
 sources = ["mise"]
 outputs = ["README.md"]
 
@@ -85,10 +82,7 @@ run = "cargo insta test --accept --unreferenced delete"
 [tasks.test]
 description = "run all tests"
 alias = 't'
-run = [
-  "mise tasks run test:unit",
-  "mise tasks run test:e2e",
-]
+run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
 
 [tasks."test:unit"]
 description = "run unit tests"
@@ -102,7 +96,7 @@ run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:
 
 [tasks."docker:cargo"]
 description = "run cargo inside of development docker container"
-run = 'docker run -ti --rm -e GITHUB_API_TOKEN -v $root:/mise -w /mise ghcr.io/jdx/mise:dev cargo'
+run = 'docker run -ti --rm -e GITHUB_API_TOKEN -v $root:/mise -v /tmp/mise/target:/tmp/mise/target -v /tmp/mise/registry:/tmp/mise/registry -w /mise ghcr.io/jdx/mise:dev cargo'
 depends = ["docker:image"]
 
 [tasks."docker:mise"]
