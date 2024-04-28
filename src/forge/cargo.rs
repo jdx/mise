@@ -32,7 +32,7 @@ impl Forge for CargoForge {
         Ok(vec!["cargo".into(), "rust".into()])
     }
 
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
                 let raw = HTTP_FETCH.get_text(get_crate_url(self.name())?)?;
@@ -47,6 +47,16 @@ impl Forge for CargoForge {
                 Ok(versions)
             })
             .cloned()
+    }
+
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        if !is_cargo_installed() {
+            bail!(
+                "cargo is not installed. Please install it in order to install {}",
+                self.name()
+            );
+        }
+        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -93,6 +103,10 @@ fn get_crate_url(n: &str) -> eyre::Result<Url> {
         _ => format!("https://index.crates.io/{}/{}/{n}", &n[..2], &n[2..4]),
     };
     Ok(url.parse()?)
+}
+
+fn is_cargo_installed() -> bool {
+    file::which("cargo").is_some()
 }
 
 #[derive(Debug, serde::Deserialize)]

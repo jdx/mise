@@ -135,7 +135,11 @@ pub trait Forge: Debug + Send + Sync {
     fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>>;
+    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        self.ensure_dependencies_installed()?;
+        self._list_remote_versions()
+    }
+    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version(Some("latest".into()))
     }
@@ -204,6 +208,7 @@ pub trait Forge: Debug + Send + Sync {
             None => self.latest_stable_version(),
         }
     }
+    #[requires(self.is_installed())]
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
@@ -242,6 +247,9 @@ pub trait Forge: Debug + Send + Sync {
     fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
         Ok(())
     }
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        Ok(())
+    }
     fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> eyre::Result<()> {
         Ok(())
     }
@@ -270,8 +278,10 @@ pub trait Forge: Debug + Send + Sync {
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
         unimplemented!()
     }
+
     #[requires(ctx.tv.forge.forge_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
+        ensure!(self.is_installed(), "{} is not installed", self.id());
         let config = Config::get();
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
