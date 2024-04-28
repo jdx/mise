@@ -38,7 +38,6 @@ mod ruby;
 
 pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Forge>> = vec![
-        Arc::new(SwiftPlugin::new()),
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(GoPlugin::new()),
@@ -46,6 +45,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
+        Arc::new(SwiftPlugin::new())
     ];
     let settings = Settings::get();
     if settings.experimental {
