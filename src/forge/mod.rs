@@ -116,6 +116,19 @@ pub trait Forge: Debug + Send + Sync {
             false => vec![],
         })
     }
+
+    /// Some tools like Swift, might be distributed as part of an Xcode installation
+    /// that's managed by the user. This method is used to list those versions.
+    fn list_system_managed_versions(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    fn list_all_versions(&self) -> eyre::Result<Vec<String>> {
+        let mut versions = self.list_installed_versions()?;
+        versions.extend(self.list_system_managed_versions()?);
+        return Ok(versions)
+    }
+
     fn is_version_installed(&self, tv: &ToolVersion) -> bool {
         match tv.request {
             ToolVersionRequest::System(_) => true,
@@ -152,7 +165,7 @@ pub trait Forge: Debug + Send + Sync {
         file::make_symlink(target, &link)
     }
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_installed_versions()?;
+        let versions = self.list_all_versions()?;
         fuzzy_match_filter(versions, query)
     }
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
