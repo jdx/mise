@@ -463,7 +463,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("markdownlint-cli2", "https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2"),
     ("marp-cli", "https://github.com/xataz/asdf-marp-cli"),
     ("mask", "https://github.com/aaaaninja/asdf-mask.git"),
-    ("maven", "https://github.com/halcyon/asdf-maven.git"),
+    ("maven", "https://github.com/mise-plugins/asdf-maven.git"),
     ("mc", "https://github.com/penpyt/asdf-mc.git"),
     ("mdbook", "https://github.com/cipherstash/asdf-mdbook.git"),
     ("mdbook-linkcheck", "https://github.com/cipherstash/asdf-mdbook-linkcheck.git"),
