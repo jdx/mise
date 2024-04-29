@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://mise.jdx.dev/schema/mise.json",
   "title": "mise",
   "description": "config file for mise version manager (.mise.toml)",

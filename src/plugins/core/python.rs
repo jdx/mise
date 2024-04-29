@@ -97,7 +97,7 @@ impl PythonPlugin {
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
             let settings = Settings::get();
-            let raw = HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled")?;
+            let raw = HTTP_FETCH.get_text("https://mise-versions.jdx.dev/python-precompiled")?;
             let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
             let versions = raw
                 .lines()
