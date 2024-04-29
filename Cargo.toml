@@ -106,7 +106,7 @@ usage-lib = { version = "0.1.18", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 walkdir = "2.5.0"
 which = "6.0.1"
-zip = { version = "1.1.1", default-features = false, features = ["deflate"] }
+zip = { version = "1.1.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3.1"
