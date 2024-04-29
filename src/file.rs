@@ -100,10 +100,6 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-pub fn basename(path: &Path) -> Option<String> {
-    path.file_name().map(|f| f.to_string_lossy().to_string())
-}
-
 /// replaces $HOME with "~"
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     let home = dirs::HOME.to_string_lossy();

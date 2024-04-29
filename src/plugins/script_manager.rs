@@ -14,14 +14,13 @@ use crate::config::Settings;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::fake_asdf::get_path_with_fake_asdf;
-use crate::file::{basename, display_path};
+use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
 pub struct ScriptManager {
     pub plugin_path: PathBuf,
-    pub plugin_name: String,
     pub env: HashMap<OsString, OsString>,
 }
 
@@ -104,11 +103,7 @@ impl ScriptManager {
             // used for testing failure cases
             env.insert("MISE_FAILURE".into(), failure);
         }
-        Self {
-            plugin_name: basename(&plugin_path).expect("invalid plugin path"),
-            env,
-            plugin_path,
-        }
+        Self { env, plugin_path }
     }
 
     pub fn with_env<K, V>(mut self, k: K, v: V) -> Self
@@ -195,7 +190,6 @@ mod tests {
         let plugin_path = PathBuf::from("/tmp/asdf");
         let script_manager = ScriptManager::new(plugin_path.clone());
         assert_eq!(script_manager.plugin_path, plugin_path);
-        assert_eq!(script_manager.plugin_name, "asdf");
     }
 
     #[test]
