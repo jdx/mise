@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction};
 
 #[derive(Clone)]
-pub struct VerboseArg(pub u8);
+pub struct VerboseArg;
 
 impl VerboseArg {
     pub fn arg() -> clap::Arg {

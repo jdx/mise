@@ -1,8 +1,7 @@
 use clap::{Arg, ArgAction};
-use log::LevelFilter;
 
 #[derive(Clone)]
-pub struct LogLevelArg(pub LevelFilter);
+pub struct LogLevelArg;
 
 impl LogLevelArg {
     pub fn arg() -> clap::Arg {

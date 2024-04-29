@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction};
 
-pub struct YesArg(pub bool);
+pub struct YesArg;
 
 impl YesArg {
     pub fn arg() -> Arg {
