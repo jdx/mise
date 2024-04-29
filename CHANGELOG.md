@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.4.10](https://github.com/jdx/mise/compare/v2024.4.9..v2024.4.10) - 2024-04-29
+
+### 🐛 Bug Fixes
+
+- **(docker)** create path to cargo registry cache by [@jdx](https://github.com/jdx) in [ed91c1c](https://github.com/jdx/mise/commit/ed91c1c5f928751c6bc1ce23ac0595c063648677)
+
+### 🔍 Other Changes
+
+- Revert "fix(java): inconsistent version resolution " by [@jdx](https://github.com/jdx) in [#1993](https://github.com/jdx/mise/pull/1993)
+
 ## [2024.4.9](https://github.com/jdx/mise/compare/v2024.4.8..v2024.4.9) - 2024-04-29
 
 ### 🚀 Features
