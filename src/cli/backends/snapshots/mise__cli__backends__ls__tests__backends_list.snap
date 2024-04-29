@@ -1,0 +1,9 @@
+---
+source: src/cli/backends/ls.rs
+expression: output
+---
+cargo
+go
+npm
+pipx
+ubi

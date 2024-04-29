@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,7 @@ use eyre::WrapErr;
 use itertools::Itertools;
 use rayon::prelude::*;
 use regex::Regex;
+use strum::IntoEnumIterator;
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
@@ -41,7 +42,9 @@ pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
 pub type ForgeList = Vec<AForge>;
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, EnumString, AsRefStr, Ord, PartialOrd)]
+#[derive(
+    Debug, PartialEq, Eq, Hash, Clone, Copy, EnumString, EnumIter, AsRefStr, Ord, PartialOrd,
+)]
 #[strum(serialize_all = "snake_case")]
 pub enum ForgeType {
     Asdf,
@@ -50,6 +53,12 @@ pub enum ForgeType {
     Npm,
     Pipx,
     Ubi,
+}
+
+impl Display for ForgeType {
+    fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(formatter, "{}", format!("{:?}", self).to_lowercase())
+    }
 }
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
@@ -93,6 +102,10 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
 
 pub fn list() -> ForgeList {
     load_forges().values().cloned().collect()
+}
+
+pub fn list_forge_types() -> Vec<ForgeType> {
+    ForgeType::iter().collect()
 }
 
 pub fn get(fa: &ForgeArg) -> AForge {
