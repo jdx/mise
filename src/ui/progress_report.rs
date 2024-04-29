@@ -51,8 +51,7 @@ static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
         .map(|p| p.id().len())
         .max()
         .unwrap_or_default()
-        .max(15)
-        .min(35)
+        .clamp(15, 35)
 });
 
 fn pad_prefix(w: usize, s: &str) -> String {

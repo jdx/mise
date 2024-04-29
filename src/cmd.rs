@@ -223,6 +223,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    #[allow(clippy::readonly_write_lock)]
     pub fn execute(mut self) -> Result<()> {
         static RAW_LOCK: RwLock<()> = RwLock::new(());
         let read_lock = RAW_LOCK.read().unwrap();
