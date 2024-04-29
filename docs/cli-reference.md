@@ -151,6 +151,25 @@ Examples:
     $ mise alias unset node lts-hydrogen
 ```
 
+## `mise backends ls`
+
+**Aliases:** `list`
+
+```text
+List built-in backends
+
+Usage: backends ls
+
+Examples:
+
+  $ mise backends ls
+  cargo
+  go
+  npm
+  pipx
+  ubi
+```
+
 ## `mise bin-paths`
 
 ```text
