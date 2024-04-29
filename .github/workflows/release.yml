@@ -76,8 +76,6 @@ jobs:
       - run: rustup target add ${{matrix.target}}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
-        with:
-          cache-provider: buildjet
       - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - run: scripts/setup-zipsign.sh
