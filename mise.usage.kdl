@@ -122,6 +122,22 @@ This modifies the contents of ~/.config/mise/config.toml"
 cmd "asdf" hide=true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     arg "[ARGS]..." help="all arguments" var=true
 }
+cmd "backends" help="Manage backends" {
+    alias "b"
+    alias "backend" "backend-list" hide=true
+    cmd "ls" help="List built-in backends" {
+        alias "list"
+        after_long_help r"Examples:
+
+  $ mise backends ls
+  cargo
+  go
+  npm
+  pipx
+  ubi
+"
+    }
+}
 cmd "bin-paths" help="List all the active runtime bin paths"
 cmd "cache" help="Manage the mise cache" {
     long_help r"Manage the mise cache
