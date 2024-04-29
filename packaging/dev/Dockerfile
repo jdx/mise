@@ -46,4 +46,4 @@ RUN    apt-get update \
     && node -v \
     && npm -v \
     && python3 -v \
-    && rm -rf "$CARGO_HOME/registry" && ln -sv "/tmp/mise/registry" "$CARGO_HOME/registry"
+    && rm -rf "$CARGO_HOME/registry" && ln -sv /tmp/mise/registry "$CARGO_HOME/registry" && mkdir -p /tmp/mise/registry
