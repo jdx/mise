@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.4.12](https://github.com/jdx/mise/compare/v2024.4.11..v2024.4.12) - 2024-04-30
+
+### 🐛 Bug Fixes
+
+- **(self_update)** downgrade to fix signature verification issue by [@jdx](https://github.com/jdx) in [dbe1971](https://github.com/jdx/mise/commit/dbe1971c337a29f2e92fd1b765436e67abf7f04e)
+
 ## [2024.4.11](https://github.com/jdx/mise/compare/v2024.4.10..v2024.4.11) - 2024-04-30
 
 ### 🐛 Bug Fixes
