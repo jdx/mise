@@ -82,6 +82,7 @@ self_update = { version = "0.40.0", default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "rustls",
 ] }
 serde = "1.0.199"
 serde_derive = "1.0.199"
