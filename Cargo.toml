@@ -56,7 +56,7 @@ duct = "0.13.7"
 either = { version = "1.11.0", features = ["serde"] }
 eyre = "0.6.12"
 filetime = "0.2.23"
-flate2 = "1.0.29"
+flate2 = "1.0.30"
 fslock = "0.2.1"
 globset = "0.4.14"
 globwalk = "0.9.1"
