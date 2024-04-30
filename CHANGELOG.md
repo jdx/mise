@@ -1,5 +1,24 @@
 # Changelog
 
+## [2024.4.11](https://github.com/jdx/mise/compare/v2024.4.10..v2024.4.11) - 2024-04-30
+
+### 🐛 Bug Fixes
+
+- **(self-update)** always use rustls by [@jdx](https://github.com/jdx) in [93a9c57](https://github.com/jdx/mise/commit/93a9c57ae895f1772a5ae8146d83713f631c77f1)
+
+### 🧪 Testing
+
+- **(java)** added e2e test for corretto-8 shorthand by [@jdx](https://github.com/jdx) in [#1995](https://github.com/jdx/mise/pull/1995)
+
+### 🔍 Other Changes
+
+- **(release)** fix cache by [@jdx](https://github.com/jdx) in [b54b25d](https://github.com/jdx/mise/commit/b54b25d06c49b5116ed37dda4c08005dfe7e6e11)
+- fix clippy warnings in latest rust beta by [@jdx](https://github.com/jdx) in [#1994](https://github.com/jdx/mise/pull/1994)
+
+### 📦️ Dependency Updates
+
+- update rust crate flate2 to 1.0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1997](https://github.com/jdx/mise/pull/1997)
+
 ## [2024.4.10](https://github.com/jdx/mise/compare/v2024.4.9..v2024.4.10) - 2024-04-29
 
 ### 🐛 Bug Fixes
