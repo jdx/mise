@@ -89,6 +89,21 @@ impl RubyPlugin {
     }
     fn update_ruby_build(&self) -> Result<()> {
         let _lock = self.lock_build_tool();
+        if self.ruby_build_path().exists() {
+            let cur = self.ruby_build_version()?;
+            let latest = self.latest_ruby_build_version();
+            match (cur, latest) {
+                // ruby-build is up-to-date
+                (cur, Ok(latest)) if cur == latest => return Ok(()),
+                // ruby-build is not up-to-date
+                (_cur, Ok(_latest)) => {}
+                // error getting latest ruby-build version (usually github rate limit)
+                (_cur, Err(err)) => {
+                    debug!("failed to get latest ruby-build version: {}", err);
+                    return Ok(());
+                }
+            }
+        }
         if self.ruby_build_path().exists()
             && self.ruby_build_version()? == self.latest_ruby_build_version()?
         {
