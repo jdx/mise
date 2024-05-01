@@ -230,7 +230,7 @@ pub trait Forge: Debug + Send + Sync {
             }
             None => {
                 let installed_symlink = self.fa().installs_path.join("latest");
-                if installed_symlink.exists() {
+                if installed_symlink.is_symlink() {
                     let target = installed_symlink.read_link()?;
                     let version = target
                         .file_name()
