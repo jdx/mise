@@ -8,6 +8,7 @@ mod activate;
 mod alias;
 pub mod args;
 mod asdf;
+pub mod backends;
 mod bin_paths;
 mod cache;
 mod completion;
@@ -62,6 +63,7 @@ pub enum Commands {
     Activate(activate::Activate),
     Alias(alias::Alias),
     Asdf(asdf::Asdf),
+    Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
     Cache(cache::Cache),
     Completion(completion::Completion),
@@ -117,6 +119,7 @@ impl Commands {
             Self::Activate(cmd) => cmd.run(),
             Self::Alias(cmd) => cmd.run(),
             Self::Asdf(cmd) => cmd.run(),
+            Self::Backends(cmd) => cmd.run(),
             Self::BinPaths(cmd) => cmd.run(),
             Self::Cache(cmd) => cmd.run(),
             Self::Completion(cmd) => cmd.run(),

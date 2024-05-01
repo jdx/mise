@@ -10,6 +10,7 @@ use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
+use crate::forge::ForgeType;
 use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
@@ -100,6 +101,7 @@ impl Doctor {
         let config = config.as_ref();
 
         section("config_files", render_config_files(config))?;
+        section("backends", render_backends())?;
         section("plugins", render_plugins())?;
 
         for plugin in forge::list() {
@@ -239,11 +241,22 @@ fn render_config_files(config: &Config) -> String {
         .join("\n")
 }
 
+fn render_backends() -> String {
+    let mut s = vec![];
+    let backends = forge::list_forge_types()
+        .into_iter()
+        .filter(|f| *f != ForgeType::Asdf);
+    for b in backends {
+        s.push(format!("{}", b));
+    }
+    s.join("\n")
+}
+
 fn render_plugins() -> String {
     let mut s = vec![];
     let plugins = forge::list()
         .into_iter()
-        .filter(|p| p.is_installed())
+        .filter(|p| p.is_installed() && p.get_type() == ForgeType::Asdf)
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins
         .iter()

@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.4.8"
+version = "2024.4.12"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -35,7 +35,8 @@ path = "src/main.rs"
 #name = "config_bench"
 #harness = false
 
-[profile.release]
+[profile.serious]
+inherits = "release"
 lto = true
 
 [dependencies]
@@ -56,7 +57,7 @@ duct = "0.13.7"
 either = { version = "1.11.0", features = ["serde"] }
 eyre = "0.6.12"
 filetime = "0.2.23"
-flate2 = "1.0.29"
+flate2 = "1.0.30"
 fslock = "0.2.1"
 globset = "0.4.14"
 globwalk = "0.9.1"
@@ -78,7 +79,8 @@ rayon = "1.10.0"
 regex = "1.10.4"
 reqwest = { version = "<0.12", default-features = false, features = ["blocking", "json", "gzip"] }
 rmp-serde = "1.2.0"
-self_update = { version = "0.40.0", default-features = false, features = [
+# TODO: fix issue with rustls and "No signature verification implemented for Plain(None) files"
+self_update = { version = "<0.40.0", default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
@@ -106,7 +108,7 @@ usage-lib = { version = "0.1.18", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 walkdir = "2.5.0"
 which = "6.0.1"
-zip = { version = "1.1.1", default-features = false, features = ["deflate"] }
+zip = { version = "1.1.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3.1"

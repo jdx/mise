@@ -59,7 +59,6 @@ impl Implode {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use crate::dirs;
 

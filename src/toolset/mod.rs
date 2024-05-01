@@ -187,7 +187,6 @@ impl Toolset {
                                     ts,
                                     pr: mpr.add(&tv.style()),
                                     tv,
-                                    raw,
                                     force: opts.force,
                                 };
                                 t.install_version(ctx)?;

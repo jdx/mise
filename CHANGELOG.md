@@ -1,5 +1,88 @@
 # Changelog
 
+## [2024.4.12](https://github.com/jdx/mise/compare/v2024.4.11..v2024.4.12) - 2024-04-30
+
+### 🐛 Bug Fixes
+
+- **(self_update)** downgrade to fix signature verification issue by [@jdx](https://github.com/jdx) in [dbe1971](https://github.com/jdx/mise/commit/dbe1971c337a29f2e92fd1b765436e67abf7f04e)
+
+## [2024.4.11](https://github.com/jdx/mise/compare/v2024.4.10..v2024.4.11) - 2024-04-30
+
+### 🐛 Bug Fixes
+
+- **(self-update)** always use rustls by [@jdx](https://github.com/jdx) in [93a9c57](https://github.com/jdx/mise/commit/93a9c57ae895f1772a5ae8146d83713f631c77f1)
+
+### 🧪 Testing
+
+- **(java)** added e2e test for corretto-8 shorthand by [@jdx](https://github.com/jdx) in [#1995](https://github.com/jdx/mise/pull/1995)
+
+### 🔍 Other Changes
+
+- **(release)** fix cache by [@jdx](https://github.com/jdx) in [b54b25d](https://github.com/jdx/mise/commit/b54b25d06c49b5116ed37dda4c08005dfe7e6e11)
+- fix clippy warnings in latest rust beta by [@jdx](https://github.com/jdx) in [#1994](https://github.com/jdx/mise/pull/1994)
+
+### 📦️ Dependency Updates
+
+- update rust crate flate2 to 1.0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1997](https://github.com/jdx/mise/pull/1997)
+
+## [2024.4.10](https://github.com/jdx/mise/compare/v2024.4.9..v2024.4.10) - 2024-04-29
+
+### 🐛 Bug Fixes
+
+- **(docker)** create path to cargo registry cache by [@jdx](https://github.com/jdx) in [ed91c1c](https://github.com/jdx/mise/commit/ed91c1c5f928751c6bc1ce23ac0595c063648677)
+
+### 🔍 Other Changes
+
+- Revert "fix(java): inconsistent version resolution " by [@jdx](https://github.com/jdx) in [#1993](https://github.com/jdx/mise/pull/1993)
+
+## [2024.4.9](https://github.com/jdx/mise/compare/v2024.4.8..v2024.4.9) - 2024-04-29
+
+### 🚀 Features
+
+- **(node)** support comments in .nvmrc/.node-version by [@jdx](https://github.com/jdx) in [5915ae0](https://github.com/jdx/mise/commit/5915ae0a23d322e37f22847be11638f8ba108c15)
+- cli command for listing backends by [@roele](https://github.com/roele) in [#1989](https://github.com/jdx/mise/pull/1989)
+
+### 🐛 Bug Fixes
+
+- **(ci)** git2 reference by [@jdx](https://github.com/jdx) in [#1961](https://github.com/jdx/mise/pull/1961)
+- **(docker)** Ensure the e2e tests pass in the dev container by [@Adirelle](https://github.com/Adirelle) in [#1942](https://github.com/jdx/mise/pull/1942)
+- **(java)** inconsistent version resolution by [@roele](https://github.com/roele) in [#1957](https://github.com/jdx/mise/pull/1957)
+- **(zig)** can't install zig@master from v2024.4.6 by [@roele](https://github.com/roele) in [#1958](https://github.com/jdx/mise/pull/1958)
+- use mise fork of asdf-maven by [@jdx](https://github.com/jdx) in [5a01c1b](https://github.com/jdx/mise/commit/5a01c1b336a6e0a2ca0167aee6fa865318bd7f81)
+- deal with missing go/cargo/npm/etc in backends by [@jdx](https://github.com/jdx) in [#1976](https://github.com/jdx/mise/pull/1976)
+- mise doesn't change the trust hash file by [@roele](https://github.com/roele) in [#1979](https://github.com/jdx/mise/pull/1979)
+
+### 🚜 Refactor
+
+- converted just tasks in mise tasks. by [@Adirelle](https://github.com/Adirelle) in [#1948](https://github.com/jdx/mise/pull/1948)
+
+### 🧪 Testing
+
+- added cache for docker tests by [@jdx](https://github.com/jdx) in [#1977](https://github.com/jdx/mise/pull/1977)
+
+### 🔍 Other Changes
+
+- **(docker)** removed unused image by [@jdx](https://github.com/jdx) in [4150207](https://github.com/jdx/mise/commit/4150207c3464bf47207ea1c3c0959e7141ab27b8)
+- **(renovate)** ignore changes to registry/ subtree by [@jdx](https://github.com/jdx) in [c556149](https://github.com/jdx/mise/commit/c556149a88e73825306d98e3e3ea5b53692e0900)
+- buildjet by [@jdx](https://github.com/jdx) in [#1953](https://github.com/jdx/mise/pull/1953)
+- make git2 an optional build dependency by [@jdx](https://github.com/jdx) in [#1960](https://github.com/jdx/mise/pull/1960)
+- remove CODEOWNERS by [@jdx](https://github.com/jdx) in [304ba17](https://github.com/jdx/mise/commit/304ba171fd95701c04beb3d2a76bde0463a54209)
+
+### 📦️ Dependency Updates
+
+- update rust crate color-print to 0.3.6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1943](https://github.com/jdx/mise/pull/1943)
+- update amannn/action-semantic-pull-request action to v5.5.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1947](https://github.com/jdx/mise/pull/1947)
+- update rust crate demand to 1.1.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1944](https://github.com/jdx/mise/pull/1944)
+- update rust crate self_update to 0.40.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1954](https://github.com/jdx/mise/pull/1954)
+- update rust crate flate2 to 1.0.29 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1963](https://github.com/jdx/mise/pull/1963)
+- update serde monorepo to 1.0.199 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1964](https://github.com/jdx/mise/pull/1964)
+- update rust crate demand to 1.1.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1965](https://github.com/jdx/mise/pull/1965)
+- update rust crate zip to 1.1.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#1985](https://github.com/jdx/mise/pull/1985)
+
+### New Contributors
+
+* @Adirelle made their first contribution in [#1948](https://github.com/jdx/mise/pull/1948)
+
 ## [2024.4.8](https://github.com/jdx/mise/compare/v2024.4.7..v2024.4.8) - 2024-04-23
 
 ### 🚀 Features
