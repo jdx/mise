@@ -98,16 +98,8 @@ impl RubyPlugin {
                 // ruby-build is not up-to-date
                 (_cur, Ok(_latest)) => {}
                 // error getting latest ruby-build version (usually github rate limit)
-                (_cur, Err(err)) => {
-                    warn!("failed to get latest ruby-build version: {}", err);
-                    return Ok(());
-                }
+                (_cur, Err(err)) => warn!("failed to get latest ruby-build version: {}", err),
             }
-        }
-        if self.ruby_build_path().exists()
-            && self.ruby_build_version()? == self.latest_ruby_build_version()?
-        {
-            return Ok(());
         }
         debug!(
             "Updating ruby-build in {}",
