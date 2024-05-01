@@ -99,7 +99,7 @@ impl RubyPlugin {
                 (_cur, Ok(_latest)) => {}
                 // error getting latest ruby-build version (usually github rate limit)
                 (_cur, Err(err)) => {
-                    debug!("failed to get latest ruby-build version: {}", err);
+                    warn!("failed to get latest ruby-build version: {}", err);
                     return Ok(());
                 }
             }
