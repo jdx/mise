@@ -35,7 +35,8 @@ path = "src/main.rs"
 #name = "config_bench"
 #harness = false
 
-[profile.release]
+[profile.serious]
+inherits = "release"
 lto = true
 
 [dependencies]
