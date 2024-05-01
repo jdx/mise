@@ -40,7 +40,7 @@ inherits = "release"
 lto = true
 
 [dependencies]
-base64 = "0.22.0"
+base64 = "0.22.1"
 calm_io = "0.1.1"
 chrono = { version = "0.4.38", default-features = false, features = ["std", "clock"] }
 ci_info = "0.14.14"
