@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.5.0](https://github.com/jdx/mise/compare/v2024.4.12..v2024.5.0) - 2024-05-01
+
+### 🐛 Bug Fixes
+
+- **(release)** use target/release dir by [@jdx](https://github.com/jdx) in [e6448b3](https://github.com/jdx/mise/commit/e6448b335cf99db6fb2bdfd4c3f49ba255c2d8de)
+- **(release)** fixed the "serious" profile by [@jdx](https://github.com/jdx) in [487a1a0](https://github.com/jdx/mise/commit/487a1a0d336fed180123659ac59d1106d79f2d60)
+
+### 🔍 Other Changes
+
+- **(release)** added "serious" profile by [@jdx](https://github.com/jdx) in [f8ce139](https://github.com/jdx/mise/commit/f8ce139c1d0b41006dbbf1707801bf665f201ec6)
+
+### 📦️ Dependency Updates
+
+- update rust crate rmp-serde to 1.3.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2007](https://github.com/jdx/mise/pull/2007)
+- update rust crate base64 to 0.22.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2006](https://github.com/jdx/mise/pull/2006)
+
 ## [2024.4.12](https://github.com/jdx/mise/compare/v2024.4.11..v2024.4.12) - 2024-04-30
 
 ### 🐛 Bug Fixes
