@@ -79,16 +79,16 @@ VERSION=$(./scripts/get-version.sh)
 BASENAME=$NAME-$VERSION-$(get_os)-$(get_arch)$(get_suffix)
 
 if command -v cross >/dev/null; then
-  cross build "$@"
+  cross build --profile=serious "$@"
 elif command -v zig >/dev/null; then
-  cargo zigbuild "$@"
+  cargo zigbuild --profile=serious "$@"
 else
-  cargo build "$@"
+  cargo build --profile=serious "$@"
 fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
 mkdir -p dist/mise/share/fish/vendor_conf.d
-cp "target/$RUST_TRIPLE/release/mise" dist/mise/bin/mise
+cp "target/$RUST_TRIPLE/serious/mise" dist/mise/bin/mise
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 cp {,dist/mise/}man/man1/mise.1
