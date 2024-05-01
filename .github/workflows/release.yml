@@ -81,8 +81,7 @@ jobs:
       - run: scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
-      - run: ln -sv ./serious target/release
-      - run: scripts/build-tarball.sh mise --profile=serious --features openssl/vendored,git2 --target ${{matrix.target}}
+      - run: scripts/build-tarball.sh mise --features openssl/vendored,git2 --target ${{matrix.target}}
       - uses: actions/upload-artifact@v4
         with:
           name: tarball-${{matrix.target}}
