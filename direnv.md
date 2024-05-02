@@ -75,5 +75,5 @@ If you continue to struggle, you can also try using the [shims method](dev-tools
 
 While making mise compatible with direnv is, and will always be a major goal of this project, I also
 want mise to be capable of replacing direnv if needed. This is why mise includes support for managing
-env vars and [virtualenv](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation)
+env vars and [virtualenv](lang/python.md#automatic-virtualenv-activation)
 for python using `.mise.toml`.
