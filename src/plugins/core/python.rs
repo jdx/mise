@@ -135,7 +135,7 @@ impl PythonPlugin {
         };
 
         warn!("installing precompiled python from indygreg/python-build-standalone");
-        warn!("if you experience issues with this python, switch to python-build");
+        warn!("if you experience issues with this python (e.g.: running poetry), switch to python-build");
         warn!("by running: mise settings set python_compile 1");
 
         let url = format!(
