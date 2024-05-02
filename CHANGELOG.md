@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.5.2](https://github.com/jdx/mise/compare/v2024.5.1..v2024.5.2) - 2024-05-02
+
+### 🐛 Bug Fixes
+
+- **(self_update)** show --version param by [@jdx](https://github.com/jdx) in [#2013](https://github.com/jdx/mise/pull/2013)
+
 ## [2024.5.1](https://github.com/jdx/mise/compare/v2024.5.0..v2024.5.1) - 2024-05-02
 
 ### 🐛 Bug Fixes
