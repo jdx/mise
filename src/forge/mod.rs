@@ -32,7 +32,7 @@ use crate::{dirs, file};
 use self::forge_meta::ForgeMeta;
 
 mod cargo;
-mod forge_meta;
+pub mod forge_meta;
 mod go;
 mod npm;
 mod pipx;

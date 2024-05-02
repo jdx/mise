@@ -11,7 +11,7 @@ pub struct ForgeMeta {
     pub forge_type: String,
 }
 
-const FORGE_META_FILENAME: &str = ".mise.forge.json";
+pub const FORGE_META_FILENAME: &str = ".mise.forge.json";
 
 impl ForgeMeta {
     pub fn read(dirname: &str) -> ForgeMeta {
