@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# mise depends=["build"]
 # mise description="run all tests with coverage report"
 
 echo "::group::Setup"
@@ -25,7 +24,14 @@ if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
   mise implode
 elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
   echo "::group::Self update"
-  mise self-update -fy
+  # pick a version from the previous month because the current release might not have been published yet
+  y=$(date +%Y)
+  m=$(($(date +%m) - 1))
+  if [[ $m -eq 0 ]]; then
+    m=12
+    y=$((y - 1))
+  fi
+  mise self-update -fy "$y.$m.0"
 fi
 echo "::group::Render lcov report"
 cargo llvm-cov report --lcov --output-path lcov.info
