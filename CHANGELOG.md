@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.5.1](https://github.com/jdx/mise/compare/v2024.5.0..v2024.5.1) - 2024-05-02
+
+### 🐛 Bug Fixes
+
+- **(ruby)** handle github rate limits when fetching ruby-build version by [@jdx](https://github.com/jdx) in [4a538a7](https://github.com/jdx/mise/commit/4a538a7e282de8c59ba51ec6de64bb715debe022)
+- **(ruby)** attempt to update ruby-build if it cannot check version by [@jdx](https://github.com/jdx) in [9f6e2ef](https://github.com/jdx/mise/commit/9f6e2efeb03a9cfc1786f88e84ce03ed6399a304)
+- prevent crashing if "latest" is not a symlink by [@jdx](https://github.com/jdx) in [91291e0](https://github.com/jdx/mise/commit/91291e09e8fd3395f8a1265c9af2bd22eff46993)
+- edge case around "latest" being the "latest" version by [@jdx](https://github.com/jdx) in [33f5473](https://github.com/jdx/mise/commit/33f547357e9f082115e81ff852c523b406e5226d)
+- show source file on resolve error by [@jdx](https://github.com/jdx) in [881dbeb](https://github.com/jdx/mise/commit/881dbeb9a34fcb231bc83e14d1a12314bb995870)
+
+### 📚 Documentation
+
+- **(python)** warn about precompiled python and poetry by [@jdx](https://github.com/jdx) in [3c07dce](https://github.com/jdx/mise/commit/3c07dced232970fce3d585277089cbf374e4d64a)
+
+### 🧪 Testing
+
+- **(self-update)** try to enable self update test by [@jdx](https://github.com/jdx) in [778e90a](https://github.com/jdx/mise/commit/778e90af1bdfb5095e2f0b5c1b625c5abab7ee45)
+- fix the test-plugins job by [@jdx](https://github.com/jdx) in [669530c](https://github.com/jdx/mise/commit/669530ce5bbd902ad0cd39e87e6c442d184353b9)
+
+### 🔍 Other Changes
+
+- **(release)** disable cache by [@jdx](https://github.com/jdx) in [b69edc6](https://github.com/jdx/mise/commit/b69edc67c83284ee758c92258608298eaba25929)
+- **(ruby)** change ruby-build update failure to warn-level by [@jdx](https://github.com/jdx) in [d6f7f22](https://github.com/jdx/mise/commit/d6f7f22df93a862929ebbc8f3b6a1309e1e3c875)
+
 ## [2024.5.0](https://github.com/jdx/mise/compare/v2024.4.12..v2024.5.0) - 2024-05-01
 
 ### 🐛 Bug Fixes
