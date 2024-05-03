@@ -49,6 +49,21 @@ pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
 }
 
+pub fn remove_dir_ignore<P: AsRef<Path>>(
+    path: P,
+    is_empty_ignore_files: Vec<String>,
+) -> Result<()> {
+    let path = path.as_ref();
+    (|| -> Result<()> {
+        if path.exists() && is_empty_dir_ignore(path, is_empty_ignore_files)? {
+            trace!("rm -rf {}", display_path(path));
+            remove_all_with_warning(path)?;
+        }
+        Ok(())
+    })()
+    .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
+}
+
 pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     remove_all(&path).map_err(|e| {
         warn!("failed to remove {}: {}", path.as_ref().display(), e);
@@ -250,6 +265,22 @@ pub fn all_dirs() -> Result<Vec<PathBuf>> {
 fn is_empty_dir(path: &Path) -> Result<bool> {
     path.read_dir()
         .map(|mut i| i.next().is_none())
+        .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
+}
+
+fn is_empty_dir_ignore(path: &Path, ignore_files: Vec<String>) -> Result<bool> {
+    path.read_dir()
+        .map(|mut i| {
+            i.all(|entry| match entry {
+                Ok(entry) => ignore_files.iter().any(|ignore_file| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(ignore_file)
+                }),
+                Err(_) => false,
+            })
+        })
         .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
 }
 
