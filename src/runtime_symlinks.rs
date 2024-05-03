@@ -9,7 +9,7 @@ use versions::Versioning;
 
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::forge::Forge;
+use crate::forge::{forge_meta, Forge};
 use crate::plugins::VERSION_REGEX;
 use crate::{file, forge};
 
@@ -30,8 +30,11 @@ pub fn rebuild(config: &Config) -> Result<()> {
             make_symlink(&to, &from)?;
         }
         remove_missing_symlinks(forge.clone())?;
-        // remove install dir if empty
-        file::remove_dir(installs_dir)?;
+        // remove install dir if empty (ignore metadata)
+        file::remove_dir_ignore(
+            installs_dir,
+            vec![forge_meta::FORGE_META_FILENAME.to_string()],
+        )?;
     }
     Ok(())
 }
