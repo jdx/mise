@@ -5,11 +5,14 @@ use console::style;
 use eyre::Result;
 
 use crate::cli::args::ForgeArg;
+use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
+
+use super::trust::Trust;
 
 /// Delete unused versions of tools
 ///
@@ -27,10 +30,39 @@ pub struct Prune {
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
     pub dry_run: bool,
+
+    /// Prune only tracked and trusted configuration links that point to non-existent configurations
+    #[clap(long)]
+    pub configs: bool,
+
+    /// Prune only unused versions of tools
+    #[clap(long)]
+    pub tools: bool,
 }
 
 impl Prune {
     pub fn run(self) -> Result<()> {
+        if self.configs || !self.tools {
+            self.prune_configs()?;
+        }
+        if self.tools || !self.configs {
+            self.prune_tools()?;
+        }
+        Ok(())
+    }
+
+    fn prune_configs(&self) -> Result<()> {
+        if self.dry_run {
+            info!("pruned configuration links {}", style("[dryrun]").bold());
+        } else {
+            Tracker::clean()?;
+            Trust::clean()?;
+            info!("pruned configuration links");
+        }
+        Ok(())
+    }
+
+    fn prune_tools(&self) -> Result<()> {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
         let mut to_delete = ts
