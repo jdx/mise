@@ -94,7 +94,7 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         display_friendly_err(err);
         exit(1);
     }
-    Err(err).suggestion("Run with --verbose or MISE_VERBOSE=1 for more information.")
+    Err(err)
 }
 
 fn display_friendly_err(err: Report) {
