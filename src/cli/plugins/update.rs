@@ -1,5 +1,5 @@
 use console::style;
-use eyre::Result;
+use eyre::{Report, Result};
 use rayon::prelude::*;
 
 use crate::config::Settings;
@@ -42,20 +42,34 @@ impl Update {
                 .collect::<Vec<_>>(),
         };
 
-        // let queue = Mutex::new(plugins);
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
-        rayon::ThreadPoolBuilder::new()
+        let mut errors = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs.unwrap_or(settings.jobs))
             .build()?
             .install(|| {
-                plugins.into_par_iter().for_each(|(plugin, ref_)| {
-                    let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
-                    let pr = mpr.add(&prefix);
-                    plugin.update(pr.as_ref(), ref_).unwrap();
-                });
-                Ok(())
-            })
+                plugins
+                    .into_par_iter()
+                    .map(|(plugin, ref_)| {
+                        let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
+                        let pr = mpr.add(&prefix);
+                        plugin
+                            .update(pr.as_ref(), ref_)
+                            .map_err(|e| eyre!("[{plugin}] plugin update: {e:?}"))
+                    })
+                    .filter_map(|r| r.err())
+                    .collect::<Vec<_>>()
+            });
+        if errors.is_empty() {
+            Ok(())
+        } else if errors.len() == 1 {
+            Err(errors.pop().unwrap())
+        } else {
+            let err = eyre!("{} plugins failed to update", errors.len());
+            Err(errors
+                .into_iter()
+                .fold(err, |report: Report, e| report.wrap_err(e)))
+        }
     }
 }
 
