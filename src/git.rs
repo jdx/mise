@@ -1,8 +1,8 @@
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
-use color_eyre::eyre::{eyre, Result};
 use duct::Expression;
+use eyre::{eyre, Result, WrapErr};
 
 use crate::cmd;
 use crate::file::touch_dir;
@@ -16,6 +16,17 @@ macro_rules! git_cmd {
         {
             let safe = format!("safe.directory={}", $dir.display());
             cmd!("git", "-C", $dir, "-c", safe $(, $arg)*)
+        }
+    }
+}
+
+macro_rules! git_cmd_read {
+    ( $dir:expr $(, $arg:expr )* $(,)? ) => {
+        {
+            git_cmd!($dir $(, $arg)*).read().wrap_err_with(|| {
+                let args = [$($arg,)*].join(" ");
+                format!("git {args} failed")
+            })
         }
     }
 }
@@ -88,24 +99,24 @@ impl Git {
     }
 
     pub fn current_branch(&self) -> Result<String> {
-        let branch = git_cmd!(&self.dir, "branch", "--show-current").read()?;
+        let branch = git_cmd_read!(&self.dir, "branch", "--show-current")?;
         debug!("current branch for {}: {}", self.dir.display(), &branch);
         Ok(branch)
     }
     pub fn current_sha(&self) -> Result<String> {
-        let sha = git_cmd!(&self.dir, "rev-parse", "HEAD").read()?;
+        let sha = git_cmd_read!(&self.dir, "rev-parse", "HEAD")?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
 
     pub fn current_sha_short(&self) -> Result<String> {
-        let sha = git_cmd!(&self.dir, "rev-parse", "--short", "HEAD").read()?;
+        let sha = git_cmd_read!(&self.dir, "rev-parse", "--short", "HEAD")?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
 
     pub fn current_abbrev_ref(&self) -> Result<String> {
-        let aref = git_cmd!(&self.dir, "rev-parse", "--abbrev-ref", "HEAD").read()?;
+        let aref = git_cmd_read!(&self.dir, "rev-parse", "--abbrev-ref", "HEAD")?;
         debug!("current abbrev ref for {}: {}", self.dir.display(), &aref);
         Ok(aref)
     }
@@ -114,7 +125,7 @@ impl Git {
         if !self.dir.exists() {
             return None;
         }
-        let res = git_cmd!(&self.dir, "config", "--get", "remote.origin.url").read();
+        let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
         match res {
             Ok(url) => {
                 debug!("remote url for {}: {}", self.dir.display(), &url);
