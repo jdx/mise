@@ -1,6 +1,8 @@
 use console::style;
 use eyre::Result;
+use itertools::Itertools;
 use rayon::prelude::*;
+use std::sync::Mutex;
 
 use crate::config::Settings;
 use crate::plugins;
@@ -49,12 +51,28 @@ impl Update {
             .num_threads(self.jobs.unwrap_or(settings.jobs))
             .build()?
             .install(|| {
+                let errors = Mutex::new(Vec::new());
+
                 plugins.into_par_iter().for_each(|(plugin, ref_)| {
                     let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
                     let pr = mpr.add(&prefix);
-                    plugin.update(pr.as_ref(), ref_).unwrap();
+                    match plugin.update(pr.as_ref(), ref_) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            let plugin_name = plugin.name().to_owned();
+                            let mut errs = errors.lock().unwrap();
+                            errs.push((plugin_name, e))
+                        }
+                    }
                 });
-                Ok(())
+
+                let locked_errors = errors.lock().unwrap();
+                if locked_errors.is_empty() {
+                    Ok(())
+                } else {
+                    let names = locked_errors.iter().map(|(name, _)| name).join(", ");
+                    Err(eyre::eyre!("Failed to update plugins: {}", names))
+                }
             })
     }
 }
