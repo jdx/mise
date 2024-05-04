@@ -1,6 +1,5 @@
 use console::style;
-use eyre::Result;
-use itertools::Itertools;
+use eyre::{Report, Result};
 use rayon::prelude::*;
 use std::sync::Mutex;
 
@@ -47,32 +46,37 @@ impl Update {
         // let queue = Mutex::new(plugins);
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
+
         rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs.unwrap_or(settings.jobs))
             .build()?
             .install(|| {
-                let errors = Mutex::new(Vec::new());
-
+                let results = Mutex::new(Vec::new());
                 plugins.into_par_iter().for_each(|(plugin, ref_)| {
                     let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
                     let pr = mpr.add(&prefix);
-                    match plugin.update(pr.as_ref(), ref_) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            let plugin_name = plugin.name().to_owned();
-                            let mut errs = errors.lock().unwrap();
-                            errs.push((plugin_name, e))
-                        }
-                    }
+                    let mut results = results.lock().unwrap();
+                    let result = plugin.update(pr.as_ref(), ref_);
+                    results.push(result)
                 });
 
-                let locked_errors = errors.lock().unwrap();
-                if locked_errors.is_empty() {
-                    Ok(())
-                } else {
-                    let names = locked_errors.iter().map(|(name, _)| name).join(", ");
-                    Err(eyre::eyre!("Failed to update plugins: {}", names))
+                let locked_results = results.lock().unwrap();
+                if locked_results.iter().all(|r| r.is_ok()) {
+                    return Ok(());
                 }
+
+                let errors: Vec<&Report> = locked_results
+                    .iter()
+                    .filter_map(|r| r.as_ref().err())
+                    .collect();
+
+                let report = errors
+                    .into_iter()
+                    .fold(eyre!("encountered errors during update"), |report, e| {
+                        report.wrap_err(e)
+                    });
+
+                Err(report)
             })
     }
 }
