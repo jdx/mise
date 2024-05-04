@@ -65,9 +65,19 @@ impl Forge for PIPXForge {
         settings.ensure_experimental("pipx backend")?;
         let project_name = transform_project_name(ctx, self.name());
 
+        // add extra arguments from options, converting | to multiple args
+        // e.g. { preinstall = "foo|bar" } -> --preinstall=foo --preinstall=bar
+        let args = (ctx.tv.opts).iter().flat_map(|(key, value)| {
+            value
+                .trim()
+                .split('|')
+                .map(|v| format!("--{key}={value}", key = key.clone(), value = v.trim()))
+        });
+
         CmdLineRunner::new("pipx")
             .arg("install")
             .arg(project_name)
+            .args(args)
             .with_pr(ctx.pr.as_ref())
             .env("PIPX_HOME", ctx.tv.install_path())
             .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
