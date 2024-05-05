@@ -57,6 +57,7 @@ fn init_term_logger(level: LevelFilter) -> Box<dyn SharedLogger> {
             .set_thread_level(trace_level)
             .set_location_level(trace_level)
             .set_target_level(trace_level)
+            .add_filter_ignore(String::from("globset")) // debug!() statements break outputs
             .build(),
         TerminalMode::Stderr,
         ColorChoice::Auto,

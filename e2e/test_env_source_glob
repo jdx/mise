@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+export MISE_EXPERIMENTAL=1
+
+cat >.e2e.mise.toml <<EOF
+[env]
+_.source = "source.d/*.sh"
+EOF
+
+mkdir -p source.d
+
+cat >source.d/1.sh <<EOF
+#!/usr/bin/env bash
+export SOURCE1=1
+EOF
+
+cat >source.d/2.sh <<EOF
+#!/usr/bin/env bash
+export SOURCE2=2
+EOF
+
+assert_contains "mise env -s bash" "SOURCE1=1"
+assert_contains "mise env -s bash" "SOURCE2=2"
