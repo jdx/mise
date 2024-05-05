@@ -11,3 +11,5 @@ Library
 /pyproject.toml
 /poetry.lock
 /test-e2e/
+env.d
+source.d
