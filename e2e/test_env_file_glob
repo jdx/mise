@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
+
+cat >.e2e.mise.toml <<EOF
+[env]
+_.file = "env.d/*.env"
+EOF
+
+mkdir -p env.d
+
+echo "VAR1=1" >env.d/1.env
+echo "VAR2=2" >env.d/2.env
+
+# mise trust --verbose
+mise env -s bash
+assert_contains "mise env -s bash" "VAR1=1"
+assert_contains "mise env -s bash" "VAR2=2"
