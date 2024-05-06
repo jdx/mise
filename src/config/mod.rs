@@ -29,7 +29,7 @@ use crate::{dirs, env, file, forge};
 pub mod config_file;
 mod env_directive;
 pub mod settings;
-mod tracking;
+pub mod tracking;
 
 type AliasMap = BTreeMap<ForgeArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;

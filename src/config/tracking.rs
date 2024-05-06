@@ -21,7 +21,6 @@ impl Tracker {
     }
 
     pub fn list_all() -> Result<Vec<PathBuf>> {
-        Self::clean()?;
         let mut output = vec![];
         for path in read_dir(&*TRACKED_CONFIGS)? {
             let path = path?.path();
@@ -37,10 +36,12 @@ impl Tracker {
     }
 
     pub fn clean() -> Result<()> {
-        for path in read_dir(&*TRACKED_CONFIGS)? {
-            let path = path?.path();
-            if !path.exists() {
-                remove_file(&path)?;
+        if TRACKED_CONFIGS.is_dir() {
+            for path in read_dir(&*TRACKED_CONFIGS)? {
+                let path = path?.path();
+                if !path.exists() {
+                    remove_file(&path)?;
+                }
             }
         }
         Ok(())
