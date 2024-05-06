@@ -682,6 +682,8 @@ as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSI
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 "
     flag "-n --dry-run" help="Do not actually delete anything"
+    flag "--configs" help="Prune only tracked and trusted configuration links that point to non-existent configurations"
+    flag "--tools" help="Prune only unused versions of tools"
     arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" var=true
 }
 cmd "reshim" help="rebuilds the shim farm" {
