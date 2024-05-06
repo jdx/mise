@@ -21,10 +21,6 @@
 - Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](https://mise.jdx.dev/environments.html) for different project directories.
 - Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](https://mise.jdx.dev/tasks/) used to build and test projects.
 
-## Migrating from rtx
-
-mise will attempt to migrate most of its internal files making the transition as easy as possible. That said, it's worth reading the [migration guide](https://mise.jdx.dev/rtx.html) because there are a few things to watch out for.
-
 ## 30 Second Demo
 
 The following shows using mise to install different versions
