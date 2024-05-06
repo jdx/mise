@@ -52,8 +52,8 @@ impl Trust {
                 None => bail!("No trusted config files found."),
             },
         };
-        config_file::untrust(&path)?;
         let path = path.canonicalize()?;
+        config_file::untrust(&path)?;
         info!("untrusted {}", path.display());
         Ok(())
     }
@@ -65,8 +65,8 @@ impl Trust {
                 None => bail!("No untrusted config files found."),
             },
         };
-        config_file::trust(&path)?;
         let path = path.canonicalize()?;
+        config_file::trust(&path)?;
         info!("trusted {}", path.display());
         Ok(())
     }
