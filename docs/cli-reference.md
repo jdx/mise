@@ -885,6 +885,12 @@ Options:
   -n, --dry-run
           Do not actually delete anything
 
+      --configs
+          Prune only tracked and trusted configuration links that point to non-existent configurations
+
+      --tools
+          Prune only unused versions of tools
+
 Examples:
 
     $ mise prune --dry-run
