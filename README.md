@@ -96,7 +96,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | CalendarSync                  | [FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync)                                           |
 | Calicoctl                     | [FairwindsOps/asdf-calicoctl](https://github.com/FairwindsOps/asdf-calicoctl)                                     |
 | Camunda Modeler               | [barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler)                                     |
-| cargo-make                    | [kachick/asdf-cargo-make](https://github.com/kachick/asdf-cargo-make)                                             |
+| cargo-make                    | [mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make)                                   |
 | Carp                          | [susurri/asdf-carp](https://github.com/susurri/asdf-carp)                                                         |
 | carthage                      | [younke/asdf-carthage](https://github.com/younke/asdf-carthage)                                                   |
 | ccache                        | [asdf-community/asdf-ccache](https://github.com/asdf-community/asdf-ccache)                                       |
@@ -765,7 +765,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | xcresultparser                | [MacPaw/asdf-xcresultparser](https://github.com/MacPaw/asdf-xcresultparser)                                       |
 | xh                            | [NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh)                                                               |
 | yadm                          | [particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm)                                             |
-| yamlfmt                       | [kachick/asdf-yamlfmt](https://github.com/kachick/asdf-yamlfmt)                                                   |
+| yamlfmt                       | [mise-plugins/asdf-yamlfmt](https://github.com/mise-plugins/asdf-yamlfmt)                                         |
 | yamllint                      | [ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint)                                 |
 | yamlscript                    | [FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript)                                               |
 | Yarn                          | [mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn)                                               |
@@ -779,7 +779,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | zbctl                         | [camunda-community-hub/asdf-zbctl](https://github.com/camunda-community-hub/asdf-zbctl)                           |
 | zellij                        | [chessmango/asdf-zellij](https://github.com/chessmango/asdf-zellij)                                               |
 | Zephyr                        | [nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr)                                                 |
-| zigmod                        | [kachick/asdf-zigmod](https://github.com/kachick/asdf-zigmod)                                                     |
+| zigmod                        | [mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod)                                           |
 | Zola                          | [salasrod/asdf-zola](https://github.com/salasrod/asdf-zola)                                                       |
 | zoxide                        | [nyrst/asdf-zoxide](https://github.com/nyrst/asdf-zoxide)                                                         |
 | zprint                        | [carlduevel/asdf-zprint](https://github.com/carlduevel/asdf-zprint)                                               |
