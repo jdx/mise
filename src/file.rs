@@ -216,7 +216,8 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
     if link.is_file() || link.is_symlink() {
         fs::remove_file(link)?;
     }
-    symlink(target, link)?;
+    symlink(target, link)
+        .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
     Ok(())
 }
 
