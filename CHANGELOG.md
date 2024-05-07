@@ -1,5 +1,31 @@
 # Changelog
 
+## [2024.5.3](https://github.com/jdx/mise/compare/v2024.5.2..v2024.5.3) - 2024-05-06
+
+### 🚀 Features
+
+- **(env)** supports glob patterns in `env._.file` and `env._.source` (fix #1916) by [@noirbizarre](https://github.com/noirbizarre) in [#2016](https://github.com/jdx/mise/pull/2016)
+- cleanup invalid symlinks in .local/state/mise/(tracked|trusted)-configs by [@roele](https://github.com/roele) in [#2036](https://github.com/jdx/mise/pull/2036)
+
+### 🐛 Bug Fixes
+
+- **(plugin-update)** Handle errors from the underlying plugin updates by [@offbyone](https://github.com/offbyone) in [#2024](https://github.com/jdx/mise/pull/2024)
+- backend install directory not removed if empty by [@roele](https://github.com/roele) in [#2018](https://github.com/jdx/mise/pull/2018)
+- mise trust doesn't handle relative paths by [@roele](https://github.com/roele) in [#2037](https://github.com/jdx/mise/pull/2037)
+
+### 🔍 Other Changes
+
+- Update README.md by [@jdx](https://github.com/jdx) in [40e82be](https://github.com/jdx/mise/commit/40e82be7e187cb09d2dad1c0d8b61078c4f7cebe)
+- move kachick plugins to mise-plugins by Jeff Dickey in [a41b296](https://github.com/jdx/mise/commit/a41b296d7f599de3bccfb31c71da9606fd508216)
+
+### 📦️ Dependency Updates
+
+- update rust crate zip to v1.1.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2030](https://github.com/jdx/mise/pull/2030)
+
+### New Contributors
+
+* @noirbizarre made their first contribution in [#2016](https://github.com/jdx/mise/pull/2016)
+
 ## [2024.5.2](https://github.com/jdx/mise/compare/v2024.5.1..v2024.5.2) - 2024-05-02
 
 ### 🐛 Bug Fixes
