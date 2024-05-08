@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 mise i
-mise uninstall tiny
+mise uninstall tiny --all
 export CLICOLOR=0
 assert_contains "mise ls tiny" "3.1.0 (missing)"
 
