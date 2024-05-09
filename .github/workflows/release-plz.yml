@@ -44,6 +44,7 @@ jobs:
           restore-keys: mise-tools
       - run: mise install
       - run: git subtree pull --prefix registry https://github.com/mise-plugins/registry.git main
+        continue-on-error: true
       #- run: git subtree push --prefix registry https://github.com/mise-plugins/registry.git main
       - run: mise run release-plz
         env:
