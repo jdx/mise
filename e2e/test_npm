@@ -3,8 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
-
 echo v20.0.0 >.node-version
 
 assert "mise x npm:prettier@3.1.0 -- prettier -v" "3.1.0"

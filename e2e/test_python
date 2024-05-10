@@ -3,7 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
 export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-python-packages"
 
 cat >.e2e.mise.toml <<EOF

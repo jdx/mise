@@ -3,7 +3,7 @@ set -e
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1 MISE_GO_DEFAULT_PACKAGES_FILE="$HOME/.default-go-packages"
+export MISE_GO_DEFAULT_PACKAGES_FILE="$HOME/.default-go-packages"
 
 cat >"$MISE_GO_DEFAULT_PACKAGES_FILE" <<EOF
 github.com/jdx/go-example # comment

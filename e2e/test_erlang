@@ -7,6 +7,4 @@ if [ "${TEST_ALL:-}" != 1 ]; then
   skip "should be run in all tests"
 fi
 
-export MISE_EXPERIMENTAL=1
-
 assert_contains "mise x erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell" "24"

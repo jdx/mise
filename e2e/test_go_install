@@ -3,7 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
 eval "$(mise activate bash --shims)"
 mise use go@prefix:1.20
 

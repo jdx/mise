@@ -2,7 +2,6 @@
 # shellcheck disable=SC2088
 set -euo pipefail
 
-export MISE_EXPERIMENTAL=1
 orig_path="$PATH"
 
 # shellcheck disable=SC1090

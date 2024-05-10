@@ -3,7 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
 eval "$(mise activate bash)" && eval "$(mise hook-env)"
 assert "node -v" "v20.0.0"
 mise shell node@18.0.0 && eval "$(mise hook-env)"

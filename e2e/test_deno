@@ -3,8 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
-
 if [[ "${MISE_DISABLE_TOOLS:-}" = *deno* ]]; then
   skip "Skipping deno tests"
 fi

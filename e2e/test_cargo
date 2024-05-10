@@ -3,7 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-export MISE_EXPERIMENTAL=1
 export MISE_CARGO_BINSTALL=1
 
 assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls

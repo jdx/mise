@@ -1,8 +1,6 @@
 #!/usr/bin/env zsh
 set -e
 
-export MISE_EXPERIMENTAL=1
-
 eval "$(direnv hook zsh)"
 eval "$(mise activate zsh --status)"
 _mise_hook && _direnv_hook
