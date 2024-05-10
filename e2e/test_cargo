@@ -9,9 +9,7 @@ assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replaceme
 v0.17.0 [+git]
 https://github.com/eza-community/eza"
 
-if [ "${TEST_ALL:-}" != 1 ]; then
-  exit
-fi
+skip_slow_test
 
 export MISE_CARGO_BINSTALL=0
 mise rm cargo:eza@0.17.0

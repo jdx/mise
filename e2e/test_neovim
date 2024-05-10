@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-skip "TODO: fix this in github actions CI"
+skip_slow_test
 
 mise i neovim@ref:master
 assert_contains "mise x neovim@ref:master -- nvim --version" "NVIM v0."

@@ -3,8 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-if [ "${TEST_ALL:-}" != 1 ]; then
-  skip "should be run in all tests"
-fi
+skip_slow_test
 
 assert_contains "mise x erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell" "24"
