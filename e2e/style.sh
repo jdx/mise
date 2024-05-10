@@ -4,8 +4,8 @@ if [[ -n ${GITHUB_ACTION:-} ]]; then
   # Use special GA formatting
   # Use ANSI green color for the "ok" message so groups with no errors are kept collapsed
   _STYLE_OK=$'\e[92m'
-  _STYLE_ERR='::error::'
-  _STYLE_WARN='::warning::'
+  _STYLE_ERR="::error${MISE_TEST_SCRIPT:+ file=${MISE_TEST_SCRIPT#"$ROOT"/}}::"
+  _STYLE_WARN="::warning${MISE_TEST_SCRIPT:+ file=${MISE_TEST_SCRIPT#"$ROOT"/}}::"
   _STYLE_RESET=$'\e[0m'
   _GROUP_START='::group::'
   _GROUP_END='::endgroup::'

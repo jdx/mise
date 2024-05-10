@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
-
-ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 
 TEST="$1"
 TEST_SCRIPT="$SCRIPT_DIR/$TEST"
@@ -57,6 +56,7 @@ within_isolated_env() {
     MISE_YES=1 \
     MISE_TEST_NAME="$TEST" \
     MISE_TEST_ROOT="$SCRIPT_DIR" \
+    MISE_TEST_SCRIPT="$TEST_SCRIPT" \
     MISE_TEST_DIR="$(dirname "$TEST_SCRIPT")" \
     NPM_CONFIG_FUND=false \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \

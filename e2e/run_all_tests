@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
 test_count=0
 passed_tests=()
