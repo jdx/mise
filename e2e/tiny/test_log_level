@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+assert_contains "mise x tiny@latest --log-level debug -- rtx-tiny" "[DEBUG]"
+assert_contains "mise x tiny@latest --log-level=debug -- rtx-tiny" "[DEBUG]"
+assert_contains "mise x tiny@latest --debug -- rtx-tiny" "[DEBUG]"
+assert_contains "mise x tiny@latest --trace -- rtx-tiny" "[TRACE]"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+mkdir direnv
+
+assert "mise x -C $PWD/direnv -- pwd" "$(pwd)/direnv"
+assert "mise x -C ./direnv -- pwd" "$(pwd)/direnv"
+assert "mise x -C direnv -- pwd" "$(pwd)/direnv"

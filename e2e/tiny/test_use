@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+mise i tiny@1.0.0
+
+assert_contains "mise use tiny" "tiny@1.0.0"
+assert_contains "mise current tiny" "1.0.0"
+
+assert_contains "mise use tiny@1" "tiny@1.0.0"
+assert "mise current tiny" "1.0.0"
+
+assert_contains "mise use --env local tiny@2" "tiny@2.1.0"
+assert "cat .mise.local.toml" '[tools]
+tiny = "2"'
+assert "mise current tiny" "2.1.0"
+rm .mise.local.toml
+
+assert_not_contains "mise use --rm tiny" "tiny"
+assert "mise current tiny" ""

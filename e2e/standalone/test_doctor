@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+mise plugins install poetry && mise i
+eval "$(mise activate bash)" && _mise_hook
+mise reshim
+mise doctor

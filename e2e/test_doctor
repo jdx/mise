@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-mise plugins install poetry && mise i
-eval "$(mise activate bash)" && _mise_hook
-mise reshim
-mise doctor

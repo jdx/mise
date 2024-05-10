@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+mise i --raw -f tiny@1 tiny@2 tiny@3
+MISE_RAW=1 mise i -f tiny@1 tiny@2 tiny@3

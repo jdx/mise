@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+assert_contains "mise p list-remote" "elixir"
+assert_contains "mise ls-remote tiny" "1.1.0"

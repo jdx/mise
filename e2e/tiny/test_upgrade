@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+echo "tiny 3" >.tool-versions
+
+mise install tiny@3.0.0
+assert_contains "mise ls --installed tiny" "3.0.0"
+assert_not_contains "mise ls --installed tiny" "3.1.0"
+
+mise upgrade tiny
+assert_contains "mise ls --installed tiny" "3.1.0"
+assert_not_contains "mise ls --installed tiny" "3.0.0"

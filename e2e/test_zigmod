@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/assert.sh"
-
-eval "$(mise activate bash)" && eval "$(mise hook-env)"
-mise plugin install https://github.com/kachick/asdf-zigmod
-assert_contains "mise x zigmod@latest -- zigmod version" "zigmod"

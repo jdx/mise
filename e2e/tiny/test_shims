@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+eval "$(mise activate --shims)"
+
+mise use tiny@latest
+mise i
+mise reshim
+assert_contains "rtx-tiny" "v20.0.0"
+
+# should still have this prefix since mise should only modify PATH
+# starting at the shim directory
+assert_matches "node -p 'process.env.PATH'" "^/XSTARTX:"

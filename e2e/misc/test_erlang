@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+skip_slow_test
+
+assert_contains "mise x erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell" "24"
