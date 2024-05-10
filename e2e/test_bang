@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
 
-assert() {
-  local actual
-  actual="$($1)"
-  if [[ "$actual" != "$2" ]]; then
-    echo "Expected '$2' but got '$actual'"
-    exit 1
-  fi
-}
+assert_fail "mise current tiny"
 
-mise uninstall --all tiny
 mise i tiny
+
 mise local tiny@sub-1:latest
 assert "mise current tiny" "2.1.0"
+
 mise local tiny@sub-1:lts
 assert "mise current tiny" "2.1.0"
+
 mise local tiny@sub-0.1:3.1
 assert "mise current tiny" "3.0.1"
-mise local tiny@latest

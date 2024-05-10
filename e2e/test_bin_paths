@@ -3,5 +3,13 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-mise use go@system
-assert_not_contains "mise env -s bash" "go/system"
+cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+[tools]
+tiny = "latest"
+EOF
+
+mise i tiny
+assert_contains "mise env -s bash" "tiny/latest"
+
+mise use tiny@system
+assert_not_contains "mise env -s bash" "tiny/latest"

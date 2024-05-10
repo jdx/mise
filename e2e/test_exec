@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
 
-assert() {
-  local actual
-  actual="$($1)"
-  if [[ "$actual" != "$2" ]]; then
-    echo "Expected '$2' but got '$actual'"
-    exit 1
-  fi
-}
+mkdir direnv
 
 assert "mise x -C $PWD/direnv -- pwd" "$(pwd)/direnv"
 assert "mise x -C ./direnv -- pwd" "$(pwd)/direnv"

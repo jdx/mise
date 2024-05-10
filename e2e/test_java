@@ -19,7 +19,7 @@ assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
 rm .java-version
 
 if [ "${TEST_ALL:-}" != 1 ]; then
-  exit
+  skip "skipping java 8 installation test"
 fi
 
 mise i java@corretto-8

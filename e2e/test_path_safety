@@ -5,5 +5,5 @@ source "$(dirname "$0")/assert.sh"
 
 export MISE_EXPERIMENTAL=1
 eval "$(mise activate bash)" && eval "$(mise hook-env)"
-install -m 0755 /dev/null /tmp/MISE_PATH_SAFETY_CHECK
-cd /tmp && assert_fail "command -v MISE_PATH_SAFETY_CHECK"
+install -m 0755 /dev/null "$TMPDIR/MISE_PATH_SAFETY_CHECK"
+cd "$TMPDIR" && assert_fail "command -v MISE_PATH_SAFETY_CHECK"

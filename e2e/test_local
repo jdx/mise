@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
-
-assert() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
-}
-assert_raises() {
-  if ! $1; then
-    echo "assertion failed: $1"
-    exit 1
-  fi
-}
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
 
 mise i shfmt@3.6.0 shfmt@3.5.0
 

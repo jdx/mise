@@ -5,14 +5,17 @@ source "$(dirname "$0")/assert.sh"
 
 export MISE_EXPERIMENTAL=1
 export MISE_NODE_COREPACK=1
-export MISE_NODE_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-npm-packages"
+export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
 
-mise plugin uninstall node
+echo v20.0.0 >.node-version
+echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
+
 mise i node@lts/hydrogen
 mise i -f node
 assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
 assert "mise x -- node --version" "v20.0.0"
 assert_contains "mise x -- which yarn" "yarn"
+assert_contains "mise x -- which zx" "zx"
 
 # test asdf-nodejs
 mise plugin i nodejs https://github.com/asdf-vm/asdf-nodejs.git
@@ -24,10 +27,10 @@ assert_contains "mise node nodebuild --version" "node-build "
 mise use --rm node
 
 # MISE_LEGACY_VERSION_FILE env var
-MISE_LEGACY_VERSION_FILE=1 assert_contains "mise current node" "20.0.0"
-MISE_LEGACY_VERSION_FILE=0 assert_not_contains "mise current node" "20.0.0"
+assert_contains "MISE_LEGACY_VERSION_FILE=1 mise current node" "20.0.0"
+assert_not_contains "MISE_LEGACY_VERSION_FILE=0 mise current node" "20.0.0"
 mise plugin uninstall nodejs
 assert_not_contains "mise plugins --user" "node"
 
 # disable nodejs plugin
-MISE_DISABLE_TOOLS=node assert_not_contains "mise plugins --core" "node"
+assert_not_contains "MISE_DISABLE_TOOLS=node mise plugins --core" "node"

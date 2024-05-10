@@ -3,6 +3,15 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
+cat >"$MISE_DEFAULT_CONFIG_FILENAME" <<CONF
+[tools]
+tiny = "latest"
+[plugins]
+tiny-ref = "https://github.com/mise-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
+CONF
+
+mise plugin install tiny
+
 mise cache clean
 rm -rf "$MISE_DATA_DIR/installs/tiny"
 mise ls
