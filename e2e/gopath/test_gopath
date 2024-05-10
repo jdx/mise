@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+
+echo "golang 1.20" >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+mkdir 21
+echo "golang 1.21" >"21/$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
 
 export MISE_GO_SET_GOPATH=1
 
 eval "$(mise activate bash)"
 _mise_hook
 
-assert_gopath() {
-  local expected="$1"
-  if [[ "$GOPATH" != "$expected" ]]; then
-    echo "Invalid GOPATH: $GOPATH, expected: $expected"
-    exit 1
-  fi
-}
-
 GO_20=$(mise latest golang@1.20)
 GO_21=$(mise latest golang@1.21)
 
 mise i golang@1.20 golang@1.21 && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/$GO_20/packages"
+
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_20/packages"
 cd 21 && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/$GO_21/packages"
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_21/packages"
 cd .. && _mise_hook
-assert_gopath "$MISE_DATA_DIR/installs/go/$GO_20/packages"
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_20/packages"

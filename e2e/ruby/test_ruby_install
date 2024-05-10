@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-set -e
-
+set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/../assert.sh"
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
 
-export MISE_RUBY_DEFAULT_PACKAGES_FILE="$ROOT/e2e/.default-gems"
+skip_slow_test
+
+export MISE_RUBY_DEFAULT_PACKAGES_FILE="$HOME/.default-gems"
 export MISE_RUBY_INSTALL=1
 
 echo "ruby-3.2.1" >.ruby-version
 
 # disable this slow test for now
-#mise i ruby
-#assert_contains "mise x -- ruby --version" "ruby 3.2.1"
-
-rm .ruby-version
+mise i ruby
+assert_contains "mise x -- ruby --version" "ruby 3.2.1"

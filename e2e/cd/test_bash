@@ -1,64 +1,68 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2088
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
 
 orig_path="$PATH"
+
+cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+[tools]
+tiny = "3.1.0"
+[env]
+FOO = "bar"
+EOF
+
+mkdir subdir
+cat <<EOF >"subdir/$MISE_DEFAULT_CONFIG_FILENAME"
+[tools]
+tiny = "2.0.0"
+[env]
+FOO = "quz"
+EOF
 
 # shellcheck disable=SC1090
 eval "$(mise activate bash --status)" && _mise_hook
 
-assert() {
-  local actual="$1"
-  local expected="$2"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "actual: $actual"
-    echo "expected: $expected"
-    exit 1
-  fi
-}
-
 assert_path() {
-  local expected="$1"
   local actual="${PATH/%$orig_path/}"
   actual="${actual%:}"
   actual="${actual%:}"
-  actual="${actual//$ROOT/ROOT}"
   actual="${actual//$MISE_DATA_DIR\/installs/INSTALLS}"
-  if [[ "$actual" != "$expected" ]]; then
-    echo "Invalid PATH:  $actual"
-    echo "Expected PATH: $expected"
-    exit 1
-  fi
+  actual="${actual//$HOME/HOME}"
+  assert "echo $actual" "$1"
 }
 
-NODE_18="INSTALLS/node/18.0.0/bin"
-NODE_20="INSTALLS/node/20.0.0/bin"
-TINY="INSTALLS/tiny/latest/bin"
-SHELLCHECK="INSTALLS/shellcheck/0.9.0/bin"
-SHFMT="INSTALLS/shfmt/3.6.0/bin"
+TINY_310="INSTALLS/tiny/3.1.0/bin"
+TINY_200="INSTALLS/tiny/2.0.0/bin"
 
 mise ls
 mise i && _mise_hook
-test "$(node -v)" = "v20.0.0"
-assert_path "/root:ROOT/e2e/cwd:$NODE_20:$TINY:$SHELLCHECK:$SHFMT"
-assert "$FOO" "cd"
 
-cd 18 && mise i && _mise_hook
-test "$(node -v)" = "v18.0.0"
-assert_path "/root:ROOT/e2e/cwd:$NODE_18:$TINY:$SHELLCHECK:$SHFMT"
-assert "$FOO" "18"
+echo "$PATH"
+
+assert_contains "rtx-tiny" "v3.1.0"
+assert "echo $FOO" "bar"
+assert_path "$TINY_310"
+
+cd subdir && mise i && _mise_hook
+assert_contains "rtx-tiny" "v2.0.0"
+assert "echo $FOO" "quz"
+assert_path "$TINY_200"
 
 cd .. && _mise_hook
-test "$(node -v)" = "v20.0.0"
-assert_path "/root:ROOT/e2e/cwd:$NODE_20:$TINY:$SHELLCHECK:$SHFMT"
+assert_contains "rtx-tiny" "v3.1.0"
+assert "echo $FOO" "bar"
+assert_path "$TINY_310"
 
 export PATH="PRE:$PATH"
-cd 18 && _mise_hook
-test "$(node -v)" = "v18.0.0"
-assert_path "PRE:/root:ROOT/e2e/cwd:$NODE_18:$TINY:$SHELLCHECK:$SHFMT"
+cd subdir && _mise_hook
+assert_contains "rtx-tiny" "v2.0.0"
+assert "echo $FOO" "quz"
+assert_path "PRE:$TINY_200"
 
-mise shell node@18.0.0 && _mise_hook
-test "$(node -v)" = "v18.0.0"
+mise shell tiny@3.0.0 && _mise_hook
+assert_contains "rtx-tiny" "v3.0.0"
 
 mise deactivate
 assert_path "PRE"

@@ -2,6 +2,17 @@
 set -euo pipefail
 orig_path="$PATH"
 
+cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+[tools]
+node = "20.0.0"
+EOF
+
+mkdir 18
+cat <<EOF >"18/$MISE_DEFAULT_CONFIG_FILENAME"
+[tools]
+node = "18.0.0"
+EOF
+
 assert_path() {
   local expected="${1//$HOME/\~}"
   local actual="${PATH/%$orig_path/}"

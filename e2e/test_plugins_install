@@ -1,24 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/assert.sh"
 
-assert_not_contains() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" == *"$expected"* ]]; then
-    echo "assertion failed, expected not '$expected', got '$actual'"
-    exit 1
-  fi
-}
-assert_contains() {
-  actual="$($1)"
-  actual="${actual%$'\n'}"
-  expected="${2%$'\n'}"
-  if [[ "$actual" != *"$expected"* ]]; then
-    echo "assertion failed, expected '$expected', got '$actual'"
-    exit 1
-  fi
-}
+cat <<EOF >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+tiny latest
+shfmt latest
+shellcheck latest
+EOF
 
 # install/uninstall multiple
 mise plugin install tiny shfmt shellcheck

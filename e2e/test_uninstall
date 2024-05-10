@@ -4,6 +4,11 @@ set -euo pipefail
 source "$(dirname "$0")/assert.sh"
 
 export CLICOLOR=0
+
+echo "tiny 3.1.0" >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+
+mise plugins install tiny
+
 assert_contains "mise ls tiny" "3.1.0 (missing)"
 
 mise i tiny@1 tiny@2.0 tiny@2.1

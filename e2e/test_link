@@ -7,6 +7,8 @@ mise plugins ln "$ROOT"/test/data/plugins/tiny
 assert_contains "mise plugins" "tiny"
 
 assert_fail "mise plugins link $ROOT/test/data/plugins/tiny"
-
 mise plugins link -f "$ROOT"/test/data/plugins/tiny
+assert_contains "mise plugins" "tiny"
+
+mise plugins rm tiny
 assert_not_contains "mise plugins" "tiny"

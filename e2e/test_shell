@@ -3,9 +3,15 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
+echo "tiny v3.1.0" >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+
+mise install tiny
+
 eval "$(mise activate bash)" && eval "$(mise hook-env)"
-assert "node -v" "v20.0.0"
-mise shell node@18.0.0 && eval "$(mise hook-env)"
-assert "node -v" "v18.0.0"
-export MISE_NODE_VERSION=20.0.0 && eval "$(mise hook-env)"
-assert "node -v" "v20.0.0"
+assert_contains "rtx-tiny" "v3.1.0"
+
+mise shell tiny@2.0.0 && eval "$(mise hook-env)"
+assert_contains "rtx-tiny" "v2.0.0"
+
+export MISE_TINY_VERSION=v3.1.0 && eval "$(mise hook-env)"
+assert_contains "rtx-tiny" "v3.1.0"

@@ -3,18 +3,21 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-mise rm --all tiny
+unset MISE_DEFAULT_CONFIG_FILENAME
+
 mise i tiny@1.0.0
-mise use tiny@1
+
+assert_contains "mise use tiny" "tiny@1.0.0"
+assert_contains "mise current tiny" "1.0.0"
+
+assert_contains "mise use tiny@1" "tiny@1.0.0"
 assert "mise current tiny" "1.0.0"
 
-mise use --env local tiny@1
-assert "mise current tiny" "1.0.0"
+assert_contains "mise use --env local tiny@2" "tiny@2.1.0"
 assert "cat .mise.local.toml" '[tools]
-tiny = "1"'
+tiny = "2"'
+assert "mise current tiny" "2.1.0"
 rm .mise.local.toml
 
-mise use --rm tiny
+assert_not_contains "mise use --rm tiny" "tiny"
 assert "mise current tiny" ""
-mise use tiny
-assert_contains "mise current tiny" "1.0.0"
