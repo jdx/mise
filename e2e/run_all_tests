@@ -3,8 +3,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FILES=$(find e2e -name 'test_*' -type f -not -path "*/.mise/*" | sort)
+FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
 test_count=0
+test_successes=0
+test_failures=0
+
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "| Test | Duration | Result |"
@@ -19,9 +22,15 @@ for f in $FILES; do
       continue
     fi
   fi
-  "$ROOT/e2e/run_test" "$f"
+  if "$ROOT/e2e/run_test" "$f"; then
+    test_successes=$((test_successes + 1))
+  else
+    test_failures=$((test_failures + 1))
+  fi
   echo
   test_count=$((test_count + 1))
 done
 
-echo "e2e: $test_count tests passed"
+echo "e2e: $test_count tests passed, $test_successes succeeded, $test_failures failed"
+
+[[ $test_failures = 0 ]]
