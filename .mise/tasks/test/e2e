@@ -9,7 +9,7 @@ export RUST_TEST_THREADS=1
 if [[ "${1:-all}" == all ]]; then
   ./e2e/run_all_tests
 else
-  FILES="$(fd "$1" e2e/)"
+  FILES="$(find e2e -name "test_*$1" -type f -printf "%P\n")"
   for FILE in $FILES; do
     ./e2e/run_test "$FILE"
   done
