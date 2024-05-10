@@ -62,6 +62,7 @@ within_isolated_env() {
     MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
     MISE_EXPERIMENTAL=1 \
     MISE_YES=1 \
+    MISE_TEST_NAME="$TEST" \
     NPM_CONFIG_FUND=false \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
     "$@" || return $?
