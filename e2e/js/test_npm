@@ -1,9 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
-
-echo v20.0.0 >.node-version
+# shellcheck shell=bash
+require_cmd node
 
 assert "mise x npm:prettier@3.1.0 -- prettier -v" "3.1.0"
 assert "FORCE_COLOR=0 mise x npm:@antfu/ni@0.21.12 -- ni -v 2>/dev/null | head -n1" "@antfu/ni  v0.21.12"

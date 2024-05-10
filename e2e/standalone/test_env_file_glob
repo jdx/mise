@@ -1,9 +1,6 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
-cat >.e2e.mise.toml <<EOF
+cat >.mise.toml <<EOF
 [env]
 _.file = "env.d/*.env"
 EOF

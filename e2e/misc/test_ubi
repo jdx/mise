@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 # Needed for linux/mac compatibility (https://unix.stackexchange.com/a/84980)
 declare BIN_BACKEND_TEMP_DIR

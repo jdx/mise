@@ -1,12 +1,7 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/assert.sh"
+# shellcheck shell=bash
+require_cmd node
 
-if ! system_node="$(which node)"; then
-  warn "skipping test: no system-wide installation of node"
-  exit 0
-fi
+system_node="$(which node)"
 
 echo v20.0.0 >.node-version
 mise_node="$(mise which node)"

@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 echo "tiny 3" >.tool-versions
 

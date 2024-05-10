@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 export MISE_NODE_COREPACK=1
 export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"

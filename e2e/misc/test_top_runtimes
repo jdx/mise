@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-# shellcheck disable=SC2317
-
-set -e
+# shellcheck shell=bash
 
 exit 0 # disable for now for faster releases
 

@@ -1,11 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
-
-cat <<EOF >.node-version
-18
-EOF
+# shellcheck shell=bash
 
 cat <<EOF >.bun-version
 1.0.17
@@ -13,4 +6,6 @@ EOF
 
 mise i
 assert_contains "mise x bun -- bun -v" "1.0.17"
+
+require_cmd node
 assert_contains "mise x bun -- bunx oclif --version" "oclif"

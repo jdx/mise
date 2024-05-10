@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
 export MISE_DEFAULT_CONFIG_FILENAME=.MISSING

@@ -1,8 +1,4 @@
-#!/usr/bin/env bash
-# shellcheck disable=SC2088
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 orig_path="$PATH"
 

@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
 mise plugins ln "$ROOT"/test/data/plugins/tiny
 assert_contains "mise plugins" "tiny"

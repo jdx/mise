@@ -1,16 +1,3 @@
-# shellcheck shell=bash
-
-cat <<EOF >.mise.toml
-[tasks.configtask]
-run = 'echo "configtask:"'
-[tasks.lint]
-run = 'echo "linting!"'
-[tasks.test]
-run = 'echo "testing!"'
-EOF
-
-mkdir -p .mise/tasks
-cat <<'EOF' >.mise/tasks/filetask
 #!/usr/bin/env bash
 # mise description="This is a test build script"
 # mise depends=["lint", "test"]
@@ -24,9 +11,3 @@ echo "running test-build script"
 mkdir -p test-e2e
 echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" >test-e2e/test-build-output.txt
 echo "ARGS: $*" >>test-e2e/test-build-output.txt
-EOF
-chmod +x .mise/tasks/filetask
-
-mise r --cd "$PWD" configtask arg1 arg2 ::: filetask arg1 arg2
-assert "cat test-e2e/test-build-output.txt" "TEST_BUILDSCRIPT_ENV_VAR: VALID
-ARGS: arg1 arg2"

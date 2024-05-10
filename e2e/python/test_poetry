@@ -1,19 +1,11 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
+# shellcheck shell=bash
 
-if [ "${TEST_ALL:-}" != 1 ]; then
-  exit
-fi
-
-rm -rf "$MISE_DATA_DIR/cache/poetry"
+skip_slow_test
 
 export POETRY_HOME=".poetry"
-mise settings set experimental n
 
 eval "$(mise activate bash)"
-cat >.e2e.mise.toml <<EOF
+cat >.mise.toml <<EOF
 [tools]
 python = "3.12.0"
 poetry = {version="1.7.1", pyproject="pyproject.toml"}

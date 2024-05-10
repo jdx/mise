@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 
 # shellcheck source-path=SCRIPTDIR
-source "$(dirname "${BASH_SOURCE[0]}")"/style.sh
+source "$MISE_TEST_ROOT/style.sh"
 
 fail() {
   err "$*"
@@ -86,6 +86,13 @@ assert_matches() {
 skip_slow_test() {
   if [[ -z "${TEST_ALL:-}" ]]; then
     warn "skipping slow tests"
+    exit 0
+  fi
+}
+
+require_cmd() {
+  if ! type -p "$1" >/dev/null; then
+    warn "skipping test: cannot find $1 in PATH ($PATH)"
     exit 0
   fi
 }

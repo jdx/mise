@@ -28,10 +28,6 @@ setup_isolated_env() {
 
 create_isolated_env() {
   mkdir --parents "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
-
-  # Share the download folder to save some time
-  mkdir --parents "$SCRIPT_DIR/.cache/downloads"
-  ln -snf "$SCRIPT_DIR/.cache/downloads" "$MISE_DATA_DIR/downloads"
 }
 
 remove_isolated_env() {
@@ -60,6 +56,8 @@ within_isolated_env() {
     MISE_EXPERIMENTAL=1 \
     MISE_YES=1 \
     MISE_TEST_NAME="$TEST" \
+    MISE_TEST_ROOT="$SCRIPT_DIR" \
+    MISE_TEST_DIR="$(dirname "$TEST_SCRIPT")" \
     NPM_CONFIG_FUND=false \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
     "$@" || return $?
@@ -71,7 +69,7 @@ run_test() {
 
   START="$(date +%s)"
   local status=0
-  within_isolated_env "$TEST_SCRIPT" || status=$?
+  within_isolated_env bash --noprofile -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
   END="$(date +%s)"
   echo "$TEST: $((END - START))s" >&2
 
