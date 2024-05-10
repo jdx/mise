@@ -2,11 +2,14 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/style.sh"
+
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
 test_count=0
-test_successes=0
-test_failures=0
+passed_tests=()
+failed_tests=()
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
@@ -14,6 +17,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "| ---- | -------- | ------ |"
   } >>"$GITHUB_STEP_SUMMARY"
 fi
+
 for f in $FILES; do
   # split tests into two tranches to reduce test time
   if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
@@ -23,14 +27,19 @@ for f in $FILES; do
     fi
   fi
   if "$ROOT/e2e/run_test" "$f"; then
-    test_successes=$((test_successes + 1))
+    passed_tests=("${passed_tests[@]}" "$f")
   else
-    test_failures=$((test_failures + 1))
+    failed_tests=("${failed_tests[@]}" "$f")
   fi
-  echo
   test_count=$((test_count + 1))
 done
 
-echo "e2e: $test_count tests passed, $test_successes succeeded, $test_failures failed"
+echo "e2e: ran $test_count tests" >&2
 
-[[ $test_failures = 0 ]]
+if [[ -n "${passed_tests[*]}" ]]; then
+  ok "e2e: ${#passed_tests[*]} tests passed: ${passed_tests[*]}"
+fi
+if [[ -n "${failed_tests[*]}" ]]; then
+  err "e2e: ${#failed_tests[*]} tests failed: ${failed_tests[*]}"
+  exit 1
+fi

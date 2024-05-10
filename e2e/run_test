@@ -2,6 +2,9 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/style.sh"
+
 ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 
 TEST="$1"
@@ -9,7 +12,6 @@ TEST_SCRIPT="$SCRIPT_DIR/$TEST"
 
 setup_isolated_env() {
   TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
-  echo "Test directory: $TEST_ISOLATED_DIR" >&2
 
   # Use a fake HOME and a fake temporary directory
   TEST_HOME="$TEST_ISOLATED_DIR/home"
@@ -60,32 +62,31 @@ within_isolated_env() {
     MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
     MISE_YES=1 \
     NPM_CONFIG_FUND=false \
+    GITHUB_ACTION="${GITHUB_ACTION:-}" \
     "$@" || return $?
 }
 
 run_test() {
-  echo "::group::E2E $TEST"
-
   setup_isolated_env
   create_isolated_env
 
-  START=$(date +%s)
+  START="$(date +%s)"
   local status=0
   within_isolated_env "$TEST_SCRIPT" || status=$?
-  END=$(date +%s)
+  END="$(date +%s)"
+  echo "$TEST: $((END - START))s" >&2
 
   if [[ "$status" == 0 ]]; then
     remove_isolated_env
     STATUS_MSG=":white_check_mark:"
   else
-    echo "::error file=$TEST::E2E Test Failed (code: $status)"
+    err "E2E Test Failed (code: $status)"
     STATUS_MSG=":x:"
   fi
-  echo "$TEST: $((END - START))s"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
   fi
   return "$status"
 }
 
-run_test
+as_group "E2E $TEST" run_test

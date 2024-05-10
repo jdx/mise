@@ -1,34 +1,21 @@
-#!/usr/bin/env bash
+# shellcheck shell=bash
 
-# Define "success" and "fail" with(out) coloring
-if [[ ( -n ${CI:-} || -t 2 ) && -z ${NO_COLOR:-} ]]; then
-  # Success in green
-  succeed() {
-    echo $'\e[92m'"SUCCESS: $*"$'\e[0m' >&2
-  }
-  # Failure in red
-  fail() {
-    echo $'\e[91m'"FAILURE: $*"$'\e[0m' >&2
-    exit 1
-  }
-  # Skipped in yellow
-  skip() {
-    echo $'\e[93m'"SKIPPED: $*"$'\e[0m' >&2
-    exit 0
-  }
-else
-  succeed() {
-    echo "SUCCESS: $*" >&2
-  }
-  fail() {
-    echo "FAILURE: $*" >&2
-    exit 1
-  }
-  skip() {
-    echo "SKIPPED:$*" >&2
-    exit 0
-  }
-fi
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")"/style.sh
+
+succeed() {
+  ok "$*"
+}
+
+fail() {
+  err "$*"
+  exit 1
+}
+
+skip() {
+  notice "${*:-test skipped for some reason.}"
+  exit 0
+}
 
 quiet_assert_succeed() {
   local status=0
@@ -71,7 +58,6 @@ assert_not() {
     fail "[$1] expected '$2' not to be in '$actual'"
   fi
 }
-
 
 assert_contains() {
   local actual
