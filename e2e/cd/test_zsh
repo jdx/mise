@@ -2,13 +2,13 @@
 set -euo pipefail
 orig_path="$PATH"
 
-cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >.mise.toml
 [tools]
 node = "20.0.0"
 EOF
 
 mkdir 18
-cat <<EOF >"18/$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >18/.mise.toml
 [tools]
 node = "18.0.0"
 EOF

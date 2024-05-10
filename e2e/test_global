@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-unset MISE_CONFIG_FILE MISE_GLOBAL_CONFIG_FILE MISE_ASDF_COMPAT
+unset MISE_ASDF_COMPAT
 
 assert_contains "MISE_CONFIG_FILE=~/.e2e-tool-versions mise global tiny 3.1.0" "~/.e2e-tool-versions"
 rm ~/.e2e-tool-versions

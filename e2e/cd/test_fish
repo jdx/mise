@@ -5,7 +5,7 @@ set -l fish_trace 1
 mise install tiny@3.1.0 tiny@2.0.0
 or exit
 
-echo >"$MISE_DEFAULT_CONFIG_FILENAME" '
+echo >.mise.toml '
 [tools]
 tiny = "3.1.0"
 [env]
@@ -13,7 +13,7 @@ FOO = "bar"
 '
 
 mkdir subdir
-echo >"subdir/$MISE_DEFAULT_CONFIG_FILENAME" '
+echo >subdir/.mise.toml '
 [tools]
 tiny = "2.0.0"
 [env]

@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >.mise.toml
 [plugins]
 tiny-ref = "https://github.com/mise-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
 EOF

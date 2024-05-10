@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
 
 orig_path="$PATH"
 
-cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >.mise.toml
 [tools]
 tiny = "3.1.0"
 [env]
@@ -14,7 +14,7 @@ FOO = "bar"
 EOF
 
 mkdir subdir
-cat <<EOF >"subdir/$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >subdir/.mise.toml
 [tools]
 tiny = "2.0.0"
 [env]

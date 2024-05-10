@@ -3,9 +3,9 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "${BASH_SOURCE[0]}")"/../assert.sh
 
-echo "golang 1.20" >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+echo "golang 1.20" >.tool-versions
 mkdir 21
-echo "golang 1.21" >"21/$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+echo "golang 1.21" >21/.tool-versions
 
 export MISE_GO_SET_GOPATH=1
 

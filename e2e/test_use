@@ -3,8 +3,6 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-unset MISE_DEFAULT_CONFIG_FILENAME
-
 mise i tiny@1.0.0
 
 assert_contains "mise use tiny" "tiny@1.0.0"

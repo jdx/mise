@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-cat <<EOF >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+cat <<EOF >.tool-versions
 tiny latest
 shfmt latest
 shellcheck latest

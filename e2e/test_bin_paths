@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-cat <<EOF >"$MISE_DEFAULT_CONFIG_FILENAME"
+cat <<EOF >.mise.toml
 [tools]
 tiny = "latest"
 EOF

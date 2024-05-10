@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-echo "tiny 3.1.0" >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+echo "tiny 3.1.0" >.tool-versions
 
 mise install tiny
 assert_contains "mise ls --installed" "tiny"

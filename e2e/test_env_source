@@ -3,9 +3,9 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/assert.sh"
 
-mkdir -p "$(dirname "$MISE_GLOBAL_CONFIG_FILE")" "$MISE_CONFIG_DIR"
+mkdir -p "$MISE_CONFIG_DIR"
 
-cat >"$MISE_GLOBAL_CONFIG_FILE" <<EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 [env]
 _.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
 EOF
