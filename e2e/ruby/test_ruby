@@ -20,5 +20,3 @@ EOF
 
 mise i ruby -v
 assert_contains "mise x -- ruby --version" "ruby 3.2.2"
-
-rm Gemfile

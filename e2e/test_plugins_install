@@ -21,7 +21,6 @@ assert_contains() {
 }
 
 # install/uninstall multiple
-mise plugin uninstall tiny shfmt shellcheck
 mise plugin install tiny shfmt shellcheck
 assert_contains "mise plugin ls" "tiny"
 assert_contains "mise plugin ls" "shfmt"
