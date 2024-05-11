@@ -9,7 +9,7 @@ use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionRequest;
 use serde_json::Value;
 use url::Url;
 
@@ -32,7 +32,7 @@ impl Forge for UbiForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["cargo:ubi".into()])
     }
 
@@ -56,16 +56,6 @@ impl Forge for UbiForge {
         }
     }
 
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_ubi_installed() {
-            bail!(
-                "ubi is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
-    }
-
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         if name_is_url(self.name()) {
             Ok(Some("latest".to_string()))
@@ -74,6 +64,16 @@ impl Forge for UbiForge {
                 .get_or_try_init(|| Ok(Some(self.list_remote_versions()?.last().unwrap().into())))
                 .cloned()
         }
+    }
+
+    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        if !is_ubi_installed() {
+            bail!(
+                "ubi is not installed. Please install it in order to install {}",
+                self.name()
+            );
+        }
+        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {

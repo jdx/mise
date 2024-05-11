@@ -94,7 +94,7 @@ fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> 
 fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> Result<String> {
     let mut ctx = BASE_CONTEXT.clone();
     ctx.insert("project_root", &config.project_root);
-    ctx.insert("opts", &tv.opts);
+    ctx.insert("opts", &tv.request.options());
     get_tera(
         config
             .project_root

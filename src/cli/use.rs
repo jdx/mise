@@ -13,7 +13,7 @@ use crate::env::{
 use crate::file::display_path;
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{env, file, forge};
+use crate::{env, file};
 
 /// Install tool version and add it to config
 ///
@@ -83,19 +83,16 @@ impl Use {
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
-        let versions = self
+        let versions: Vec<_> = self
             .tool
             .iter()
-            .map(|t| {
-                let tvr = match &t.tvr {
-                    Some(ref tvr) => tvr.clone(),
-                    None => ToolVersionRequest::new(t.forge.clone(), "latest"),
-                };
-                let plugin = forge::get(&t.forge);
-                ToolVersion::resolve(plugin.as_ref(), tvr, Default::default(), false)
+            .cloned()
+            .map(|t| match t.tvr {
+                Some(tvr) => tvr,
+                None => ToolVersionRequest::new(t.forge, "latest"),
             })
-            .collect::<Result<Vec<_>>>()?;
-        ts.install_versions(
+            .collect();
+        let versions = ts.install_versions(
             &config,
             versions.clone(),
             &mpr,

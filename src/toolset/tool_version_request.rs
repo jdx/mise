@@ -9,15 +9,27 @@ use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolVersionRequest {
-    Version(ForgeArg, String),
-    Prefix(ForgeArg, String),
-    Ref(ForgeArg, String),
-    Path(ForgeArg, PathBuf),
+    Version {
+        forge: ForgeArg,
+        version: String,
+        options: ToolVersionOptions,
+    },
+    Prefix {
+        forge: ForgeArg,
+        prefix: String,
+        options: ToolVersionOptions,
+    },
+    Ref {
+        forge: ForgeArg,
+        ref_: String,
+        options: ToolVersionOptions,
+    },
     Sub {
         forge: ForgeArg,
         sub: String,
         orig_version: String,
     },
+    Path(ForgeArg, PathBuf),
     System(ForgeArg),
 }
 
@@ -28,8 +40,16 @@ impl ToolVersionRequest {
             _ => s.to_string(),
         };
         match s.split_once(':') {
-            Some(("ref", r)) => Self::Ref(forge, r.to_string()),
-            Some(("prefix", p)) => Self::Prefix(forge, p.to_string()),
+            Some(("ref", r)) => Self::Ref {
+                forge,
+                ref_: r.to_string(),
+                options: Default::default(),
+            },
+            Some(("prefix", p)) => Self::Prefix {
+                forge,
+                prefix: p.to_string(),
+                options: Default::default(),
+            },
             Some(("path", p)) => Self::Path(forge, PathBuf::from(p)),
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 forge,
@@ -40,18 +60,31 @@ impl ToolVersionRequest {
                 if s == "system" {
                     Self::System(forge)
                 } else {
-                    Self::Version(forge, s.to_string())
+                    Self::Version {
+                        forge,
+                        version: s,
+                        options: Default::default(),
+                    }
                 }
             }
             _ => panic!("invalid tool version request: {s}"),
         }
     }
-
+    pub fn new_opts(forge: ForgeArg, s: &str, options: ToolVersionOptions) -> Self {
+        let mut tvr = Self::new(forge, s);
+        match &mut tvr {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. } => *o = options,
+            _ => Default::default(),
+        }
+        tvr
+    }
     pub fn forge(&self) -> &ForgeArg {
         match self {
-            Self::Version(f, _)
-            | Self::Prefix(f, _)
-            | Self::Ref(f, _)
+            Self::Version { forge: f, .. }
+            | Self::Prefix { forge: f, .. }
+            | Self::Ref { forge: f, .. }
             | Self::Path(f, _)
             | Self::Sub { forge: f, .. }
             | Self::System(f) => f,
@@ -59,9 +92,9 @@ impl ToolVersionRequest {
     }
     pub fn version(&self) -> String {
         match self {
-            Self::Version(_, v) => v.clone(),
-            Self::Prefix(_, p) => format!("prefix:{p}"),
-            Self::Ref(_, r) => format!("ref:{r}"),
+            Self::Version { version: v, .. } => v.clone(),
+            Self::Prefix { prefix: p, .. } => format!("prefix:{p}"),
+            Self::Ref { ref_: r, .. } => format!("ref:{r}"),
             Self::Path(_, p) => format!("path:{}", p.display()),
             Self::Sub {
                 sub, orig_version, ..
@@ -70,13 +103,17 @@ impl ToolVersionRequest {
         }
     }
 
-    pub fn resolve(
-        &self,
-        plugin: &dyn Forge,
-        opts: ToolVersionOptions,
-        latest_versions: bool,
-    ) -> Result<ToolVersion> {
-        ToolVersion::resolve(plugin, self.clone(), opts, latest_versions)
+    pub fn options(&self) -> ToolVersionOptions {
+        match self {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. } => o.clone(),
+            _ => Default::default(),
+        }
+    }
+
+    pub fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
+        ToolVersion::resolve(plugin, self.clone(), latest_versions)
     }
 }
 

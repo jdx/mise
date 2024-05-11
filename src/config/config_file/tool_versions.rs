@@ -128,7 +128,7 @@ impl ToolVersions {
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
                 let tvr = ToolVersionRequest::new(plugin.clone(), version);
-                self.toolset.add_version(tvr, Default::default())
+                self.toolset.add_version(tvr)
             }
         }
     }
