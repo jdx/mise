@@ -198,7 +198,7 @@ impl Doctor {
 }
 
 fn shims_on_path() -> bool {
-    env::PATH.contains(&*dirs::SHIMS)
+    env::PATH.contains(&dirs::SHIMS.to_path_buf())
 }
 
 fn yn(b: bool) -> String {
@@ -215,7 +215,7 @@ fn mise_dirs() -> String {
         ("config", &*dirs::CONFIG),
         ("cache", &*dirs::CACHE),
         ("state", &*dirs::STATE),
-        ("shims", &dirs::SHIMS.as_path()),
+        ("shims", &*dirs::SHIMS),
     ]
     .iter()
     .map(|(k, p)| format!("{k}: {}", display_path(p)))

@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_ls() {
-        let _ = remove_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("list", @r###"
         dummy  ref:master  ~/.test-tool-versions     ref:master
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_ls_json() {
-        let _ = remove_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--json");
         assert_cli_snapshot!("ls", "--json", "tiny");
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn test_ls_parseable() {
-        let _ = remove_all(dirs::INSTALLS.as_path());
+        let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--parseable", @r###"
         dummy ref:master

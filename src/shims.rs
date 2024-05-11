@@ -71,7 +71,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     // fallback for "system"
     for path in &*env::PATH {
         if fs::canonicalize(path).unwrap_or_default()
-            == fs::canonicalize(&*dirs::SHIMS).unwrap_or_default()
+            == fs::canonicalize(*dirs::SHIMS).unwrap_or_default()
         {
             continue;
         }
@@ -94,7 +94,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
-    create_dir_all(&*dirs::SHIMS)?;
+    create_dir_all(*dirs::SHIMS)?;
 
     let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
