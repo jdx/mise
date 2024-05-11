@@ -19,16 +19,16 @@ if [[ -n ${GITHUB_ACTION:-} ]]; then
 elif [[ -t 2 ]]; then
   # Use ANSI coloring in terminal
   ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
-  err() { echo $'\e[91m'"$*"$'\e[0m' >&2; }
-  warn() { echo $'\e[93m'"$*"$'\e[0m' >&2; }
+  err() { echo $'\e[91m'"${title:+$title: }$*"$'\e[0m' >&2; }
+  warn() { echo $'\e[93m'"${title:+$title: }$*"$'\e[0m' >&2; }
   start_group() { echo $'\e[1m'">>> $*"$'\e[0m' >&2; }
   end_group() { echo >&2; }
 
 else
   # No styling
   ok() { echo "SUCCESS: $*" >&2; }
-  err() { echo "ERROR: $*" >&2; }
-  warn() { echo "wARNING: $*" >&2; }
+  err() { echo "ERROR: ${title:+$title: }$*" >&2; }
+  warn() { echo "wARNING: ${title:+$title: }$*" >&2; }
   start_group() { echo ">>> $*" >&2; }
   end_group() { echo >&2; }
 fi

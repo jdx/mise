@@ -85,7 +85,7 @@ assert_matches() {
 
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
-    title="skipped test" warn "the required command '$1' was not found in the PATH ($PATH)"
+    title="E2E test $TEST_NAME skipped" warn "the required command '$1' was not found in the PATH"
     exit 0
   fi
 }
