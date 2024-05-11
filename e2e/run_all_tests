@@ -6,22 +6,23 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
-FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
+mapfile FILES < <(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)
 test_count=0
 skipped_count=0
 status=0
 
+# split tests into two tranches to reduce test time
+if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
+  total_count="${#FILES[@]}"
+  from=$((total_count * TEST_TRANCHE / TEST_TRANCHE_COUNT))
+  to=$((total_count * (TEST_TRANCHE + 1) / TEST_TRANCHE_COUNT))
+  FILES=("${FILES[@]:$from:$((to - from))}")
+fi
+
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
 
-for f in $FILES; do
-  # split tests into two tranches to reduce test time
-  if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
-    char_count=${#f}
-    if [[ $((char_count % "$TEST_TRANCHE_COUNT")) -ne "$TEST_TRANCHE" ]]; then
-      continue
-    fi
-  fi
+for f in "${FILES[@]}"; do
   if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
     title="E2E test $f skipped" file="e2e/$f" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
@@ -37,4 +38,4 @@ for f in $FILES; do
 done
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
-exit $status
+exit "$status"
