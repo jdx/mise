@@ -33,6 +33,12 @@ else
   end_group() { echo >&2; }
 fi
 
+if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+  summary() { echo "| $1 | $2 | $3 |" >>"$GITHUB_STEP_SUMMARY"; }
+else
+  summary() { true; }
+fi
+
 as_group() {
   local status=0
   start_group "$1"

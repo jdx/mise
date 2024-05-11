@@ -70,23 +70,24 @@ run_test() {
   setup_isolated_env
   create_isolated_env
 
-  START="$(date +%s)"
   local status=0
+
+  START="$(date +%s)"
   within_isolated_env bash --noprofile -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
   END="$(date +%s)"
-  echo "$TEST: $((END - START))s" >&2
+  DURATION=$((END - START))s
+
+  echo "$TEST: $DURATION" >&2
 
   if [[ "$status" == 0 ]]; then
     remove_isolated_env
-    STATUS_MSG=":white_check_mark:"
+    summary "$TEST" "$DURATION" ":white_check_mark:"
   else
     title="E2E test $TEST failed" err "exited with status code $status"
-    STATUS_MSG=":x:"
     echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
+    summary "$TEST" "$DURATION" ":x:"
   fi
-  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
-  fi
+
   return "$status"
 }
 

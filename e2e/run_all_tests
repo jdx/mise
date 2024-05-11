@@ -11,12 +11,8 @@ test_count=0
 skipped_count=0
 status=0
 
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  {
-    echo "| Test | Duration | Result |"
-    echo "| ---- | -------- | ------ |"
-  } >>"$GITHUB_STEP_SUMMARY"
-fi
+summary "Test" "Duration" "Result"
+summary "---" "---" "---"
 
 for f in $FILES; do
   # split tests into two tranches to reduce test time
@@ -29,6 +25,9 @@ for f in $FILES; do
   if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
     title="E2E test $f skipped" file="e2e/$f" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
+    if [[ -n $GITHUB_STEP_SUMMARY ]]; then
+      summary "$f" "-" ":zap:"
+    fi
     continue
   fi
   if ! "$ROOT/e2e/run_test" "$f"; then
