@@ -43,9 +43,10 @@ jobs:
           key: mise-tools-${{ hashFiles('.mise.toml') }}
           restore-keys: mise-tools
       - run: mise install
-      - run: git subtree pull --prefix registry https://github.com/mise-plugins/registry.git main
-        continue-on-error: true
-      #- run: git subtree push --prefix registry https://github.com/mise-plugins/registry.git main
+      - run: |
+          git clone https://github.com/mise-plugins/registry
+          rm -rf registry/.git
+          git add registry
       - run: mise run release-plz
         env:
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
