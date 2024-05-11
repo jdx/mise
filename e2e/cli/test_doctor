@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-mise plugins install poetry && mise i
+mise plugins install tiny && mise i
 eval "$(mise activate bash)" && _mise_hook
 mise reshim
 mise doctor

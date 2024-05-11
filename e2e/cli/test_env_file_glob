@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-cat >.mise.toml <<EOF
+cat <<'EOF' >.mise.toml
 [env]
 _.file = "env.d/*.env"
 EOF

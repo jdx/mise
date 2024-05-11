@@ -1,0 +1,12 @@
+# shellcheck shell=bash
+
+cat <<'EOF' >.mise.toml
+[env]
+mise.file = ['.test-env']
+EOF
+
+echo FOO_FROM_FILE=foo_from_file >.test-env
+echo TEST_ENV2=foo >.test-env2
+
+assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
+assert "MISE_ENV_FILE=.test-env mise x -- env | grep TEST_ENV2" "TEST_ENV2=foo"

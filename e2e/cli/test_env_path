@@ -1,0 +1,17 @@
+# shellcheck shell=bash
+
+cat <<'EOF' >.mise.toml
+[tools]
+tiny = "3.1.0"
+EOF
+
+mise i tiny
+assert_contains "mise env -s bash | grep PATH" "$MISE_DATA_DIR/installs/tiny/3.1.0/bin"
+# shellcheck disable=SC2016
+assert_contains 'eval "$(mise env -s bash)" && rtx-tiny' "v3.1.0"
+
+mise use tiny@latest
+assert_not_contains "mise env -s bash | grep PATH" "$MISE_DATA_DIR/installs/tiny/latest/bin"
+
+# shellcheck disable=SC2016
+assert_contains 'eval "$(mise env -s bash tiny@2.0.0)" && rtx-tiny' "v3.1.0"
