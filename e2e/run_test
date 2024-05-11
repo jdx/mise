@@ -26,7 +26,12 @@ setup_isolated_env() {
 }
 
 create_isolated_env() {
+  # Create the required diretories
   mkdir --parents "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
+
+  # The dummy plugin is required for some tests
+  mkdir -p "$MISE_DATA_DIR/plugins"
+  ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
 }
 
 remove_isolated_env() {
@@ -43,7 +48,6 @@ within_isolated_env() {
     TMPDIR="$TEST_TMPDIR" \
     SHELL="$(type -p bash)" \
     PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$(dirname "$(type -p cargo)"):/usr/local/bin:/usr/bin:/bin" \
-    MISE_USE_TOML=0 \
     MISE_DATA_DIR="$MISE_DATA_DIR" \
     MISE_STATE_DIR="$MISE_STATE_DIR" \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \

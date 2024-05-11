@@ -1,0 +1,4 @@
+# shellcheck shell=bash
+
+assert_contains 'mise i --raw -f dummy@1 2>&1' "~/.local/share/mise/plugins/dummy/bin/install"
+assert_contains 'MISE_RAW=1 mise i -f dummy@1 2>&1' "~/.local/share/mise/plugins/dummy/bin/install"

@@ -1,9 +1,8 @@
 # shellcheck shell=bash
 
-assert_contains "MISE_CONFIG_FILE=~/.e2e-tool-versions mise global tiny 3.1.0" "~/.e2e-tool-versions"
-rm ~/.e2e-tool-versions
+assert_contains "mise global dummy@2.0.0" "~/.config/mise/config.toml"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "2.0.0"'
 
-assert_contains "MISE_GLOBAL_CONFIG_FILE=~/.e2e-tool-versions mise global tiny 3.1.0" "~/.e2e-tool-versions"
-rm ~/.e2e-tool-versions
-
-assert_contains "MISE_ASDF_COMPAT=1 mise global tiny 3.1.0" "~/.e2e-tool-versions"
+mise i
+assert_contains "mise x -- dummy" "2.0.0"

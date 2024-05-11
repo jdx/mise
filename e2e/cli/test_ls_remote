@@ -1,4 +1,7 @@
 # shellcheck shell=bash
 
+assert_contains "mise ls-remote dummy" '1.0.0
+1.1.0
+2.0.0'
+
 assert_contains "mise p list-remote" "elixir"
-assert_contains "mise ls-remote tiny" "1.1.0"

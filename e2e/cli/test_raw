@@ -1,4 +1,0 @@
-# shellcheck shell=bash
-
-mise i --raw -f tiny@1 tiny@2 tiny@3
-MISE_RAW=1 mise i -f tiny@1 tiny@2 tiny@3

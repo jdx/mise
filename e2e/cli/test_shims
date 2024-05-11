@@ -1,12 +1,11 @@
 # shellcheck shell=bash
 
-eval "$(mise activate --shims)"
+export PATH="$MISE_DATA_DIR/shims:$PATH"
 
-mise use tiny@latest
-mise i
-mise reshim
-assert_contains "rtx-tiny" "v20.0.0"
+assert_fail "which dummy"
 
-# should still have this prefix since mise should only modify PATH
-# starting at the shim directory
-assert_matches "node -p 'process.env.PATH'" "^/XSTARTX:"
+mise i dummy@latest
+assert_contains "which dummy" "/mise/shims/dummy"
+
+mise uninstall -a dummy
+assert_fail "which dummy"

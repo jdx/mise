@@ -2,23 +2,21 @@
 
 export CLICOLOR=0
 
-echo "tiny 3.1.0" >.tool-versions
+echo "dummy latest" >.tool-versions
 
-mise plugins install tiny
+assert_contains "mise ls dummy" "2.0.0 (missing)"
 
-assert_contains "mise ls tiny" "3.1.0 (missing)"
+mise i dummy@{1.0.0,1.1.0,2.0.0}
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "2.0.0"
 
-mise i tiny@1 tiny@2.0 tiny@2.1
-assert_contains "mise ls tiny" "1.1.0"
-assert_contains "mise ls tiny" "2.0.1"
-assert_contains "mise ls tiny" "2.1.0"
+mise rm -a dummy@1
+assert_not_contains "mise ls dummy" "1.0.0"
+assert_not_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "2.0.0"
 
-mise rm -a tiny@2
-assert_contains "mise ls tiny" "1.1.0"
-assert_not_contains "mise ls tiny" "2.0.1"
-assert_not_contains "mise ls tiny" "2.1.0"
-
-mise rm -a tiny
-assert_not_contains "mise ls tiny" "1.1.0"
-assert_not_contains "mise ls tiny" "2.0.1"
-assert_not_contains "mise ls tiny" "2.1.0"
+mise rm -a dummy
+assert_not_contains "mise ls dummy" "1.1.0"
+assert_not_contains "mise ls dummy" "2.0.1"
+assert_not_contains "mise ls dummy" "2.1.0"

@@ -1,18 +1,17 @@
 # shellcheck shell=bash
 
-mise i tiny@1.0.0
+mise i dummy@1.0.0
 
-assert_contains "mise use tiny" "tiny@1.0.0"
-assert_contains "mise current tiny" "1.0.0"
+assert_contains "mise use dummy" "dummy@1.0.0"
+assert "mise current dummy" "1.0.0"
 
-assert_contains "mise use tiny@1" "tiny@1.0.0"
-assert "mise current tiny" "1.0.0"
+assert_contains "mise use dummy@2" "dummy@2."
+assert "mise current dummy" "2.0.0"
 
-assert_contains "mise use --env local tiny@2" "tiny@2.1.0"
+assert_not_contains "mise use --rm dummy" "dummy"
+assert "mise current dummy" ""
+
+assert_contains "mise use --env local dummy@2" "dummy@2."
 assert "cat .mise.local.toml" '[tools]
-tiny = "2"'
-assert "mise current tiny" "2.1.0"
-rm .mise.local.toml
-
-assert_not_contains "mise use --rm tiny" "tiny"
-assert "mise current tiny" ""
+dummy = "2"'
+assert "mise current dummy" "2.0.0"

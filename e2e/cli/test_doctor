@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-mise plugins install tiny && mise i
+mise use dummy@latest
+
 eval "$(mise activate bash)" && _mise_hook
-mise reshim
 mise doctor
