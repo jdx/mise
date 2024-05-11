@@ -58,7 +58,6 @@ within_isolated_env() {
     MISE_TEST_ROOT="$SCRIPT_DIR" \
     MISE_TEST_SCRIPT="$TEST_SCRIPT" \
     MISE_TEST_DIR="$(dirname "$TEST_SCRIPT")" \
-    NPM_CONFIG_FUND=false \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
     "$@" || return $?
 }

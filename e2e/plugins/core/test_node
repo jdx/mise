@@ -2,6 +2,7 @@
 
 export MISE_NODE_COREPACK=1
 export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
+export NPM_CONFIG_FUND=false
 
 echo v20.0.0 >.node-version
 echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
