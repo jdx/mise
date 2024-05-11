@@ -4,7 +4,7 @@
 source "$TEST_ROOT/style.sh"
 
 fail() {
-  title="assertion failed" err "$*"
+  title="E2E assertion failed" err "$*"
   exit 1
 }
 

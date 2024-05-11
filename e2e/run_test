@@ -76,8 +76,9 @@ run_test() {
     remove_isolated_env
     STATUS_MSG=":white_check_mark:"
   else
-    title="E2E test failed" err "Test exited with status code $status"
+    title="E2E test failed: $TEST" err "Exited with status code $status"
     STATUS_MSG=":x:"
+    echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
   fi
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"

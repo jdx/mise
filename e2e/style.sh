@@ -3,9 +3,10 @@
 if [[ -n ${GITHUB_ACTION:-} ]]; then
   # Output Github action annotations
   annotate() {
-    : "${file:=${TEST_SCRIPT:-}}"
-    : "${title:=}"
-    echo "::${type:?}${file:+ file=${file}}${title:+ title=${title}}::$*" >&2
+    local parameters=""
+    [[ -n ${file:=${TEST_SCRIPT:-}} ]] && parameters="file=${file}"
+    [[ -n ${title:-} ]] && parameters="${parameters:+,}title=${title}"
+    echo "::${type:-debug}${parameters:+ ${parameters}}::$*" >&2
   }
   err() { type=error annotate "$*"; }
   warn() { type=warning annotate "$*"; }

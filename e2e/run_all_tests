@@ -8,8 +8,7 @@ source "$SCRIPT_DIR/style.sh"
 
 FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
 test_count=0
-passed_tests=()
-failed_tests=()
+status=0
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
@@ -26,20 +25,11 @@ for f in $FILES; do
       continue
     fi
   fi
-  if "$ROOT/e2e/run_test" "$f"; then
-    passed_tests=("${passed_tests[@]}" "$f")
-  else
-    failed_tests=("${failed_tests[@]}" "$f")
+  if ! "$ROOT/e2e/run_test" "$f"; then
+    status=1
   fi
   test_count=$((test_count + 1))
 done
 
-echo "e2e: ran $test_count tests" >&2
-
-if [[ -n "${passed_tests[*]}" ]]; then
-  ok "e2e: ${#passed_tests[*]} tests passed: ${passed_tests[*]}"
-fi
-if [[ -n "${failed_tests[*]}" ]]; then
-  err "e2e: ${#failed_tests[*]} tests failed: ${failed_tests[*]}"
-  exit 1
-fi
+echo "E2E: ran $test_count tests" >&2
+exit $status
