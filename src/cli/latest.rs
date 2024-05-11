@@ -30,7 +30,7 @@ impl Latest {
         let config = Config::try_get()?;
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
-            Some(ToolVersionRequest::Version(_, version)) => Some(version),
+            Some(ToolVersionRequest::Version { version, .. }) => Some(version),
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 

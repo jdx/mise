@@ -76,7 +76,7 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn add_version(&mut self, tvr: ToolVersionRequest, opts: ToolVersionOptions) {
+    pub fn add_version(&mut self, tvr: ToolVersionRequest) {
         let fa = tvr.forge();
         if self.disable_tools.contains(fa) {
             return;
@@ -85,7 +85,7 @@ impl Toolset {
             .versions
             .entry(tvr.forge().clone())
             .or_insert_with(|| ToolVersionList::new(fa.clone(), self.source.clone().unwrap()));
-        tvl.requests.push((tvr, opts));
+        tvl.requests.push(tvr);
     }
     pub fn merge(&mut self, other: Toolset) {
         let mut versions = other.versions;
@@ -106,7 +106,11 @@ impl Toolset {
             .par_iter_mut()
             .for_each(|(_, v)| v.resolve(false));
     }
-    pub fn install_arg_versions(&mut self, config: &Config, opts: &InstallOptions) -> Result<()> {
+    pub fn install_arg_versions(
+        &mut self,
+        config: &Config,
+        opts: &InstallOptions,
+    ) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let versions = self
             .list_current_versions()
@@ -114,6 +118,7 @@ impl Toolset {
             .filter(|(p, tv)| opts.force || !p.is_version_installed(tv))
             .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.forge].source, ToolSource::Argument))
+            .map(|tv| tv.request)
             .collect_vec();
         self.install_versions(config, versions, &mpr, opts)
     }
@@ -130,18 +135,18 @@ impl Toolset {
     pub fn install_versions(
         &mut self,
         config: &Config,
-        versions: Vec<ToolVersion>,
+        versions: Vec<ToolVersionRequest>,
         mpr: &MultiProgressReport,
         opts: &InstallOptions,
-    ) -> Result<()> {
+    ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
-            return Ok(());
+            return Ok(vec![]);
         }
         let settings = Settings::try_get()?;
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
-            .group_by(|v| v.forge.clone())
+            .group_by(|v| v.forge().clone())
             .into_iter()
             .map(|(fa, v)| (forge::get(&fa), v.collect_vec()))
             .collect();
@@ -158,11 +163,14 @@ impl Toolset {
         };
         let installing: HashSet<String> = HashSet::new();
         let installing = Arc::new(Mutex::new(installing));
+        let installed = Arc::new(Mutex::new(vec![]));
         thread::scope(|s| {
+            #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
                     let queue = queue.clone();
                     let installing = installing.clone();
+                    let installed = installed.clone();
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
@@ -178,18 +186,15 @@ impl Toolset {
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
-                                let tv = tv.request.resolve(
-                                    t.as_ref(),
-                                    tv.opts.clone(),
-                                    opts.latest_versions,
-                                )?;
+                                let tv = tv.resolve(t.as_ref(), opts.latest_versions)?;
                                 let ctx = InstallContext {
                                     ts,
                                     pr: mpr.add(&tv.style()),
-                                    tv,
+                                    tv: tv.clone(),
                                     force: opts.force,
                                 };
                                 t.install_version(ctx)?;
+                                installed.lock().unwrap().push(tv);
                             }
                             installing.lock().unwrap().remove(t.id());
                         }
@@ -199,12 +204,15 @@ impl Toolset {
                 .collect_vec()
                 .into_iter()
                 .map(|t| t.join().unwrap())
-                .collect::<Result<Vec<()>>>()
+                .collect::<Result<()>>()
         })?;
         self.resolve();
         shims::reshim(self)?;
-        runtime_symlinks::rebuild(config)
+        runtime_symlinks::rebuild(config)?;
+        let installed = installed.lock().unwrap().clone();
+        Ok(installed)
     }
+
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
             .into_iter()
@@ -229,7 +237,7 @@ impl Toolset {
                             Some((p, tv)) => (p.clone(), tv.clone()),
                             None => {
                                 let tv = ToolVersionRequest::new(p.fa().clone(), &v)
-                                    .resolve(p.as_ref(), Default::default(), false)
+                                    .resolve(p.as_ref(), false)
                                     .unwrap();
                                 (p.clone(), tv)
                             }
@@ -379,10 +387,12 @@ impl Toolset {
                 .list_missing_versions()
                 .into_iter()
                 .filter(|tv| &tv.forge == plugin.fa())
+                .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
                 let mpr = MultiProgressReport::get();
-                self.install_versions(&config, versions.clone(), &mpr, &InstallOptions::new())?;
+                let versions =
+                    self.install_versions(&config, versions.clone(), &mpr, &InstallOptions::new())?;
                 return Ok(Some(versions));
             }
         }
@@ -440,7 +450,7 @@ impl Display for Toolset {
         let plugins = &self
             .versions
             .iter()
-            .map(|(_, v)| v.requests.iter().map(|(tvr, _)| tvr.to_string()).join(" "))
+            .map(|(_, v)| v.requests.iter().map(|tvr| tvr.to_string()).join(" "))
             .collect_vec();
         write!(f, "{}", plugins.join(", "))
     }

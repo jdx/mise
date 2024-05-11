@@ -145,7 +145,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {

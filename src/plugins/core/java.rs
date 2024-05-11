@@ -247,7 +247,8 @@ impl JavaPlugin {
     }
 
     fn tv_release_type(&self, tv: &ToolVersion) -> String {
-        tv.opts
+        tv.request
+            .options()
             .get("release_type")
             .cloned()
             .unwrap_or(String::from("ga"))

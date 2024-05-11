@@ -8,7 +8,7 @@ use crate::file;
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug)]
 pub struct GoForge {
@@ -25,7 +25,7 @@ impl Forge for GoForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["go".into()])
     }
 
@@ -112,7 +112,7 @@ fn trim_after_last_slash(s: &str) -> Option<&str> {
 }
 
 fn is_go_installed() -> bool {
-    file::which("go").is_some()
+    file::which_non_pristine("go").is_some()
 }
 
 #[derive(Debug, serde::Deserialize)]

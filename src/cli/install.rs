@@ -2,7 +2,6 @@ use eyre::Result;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::forge;
 use crate::toolset::{
     InstallOptions, ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
 };
@@ -52,18 +51,18 @@ impl Install {
         match &self.tool {
             Some(runtime) => self.install_runtimes(&config, runtime)?,
             None => self.install_missing_runtimes(&config)?,
-        }
+        };
 
         Ok(())
     }
-    fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<()> {
+    fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new().build(config)?;
-        let tool_versions = self.get_requested_tool_versions(&ts, runtimes, &mpr)?;
+        let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
-            return Ok(());
+            return Ok(vec![]);
         }
         ts.install_versions(config, tool_versions, &mpr, &self.install_opts())
     }
@@ -81,51 +80,55 @@ impl Install {
         &self,
         ts: &Toolset,
         runtimes: &[ToolArg],
-        mpr: &MultiProgressReport,
-    ) -> Result<Vec<ToolVersion>> {
+    ) -> Result<Vec<ToolVersionRequest>> {
         let mut requests = vec![];
         for ta in ToolArg::double_tool_condition(runtimes)? {
             let default_opts = ToolVersionOptions::new();
             match ta.tvr {
-                Some(tv) => requests.push((ta.forge, tv, default_opts.clone())),
+                // user provided an explicit version
+                // TODO: this should install using options from config if the version matches
+                Some(tv) => requests.push(tv),
                 None => {
                     if ta.tvr.is_none() {
                         match ts.versions.get(&ta.forge) {
+                            // the tool is in config so fetch the params from config
+                            // this may match multiple versions of one tool (e.g.: python)
                             Some(tvl) => {
-                                for (tvr, opts) in &tvl.requests {
-                                    requests.push((ta.forge.clone(), tvr.clone(), opts.clone()));
+                                for tvr in &tvl.requests {
+                                    requests.push(tvr.clone());
                                 }
                             }
+                            // in this case the user specified a tool which is not in config
+                            // so we default to @latest with no options
                             None => {
-                                let tvr =
-                                    ToolVersionRequest::Version(ta.forge.clone(), "latest".into());
-                                requests.push((ta.forge, tvr, default_opts.clone()));
+                                let tvr = ToolVersionRequest::Version {
+                                    forge: ta.forge.clone(),
+                                    version: "latest".into(),
+                                    options: default_opts.clone(),
+                                };
+                                requests.push(tvr);
                             }
                         }
                     }
                 }
             }
         }
-        let mut tool_versions = vec![];
-        for (fa, tvr, opts) in requests {
-            let plugin = forge::get(&fa);
-            plugin.ensure_installed(mpr, false)?;
-            let tv = tvr.resolve(plugin.as_ref(), opts, true)?;
-            tool_versions.push(tv);
-        }
-        Ok(tool_versions)
+        Ok(requests)
     }
 
-    fn install_missing_runtimes(&self, config: &Config) -> Result<()> {
+    fn install_missing_runtimes(&self, config: &Config) -> Result<Vec<ToolVersion>> {
         let mut ts = ToolsetBuilder::new().build(config)?;
-        let versions = ts.list_missing_versions();
+        let versions: Vec<_> = ts
+            .list_missing_versions()
+            .into_iter()
+            .map(|tv| tv.request)
+            .collect();
         if versions.is_empty() {
             info!("all runtimes are installed");
-            return Ok(());
+            return Ok(vec![]);
         }
         let mpr = MultiProgressReport::get();
-        ts.install_versions(config, versions, &mpr, &self.install_opts())?;
-        Ok(())
+        ts.install_versions(config, versions, &mpr, &self.install_opts())
     }
 }
 

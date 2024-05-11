@@ -41,7 +41,7 @@ impl Where {
                         .versions
                         .get(&self.tool.forge)
                         .and_then(|v| v.requests.first())
-                        .map(|(r, _)| r.version());
+                        .map(|r| r.version());
                     self.tool.with_version(&v.unwrap_or(String::from("latest")))
                 }
             },
@@ -53,7 +53,7 @@ impl Where {
         match runtime
             .tvr
             .as_ref()
-            .map(|tvr| tvr.resolve(plugin.as_ref(), Default::default(), false))
+            .map(|tvr| tvr.resolve(plugin.as_ref(), false))
         {
             Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
                 miseprintln!("{}", tv.install_path().to_string_lossy());

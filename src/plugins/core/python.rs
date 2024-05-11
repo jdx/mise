@@ -161,7 +161,7 @@ impl PythonPlugin {
         let config = Config::get();
         let settings = Settings::get();
         self.install_or_update_python_build()?;
-        if matches!(&ctx.tv.request, ToolVersionRequest::Ref(..)) {
+        if matches!(&ctx.tv.request, ToolVersionRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build".into());
@@ -225,7 +225,7 @@ impl PythonPlugin {
         tv: &ToolVersion,
         pr: Option<&dyn SingleReport>,
     ) -> eyre::Result<Option<PathBuf>> {
-        if let Some(virtualenv) = tv.opts.get("virtualenv") {
+        if let Some(virtualenv) = tv.request.options().get("virtualenv") {
             let settings = Settings::try_get()?;
             if !settings.experimental {
                 warn!(
