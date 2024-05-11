@@ -12,10 +12,10 @@ pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::MISE_CONFIG_DIR);
 pub static STATE: Lazy<&Path> = Lazy::new(|| &env::MISE_STATE_DIR);
 pub static SYSTEM: Lazy<&Path> = Lazy::new(|| &env::MISE_SYSTEM_DIR);
 
-pub static PLUGINS: Lazy<PathBuf> = Lazy::new(|| DATA.join("plugins"));
-pub static DOWNLOADS: Lazy<PathBuf> = Lazy::new(|| DATA.join("downloads"));
-pub static INSTALLS: Lazy<PathBuf> = Lazy::new(|| DATA.join("installs"));
-pub static SHIMS: Lazy<PathBuf> = Lazy::new(|| DATA.join("shims"));
+pub static PLUGINS: Lazy<&Path> = Lazy::new(|| &env::MISE_PLUGINS_DIR);
+pub static DOWNLOADS: Lazy<&Path> = Lazy::new(|| &env::MISE_DOWNLOADS_DIR);
+pub static INSTALLS: Lazy<&Path> = Lazy::new(|| &env::MISE_INSTALLS_DIR);
+pub static SHIMS: Lazy<&Path> = Lazy::new(|| &env::MISE_SHIMS_DIR);
 
 pub static TRACKED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("tracked-configs"));
 pub static TRUSTED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("trusted-configs"));
