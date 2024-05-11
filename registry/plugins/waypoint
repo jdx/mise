@@ -1,0 +1,2 @@
+repository = https://github.com/asdf-community/asdf-hashicorp.git
+first-party = true
