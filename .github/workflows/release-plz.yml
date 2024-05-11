@@ -44,6 +44,7 @@ jobs:
           restore-keys: mise-tools
       - run: mise install
       - run: |
+          rm -rf registry
           git clone https://github.com/mise-plugins/registry
           rm -rf registry/.git
           git add registry
