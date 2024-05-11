@@ -163,17 +163,16 @@ impl Toolset {
         };
         let installing: HashSet<String> = HashSet::new();
         let installing = Arc::new(Mutex::new(installing));
-        let installed = Arc::new(Mutex::new(vec![]));
-        thread::scope(|s| {
+        let installed = thread::scope(|s| {
             #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
                     let queue = queue.clone();
                     let installing = installing.clone();
-                    let installed = installed.clone();
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
+                        let mut installed = vec![];
                         while let Some((t, versions)) = next_job() {
                             installing.lock().unwrap().insert(t.id().into());
                             for tv in versions {
@@ -194,23 +193,22 @@ impl Toolset {
                                     force: opts.force,
                                 };
                                 t.install_version(ctx)?;
-                                installed.lock().unwrap().push(tv);
+                                installed.push(tv);
                             }
-                            installing.lock().unwrap().remove(t.id());
                         }
-                        Ok(())
+                        Ok(installed)
                     })
                 })
                 .collect_vec()
                 .into_iter()
                 .map(|t| t.join().unwrap())
-                .collect::<Result<()>>()
+                .collect::<Result<Vec<Vec<ToolVersion>>>>()
+            // TODO: figure out how to get Result<Vec<ToolVersion>> instead
         })?;
         self.resolve();
         shims::reshim(self)?;
         runtime_symlinks::rebuild(config)?;
-        let installed = installed.lock().unwrap().clone();
-        Ok(installed)
+        Ok(installed.into_iter().flatten().collect())
     }
 
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
