@@ -58,6 +58,7 @@ within_isolated_env() {
     MISE_TEST_SCRIPT="$TEST_SCRIPT" \
     MISE_TEST_DIR="$(dirname "$TEST_SCRIPT")" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
+    GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
     "$@" || return $?
 }
 
