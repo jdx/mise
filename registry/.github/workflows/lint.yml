@@ -1,0 +1,31 @@
+name: lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  markdown_and_scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install asdf dependencies
+        uses: asdf-vm/actions/install@v3
+
+      - name: lint
+        run: scripts/lint.bash
+
+  actions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check workflow files
+        uses: docker://rhysd/actionlint:1.6.23
+        with:
+          args: -color

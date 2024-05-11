@@ -1,0 +1,18 @@
+name: test
+
+on:
+  pull_request:
+    paths:
+      - plugins/*
+
+jobs:
+  changed_plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check new plugin is registered correctly
+        run: bash scripts/test_plugin.bash --diff origin/main ${{ github.sha }}
