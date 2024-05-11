@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 
+# Systematically installed by run_test
+rm "$MISE_DATA_DIR/plugins/dummy"
+
 mise plugins ln "$ROOT"/test/data/plugins/dummy
 assert_contains "mise plugins" "dummy"
 
