@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-require_cmd node
+require_cmd npm
 
 export NPM_CONFIG_FUND=false
 

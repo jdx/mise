@@ -22,6 +22,7 @@ RUN    apt-get update \
     fd-find \
     fish \
     python3-venv \
+    pipx \
     && ln -s /usr/bin/{fdfind,fd} \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
@@ -29,6 +30,7 @@ RUN    apt-get update \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && node -v \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
+    && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh | TARGET=/usr/local/bin sh \
     && rustup toolchain install nightly --component llvm-tools-preview \
     && cargo binstall -y \
     cargo-deny \
@@ -45,5 +47,7 @@ RUN    apt-get update \
     && cargo -V \
     && node -v \
     && npm -v \
-    && python3 -v \
+    && python3 -V \
+    && pipx --version \
+    && ubi -V \
     && rm -rf "$CARGO_HOME/registry" && ln -sv /tmp/mise/registry "$CARGO_HOME/registry" && mkdir -p /tmp/mise/registry

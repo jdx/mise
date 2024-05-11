@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+require_cmd ubi
 
 # Needed for linux/mac compatibility (https://unix.stackexchange.com/a/84980)
 declare BIN_BACKEND_TEMP_DIR
