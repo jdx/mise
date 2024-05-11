@@ -417,10 +417,10 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
         .with_env("ASDF_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_NAME", name.to_string())
-        .with_env("RTX_SHIMS_DIR", &*dirs::SHIMS)
+        .with_env("RTX_SHIMS_DIR", *dirs::SHIMS)
         .with_env("MISE_PLUGIN_NAME", name.to_string())
         .with_env("MISE_PLUGIN_PATH", plugin_path)
-        .with_env("MISE_SHIMS_DIR", &*dirs::SHIMS)
+        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
 }
 
 impl Eq for ExternalPlugin {}

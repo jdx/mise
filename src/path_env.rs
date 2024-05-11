@@ -31,11 +31,19 @@ impl PathEnv {
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
-        let mut paths = self.pre.iter().chain(self.mise.iter()).collect_vec();
+        let mut paths = self
+            .pre
+            .iter()
+            .chain(self.mise.iter())
+            .map(|p| p.to_path_buf())
+            .collect_vec();
         if self.seen_shims {
-            paths.push(&dirs::SHIMS);
+            paths.push(dirs::SHIMS.to_path_buf())
         }
-        paths.into_iter().chain(self.post.iter()).cloned().collect()
+        paths
+            .into_iter()
+            .chain(self.post.iter().map(|p| p.to_path_buf()))
+            .collect()
     }
 
     pub fn join(&self) -> OsString {

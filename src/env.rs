@@ -49,6 +49,16 @@ pub static MISE_TMP_DIR: Lazy<PathBuf> =
 pub static MISE_SYSTEM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/mise")));
 
+// data subdirs
+pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_INSTALLS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("installs")));
+pub static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_DOWNLOADS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("downloads")));
+pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
+pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
+
 pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
 });
