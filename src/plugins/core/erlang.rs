@@ -108,7 +108,7 @@ impl Forge for ErlangPlugin {
 
         file::remove_all(ctx.tv.install_path())?;
         match &ctx.tv.request {
-            ToolVersionRequest::Ref(..) => {
+            ToolVersionRequest::Ref { .. } => {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {

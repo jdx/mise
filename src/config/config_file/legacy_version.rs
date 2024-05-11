@@ -20,10 +20,7 @@ impl LegacyVersionFile {
         for plugin in plugins {
             let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
-                toolset.add_version(
-                    ToolVersionRequest::new(plugin.fa().clone(), version),
-                    Default::default(),
-                );
+                toolset.add_version(ToolVersionRequest::new(plugin.fa().clone(), version));
             }
         }
 

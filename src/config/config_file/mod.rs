@@ -100,7 +100,7 @@ impl dyn ConfigFile {
         for (fa, versions) in &plugins_to_update {
             let mut tvl = ToolVersionList::new(fa.clone(), ts.source.as_ref().unwrap().clone());
             for tv in versions {
-                tvl.requests.push(((*tv).clone(), Default::default()));
+                tvl.requests.push((*tv).clone());
             }
             ts.versions.insert(fa.clone(), tvl);
         }
@@ -111,7 +111,7 @@ impl dyn ConfigFile {
                 .map(|tvr| {
                     if pin {
                         let plugin = forge::get(&fa);
-                        let tv = tvr.resolve(plugin.as_ref(), Default::default(), false)?;
+                        let tv = tvr.resolve(plugin.as_ref(), false)?;
                         Ok(tv.version)
                     } else {
                         Ok(tvr.version())
@@ -144,7 +144,7 @@ impl dyn ConfigFile {
                 })?
                 .requests
                 .iter()
-                .map(|(tvr, _)| tvr.version())
+                .map(|tvr| tvr.version())
                 .collect::<Vec<_>>();
             miseprintln!("{}", tvl.join(" "));
             return Ok(true);

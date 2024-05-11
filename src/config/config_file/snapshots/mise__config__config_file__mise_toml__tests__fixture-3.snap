@@ -8,13 +8,11 @@ Toolset {
             forge: ForgeArg("terraform"),
             versions: [],
             requests: [
-                (
-                    Version(
-                        ForgeArg("terraform"),
-                        "1.0.0",
-                    ),
-                    {},
-                ),
+                Version {
+                    forge: ForgeArg("terraform"),
+                    version: "1.0.0",
+                    options: {},
+                },
             ],
             source: MiseToml(
                 "~/fixtures/.mise.toml",
@@ -24,33 +22,24 @@ Toolset {
             forge: ForgeArg("node"),
             versions: [],
             requests: [
-                (
-                    Version(
-                        ForgeArg("node"),
-                        "18",
-                    ),
-                    {},
-                ),
-                (
-                    Prefix(
-                        ForgeArg("node"),
-                        "20",
-                    ),
-                    {},
-                ),
-                (
-                    Ref(
-                        ForgeArg("node"),
-                        "master",
-                    ),
-                    {},
-                ),
-                (
-                    Path(
-                        ForgeArg("node"),
-                        "~/.nodes/18",
-                    ),
-                    {},
+                Version {
+                    forge: ForgeArg("node"),
+                    version: "18",
+                    options: {},
+                },
+                Prefix {
+                    forge: ForgeArg("node"),
+                    prefix: "20",
+                    options: {},
+                },
+                Ref {
+                    forge: ForgeArg("node"),
+                    ref_: "master",
+                    options: {},
+                },
+                Path(
+                    ForgeArg("node"),
+                    "~/.nodes/18",
                 ),
             ],
             source: MiseToml(
@@ -61,13 +50,11 @@ Toolset {
             forge: ForgeArg("jq"),
             versions: [],
             requests: [
-                (
-                    Prefix(
-                        ForgeArg("jq"),
-                        "1.6",
-                    ),
-                    {},
-                ),
+                Prefix {
+                    forge: ForgeArg("jq"),
+                    prefix: "1.6",
+                    options: {},
+                },
             ],
             source: MiseToml(
                 "~/fixtures/.mise.toml",
@@ -77,13 +64,11 @@ Toolset {
             forge: ForgeArg("shellcheck"),
             versions: [],
             requests: [
-                (
-                    Version(
-                        ForgeArg("shellcheck"),
-                        "0.9.0",
-                    ),
-                    {},
-                ),
+                Version {
+                    forge: ForgeArg("shellcheck"),
+                    version: "0.9.0",
+                    options: {},
+                },
             ],
             source: MiseToml(
                 "~/fixtures/.mise.toml",
@@ -93,22 +78,18 @@ Toolset {
             forge: ForgeArg("python"),
             versions: [],
             requests: [
-                (
-                    Version(
-                        ForgeArg("python"),
-                        "3.10.0",
-                    ),
-                    {
+                Version {
+                    forge: ForgeArg("python"),
+                    version: "3.10.0",
+                    options: {
                         "venv": ".venv",
                     },
-                ),
-                (
-                    Version(
-                        ForgeArg("python"),
-                        "3.9.0",
-                    ),
-                    {},
-                ),
+                },
+                Version {
+                    forge: ForgeArg("python"),
+                    version: "3.9.0",
+                    options: {},
+                },
             ],
             source: MiseToml(
                 "~/fixtures/.mise.toml",

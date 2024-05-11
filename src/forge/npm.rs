@@ -8,7 +8,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionRequest;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl Forge for NPMForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["node".into()])
     }
 

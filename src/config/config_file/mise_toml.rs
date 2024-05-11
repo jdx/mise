@@ -308,12 +308,12 @@ impl ConfigFile for MiseToml {
                     trust_check(&self.path)?;
                 }
                 let version = self.parse_template(&tool.tt.to_string())?;
-                let tvr = ToolVersionRequest::new(fa.clone(), &version);
                 let mut options = tool.options.clone();
                 for v in options.values_mut() {
                     *v = self.parse_template(v)?;
                 }
-                toolset.add_version(tvr, options);
+                let tvr = ToolVersionRequest::new_opts(fa.clone(), &version, options);
+                toolset.add_version(tvr);
             }
         }
         Ok(toolset)

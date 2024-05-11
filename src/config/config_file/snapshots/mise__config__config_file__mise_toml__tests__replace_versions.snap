@@ -8,20 +8,16 @@ Toolset {
             forge: ForgeArg("node"),
             versions: [],
             requests: [
-                (
-                    Version(
-                        ForgeArg("node"),
-                        "16.0.1",
-                    ),
-                    {},
-                ),
-                (
-                    Version(
-                        ForgeArg("node"),
-                        "18.0.1",
-                    ),
-                    {},
-                ),
+                Version {
+                    forge: ForgeArg("node"),
+                    version: "16.0.1",
+                    options: {},
+                },
+                Version {
+                    forge: ForgeArg("node"),
+                    version: "18.0.1",
+                    options: {},
+                },
             ],
             source: MiseToml(
                 "/tmp/.mise.toml",

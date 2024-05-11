@@ -1,14 +1,14 @@
 use crate::cli::args::ForgeArg;
 use crate::forge;
 use crate::toolset::tool_version_request::ToolVersionRequest;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolSource, ToolVersion};
 
 /// represents several versions of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersionList {
     pub forge: ForgeArg,
     pub versions: Vec<ToolVersion>,
-    pub requests: Vec<(ToolVersionRequest, ToolVersionOptions)>,
+    pub requests: Vec<ToolVersionRequest>,
     pub source: ToolSource,
 }
 
@@ -24,8 +24,8 @@ impl ToolVersionList {
     pub fn resolve(&mut self, latest_versions: bool) {
         self.versions.clear();
         let plugin = forge::get(&self.forge);
-        for (tvr, opts) in &mut self.requests {
-            match tvr.resolve(plugin.as_ref(), opts.clone(), latest_versions) {
+        for tvr in &mut self.requests {
+            match tvr.resolve(plugin.as_ref(), latest_versions) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     let source = self.source.to_string();
@@ -46,10 +46,7 @@ mod tests {
     fn test_tool_version_list() {
         let fa: ForgeArg = "tiny".parse().unwrap();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests.push((
-            ToolVersionRequest::new(fa, "latest"),
-            ToolVersionOptions::default(),
-        ));
+        tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
         tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 1);
     }
@@ -61,10 +58,7 @@ mod tests {
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let fa: ForgeArg = "dummy".parse().unwrap();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests.push((
-            ToolVersionRequest::new(fa, "latest"),
-            ToolVersionOptions::default(),
-        ));
+        tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
         tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 0);
         env::remove_var("MISE_FAILURE");

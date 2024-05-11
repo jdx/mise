@@ -43,7 +43,7 @@ impl LsRemote {
     fn run_single(self, plugin: Arc<dyn Forge>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
-                Some(ToolVersionRequest::Version(_, v)) => Some(v.clone()),
+                Some(ToolVersionRequest::Version { version: v, .. }) => Some(v.clone()),
                 _ => self.prefix.clone(),
             },
             _ => self.prefix.clone(),

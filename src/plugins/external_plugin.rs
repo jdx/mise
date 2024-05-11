@@ -324,7 +324,7 @@ impl ExternalPlugin {
     fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
         let config = Config::get();
         let mut sm = self.script_man.clone();
-        for (key, value) in &tv.opts {
+        for (key, value) in &tv.request.options() {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
@@ -336,8 +336,8 @@ impl ExternalPlugin {
             sm = sm.with_env("MISE_PROJECT_ROOT", project_root);
         }
         let install_type = match &tv.request {
-            ToolVersionRequest::Version(_, _) | ToolVersionRequest::Prefix(_, _) => "version",
-            ToolVersionRequest::Ref(_, _) => "ref",
+            ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. } => "version",
+            ToolVersionRequest::Ref { .. } => "ref",
             ToolVersionRequest::Path(_, _) => "path",
             ToolVersionRequest::Sub { .. } => "sub",
             ToolVersionRequest::System(_) => {
@@ -345,7 +345,7 @@ impl ExternalPlugin {
             }
         };
         let install_version = match &tv.request {
-            ToolVersionRequest::Ref(_, v) => v, // should not have "ref:" prefix
+            ToolVersionRequest::Ref { ref_: v, .. } => v, // should not have "ref:" prefix
             _ => &tv.version,
         };
         // add env vars from .mise.toml files
@@ -446,8 +446,8 @@ impl Forge for ExternalPlugin {
         PluginType::External
     }
 
-    fn get_dependencies(&self, tv: &ToolVersion) -> Result<Vec<String>> {
-        let out = match tv.forge.name.as_str() {
+    fn get_dependencies(&self, tvr: &ToolVersionRequest) -> Result<Vec<String>> {
+        let out = match tvr.forge().name.as_str() {
             "poetry" | "pipenv" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],

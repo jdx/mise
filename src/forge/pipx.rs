@@ -8,7 +8,7 @@ use crate::file;
 
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionRequest;
 
 #[derive(Debug)]
 pub struct PIPXForge {
@@ -26,7 +26,7 @@ impl Forge for PIPXForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tv: &ToolVersion) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["pipx".into()])
     }
 

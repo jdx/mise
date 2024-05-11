@@ -83,7 +83,7 @@ impl ToolsetBuilder {
                 let mut env_ts = Toolset::new(source);
                 for v in v.split_whitespace() {
                     let tvr = ToolVersionRequest::new(fa.clone(), v);
-                    env_ts.add_version(tvr, Default::default());
+                    env_ts.add_version(tvr);
                 }
                 ts.merge(env_ts);
             }
@@ -98,7 +98,7 @@ impl ToolsetBuilder {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    arg_ts.add_version(tvr.clone(), Default::default());
+                    arg_ts.add_version(tvr.clone());
                 } else if self.default_to_latest {
                     // TODO: see if there is a cleaner way to handle this scenario
                     // this logic is required for `mise x` because with that specific command mise
@@ -113,10 +113,7 @@ impl ToolsetBuilder {
                     });
 
                     if let Some((_ta, _fa)) = set_as_latest {
-                        arg_ts.add_version(
-                            ToolVersionRequest::new(arg.forge.clone(), "latest"),
-                            Default::default(),
-                        );
+                        arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest"));
                     }
                 }
             }

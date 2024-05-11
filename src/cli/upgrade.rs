@@ -78,7 +78,7 @@ impl Upgrade {
                 tv.version.clone_from(latest);
                 tv
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let to_remove = outdated
             .into_iter()
@@ -101,6 +101,7 @@ impl Upgrade {
             raw: self.raw,
             latest_versions: true,
         };
+        let new_versions = new_versions.into_iter().map(|tv| tv.request).collect();
         ts.install_versions(config, new_versions, &mpr, &opts)?;
         for (tool, tv) in to_remove {
             let pr = mpr.add(&tv.style());
