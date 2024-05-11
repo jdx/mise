@@ -8,6 +8,7 @@ source "$SCRIPT_DIR/style.sh"
 
 FILES="$(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)"
 test_count=0
+skipped_count=0
 status=0
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
@@ -25,11 +26,16 @@ for f in $FILES; do
       continue
     fi
   fi
+  if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
+    title="skipped test: $f" file="e2e/$f" warn "slow tests are disabled"
+    skipped_count=$((skipped_count + 1))
+    continue
+  fi
   if ! "$ROOT/e2e/run_test" "$f"; then
     status=1
   fi
   test_count=$((test_count + 1))
 done
 
-echo "E2E: ran $test_count tests" >&2
+echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
 exit $status

@@ -12,7 +12,3 @@ cat <<EOF >.java-version
 EOF
 assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
 rm .java-version
-
-skip_slow_test
-
-mise i java@corretto-8

@@ -1,0 +1,3 @@
+# shellcheck shell=bash
+
+mise i java@corretto-8

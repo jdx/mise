@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+require_cmd cargo
+
+export MISE_CARGO_BINSTALL=1
+
+assert "mise x cargo:eza@0.17.0 -- eza -v" "eza - A modern, maintained replacement for ls
+v0.17.0 [+git]
+https://github.com/eza-community/eza"

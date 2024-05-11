@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 
-skip_slow_test
-
 export POETRY_HOME=".poetry"
 
 eval "$(mise activate bash)"

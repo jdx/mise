@@ -1,6 +1,4 @@
 # shellcheck shell=bash
 
-skip_slow_test
-
 mise i neovim@ref:master
 assert_contains "mise x neovim@ref:master -- nvim --version" "NVIM v0."

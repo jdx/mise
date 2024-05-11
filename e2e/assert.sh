@@ -83,13 +83,6 @@ assert_matches() {
   fi
 }
 
-skip_slow_test() {
-  if [[ -z ${TEST_ALL:-} ]]; then
-    title="skipped test" warn "slow tests are disabled"
-    exit 0
-  fi
-}
-
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
     title="skipped test" warn "the required command '$1' was not found in the PATH ($PATH)"

@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 
-skip_slow_test
-
 export MISE_RUBY_DEFAULT_PACKAGES_FILE="$HOME/.default-gems"
 export MISE_RUBY_INSTALL=1
 
