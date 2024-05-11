@@ -1,15 +1,15 @@
 # shellcheck shell=bash
 
 # shellcheck source-path=SCRIPTDIR
-source "$MISE_TEST_ROOT/style.sh"
+source "$TEST_ROOT/style.sh"
 
 fail() {
   err "$*"
   exit 1
 }
 
-# Safeguard against running test directly, which would execute in the actual user home
-[[ -n "${MISE_TEST_NAME:-}" ]] || fail "tests should be called using run_test"
+# Safeguard against running the test directly, which would execute in the actual user home
+[[ -n "${TEST_NAME:-}" ]] || fail "tests should be called using run_test"
 
 quiet_assert_succeed() {
   local status=0

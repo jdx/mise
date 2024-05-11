@@ -53,10 +53,10 @@ within_isolated_env() {
     MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
     MISE_EXPERIMENTAL=1 \
     MISE_YES=1 \
-    MISE_TEST_NAME="$TEST" \
-    MISE_TEST_ROOT="$SCRIPT_DIR" \
-    MISE_TEST_SCRIPT="$TEST_SCRIPT" \
-    MISE_TEST_DIR="$(dirname "$TEST_SCRIPT")" \
+    TEST_NAME="$TEST" \
+    TEST_ROOT="$SCRIPT_DIR" \
+    TEST_SCRIPT="$TEST_SCRIPT" \
+    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
     GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
     "$@" || return $?
