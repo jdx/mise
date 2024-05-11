@@ -6,7 +6,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
-mapfile FILES < <(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)
+mapfile -t FILES < <(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)
 test_count=0
 skipped_count=0
 status=0
@@ -26,9 +26,7 @@ for f in "${FILES[@]}"; do
   if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
     title="E2E test $f skipped" file="e2e/$f" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
-    if [[ -n $GITHUB_STEP_SUMMARY ]]; then
-      summary "$f" "-" ":zap:"
-    fi
+    summary "$f" "-" ":zap:"
     continue
   fi
   if ! "$ROOT/e2e/run_test" "$f"; then
