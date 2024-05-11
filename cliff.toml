@@ -67,7 +67,7 @@ footer = """
 # remove the leading and trailing whitespace from the template
 trim = true
 postprocessors = [
-    { pattern = '\$REPO', replace = "https://github.com/jdx/mise" },
+  { pattern = '\$REPO', replace = "https://github.com/jdx/mise" },
 ]
 
 [git]
@@ -79,31 +79,31 @@ filter_unconventional = false
 split_commits = false
 # regex for preprocessing the commit messages
 commit_preprocessors = [
-    # remove PR labels from commits
-    { pattern = '\(#([0-9]+)\)', replace = "" },
-    # Check spelling of the commit with https://github.com/crate-ci/typos
-    # If the spelling is incorrect, it will be automatically fixed.
-    #{ pattern = '.*', replace_command = 'typos --write-changes -' },
+  # remove PR labels from commits
+  { pattern = '\(#([0-9]+)\)', replace = "" },
+  # Check spelling of the commit with https://github.com/crate-ci/typos
+  # If the spelling is incorrect, it will be automatically fixed.
+  #{ pattern = '.*', replace_command = 'typos --write-changes -' },
 ]
 # regex for parsing and grouping commits
 commit_parsers = [
-    { message = '^chore\(release\): prepare for', skip = true },
-    { message = '^chore\(pr\)', skip = true },
-    { message = '^chore\(pull\)', skip = true },
-    { message = '^chore: (release|Release)', skip = true },
-    { message = '^Release', skip = true },
-    { message = "^Merge commit", skip = true },
-    { body = '.*security', group = "<!-- 08 -->🛡️ Security" },
-    { message = '^(chore|fix)\(deps\):', group = "<!-- 99 -->📦️ Dependency Updates", scope = "" },
-    { message = '^feat', group = "<!-- 00 -->🚀 Features" },
-    { message = '^fix', group = "<!-- 01 -->🐛 Bug Fixes" },
-    { message = '^refactor', group = "<!-- 02 -->🚜 Refactor" },
-    { message = '^doc', group = "<!-- 03 -->📚 Documentation" },
-    { message = '^style', group = "<!-- 05 -->🎨 Styling" },
-    { message = '^perf', group = "<!-- 04 -->⚡ Performance" },
-    { message = '^test', group = "<!-- 06 -->🧪 Testing" },
-    { message = '^revert', group = "<!-- 09 -->◀️ Revert" },
-    { message = '.', group = "<!-- 10 -->🔍 Other Changes" },
+  { message = '^chore\(release\): prepare for', skip = true },
+  { message = '^chore\(pr\)', skip = true },
+  { message = '^chore\(pull\)', skip = true },
+  { message = '^chore: (release|Release)', skip = true },
+  { message = '^Release', skip = true },
+  { message = "^Merge commit", skip = true },
+  { body = '.*security', group = "<!-- 08 -->🛡️ Security" },
+  { message = '^(chore|fix)\(deps\):', group = "<!-- 99 -->📦️ Dependency Updates", scope = "" },
+  { message = '^feat', group = "<!-- 00 -->🚀 Features" },
+  { message = '^fix', group = "<!-- 01 -->🐛 Bug Fixes" },
+  { message = '^refactor', group = "<!-- 02 -->🚜 Refactor" },
+  { message = '^doc', group = "<!-- 03 -->📚 Documentation" },
+  { message = '^style', group = "<!-- 05 -->🎨 Styling" },
+  { message = '^perf', group = "<!-- 04 -->⚡ Performance" },
+  { message = '^test', group = "<!-- 06 -->🧪 Testing" },
+  { message = '^revert', group = "<!-- 09 -->◀️ Revert" },
+  { message = '.', group = "<!-- 10 -->🔍 Other Changes" },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = false
@@ -112,7 +112,7 @@ filter_commits = false
 # regex for matching git tags
 tag_pattern = '^v\d+\.\d+\.\d+$'
 # regex for skipping tags
-skip_tags = '^v(1|2023|2024\.0)\.'
+skip_tags = '^v(1|2023|2024\.0|2024\.5\.3)'
 # regex for ignoring tags
 # ignore_tags = ""
 # sort the tags topologically
