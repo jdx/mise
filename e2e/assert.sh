@@ -4,7 +4,7 @@
 source "$TEST_ROOT/style.sh"
 
 fail() {
-  err "$*"
+  title="assertion failed" err "$*"
   exit 1
 }
 
@@ -85,14 +85,14 @@ assert_matches() {
 
 skip_slow_test() {
   if [[ -z ${TEST_ALL:-} ]]; then
-    warn "skipping slow tests"
+    title="skipped test" warn "slow tests are disabled"
     exit 0
   fi
 }
 
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
-    warn "skipping test: cannot find ""$1"" in PATH ($PATH)"
+    title="skipped test" warn "the required command '$1' was not found in the PATH ($PATH)"
     exit 0
   fi
 }

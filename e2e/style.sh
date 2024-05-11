@@ -1,49 +1,42 @@
 # shellcheck shell=bash
 
 if [[ -n ${GITHUB_ACTION:-} ]]; then
-  # Use special GA formatting
-  # Use ANSI green color for the "ok" message so groups with no errors are kept collapsed
-  _STYLE_OK=$'\e[92m'
-  _STYLE_ERR="::error${MISE_TEST_SCRIPT:+ file=${MISE_TEST_SCRIPT#"$ROOT"/}}::"
-  _STYLE_WARN="::warning${MISE_TEST_SCRIPT:+ file=${MISE_TEST_SCRIPT#"$ROOT"/}}::"
-  _STYLE_RESET=$'\e[0m'
-  _GROUP_START='::group::'
-  _GROUP_END='::endgroup::'
+  # Output Github action annotations
+  annotate() {
+    : "${file:=${TEST_SCRIPT:-}}"
+    : "${title:=}"
+    echo "::${type:?}${file:+ file=${file}}${title:+ title=${title}}::$*" >&2
+  }
+  err() { type=error annotate "$*"; }
+  warn() { type=warning annotate "$*"; }
+  start_group() { echo "::group::$*" >&2; }
+  end_group() { echo ::endgroup:: >&2; }
+
+  # Yet use ANSI green color for the "ok" message
+  ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
+
 elif [[ -t 2 ]]; then
   # Use ANSI coloring in terminal
-  _STYLE_OK=$'\e[92m'       # green
-  _STYLE_ERR=$'\e[91m'      # red
-  _STYLE_WARN=$'\e[93m'     # yellow
-  _STYLE_RESET=$'\e[0m'     # full reset
-  _GROUP_START=$'\e[1m>>> ' # bold
-  _GROUP_END=
+  ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
+  err() { echo $'\e[91m'"$*"$'\e[0m' >&2; }
+  warn() { echo $'\e[93m'"$*"$'\e[0m' >&2; }
+  start_group() { echo $'\e[1m'">>> $*"$'\e[0m' >&2; }
+  end_group() { echo >&2; }
+
 else
   # No styling
-  _STYLE_OK='SUCCESS: '
-  _STYLE_ERR='ERROR: '
-  _STYLE_WARN='NOTICE: '
-  _STYLE_RESET=
-  _GROUP_START='>>> '
-  _GROUP_END=
+  ok() { echo "SUCCESS: $*" >&2; }
+  err() { echo "ERROR: $*" >&2; }
+  warn() { echo "wARNING: $*" >&2; }
+  start_group() { echo ">>> $*" >&2; }
+  end_group() { echo >&2; }
 fi
-
-ok() {
-  echo "${_STYLE_OK}$*${_STYLE_RESET}" >&2
-}
-
-err() {
-  echo "${_STYLE_ERR}$*${_STYLE_RESET}" >&2
-}
-
-warn() {
-  echo "${_STYLE_WARN}$*${_STYLE_RESET}" >&2
-}
 
 as_group() {
   local status=0
-  echo "${_GROUP_START}$1${_STYLE_RESET}" >&2
+  start_group "$1"
   shift
   "$*" || status=$?
-  echo "${_GROUP_END}${_STYLE_RESET}" >&2
+  end_group
   return "$status"
 }
