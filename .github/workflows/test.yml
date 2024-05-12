@@ -81,7 +81,18 @@ jobs:
         with:
           shared-key: coverage
           save-if: ${{ github.ref_name == 'main' }}
-      - run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install \
+            bison \
+            build-essential \
+            direnv \
+            fd-find \
+            fish \
+            libgettextpo-dev \
+            pipx \
+            python3-venv \
+            zsh
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,mise,usage-cli
