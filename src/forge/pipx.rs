@@ -68,7 +68,7 @@ impl Forge for PIPXForge {
             .with_pr(ctx.pr.as_ref())
             .env("PIPX_HOME", ctx.tv.install_path())
             .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
-            .envs(config.env()?)
+            .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?
             // Prepend install path so pipx doesn't issue a warning about missing path
             .prepend_path(vec![ctx.tv.install_path().join("bin")])?

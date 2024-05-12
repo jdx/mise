@@ -195,6 +195,7 @@ impl Toolset {
                                 t.install_version(ctx)?;
                                 installed.push(tv);
                             }
+                            installing.lock().unwrap().remove(t.id());
                         }
                         Ok(installed)
                     })
