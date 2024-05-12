@@ -42,10 +42,7 @@ impl Forge for PIPXForge {
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
-            .get_or_try_init(|| {
-                let latest = self.latest_version(Some("latest".into())).unwrap();
-                Ok(latest)
-            })
+            .get_or_try_init(|| self.latest_version(Some("latest".into())))
             .cloned()
     }
 
