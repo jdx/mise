@@ -113,5 +113,5 @@ jobs:
         uses: codacy/codacy-coverage-reporter-action@v1
         continue-on-error: true
         with:
-          project-token: cb3da7e860bf4e31a50e733aefa8d347
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: lcov0.info,lcov1.info,lcov2.info,lcov3.info
