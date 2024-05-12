@@ -11,31 +11,36 @@ test_count=0
 skipped_count=0
 status=0
 
-# split tests into two tranches to reduce test time
-if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
-  total_count="${#FILES[@]}"
-  from=$((total_count * TEST_TRANCHE / TEST_TRANCHE_COUNT))
-  to=$((total_count * (TEST_TRANCHE + 1) / TEST_TRANCHE_COUNT))
-  FILES=("${FILES[@]:$from:$((to - from))}")
-fi
-
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
 
 TEST_ALL=1 # @TODO: remove before merging
 
-for f in "${FILES[@]}"; do
-  if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
-    title="E2E test $f skipped" file="e2e/$f" warn "slow tests are disabled"
+for index in "${!FILES[@]}"; do
+  TEST_NAME="${FILES[$index]}"
+
+  # split tests into tranches to reduce test time
+  if [[ -n "${TEST_TRANCHE_COUNT:-}" ]]; then
+    if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then
+      continue
+    fi
+  fi
+
+  # Skip slow tests unless TEST_ALL == 1
+  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME = *_slow ]]; then
+    title="E2E test $TEST_NAME skipped" file="e2e/$f" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
-    summary "$f" "-" ":zap:"
+    summary "$TEST_NAME" "-" ":zap:"
     continue
   fi
-  if ! "$ROOT/e2e/run_test" "$f"; then
+
+  # Actually run the test
+  if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
     status=1
   fi
   test_count=$((test_count + 1))
 done
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
+
 exit "$status"
