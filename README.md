@@ -36,7 +36,7 @@ Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-mise 2024.5.8
+mise 2024.5.9
 ```
 
 Hook mise into your shell (pick the right one for your shell):
