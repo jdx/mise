@@ -103,10 +103,5 @@ jobs:
         uses: codacy/codacy-coverage-reporter-action@v1
         continue-on-error: true
         with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          project-token: cb3da7e860bf4e31a50e733aefa8d347
           coverage-reports: lcov.info
-      # - name: Upload to codecov.io
-      #   uses: codecov/codecov-action@v3
-      #   with:
-      #     fail_ci_if_error: false
-      #     files: lcov.info
