@@ -33,7 +33,7 @@ impl FromStr for ToolArg {
     fn from_str(input: &str) -> eyre::Result<Self> {
         let (forge_input, version) = parse_input(input);
 
-        let forge: ForgeArg = forge_input.parse()?;
+        let forge: ForgeArg = forge_input.into();
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".parse().unwrap(),
+                forge: "node".into(),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
@@ -183,10 +183,10 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".parse().unwrap(),
+                forge: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolVersionRequest::new("node".parse().unwrap(), "20")),
+                tvr: Some(ToolVersionRequest::new("node".into(), "20")),
             }
         );
     }
@@ -197,10 +197,10 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".parse().unwrap(),
+                forge: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolVersionRequest::new("node".parse().unwrap(), "lts")),
+                tvr: Some(ToolVersionRequest::new("node".into(), "lts")),
             }
         );
     }

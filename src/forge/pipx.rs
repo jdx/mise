@@ -4,8 +4,6 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file;
-
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionRequest;
@@ -26,7 +24,7 @@ impl Forge for PIPXForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["pipx".into()])
     }
 
@@ -44,16 +42,6 @@ impl Forge for PIPXForge {
         self.latest_version_cache
             .get_or_try_init(|| self.latest_version(Some("latest".into())))
             .cloned()
-    }
-
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_pipx_installed() {
-            bail!(
-                "pipx is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -116,8 +104,4 @@ fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
         (_, false, 1, v) => format!("{}=={}", name, v),
         _ => name.to_string(),
     }
-}
-
-fn is_pipx_installed() -> bool {
-    file::which("pipx").is_some()
 }

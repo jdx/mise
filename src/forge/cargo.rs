@@ -28,7 +28,7 @@ impl Forge for CargoForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["cargo".into(), "cargo-binstall".into(), "rust".into()])
     }
 
@@ -47,16 +47,6 @@ impl Forge for CargoForge {
                 Ok(versions)
             })
             .cloned()
-    }
-
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_cargo_installed() {
-            bail!(
-                "cargo is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -107,10 +97,6 @@ fn get_crate_url(n: &str) -> eyre::Result<Url> {
         _ => format!("https://index.crates.io/{}/{}/{n}", &n[..2], &n[2..4]),
     };
     Ok(url.parse()?)
-}
-
-fn is_cargo_installed() -> bool {
-    file::which("cargo").is_some()
 }
 
 #[derive(Debug, serde::Deserialize)]

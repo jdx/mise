@@ -67,6 +67,8 @@ pub struct Toolset {
     pub versions: IndexMap<ForgeArg, ToolVersionList>,
     pub source: Option<ToolSource>,
     pub disable_tools: HashSet<ForgeArg>,
+    pub tool_filter: Option<HashSet<ForgeArg>>,
+    pub installed_only: bool,
 }
 
 impl Toolset {
@@ -78,7 +80,7 @@ impl Toolset {
     }
     pub fn add_version(&mut self, tvr: ToolVersionRequest) {
         let fa = tvr.forge();
-        if self.disable_tools.contains(fa) {
+        if self.is_disabled(fa) {
             return;
         }
         let tvl = self
@@ -94,7 +96,7 @@ impl Toolset {
                 versions.insert(plugin, tvl);
             }
         }
-        versions.retain(|_, tvl| !self.disable_tools.contains(&tvl.forge));
+        versions.retain(|_, tvl| !self.is_disabled(&tvl.forge));
         self.versions = versions;
         self.source = other.source;
     }
@@ -177,11 +179,8 @@ impl Toolset {
                             installing.lock().unwrap().insert(t.id().into());
                             for tv in versions {
                                 for dep in t.get_dependencies(&tv)? {
-                                    while installing.lock().unwrap().contains(dep.as_str()) {
-                                        trace!(
-                                            "{tv} waiting for dependency {} to finish installing",
-                                            dep
-                                        );
+                                    while installing.lock().unwrap().contains(&dep.to_string()) {
+                                        trace!("{tv} waiting for dependency {dep} to finish installing");
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
@@ -261,6 +260,9 @@ impl Toolset {
         self.versions
             .iter()
             .map(|(p, v)| (forge::get(p), &v.versions))
+            .filter(|(p, tv)| {
+                !self.installed_only || tv.iter().any(|tv| p.is_version_installed(tv))
+            })
             .collect()
     }
     pub fn list_current_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
@@ -297,6 +299,14 @@ impl Toolset {
                 }
             })
             .collect()
+    }
+    pub fn full_env(&self) -> Result<BTreeMap<String, String>> {
+        let mut env = env::PRISTINE_ENV
+            .clone()
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        env.extend(self.env(&Config::get())?);
+        Ok(env)
     }
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
@@ -441,6 +451,11 @@ impl Toolset {
             "missing: {}",
             truncate_str(&versions, *TERM_WIDTH - 14, "…"),
         );
+    }
+
+    fn is_disabled(&self, fa: &ForgeArg) -> bool {
+        self.tool_filter.as_ref().is_some_and(|tf| !tf.contains(fa))
+            || self.disable_tools.contains(fa)
     }
 }
 
