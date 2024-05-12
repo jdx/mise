@@ -21,6 +21,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
+    bison \
+    build-essential \
+    cmake \
     direnv \
     fd-find \
     fish \

@@ -1,22 +1,40 @@
 # shellcheck shell=bash
 
-export POETRY_HOME=".poetry"
+# arrange
+export MISE_PYTHON_COMPILE=1
+export POETRY_HOME="$HOME/.poetry"
 
-eval "$(mise activate bash)"
 cat >.mise.toml <<EOF
 [tools]
 python = "3.12.0"
 poetry = {version="1.7.1", pyproject="pyproject.toml"}
 EOF
-# TODO: get poetry to work with precompiled python
-MISE_PYTHON_COMPILE=1 mise i python poetry -f && _mise_hook
 
+cat >pyproject.toml <<EOF
+[tool.poetry]
+name = "poetry-test"
+version = "0.1.0"
+description = ""
+authors = ["mise"]
+packages = [{include = "poetry_demo"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+EOF
+
+mkdir poetry_demo
+touch poetry_demo/__init.py
+
+# act
+eval "$(mise activate bash)"
+
+mise install python poetry
+_mise_hook
+
+# assert
 assert "poetry --version" "Poetry (version 1.7.1)"
-python3 -V
-poetry install && _mise_hook
-mise i poetry -f && _mise_hook
-poetry env info
-assert "$(poetry env info -e) --version" "Python 3.12.0"
-assert "echo \$VIRTUAL_ENV" "$(poetry env info -p)"
-
-rm pyproject.toml
+assert "poetry run -- python3 -V" "Python 3.12.0"

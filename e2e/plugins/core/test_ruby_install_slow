@@ -1,10 +1,5 @@
 # shellcheck shell=bash
+# Install and build ruby using ruby-install
 
-export MISE_RUBY_DEFAULT_PACKAGES_FILE="$HOME/.default-gems"
 export MISE_RUBY_INSTALL=1
-
-echo "ruby-3.2.1" >.ruby-version
-
-# disable this slow test for now
-mise i ruby
-assert_contains "mise x -- ruby --version" "ruby 3.2.1"
+assert_contains "mise x ruby@3.2.1 -- ruby --version" "ruby 3.2.1"
