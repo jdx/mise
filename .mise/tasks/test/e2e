@@ -9,7 +9,9 @@ export RUST_TEST_THREADS=1
 if [[ "${1:-all}" == all ]]; then
   ./e2e/run_all_tests
 else
-  FILES="$(find e2e -name "test_*$1*" -type f -printf "%P\n")"
+  pushd e2e
+  FILES="$(fd -tf "test_$1")"
+  popd
   if [[ -z $FILES ]]; then
     echo "Not test matches $1" >&2
     exit 1

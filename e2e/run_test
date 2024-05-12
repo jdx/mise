@@ -31,7 +31,7 @@ setup_isolated_env() {
 
 create_isolated_env() {
   # Create the required diretories
-  mkdir --parents "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
+  mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
   # The dummy plugin is required for some tests
   mkdir -p "$MISE_DATA_DIR/plugins"
@@ -43,10 +43,8 @@ remove_isolated_env() {
 }
 
 within_isolated_env() {
-  env \
-    --ignore-environment \
-    --chdir="$TEST_WORKDIR" \
-    - \
+  pushd "$TEST_WORKDIR"
+  env -i - \
     ROOT="$ROOT" \
     HOME="$TEST_HOME" \
     TMPDIR="$TEST_TMPDIR" \
@@ -58,7 +56,7 @@ within_isolated_env() {
     MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
     MISE_TMP_DIR="$TEST_TMPDIR" \
     MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
-    MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
+    MISE_TRUSTED_CONFIG_PATHS="/" \
     MISE_EXPERIMENTAL=1 \
     MISE_YES=1 \
     TEST_NAME="$TEST" \
@@ -74,6 +72,7 @@ within_isolated_env() {
     CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
     CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
     "$@" || return $?
+  popd
 }
 
 run_test() {

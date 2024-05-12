@@ -92,6 +92,7 @@ jobs:
             pipx \
             python3-venv \
             zsh
+      - run: ln -s /usr/bin/fd-find /usr/bin/fd
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,mise,usage-cli
