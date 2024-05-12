@@ -29,7 +29,7 @@ impl Forge for CargoForge {
     }
 
     fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
-        Ok(vec!["cargo".into(), "rust".into()])
+        Ok(vec!["cargo".into(), "cargo-binstall".into(), "rust".into()])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
