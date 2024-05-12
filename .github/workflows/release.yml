@@ -92,7 +92,6 @@ jobs:
     name: e2e-linux-${{matrix.tranche}}
     runs-on: ubuntu-latest
     #container: ghcr.io/jdx/mise:github-actions
-    needs: [build-tarball]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -126,7 +125,6 @@ jobs:
           command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
-    needs: [build-tarball]
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm
     steps:
@@ -152,7 +150,6 @@ jobs:
     runs-on: ubuntu-22.04
     container: ghcr.io/jdx/mise:deb
     timeout-minutes: 10
-    needs: [build-tarball]
     steps:
       - uses: actions/checkout@v4
       - uses: crazy-max/ghaction-import-gpg@v6
@@ -178,11 +175,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    needs:
-      - e2e-linux
-      - build-tarball
-      - rpm
-      - deb
+    needs: [e2e-linux]
     steps:
       - uses: actions/checkout@v4
         with:
