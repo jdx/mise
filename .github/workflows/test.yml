@@ -115,4 +115,4 @@ jobs:
         continue-on-error: true
         with:
           project-token: cb3da7e860bf4e31a50e733aefa8d347
-          coverage-reports: lcov.info
+          coverage-reports: lcov0.info,lcov1.info,lcov2.info,lcov3.info

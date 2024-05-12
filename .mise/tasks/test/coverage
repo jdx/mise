@@ -34,4 +34,4 @@ elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
   mise self-update -fy "$y.$m.0"
 fi
 echo "::group::Render lcov report"
-cargo llvm-cov report --lcov --output-path lcov.info
+cargo llvm-cov report --lcov --output-path "lcov${TEST_TRANCHE:-}.info"
