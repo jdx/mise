@@ -44,7 +44,7 @@ impl Forge for NPMForge {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json").read()?;
+                let raw = cmd_env!("npm", "view", self.name(), "dist-tags", "--json").read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
                 let latest = match dist_tags["latest"] {
                     Value::String(ref s) => Some(s.clone()),
@@ -77,7 +77,7 @@ impl Forge for NPMForge {
             .arg("--prefix")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())
-            .envs(config.env()?)
+            .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?
             .execute()?;
 

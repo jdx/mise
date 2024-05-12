@@ -95,7 +95,7 @@ impl Forge for UbiForge {
             .arg("--project")
             .arg(self.name())
             .with_pr(ctx.pr.as_ref())
-            .envs(config.env()?)
+            .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?;
 
         if name_is_url(self.name()) {
