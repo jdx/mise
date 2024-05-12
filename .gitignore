@@ -5,7 +5,7 @@ package-lock.json
 
 *.log
 *.profraw
-lcov.info
+*.lcov
 
 **/snapshots/*.snap.new
 
