@@ -100,8 +100,13 @@ jobs:
         tranche: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
-      - name: Install zsh/fish/direnv
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - name: Install zsh/fish/direnv/fd
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find
+      - name: Install fd-find
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
         with:
           name: tarball-x86_64-unknown-linux-gnu
