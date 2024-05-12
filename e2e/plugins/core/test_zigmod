@@ -1,0 +1,5 @@
+# shellcheck shell=bash
+
+eval "$(mise activate bash)" && eval "$(mise hook-env)"
+mise plugin install https://github.com/kachick/asdf-zigmod
+assert_contains "mise x zigmod@latest -- zigmod version" "zigmod"

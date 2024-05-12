@@ -1,0 +1,4 @@
+# shellcheck shell=bash
+
+export MISE_PYTHON_COMPILE=1
+assert "mise x python@3.12.3 -- python --version" "Python 3.12.3"

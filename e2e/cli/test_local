@@ -1,0 +1,43 @@
+# shellcheck shell=bash
+
+export MISE_USE_TOML=0
+
+mise i dummy@{1,2} tiny@3
+
+mise local dummy@2
+assert "mise local" "dummy 2"
+assert "mise local --path" "$PWD/.tool-versions"
+
+assert_contains "mise x -- dummy" "2.0.0"
+
+mise local --pin dummy@1
+assert "mise local" "dummy 1.1.0"
+
+assert_contains "mise x -- dummy" "1.1.0"
+
+mkdir subdir
+(
+  cd subdir || exit
+  mise local --parent dummy@2
+  assert "mise local --parent --path" "$HOME/workdir/.tool-versions"
+  assert "mise local --parent" "dummy 2"
+
+  assert_contains "mise x -- dummy" "2.0.0"
+)
+
+(
+  cd subdir || exit
+  mise local tiny@3
+  assert "mise local --path" "$PWD/.tool-versions"
+  assert "mise local" "tiny 3"
+
+  assert_contains "mise x -- dummy" "2.0.0"
+  assert_contains "mise x -- rtx-tiny" "3.1.0"
+)
+assert_fail "rtx-tiny"
+
+MISE_ASDF_COMPAT=1 mise local dummy@2
+assert "mise local" "dummy 2.0.0"
+
+MISE_ASDF_COMPAT=1 mise local --fuzzy dummy@2
+assert "mise local" "dummy 2"

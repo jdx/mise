@@ -1,0 +1,6 @@
+# shellcheck shell=bash
+
+mise use dummy@latest
+
+eval "$(mise activate bash)" && _mise_hook
+mise doctor

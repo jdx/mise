@@ -1,0 +1,6 @@
+# shellcheck shell=bash
+require_cmd pipx
+
+assert_contains "mise x pipx:black@22.6.0 -- black --version" "22.6.0"
+assert_contains "mise x pipx:psf/black@24.3.0 -- black --version" "24.3.0"
+assert_contains "mise x pipx:git+https://github.com/psf/black.git@24.2.0 -- black --version" "24.2.0"

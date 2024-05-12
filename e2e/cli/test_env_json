@@ -1,0 +1,9 @@
+# shellcheck shell=bash
+require_cmd jq
+
+cat >.mise.toml <<EOF
+[env]
+FOO = "bar"
+EOF
+
+assert "mise env --json dummy@latest | jq -r .FOO" "bar"

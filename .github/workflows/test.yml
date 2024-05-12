@@ -32,7 +32,7 @@ jobs:
           components: rustfmt
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
+          tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
       - run: cargo nextest run --all-features
@@ -81,7 +81,17 @@ jobs:
         with:
           shared-key: coverage
           save-if: ${{ github.ref_name == 'main' }}
-      - run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install \
+            bison \
+            build-essential \
+            direnv \
+            fd-find \
+            fish \
+            pipx \
+            python3-venv \
+            zsh
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,mise,usage-cli
@@ -104,4 +114,4 @@ jobs:
         continue-on-error: true
         with:
           project-token: cb3da7e860bf4e31a50e733aefa8d347
-          coverage-reports: lcov.info
+          coverage-reports: lcov0.info,lcov1.info,lcov2.info,lcov3.info

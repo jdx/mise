@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/assert.sh"
-
-mise p list-remote | grep elixir
-mise p uninstall tiny
-assert_contains "mise ls-remote tiny" "1.1.0"

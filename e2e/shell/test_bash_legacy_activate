@@ -1,0 +1,19 @@
+# shellcheck shell=bash
+
+echo "tiny 3.1.0" >.tool-versions
+mkdir subdir
+echo "tiny 2.0.0" >subdir/.tool-versions
+
+mise install tiny@3.1.0 tiny@2.0.0
+
+# shellcheck disable=SC1090
+eval "$(mise activate -s bash --status)"
+
+_mise_hook
+assert_contains "rtx-tiny" "v3.1.0"
+
+cd subdir && _mise_hook
+assert_contains "rtx-tiny" "v2.0.0"
+
+cd .. && _mise_hook
+assert_contains "rtx-tiny" "v3.1.0"

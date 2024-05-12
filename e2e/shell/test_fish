@@ -1,0 +1,3 @@
+# shellcheck shell=bash
+require_cmd fish
+exec fish "$TEST_DIR/fish_script"

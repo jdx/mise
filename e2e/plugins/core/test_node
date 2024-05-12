@@ -1,0 +1,33 @@
+# shellcheck shell=bash
+
+export MISE_NODE_COREPACK=1
+export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
+export NPM_CONFIG_FUND=false
+
+echo v20.0.0 >.node-version
+echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
+
+mise i node@lts/hydrogen
+mise i -f node
+assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
+assert "mise x -- node --version" "v20.0.0"
+assert_contains "mise x -- which yarn" "yarn"
+assert_contains "mise x -- which zx" "zx"
+
+# test asdf-nodejs
+mise plugin i nodejs https://github.com/asdf-vm/asdf-nodejs.git
+mise use nodejs@20.1.0
+mise ls
+assert "mise x -- node --version" "v20.1.0"
+assert_contains "mise ls-remote nodejs" "20.1.0"
+assert_contains "mise node nodebuild --version" "node-build "
+mise use --rm node
+
+# MISE_LEGACY_VERSION_FILE env var
+assert_contains "MISE_LEGACY_VERSION_FILE=1 mise current node" "20.0.0"
+assert_not_contains "MISE_LEGACY_VERSION_FILE=0 mise current node" "20.0.0"
+mise plugin uninstall nodejs
+assert_not_contains "mise plugins --user" "node"
+
+# disable nodejs plugin
+assert_not_contains "MISE_DISABLE_TOOLS=node mise plugins --core" "node"

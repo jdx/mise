@@ -1,0 +1,17 @@
+# shellcheck shell=bash
+
+mise i dummy@{1.0.0,1.1.0,2.0.0}
+
+eval "$(mise activate bash)"
+
+mise use dummy@2.0.0
+eval "$(mise hook-env)"
+assert_contains "dummy" "2.0.0"
+
+mise shell dummy@1.0.0
+eval "$(mise hook-env)"
+assert_contains "dummy" "1.0.0"
+
+export MISE_DUMMY_VERSION=v1.1.0
+eval "$(mise hook-env)"
+assert_contains "dummy" "1.1.0"

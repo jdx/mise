@@ -1,0 +1,22 @@
+# shellcheck shell=bash
+
+export CLICOLOR=0
+
+echo "dummy latest" >.tool-versions
+
+assert_contains "mise ls dummy" "2.0.0 (missing)"
+
+mise i dummy@{1.0.0,1.1.0,2.0.0}
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "2.0.0"
+
+mise rm -a dummy@1
+assert_not_contains "mise ls dummy" "1.0.0"
+assert_not_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "2.0.0"
+
+mise rm -a dummy
+assert_not_contains "mise ls dummy" "1.1.0"
+assert_not_contains "mise ls dummy" "2.0.1"
+assert_not_contains "mise ls dummy" "2.1.0"

@@ -1,0 +1,3 @@
+# shellcheck shell=bash
+
+assert_contains "mise x erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell" "24"

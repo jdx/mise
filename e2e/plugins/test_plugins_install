@@ -1,0 +1,35 @@
+# shellcheck shell=bash
+
+cat <<EOF >.tool-versions
+tiny latest
+shfmt latest
+shellcheck latest
+EOF
+
+# install/uninstall multiple
+mise plugin install tiny shfmt shellcheck
+assert_contains "mise plugin ls" "tiny"
+assert_contains "mise plugin ls" "shfmt"
+assert_contains "mise plugin ls" "shellcheck"
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+mise plugin install https://github.com/mise-plugins/rtx-tiny.git
+assert_contains "mise plugin ls" "tiny"
+mise plugin install -f tiny
+assert_contains "mise plugin ls" "tiny"
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+mise plugin install tiny https://github.com/mise-plugins/rtx-tiny
+assert_contains "mise plugin ls" "tiny"
+
+rm -rf "$MISE_DATA_DIR/plugins/shellcheck"
+mise plugin install --all
+assert_contains "mise plugin ls" "shellcheck"
+
+mise plugin uninstall tiny
+assert_not_contains "mise plugin ls" "tiny"
+mise plugin uninstall tiny
+
+mise plugin update
+mise plugin update shfmt
+mise i

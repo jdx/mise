@@ -1,27 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FILES=$(find e2e -name 'test_*' -type f -not -path "*/.mise/*" | sort)
+
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/style.sh"
+
+mapfile -t FILES < <(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)
 test_count=0
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  {
-    echo "| Test | Duration | Result |"
-    echo "| ---- | -------- | ------ |"
-  } >>"$GITHUB_STEP_SUMMARY"
-fi
-for f in $FILES; do
-  # split tests into two tranches to reduce test time
-  if [ -n "${TEST_TRANCHE_COUNT:-}" ]; then
-    char_count=${#f}
-    if [[ $((char_count % "$TEST_TRANCHE_COUNT")) -ne "$TEST_TRANCHE" ]]; then
+skipped_count=0
+status=0
+
+summary "Test" "Duration" "Result"
+summary "---" "---" "---"
+
+for index in "${!FILES[@]}"; do
+  TEST_NAME="${FILES[$index]}"
+
+  # split tests into tranches to reduce test time
+  if [[ -n "${TEST_TRANCHE_COUNT:-}" ]]; then
+    if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then
       continue
     fi
   fi
-  "$ROOT/e2e/run_test" "$f"
-  echo
+
+  # Skip slow tests unless TEST_ALL == 1
+  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME = *_slow ]]; then
+    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
+    skipped_count=$((skipped_count + 1))
+    summary "$TEST_NAME" "-" ":zap:"
+    continue
+  fi
+
+  # Actually run the test
+  if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
+    status=1
+  fi
   test_count=$((test_count + 1))
 done
 
-echo "e2e: $test_count tests passed"
+echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
+
+exit "$status"

@@ -1,0 +1,5 @@
+# shellcheck shell=bash
+# Install and build ruby using ruby-install
+
+export MISE_RUBY_INSTALL=1
+assert_contains "mise x ruby@3.2.1 -- ruby --version" "ruby 3.2.1"

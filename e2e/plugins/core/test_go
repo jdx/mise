@@ -1,0 +1,16 @@
+# shellcheck shell=bash
+
+export MISE_GO_DEFAULT_PACKAGES_FILE="$HOME/.default-go-packages"
+
+cat >"$MISE_GO_DEFAULT_PACKAGES_FILE" <<EOF
+github.com/jdx/go-example # comment
+EOF
+
+mise use golang@1.20
+
+assert_contains "mise x -- go version" "go version go1.20"
+assert "mise x -- go env GOBIN" "${MISE_DATA_DIR}/installs/go/1.20/bin"
+assert_contains "mise x -- go-example" "hello world"
+
+# Required to properly cleanup as go installs read-only sources
+chmod -R +w ~/go

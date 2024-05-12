@@ -1,0 +1,52 @@
+# shellcheck shell=bash
+require_cmd direnv
+
+# Create a "local" dummy binary
+mkdir -p node_modules/.bin
+cat <<EOF >node_modules/.bin/dummy
+#!/usr/bin/env bash
+echo "I am Dummy from node_modules!"
+EOF
+chmod +x node_modules/.bin/dummy
+
+# Some configuration for direnv
+cat <<EOF >.envrc
+PATH_add node_modules/.bin
+export FIRST='first'
+EOF
+
+export FIRST="last"
+
+# Activate direnv and mise
+eval "$(direnv hook bash)"
+eval "$(mise activate bash --status)"
+
+# Tell mise to use dummy@latest
+mise use dummy@latest && _mise_hook && _direnv_hook
+
+# Should use dummy@latest
+assert "which dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+# shellcheck disable=SC2016
+assert 'echo $FIRST' "last"
+
+# Allow direnv to use the .envrc file
+direnv allow && _mise_hook && _direnv_hook
+
+# Should use dummy from node_modules (direnv PATH takes precedence)
+assert "which dummy" "$PWD/node_modules/.bin/dummy"
+# shellcheck disable=SC2016
+assert 'echo $FIRST' "first"
+
+# Deny direnv from using the .envrc file
+direnv deny && _mise_hook && _direnv_hook
+
+# Should use dummy@latest again
+assert "which dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+# shellcheck disable=SC2016
+assert 'echo $FIRST' "last"
+
+# Allow direnv to use the .envrc file, but this a different activation order
+direnv allow && _direnv_hook && _mise_hook
+
+# Should use dummy from node_modules (direnv PATH takes precedence)
+assert "which dummy" "$PWD/node_modules/.bin/dummy"
