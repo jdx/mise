@@ -4,8 +4,6 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file;
-
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionRequest;
@@ -25,7 +23,7 @@ impl Forge for GoForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["go".into()])
     }
 
@@ -36,7 +34,8 @@ impl Forge for GoForge {
 
                 while let Some(cur_mod_path) = mod_path {
                     let res =
-                        cmd_env!("go", "list", "-m", "-versions", "-json", cur_mod_path).read();
+                        cmd_forge!(self, "go", "list", "-m", "-versions", "-json", cur_mod_path)?
+                            .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
                         if let Ok(mut mod_info) = res {
@@ -56,16 +55,6 @@ impl Forge for GoForge {
                 Ok(vec![])
             })
             .cloned()
-    }
-
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_go_installed() {
-            bail!(
-                "go is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -110,10 +99,6 @@ fn trim_after_last_slash(s: &str) -> Option<&str> {
         Some((new_path, _)) => Some(new_path),
         None => None,
     }
-}
-
-fn is_go_installed() -> bool {
-    file::which_non_pristine("go").is_some()
 }
 
 #[derive(Debug, serde::Deserialize)]

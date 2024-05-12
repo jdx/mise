@@ -72,7 +72,7 @@ impl Watch {
         let ts = ToolsetBuilder::new().build(&config)?;
         settings.ensure_experimental("`mise watch`")?;
         if let Err(err) = which::which("watchexec") {
-            let watchexec: ForgeArg = "watchexec".parse()?;
+            let watchexec: ForgeArg = "watchexec".into();
             if !ts.versions.contains_key(&watchexec) {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());

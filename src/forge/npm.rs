@@ -1,15 +1,14 @@
 use std::fmt::Debug;
 
+use serde_json::Value;
+
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-
-use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionRequest;
-use serde_json::Value;
 
 #[derive(Debug)]
 pub struct NPMForge {
@@ -27,7 +26,7 @@ impl Forge for NPMForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["node".into()])
     }
 
@@ -44,7 +43,8 @@ impl Forge for NPMForge {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd_env!("npm", "view", self.name(), "dist-tags", "--json").read()?;
+                let raw =
+                    cmd_forge!(self, "npm", "view", self.name(), "dist-tags", "--json")?.read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
                 let latest = match dist_tags["latest"] {
                     Value::String(ref s) => Some(s.clone()),
@@ -53,16 +53,6 @@ impl Forge for NPMForge {
                 Ok(latest)
             })
             .cloned()
-    }
-
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_npm_installed() {
-            bail!(
-                "npm is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -83,10 +73,6 @@ impl Forge for NPMForge {
 
         Ok(())
     }
-}
-
-fn is_npm_installed() -> bool {
-    file::which("npm").is_some()
 }
 
 impl NPMForge {

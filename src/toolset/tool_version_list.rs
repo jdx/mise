@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn test_tool_version_list() {
-        let fa: ForgeArg = "tiny".parse().unwrap();
+        let fa: ForgeArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
         tvl.resolve(true);
@@ -56,7 +56,7 @@ mod tests {
         forge::reset();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
-        let fa: ForgeArg = "dummy".parse().unwrap();
+        let fa: ForgeArg = "dummy".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
         tvl.resolve(true);

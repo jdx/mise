@@ -1,9 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use clap::Command;
@@ -24,7 +23,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
@@ -86,7 +85,7 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
         .into_par_iter()
         .map(|dir| {
             let id = ForgeMeta::read(&dir).id;
-            let fa = ForgeArg::from_str(&id).unwrap();
+            let fa: ForgeArg = id.as_str().into();
             match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
@@ -145,7 +144,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec![])
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -264,6 +263,24 @@ pub trait Forge: Debug + Send + Sync {
         Ok(())
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        let deps = self
+            .get_dependencies(&ToolVersionRequest::System(self.id().into()))?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        if deps.is_empty() {
+            return Ok(());
+        }
+        let config = Config::get();
+        let ts = ToolsetBuilder::new()
+            .with_tool_filter(deps.clone())
+            .build(&config)?;
+        if !ts.list_missing_versions().is_empty() {
+            bail!(
+                "Dependency {} not installed for {}",
+                deps.iter().map(|d| d.to_string()).join(", "),
+                self.id()
+            );
+        }
         Ok(())
     }
     fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> eyre::Result<()> {

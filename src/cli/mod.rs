@@ -213,7 +213,7 @@ impl Cli {
             Err(err) => matches
                 .subcommand()
                 .ok_or(err)
-                .map(|(command, sub_m)| external::execute(&command.parse()?, sub_m))?,
+                .map(|(command, sub_m)| external::execute(&command.into(), sub_m))?,
         }
     }
 }
