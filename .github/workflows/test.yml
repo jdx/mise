@@ -32,7 +32,7 @@ jobs:
           components: rustfmt
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,just,cargo-deny,cargo-msrv,cargo-machete,usage-cli
+          tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
       - name: Install direnv
         run: sudo apt-get update; sudo apt-get install direnv
       - run: cargo nextest run --all-features
@@ -89,7 +89,6 @@ jobs:
             direnv \
             fd-find \
             fish \
-            gettext \
             pipx \
             python3-venv \
             zsh
