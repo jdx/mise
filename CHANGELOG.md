@@ -1,5 +1,12 @@
 # Changelog
 
+## [2024.5.8](https://github.com/jdx/mise/compare/v2024.5.7..v2024.5.8) - 2024-05-12
+
+### 🐛 Bug Fixes
+
+- use correct url for aur-bin by [@jdx](https://github.com/jdx) in [a683c15](https://github.com/jdx/mise/commit/a683c1593d3c83660a42e4e6685522edb20e0480)
+- handle race condition when initializing backends with dependencies by [@jdx](https://github.com/jdx) in [#2071](https://github.com/jdx/mise/pull/2071)
+
 ## [2024.5.7](https://github.com/jdx/mise/compare/v2024.5.6..v2024.5.7) - 2024-05-12
 
 ### 🧪 Testing
