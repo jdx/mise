@@ -1,5 +1,12 @@
 # Changelog
 
+## [2024.5.5](https://github.com/jdx/mise/compare/v2024.5.4..v2024.5.5) - 2024-05-12
+
+### 🐛 Bug Fixes
+
+- **(pipx)** remove unneeded unwrap by [@jdx](https://github.com/jdx) in [273c73d](https://github.com/jdx/mise/commit/273c73d15d77d42e8ff4ed732335cc418f903e0b)
+- resolve bug with backends not resolving mise-installed tools by [@jdx](https://github.com/jdx) in [#2059](https://github.com/jdx/mise/pull/2059)
+
 ## [2024.5.4] - 2024-05-11
 
 ### 🚀 Features
