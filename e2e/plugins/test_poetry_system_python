@@ -1,0 +1,34 @@
+# shellcheck shell=bash
+
+# arrange
+export POETRY_HOME="$HOME/.poetry"
+python_version="$(python3 --version)"
+
+cat >pyproject.toml <<EOF
+[tool.poetry]
+name = "poetry-test"
+version = "0.1.0"
+description = ""
+authors = ["mise"]
+packages = [{include = "poetry_demo"}]
+
+[tool.poetry.dependencies]
+python = "3.*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+EOF
+
+mkdir poetry_demo
+touch poetry_demo/__init.py
+
+# assert
+eval "$(mise activate bash)"
+
+mise use poetry@1.7.1
+_mise_hook
+
+# assert
+assert "poetry --version" "Poetry (version 1.7.1)"
+assert "poetry run -- python3 -V" "$python_version"
