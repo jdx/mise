@@ -1,0 +1,27 @@
+name: 'OpenCommit Action'
+
+on:
+  push:
+    # this list of branches is often enough,
+    # but you may still ignore other public branches
+    branches-ignore: [main master dev development release]
+
+jobs:
+  opencommit:
+    timeout-minutes: 10
+    name: OpenCommit
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: di-sukharev/opencommit@github-action-v1.0.4
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          OCO_OPENAI_API_KEY: ${{ secrets.OPENAI_KEY }}
