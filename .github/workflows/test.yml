@@ -92,6 +92,10 @@ jobs:
             pipx \
             python3-venv \
             zsh
+      - run: |
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,mise,usage-cli
