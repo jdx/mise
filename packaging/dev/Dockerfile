@@ -33,7 +33,6 @@ RUN    apt-get update \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && node -v \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
-    && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh | TARGET=/usr/local/bin sh \
     && rustup toolchain install nightly --component llvm-tools-preview \
     && cargo binstall -y \
     cargo-deny \
@@ -52,5 +51,4 @@ RUN    apt-get update \
     && npm -v \
     && python3 -V \
     && pipx --version \
-    && ubi -V \
     && rm -rf "$CARGO_HOME/registry" && ln -sv /tmp/mise/registry "$CARGO_HOME/registry" && mkdir -p /tmp/mise/registry
