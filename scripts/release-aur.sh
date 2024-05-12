@@ -27,6 +27,7 @@ replaces=('rtx')
 options=('!lto')
 source=("\$pkgname-\$pkgver.tar.gz::https://github.com/jdx/\$pkgname/archive/v\$pkgver.tar.gz")
 sha512sums=('$SHA512')
+optdepends=('usage: completion support')
 
 prepare() {
   cd "\$srcdir/\$pkgname-\$pkgver"
