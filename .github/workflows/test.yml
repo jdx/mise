@@ -89,7 +89,7 @@ jobs:
             direnv \
             fd-find \
             fish \
-            libgettextpo-dev \
+            gettext \
             pipx \
             python3-venv \
             zsh
