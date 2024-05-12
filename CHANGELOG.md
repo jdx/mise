@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.5.9](https://github.com/jdx/mise/compare/v2024.5.8..v2024.5.9) - 2024-05-12
+
+### 🐛 Bug Fixes
+
+- `.` in `list-bin-paths` was taken as is to form `PATH` by [@FranklinYinanDing](https://github.com/FranklinYinanDing) in [#2077](https://github.com/jdx/mise/pull/2077)
+
+### 🧪 Testing
+
+- use fd instead of find for macos compat by [@jdx](https://github.com/jdx) in [#2074](https://github.com/jdx/mise/pull/2074)
+- test_java_corretto is not slow by [@jdx](https://github.com/jdx) in [92267b1](https://github.com/jdx/mise/commit/92267b1eb861357433005b26134689b0ce43a2b0)
+- mark some e2e tests slow by [@jdx](https://github.com/jdx) in [99f9454](https://github.com/jdx/mise/commit/99f9454e4f062914ab4e4cd950d2f11023bd06bc)
+- mark test_pipx as slow by [@jdx](https://github.com/jdx) in [ced564a](https://github.com/jdx/mise/commit/ced564ab5b8786f74d25d2a92e68c58ca488c122)
+- add homebrew to e2e PATH by [@jdx](https://github.com/jdx) in [f1c7fb3](https://github.com/jdx/mise/commit/f1c7fb3434edc18787a293dc033459f78dd39514)
+
+### 🔍 Other Changes
+
+- add fd to e2e-linux jobs by [@jdx](https://github.com/jdx) in [9f57dae](https://github.com/jdx/mise/commit/9f57dae9298c4124352c8e7528024265a068ecc9)
+- bump usage-lib by [@jdx](https://github.com/jdx) in [#2078](https://github.com/jdx/mise/pull/2078)
+- add permissions for pr comment tool by [@jdx](https://github.com/jdx) in [64cb8da](https://github.com/jdx/mise/commit/64cb8dacd1b5c39c21cafa03eab361e68ac3a1d9)
+
+### New Contributors
+
+* @FranklinYinanDing made their first contribution in [#2077](https://github.com/jdx/mise/pull/2077)
+
 ## [2024.5.8](https://github.com/jdx/mise/compare/v2024.5.7..v2024.5.8) - 2024-05-12
 
 ### 🐛 Bug Fixes
