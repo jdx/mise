@@ -296,7 +296,16 @@ impl ExternalPlugin {
             //     }
             // }
             let output = sm.cmd(&Script::ListBinPaths).read()?;
-            output.split_whitespace().map(|f| f.to_string()).collect()
+            output
+                .split_whitespace()
+                .map(|f| {
+                    if f == "." {
+                        String::new()
+                    } else {
+                        f.to_string()
+                    }
+                })
+                .collect()
         } else {
             vec!["bin".into()]
         };
