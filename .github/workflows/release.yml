@@ -90,6 +90,7 @@ jobs:
           if-no-files-found: error
   e2e-linux:
     name: e2e-linux-${{matrix.tranche}}
+    needs: [build-tarball-linux-x64]
     runs-on: ubuntu-latest
     #container: ghcr.io/jdx/mise:github-actions
     timeout-minutes: 30
@@ -125,6 +126,7 @@ jobs:
           command: ./e2e/run_all_tests
   rpm:
     runs-on: ubuntu-22.04
+    needs: [build-tarball-linux-x64, build-tarball-linux-arm64]
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm
     steps:
@@ -148,6 +150,7 @@ jobs:
           if-no-files-found: error
   deb:
     runs-on: ubuntu-22.04
+    needs: [build-tarball-linux-x64, build-tarball-linux-arm64]
     container: ghcr.io/jdx/mise:deb
     timeout-minutes: 10
     steps:
@@ -175,7 +178,11 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    needs: [e2e-linux]
+    needs:
+      - build-tarball
+      - rpm
+      - deb
+      - e2e-linux
     steps:
       - uses: actions/checkout@v4
         with:
