@@ -6,7 +6,11 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
-mapfile -t FILES < <(find "$SCRIPT_DIR" -name 'test_*' -type f -printf '%P\n' | sort)
+pushd e2e
+mapfile -t SLOW_FILES < <(fd -tf -g "test_*_slow" | sort)
+mapfile -t FAST_FILES < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
+popd
+FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 test_count=0
 skipped_count=0
 status=0
