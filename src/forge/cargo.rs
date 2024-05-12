@@ -63,11 +63,10 @@ impl Forge for CargoForge {
         let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental("cargo backend")?;
-        let cmd = match settings.cargo_binstall {
-            true if file::which_non_pristine("cargo-binstall").is_some() => {
-                CmdLineRunner::new("cargo-binstall").arg("-y")
-            }
-            _ => CmdLineRunner::new("cargo").arg("install"),
+        let cmd = if self.is_binstall_enabled() {
+            CmdLineRunner::new("cargo-binstall").arg("-y")
+        } else {
+            CmdLineRunner::new("cargo").arg("install")
         };
 
         cmd.arg(&format!("{}@{}", self.name(), ctx.tv.version))
@@ -91,6 +90,11 @@ impl CargoForge {
             ),
             fa,
         }
+    }
+
+    fn is_binstall_enabled(&self) -> bool {
+        let settings = Settings::get();
+        settings.cargo_binstall && file::which_non_pristine("cargo-binstall").is_some()
     }
 }
 
