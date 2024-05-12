@@ -1550,7 +1550,7 @@ dependencies = [
  "versions",
  "walkdir",
  "which",
- "xx 0.5.1",
+ "xx",
  "zip",
 ]
 
@@ -3020,9 +3020,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "0.1.18"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f939231931f7e0581372e5543bf9957f26b87a97e5382c2b837e0c611f784eb4"
+checksum = "aeebfca27b4e59b6f065adb43095f9563d691fea3075c34483c6808e301cfcbc"
 dependencies = [
  "clap",
  "heck 0.5.0",
@@ -3036,7 +3036,7 @@ dependencies = [
  "shell-escape",
  "strum",
  "thiserror",
- "xx 0.2.5",
+ "xx",
 ]
 
 [[package]]
@@ -3436,18 +3436,6 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "rustix",
-]
-
-[[package]]
-name = "xx"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6c82f8a59dddf27110090af5ef62f75f44d20d15d15b46113e5aee214ae5fd9"
-dependencies = [
- "log",
- "miette",
- "regex",
- "thiserror",
 ]
 
 [[package]]
