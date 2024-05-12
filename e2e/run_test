@@ -23,11 +23,15 @@ setup_isolated_env() {
   MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
   MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
   MISE_STATE_DIR="$TEST_HOME/.local/state/mise"
+
+  # Set default values
+  : "${CARGO_HOME:=$HOME/.cargo}"
+  : "${RUSTUP_HOME:=$HOME/.rustup}"
 }
 
 create_isolated_env() {
   # Create the required diretories
-  mkdir --parents "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
+  mkdir --parents "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
   # The dummy plugin is required for some tests
   mkdir -p "$MISE_DATA_DIR/plugins"
@@ -47,7 +51,7 @@ within_isolated_env() {
     HOME="$TEST_HOME" \
     TMPDIR="$TEST_TMPDIR" \
     SHELL="$(type -p bash)" \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$(dirname "$(type -p cargo)"):/usr/local/bin:/usr/bin:/bin" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$CARGO_HOME/bin:$TEST_HOME/bin:/usr/local/bin:/usr/bin:/bin" \
     MISE_DATA_DIR="$MISE_DATA_DIR" \
     MISE_STATE_DIR="$MISE_STATE_DIR" \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \
@@ -63,6 +67,8 @@ within_isolated_env() {
     TEST_DIR="$(dirname "$TEST_SCRIPT")" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
     GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
+    CARGO_HOME="$CARGO_HOME" \
+    RUSTUP_HOME="$RUSTUP_HOME" \
     "$@" || return $?
 }
 
