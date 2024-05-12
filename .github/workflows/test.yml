@@ -80,7 +80,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.ref_name == 'main' && matrix.tranche == 0 }}
       - name: Install build and test dependencies
         run: |
           sudo apt-get update && sudo apt-get install \
@@ -109,9 +109,40 @@ jobs:
           timeout_minutes: 30
           max_attempts: 2
           command: mise tasks run test:coverage
-      - name: Run codacy-coverage-reporter
-        uses: codacy/codacy-coverage-reporter-action@v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{matrix.tranche}}.lcov
+          path: coverage-${{matrix.tranche}}.lcov
+          if-no-files-found: error
+  coverage-report:
+    name: coverage-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: coverage
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*.lcov
+          path: .
+          merge-multiple: true
+      - run: |
+          pip install lcov_cobertura
+          npx lcov-result-merger 'coverage-*.lcov' coverage.lcov
+          lcov_cobertura coverage.lcov --output coverage.xml
+      - uses: codacy/codacy-coverage-reporter-action@v1
         continue-on-error: true
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: lcov0.info,lcov1.info,lcov2.info,lcov3.info
+          coverage-reports: coverage.lcov
+      - uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          format: markdown
+          output: both
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          recreate: true
+          path: code-coverage-results.md

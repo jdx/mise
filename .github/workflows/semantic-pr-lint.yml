@@ -1,3 +1,4 @@
+name: semantic-pr-lint
 on:
   pull_request_target:
     types:
