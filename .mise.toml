@@ -94,10 +94,14 @@ depends = ["build"]
 description = "build docker image from Dockerfile"
 run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
 
+[tasks."docker:run"]
+description = "run a command inside of development docker container"
+run = 'docker run -ti --rm -e GITHUB_API_TOKEN -e TEST_ALL -v $root:/mise -v /tmp/mise/target:/tmp/mise/target -v /tmp/mise/registry:/tmp/mise/registry -w /mise ghcr.io/jdx/mise:dev'
+depends = ["docker:image"]
+
 [tasks."docker:cargo"]
 description = "run cargo inside of development docker container"
-run = 'docker run -ti --rm -e GITHUB_API_TOKEN -v $root:/mise -v /tmp/mise/target:/tmp/mise/target -v /tmp/mise/registry:/tmp/mise/registry -w /mise ghcr.io/jdx/mise:dev cargo'
-depends = ["docker:image"]
+run = 'mise tasks run docker:run cargo'
 
 [tasks."docker:mise"]
 description = "run mise inside of development docker container"
