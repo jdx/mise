@@ -16,6 +16,9 @@ env:
   CARGO_INCREMENTAL: 0
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
+permissions:
+  pull-requests: write
+
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -149,4 +152,5 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           recreate: true
+          continue-on-error: true
           path: code-coverage-results.md
