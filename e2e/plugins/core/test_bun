@@ -1,0 +1,11 @@
+# shellcheck shell=bash
+
+cat <<EOF >.bun-version
+1.0.17
+EOF
+
+mise i
+assert_contains "mise x bun -- bun -v" "1.0.17"
+
+require_cmd node
+assert_contains "mise x bun -- bunx oclif --version" "oclif"

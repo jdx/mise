@@ -1,0 +1,11 @@
+# shellcheck shell=bash
+
+assert_contains "MISE_GLOBAL_CONFIG_FILE=~/.mise.global.toml mise global dummy@latest" "~/.mise.global.toml"
+assert "cat ~/.mise.global.toml" '[tools]
+dummy = "latest"'
+
+assert_contains "MISE_GLOBAL_CONFIG_FILE=~/.config/mise/.tool-versions mise global dummy@latest" "~/.config/mise/.tool-versions"
+assert "cat ~/.config/mise/.tool-versions" 'dummy latest'
+
+assert_contains "MISE_ASDF_COMPAT=1 mise global dummy@3" "~/.tool-versions"
+assert "cat ~/.tool-versions" 'dummy 3'

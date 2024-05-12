@@ -1,0 +1,3 @@
+# shellcheck shell=bash
+
+assert_contains "mise x java@corretto-8 -- java -version 2>&1" "Corretto-8"

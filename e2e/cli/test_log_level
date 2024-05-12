@@ -1,0 +1,6 @@
+# shellcheck shell=bash
+
+assert_contains "mise x dummy@latest --log-level debug -- dummy 2>&1" "[DEBUG]"
+assert_contains "mise x dummy@latest --log-level=debug -- dummy 2>&1" "[DEBUG]"
+assert_contains "mise x dummy@latest --debug -- dummy 2>&1" "[DEBUG]"
+assert_contains "mise x dummy@latest --trace -- dummy 2>&1" "[TRACE]"

@@ -1,0 +1,28 @@
+# shellcheck shell=bash
+
+export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
+
+cat >.mise.toml <<EOF
+[env._.python]
+venv = {path = "my_venv", create=true}
+[tools]
+python = "3.12.3"
+EOF
+
+mise i
+assert "mise x -- python --version" "Python 3.12.3"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_venv"
+assert "mise x -- which python" "$PWD/my_venv/bin/python"
+
+# verify nested virtualenv is used
+mkdir -p subdir
+cat >subdir/.mise.toml <<EOF
+[env._.python]
+venv = {path = "my_subvenv", create=true}
+EOF
+
+cd subdir || exit
+mise i
+assert "mise x -- python --version" "Python 3.12.3"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_subvenv"
+assert "mise x -- which python" "$PWD/my_subvenv/bin/python"

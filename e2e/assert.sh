@@ -1,44 +1,91 @@
-#!/usr/bin/env bash
+# shellcheck shell=bash
+
+# shellcheck source-path=SCRIPTDIR
+source "$TEST_ROOT/style.sh"
+
+fail() {
+  title="E2E assertion failed" err "$*"
+  exit 1
+}
+
+# Safeguard against running the test directly, which would execute in the actual user home
+[[ -n "${TEST_NAME:-}" ]] || fail "tests should be called using run_test"
+
+quiet_assert_succeed() {
+  local status=0
+  bash -c "$1" || status=$?
+  if [[ $status -ne 0 ]]; then
+    fail "[$1] command failed with status $status"
+  fi
+}
+
+assert_succeed() {
+  if quiet_assert_succeed "$1"; then
+    ok "[$1] expected success"
+  fi
+}
+
+assert_fail() {
+  if ! bash -c "$1" 2>&1; then
+    ok "[$1] expected failure"
+  else
+    fail "[$1] expected failure but succeeded"
+  fi
+}
 
 assert() {
   local actual
-  actual="$(bash -c "$1")"
-  if [[ "$actual" != "$2" ]]; then
-    echo "Expected '$2' but got '$actual'"
-    exit 1
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ $actual == "$2" ]]; then
+    ok "[$1] output is equal to '$2'"
+  else
+    fail "[$1] expected '$2' but got '$actual'"
+  fi
+}
+
+assert_not() {
+  local actual
+  actual="$(bash -c "$1" || true)"
+  if [[ $actual != "$2" ]]; then
+    ok "[$1] output is different from '$2'"
+  else
+    fail "[$1] expected '$2' not to be in '$actual'"
   fi
 }
 
 assert_contains() {
   local actual
-  actual="$(bash -c "$1")"
-  if [[ "$actual" != *"$2"* ]]; then
-    echo "Expected '$2' to be in '$actual'"
-    exit 1
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ $actual == *"$2"* ]]; then
+    ok "[$1] '$2' is in output"
+  else
+    fail "[$1] expected '$2' to be in '$actual'"
   fi
 }
 
 assert_not_contains() {
   local actual
-  actual="$(bash -c "$1")"
-  if [[ "$actual" == *"$2"* ]]; then
-    echo "Expected '$2' to not be in '$actual'"
-    exit 1
-  fi
-}
-
-assert_fail() {
-  if bash -c "$1" 2>&1; then
-    echo "Expected failure but succeeded"
-    exit 1
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ $actual != *"$2"* ]]; then
+    ok "[$1] '$2' is not in output"
+  else
+    fail "[$1] expected '$2' not to be in '$actual'"
   fi
 }
 
 assert_matches() {
   local actual
-  actual="$(bash -c "$1")"
-  if [[ ! "$actual" =~ $2 ]]; then
-    echo "Expected '$2' to match '$actual'"
-    exit 1
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ $actual =~ $2 ]]; then
+    ok "[$1] '$2' matches output"
+  else
+    fail "[$1] expected '$2' to match '$actual'"
+  fi
+}
+
+require_cmd() {
+  if ! type -p "$1" >/dev/null; then
+    title="E2E test $TEST_NAME aborted" err "'$1' is required but was not found in PATH"
+    exit 2
   fi
 }

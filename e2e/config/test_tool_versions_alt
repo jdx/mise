@@ -1,0 +1,20 @@
+# shellcheck shell=bash
+
+export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
+export MISE_DEFAULT_CONFIG_FILENAME=.MISSING
+
+cat <<EOF >"$MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+tiny 3.1.0
+EOF
+
+mise i tiny
+assert "mise local" "tiny 3.1.0"
+assert_contains "mise exec -- rtx-tiny" "v3.1.0"
+
+mise local -p tiny@2.0.0
+mise i tiny
+assert "mise local -p" "tiny 2.0.0"
+assert_contains "mise exec -- rtx-tiny" "v2.0.0"
+
+mise local -p tiny@3.5.0
+assert "mise local tiny" "3.5.0"

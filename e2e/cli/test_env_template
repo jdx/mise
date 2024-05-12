@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+
+cat <<EOF >.mise.toml
+[env]
+ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
+EOF
+
+assert "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"

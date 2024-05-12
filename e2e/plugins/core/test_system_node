@@ -1,0 +1,10 @@
+# shellcheck shell=bash
+require_cmd node
+
+system_node="$(which node)"
+
+mise use node@20.0.0
+mise_node="$(mise which node)"
+
+assert "mise x node@system -- which node" "$system_node"
+assert "mise x -- which node" "$mise_node"

@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/assert.sh"
-
-mise use go@system
-assert_not_contains "mise env -s bash" "go/system"

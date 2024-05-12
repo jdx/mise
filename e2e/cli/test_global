@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+
+assert_contains "mise global dummy@2.0.0" "~/.config/mise/config.toml"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "2.0.0"'
+
+mise i
+assert_contains "mise x -- dummy" "2.0.0"

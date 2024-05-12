@@ -1,0 +1,12 @@
+# shellcheck shell=bash
+
+echo 'dummy 1' >.tool-versions
+mise install dummy@1.0.0
+
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+mise upgrade dummy
+
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "1.0.0"

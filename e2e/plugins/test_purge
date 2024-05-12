@@ -1,0 +1,15 @@
+# shellcheck shell=bash
+
+echo "tiny 3.1.0" >.tool-versions
+
+mise install tiny
+assert_contains "mise ls --installed" "tiny"
+
+mise plugin uninstall tiny
+assert_contains "mise ls --installed" "tiny"
+
+mise plugin install tiny
+assert_contains "mise ls --installed" "tiny"
+
+mise plugin uninstall tiny --purge
+assert_not_contains "mise ls --installed" "tiny"

@@ -1,0 +1,21 @@
+# shellcheck shell=bash
+
+echo "golang 1.20" >.tool-versions
+mkdir 21
+echo "golang 1.21" >21/.tool-versions
+
+export MISE_GO_SET_GOPATH=1
+
+eval "$(mise activate bash)"
+_mise_hook
+
+GO_20=$(mise latest golang@1.20)
+GO_21=$(mise latest golang@1.21)
+
+mise i golang@1.20 golang@1.21 && _mise_hook
+
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_20/packages"
+cd 21 && _mise_hook
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_21/packages"
+cd .. && _mise_hook
+assert "go env GOPATH" "$MISE_DATA_DIR/installs/go/$GO_20/packages"

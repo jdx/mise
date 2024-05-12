@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+# Read ruby version from Gemfile
+
+cat >Gemfile <<EOF
+ruby "3.2.2"
+EOF
+
+assert "mise current ruby" "3.2.2"

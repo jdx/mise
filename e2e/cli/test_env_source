@@ -1,0 +1,12 @@
+# shellcheck shell=bash
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+EOF
+
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export MISE_TEST_SOURCE=1234
+EOF
+
+assert "mise env -s bash | grep MISE_TEST_SOURCE" "export MISE_TEST_SOURCE=1234"

@@ -1,0 +1,36 @@
+# shellcheck shell=bash
+
+cat >.mise.toml <<EOF
+[tools]
+tiny = "latest"
+[plugins]
+tiny-ref = "https://github.com/mise-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
+EOF
+
+mise plugin install tiny
+
+mise ls
+
+# this will fail when calling bin/list-all, but it won't stop it from executing
+MISE_TINY_LIST_ALL_FAIL=1 MISE_TINY_VERSION=latest mise env >/dev/null
+
+# check bin/list-legacy-files
+assert "mise current tiny" "3.1.0"
+mise local --remove tiny
+echo "2.0" >.tiny-version
+assert "mise current tiny" "2.0.1"
+rm .tiny-version
+mise local tiny@latest
+assert "mise current tiny" "3.1.0"
+
+# test outdated/upgrade
+mise settings set experimental true
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+mise use tiny@3
+mv "$MISE_DATA_DIR/installs/tiny/"{3.1.0,3.0.0}
+assert "mise current tiny" "3.0.0"
+assert "mise outdated tiny" "Tool    Requested  Current  Latest
+tiny    3          3.0.0    3.1.0"
+mise upgrade tiny
+assert "mise current tiny" "3.1.0"
+assert "mise outdated tiny" ""

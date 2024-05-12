@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# shellcheck source-path=SCRIPTDIR
-source "$(dirname "$0")/assert.sh"
-
-# TODO: fix this in github actions CI
-exit 0
-mise i neovim@ref:master
-assert_contains "mise x neovim@ref:master -- nvim --version" "NVIM v0."

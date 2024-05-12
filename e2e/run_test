@@ -1,59 +1,104 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-
 ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
-TEST="$1"
 
-setup_env() {
-  export ROOT
-  export PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$PATH"
-  export MISE_USE_TOML="0"
-  export MISE_DATA_DIR="$HOME/.mise/e2e"
-  export MISE_STATE_DIR="$HOME/.mise/e2e"
-  export MISE_CACHE_DIR="$HOME/.mise/e2e/cache"
-  export MISE_CONFIG_DIR="$HOME/.mise/e2e/config"
-  export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.e2e-tool-versions
-  export MISE_DEFAULT_CONFIG_FILENAME=.e2e.mise.toml
-  export MISE_GLOBAL_CONFIG_FILE="$ROOT/e2e/.config/mise/config.toml"
-  export MISE_ALWAYS_KEEP_DOWNLOAD="1"
-  export MISE_TRUSTED_CONFIG_PATHS="$ROOT/e2e"
-  export MISE_YES="1"
-  export NPM_CONFIG_FUND="false"
-  unset GOPATH
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/style.sh"
+
+TEST="$1"
+TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+
+setup_isolated_env() {
+  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+
+  # Use a fake HOME and a fake temporary directory
+  TEST_HOME="$TEST_ISOLATED_DIR/home"
+  TEST_WORKDIR="$TEST_HOME/workdir"
+  TEST_TMPDIR="$TEST_ISOLATED_DIR/tmp"
+
+  # Tell mise to look for its directory in the isolated environment
+  MISE_SYSTEM_DIR="$TEST_ISOLATED_DIR/etc/mise"
+  MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
+  MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
+  MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
+  MISE_STATE_DIR="$TEST_HOME/.local/state/mise"
+
+  # Set default values
+  : "${CARGO_HOME:=$HOME/.cargo}"
+  : "${RUSTUP_HOME:=$HOME/.rustup}"
 }
 
-setup_config_files() {
-  mkdir -p "$ROOT/e2e/cd/18"
-  cp "$ROOT/e2e/config/".e2e.* "$ROOT/e2e/"
-  cp "$ROOT/e2e/config/"{.node-version,.alternate-tool-versions,.test-env,pyproject.toml} "$ROOT/e2e/"
-  cp "$ROOT/e2e/config/cd/".e2e.* "$ROOT/e2e/cd/"
-  cp "$ROOT/e2e/config/cd/18/".e2e.* "$ROOT/e2e/cd/18"
+create_isolated_env() {
+  # Create the required diretories
+  mkdir --parents "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
+
+  # The dummy plugin is required for some tests
+  mkdir -p "$MISE_DATA_DIR/plugins"
+  ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+}
+
+remove_isolated_env() {
+  rm -rf "$TEST_ISOLATED_DIR"
+}
+
+within_isolated_env() {
+  env \
+    --ignore-environment \
+    --chdir="$TEST_WORKDIR" \
+    - \
+    ROOT="$ROOT" \
+    HOME="$TEST_HOME" \
+    TMPDIR="$TEST_TMPDIR" \
+    SHELL="$(type -p bash)" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$CARGO_HOME/bin:$TEST_HOME/bin:/usr/local/bin:/usr/bin:/bin" \
+    MISE_DATA_DIR="$MISE_DATA_DIR" \
+    MISE_STATE_DIR="$MISE_STATE_DIR" \
+    MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+    MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
+    MISE_TMP_DIR="$TEST_TMPDIR" \
+    MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
+    MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
+    MISE_EXPERIMENTAL=1 \
+    MISE_YES=1 \
+    TEST_NAME="$TEST" \
+    TEST_ROOT="$SCRIPT_DIR" \
+    TEST_SCRIPT="$TEST_SCRIPT" \
+    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
+    GITHUB_ACTION="${GITHUB_ACTION:-}" \
+    GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
+    CARGO_HOME="$CARGO_HOME" \
+    RUSTUP_HOME="$RUSTUP_HOME" \
+    LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
+    CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
+    CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
+    CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
+    "$@" || return $?
 }
 
 run_test() {
-  echo "::group::E2E $TEST"
-  rm -f "$MISE_GLOBAL_CONFIG_FILE"
-  cd "$(dirname "$TEST")"
+  setup_isolated_env
+  create_isolated_env
 
-  START=$(date +%s)
   local status=0
-  "./$(basename "$TEST")" || status=$?
-  END=$(date +%s)
+
+  START="$(date +%s)"
+  within_isolated_env bash --noprofile --norc -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
+  END="$(date +%s)"
+  DURATION=$((END - START))s
+
+  echo "$TEST: $DURATION" >&2
 
   if [[ "$status" == 0 ]]; then
-    STATUS_MSG=":white_check_mark:"
+    remove_isolated_env
+    summary "$TEST" "$DURATION" ":white_check_mark:"
   else
-    echo "::error file=$TEST::E2E Test Failed (code: $status)"
-    STATUS_MSG=":x:"
+    title="E2E test $TEST failed" err "exited with status code $status"
+    echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
+    summary "$TEST" "$DURATION" ":x:"
   fi
-  echo "$TEST: $((END - START))s"
-  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    echo "| $TEST | $((END - START))s | $STATUS_MSG" >>"$GITHUB_STEP_SUMMARY"
-  fi
+
   return "$status"
 }
 
-setup_env
-setup_config_files
-run_test
+as_group "E2E $TEST" run_test
