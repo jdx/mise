@@ -17,7 +17,8 @@ use crate::config::{Config, Settings};
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::toolset::ToolsetBuilder;
+use crate::forge::Forge;
+use crate::toolset::{ToolVersionRequest, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments, which may be
@@ -52,12 +53,12 @@ macro_rules! cmd {
 }
 
 #[macro_export]
-macro_rules! cmd_env {
-    ( $program:expr $(, $arg:expr )* $(,)? ) => {
+macro_rules! cmd_forge {
+    ( $forge:expr, $program:expr $(, $arg:expr )* $(,)? ) => {
         {
             use std::ffi::OsString;
             let args: std::vec::Vec<OsString> = std::vec![$( Into::<OsString>::into($arg) ),*];
-            $crate::cmd::cmd_env($program, args)
+            $crate::cmd::cmd_forge($forge, $program, args)
         }
     };
 }
@@ -104,24 +105,23 @@ where
 }
 
 /// run a command with mise env setup
-pub fn cmd_env<T, U>(program: T, args: U) -> Expression
+pub fn cmd_forge<T, U>(forge: &dyn Forge, program: T, args: U) -> eyre::Result<Expression>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
     let config = Config::get();
-    let mut env = env::PRISTINE_ENV.clone();
-    match ToolsetBuilder::new()
-        .build(&config)
-        .and_then(|ts| ts.env_with_path(&config))
-    {
-        Ok(mise_env) => env.extend(mise_env),
-        Err(e) => {
-            debug!("failed to build toolset: {e}");
-        }
-    }
-    cmd(program, args).full_env(env)
+    let dependencies = forge
+        .get_dependencies(&ToolVersionRequest::System(forge.name().into()))?
+        .into_iter()
+        .collect();
+    let env = ToolsetBuilder::new()
+        .with_tool_filter(dependencies)
+        .with_installed_only()
+        .build(&config)?
+        .full_env()?;
+    Ok(cmd(program, args).full_env(env))
 }
 
 pub struct CmdLineRunner<'a> {

@@ -69,7 +69,7 @@ impl ToolVersions {
             cf.pre.push('\n');
         }
 
-        cf.plugins = Self::parse_plugins(&s)?;
+        cf.plugins = Self::parse_plugins(&s);
         cf.populate_toolset();
         trace!("{cf}");
         Ok(cf)
@@ -85,7 +85,7 @@ impl ToolVersions {
             })
     }
 
-    fn parse_plugins(input: &str) -> Result<IndexMap<ForgeArg, ToolVersionPlugin>> {
+    fn parse_plugins(input: &str) -> IndexMap<ForgeArg, ToolVersionPlugin> {
         let mut plugins: IndexMap<ForgeArg, ToolVersionPlugin> = IndexMap::new();
         for line in input.lines() {
             if line.trim_start().starts_with('#') {
@@ -102,7 +102,7 @@ impl ToolVersions {
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
                 let orig_plugin = plugin.trim_end_matches(':');
-                let fa = orig_plugin.parse()?;
+                let fa = orig_plugin.into();
 
                 let tvp = ToolVersionPlugin {
                     orig_name: orig_plugin.to_string(),
@@ -115,7 +115,7 @@ impl ToolVersions {
                 plugins.insert(fa, tvp);
             }
         }
-        Ok(plugins)
+        plugins
     }
 
     fn add_version(&mut self, fa: &ForgeArg, version: &str) {

@@ -446,9 +446,9 @@ impl Forge for ExternalPlugin {
         PluginType::External
     }
 
-    fn get_dependencies(&self, tvr: &ToolVersionRequest) -> Result<Vec<String>> {
+    fn get_dependencies(&self, tvr: &ToolVersionRequest) -> Result<Vec<ForgeArg>> {
         let out = match tvr.forge().name.as_str() {
-            "poetry" | "pipenv" => vec!["python"],
+            "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],
         };

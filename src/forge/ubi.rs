@@ -1,17 +1,16 @@
 use std::fmt::Debug;
 
+use serde_json::Value;
+use url::Url;
+
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-
-use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionRequest;
-use serde_json::Value;
-use url::Url;
 
 #[derive(Debug)]
 pub struct UbiForge {
@@ -32,7 +31,7 @@ impl Forge for UbiForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["cargo:ubi".into()])
     }
 
@@ -64,16 +63,6 @@ impl Forge for UbiForge {
                 .get_or_try_init(|| Ok(Some(self.list_remote_versions()?.last().unwrap().into())))
                 .cloned()
         }
-    }
-
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        if !is_ubi_installed() {
-            bail!(
-                "ubi is not installed. Please install it in order to install {}",
-                self.name()
-            );
-        }
-        Ok(())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
@@ -136,8 +125,4 @@ fn get_binary_url(n: &str) -> eyre::Result<Url> {
 
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
-}
-
-fn is_ubi_installed() -> bool {
-    file::which("ubi").is_some()
 }

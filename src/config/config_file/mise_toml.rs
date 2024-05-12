@@ -816,7 +816,7 @@ impl<'de> de::Deserialize<'de> for ForgeArg {
             where
                 E: de::Error,
             {
-                v.parse().map_err(de::Error::custom)
+                Ok(v.into())
             }
         }
 
@@ -842,7 +842,7 @@ where
         {
             let mut aliases = AliasMap::new();
             while let Some(plugin) = map.next_key::<String>()? {
-                let fa: ForgeArg = plugin.parse().map_err(de::Error::custom)?;
+                let fa: ForgeArg = plugin.as_str().into();
                 let plugin_aliases = aliases.entry(fa).or_default();
                 for (from, to) in map.next_value::<BTreeMap<String, String>>()? {
                     plugin_aliases.insert(from, to);
@@ -1017,8 +1017,8 @@ mod tests {
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".parse().unwrap();
-        let python = "python".parse().unwrap();
+        let node = "node".into();
+        let python = "python".into();
         cf.set_alias(&node, "18", "18.0.1").unwrap();
         cf.set_alias(&node, "20", "20.0.0").unwrap();
         cf.set_alias(&python, "3.10", "3.10.0").unwrap();
@@ -1045,8 +1045,8 @@ mod tests {
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".parse().unwrap();
-        let python = "python".parse().unwrap();
+        let node = "node".into();
+        let python = "python".into();
         cf.remove_alias(&node, "16").unwrap();
         cf.remove_alias(&python, "3.10").unwrap();
 
@@ -1070,7 +1070,7 @@ mod tests {
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".parse().unwrap();
+        let node = "node".into();
         cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()])
             .unwrap();
 
@@ -1093,7 +1093,7 @@ mod tests {
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        cf.remove_plugin(&"node".parse().unwrap()).unwrap();
+        cf.remove_plugin(&"node".into()).unwrap();
 
         assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
