@@ -92,7 +92,7 @@ depends = ["build"]
 
 [tasks."docker:image"]
 description = "build docker image from Dockerfile"
-run = 'docker build $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
+run = 'docker build --build-arg GITHUB_TOKEN=$GITHUB_API_TOKEN $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
 
 [tasks."docker:run"]
 description = "run a command inside of development docker container"

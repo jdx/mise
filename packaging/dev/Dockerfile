@@ -11,6 +11,9 @@ ENV MISE_CONFIG_DIR="$dev/mise"
 ENV MISE_CACHE_DIR="$dev/mise/cache"
 ENV CARGO_TARGET_DIR="/tmp/mise/target"
 
+# cargo_binstall makes use of this
+ARG GITHUB_TOKEN=
+
 # TODO: deno does not currently support linux/arm64 making it hard to use this on macs
 ENV MISE_DISABLE_TOOLS="deno"
 
