@@ -85,7 +85,7 @@ assert_matches() {
 
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
-    title="E2E test $TEST aborted" err "'$1' is required but was not found in PATH"
+    title="E2E test $TEST_NAME aborted" err "'$1' is required but was not found in PATH"
     exit 2
   fi
 }
