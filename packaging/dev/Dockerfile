@@ -37,6 +37,7 @@ RUN    apt-get update \
     && node -v \
     && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
     && rustup toolchain install nightly --component llvm-tools-preview \
+    && rustup component add llvm-tools-preview \
     && cargo binstall -y \
     cargo-deny \
     cargo-insta \
