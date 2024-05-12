@@ -1,5 +1,33 @@
 # Changelog
 
+## [2024.5.6](https://github.com/jdx/mise/compare/v2024.5.5..v2024.5.6) - 2024-05-12
+
+### 🚀 Features
+
+- add cargo-binstall as dependency for cargo backend by [@jdx](https://github.com/jdx) in [94868af](https://github.com/jdx/mise/commit/94868afcca9731c43fb48670ed0d7d4f40a4fab8)
+
+### 🐛 Bug Fixes
+
+- performance fix for _.file/_.path by [@jdx](https://github.com/jdx) in [76202de](https://github.com/jdx/mise/commit/76202ded1bb47ecf9c1a5a7e6f71216aca26c68e)
+
+### 🚜 Refactor
+
+- **(cargo)** improve cargo-binstall check by [@jdx](https://github.com/jdx) in [d1432e0](https://github.com/jdx/mise/commit/d1432e0316a1e1b335022372ef0896c5b5b7b0df)
+
+### 🧪 Testing
+
+- **(e2e)** fix mise path by [@jdx](https://github.com/jdx) in [f6de41a](https://github.com/jdx/mise/commit/f6de41af71e7ad03d831bf602c291f38dd6c0fd8)
+- isolation of end-to-end tests by [@Adirelle](https://github.com/Adirelle) in [#2047](https://github.com/jdx/mise/pull/2047)
+- simplify release e2e jobs by [@jdx](https://github.com/jdx) in [b97a0bb](https://github.com/jdx/mise/commit/b97a0bb563762a4de40ea49a5bccb3a74daafb8f)
+
+### 🔍 Other Changes
+
+- **(aur)** added usage as optional dependency by [@jdx](https://github.com/jdx) in [5280ece](https://github.com/jdx/mise/commit/5280ece4f2f2337e7dd56c17062a09fdf1e1c808)
+- **(codacy)** fix codacy on forks by [@jdx](https://github.com/jdx) in [c70d567](https://github.com/jdx/mise/commit/c70d567b2529e7054a79e461114a85c2fceb457d)
+- switch back to secret for codacy by [@jdx](https://github.com/jdx) in [7622cfb](https://github.com/jdx/mise/commit/7622cfbb969c9a40638855d13009a72e4dc91ac8)
+- added semantic-pr check by [@jdx](https://github.com/jdx) in [#2063](https://github.com/jdx/mise/pull/2063)
+- fix whitespace by [@jdx](https://github.com/jdx) in [3eadcb5](https://github.com/jdx/mise/commit/3eadcb548960729e7168842af18c8200b3b70863)
+
 ## [2024.5.5](https://github.com/jdx/mise/compare/v2024.5.4..v2024.5.5) - 2024-05-12
 
 ### 🐛 Bug Fixes

@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.5.5"
+version = "2024.5.6"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
