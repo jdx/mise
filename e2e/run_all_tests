@@ -14,8 +14,6 @@ status=0
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
 
-TEST_ALL=1 # @TODO: remove before merging
-
 for index in "${!FILES[@]}"; do
   TEST_NAME="${FILES[$index]}"
 
