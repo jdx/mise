@@ -79,7 +79,7 @@ run_test() {
   local status=0
 
   START="$(date +%s)"
-  within_isolated_env bash --noprofile -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
+  within_isolated_env bash --noprofile --norc -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
   END="$(date +%s)"
   DURATION=$((END - START))s
 
