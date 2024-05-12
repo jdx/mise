@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
 use eyre::Context;
-use globwalk::{GlobError, GlobWalkerBuilder};
 use indexmap::IndexMap;
 
 use crate::cmd::CmdLineRunner;
@@ -111,23 +110,6 @@ impl EnvResults {
                     _ => p.to_path_buf(),
                 }
             };
-            let glob_files = |path: PathBuf| {
-                // Use the longuest path without any glob pattern character as root
-                let root = path
-                    .ancestors()
-                    .skip(1)
-                    .find(|a| !"*[{?".chars().any(|c| a.to_str().unwrap().contains(c)))
-                    .unwrap()
-                    .to_path_buf();
-                let pattern = path.strip_prefix(&root).unwrap();
-                let files = GlobWalkerBuilder::new(root, pattern.to_string_lossy())
-                    .follow_links(true)
-                    .build()?
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .map(|e| e.into_path());
-                Ok::<_, GlobError>(files)
-            };
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
@@ -147,7 +129,7 @@ impl EnvResults {
                 EnvDirective::File(input) => {
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in glob_files(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(s.into()))? {
                         r.env_files.push(p.clone());
                         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
                         for item in dotenvy::from_path_iter(&p).wrap_err_with(errfn)? {
@@ -161,7 +143,7 @@ impl EnvResults {
                     settings.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in glob_files(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(s.into()))? {
                         r.env_scripts.push(p.clone());
                         let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
                         for p in env_diff.to_patches() {
