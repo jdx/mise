@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016
 
 orig_path="$PATH"
 
@@ -17,7 +18,6 @@ tiny = "2.0.0"
 FOO = "quz"
 EOF
 
-# shellcheck disable=SC1090
 eval "$(mise activate bash --status)" && _mise_hook
 
 assert_path() {
@@ -38,23 +38,23 @@ mise i && _mise_hook
 echo "$PATH"
 
 assert_contains "rtx-tiny" "v3.1.0"
-assert "echo $FOO" "bar"
+assert 'echo $FOO' "bar"
 assert_path "$TINY_310"
 
 cd subdir && mise i && _mise_hook
 assert_contains "rtx-tiny" "v2.0.0"
-assert "echo $FOO" "quz"
+assert 'echo $FOO' "quz"
 assert_path "$TINY_200"
 
 cd .. && _mise_hook
 assert_contains "rtx-tiny" "v3.1.0"
-assert "echo $FOO" "bar"
+assert 'echo $FOO' "bar"
 assert_path "$TINY_310"
 
 export PATH="PRE:$PATH"
 cd subdir && _mise_hook
 assert_contains "rtx-tiny" "v2.0.0"
-assert "echo $FOO" "quz"
+assert 'echo $FOO' "quz"
 assert_path "PRE:$TINY_200"
 
 mise shell tiny@3.0.0 && _mise_hook
