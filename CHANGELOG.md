@@ -1,5 +1,16 @@
 # Changelog
 
+## [2024.5.7](https://github.com/jdx/mise/compare/v2024.5.6..v2024.5.7) - 2024-05-12
+
+### 🧪 Testing
+
+- add coverage report summary by [@jdx](https://github.com/jdx) in [#2065](https://github.com/jdx/mise/pull/2065)
+
+### 🔍 Other Changes
+
+- fix release job by [@jdx](https://github.com/jdx) in [a491270](https://github.com/jdx/mise/commit/a49127029b67d39f80708e47cfc20351faca941f)
+- fix release job by [@jdx](https://github.com/jdx) in [90268db](https://github.com/jdx/mise/commit/90268dbdbb71f6e0ba51dbc657536029c2aac099)
+
 ## [2024.5.6](https://github.com/jdx/mise/compare/v2024.5.5..v2024.5.6) - 2024-05-12
 
 ### 🚀 Features
