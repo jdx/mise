@@ -22,6 +22,8 @@ fi
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
 
+TEST_ALL=1 # @TODO: remove before merging
+
 for f in "${FILES[@]}"; do
   if [[ ${TEST_ALL:-0} != 1 && $f = *_slow ]]; then
     title="E2E test $f skipped" file="e2e/$f" warn "slow tests are disabled"
