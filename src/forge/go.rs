@@ -35,7 +35,8 @@ impl Forge for GoForge {
                 let mut mod_path = Some(self.name());
 
                 while let Some(cur_mod_path) = mod_path {
-                    let res = cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path).read();
+                    let res =
+                        cmd_env!("go", "list", "-m", "-versions", "-json", cur_mod_path).read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
                         if let Ok(mut mod_info) = res {
@@ -84,7 +85,7 @@ impl Forge for GoForge {
             .arg("install")
             .arg(&format!("{}@{}", self.name(), version))
             .with_pr(ctx.pr.as_ref())
-            .envs(config.env()?)
+            .envs(ctx.ts.env_with_path(&config)?)
             .env("GOBIN", ctx.tv.install_path().join("bin"))
             .execute()?;
 

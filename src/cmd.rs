@@ -13,10 +13,11 @@ use eyre::Context;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 use signal_hook::iterator::Signals;
 
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments, which may be
@@ -46,6 +47,17 @@ macro_rules! cmd {
             use std::ffi::OsString;
             let args: std::vec::Vec<OsString> = std::vec![$( Into::<OsString>::into($arg) ),*];
             $crate::cmd::cmd($program, args)
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! cmd_env {
+    ( $program:expr $(, $arg:expr )* $(,)? ) => {
+        {
+            use std::ffi::OsString;
+            let args: std::vec::Vec<OsString> = std::vec![$( Into::<OsString>::into($arg) ),*];
+            $crate::cmd::cmd_env($program, args)
         }
     };
 }
@@ -89,6 +101,27 @@ where
     debug!("$ {display_command}");
 
     duct::cmd(program, args)
+}
+
+/// run a command with mise env setup
+pub fn cmd_env<T, U>(program: T, args: U) -> Expression
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    let config = Config::get();
+    let mut env = env::PRISTINE_ENV.clone();
+    match ToolsetBuilder::new()
+        .build(&config)
+        .and_then(|ts| ts.env_with_path(&config))
+    {
+        Ok(mise_env) => env.extend(mise_env),
+        Err(e) => {
+            debug!("failed to build toolset: {e}");
+        }
+    }
+    cmd(program, args).full_env(env)
 }
 
 pub struct CmdLineRunner<'a> {
