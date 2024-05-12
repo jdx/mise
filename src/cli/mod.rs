@@ -235,7 +235,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise install node@20</bold>           Install a version matching a prefix
     $ <bold>mise install node</bold>              Install the node version defined in config
     $ <bold>mise install</bold>                   Install all plugins/tools defined in config
-  
+
     $ <bold>mise install cargo:ripgrep            Install something via cargo
     $ <bold>mise install npm:prettier             Install something via npm
 
