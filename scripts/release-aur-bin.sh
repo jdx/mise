@@ -26,8 +26,9 @@ provides=('mise')
 conflicts=('mise' 'rtx-bin' 'rtx')
 replaces=('rtx-bin')
 options=('!lto')
-source=("mise-\$pkgver.tar.gz::${TAR_GZ_URI}")
+source=("mise-\$pkgver.tar.gz::https://github.com/jdx/mise/releases/download/\$pkgver/mise-\$pkgver-linux-x64.tar.gz")
 sha512sums=('$SHA512')
+optdepends=('usage-bin: completion support')
 
 build() {
   cd "\$srcdir/"
