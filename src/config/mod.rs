@@ -310,7 +310,7 @@ impl Config {
 
     fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
         file::recursive_ls(root)?
-            .into_iter()
+            .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
             .collect()
