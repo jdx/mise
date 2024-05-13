@@ -11,6 +11,7 @@ TEST_SCRIPT="$SCRIPT_DIR/$TEST"
 
 setup_isolated_env() {
   TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
 
   # Use a fake HOME and a fake temporary directory
   TEST_HOME="$TEST_ISOLATED_DIR/home"
@@ -58,7 +59,7 @@ within_isolated_env() {
     MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
     MISE_TMP_DIR="$TEST_TMPDIR" \
     MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
-    MISE_TRUSTED_CONFIG_PATHS="$TEST_HOME" \
+    MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
     MISE_EXPERIMENTAL=1 \
     MISE_YES=1 \
     TEST_NAME="$TEST" \
@@ -107,6 +108,14 @@ _env() {
   else
     env "$@"
   fi
+}
+
+os() {
+  case "$(uname -s)" in
+  Darwin) echo "macos" ;;
+  Linux) echo "linux" ;;
+  *) echo "unknown" ;;
+  esac
 }
 
 as_group "E2E $TEST" run_test
