@@ -456,7 +456,7 @@ pub trait Forge: Debug + Send + Sync {
 fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
     let mut query = query;
     if query == "latest" {
-        query = "[0-9].*";
+        query = "v?[0-9].*";
     }
     let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
     let versions = versions
@@ -475,11 +475,10 @@ fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<St
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
-    let v = match list.contains(&query.to_string()) {
+    match list.contains(&query.to_string()) {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
-    };
-    v
+    }
 }
 
 fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {

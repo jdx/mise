@@ -8,9 +8,6 @@ Config {
         "~/.test-tool-versions",
         "~/config/config.toml",
     ],
-    Env: {
-        "TEST_ENV_VAR": "test-123",
-    },
     Aliases: {
         ForgeArg("tiny"): {
             "my/alias": "3.0",

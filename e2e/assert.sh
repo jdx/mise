@@ -13,6 +13,7 @@ fail() {
 
 quiet_assert_succeed() {
   local status=0
+  debug "$ $1"
   bash -c "$1" || status=$?
   if [[ $status -ne 0 ]]; then
     fail "[$1] command failed with status $status"
@@ -26,6 +27,7 @@ assert_succeed() {
 }
 
 assert_fail() {
+  debug "$ $1"
   if ! bash -c "$1" 2>&1; then
     ok "[$1] expected failure"
   else
@@ -45,6 +47,7 @@ assert() {
 
 assert_not() {
   local actual
+  debug "$ $1"
   actual="$(bash -c "$1" || true)"
   if [[ $actual != "$2" ]]; then
     ok "[$1] output is different from '$2'"
