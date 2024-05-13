@@ -80,7 +80,12 @@ petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.10.0"
 regex = "1.10.4"
-reqwest = { version = "0.12", default-features = false, features = [
+# TODO: reqwest 0.12 breaks self_update and for some reason it only happens after a release with this error
+# make sure this is working before trying to upgrade again
+# mise ReqwestError: error sending request for url (https://api.github.com/repos/jdx/mise/releases): error trying to connect: invalid URL, scheme is not http
+# mise error sending request for url (https://api.github.com/repos/jdx/mise/releases): error trying to connect: invalid URL, scheme is not http
+# mise error trying to connect: invalid URL, scheme is not http
+reqwest = { version = "<0.12", default-features = false, features = [
   "blocking",
   "json",
   "gzip",
