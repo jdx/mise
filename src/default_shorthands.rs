@@ -22,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     Lazy::new(|| HashMap::from([
     ("1password-cli", "https://github.com/NeoHsu/asdf-1password-cli.git"),
-    ("R", "https://github.com/asdf-community/asdf-r.git"),
     ("act", "https://github.com/gr1m0h/asdf-act.git"),
     ("action-validator", "https://github.com/mpalmer/action-validator.git"),
     ("actionlint", "https://github.com/crazy-matt/asdf-actionlint.git"),
@@ -452,7 +451,6 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("lsd", "https://github.com/mise-plugins/asdf-lsd"),
     ("lua", "https://github.com/Stratus3D/asdf-lua.git"),
     ("lua-language-server", "https://github.com/bellini666/asdf-lua-language-server"),
-    ("luaJIT", "https://github.com/smashedtoatoms/asdf-luaJIT.git"),
     ("luajit", "https://github.com/smashedtoatoms/asdf-luaJIT.git"),
     ("lucy", "https://github.com/cometkim/asdf-lucy.git"),
     ("maestro", "https://github.com/dotanuki-labs/asdf-maestro.git"),
