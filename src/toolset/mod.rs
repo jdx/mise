@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{panic, thread};
 
 use console::truncate_str;
 use eyre::Result;
@@ -180,7 +180,9 @@ impl Toolset {
                             for tv in versions {
                                 for dep in t.get_dependencies(&tv)? {
                                     while installing.lock().unwrap().contains(&dep.to_string()) {
-                                        trace!("{tv} waiting for dependency {dep} to finish installing");
+                                        trace!(
+                                        "{tv} waiting for dependency {dep} to finish installing"
+                                    );
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
@@ -199,16 +201,19 @@ impl Toolset {
                         Ok(installed)
                     })
                 })
-                .collect_vec()
+                .collect::<Vec<_>>()
                 .into_iter()
-                .map(|t| t.join().unwrap())
+                .map(|t| match t.join() {
+                    Ok(x) => x,
+                    Err(e) => panic::resume_unwind(e),
+                })
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
-            // TODO: figure out how to get Result<Vec<ToolVersion>> instead
+                .map(|x| x.into_iter().flatten().collect())
         })?;
         self.resolve();
         shims::reshim(self)?;
         runtime_symlinks::rebuild(config)?;
-        Ok(installed.into_iter().flatten().collect())
+        Ok(installed)
     }
 
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
