@@ -1645,7 +1645,7 @@ dependencies = [
  "versions",
  "walkdir",
  "which",
- "xx",
+ "xx 1.0.2",
  "zip",
 ]
 
@@ -3276,7 +3276,7 @@ dependencies = [
  "shell-escape",
  "strum",
  "thiserror",
- "xx",
+ "xx 0.5.1",
 ]
 
 [[package]]
@@ -3702,6 +3702,20 @@ name = "xx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e56d3f594fa196a364c0fdd4bab4b4e81fe46712c6754c9bc0930a6eac6998d"
+dependencies = [
+ "duct",
+ "filetime",
+ "log",
+ "miette",
+ "regex",
+ "thiserror",
+]
+
+[[package]]
+name = "xx"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4c55b83ffe30f8b5f8144bd94af5be173d88139310ddfac10e69e24a70a2ffb"
 dependencies = [
  "duct",
  "filetime",
