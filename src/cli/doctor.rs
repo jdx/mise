@@ -4,6 +4,7 @@ use std::process::exit;
 use console::{pad_str, style, Alignment};
 use indenter::indented;
 use itertools::Itertools;
+use rayon::prelude::*;
 
 use crate::build_time::built_info;
 use crate::cli::version;
@@ -115,7 +116,7 @@ impl Doctor {
         if !env::is_activated() && !shims_on_path() {
             let cmd = style::nyellow("mise help activate");
             let url = style::nunderline("https://mise.jdx.dev");
-            let shims = style::ncyan(dirs::SHIMS.display());
+            let shims = style::ncyan(display_path(*dirs::SHIMS));
             self.errors.push(formatdoc!(
                 r#"mise is not activated, run {cmd} or
                     read documentation at {url} for activation instructions.
@@ -161,6 +162,7 @@ impl Doctor {
     }
 
     fn analyze_shims(&mut self, toolset: &Toolset) {
+        let start_ms = std::time::Instant::now();
         let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
         if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset) {
@@ -182,6 +184,7 @@ impl Doctor {
                 ));
             }
         }
+        trace!("Shim analysis took {:?}", start_ms.elapsed());
     }
 
     fn analyze_plugins(&mut self) {
@@ -253,7 +256,6 @@ fn render_backends() -> String {
 }
 
 fn render_plugins() -> String {
-    let mut s = vec![];
     let plugins = forge::list()
         .into_iter()
         .filter(|p| p.is_installed() && p.get_type() == ForgeType::Asdf)
@@ -264,26 +266,29 @@ fn render_plugins() -> String {
         .max()
         .unwrap_or(0)
         .min(40);
-    for p in plugins {
-        let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
-        let extra = match p.get_plugin_type() {
-            PluginType::External => {
-                let git = Git::new(dirs::PLUGINS.join(p.id()));
-                match git.get_remote_url() {
-                    Some(url) => {
-                        let sha = git
-                            .current_sha_short()
-                            .unwrap_or_else(|_| "(unknown)".to_string());
-                        format!("{url}#{sha}")
+    plugins
+        .into_par_iter()
+        .map(|p| {
+            let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
+            let extra = match p.get_plugin_type() {
+                PluginType::External => {
+                    let git = Git::new(dirs::PLUGINS.join(p.id()));
+                    match git.get_remote_url() {
+                        Some(url) => {
+                            let sha = git
+                                .current_sha_short()
+                                .unwrap_or_else(|_| "(unknown)".to_string());
+                            format!("{url}#{sha}")
+                        }
+                        None => "".to_string(),
                     }
-                    None => "".to_string(),
                 }
-            }
-            PluginType::Core => "(core)".to_string(),
-        };
-        s.push(format!("{padded_name}  {}", style::ndim(extra)));
-    }
-    s.join("\n")
+                PluginType::Core => "(core)".to_string(),
+            };
+            format!("{padded_name}  {}", style::ndim(extra))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn build_info() -> String {
