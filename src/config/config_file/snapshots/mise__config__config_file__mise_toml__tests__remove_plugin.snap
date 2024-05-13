@@ -4,11 +4,7 @@ expression: cf.to_toolset().unwrap()
 ---
 Toolset {
     versions: {},
-    source: Some(
-        MiseToml(
-            "/tmp/.mise.toml",
-        ),
-    ),
+    source: None,
     disable_tools: {},
     tool_filter: None,
     installed_only: false,

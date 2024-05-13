@@ -23,6 +23,7 @@ use crate::file::display_path;
 use crate::forge::Forge;
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
+use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder};
 use crate::ui::style;
 use crate::{dirs, env, file, forge};
 
@@ -46,6 +47,7 @@ pub struct Config {
     repo_urls: HashMap<String, String>,
     shorthands: OnceLock<HashMap<String, String>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
+    tool_request_set: OnceCell<ToolRequestSet>,
 }
 
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -78,15 +80,11 @@ impl Config {
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
 
         let config = Self {
-            env: OnceCell::new(),
-            env_with_sources: OnceCell::new(),
             aliases: load_aliases(&config_files),
-            all_aliases: OnceLock::new(),
-            shorthands: OnceLock::new(),
-            tasks: OnceCell::new(),
             project_root: get_project_root(&config_files),
             config_files,
             repo_urls,
+            ..Default::default()
         };
 
         config.validate()?;
@@ -139,6 +137,10 @@ impl Config {
     pub fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
             .get_or_init(|| get_shorthands(&Settings::get()))
+    }
+    pub fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
+        self.tool_request_set
+            .get_or_try_init(|| ToolRequestSetBuilder::new().build())
     }
 
     pub fn get_repo_url(&self, plugin_name: &String) -> Option<String> {

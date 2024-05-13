@@ -13,6 +13,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 pub use builder::ToolsetBuilder;
+pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
@@ -31,6 +32,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, forge};
 
 mod builder;
+mod tool_request_set;
 mod tool_source;
 mod tool_version;
 mod tool_version_list;
@@ -100,13 +102,24 @@ impl Toolset {
         self.versions = versions;
         self.source = other.source;
     }
-    pub fn resolve(&mut self) {
+    pub fn resolve(&mut self) -> eyre::Result<()> {
         self.list_missing_plugins();
-        self.versions
+        let errors = self
+            .versions
             .iter_mut()
             .collect::<Vec<_>>()
             .par_iter_mut()
-            .for_each(|(_, v)| v.resolve(false));
+            .map(|(_, v)| v.resolve(false))
+            .filter(|r| r.is_err())
+            .map(|r| r.unwrap_err())
+            .collect::<Vec<_>>();
+        match errors.is_empty() {
+            true => Ok(()),
+            false => {
+                let err = eyre!("error resolving versions");
+                Err(errors.into_iter().fold(err, |e, x| e.wrap_err(x)))
+            }
+        }
     }
     pub fn install_arg_versions(
         &mut self,
@@ -144,6 +157,11 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        let leaf_deps = get_leaf_dependencies(&versions)?;
+        if leaf_deps.len() < versions.len() {
+            debug!("installing {} leaf tools first", leaf_deps.len());
+            self.install_versions(config, leaf_deps.into_iter().cloned().collect(), mpr, opts)?;
+        }
         let settings = Settings::try_get()?;
         let queue: Vec<_> = versions
             .into_iter()
@@ -178,6 +196,7 @@ impl Toolset {
                         while let Some((t, versions)) = next_job() {
                             installing.lock().unwrap().insert(t.id().into());
                             for tv in versions {
+                                // TODO: this logic should be able to be removed now I think
                                 for dep in t.get_dependencies(&tv)? {
                                     while installing.lock().unwrap().contains(&dep.to_string()) {
                                         trace!(
@@ -210,7 +229,9 @@ impl Toolset {
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
                 .map(|x| x.into_iter().flatten().collect())
         })?;
-        self.resolve();
+        if let Err(err) = self.resolve() {
+            debug!("error resolving versions after install: {err:#}");
+        }
         shims::reshim(self)?;
         runtime_symlinks::rebuild(config)?;
         Ok(installed)
@@ -272,7 +293,7 @@ impl Toolset {
             .iter()
             .map(|(p, v)| (forge::get(p), &v.versions))
             .filter(|(p, tv)| {
-                !self.installed_only || tv.iter().any(|tv| p.is_version_installed(tv))
+                !self.installed_only || tv.iter().all(|tv| p.is_version_installed(tv))
             })
             .collect()
     }
@@ -316,7 +337,7 @@ impl Toolset {
             .clone()
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        env.extend(self.env(&Config::get())?);
+        env.extend(self.env_with_path(&Config::get())?);
         Ok(env)
     }
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
@@ -479,4 +500,42 @@ impl Display for Toolset {
             .collect_vec();
         write!(f, "{}", plugins.join(", "))
     }
+}
+
+impl From<ToolRequestSet> for Toolset {
+    fn from(mut trs: ToolRequestSet) -> Self {
+        let mut ts = Toolset {
+            source: trs.sources.pop_first().map(|(_, source)| source),
+            ..Default::default()
+        };
+        for (fa, versions) in trs.tools {
+            let mut tvl = ToolVersionList::new(fa.clone(), ts.source.as_ref().unwrap().clone());
+            for tr in versions {
+                tvl.requests.push(tr);
+            }
+            ts.versions.insert(fa, tvl);
+        }
+        ts
+    }
+}
+
+fn get_leaf_dependencies(
+    requests: &[ToolVersionRequest],
+) -> eyre::Result<Vec<&ToolVersionRequest>> {
+    let versions_hash = requests.iter().map(|tr| tr.forge()).collect::<HashSet<_>>();
+    let leaves = requests
+        .iter()
+        .map(|tr| {
+            match tr
+                .dependencies()?
+                .iter()
+                .all(|dep| !versions_hash.contains(dep))
+            {
+                true => Ok(Some(tr)),
+                false => Ok(None),
+            }
+        })
+        .flatten_ok()
+        .collect::<Result<Vec<_>>>()?;
+    Ok(leaves)
 }

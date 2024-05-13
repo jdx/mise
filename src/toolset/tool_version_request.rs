@@ -2,8 +2,11 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
 use eyre::Result;
+use versions::{Chunk, Version};
+use xx::file;
 
 use crate::cli::args::ForgeArg;
+use crate::forge;
 use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
@@ -90,6 +93,10 @@ impl ToolVersionRequest {
             | Self::System(f) => f,
         }
     }
+    pub fn dependencies(&self) -> eyre::Result<Vec<ForgeArg>> {
+        let forge = forge::get(self.forge());
+        forge.get_dependencies(self)
+    }
     pub fn version(&self) -> String {
         match self {
             Self::Version { version: v, .. } => v.clone(),
@@ -112,8 +119,59 @@ impl ToolVersionRequest {
         }
     }
 
+    pub fn is_installed(&self) -> bool {
+        // TODO: dispatch to forge
+        match self {
+            Self::System(_) => true,
+            _ => self.install_path().is_some_and(|p| p.exists()),
+        }
+    }
+
+    pub fn install_path(&self) -> Option<PathBuf> {
+        match self {
+            Self::Version { forge, version, .. } => Some(forge.installs_path.join(version)),
+            Self::Ref { forge, ref_, .. } => {
+                Some(forge.installs_path.join(format!("ref-{}", ref_)))
+            }
+            Self::Sub {
+                forge,
+                sub,
+                orig_version,
+            } => Some(
+                forge
+                    .installs_path
+                    .join(Self::version_sub(orig_version, sub.as_str())),
+            ),
+            Self::Prefix { forge, prefix, .. } => match file::ls(&forge.installs_path) {
+                Ok(installs) => {
+                    let path = installs.iter().find(|p| p.starts_with(prefix));
+                    path.map(|p| forge.installs_path.join(p))
+                }
+                Err(_) => None,
+            },
+            Self::Path(_, path) => Some(path.clone()),
+            Self::System(_) => None,
+        }
+    }
+
     pub fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
         ToolVersion::resolve(plugin, self.clone(), latest_versions)
+    }
+
+    /// subtracts sub from orig and removes suffix
+    /// e.g. version_sub("18.2.3", "2") -> "16"
+    /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+    fn version_sub(orig: &str, sub: &str) -> String {
+        let mut orig = Version::new(orig).unwrap();
+        let sub = Version::new(sub).unwrap();
+        while orig.chunks.0.len() > sub.chunks.0.len() {
+            orig.chunks.0.pop();
+        }
+        for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
+            let m = sub.nth(i).unwrap();
+            orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+        }
+        orig.to_string()
     }
 }
 

@@ -19,7 +19,7 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
-use crate::toolset::{ToolVersionList, Toolset};
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::{dirs, env, file, forge};
 
@@ -72,7 +72,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
-    fn to_toolset(&self) -> eyre::Result<Toolset>;
+    fn to_toolset(&self) -> eyre::Result<Toolset> {
+        Ok(self.to_tool_request_set()?.into())
+    }
+    fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
     fn aliases(&self) -> AliasMap {
         Default::default()
     }
@@ -86,7 +89,7 @@ impl dyn ConfigFile {
     pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset()?.to_owned();
-        ts.resolve();
+        ts.resolve()?;
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
             if let Some(tv) = &ta.tvr {
@@ -97,13 +100,16 @@ impl dyn ConfigFile {
             }
         }
         for (fa, versions) in &plugins_to_update {
-            let mut tvl = ToolVersionList::new(fa.clone(), ts.source.as_ref().unwrap().clone());
+            let mut tvl = ToolVersionList::new(
+                fa.clone(),
+                ts.source.clone().unwrap_or(ToolSource::Argument),
+            );
             for tv in versions {
                 tvl.requests.push((*tv).clone());
             }
             ts.versions.insert(fa.clone(), tvl);
         }
-        ts.resolve();
+        ts.resolve()?;
         for (fa, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()
