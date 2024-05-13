@@ -7,6 +7,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::env::GITHUB_TOKEN;
 use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
@@ -54,7 +55,11 @@ impl Forge for CargoForge {
         let settings = Settings::get();
         settings.ensure_experimental("cargo backend")?;
         let cmd = if self.is_binstall_enabled() {
-            CmdLineRunner::new("cargo-binstall").arg("-y")
+            let mut runner = CmdLineRunner::new("cargo-binstall").arg("-y");
+            if let Some(token) = &*GITHUB_TOKEN {
+                runner = runner.env("GITHUB_TOKEN", token)
+            }
+            runner
         } else {
             CmdLineRunner::new("cargo").arg("install")
         };

@@ -141,6 +141,11 @@ pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var("PATH"
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 #[allow(unused)]
 pub static GITHUB_API_TOKEN: Lazy<Option<String>> = Lazy::new(|| var("GITHUB_API_TOKEN").ok());
+pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
+    var("GITHUB_TOKEN")
+        .or_else(|_| var("GITHUB_API_TOKEN"))
+        .ok()
+});
 
 pub static MISE_USE_VERSIONS_HOST: Lazy<bool> =
     Lazy::new(|| !var_is_false("MISE_USE_VERSIONS_HOST"));
