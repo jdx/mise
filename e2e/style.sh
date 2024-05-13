@@ -10,6 +10,9 @@ if [[ -n ${GITHUB_ACTION:-} ]]; then
   }
   err() { type=error annotate "$*"; }
   warn() { type=warning annotate "$*"; }
+  notice() { type=notice annotate "$*"; }
+  # debug() { type=debug annotate "$*"; }
+  debug() { echo $'\e[90m'"$*"$'\e[0m' >&2; }
   start_group() { echo "::group::$*" >&2; }
   end_group() { echo ::endgroup:: >&2; }
 
@@ -21,6 +24,8 @@ elif [[ -t 2 ]]; then
   ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
   err() { echo $'\e[91m'"${title:+$title: }$*"$'\e[0m' >&2; }
   warn() { echo $'\e[93m'"${title:+$title: }$*"$'\e[0m' >&2; }
+  notice() { echo $'\e[94m'"$*"$'\e[0m' >&2; }
+  debug() { echo $'\e[90m'"$*"$'\e[0m' >&2; }
   start_group() { echo $'\e[1m'">>> $*"$'\e[0m' >&2; }
   end_group() { echo >&2; }
 
@@ -28,7 +33,9 @@ else
   # No styling
   ok() { echo "SUCCESS: $*" >&2; }
   err() { echo "ERROR: ${title:+$title: }$*" >&2; }
-  warn() { echo "wARNING: ${title:+$title: }$*" >&2; }
+  warn() { echo "WARNING: ${title:+$title: }$*" >&2; }
+  notice() { echo "NOTICE: $*" >&2; }
+  debug() { echo "DEBUG: $*" >&2; }
   start_group() { echo ">>> $*" >&2; }
   end_group() { echo >&2; }
 fi

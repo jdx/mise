@@ -1,10 +1,12 @@
 use std::fmt::Debug;
+use std::str::FromStr;
 
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::forge::{Forge, ForgeType};
+use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionRequest;
 
@@ -34,7 +36,26 @@ impl Forge for PIPXForge {
      */
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| Ok(vec!["latest".to_string()]))
+            .get_or_try_init(|| match self.name().parse()? {
+                PipxRequest::Pypi(package) => {
+                    let url = format!("https://pypi.org/pypi/{}/json", package);
+                    let raw = crate::http::HTTP_FETCH.get_text(url)?;
+                    let data: serde_json::Value = serde_json::from_str(&raw)?;
+                    let versions = data["releases"]
+                        .as_object()
+                        .ok_or_else(|| eyre::eyre!("Invalid pypi response"))?
+                        .keys()
+                        .map(|k| k.to_string())
+                        .collect();
+                    Ok(versions)
+                }
+                PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
+                    let repo = url.strip_prefix("https://github.com/").unwrap();
+                    let data = github::list_releases(repo)?;
+                    Ok(data.into_iter().map(|r| r.tag_name).collect())
+                }
+                PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
+            })
             .cloned()
     }
 
@@ -48,11 +69,14 @@ impl Forge for PIPXForge {
         let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental("pipx backend")?;
-        let project_name = transform_project_name(ctx, self.name());
+        let pipx_request = self
+            .name()
+            .parse::<PipxRequest>()?
+            .pipx_request(&ctx.tv.version);
 
         CmdLineRunner::new("pipx")
             .arg("install")
-            .arg(project_name)
+            .arg(pipx_request)
             .with_pr(ctx.pr.as_ref())
             .env("PIPX_HOME", ctx.tv.install_path())
             .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
@@ -79,29 +103,40 @@ impl PIPXForge {
     }
 }
 
-/*
- * Supports the following formats
- * - git+https://github.com/psf/black.git@24.2.0 => github longhand and version
- * - psf/black@24.2.0 => github shorthand and version
- * - black@24.2.0 => pypi shorthand and version
- * - black => pypi shorthand and latest
- */
-fn transform_project_name(ctx: &InstallContext, name: &str) -> String {
-    let parts: Vec<&str> = name.split('/').collect();
-    match (
-        name,
-        name.starts_with("git+http"),
-        parts.len(),
-        ctx.tv.version.as_str(),
-    ) {
-        (_, false, 2, "latest") => format!("git+https://github.com/{}.git", name),
-        (_, false, 2, v) => format!("git+https://github.com/{}.git@{}", name, v),
-        (_, true, _, "latest") => name.to_string(),
-        (_, true, _, v) => format!("{}@{}", name, v),
-        (".", false, _, _) => name.to_string(),
-        (_, false, _, "latest") => name.to_string(),
-        // Treat this as a pypi package@version and translate the version syntax
-        (_, false, 1, v) => format!("{}=={}", name, v),
-        _ => name.to_string(),
+enum PipxRequest {
+    /// git+https://github.com/psf/black.git@24.2.0
+    /// psf/black@24.2.0
+    Git(String),
+    /// black@24.2.0
+    Pypi(String),
+}
+
+impl PipxRequest {
+    fn pipx_request(&self, v: &str) -> String {
+        if v == "latest" {
+            match self {
+                PipxRequest::Git(url) => format!("git+{url}.git"),
+                PipxRequest::Pypi(package) => package.to_string(),
+            }
+        } else {
+            match self {
+                PipxRequest::Git(url) => format!("git+{}.git@{}", url, v),
+                PipxRequest::Pypi(package) => format!("{}=={}", package, v),
+            }
+        }
+    }
+}
+
+impl FromStr for PipxRequest {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(cap) = regex!(r"(git\+)(.*)(\.git)").captures(s) {
+            Ok(PipxRequest::Git(cap.get(2).unwrap().as_str().to_string()))
+        } else if s.contains('/') {
+            Ok(PipxRequest::Git(format!("https://github.com/{s}")))
+        } else {
+            Ok(PipxRequest::Pypi(s.to_string()))
+        }
     }
 }

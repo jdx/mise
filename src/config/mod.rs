@@ -95,6 +95,13 @@ impl Config {
 
         Ok(config)
     }
+    pub fn env_maybe(&self) -> Option<IndexMap<String, String>> {
+        self.env_with_sources.get().map(|env| {
+            env.iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect()
+        })
+    }
     pub fn env(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
             .env_with_sources()?
@@ -603,15 +610,16 @@ impl Debug for Config {
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
             );
         }
-        if let Ok(env) = self.env() {
+        if let Some(env) = self.env_maybe() {
             if !env.is_empty() {
                 s.field("Env", &env);
                 // s.field("Env Sources", &self.env_sources);
             }
         }
-        let path_dirs = self.path_dirs().cloned().unwrap_or_default();
-        if !path_dirs.is_empty() {
-            s.field("Path Dirs", &path_dirs);
+        if let Some(env_results) = self.env.get() {
+            if !env_results.env_files.is_empty() {
+                s.field("Path Dirs", &env_results.env_paths);
+            }
         }
         if !self.aliases.is_empty() {
             s.field("Aliases", &self.aliases);
