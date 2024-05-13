@@ -11,7 +11,9 @@ TEST_SCRIPT="$SCRIPT_DIR/$TEST"
 
 setup_isolated_env() {
   TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
-  TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
+  if [[ $(os) == "macos" ]]; then
+    TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
+  fi
 
   # Use a fake HOME and a fake temporary directory
   TEST_HOME="$TEST_ISOLATED_DIR/home"
