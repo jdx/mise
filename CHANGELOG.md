@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.5.10](https://github.com/jdx/mise/compare/v2024.5.9..v2024.5.10) - 2024-05-13
+
+### 🐛 Bug Fixes
+
+- fixed misc bugs with ubi+pipx backends by [@jdx](https://github.com/jdx) in [#2083](https://github.com/jdx/mise/pull/2083)
+
+### 🔍 Other Changes
+
+- updated reqwest by [@jdx](https://github.com/jdx) in [d927085](https://github.com/jdx/mise/commit/d92708585b62d65a838e37c022a3796de5fefe1d)
+
+### 📦️ Dependency Updates
+
+- update rust crate xx to v1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2081](https://github.com/jdx/mise/pull/2081)
+
 ## [2024.5.9](https://github.com/jdx/mise/compare/v2024.5.8..v2024.5.9) - 2024-05-12
 
 ### 🐛 Bug Fixes
