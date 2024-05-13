@@ -110,19 +110,18 @@ impl ToolsetBuilder {
                 if let Some(tvr) = &arg.tvr {
                     arg_ts.add_version(tvr.clone());
                 } else if self.default_to_latest {
-                    // TODO: see if there is a cleaner way to handle this scenario
                     // this logic is required for `mise x` because with that specific command mise
                     // should default to installing the "latest" version if no version is specified
                     // in .mise.toml
-                    let versions_by_plugin = ts.list_versions_by_plugin();
-                    let set_as_latest = versions_by_plugin.iter().find(|(_ta, fa)| {
-                        !fa.iter().any(|f|
-                            // Same forget type and same forgeArg name
-                            f.forge.forge_type == arg.forge.forge_type &&
-                                f.forge.name == arg.forge.name)
-                    });
 
-                    if let Some((_ta, _fa)) = set_as_latest {
+                    // determine if we already have some active version in config
+                    let set_as_latest = !ts
+                        .list_current_requests()
+                        .iter()
+                        .any(|tvr| tvr.forge() == &arg.forge);
+
+                    if set_as_latest {
+                        // no active version, so use "latest"
                         arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest"));
                     }
                 }
