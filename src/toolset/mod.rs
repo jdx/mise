@@ -261,6 +261,12 @@ impl Toolset {
             .map(|(p, _)| p)
             .collect()
     }
+    pub fn list_current_requests(&self) -> Vec<&ToolVersionRequest> {
+        self.versions
+            .values()
+            .flat_map(|tvl| &tvl.requests)
+            .collect()
+    }
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Forge>, &Vec<ToolVersion>)> {
         self.versions
             .iter()
