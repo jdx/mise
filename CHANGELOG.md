@@ -1,5 +1,17 @@
 # Changelog
 
+## [2024.5.11](https://github.com/jdx/mise/compare/v2024.5.10..v2024.5.11) - 2024-05-13
+
+### 🐛 Bug Fixes
+
+- **(exec)** do not default to "latest" if a version is already configured by [@jdx](https://github.com/jdx) in [f55e8ef](https://github.com/jdx/mise/commit/f55e8efccc2050cbf1a9b14f6396d7ee6fc20828)
+- **(self_update)** downgrade reqwest by [@jdx](https://github.com/jdx) in [0e17a84](https://github.com/jdx/mise/commit/0e17a84ebe9ea087d27a6c825a0bf6840cfcd3ca)
+- prompt to trust config files with env vars by [@jdx](https://github.com/jdx) in [55b3a4b](https://github.com/jdx/mise/commit/55b3a4bb1e394a3830f476594514216a4490de82)
+
+### 🧪 Testing
+
+- work with macos /private tmp dir by [@jdx](https://github.com/jdx) in [7d8ffaf](https://github.com/jdx/mise/commit/7d8ffaf2bc3341293b4884df2cdf1e14913f5eb6)
+
 ## [2024.5.10](https://github.com/jdx/mise/compare/v2024.5.9..v2024.5.10) - 2024-05-13
 
 ### 🐛 Bug Fixes
