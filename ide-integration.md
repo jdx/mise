@@ -88,8 +88,8 @@ swiftlint
 
 ## JetBrains Editors (IntelliJ, RustRover, PyCharm, WebStorm, RubyMine, GoLand, etc)
 
-JetBrains has an [open ticket](https://youtrack.jetbrains.com/issue/RUBY-32015/Support-the-mise-ex-rtx-ruby-tool-version-manager) for mise integration. However for some languages, JetBrains already has asdf integration which we can
-make use of just by symlinking the mise installs to where the IDE will look for the asdf installs:
+Some JetBrains IDEs have direct support for mise, others have support for asdf which can be used by first symlinking the mise tool directory which is the
+same layout as asdf:
 
 ```sh
 $ ln -s ~/.local/share/mise ~/.asdf
