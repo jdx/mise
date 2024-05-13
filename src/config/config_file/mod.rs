@@ -5,7 +5,6 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use eyre::Result;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use versions::Versioning;
@@ -63,17 +62,17 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn plugins(&self) -> HashMap<String, String> {
         Default::default()
     }
-    fn env_entries(&self) -> Vec<EnvDirective> {
-        Default::default()
+    fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+        Ok(Default::default())
     }
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _fa: &ForgeArg) -> Result<()>;
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> Result<()>;
-    fn save(&self) -> Result<()>;
-    fn dump(&self) -> Result<String>;
-    fn to_toolset(&self) -> Result<Toolset>;
+    fn remove_plugin(&mut self, _fa: &ForgeArg) -> eyre::Result<()>;
+    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()>;
+    fn save(&self) -> eyre::Result<()>;
+    fn dump(&self) -> eyre::Result<String>;
+    fn to_toolset(&self) -> eyre::Result<Toolset>;
     fn aliases(&self) -> AliasMap {
         Default::default()
     }
@@ -84,7 +83,7 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> Result<()> {
+    pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset()?.to_owned();
         ts.resolve();
@@ -117,7 +116,7 @@ impl dyn ConfigFile {
                         Ok(tvr.version())
                     }
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<eyre::Result<Vec<_>>>()?;
             self.replace_versions(&fa, &versions)?;
         }
 
@@ -127,7 +126,7 @@ impl dyn ConfigFile {
     /// this is for `mise local|global TOOL` which will display the version instead of setting it
     /// it's only valid to use a single tool in this case
     /// returns "true" if the tool was displayed which means the CLI should exit
-    pub fn display_runtime(&self, runtimes: &[ToolArg]) -> Result<bool> {
+    pub fn display_runtime(&self, runtimes: &[ToolArg]) -> eyre::Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let fa = &runtimes[0].forge;
@@ -165,7 +164,7 @@ fn init(path: &Path) -> Box<dyn ConfigFile> {
     }
 }
 
-pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
+pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     let cf = match path.exists() {
         true => parse(path)?,
         false => init(path),
@@ -173,7 +172,7 @@ pub fn parse_or_init(path: &Path) -> Result<Box<dyn ConfigFile>> {
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
+pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get() {
         if settings.paranoid {
             trust_check(path)?;
@@ -187,7 +186,7 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     }
 }
 
-pub fn trust_check(path: &Path) -> Result<()> {
+pub fn trust_check(path: &Path) -> eyre::Result<()> {
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
@@ -238,7 +237,7 @@ pub fn is_trusted(path: &Path) -> bool {
     true
 }
 
-pub fn trust(path: &Path) -> Result<()> {
+pub fn trust(path: &Path) -> eyre::Result<()> {
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
@@ -250,7 +249,7 @@ pub fn trust(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn untrust(path: &Path) -> Result<()> {
+pub fn untrust(path: &Path) -> eyre::Result<()> {
     let hashed_path = trust_path(path);
     if hashed_path.exists() {
         file::remove_file(hashed_path)?;
@@ -287,7 +286,7 @@ fn trust_path(path: &Path) -> PathBuf {
     )
 }
 
-fn trust_file_hash(path: &Path) -> Result<bool> {
+fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     let trust_path = trust_path(path);
     let trust_hash_path = trust_path.with_extension("hash");
     if !trust_hash_path.exists() {
