@@ -9,6 +9,7 @@ use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use rayon::prelude::*;
 use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -335,14 +336,16 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
-fn _which<P: AsRef<Path>>(name: P, paths: &Vec<PathBuf>) -> Option<PathBuf> {
-    for path in paths {
-        let bin = path.join(name.as_ref());
+fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
+    let name = name.as_ref();
+    paths.par_iter().find_map_first(|path| {
+        let bin = path.join(name);
         if is_executable(&bin) {
-            return Some(bin);
+            Some(bin)
+        } else {
+            None
         }
-    }
-    None
+    })
 }
 
 pub fn untar(archive: &Path, dest: &Path) -> Result<()> {

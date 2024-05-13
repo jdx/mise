@@ -22,7 +22,7 @@ include = [
   "/build.rs",
   "/zipsign.pub",
 ]
-rust-version = "1.74.0"
+rust-version = "1.76.0"
 build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -62,6 +62,7 @@ eyre = "0.6.12"
 filetime = "0.2.23"
 flate2 = "1.0.30"
 fslock = "0.2.1"
+git2 = "0.18.3"
 globset = "0.4.14"
 globwalk = "0.9.1"
 home = "0.5.9"
@@ -127,7 +128,7 @@ zip = { version = "1.1.2", default-features = false, features = ["deflate"] }
 exec = "0.3.1"
 
 [build-dependencies]
-built = { version = "0.7.2", features = ["chrono"] }
+built = { version = "0.7.2", features = ["chrono", "git2"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
@@ -139,7 +140,7 @@ test-case = "3.3.1"
 
 [features]
 default = ["native-tls"]
-git2 = ["built/git2"]
+git2 = []
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]

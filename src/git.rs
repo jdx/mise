@@ -3,12 +3,14 @@ use std::path::PathBuf;
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
+use once_cell::sync::OnceCell;
 
 use crate::cmd;
 use crate::file::touch_dir;
 
 pub struct Git {
     pub dir: PathBuf,
+    pub repo: OnceCell<git2::Repository>,
 }
 
 macro_rules! git_cmd {
@@ -33,7 +35,18 @@ macro_rules! git_cmd_read {
 
 impl Git {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+        Self {
+            dir,
+            repo: OnceCell::new(),
+        }
+    }
+
+    pub fn repo(&self) -> Result<&git2::Repository> {
+        self.repo.get_or_try_init(|| {
+            git2::Repository::open(&self.dir)
+                .wrap_err_with(|| format!("failed to open git repository at {:?}", self.dir))
+                .inspect_err(|err| warn!("{err:#}"))
+        })
     }
 
     pub fn is_repo(&self) -> bool {
@@ -99,44 +112,76 @@ impl Git {
     }
 
     pub fn current_branch(&self) -> Result<String> {
+        let dir = &self.dir;
+        if let Ok(repo) = self.repo() {
+            let branch = repo.head()?.shorthand().unwrap().to_string();
+            debug!("current branch for {dir:?}: {branch}");
+            return Ok(branch);
+        }
         let branch = git_cmd_read!(&self.dir, "branch", "--show-current")?;
         debug!("current branch for {}: {}", self.dir.display(), &branch);
         Ok(branch)
     }
     pub fn current_sha(&self) -> Result<String> {
+        let dir = &self.dir;
+        if let Ok(repo) = self.repo() {
+            let head = repo.head()?;
+            let head = head.peel_to_commit()?;
+            let sha = head.id().to_string();
+            debug!("current sha for {dir:?}: {sha}");
+            return Ok(sha);
+        }
         let sha = git_cmd_read!(&self.dir, "rev-parse", "HEAD")?;
         debug!("current sha for {}: {}", self.dir.display(), &sha);
         Ok(sha)
     }
 
     pub fn current_sha_short(&self) -> Result<String> {
+        let dir = &self.dir;
+        if let Ok(repo) = self.repo() {
+            let head = repo.head()?;
+            let head = head.peel_to_commit()?;
+            let sha = head.as_object().short_id()?.as_str().unwrap().to_string();
+            debug!("current sha for {dir:?}: {sha}");
+            return Ok(sha);
+        }
         let sha = git_cmd_read!(&self.dir, "rev-parse", "--short", "HEAD")?;
-        debug!("current sha for {}: {}", self.dir.display(), &sha);
+        debug!("current sha for {dir:?}: {sha}");
         Ok(sha)
     }
 
     pub fn current_abbrev_ref(&self) -> Result<String> {
+        let dir = &self.dir;
+        if let Ok(repo) = self.repo() {
+            let head = repo.head()?;
+            let head = head.shorthand().unwrap().to_string();
+            debug!("current abbrev ref for {dir:?}: {head}");
+            return Ok(head);
+        }
         let aref = git_cmd_read!(&self.dir, "rev-parse", "--abbrev-ref", "HEAD")?;
         debug!("current abbrev ref for {}: {}", self.dir.display(), &aref);
         Ok(aref)
     }
 
     pub fn get_remote_url(&self) -> Option<String> {
-        if !self.dir.exists() {
+        let dir = &self.dir;
+        if !dir.exists() {
             return None;
+        }
+        if let Ok(repo) = self.repo() {
+            let remote = repo.find_remote("origin").ok()?;
+            let url = remote.url()?;
+            trace!("remote url for {dir:?}: {url}");
+            return Some(url.to_string());
         }
         let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
         match res {
             Ok(url) => {
-                debug!("remote url for {}: {}", self.dir.display(), &url);
+                debug!("remote url for {dir:?}: {url}");
                 Some(url)
             }
             Err(err) => {
-                warn!(
-                    "failed to get remote url for {}: {:#}",
-                    self.dir.display(),
-                    err
-                );
+                warn!("failed to get remote url for {dir:?}: {err:#}");
                 None
             }
         }

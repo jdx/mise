@@ -48,6 +48,7 @@ impl ToolsetBuilder {
     }
 
     pub fn build(self, config: &Config) -> Result<Toolset> {
+        let start_ms = std::time::Instant::now();
         let settings = Settings::try_get()?;
         let mut toolset = Toolset {
             disable_tools: settings.disable_tools.iter().map(|s| s.into()).collect(),
@@ -60,7 +61,7 @@ impl ToolsetBuilder {
         self.load_runtime_args(&mut toolset);
         toolset.resolve();
 
-        debug!("Toolset: {}", toolset);
+        debug!("Toolset ({:?}): {toolset}", start_ms.elapsed());
         Ok(toolset)
     }
 

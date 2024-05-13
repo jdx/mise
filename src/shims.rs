@@ -138,13 +138,22 @@ pub fn get_shim_diffs(
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
 ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
-    let actual_shims = get_actual_shims(&mise_bin)?;
-    let desired_shims = get_desired_shims(toolset)?;
-
-    Ok((
+    let start_ms = std::time::Instant::now();
+    let mise_bin = mise_bin.as_ref();
+    let (actual_shims, desired_shims) =
+        rayon::join(|| get_actual_shims(mise_bin), || get_desired_shims(toolset));
+    let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
+    let out: (BTreeSet<String>, BTreeSet<String>) = (
         desired_shims.difference(&actual_shims).cloned().collect(),
         actual_shims.difference(&desired_shims).cloned().collect(),
-    ))
+    );
+    trace!(
+        "get_shim_diffs({:?}): sizes: ({},{})",
+        start_ms.elapsed(),
+        out.0.len(),
+        out.1.len()
+    );
+    Ok(out)
 }
 
 fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
@@ -161,18 +170,24 @@ fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
 }
 
 fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
-    let mut out = HashSet::new();
-    for bin in dir.read_dir()? {
-        let bin = bin?;
-        // skip non-files and non-symlinks or non-executable files
-        if (!bin.file_type()?.is_file() && !bin.file_type()?.is_symlink())
-            || !file::is_executable(&bin.path())
-        {
-            continue;
-        }
-        out.insert(bin.file_name().into_string().unwrap());
-    }
-    Ok(out)
+    Ok(dir
+        .read_dir()?
+        .par_bridge()
+        .map(|bin| {
+            let bin = bin?;
+            // files and symlinks which are executable
+            if file::is_executable(&bin.path())
+                && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
+            {
+                Ok(Some(bin.file_name().into_string().unwrap()))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
 }
 
 fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
