@@ -4,6 +4,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::env::GITHUB_TOKEN;
 use crate::forge::{Forge, ForgeType};
 use crate::github;
 use crate::install_context::InstallContext;
@@ -63,6 +64,10 @@ impl Forge for UbiForge {
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?;
+
+        if let Some(token) = &*GITHUB_TOKEN {
+            cmd = cmd.env("GITHUB_TOKEN", token);
+        }
 
         if version != "latest" {
             cmd = cmd.arg("--tag").arg(version);
