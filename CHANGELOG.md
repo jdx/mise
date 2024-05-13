@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.5.12](https://github.com/jdx/mise/compare/v2024.5.11..v2024.5.12) - 2024-05-13
+
+### ⚡ Performance
+
+- various performance tweaks by [@jdx](https://github.com/jdx) in [#2091](https://github.com/jdx/mise/pull/2091)
+
+### 🧪 Testing
+
+- only set realpath for macos by [@jdx](https://github.com/jdx) in [cdd1c93](https://github.com/jdx/mise/commit/cdd1c935f335e0119a7821b22415b792cc83109a)
+
 ## [2024.5.11](https://github.com/jdx/mise/compare/v2024.5.10..v2024.5.11) - 2024-05-13
 
 ### 🐛 Bug Fixes
