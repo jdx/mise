@@ -223,7 +223,7 @@ impl ConfigFile for MiseToml {
         self.plugins.clone()
     }
 
-    fn env_entries(&self) -> Vec<EnvDirective> {
+    fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
         let env_entries = self.env.0.iter().cloned();
         let path_entries = self
             .env_path
@@ -235,11 +235,15 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|p| EnvDirective::File(p.clone()))
             .collect_vec();
-        path_entries
+        let all = path_entries
             .into_iter()
             .chain(env_files)
             .chain(env_entries)
-            .collect()
+            .collect::<Vec<_>>();
+        if !all.is_empty() {
+            trust_check(&self.path)?;
+        }
+        Ok(all)
     }
 
     fn tasks(&self) -> Vec<&Task> {
@@ -339,9 +343,10 @@ impl Debug for MiseToml {
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
         }
-        let env = self.env_entries();
-        if !env.is_empty() {
-            d.field("env", &env);
+        if let Ok(env) = self.env_entries() {
+            if !env.is_empty() {
+                d.field("env", &env);
+            }
         }
         if !self.alias.is_empty() {
             d.field("alias", &self.alias);
@@ -867,7 +872,7 @@ mod tests {
     fn test_fixture() {
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
-        assert_debug_snapshot!(cf.env_entries());
+        assert_debug_snapshot!(cf.env_entries().unwrap());
         assert_debug_snapshot!(cf.plugins());
         assert_snapshot!(replace_path(&format!("{:#?}", cf.to_toolset().unwrap())));
         assert_debug_snapshot!(cf.alias);
@@ -1177,6 +1182,6 @@ mod tests {
     }
 
     fn parse_env(toml: String) -> String {
-        parse(toml).env_entries().into_iter().join("\n")
+        parse(toml).env_entries().unwrap().into_iter().join("\n")
     }
 }

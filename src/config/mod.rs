@@ -360,7 +360,7 @@ impl Config {
         }
     }
 
-    fn validate(&self) -> Result<()> {
+    fn validate(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
             if let Some(min) = cf.min_version() {
                 let cur = &*version::V;
@@ -375,12 +375,18 @@ impl Config {
         Ok(())
     }
 
-    fn load_env(&self) -> Result<EnvResults> {
+    fn load_env(&self) -> eyre::Result<EnvResults> {
         let entries = self
             .config_files
             .iter()
             .rev()
-            .flat_map(|(source, cf)| cf.env_entries().into_iter().map(|e| (e, source.clone())))
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
             .collect();
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
