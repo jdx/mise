@@ -293,7 +293,7 @@ impl Forge for NodePlugin {
         let config = Config::get();
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
-        debug!("node build opts: {:#?}", opts);
+        trace!("node build opts: {:#?}", opts);
         if settings.node_compile {
             self.install_compiled(ctx, &opts)?;
         } else {

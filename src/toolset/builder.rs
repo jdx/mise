@@ -59,7 +59,9 @@ impl ToolsetBuilder {
         self.load_config_files(config, &mut toolset)?;
         self.load_runtime_env(&mut toolset, env::vars().collect());
         self.load_runtime_args(&mut toolset);
-        toolset.resolve();
+        if let Err(err) = toolset.resolve() {
+            warn!("failed to resolve toolset: {err:#}");
+        }
 
         debug!("Toolset ({:?}): {toolset}", start_ms.elapsed());
         Ok(toolset)

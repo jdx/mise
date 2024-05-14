@@ -13,7 +13,7 @@ use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionRequest};
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
@@ -26,7 +26,7 @@ pub struct ToolVersions {
     path: PathBuf,
     pre: String,
     plugins: IndexMap<ForgeArg, ToolVersionPlugin>,
-    toolset: Toolset,
+    tools: ToolRequestSet,
 }
 
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl ToolVersions {
         context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
         ToolVersions {
             context,
-            toolset: Toolset::new(ToolSource::ToolVersions(filename.to_path_buf())),
+            tools: ToolRequestSet::new(),
             path: filename.to_path_buf(),
             ..Default::default()
         }
@@ -125,10 +125,11 @@ impl ToolVersions {
     }
 
     fn populate_toolset(&mut self) {
+        let source = ToolSource::ToolVersions(self.path.clone());
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
                 let tvr = ToolVersionRequest::new(plugin.clone(), version);
-                self.toolset.add_version(tvr)
+                self.tools.add_version(tvr, &source)
             }
         }
     }
@@ -196,8 +197,8 @@ impl ConfigFile for ToolVersions {
         Ok(s.trim_end().to_string() + "\n")
     }
 
-    fn to_toolset(&self) -> Result<Toolset> {
-        Ok(self.toolset.clone())
+    fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
+        Ok(self.tools.clone())
     }
 }
 

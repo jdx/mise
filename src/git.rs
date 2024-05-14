@@ -165,7 +165,7 @@ impl Git {
 
     pub fn get_remote_url(&self) -> Option<String> {
         let dir = &self.dir;
-        if !dir.exists() {
+        if !self.exists() {
             return None;
         }
         if let Ok(repo) = self.repo() {
@@ -192,6 +192,10 @@ impl Git {
             Some((url, _ref)) => (url.to_string(), Some(_ref.to_string())),
             None => (url.to_string(), None),
         }
+    }
+
+    pub fn exists(&self) -> bool {
+        self.dir.join(".git").is_dir()
     }
 }
 

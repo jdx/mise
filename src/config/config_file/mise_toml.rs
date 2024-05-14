@@ -22,7 +22,7 @@ use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolSource, ToolVersionOptions, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionOptions, ToolVersionRequest};
 use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
@@ -304,8 +304,9 @@ impl ConfigFile for MiseToml {
         Ok(self.doc()?.to_string())
     }
 
-    fn to_toolset(&self) -> eyre::Result<Toolset> {
-        let mut toolset = Toolset::new(ToolSource::MiseToml(self.path.clone()));
+    fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
+        let source = ToolSource::MiseToml(self.path.clone());
+        let mut trs = ToolRequestSet::new();
         for (fa, tvp) in &self.tools {
             for tool in &tvp.0 {
                 if let ToolVersionType::Path(_) = &tool.tt {
@@ -317,10 +318,10 @@ impl ConfigFile for MiseToml {
                     *v = self.parse_template(v)?;
                 }
                 let tvr = ToolVersionRequest::new_opts(fa.clone(), &version, options);
-                toolset.add_version(tvr);
+                trs.add_version(tvr, &source);
             }
         }
-        Ok(toolset)
+        Ok(trs)
     }
 
     fn aliases(&self) -> AliasMap {

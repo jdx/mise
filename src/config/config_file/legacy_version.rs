@@ -5,26 +5,28 @@ use eyre::Result;
 use crate::cli::args::ForgeArg;
 use crate::config::config_file::ConfigFile;
 use crate::forge::ForgeList;
-use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionRequest};
 
 #[derive(Debug)]
 pub struct LegacyVersionFile {
     path: PathBuf,
-    toolset: Toolset,
+    tools: ToolRequestSet,
 }
 
 impl LegacyVersionFile {
     pub fn parse(path: PathBuf, plugins: ForgeList) -> Result<Self> {
-        let mut toolset = Toolset::new(ToolSource::LegacyVersionFile(path.clone()));
+        let source = ToolSource::LegacyVersionFile(path.clone());
+        let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
             let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
-                toolset.add_version(ToolVersionRequest::new(plugin.fa().clone(), version));
+                let tr = ToolVersionRequest::new(plugin.fa().clone(), version);
+                tools.add_version(tr, &source);
             }
         }
 
-        Ok(Self { toolset, path })
+        Ok(Self { tools, path })
     }
 }
 
@@ -49,7 +51,7 @@ impl ConfigFile for LegacyVersionFile {
         unimplemented!()
     }
 
-    fn to_toolset(&self) -> Result<Toolset> {
-        Ok(self.toolset.clone())
+    fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
+        Ok(self.tools.clone())
     }
 }
