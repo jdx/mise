@@ -37,9 +37,10 @@ for index in "${!FILES[@]}"; do
   fi
 
   # Actually run the test
-  if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
-    status=1
-  fi
+  "$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
+  # if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
+  #   status=1
+  # fi
   test_count=$((test_count + 1))
 done
 
