@@ -1,14 +1,17 @@
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::os::unix::fs::symlink;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -327,7 +330,18 @@ impl Iterator for FindUp {
 /// returns the first executable in PATH
 /// will not include mise bin paths or other paths added by mise
 pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    _which(name, &env::PATH)
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = Lazy::new(Default::default);
+
+    let name = name.as_ref();
+    if let Some(path) = CACHE.lock().unwrap().get(name) {
+        return path.clone();
+    }
+    let path = _which(name, &env::PATH);
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(name.to_path_buf(), path.clone());
+    path
 }
 
 /// returns the first executable in PATH
