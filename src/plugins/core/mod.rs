@@ -39,6 +39,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Forge>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
+        Arc::new(ErlangPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
@@ -47,7 +48,6 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     ];
     let settings = Settings::get();
     if settings.experimental {
-        plugins.push(Arc::new(ErlangPlugin::new()));
         plugins.push(Arc::new(ZigPlugin::new()));
     }
     plugins
