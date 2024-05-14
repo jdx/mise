@@ -37,12 +37,12 @@ pub enum ToolVersionRequest {
 }
 
 impl ToolVersionRequest {
-    pub fn new(forge: ForgeArg, s: &str) -> Self {
+    pub fn new(forge: ForgeArg, s: &str) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some(("ref", r)) => format!("ref:{}", r),
             _ => s.to_string(),
         };
-        match s.split_once(':') {
+        Ok(match s.split_once(':') {
             Some(("ref", r)) => Self::Ref {
                 forge,
                 ref_: r.to_string(),
@@ -70,18 +70,18 @@ impl ToolVersionRequest {
                     }
                 }
             }
-            _ => panic!("invalid tool version request: {s}"),
-        }
+            _ => bail!("invalid tool version request: {s}"),
+        })
     }
-    pub fn new_opts(forge: ForgeArg, s: &str, options: ToolVersionOptions) -> Self {
-        let mut tvr = Self::new(forge, s);
+    pub fn new_opts(forge: ForgeArg, s: &str, options: ToolVersionOptions) -> eyre::Result<Self> {
+        let mut tvr = Self::new(forge, s)?;
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
             | Self::Ref { options: o, .. } => *o = options,
             _ => Default::default(),
         }
-        tvr
+        Ok(tvr)
     }
     pub fn forge(&self) -> &ForgeArg {
         match self {

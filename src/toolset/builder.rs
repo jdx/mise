@@ -57,8 +57,8 @@ impl ToolsetBuilder {
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset)?;
-        self.load_runtime_env(&mut toolset, env::vars().collect());
-        self.load_runtime_args(&mut toolset);
+        self.load_runtime_env(&mut toolset, env::vars().collect())?;
+        self.load_runtime_args(&mut toolset)?;
         if let Err(err) = toolset.resolve() {
             warn!("failed to resolve toolset: {err:#}");
         }
@@ -77,9 +77,13 @@ impl ToolsetBuilder {
         Ok(())
     }
 
-    fn load_runtime_env(&self, ts: &mut Toolset, env: BTreeMap<String, String>) {
+    fn load_runtime_env(
+        &self,
+        ts: &mut Toolset,
+        env: BTreeMap<String, String>,
+    ) -> eyre::Result<()> {
         if self.global_only {
-            return;
+            return Ok(());
         }
         for (k, v) in env {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
@@ -95,17 +99,18 @@ impl ToolsetBuilder {
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source);
                 for v in v.split_whitespace() {
-                    let tvr = ToolVersionRequest::new(fa.clone(), v);
+                    let tvr = ToolVersionRequest::new(fa.clone(), v)?;
                     env_ts.add_version(tvr);
                 }
                 ts.merge(env_ts);
             }
         }
+        Ok(())
     }
 
-    fn load_runtime_args(&self, ts: &mut Toolset) {
+    fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         if self.global_only {
-            return;
+            return Ok(());
         }
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
@@ -125,11 +130,12 @@ impl ToolsetBuilder {
 
                     if set_as_latest {
                         // no active version, so use "latest"
-                        arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest"));
+                        arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest")?);
                     }
                 }
             }
             ts.merge(arg_ts);
         }
+        Ok(())
     }
 }

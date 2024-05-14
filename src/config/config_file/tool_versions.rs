@@ -70,7 +70,7 @@ impl ToolVersions {
         }
 
         cf.plugins = Self::parse_plugins(&s);
-        cf.populate_toolset();
+        cf.populate_toolset()?;
         trace!("{cf}");
         Ok(cf)
     }
@@ -124,14 +124,15 @@ impl ToolVersions {
             .push(version.to_string());
     }
 
-    fn populate_toolset(&mut self) {
+    fn populate_toolset(&mut self) -> eyre::Result<()> {
         let source = ToolSource::ToolVersions(self.path.clone());
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
-                let tvr = ToolVersionRequest::new(plugin.clone(), version);
+                let tvr = ToolVersionRequest::new(plugin.clone(), version)?;
                 self.tools.add_version(tvr, &source)
             }
         }
+        Ok(())
     }
 }
 
