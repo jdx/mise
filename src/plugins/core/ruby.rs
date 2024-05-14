@@ -370,7 +370,9 @@ impl Forge for RubyPlugin {
         self.test_ruby(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_rubygems_hook(&ctx.tv)?;
         self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
-        self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref())?;
+        if let Err(err) = self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref()) {
+            warn!("{err}");
+        }
         Ok(())
     }
 
