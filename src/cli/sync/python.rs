@@ -3,8 +3,7 @@ use itertools::sorted;
 
 use crate::config::Config;
 use crate::env::PYENV_ROOT;
-use crate::file;
-use crate::{dirs, plugins};
+use crate::{dirs, file, plugins};
 
 /// Symlinks all tool versions from an external tool into mise
 ///

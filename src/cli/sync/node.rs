@@ -5,8 +5,7 @@ use itertools::sorted;
 
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
-use crate::{cmd, dirs};
-use crate::{file, plugins};
+use crate::{cmd, dirs, file, plugins};
 
 /// Symlinks all tool versions from an external tool into mise
 ///

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{cli::args::ForgeArg, dirs, file};
+use crate::cli::args::ForgeArg;
+use crate::{dirs, file};
 
 use super::ForgeType;
 
