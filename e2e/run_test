@@ -42,7 +42,7 @@ create_isolated_env() {
 }
 
 remove_isolated_env() {
-  rm -rf "$TEST_ISOLATED_DIR"
+  rm -rf "$TEST_ISOLATED_DIR" &
 }
 
 within_isolated_env() {

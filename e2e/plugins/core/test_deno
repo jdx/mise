@@ -6,8 +6,8 @@ if [[ "${MISE_DISABLE_TOOLS:-}" = *deno* ]]; then
 fi
 
 cat <<EOF >.deno-version
-1.35.3
+1.43.3
 EOF
 
 mise i deno
-assert_contains "mise x deno -- deno -V" "deno 1.35.3"
+assert_contains "mise x deno -- deno -V" "deno 1.43.3"
