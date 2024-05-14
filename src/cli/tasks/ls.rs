@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use console::truncate_str;
 use eyre::Result;
 use itertools::Itertools;
+use serde::Serialize;
 use tabled::Tabled;
 
 use crate::config::{Config, Settings};
@@ -29,6 +32,10 @@ pub struct TasksLs {
     /// Show hidden tasks
     #[clap(long, verbatim_doc_comment)]
     pub hidden: bool,
+
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 
     /// Sort by column. Default is name.
     #[clap(long, value_name = "COLUMN", verbatim_doc_comment)]
@@ -64,7 +71,11 @@ impl TasksLs {
             .filter(|t| self.hidden || !t.hide)
             .sorted_by(|a, b| self.sort(a, b))
             .collect();
-        self.display(tasks)?;
+        if self.json {
+            self.display_json(tasks)?;
+        } else {
+            self.display(tasks)?;
+        }
 
         Ok(())
     }
@@ -78,6 +89,12 @@ impl TasksLs {
             table::disable_columns(&mut table, vec![1]);
         }
         miseprintln!("{table}");
+        Ok(())
+    }
+
+    fn display_json(self, tasks: Vec<&Task>) -> Result<()> {
+        let tasks: Vec<JSONTask> = tasks.into_iter().map(|t| t.into()).collect();
+        miseprintln!("{}", serde_json::to_string_pretty(&tasks)?);
         Ok(())
     }
 
@@ -115,6 +132,26 @@ impl From<&Task> for Row {
             description: style::nblue(truncate(&task.description, 40)).to_string(),
             // command: style::ndim(truncate(&cmd, 20)).dim().to_string(),
             source: display_path(&task.config_source),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct JSONTask {
+    name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    aliases: Vec<String>,
+    description: String,
+    source: PathBuf,
+}
+
+impl From<&Task> for JSONTask {
+    fn from(task: &Task) -> Self {
+        Self {
+            name: task.name.clone(),
+            aliases: task.aliases.clone(),
+            description: task.description.clone(),
+            source: task.config_source.clone(),
         }
     }
 }
