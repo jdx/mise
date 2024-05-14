@@ -58,14 +58,19 @@ impl TasksLs {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise tasks ls`")?;
-        let rows = config
+        let tasks = config
             .tasks()?
             .values()
             .filter(|t| self.hidden || !t.hide)
             .sorted_by(|a, b| self.sort(a, b))
-            .map(|t| t.into())
-            .collect::<Vec<Row>>();
+            .collect();
+        self.display(tasks)?;
 
+        Ok(())
+    }
+
+    fn display(self, tasks: Vec<&Task>) -> Result<()> {
+        let rows = tasks.into_iter().map(|t| t.into()).collect::<Vec<Row>>();
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
         // hide columns alias
@@ -73,7 +78,6 @@ impl TasksLs {
             table::disable_columns(&mut table, vec![1]);
         }
         miseprintln!("{table}");
-
         Ok(())
     }
 
