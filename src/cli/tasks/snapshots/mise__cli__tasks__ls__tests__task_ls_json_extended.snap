@@ -1,0 +1,30 @@
+---
+source: src/cli/tasks/ls.rs
+expression: output
+---
+[
+  {
+    "alias": "",
+    "description": "",
+    "name": "configtask",
+    "source": "~/config/config.toml"
+  },
+  {
+    "alias": "ft",
+    "description": "This is a test build script",
+    "name": "filetask",
+    "source": "~/cwd/.mise/tasks/filetask"
+  },
+  {
+    "alias": "",
+    "description": "",
+    "name": "lint",
+    "source": "~/config/config.toml"
+  },
+  {
+    "alias": "",
+    "description": "",
+    "name": "test",
+    "source": "~/config/config.toml"
+  }
+]
