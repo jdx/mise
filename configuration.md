@@ -9,16 +9,26 @@ that has lot more flexibility. It supports functionality that is not possible wi
 - passing options to plugins like `virtualenv=".venv"` for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
-They can use any of the following project locations (in order of precedence, top is highest):
+They can use any of the following file locations (in order of precedence, top is highest):
 
+- `.mise.local.toml`
+- `mise.local.toml`
+- `.mise.$MISE_ENV.toml`
+- `mise.$MISE_ENV.toml`
 - `.mise.toml`
 - `.mise/config.toml`
+- `mise.toml`
+- `mise/config.toml`
 - `.config/mise.toml`
 - `.config/mise/config.toml`
 
-They can also be named `.mise.local.toml` and environment-specific files like `.mise.production.toml`.
-Can also be opted-in. See [Config Environments](/profiles) for more details.
-Run `mise config` to see the order of precedence on your system.
+See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
+These files recurse upwards, so if you have a `~/src/work/myproj/.mise.toml` file, what is defined there will override anything set in
+`~/src/work/.mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
+
+:::tip
+Run `mise config` to see what files mise has loaded along with their precedence.
+:::
 
 Here is what an `.mise.toml` looks like:
 
