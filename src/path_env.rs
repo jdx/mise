@@ -4,9 +4,9 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use crate::config::Settings;
 use itertools::Itertools;
 
+use crate::config::Settings;
 use crate::dirs;
 
 pub struct PathEnv {

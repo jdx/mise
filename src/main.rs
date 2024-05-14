@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate contracts;
 extern crate core;
 #[macro_use]
 extern crate eyre;
@@ -9,8 +11,6 @@ extern crate insta;
 #[cfg(test)]
 #[macro_use]
 extern crate pretty_assertions;
-#[macro_use]
-extern crate contracts;
 #[macro_use]
 extern crate strum;
 

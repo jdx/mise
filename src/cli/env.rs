@@ -69,9 +69,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::tests::grep;
     use std::env;
 
+    use crate::cli::tests::grep;
     use crate::dirs;
 
     #[test]

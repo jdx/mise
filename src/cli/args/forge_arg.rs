@@ -1,8 +1,8 @@
-use crate::dirs;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
 
+use crate::dirs;
 use crate::forge::unalias_forge;
 use crate::forge::ForgeType;
 
