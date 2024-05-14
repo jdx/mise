@@ -140,7 +140,6 @@ test-case = "3.3.1"
 
 [features]
 default = ["native-tls"]
-git2 = []
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
