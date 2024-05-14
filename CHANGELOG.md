@@ -1,5 +1,30 @@
 # Changelog
 
+## [2024.5.15](https://github.com/jdx/mise/compare/v2024.5.14..v2024.5.15) - 2024-05-14
+
+### 🚀 Features
+
+- support non-hidden configs by [@jdx](https://github.com/jdx) in [#2114](https://github.com/jdx/mise/pull/2114)
+
+### 🐛 Bug Fixes
+
+- handle sub-0.1 in new resolving logic by [@jdx](https://github.com/jdx) in [fd943a1](https://github.com/jdx/mise/commit/fd943a184bcc64866b761514788b5a0e4be07ac0)
+
+### 🚜 Refactor
+
+- ToolVersionRequest -> ToolRequest by [@jdx](https://github.com/jdx) in [45caece](https://github.com/jdx/mise/commit/45caece3517792b02444620edb96c18c2d7513c2)
+
+### 🧪 Testing
+
+- fail-fast by [@jdx](https://github.com/jdx) in [2338376](https://github.com/jdx/mise/commit/23383760900ede666865e073acb680dced37d8fc)
+- update deno version by [@jdx](https://github.com/jdx) in [71f5480](https://github.com/jdx/mise/commit/71f5480e780953e03aa97682535a58767956a927)
+- check plugin dependencies with python and pipx. by [@Adirelle](https://github.com/Adirelle) in [#2109](https://github.com/jdx/mise/pull/2109)
+
+### 🔍 Other Changes
+
+- optimize imports by [@jdx](https://github.com/jdx) in [892184f](https://github.com/jdx/mise/commit/892184f5681c7f1863cbd89f07fca0cf5fa3afb2)
+- optimize imports by [@jdx](https://github.com/jdx) in [54bfee6](https://github.com/jdx/mise/commit/54bfee6b435f8b1cbfba7210f73b9dfde1a3c6f1)
+
 ## [2024.5.14](https://github.com/jdx/mise/compare/v2024.5.13..v2024.5.14) - 2024-05-14
 
 ### 🚀 Features
