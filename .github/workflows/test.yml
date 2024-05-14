@@ -115,6 +115,7 @@ jobs:
           TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
+          retry_wait_seconds: 30
           max_attempts: 2
           command: mise tasks run test:coverage
       - uses: actions/upload-artifact@v4
