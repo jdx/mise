@@ -40,7 +40,8 @@ impl FromStr for ToolArg {
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolVersionRequest::new(forge.clone(), v));
+            .map(|v| ToolVersionRequest::new(forge.clone(), v))
+            .transpose()?;
         Ok(Self {
             tvr,
             version: version.map(|v| v.to_string()),
@@ -97,7 +98,7 @@ impl ToolArg {
             let a = tools[0].clone();
             let b = tools[1].clone();
             if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.forge.name) {
-                tools[1].tvr = Some(ToolVersionRequest::new(a.forge.clone(), &b.forge.name));
+                tools[1].tvr = Some(ToolVersionRequest::new(a.forge.clone(), &b.forge.name)?);
                 tools[1].forge = a.forge;
                 tools[1].version_type = b.forge.name.parse()?;
                 tools[1].version = Some(b.forge.name);
@@ -109,7 +110,7 @@ impl ToolArg {
 
     pub fn with_version(self, version: &str) -> Self {
         Self {
-            tvr: Some(ToolVersionRequest::new(self.forge.clone(), version)),
+            tvr: Some(ToolVersionRequest::new(self.forge.clone(), version).unwrap()),
             version: Some(version.into()),
             version_type: version.parse().unwrap(),
             ..self
@@ -186,7 +187,7 @@ mod tests {
                 forge: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolVersionRequest::new("node".into(), "20")),
+                tvr: Some(ToolVersionRequest::new("node".into(), "20").unwrap()),
             }
         );
     }
@@ -200,7 +201,7 @@ mod tests {
                 forge: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolVersionRequest::new("node".into(), "lts")),
+                tvr: Some(ToolVersionRequest::new("node".into(), "lts").unwrap()),
             }
         );
     }

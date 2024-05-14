@@ -254,20 +254,20 @@ impl Toolset {
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_installed_versions()?;
-                Ok(versions
+                versions
                     .into_iter()
                     .map(
                         |v| match current_versions.get(&(p.id().into(), v.clone())) {
-                            Some((p, tv)) => (p.clone(), tv.clone()),
+                            Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
-                                let tv = ToolVersionRequest::new(p.fa().clone(), &v)
+                                let tv = ToolVersionRequest::new(p.fa().clone(), &v)?
                                     .resolve(p.as_ref(), false)
                                     .unwrap();
-                                (p.clone(), tv)
+                                Ok((p.clone(), tv))
                             }
                         },
                     )
-                    .collect_vec())
+                    .collect::<Result<Vec<_>>>()
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()

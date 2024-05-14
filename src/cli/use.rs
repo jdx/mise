@@ -88,10 +88,10 @@ impl Use {
             .iter()
             .cloned()
             .map(|t| match t.tvr {
-                Some(tvr) => tvr,
+                Some(tvr) => Ok(tvr),
                 None => ToolVersionRequest::new(t.forge, "latest"),
             })
-            .collect();
+            .collect::<Result<_>>()?;
         let versions = ts.install_versions(
             &config,
             versions.clone(),
