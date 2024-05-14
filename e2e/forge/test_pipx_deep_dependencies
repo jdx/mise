@@ -1,0 +1,36 @@
+# shellcheck shell=bash disable=SC2016,SC2034
+
+# Create system "tools" that always fail and push them to the front of PATH
+cat >"$HOME/bin/fail" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM $(basename $0)! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/fail
+for TOOL in python python3 pipx; do
+  ln -s fail "$HOME/bin/$TOOL"
+done
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail "python"
+assert_fail "python3"
+assert_fail "pipx"
+
+# Use only precompiled python
+export MISE_PYTHON_COMPILE=0
+
+# Set up a 3-step installation: python@3.12.3 > pipx@1.5.0 > pipx:mkdocs@1.6.0
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+pipx = "1.5.0"
+"pipx:mkdocs" = "1.6.0"
+EOF
+
+# Install the tools
+mise install
+
+# Assert that mkdocs 1.6.0 has been installed with pipx and uses python 3.12
+# (mkdocs conveniently returns its installation path in with --version)
+assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/venvs/mkdocs/lib/python3.12/"
