@@ -471,7 +471,7 @@ impl Toolset {
                     .is_ok_and(|f| !f.is_empty()),
             })
             .collect_vec();
-        if missing.is_empty() {
+        if missing.is_empty() || *env::__MISE_SHIM {
             return;
         }
         let versions = missing
