@@ -1,8 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::RwLock;
 
-use eyre::WrapErr;
-use eyre::{eyre, Result};
+use eyre::{eyre, Result, WrapErr};
 
 use crate::cache::CacheManager;
 use crate::config::Config;

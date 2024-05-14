@@ -16,12 +16,9 @@ use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
-use crate::toolset::Toolset;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{cmd, dirs, forge};
-use crate::{duration, env};
-use crate::{file, shims};
+use crate::{cmd, dirs, duration, env, file, forge, shims};
 
 /// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]

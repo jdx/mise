@@ -26,10 +26,8 @@ use crate::env::TERM_WIDTH;
 use crate::forge::Forge;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
-use crate::runtime_symlinks;
-use crate::shims;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{env, forge};
+use crate::{env, forge, runtime_symlinks, shims};
 
 mod builder;
 mod tool_request_set;

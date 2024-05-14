@@ -25,8 +25,7 @@ use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::ctrlc;
-use crate::ui::style;
+use crate::ui::{ctrlc, style};
 use crate::{env, file, ui};
 
 use super::args::ToolArg;

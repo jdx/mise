@@ -16,9 +16,7 @@ use crate::file::{create_dir_all, display_path, remove_all};
 use crate::forge::Forge;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
-use crate::{dirs, file};
-use crate::{env, logger};
-use crate::{fake_asdf, forge};
+use crate::{dirs, env, fake_asdf, file, forge, logger};
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub fn handle_shim() -> Result<()> {

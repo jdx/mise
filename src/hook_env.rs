@@ -6,8 +6,7 @@ use std::time::SystemTime;
 
 use base64::prelude::*;
 use eyre::Result;
-use flate2::write::ZlibDecoder;
-use flate2::write::ZlibEncoder;
+use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
