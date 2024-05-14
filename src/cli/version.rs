@@ -7,9 +7,8 @@ use versions::Versioning;
 
 use crate::build_time::{git_sha, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
-use crate::env;
 use crate::file::modified_duration;
-use crate::{dirs, duration, file};
+use crate::{dirs, duration, env, file};
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Show mise version", alias = "v")]

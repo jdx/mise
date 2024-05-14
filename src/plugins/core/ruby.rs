@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
-use eyre::WrapErr;
+use eyre::{Result, WrapErr};
 
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;

@@ -1,13 +1,11 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::ffi;
-use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::path;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::{ffi, fmt, path};
 
 use console::truncate_str;
 use either::Either;
@@ -17,8 +15,7 @@ use itertools::Itertools;
 use petgraph::prelude::*;
 use serde_derive::Deserialize;
 
-use crate::config::config_file::toml::deserialize_arr;
-use crate::config::config_file::toml::TomlParser;
+use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
 use crate::file;
 use crate::tera::{get_tera, BASE_CONTEXT};

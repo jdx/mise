@@ -6,8 +6,7 @@ use console::truncate_str;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::config::Config;
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
 use crate::env::{TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};

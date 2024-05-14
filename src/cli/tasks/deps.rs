@@ -3,14 +3,10 @@ use eyre::Result;
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
-use crate::{
-    config::{Config, Settings},
-    task::{Deps, Task},
-    ui::{
-        style::{self},
-        tree::print_tree,
-    },
-};
+use crate::config::{Config, Settings};
+use crate::task::{Deps, Task};
+use crate::ui::style::{self};
+use crate::ui::tree::print_tree;
 
 /// [experimental] Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]

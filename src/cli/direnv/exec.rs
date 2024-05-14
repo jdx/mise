@@ -1,6 +1,5 @@
 use duct::Expression;
-use eyre::Result;
-use eyre::WrapErr;
+use eyre::{Result, WrapErr};
 use serde_derive::Deserialize;
 
 use crate::config::Config;

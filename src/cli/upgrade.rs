@@ -7,11 +7,10 @@ use eyre::{Context, Result};
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge::Forge;
-use crate::shims;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{runtime_symlinks, ui};
+use crate::{runtime_symlinks, shims, ui};
 
 /// Upgrades outdated tool versions
 #[derive(Debug, clap::Args)]
