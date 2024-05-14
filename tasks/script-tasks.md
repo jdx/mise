@@ -33,7 +33,7 @@ of course they'll need to find a different way to install their dev tools the ta
 
 ## Task Grouping
 
-Script tasks in `.mise/tasks` or `.config/mise/tasks` can be grouped into
+Script tasks in `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
 sub-directories which will automatically apply prefixes to their names
 when loaded.
 

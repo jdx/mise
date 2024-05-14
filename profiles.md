@@ -11,15 +11,22 @@ the current directory. These are intended to not be committed to version control
 The priority of these files goes in this order (bottom overrides top):
 
 - `.config/mise/config.toml`
+- `mise/config.toml`
+- `mise.toml`
 - `.mise/config.toml`
 - `.mise.toml`
 - `.config/mise/config.local.toml`
+- `mise/config.local.toml`
+- `mise.local.toml`
 - `.mise/config.local.toml`
 - `.mise.local.toml`
 - `.config/mise/config.{MISE_ENV}.toml`
+- `mise/config.{MISE_ENV}.toml`
+- `mise.{MISE_ENV}.toml`
 - `.mise/config.{MISE_ENV}.toml`
 - `.mise.{MISE_ENV}.toml`
 - `.config/mise/config.{MISE_ENV}.local.toml`
+- `mise/config.{MISE_ENV}.local.toml`
 - `.mise/config.{MISE_ENV}.local.toml`
 - `.mise.{MISE_ENV}.local.toml`
 
