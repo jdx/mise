@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.5.14](https://github.com/jdx/mise/compare/v2024.5.13..v2024.5.14) - 2024-05-14
+
+### 🚀 Features
+
+- **(erlang)** make erlang core plugin stable by [@jdx](https://github.com/jdx) in [d4bde6a](https://github.com/jdx/mise/commit/d4bde6a15297d693a00e7194ea3e20f399ae4184)
+- **(python)** make python_compile 3-way switch by [@jdx](https://github.com/jdx) in [#2100](https://github.com/jdx/mise/pull/2100)
+- raise warning instead if install default gems failed by [@jiz4oh](https://github.com/jiz4oh) in [83350be](https://github.com/jdx/mise/commit/83350be1976185dd2dd2f13e8f7a9ee940449d16)
+
+### 🐛 Bug Fixes
+
+- **(python)** correct flavor for macos-x64 by [@jdx](https://github.com/jdx) in [#2104](https://github.com/jdx/mise/pull/2104)
+- warn if failure installing default packages by [@jdx](https://github.com/jdx) in [#2102](https://github.com/jdx/mise/pull/2102)
+- hide missing runtime warning in shim context by [@jdx](https://github.com/jdx) in [#2103](https://github.com/jdx/mise/pull/2103)
+- handle tool_version parse failures by [@jdx](https://github.com/jdx) in [#2105](https://github.com/jdx/mise/pull/2105)
+
+### ⚡ Performance
+
+- memoize `which` results by [@jdx](https://github.com/jdx) in [89291ec](https://github.com/jdx/mise/commit/89291ecaa4bc53e99d61eaf3c24040f9fee11240)
+
+### 🔍 Other Changes
+
+- do not fail workflow if cant post message by [@jdx](https://github.com/jdx) in [0f3bfd3](https://github.com/jdx/mise/commit/0f3bfd38c5d9a7add05499bb230577ebe849060f)
+
+### New Contributors
+
+* @jiz4oh made their first contribution
+
 ## [2024.5.13](https://github.com/jdx/mise/compare/v2024.5.12..v2024.5.13) - 2024-05-14
 
 ### 🚀 Features
