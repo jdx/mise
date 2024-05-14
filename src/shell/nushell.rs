@@ -105,8 +105,9 @@ impl Shell for Nushell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_hook_init() {
