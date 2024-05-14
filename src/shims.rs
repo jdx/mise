@@ -32,6 +32,7 @@ pub fn handle_shim() -> Result<()> {
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
     args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
+    env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
         c: None,

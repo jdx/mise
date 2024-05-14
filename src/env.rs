@@ -85,6 +85,9 @@ pub static MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
+// true if running inside a shim
+pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
+
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
