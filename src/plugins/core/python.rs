@@ -127,6 +127,13 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
+                if Settings::get().python_compile == Some(false) {
+                    bail!(
+                        "no precompiled python found for {}.\n\
+                        To compile python from source, run: mise settings set python_compile 1",
+                        ctx.tv.version
+                    );
+                }
                 debug!("no precompiled python found for {}", ctx.tv.version);
                 let mut available = precompiled_versions.iter().map(|(v, _, _)| v);
                 trace!("available precompiled versions: {}", available.join(", "));
@@ -305,10 +312,18 @@ impl Forge for PythonPlugin {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        if Settings::get().python_compile == Some(false) {
+            Ok(self
+                .fetch_precompiled_remote_versions()?
+                .iter()
+                .map(|(v, _, _)| v.clone())
+                .collect())
+        } else {
+            self.core
+                .remote_version_cache
+                .get_or_try_init(|| self.fetch_remote_versions())
+                .cloned()
+        }
     }
 
     fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
@@ -318,7 +333,7 @@ impl Forge for PythonPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
-        if settings.python_compile {
+        if settings.python_compile == Some(true) {
             self.install_compiled(ctx)?;
         } else {
             self.install_precompiled(ctx)?;
