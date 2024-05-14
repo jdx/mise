@@ -360,7 +360,7 @@ impl Forge for RubyPlugin {
     #[requires(matches!(ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         if let Err(err) = self.update_build_tool() {
-            warn!("{err}");
+            warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("running ruby-build".into());
         let config = Config::get();
@@ -371,7 +371,7 @@ impl Forge for RubyPlugin {
         self.install_rubygems_hook(&ctx.tv)?;
         self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(err) = self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref()) {
-            warn!("{err}");
+            warn!("failed to install default ruby gems {err:#}");
         }
         Ok(())
     }

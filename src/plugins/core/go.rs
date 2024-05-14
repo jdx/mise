@@ -154,7 +154,9 @@ impl GoPlugin {
 
     fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
         self.test_go(tv, pr)?;
-        self.install_default_packages(tv, pr)?;
+        if let Err(err) = self.install_default_packages(tv, pr) {
+            warn!("failed to install default go packages: {err:#}");
+        }
         let settings = Settings::get();
         if settings.go_set_gopath {
             warn!("setting go_set_gopath is deprecated");
