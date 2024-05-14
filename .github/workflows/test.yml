@@ -31,8 +31,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: rustfmt
+        with: { toolchain: nightly, components: rustfmt }
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: stable, components: rustfmt }
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
