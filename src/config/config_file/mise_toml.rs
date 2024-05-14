@@ -317,7 +317,7 @@ impl ConfigFile for MiseToml {
                 for v in options.values_mut() {
                     *v = self.parse_template(v)?;
                 }
-                let tvr = ToolVersionRequest::new_opts(fa.clone(), &version, options);
+                let tvr = ToolVersionRequest::new_opts(fa.clone(), &version, options)?;
                 trs.add_version(tvr, &source);
             }
         }

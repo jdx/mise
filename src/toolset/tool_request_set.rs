@@ -110,8 +110,8 @@ impl ToolRequestSetBuilder {
         let mut trs = ToolRequestSet::default();
         self.load_config_files(&mut trs)?;
         if !self.global_only {
-            self.load_runtime_env(&mut trs);
-            self.load_runtime_args(&mut trs);
+            self.load_runtime_env(&mut trs)?;
+            self.load_runtime_args(&mut trs)?;
         }
 
         let forges = trs.tools.keys().cloned().collect::<Vec<_>>();
@@ -142,7 +142,7 @@ impl ToolRequestSetBuilder {
         Ok(())
     }
 
-    fn load_runtime_env(&self, trs: &mut ToolRequestSet) {
+    fn load_runtime_env(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
         for (k, v) in env::vars() {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
@@ -157,15 +157,16 @@ impl ToolRequestSetBuilder {
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = ToolRequestSet::new();
                 for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(fa.clone(), v);
+                    let tvr = ToolRequest::new(fa.clone(), v)?;
                     env_ts.add_version(tvr, &source);
                 }
                 merge(trs, env_ts);
             }
         }
+        Ok(())
     }
 
-    fn load_runtime_args(&self, trs: &mut ToolRequestSet) {
+    fn load_runtime_args(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
@@ -178,13 +179,14 @@ impl ToolRequestSetBuilder {
 
                     if !trs.tools.contains_key(&arg.forge) {
                         // no active version, so use "latest"
-                        let tr = ToolRequest::new(arg.forge.clone(), "latest");
+                        let tr = ToolRequest::new(arg.forge.clone(), "latest")?;
                         arg_ts.add_version(tr, &ToolSource::Argument);
                     }
                 }
             }
             merge(trs, arg_ts);
         }
+        Ok(())
     }
 }
 

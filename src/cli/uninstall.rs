@@ -99,11 +99,11 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.fa().clone(), v);
+                        let tvr = ToolVersionRequest::new(tool.fa().clone(), v)?;
                         let tv = ToolVersion::new(tool.as_ref(), tvr, v.into());
-                        (tool.clone(), tv)
+                        Ok((tool.clone(), tv))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?;
                 if let Some(tvr) = &a.tvr {
                     tvs.push((tool.clone(), tvr.resolve(tool.as_ref(), false)?));
                 }

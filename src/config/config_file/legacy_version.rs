@@ -21,7 +21,7 @@ impl LegacyVersionFile {
         for plugin in plugins {
             let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
-                let tr = ToolVersionRequest::new(plugin.fa().clone(), version);
+                let tr = ToolVersionRequest::new(plugin.fa().clone(), version)?;
                 tools.add_version(tr, &source);
             }
         }
