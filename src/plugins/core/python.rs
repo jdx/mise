@@ -340,10 +340,14 @@ impl Forge for PythonPlugin {
         }
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
-            warn!("failed to get virtualenv: {e}");
+            warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &settings.python_default_packages_file {
-            self.install_default_packages(&config, default_file, &ctx.tv, ctx.pr.as_ref())?;
+            if let Err(err) =
+                self.install_default_packages(&config, default_file, &ctx.tv, ctx.pr.as_ref())
+            {
+                warn!("failed to install default python packages: {err:#}");
+            }
         }
         Ok(())
     }
