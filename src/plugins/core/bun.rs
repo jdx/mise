@@ -13,7 +13,7 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 
 #[derive(Debug)]
@@ -112,7 +112,7 @@ impl Forge for BunPlugin {
         Ok(vec![".bun-version".into()])
     }
 
-    #[requires(matches!(ctx.tv.request, ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. }), "unsupported tool version request type")]
+    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(ctx, &tarball_path)?;

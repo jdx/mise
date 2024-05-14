@@ -31,7 +31,7 @@ use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
@@ -282,7 +282,7 @@ impl ExternalPlugin {
 
     fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
-        let bin_paths = if matches!(tv.request, ToolVersionRequest::System(_)) {
+        let bin_paths = if matches!(tv.request, ToolRequest::System(_)) {
             Vec::new()
         } else if list_bin_paths.exists() {
             let sm = self.script_man_for_tv(tv)?;
@@ -345,16 +345,16 @@ impl ExternalPlugin {
             sm = sm.with_env("MISE_PROJECT_ROOT", project_root);
         }
         let install_type = match &tv.request {
-            ToolVersionRequest::Version { .. } | ToolVersionRequest::Prefix { .. } => "version",
-            ToolVersionRequest::Ref { .. } => "ref",
-            ToolVersionRequest::Path(_, _) => "path",
-            ToolVersionRequest::Sub { .. } => "sub",
-            ToolVersionRequest::System(_) => {
+            ToolRequest::Version { .. } | ToolRequest::Prefix { .. } => "version",
+            ToolRequest::Ref { .. } => "ref",
+            ToolRequest::Path(_, _) => "path",
+            ToolRequest::Sub { .. } => "sub",
+            ToolRequest::System(_) => {
                 panic!("should not be called for system tool")
             }
         };
         let install_version = match &tv.request {
-            ToolVersionRequest::Ref { ref_: v, .. } => v, // should not have "ref:" prefix
+            ToolRequest::Ref { ref_: v, .. } => v, // should not have "ref:" prefix
             _ => &tv.version,
         };
         // add env vars from .mise.toml files
@@ -455,7 +455,7 @@ impl Forge for ExternalPlugin {
         PluginType::External
     }
 
-    fn get_dependencies(&self, tvr: &ToolVersionRequest) -> Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<ForgeArg>> {
         let out = match tvr.forge().name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
@@ -756,7 +756,7 @@ impl Forge for ExternalPlugin {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        if matches!(tv.request, ToolVersionRequest::System(_)) {
+        if matches!(tv.request, ToolRequest::System(_)) {
             return Ok(BTreeMap::new());
         }
         if !self.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {

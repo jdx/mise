@@ -14,7 +14,7 @@ use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file};
 
@@ -168,7 +168,7 @@ impl PythonPlugin {
         let config = Config::get();
         let settings = Settings::get();
         self.install_or_update_python_build()?;
-        if matches!(&ctx.tv.request, ToolVersionRequest::Ref { .. }) {
+        if matches!(&ctx.tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build".into());

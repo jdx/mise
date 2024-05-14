@@ -11,7 +11,7 @@ use crate::forge::Forge;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum ToolVersionRequest {
+pub enum ToolRequest {
     Version {
         forge: ForgeArg,
         version: String,
@@ -36,7 +36,7 @@ pub enum ToolVersionRequest {
     System(ForgeArg),
 }
 
-impl ToolVersionRequest {
+impl ToolRequest {
     pub fn new(forge: ForgeArg, s: &str) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some(("ref", r)) => format!("ref:{}", r),
@@ -187,7 +187,7 @@ pub fn version_sub(orig: &str, sub: &str) -> String {
     orig.to_string()
 }
 
-impl Display for ToolVersionRequest {
+impl Display for ToolRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", &self.forge(), self.version())
     }

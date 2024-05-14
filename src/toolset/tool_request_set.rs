@@ -1,6 +1,6 @@
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
-use crate::toolset::{ToolSource, ToolVersionRequest as ToolRequest};
+use crate::toolset::{ToolRequest, ToolSource};
 use crate::{config, env};
 use indexmap::IndexMap;
 use itertools::Itertools;

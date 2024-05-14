@@ -5,7 +5,7 @@ use eyre::Result;
 use crate::cli::args::ForgeArg;
 use crate::config::config_file::ConfigFile;
 use crate::forge::ForgeList;
-use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionRequest};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 #[derive(Debug)]
 pub struct LegacyVersionFile {
@@ -21,7 +21,7 @@ impl LegacyVersionFile {
         for plugin in plugins {
             let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
-                let tr = ToolVersionRequest::new(plugin.fa().clone(), version)?;
+                let tr = ToolRequest::new(plugin.fa().clone(), version)?;
                 tools.add_version(tr, &source);
             }
         }

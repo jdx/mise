@@ -3,7 +3,7 @@ use color_eyre::eyre::Result;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge;
-use crate::toolset::ToolVersionRequest;
+use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Gets the latest available version for a plugin
@@ -30,7 +30,7 @@ impl Latest {
         let config = Config::try_get()?;
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
-            Some(ToolVersionRequest::Version { version, .. }) => Some(version),
+            Some(ToolRequest::Version { version, .. }) => Some(version),
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 

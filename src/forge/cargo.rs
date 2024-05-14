@@ -12,7 +12,7 @@ use crate::file;
 use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersionRequest;
+use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct CargoForge {
@@ -29,7 +29,7 @@ impl Forge for CargoForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["cargo".into(), "cargo-binstall".into(), "rust".into()])
     }
 

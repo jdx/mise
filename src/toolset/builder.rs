@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
-use crate::toolset::{ToolSource, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use crate::{config, env};
 
 #[derive(Debug, Default)]
@@ -99,7 +99,7 @@ impl ToolsetBuilder {
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source);
                 for v in v.split_whitespace() {
-                    let tvr = ToolVersionRequest::new(fa.clone(), v)?;
+                    let tvr = ToolRequest::new(fa.clone(), v)?;
                     env_ts.add_version(tvr);
                 }
                 ts.merge(env_ts);
@@ -130,7 +130,7 @@ impl ToolsetBuilder {
 
                     if set_as_latest {
                         // no active version, so use "latest"
-                        arg_ts.add_version(ToolVersionRequest::new(arg.forge.clone(), "latest")?);
+                        arg_ts.add_version(ToolRequest::new(arg.forge.clone(), "latest")?);
                     }
                 }
             }
