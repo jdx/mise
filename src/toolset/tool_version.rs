@@ -6,14 +6,13 @@ use std::path::PathBuf;
 
 use console::style;
 use eyre::Result;
-use versions::{Chunk, Version};
 
 use crate::cli::args::ForgeArg;
 use crate::config::Config;
 use crate::forge;
 use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
-use crate::toolset::{ToolVersionOptions, ToolVersionRequest};
+use crate::toolset::{tool_version_request, ToolVersionOptions, ToolVersionRequest};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -192,7 +191,7 @@ impl ToolVersion {
             "latest" => tool.latest_version(None)?.unwrap(),
             _ => Config::get().resolve_alias(tool, v)?,
         };
-        let v = version_sub(&v, sub);
+        let v = tool_version_request::version_sub(&v, sub);
         Self::resolve_version(tool, request, latest_versions, &v)
     }
 
@@ -257,32 +256,5 @@ impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.forge.id.hash(state);
         self.version.hash(state);
-    }
-}
-
-/// subtracts sub from orig and removes suffix
-/// e.g. version_sub("18.2.3", "2") -> "16"
-/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
-fn version_sub(orig: &str, sub: &str) -> String {
-    let mut orig = Version::new(orig).unwrap();
-    let sub = Version::new(sub).unwrap();
-    while orig.chunks.0.len() > sub.chunks.0.len() {
-        orig.chunks.0.pop();
-    }
-    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
-        let m = sub.nth(i).unwrap();
-        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
-    }
-    orig.to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::version_sub;
-
-    #[test]
-    fn test_version_sub() {
-        assert_str_eq!(version_sub("18.2.3", "2"), "16");
-        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }
 }

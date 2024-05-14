@@ -137,11 +137,11 @@ impl ToolVersionRequest {
                 forge,
                 sub,
                 orig_version,
-            } => Some(
-                forge
-                    .installs_path
-                    .join(Self::version_sub(orig_version, sub.as_str())),
-            ),
+            } => self
+                .local_resolve(orig_version)
+                .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
+                .unwrap_or_default()
+                .map(|v| forge.installs_path.join(version_sub(&v, sub.as_str()))),
             Self::Prefix { forge, prefix, .. } => match file::ls(&forge.installs_path) {
                 Ok(installs) => {
                     let path = installs.iter().find(|p| p.starts_with(prefix));
@@ -154,29 +154,52 @@ impl ToolVersionRequest {
         }
     }
 
+    pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {
+        let forge = forge::get(self.forge());
+        let matches = forge.list_installed_versions_matching(v)?;
+        if matches.iter().any(|m| m == v) {
+            return Ok(Some(v.to_string()));
+        }
+        if let Some(v) = matches.last() {
+            return Ok(Some(v.to_string()));
+        }
+        Ok(None)
+    }
+
     pub fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
         ToolVersion::resolve(plugin, self.clone(), latest_versions)
     }
+}
 
-    /// subtracts sub from orig and removes suffix
-    /// e.g. version_sub("18.2.3", "2") -> "16"
-    /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
-    fn version_sub(orig: &str, sub: &str) -> String {
-        let mut orig = Version::new(orig).unwrap();
-        let sub = Version::new(sub).unwrap();
-        while orig.chunks.0.len() > sub.chunks.0.len() {
-            orig.chunks.0.pop();
-        }
-        for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
-            let m = sub.nth(i).unwrap();
-            orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
-        }
-        orig.to_string()
+/// subtracts sub from orig and removes suffix
+/// e.g. version_sub("18.2.3", "2") -> "16"
+/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+pub fn version_sub(orig: &str, sub: &str) -> String {
+    let mut orig = Version::new(orig).unwrap();
+    let sub = Version::new(sub).unwrap();
+    while orig.chunks.0.len() > sub.chunks.0.len() {
+        orig.chunks.0.pop();
     }
+    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
+        let m = sub.nth(i).unwrap();
+        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+    }
+    orig.to_string()
 }
 
 impl Display for ToolVersionRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", &self.forge(), self.version())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_sub;
+
+    #[test]
+    fn test_version_sub() {
+        assert_str_eq!(version_sub("18.2.3", "2"), "16");
+        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }
 }

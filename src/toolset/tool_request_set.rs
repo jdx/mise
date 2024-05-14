@@ -18,12 +18,12 @@ impl ToolRequestSet {
         Self::default()
     }
 
-    pub fn tools_with_sources(&self) -> Vec<(&ForgeArg, &Vec<ToolRequest>, &ToolSource)> {
-        self.tools
-            .iter()
-            .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
-            .collect()
-    }
+    // pub fn tools_with_sources(&self) -> Vec<(&ForgeArg, &Vec<ToolRequest>, &ToolSource)> {
+    //     self.tools
+    //         .iter()
+    //         .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
+    //         .collect()
+    // }
 
     // pub fn installed_tools(&self) -> eyre::Result<Vec<&ToolRequest>> {
     //     self.tools
@@ -57,10 +57,8 @@ impl ToolRequestSet {
 
 impl Display for ToolRequestSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (forge, versions, source) in self.tools_with_sources() {
-            writeln!(f, "ToolRequestSet: {} ({:?})", forge, source)?;
-            writeln!(f, "  {}", versions.iter().join(" "))?;
-        }
+        let versions = self.tools.values().flatten().join(" ");
+        writeln!(f, "ToolRequestSet: {}", versions)?;
         Ok(())
     }
 }
@@ -122,7 +120,7 @@ impl ToolRequestSetBuilder {
             }
         }
 
-        debug!("ToolRequestSet ({:?}): {trs}", start_ms.elapsed());
+        debug!("ToolRequestSet.build({:?}): {trs}", start_ms.elapsed());
         Ok(trs)
     }
 
