@@ -99,7 +99,6 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-
     use crate::test::replace_path;
 
     use super::*;

@@ -1,9 +1,10 @@
-use console::Term;
-use signal_hook::consts::SIGINT;
-use signal_hook::iterator::{Handle, Signals};
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+
+use console::Term;
+use signal_hook::consts::SIGINT;
+use signal_hook::iterator::{Handle, Signals};
 
 #[must_use]
 #[derive(Debug)]

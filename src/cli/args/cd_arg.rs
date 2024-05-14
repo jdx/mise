@@ -1,5 +1,6 @@
-use clap::{Arg, ArgAction};
 use std::path::PathBuf;
+
+use clap::{Arg, ArgAction};
 
 #[derive(Clone)]
 pub struct CdArg;

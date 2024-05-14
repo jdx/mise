@@ -15,8 +15,9 @@
 // !GENERATED FILE!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
+
+use once_cell::sync::Lazy;
 
 #[rustfmt::skip]
 pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =

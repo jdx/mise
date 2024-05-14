@@ -1,6 +1,7 @@
-use crate::cli;
 use clap::builder::Resettable;
 use eyre::Result;
+
+use crate::cli;
 
 /// Generate a usage CLI spec
 ///

@@ -1,11 +1,13 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{Debug, Display};
+
+use indexmap::IndexMap;
+use itertools::Itertools;
+
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::toolset::{ToolRequest, ToolSource};
 use crate::{config, env};
-use indexmap::IndexMap;
-use itertools::Itertools;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{Debug, Display};
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {

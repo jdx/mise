@@ -1,5 +1,4 @@
 use std::ffi::OsString;
-
 use std::sync::Arc;
 
 use eyre::Result;
