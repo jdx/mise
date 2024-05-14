@@ -464,21 +464,28 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
             ".config/mise/config.toml".into(),
             ".config/mise.toml".into(),
             ".mise/config.toml".into(),
+            "mise/config.toml".into(),
+            ".mise/config.toml".into(),
             ".rtx.toml".into(),
             env::MISE_DEFAULT_CONFIG_FILENAME.clone(), // .mise.toml
             ".config/mise/config.local.toml".into(),
             ".config/mise.local.toml".into(),
             ".mise/config.local.toml".into(),
             ".rtx.local.toml".into(),
+            "mise.local.toml".into(),
             ".mise.local.toml".into(),
         ];
         if let Some(env) = &*env::MISE_ENV {
             filenames.push(format!(".config/mise/config.{env}.toml"));
             filenames.push(format!(".config/mise.{env}.toml"));
+            filenames.push(format!("mise/config.{env}.local.toml"));
+            filenames.push(format!("mise.{env}.toml"));
             filenames.push(format!(".mise/config.{env}.local.toml"));
             filenames.push(format!(".mise.{env}.toml"));
             filenames.push(format!(".config/mise/config.{env}.local.toml"));
             filenames.push(format!(".config/mise.{env}.local.toml"));
+            filenames.push(format!("mise/config.{env}.local.toml"));
+            filenames.push(format!("mise.{env}.local.toml"));
             filenames.push(format!(".mise/config.{env}.local.toml"));
             filenames.push(format!(".mise.{env}.local.toml"));
         }
@@ -637,7 +644,11 @@ impl Debug for Config {
 }
 
 fn default_task_includes() -> Vec<PathBuf> {
-    vec![".mise/tasks".into(), ".config/mise/tasks".into()]
+    vec![
+        ".mise/tasks".into(),
+        ".config/mise/tasks".into(),
+        "mise/tasks".into(),
+    ]
 }
 
 #[cfg(test)]
