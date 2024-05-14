@@ -11,7 +11,7 @@ use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
 use crate::file::display_path;
-use crate::toolset::{InstallOptions, ToolSource, ToolVersion, ToolVersionRequest, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file};
 
@@ -89,7 +89,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => Ok(tvr),
-                None => ToolVersionRequest::new(t.forge, "latest"),
+                None => ToolRequest::new(t.forge, "latest"),
             })
             .collect::<Result<_>>()?;
         let versions = ts.install_versions(

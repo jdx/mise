@@ -18,7 +18,7 @@ use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::forge::Forge;
-use crate::toolset::{ToolVersionRequest, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments, which may be
@@ -113,7 +113,7 @@ where
 {
     let config = Config::get();
     let dependencies = forge
-        .get_dependencies(&ToolVersionRequest::System(forge.name().into()))?
+        .get_dependencies(&ToolRequest::System(forge.name().into()))?
         .into_iter()
         .collect();
     let env = ToolsetBuilder::new()

@@ -9,7 +9,7 @@ use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
-use crate::toolset::ToolVersionRequest;
+use crate::toolset::ToolRequest;
 use crate::{cmd, file};
 
 #[derive(Debug)]
@@ -108,7 +108,7 @@ impl Forge for ErlangPlugin {
 
         file::remove_all(ctx.tv.install_path())?;
         match &ctx.tv.request {
-            ToolVersionRequest::Ref { .. } => {
+            ToolRequest::Ref { .. } => {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {

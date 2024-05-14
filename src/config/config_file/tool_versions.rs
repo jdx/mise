@@ -13,7 +13,7 @@ use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionRequest};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
@@ -128,7 +128,7 @@ impl ToolVersions {
         let source = ToolSource::ToolVersions(self.path.clone());
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
-                let tvr = ToolVersionRequest::new(plugin.clone(), version)?;
+                let tvr = ToolRequest::new(plugin.clone(), version)?;
                 self.tools.add_version(tvr, &source)
             }
         }

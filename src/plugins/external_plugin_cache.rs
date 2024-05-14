@@ -9,13 +9,13 @@ use crate::config::Config;
 use crate::hash::hash_to_str;
 use crate::plugins::ExternalPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolVersion, ToolVersionRequest};
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {
-    list_bin_paths: RwLock<HashMap<ToolVersionRequest, CacheManager<Vec<String>>>>,
-    exec_env: RwLock<HashMap<ToolVersionRequest, CacheManager<BTreeMap<String, String>>>>,
+    list_bin_paths: RwLock<HashMap<ToolRequest, CacheManager<Vec<String>>>>,
+    exec_env: RwLock<HashMap<ToolRequest, CacheManager<BTreeMap<String, String>>>>,
 }
 
 impl ExternalPluginCache {

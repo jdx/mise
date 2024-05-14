@@ -14,7 +14,7 @@ use crate::forge::Forge;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, hash};
 
@@ -216,7 +216,7 @@ impl Forge for GoPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
-        if let ToolVersionRequest::System(_) = tv.request {
+        if let ToolRequest::System(_) = tv.request {
             return Ok(vec![]);
         }
         // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT

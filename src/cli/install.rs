@@ -4,7 +4,7 @@ use itertools::Itertools;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{
-    InstallOptions, ToolVersion, ToolVersionOptions, ToolVersionRequest, Toolset, ToolsetBuilder,
+    InstallOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -81,7 +81,7 @@ impl Install {
         &self,
         ts: &Toolset,
         runtimes: &[ToolArg],
-    ) -> Result<Vec<ToolVersionRequest>> {
+    ) -> Result<Vec<ToolRequest>> {
         let mut requests = vec![];
         for ta in ToolArg::double_tool_condition(runtimes)? {
             let default_opts = ToolVersionOptions::new();
@@ -102,7 +102,7 @@ impl Install {
                             // in this case the user specified a tool which is not in config
                             // so we default to @latest with no options
                             None => {
-                                let tvr = ToolVersionRequest::Version {
+                                let tvr = ToolRequest::Version {
                                     forge: ta.forge.clone(),
                                     version: "latest".into(),
                                     options: default_opts.clone(),

@@ -22,7 +22,7 @@ use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionOptions, ToolVersionRequest};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
@@ -317,7 +317,7 @@ impl ConfigFile for MiseToml {
                 for v in options.values_mut() {
                     *v = self.parse_template(v)?;
                 }
-                let tvr = ToolVersionRequest::new_opts(fa.clone(), &version, options)?;
+                let tvr = ToolRequest::new_opts(fa.clone(), &version, options)?;
                 trs.add_version(tvr, &source);
             }
         }

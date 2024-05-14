@@ -17,7 +17,7 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_request::ToolVersionRequest;
+pub use tool_version_request::ToolRequest;
 
 use crate::cli::args::ForgeArg;
 use crate::config::settings::SettingsStatusMissingTools;
@@ -80,7 +80,7 @@ impl Toolset {
             ..Default::default()
         }
     }
-    pub fn add_version(&mut self, tvr: ToolVersionRequest) {
+    pub fn add_version(&mut self, tvr: ToolRequest) {
         let fa = tvr.forge();
         if self.is_disabled(fa) {
             return;
@@ -150,7 +150,7 @@ impl Toolset {
     pub fn install_versions(
         &mut self,
         config: &Config,
-        versions: Vec<ToolVersionRequest>,
+        versions: Vec<ToolRequest>,
         mpr: &MultiProgressReport,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
@@ -260,7 +260,7 @@ impl Toolset {
                         |v| match current_versions.get(&(p.id().into(), v.clone())) {
                             Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
-                                let tv = ToolVersionRequest::new(p.fa().clone(), &v)?
+                                let tv = ToolRequest::new(p.fa().clone(), &v)?
                                     .resolve(p.as_ref(), false)
                                     .unwrap();
                                 Ok((p.clone(), tv))
@@ -282,7 +282,7 @@ impl Toolset {
             .map(|(p, _)| p)
             .collect()
     }
-    pub fn list_current_requests(&self) -> Vec<&ToolVersionRequest> {
+    pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
         self.versions
             .values()
             .flat_map(|tvl| &tvl.requests)
@@ -359,7 +359,7 @@ impl Toolset {
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolVersionRequest::System(_)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(_)))
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
@@ -390,7 +390,7 @@ impl Toolset {
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolVersionRequest::System(_)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(_)))
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
                     warn!("Error listing bin paths for {tv}: {e:#}");
@@ -519,9 +519,7 @@ impl From<ToolRequestSet> for Toolset {
     }
 }
 
-fn get_leaf_dependencies(
-    requests: &[ToolVersionRequest],
-) -> eyre::Result<Vec<&ToolVersionRequest>> {
+fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
     let versions_hash = requests.iter().map(|tr| tr.forge()).collect::<HashSet<_>>();
     let leaves = requests
         .iter()

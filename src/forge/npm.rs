@@ -8,7 +8,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersionRequest;
+use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct NPMForge {
@@ -26,7 +26,7 @@ impl Forge for NPMForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["node".into()])
     }
 

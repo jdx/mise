@@ -23,7 +23,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionRequest, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
@@ -144,7 +144,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec![])
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -170,7 +170,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     fn is_version_installed(&self, tv: &ToolVersion) -> bool {
         match tv.request {
-            ToolVersionRequest::System(_) => true,
+            ToolRequest::System(_) => true,
             _ => {
                 tv.install_path().exists()
                     && !self.incomplete_file_path(tv).exists()
@@ -264,7 +264,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
-            .get_dependencies(&ToolVersionRequest::System(self.id().into()))?
+            .get_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
             .collect::<HashSet<_>>();
         if deps.is_empty() {
@@ -388,7 +388,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         match tv.request {
-            ToolVersionRequest::System(_) => Ok(vec![]),
+            ToolRequest::System(_) => Ok(vec![]),
             _ => Ok(vec![tv.install_short_path().join("bin")]),
         }
     }

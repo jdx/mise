@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::forge::Forge;
-use crate::toolset::{ToolVersion, ToolVersionRequest, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{forge, runtime_symlinks, shims};
 
@@ -99,7 +99,7 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolVersionRequest::new(tool.fa().clone(), v)?;
+                        let tvr = ToolRequest::new(tool.fa().clone(), v)?;
                         let tv = ToolVersion::new(tool.as_ref(), tvr, v.into());
                         Ok((tool.clone(), tv))
                     })

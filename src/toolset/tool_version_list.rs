@@ -1,6 +1,6 @@
 use crate::cli::args::ForgeArg;
 use crate::forge;
-use crate::toolset::tool_version_request::ToolVersionRequest;
+use crate::toolset::tool_version_request::ToolRequest;
 use crate::toolset::{ToolSource, ToolVersion};
 
 /// represents several versions of a tool for a particular plugin
@@ -8,7 +8,7 @@ use crate::toolset::{ToolSource, ToolVersion};
 pub struct ToolVersionList {
     pub forge: ForgeArg,
     pub versions: Vec<ToolVersion>,
-    pub requests: Vec<ToolVersionRequest>,
+    pub requests: Vec<ToolRequest>,
     pub source: ToolSource,
 }
 
@@ -47,8 +47,7 @@ mod tests {
     fn test_tool_version_list() {
         let fa: ForgeArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests
-            .push(ToolVersionRequest::new(fa, "latest").unwrap());
+        tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
         tvl.resolve(true).unwrap();
         assert_eq!(tvl.versions.len(), 1);
     }
@@ -60,8 +59,7 @@ mod tests {
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let fa: ForgeArg = "dummy".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests
-            .push(ToolVersionRequest::new(fa, "latest").unwrap());
+        tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
         let _ = tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 0);
         env::remove_var("MISE_FAILURE");

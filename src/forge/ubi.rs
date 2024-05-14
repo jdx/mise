@@ -8,7 +8,7 @@ use crate::env::GITHUB_TOKEN;
 use crate::forge::{Forge, ForgeType};
 use crate::github;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersionRequest;
+use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct UbiForge {
@@ -27,7 +27,7 @@ impl Forge for UbiForge {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolVersionRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec!["cargo:ubi".into()])
     }
 
