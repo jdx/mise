@@ -21,7 +21,7 @@ impl ToolVersionList {
             source,
         }
     }
-    pub fn resolve(&mut self, latest_versions: bool) {
+    pub fn resolve(&mut self, latest_versions: bool) -> eyre::Result<()> {
         self.versions.clear();
         let plugin = forge::get(&self.forge);
         for tvr in &mut self.requests {
@@ -29,10 +29,11 @@ impl ToolVersionList {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     let source = self.source.to_string();
-                    warn!("failed to resolve version of {plugin} from {source}: {err:#}");
+                    bail!("failed to resolve version of {plugin} from {source}: {err:#}");
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -47,7 +48,7 @@ mod tests {
         let fa: ForgeArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
-        tvl.resolve(true);
+        tvl.resolve(true).unwrap();
         assert_eq!(tvl.versions.len(), 1);
     }
 
@@ -59,7 +60,7 @@ mod tests {
         let fa: ForgeArg = "dummy".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolVersionRequest::new(fa, "latest"));
-        tvl.resolve(true);
+        let _ = tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 0);
         env::remove_var("MISE_FAILURE");
     }

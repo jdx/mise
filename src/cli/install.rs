@@ -1,4 +1,5 @@
 use eyre::Result;
+use itertools::Itertools;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -116,18 +117,15 @@ impl Install {
         Ok(requests)
     }
 
-    fn install_missing_runtimes(&self, config: &Config) -> Result<Vec<ToolVersion>> {
-        let mut ts = ToolsetBuilder::new().build(config)?;
-        let versions: Vec<_> = ts
-            .list_missing_versions()
-            .into_iter()
-            .map(|tv| tv.request)
-            .collect();
+    fn install_missing_runtimes(&self, config: &Config) -> eyre::Result<Vec<ToolVersion>> {
+        let trs = config.get_tool_request_set()?;
+        let versions = trs.missing_tools().into_iter().cloned().collect_vec();
         if versions.is_empty() {
             info!("all runtimes are installed");
             return Ok(vec![]);
         }
         let mpr = MultiProgressReport::get();
+        let mut ts: Toolset = trs.clone().into();
         ts.install_versions(config, versions, &mpr, &self.install_opts())
     }
 }
