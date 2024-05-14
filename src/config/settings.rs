@@ -88,8 +88,8 @@ pub struct Settings {
     pub paranoid: bool,
     #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
-    #[config(env = "MISE_PYTHON_COMPILE", default = false)]
-    pub python_compile: bool,
+    #[config(env = "MISE_PYTHON_COMPILE")]
+    pub python_compile: Option<bool>,
     #[config(env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE")]
     pub python_default_packages_file: Option<PathBuf>,
     #[config(env = "MISE_PYTHON_PATCH_URL")]
@@ -256,7 +256,9 @@ impl Settings {
         }
         if settings.all_compile {
             settings.node_compile = true;
-            settings.python_compile = true;
+            if settings.python_compile.is_none() {
+                settings.python_compile = Some(true);
+            }
         }
         let settings = Arc::new(settings);
         *SETTINGS.write().unwrap() = Some(settings.clone());

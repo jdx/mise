@@ -147,7 +147,6 @@ pub mod tests {
         not_found_auto_install = true
         paranoid = false
         plugin_autoupdate_last_check_duration = "1"
-        python_compile = false
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         quiet = false
