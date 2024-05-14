@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.5.13](https://github.com/jdx/mise/compare/v2024.5.12..v2024.5.13) - 2024-05-14
+
+### 🚀 Features
+
+- pass github token to UBI and cargo-binstall backends. by [@Adirelle](https://github.com/Adirelle) in [#2090](https://github.com/jdx/mise/pull/2090)
+
+### 🚜 Refactor
+
+- bubble up resolve errors by [@jdx](https://github.com/jdx) in [#2094](https://github.com/jdx/mise/pull/2094)
+
+### 🔍 Other Changes
+
+- always build with git2 feature by [@jdx](https://github.com/jdx) in [fb51b57](https://github.com/jdx/mise/commit/fb51b57234e3227e00b1866f7ed93bf9d1bc90db)
+
 ## [2024.5.12](https://github.com/jdx/mise/compare/v2024.5.11..v2024.5.12) - 2024-05-13
 
 ### ⚡ Performance
