@@ -302,7 +302,9 @@ impl Forge for NodePlugin {
         self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_npm_shim(&ctx.tv)?;
         self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
-        self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref())?;
+        if let Err(err) = self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref()) {
+            warn!("failed to install default npm packages: {err:#}");
+        }
         if *env::MISE_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
             self.enable_default_corepack_shims(&ctx.tv, ctx.pr.as_ref())?;
         }
