@@ -46,10 +46,11 @@ The pyenv repo to get python-build from.
 
 * Type: `bool`
 * Env: `MISE_PYTHON_COMPILE`
-* Default: `false`
-
-Set to `true` to always use python-build instead
-of [precompiled binaries](#precompiled-python-binaries).
+* Default: [undefined]
+* Values:
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](#precompiled-python-binaries).
+  * `false` - always download precompiled binaries.
+  * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
 
 ### `python_precompiled_os`
 
