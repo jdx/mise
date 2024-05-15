@@ -50,32 +50,33 @@ within_isolated_env() {
     --ignore-environment \
     --chdir="$TEST_WORKDIR" \
     - \
-    ROOT="$ROOT" \
-    HOME="$TEST_HOME" \
-    TMPDIR="$TEST_TMPDIR" \
-    SHELL="$(type -p bash)" \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
-    MISE_DATA_DIR="$MISE_DATA_DIR" \
-    MISE_STATE_DIR="$MISE_STATE_DIR" \
-    MISE_CACHE_DIR="$MISE_CACHE_DIR" \
-    MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
-    MISE_TMP_DIR="$TEST_TMPDIR" \
-    MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
-    MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
-    MISE_EXPERIMENTAL=1 \
-    MISE_YES=1 \
-    TEST_NAME="$TEST" \
-    TEST_ROOT="$SCRIPT_DIR" \
-    TEST_SCRIPT="$TEST_SCRIPT" \
-    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
-    GITHUB_ACTION="${GITHUB_ACTION:-}" \
-    GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
     CARGO_HOME="$CARGO_HOME" \
-    RUSTUP_HOME="$RUSTUP_HOME" \
-    LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
     CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
     CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
     CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
+    GITHUB_ACTION="${GITHUB_ACTION:-}" \
+    GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}" \
+    HOME="$TEST_HOME" \
+    LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
+    MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+    MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
+    MISE_DATA_DIR="$MISE_DATA_DIR" \
+    MISE_EXPERIMENTAL=1 \
+    MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
+    MISE_STATE_DIR="$MISE_STATE_DIR" \
+    MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
+    MISE_TMP_DIR="$TEST_TMPDIR" \
+    MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
+    MISE_YES=1 \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
+    ROOT="$ROOT" \
+    RUSTUP_HOME="$RUSTUP_HOME" \
+    SHELL="$(type -p bash)" \
+    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
+    TEST_NAME="$TEST" \
+    TEST_ROOT="$SCRIPT_DIR" \
+    TEST_SCRIPT="$TEST_SCRIPT" \
+    TMPDIR="$TEST_TMPDIR" \
     "$@" || return $?
 }
 
