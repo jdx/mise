@@ -18,7 +18,5 @@
   </component>
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/mise-docs" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/usage" vcs="Git" />
   </component>
 </project>

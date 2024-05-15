@@ -111,6 +111,8 @@ where
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
+    // TODO: move this into a generic forge method/macro (#2125)
+    // TODO: fetch transitive dependencies like pipx -> python
     let config = Config::get();
     let dependencies = forge
         .get_dependencies(&ToolRequest::System(forge.name().into()))?

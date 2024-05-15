@@ -160,6 +160,7 @@ impl Toolset {
             debug!("installing {} leaf tools first", leaf_deps.len());
             self.install_versions(config, leaf_deps.into_iter().cloned().collect(), mpr, opts)?;
         }
+        debug!("install_versions: {}", versions.iter().join(" "));
         let settings = Settings::try_get()?;
         let queue: Vec<_> = versions
             .into_iter()
