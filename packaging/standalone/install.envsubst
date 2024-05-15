@@ -73,50 +73,76 @@ shasum_bin() {
 }
 
 get_checksum() {
+	version=$1
 	os="$(get_os)"
 	arch="$(get_arch)"
+	url="https://github.com/jdx/mise/releases/download/${version}/SHASUMS256.txt"
 
-	checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
-	checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
-	checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
-	checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
-	checksum_linux_armv6="$MISE_CHECKSUM_LINUX_ARMV6"
-	checksum_linux_armv6_musl="$MISE_CHECKSUM_LINUX_ARMV6_MUSL"
-	checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
-	checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
-	checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
-	checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
+	# For current version use static checksum otherwize
+	# use checksum from releases
+	if [ "$version" = "$MISE_CURRENT_VERSION" ]; then
+		checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
+		checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
+		checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
+		checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
+		checksum_linux_armv6="$MISE_CHECKSUM_LINUX_ARMV6"
+		checksum_linux_armv6_musl="$MISE_CHECKSUM_LINUX_ARMV6_MUSL"
+		checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
+		checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
+		checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
+		checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
 
-	if [ "$os" = "linux" ]; then
-		if [ "$arch" = "x64" ]; then
-			echo "$checksum_linux_x86_64"
-		elif [ "$arch" = "x64-musl" ]; then
-			echo "$checksum_linux_x86_64_musl"
-		elif [ "$arch" = "arm64" ]; then
-			echo "$checksum_linux_arm64"
-		elif [ "$arch" = "arm64-musl" ]; then
-			echo "$checksum_linux_arm64_musl"
-		elif [ "$arch" = "armv6" ]; then
-			echo "$checksum_linux_armv6"
-		elif [ "$arch" = "armv6-musl" ]; then
-			echo "$checksum_linux_armv6_musl"
-		elif [ "$arch" = "armv7" ]; then
-			echo "$checksum_linux_armv7"
-		elif [ "$arch" = "armv7-musl" ]; then
-			echo "$checksum_linux_armv7_musl"
-		else
-			warn "no checksum for $os-$arch"
-		fi
-	elif [ "$os" = "macos" ]; then
-		if [ "$arch" = "x64" ]; then
-			echo "$checksum_macos_x86_64"
-		elif [ "$arch" = "arm64" ]; then
-			echo "$checksum_macos_arm64"
+		if [ "$os" = "linux" ]; then
+			if [ "$arch" = "x64" ]; then
+				echo "$checksum_linux_x86_64"
+			elif [ "$arch" = "x64-musl" ]; then
+				echo "$checksum_linux_x86_64_musl"
+			elif [ "$arch" = "arm64" ]; then
+				echo "$checksum_linux_arm64"
+			elif [ "$arch" = "arm64-musl" ]; then
+				echo "$checksum_linux_arm64_musl"
+			elif [ "$arch" = "armv6" ]; then
+				echo "$checksum_linux_armv6"
+			elif [ "$arch" = "armv6-musl" ]; then
+				echo "$checksum_linux_armv6_musl"
+			elif [ "$arch" = "armv7" ]; then
+				echo "$checksum_linux_armv7"
+			elif [ "$arch" = "armv7-musl" ]; then
+				echo "$checksum_linux_armv7_musl"
+			else
+				warn "no checksum for $os-$arch"
+			fi
+		elif [ "$os" = "macos" ]; then
+			if [ "$arch" = "x64" ]; then
+				echo "$checksum_macos_x86_64"
+			elif [ "$arch" = "arm64" ]; then
+				echo "$checksum_macos_arm64"
+			else
+				warn "no checksum for $os-$arch"
+			fi
 		else
 			warn "no checksum for $os-$arch"
 		fi
 	else
-		warn "no checksum for $os-$arch"
+		if command -v curl >/dev/null 2>&1; then
+			debug ">" curl -fsSL "$url"
+			checksums="$(curl -fsSL "$url")"
+		else
+			if command -v wget >/dev/null 2>&1; then
+				debug ">" wget -qO - "$url"
+				stderr=$(mktemp)
+				checksums="$(wget -qO - "$url")"
+			else
+				error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
+			fi
+		fi
+
+		checksum="$(echo "$checksums" | grep "$os-$arch.tar.gz")"
+		if ! echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
+			warn "no checksum for mise $version and $os-$arch"
+		else
+			echo "$checksum"
+		fi
 	fi
 }
 
@@ -147,8 +173,7 @@ download_file() {
 }
 
 install_mise() {
-	# download the tarball
-	version="$MISE_VERSION"
+	version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
 	os="$(get_os)"
 	arch="$(get_arch)"
 	install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
@@ -159,7 +184,7 @@ install_mise() {
 	debug "mise-setup: tarball=$cache_file"
 
 	debug "validating checksum"
-	cd "$(dirname "$cache_file")" && get_checksum | "$(shasum_bin)" -c >/dev/null
+	cd "$(dirname "$cache_file")" && get_checksum "$version" | "$(shasum_bin)" -c >/dev/null
 
 	# extract tarball
 	mkdir -p "$install_dir"
