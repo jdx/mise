@@ -27,7 +27,7 @@ impl Forge for PIPXForge {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
-        Ok(vec!["pipx".into()])
+        Ok(vec!["pipx".into(), "python".into()])
     }
 
     /*
