@@ -1348,6 +1348,9 @@ Options:
 
           [possible values: asc, desc]
 
+  -J, --json
+          Output in JSON format
+
 Examples:
 
     $ mise tasks ls

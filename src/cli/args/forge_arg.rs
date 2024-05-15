@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
 
+use once_cell::sync::Lazy;
+
 use crate::dirs;
 use crate::forge::{unalias_forge, ForgeType};
+use crate::registry::REGISTRY;
 
 #[derive(Clone, PartialOrd, Ord)]
 pub struct ForgeArg {
@@ -17,6 +21,9 @@ pub struct ForgeArg {
 
 impl From<&str> for ForgeArg {
     fn from(s: &str) -> Self {
+        if let Some(fa) = FORGE_MAP.get(s) {
+            return fa.clone();
+        }
         if let Some((forge_type, name)) = s.split_once(':') {
             if let Ok(forge_type) = forge_type.parse() {
                 return Self::new(forge_type, name);
@@ -75,6 +82,18 @@ impl Hash for ForgeArg {
         self.id.hash(state);
     }
 }
+
+static FORGE_MAP: Lazy<HashMap<&'static str, ForgeArg>> = Lazy::new(|| {
+    REGISTRY
+        .iter()
+        .map(|(short, full)| {
+            let (forge_type, name) = full.split_once(':').unwrap();
+            let forge_type = forge_type.parse().unwrap();
+            let fa = ForgeArg::new(forge_type, name);
+            (*short, fa)
+        })
+        .collect()
+});
 
 #[cfg(test)]
 mod tests {
