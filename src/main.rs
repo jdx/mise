@@ -63,6 +63,7 @@ mod migrate;
 mod path_env;
 mod plugins;
 mod rand;
+mod registry;
 mod runtime_symlinks;
 mod shell;
 mod shims;
