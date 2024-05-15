@@ -1,5 +1,24 @@
 # Changelog
 
+## [2024.5.16](https://github.com/jdx/mise/compare/v2024.5.15..v2024.5.16) - 2024-05-15
+
+### 🚀 Features
+
+- **(registry)** map ubi -> cargo:ubi by [@jdx](https://github.com/jdx) in [#2110](https://github.com/jdx/mise/pull/2110)
+- **(tasks)** add --json flag by [@vrslev](https://github.com/vrslev) in [#2116](https://github.com/jdx/mise/pull/2116)
+
+### 🐛 Bug Fixes
+
+- support "mise.toml" filename by [@jdx](https://github.com/jdx) in [035745f](https://github.com/jdx/mise/commit/035745f95f5f143b62e6d3cdc6cfbaa4a6d887e0)
+
+### 🔍 Other Changes
+
+- add rustfmt to release-plz by [@jdx](https://github.com/jdx) in [2d530f6](https://github.com/jdx/mise/commit/2d530f645b6263c6162380684ab7914efc3dce39)
+
+### New Contributors
+
+* @vrslev made their first contribution in [#2116](https://github.com/jdx/mise/pull/2116)
+
 ## [2024.5.15](https://github.com/jdx/mise/compare/v2024.5.14..v2024.5.15) - 2024-05-14
 
 ### 🚀 Features
@@ -19,11 +38,14 @@
 - fail-fast by [@jdx](https://github.com/jdx) in [2338376](https://github.com/jdx/mise/commit/23383760900ede666865e073acb680dced37d8fc)
 - update deno version by [@jdx](https://github.com/jdx) in [71f5480](https://github.com/jdx/mise/commit/71f5480e780953e03aa97682535a58767956a927)
 - check plugin dependencies with python and pipx. by [@Adirelle](https://github.com/Adirelle) in [#2109](https://github.com/jdx/mise/pull/2109)
+- wait a bit longer before retrying e2e test failures by [@jdx](https://github.com/jdx) in [d098c86](https://github.com/jdx/mise/commit/d098c866a415459981a5bb770f60b51067f444ce)
 
 ### 🔍 Other Changes
 
 - optimize imports by [@jdx](https://github.com/jdx) in [892184f](https://github.com/jdx/mise/commit/892184f5681c7f1863cbd89f07fca0cf5fa3afb2)
 - optimize imports by [@jdx](https://github.com/jdx) in [54bfee6](https://github.com/jdx/mise/commit/54bfee6b435f8b1cbfba7210f73b9dfde1a3c6f1)
+- automatically optimize imports by [@jdx](https://github.com/jdx) in [#2113](https://github.com/jdx/mise/pull/2113)
+- fix release-plz with nightly rustfmt by [@jdx](https://github.com/jdx) in [0b6521a](https://github.com/jdx/mise/commit/0b6521ab620cf6c16e36d9c5d3cf56b7b0ee81eb)
 
 ## [2024.5.14](https://github.com/jdx/mise/compare/v2024.5.13..v2024.5.14) - 2024-05-14
 
