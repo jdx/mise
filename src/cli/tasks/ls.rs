@@ -37,6 +37,10 @@ pub struct TasksLs {
     /// Sort order. Default is asc.
     #[clap(long, verbatim_doc_comment)]
     pub sort_order: Option<SortOrder>,
+
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -58,14 +62,24 @@ impl TasksLs {
         let config = Config::try_get()?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise tasks ls`")?;
-        let rows = config
+        let tasks = config
             .tasks()?
             .values()
             .filter(|t| self.hidden || !t.hide)
+            .cloned()
             .sorted_by(|a, b| self.sort(a, b))
-            .map(|t| t.into())
-            .collect::<Vec<Row>>();
+            .collect::<Vec<Task>>();
 
+        if self.json {
+            self.display_json(tasks)?;
+        } else {
+            self.display(tasks)?;
+        }
+        Ok(())
+    }
+
+    fn display(&self, tasks: Vec<Task>) -> Result<()> {
+        let rows = tasks.iter().map(|t| t.into()).collect::<Vec<Row>>();
         let mut table = tabled::Table::new(rows);
         table::default_style(&mut table, self.no_header);
         // hide columns alias
@@ -73,7 +87,27 @@ impl TasksLs {
             table::disable_columns(&mut table, vec![1]);
         }
         miseprintln!("{table}");
+        Ok(())
+    }
 
+    fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
+        let array_items = tasks
+            .into_iter()
+            .map(|task| {
+                let mut inner = serde_json::Map::new();
+                inner.insert("name".to_string(), task.name.into());
+                if self.extended {
+                    inner.insert("alias".to_string(), task.aliases.join(", ").into());
+                }
+                inner.insert("description".to_string(), task.description.into());
+                inner.insert(
+                    "source".to_string(),
+                    display_path(task.config_source).into(),
+                );
+                inner
+            })
+            .collect::<serde_json::Value>();
+        miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }
 
@@ -141,5 +175,15 @@ mod tests {
         lint                                     ~/config/config.toml       
         test                                     ~/config/config.toml
         "###);
+    }
+
+    #[test]
+    fn test_task_ls_json() {
+        assert_cli_snapshot!("t", "--json");
+    }
+
+    #[test]
+    fn test_task_ls_json_extended() {
+        assert_cli_snapshot!("t", "--json", "-x");
     }
 }

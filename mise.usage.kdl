@@ -932,6 +932,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
     flag "--sort-order" help="Sort order. Default is asc." {
         arg "<SORT_ORDER>"
     }
+    flag "-J --json" help="Output in JSON format"
     cmd "deps" help="[experimental] Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
@@ -981,6 +982,7 @@ tasks will override the global ones if they have the same name."
         flag "--sort-order" help="Sort order. Default is asc." {
             arg "<SORT_ORDER>"
         }
+        flag "-J --json" help="Output in JSON format"
     }
     cmd "run" help="[experimental] Run a tasks" {
         alias "r"
