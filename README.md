@@ -39,6 +39,14 @@ $ ~/.local/bin/mise --version
 mise 2024.5.16
 ```
 
+or install a specific a version:
+
+```sh-session
+$ curl https://mise.run | MISE_VERSION=v2024.5.16 sh
+$ ~/.local/bin/mise --version
+mise 2024.5.16
+```
+
 Hook mise into your shell (pick the right one for your shell):
 
 ```sh-session
