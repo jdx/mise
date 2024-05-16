@@ -535,7 +535,10 @@ impl Forge for ExternalPlugin {
                     if settings.paranoid {
                         bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
                     }
-                    if !prompt::confirm(format!("Would you like to install {}?", self.name))? {
+                    if !prompt::confirm_with_all(format!(
+                        "Would you like to install {}?",
+                        self.name
+                    ))? {
                         Err(PluginNotInstalled(self.name.clone()))?
                     }
                 }
