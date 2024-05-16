@@ -23,6 +23,7 @@ use crate::cli::args::ForgeArg;
 use crate::config::settings::SettingsStatusMissingTools;
 use crate::config::{Config, Settings};
 use crate::env::TERM_WIDTH;
+use crate::errors::Error;
 use crate::forge::Forge;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
@@ -171,7 +172,13 @@ impl Toolset {
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
-                t.ensure_installed(mpr, false)?;
+                t.ensure_installed(mpr, false).or_else(|err| {
+                    if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                        Ok(())
+                    } else {
+                        Err(err)
+                    }
+                })?;
             }
         }
         let queue = Arc::new(Mutex::new(queue));
