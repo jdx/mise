@@ -203,7 +203,7 @@ impl Toolset {
                             installing.lock().unwrap().insert(t.id().into());
                             for tv in versions {
                                 // TODO: this logic should be able to be removed now I think
-                                for dep in t.get_dependencies(&tv)? {
+                                for dep in t.get_all_dependencies(&tv)? {
                                     while installing.lock().unwrap().contains(&dep.to_string()) {
                                         trace!(
                                         "{tv} waiting for dependency {dep} to finish installing"
