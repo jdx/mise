@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -9,7 +8,7 @@ pub use script_manager::{Script, ScriptManager};
 
 use crate::cli::args::ForgeArg;
 use crate::forge;
-use crate::forge::{Forge, ForgeList, ForgeType};
+use crate::forge::{AForge, ForgeList, ForgeType};
 
 pub mod core;
 mod external_plugin;
@@ -30,9 +29,8 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-pub fn get(name: &str) -> Arc<dyn Forge> {
-    let fa = ForgeArg::new(ForgeType::Asdf, name);
-    forge::get(&fa)
+pub fn get(name: &str) -> AForge {
+    ForgeArg::new(ForgeType::Asdf, name).into()
 }
 
 pub fn list() -> ForgeList {
@@ -52,6 +50,7 @@ pub fn list_external() -> ForgeList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::Forge;
 
     #[test]
     fn test_exact_match() {

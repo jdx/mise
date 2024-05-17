@@ -95,7 +95,7 @@ impl ToolRequest {
     }
     pub fn dependencies(&self) -> eyre::Result<Vec<ForgeArg>> {
         let forge = forge::get(self.forge());
-        forge.get_dependencies(self)
+        forge.get_all_dependencies(self)
     }
     pub fn version(&self) -> String {
         match self {
