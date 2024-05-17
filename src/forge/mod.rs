@@ -128,6 +128,18 @@ pub fn get(fa: &ForgeArg) -> AForge {
     }
 }
 
+impl From<ForgeArg> for AForge {
+    fn from(fa: ForgeArg) -> Self {
+        get(&fa)
+    }
+}
+
+impl From<&ForgeArg> for AForge {
+    fn from(fa: &ForgeArg) -> Self {
+        get(fa)
+    }
+}
+
 pub trait Forge: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.fa().id
@@ -146,6 +158,16 @@ pub trait Forge: Debug + Send + Sync {
     /// before installing this tool.
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
         Ok(vec![])
+    }
+    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+        let mut deps = self.get_dependencies(tvr)?;
+        let dep_forges = deps.iter().map(|fa| fa.into()).collect::<Vec<AForge>>();
+        for dep in dep_forges {
+            // TODO: pass the right tvr
+            let tvr = ToolRequest::System(dep.id().into());
+            deps.extend(dep.get_all_dependencies(&tvr)?);
+        }
+        Ok(deps)
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
@@ -264,7 +286,7 @@ pub trait Forge: Debug + Send + Sync {
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
-            .get_dependencies(&ToolRequest::System(self.id().into()))?
+            .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
             .collect::<HashSet<_>>();
         if deps.is_empty() {
@@ -503,7 +525,7 @@ pub fn unalias_forge(forge: &str) -> &str {
 }
 
 impl Display for dyn Forge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id())
     }
 }
