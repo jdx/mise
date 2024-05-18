@@ -213,8 +213,9 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig())?
 }
 
+static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
 pub fn is_trusted(path: &Path) -> bool {
-    static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
     let mut cached = IS_TRUSTED.lock().unwrap();
     if cached.contains(path) {
         return true;
@@ -338,6 +339,12 @@ impl Hash for dyn ConfigFile {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct TaskConfig {
     pub includes: Option<Vec<PathBuf>>,
+}
+
+#[cfg(test)]
+pub fn reset() {
+    let mut cached = IS_TRUSTED.lock().unwrap();
+    cached.clear();
 }
 
 #[cfg(test)]

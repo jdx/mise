@@ -139,21 +139,26 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::env;
+    use test_log::test;
 
     #[test]
     fn test_exec_ok() {
+        reset();
         assert_cli!("exec", "--", "echo");
     }
 
     #[test]
     fn test_exec_fail() {
+        reset();
         let err = assert_cli_err!("exec", "--", "exit", "1");
         assert_snapshot!(err);
     }
 
     #[test]
     fn test_exec_cd() {
+        reset();
         let cwd = env::current_dir().unwrap();
         assert_cli!("exec", "-C", "/tmp", "--", "pwd");
         env::set_current_dir(cwd).unwrap();

@@ -1,5 +1,6 @@
 pub use prompt::confirm;
 
+#[cfg_attr(any(test, target_os = "windows"), path = "ctrlc_stub.rs")]
 pub mod ctrlc;
 pub mod multi_progress_report;
 pub mod progress_report;

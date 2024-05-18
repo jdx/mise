@@ -51,9 +51,11 @@ fn env_cmd() -> Expression {
 #[cfg(test)]
 mod tests {
     use crate::cli::tests::grep;
+    use crate::test::reset;
 
     #[test]
     fn test_direnv_exec() {
+        reset();
         let stdout = assert_cli!("direnv", "exec");
         assert_str_eq!(grep(stdout, "JDXCODE_TINY="), "JDXCODE_TINY=3.1.0");
     }

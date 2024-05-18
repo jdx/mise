@@ -4,12 +4,49 @@ use std::path::PathBuf;
 use color_eyre::{Help, SectionExt};
 
 use crate::cli::Cli;
-use crate::config::Config;
+use crate::config::{config_file, Config};
 use crate::output::tests::{STDERR, STDOUT};
 use crate::{dirs, env, file, forge};
 
+#[macro_export]
+macro_rules! assert_cli_snapshot {
+    ($($args:expr),+, @$snapshot:literal) => {
+        let args = &vec!["mise".into(), $($args.into()),+];
+        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let output = [stdout, stderr].join("\n").trim().to_string();
+        insta::assert_snapshot!(output, @$snapshot);
+    };
+    ($($args:expr),+) => {
+        let args = &vec!["mise".into(), $($args.into()),+];
+        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let output = [stdout, stderr].join("\n").trim().to_string();
+        insta::assert_snapshot!(output);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_cli {
+    ($($args:expr),+) => {{
+        let args = &vec!["mise".into(), $($args.into()),+];
+        $crate::test::cli_run(args).unwrap();
+        let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
+        console::strip_ansi_codes(&output).trim().to_string()
+    }};
+}
+
+#[macro_export]
+macro_rules! assert_cli_err {
+    ($($args:expr),+) => {{
+        let args = &vec!["mise".into(), $($args.into()),+];
+        $crate::test::cli_run(args).unwrap_err()
+    }};
+}
+
 #[ctor::ctor]
 fn init() {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "debug")
+    }
     console::set_colors_enabled(false);
     console::set_colors_enabled_stderr(false);
     if env::var("__MISE_DIFF").is_ok() {
@@ -20,7 +57,6 @@ fn init() {
         "HOME",
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
     );
-    env::set_current_dir(env::HOME.join("cwd")).unwrap();
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
     env::set_var("NO_COLOR", "1");
@@ -33,11 +69,13 @@ fn init() {
     env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
     //env::set_var("TERM", "dumb");
-    reset_config();
-    forge::reset();
 }
 
-pub fn reset_config() {
+pub fn reset() {
+    env::set_current_dir(env::HOME.join("cwd")).unwrap();
+    env::remove_var("MISE_FAILURE");
+    file::remove_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+    file::remove_all(&*dirs::TRACKED_CONFIGS).unwrap();
     file::write(
         env::HOME.join(".test-tool-versions"),
         indoc! {r#"
@@ -86,6 +124,8 @@ pub fn reset_config() {
     )
     .unwrap();
     let _ = file::remove_file(".test.mise.toml");
+    assert_cli!("prune");
+    assert_cli!("install");
 }
 
 pub fn replace_path(input: &str) -> String {
@@ -103,6 +143,7 @@ pub fn replace_path(input: &str) -> String {
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
     forge::reset();
+    config_file::reset();
     env::ARGS.write().unwrap().clone_from(args);
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
@@ -137,38 +178,4 @@ macro_rules! with_settings {
             (home.as_str(), "~"),
         ]}, {$body})
     }}
-}
-
-#[macro_export]
-macro_rules! assert_cli_snapshot {
-    ($($args:expr),+, @$snapshot:literal) => {
-        let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
-        let output = [stdout, stderr].join("\n").trim().to_string();
-        insta::assert_snapshot!(output, @$snapshot);
-    };
-    ($($args:expr),+) => {
-        let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
-        let output = [stdout, stderr].join("\n").trim().to_string();
-        insta::assert_snapshot!(output);
-    };
-}
-
-#[macro_export]
-macro_rules! assert_cli {
-    ($($args:expr),+) => {{
-        let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap();
-        let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
-        console::strip_ansi_codes(&output).trim().to_string()
-    }};
-}
-
-#[macro_export]
-macro_rules! assert_cli_err {
-    ($($args:expr),+) => {{
-        let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap_err()
-    }};
 }

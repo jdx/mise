@@ -46,11 +46,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset_config;
+    use crate::test::reset;
 
     #[test]
     fn test_settings_get() {
-        reset_config();
+        reset();
         assert_cli_snapshot!("settings", "get", "legacy_version_file", @"true");
         assert_cli_snapshot!("settings", "get", "status.missing_tools", @r###""if_other_versions_installed""###);
     }

@@ -182,8 +182,12 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+    use test_log::test;
+
     #[test]
     fn test_hook_env() {
+        reset();
         assert_cli!("hook-env", "--status", "-s", "fish");
     }
 }

@@ -84,9 +84,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::dirs;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn test_where() {
+        reset();
         assert_cli!("install");
         let stdout = assert_cli!("where", "tiny");
         assert_str_eq!(
@@ -97,6 +100,7 @@ mod tests {
 
     #[test]
     fn test_where_asdf_style() {
+        reset();
         assert_cli!("install", "tiny@2", "tiny@3");
         assert_cli_snapshot!("where", "tiny", "2");
         assert_cli_snapshot!("where", "tiny", "3");
@@ -104,6 +108,7 @@ mod tests {
 
     #[test]
     fn test_where_alias() {
+        reset();
         assert_cli!("install", "tiny@my/alias");
         let stdout = assert_cli!("where", "tiny@my/alias");
         assert_str_eq!(
@@ -115,6 +120,7 @@ mod tests {
 
     #[test]
     fn test_where_not_found() {
+        reset();
         let err = assert_cli_err!("where", "tiny@1111");
         assert_snapshot!(err, @"tiny@1111 not installed");
     }

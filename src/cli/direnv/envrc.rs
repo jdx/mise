@@ -56,11 +56,12 @@ impl Envrc {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use crate::{dirs, file};
 
     #[test]
     fn test_direnv_envrc() {
-        assert_cli!("install");
+        reset();
         let stdout = assert_cli!("direnv", "envrc");
         let envrc = file::read_to_string(stdout.trim()).unwrap();
         let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");

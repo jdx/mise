@@ -53,11 +53,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset_config;
+    use crate::test::reset;
 
     #[test]
     fn test_settings_ls() {
-        reset_config();
+        reset();
         assert_cli_snapshot!("settings", @r###"
         activate_aggressive = false
         all_compile = false
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_settings_ls_keys() {
-        reset_config();
+        reset();
         assert_cli_snapshot!("settings", "--keys", @r###"
         activate_aggressive
         all_compile

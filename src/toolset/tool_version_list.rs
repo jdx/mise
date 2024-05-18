@@ -39,12 +39,14 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use crate::{dirs, env, file};
 
     use super::*;
 
     #[test]
     fn test_tool_version_list() {
+        reset();
         let fa: ForgeArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
@@ -54,6 +56,7 @@ mod tests {
 
     #[test]
     fn test_tool_version_list_failure() {
+        reset();
         forge::reset();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
@@ -62,6 +65,5 @@ mod tests {
         tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
         let _ = tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 0);
-        env::remove_var("MISE_FAILURE");
     }
 }

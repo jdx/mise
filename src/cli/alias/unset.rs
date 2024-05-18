@@ -33,11 +33,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset_config;
+    use crate::test::reset;
 
     #[test]
     fn test_alias_unset() {
-        reset_config();
+        reset();
 
         assert_cli!("alias", "unset", "tiny", "my/alias");
         assert_cli_snapshot!("aliases", @r###"
@@ -56,6 +56,6 @@ mod tests {
         tiny  lts-prev     2.0.0
         "###);
 
-        reset_config();
+        reset();
     }
 }

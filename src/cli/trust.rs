@@ -5,7 +5,7 @@ use clap::ValueHint;
 use eyre::Result;
 
 use crate::config;
-use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
+use crate::config::{config_file, Settings, DEFAULT_CONFIG_FILENAMES};
 use crate::dirs::TRUSTED_CONFIGS;
 use crate::file::remove_file;
 
@@ -59,16 +59,29 @@ impl Trust {
         Ok(())
     }
     fn untrust(&self) -> Result<()> {
+        let settings = Settings::get();
         let path = match &self.config_file {
             Some(filename) => PathBuf::from(filename),
             None => match self.get_next_trusted() {
                 Some(path) => path,
-                None => bail!("No trusted config files found."),
+                None => {
+                    warn!("No trusted config files found.");
+                    return Ok(());
+                }
             },
         };
         let path = path.canonicalize()?;
         config_file::untrust(&path)?;
         info!("untrusted {}", path.display());
+
+        let trusted_via_settings = settings
+            .trusted_config_paths
+            .iter()
+            .any(|p| path.starts_with(p));
+        if trusted_via_settings {
+            warn!("{path:?} is trusted via settings so it will still be trusted.");
+        }
+
         Ok(())
     }
     fn trust(&self) -> Result<()> {
@@ -76,7 +89,10 @@ impl Trust {
             Some(filename) => PathBuf::from(filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
-                None => bail!("No untrusted config files found."),
+                None => {
+                    warn!("No untrusted config files found.");
+                    return Ok(());
+                }
             },
         };
         let path = path.canonicalize()?;
@@ -109,8 +125,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_trust() {
+        reset();
+        assert_cli!("trust", "--untrust");
         assert_cli_snapshot!("trust");
         assert_cli_snapshot!("trust", "--untrust");
         assert_cli_snapshot!("trust", ".test-tool-versions");

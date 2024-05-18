@@ -12,15 +12,15 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-  "src/**/*.rs",
-  "src/plugins/core/assets/**",
-  "src/assets/**",
-  "/completions/*",
-  "/Cargo.lock",
-  "/LICENSE",
-  "/README.md",
-  "/build.rs",
-  "/zipsign.pub",
+    "src/**/*.rs",
+    "src/plugins/core/assets/**",
+    "src/assets/**",
+    "/completions/*",
+    "/Cargo.lock",
+    "/LICENSE",
+    "/README.md",
+    "/build.rs",
+    "/zipsign.pub",
 ]
 rust-version = "1.76.0"
 build = "build.rs"
@@ -43,8 +43,8 @@ lto = true
 base64 = "0.22.1"
 calm_io = "0.1.1"
 chrono = { version = "0.4.38", default-features = false, features = [
-  "std",
-  "clock",
+    "std",
+    "clock",
 ] }
 ci_info = "0.14.14"
 clap = { version = "4.5.4", features = ["env", "derive", "string"] }
@@ -87,16 +87,16 @@ regex = "1.10.4"
 # mise error sending request for url (https://api.github.com/repos/jdx/mise/releases): error trying to connect: invalid URL, scheme is not http
 # mise error trying to connect: invalid URL, scheme is not http
 reqwest = { version = "<0.12", default-features = false, features = [
-  "blocking",
-  "json",
-  "gzip",
+    "blocking",
+    "json",
+    "gzip",
 ] }
 rmp-serde = "1.3.0"
 # TODO: fix issue with rustls and "No signature verification implemented for Plain(None) files"
 self_update = { version = "<0.40.0", default-features = false, features = [
-  "archive-tar",
-  "compression-flate2",
-  "signatures",
+    "archive-tar",
+    "compression-flate2",
+    "signatures",
 ] }
 serde = "1.0.199"
 serde_derive = "1.0.199"
@@ -137,6 +137,7 @@ insta = { version = "1.38.0", features = ["filters", "json"] }
 predicates = "3.1.0"
 pretty_assertions = "1.4.0"
 test-case = "3.3.1"
+test-log = "0.2"
 
 [features]
 default = ["native-tls"]
