@@ -27,9 +27,12 @@ impl FromStr for EnvVarArg {
 #[cfg(test)]
 mod tests {
     use super::EnvVarArg;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn valid_values() {
+        reset();
         let values = [
             ("FOO", new_arg("FOO", None)),
             ("FOO=", new_arg("FOO", Some(""))),

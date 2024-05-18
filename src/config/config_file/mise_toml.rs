@@ -872,6 +872,7 @@ mod tests {
 
     #[test]
     fn test_fixture() {
+        reset();
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
