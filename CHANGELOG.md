@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.5.17](https://github.com/jdx/mise/compare/v2024.5.16..v2024.5.17) - 2024-05-18
+
+### 🚀 Features
+
+- allow install specific version from https://mise.run #1800 by [@Its-Alex](https://github.com/Its-Alex) in [#2123](https://github.com/jdx/mise/pull/2123)
+- confirm all plugins by [@roele](https://github.com/roele) in [#2126](https://github.com/jdx/mise/pull/2126)
+- allow ignore missing plugin by [@roele](https://github.com/roele) in [#2127](https://github.com/jdx/mise/pull/2127)
+
+### 🐛 Bug Fixes
+
+- **(pipx)** depend on python by [@jdx](https://github.com/jdx) in [89b9c9a](https://github.com/jdx/mise/commit/89b9c9a7db4e1db624019bb760ed32a76d5a7597)
+
+### 🚜 Refactor
+
+- fetch transitive dependencies by [@jdx](https://github.com/jdx) in [#2131](https://github.com/jdx/mise/pull/2131)
+
+### 🧪 Testing
+
+- pass MISE_LOG_LEVEL through by [@jdx](https://github.com/jdx) in [7dea795](https://github.com/jdx/mise/commit/7dea795967ee11526af6e95a55e19bf7fddb3315)
+- make unit tests work shuffled by [@jdx](https://github.com/jdx) in [#2133](https://github.com/jdx/mise/pull/2133)
+- ensure tests reset by [@jdx](https://github.com/jdx) in [#2134](https://github.com/jdx/mise/pull/2134)
+- ensure tests reset by [@jdx](https://github.com/jdx) in [feeaf8f](https://github.com/jdx/mise/commit/feeaf8f072a253305df9f59d357596a87fc0da36)
+- clean up .test.mise.toml file by [@jdx](https://github.com/jdx) in [c41e0a3](https://github.com/jdx/mise/commit/c41e0a3adedf5502901d5c8b5f49d2f51e4f9428)
+
 ## [2024.5.16](https://github.com/jdx/mise/compare/v2024.5.15..v2024.5.16) - 2024-05-15
 
 ### 🚀 Features
