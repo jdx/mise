@@ -147,20 +147,25 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::change_installed_version;
+    use crate::test::{change_installed_version, reset};
 
     #[test]
-    fn test_current() {
+    fn test_outdated() {
+        reset();
+        assert_cli!("prune");
+        assert_cli!("install");
         assert_cli_snapshot!("outdated");
     }
 
     #[test]
-    fn test_current_with_runtimes() {
+    fn test_outdated_with_runtimes() {
+        reset();
         assert_cli_snapshot!("outdated", "tiny");
     }
 
     #[test]
-    fn test_current_json() {
+    fn test_outdated_json() {
+        reset();
         change_installed_version("tiny", "3.1.0", "3.0.0");
         assert_cli_snapshot!("outdated", "tiny", "--json");
         change_installed_version("tiny", "3.0.0", "3.1.0");

@@ -70,8 +70,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+    use test_log::test;
+
     #[test]
     fn test_alias_ls() {
+        reset();
         assert_cli_snapshot!("aliases", @r###"
         java  lts          21   
         node  lts          20   
@@ -92,6 +96,7 @@ mod tests {
 
     #[test]
     fn test_alias_ls_filter() {
+        reset();
         assert_cli_snapshot!("aliases", "ls", "tiny", @r###"
         tiny  lts      3.1.0
         tiny  lts-prev 2.0.0

@@ -161,8 +161,8 @@ mod tests {
     use std::panic;
 
     use crate::cli::tests::grep;
-    use crate::test::reset_config;
-    use crate::{dirs, env, file};
+    use crate::test::reset;
+    use crate::{dirs, forge};
 
     #[test]
     fn test_local_remove() {
@@ -223,6 +223,8 @@ mod tests {
         run_test(|| {
             assert_cli_snapshot!("local", "--path");
             assert_cli_snapshot!("local", "tiny@2", "tiny@1", "tiny@3");
+            assert_cli!("install");
+            forge::reset();
             assert_cli_snapshot!("bin-paths");
         });
     }
@@ -304,15 +306,9 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        let _ = file::remove_file(env::current_dir().unwrap().join(".test.mise.toml"));
-        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
-        let orig = file::read_to_string(&cf_path).unwrap();
-
+        reset();
+        assert_cli!("install");
         let result = panic::catch_unwind(test);
-
-        file::write(cf_path, orig).unwrap();
-
         assert!(result.is_ok());
-        reset_config();
     }
 }

@@ -83,8 +83,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_which() {
+        reset();
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -94,6 +97,7 @@ mod tests {
 
     #[test]
     fn test_which_plugin() {
+        reset();
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--plugin", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -103,6 +107,7 @@ mod tests {
 
     #[test]
     fn test_which_version() {
+        reset();
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--version", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -112,6 +117,7 @@ mod tests {
 
     #[test]
     fn test_which_tool() {
+        reset();
         assert_cli!("install", "dummy@1.0.1");
         assert_cli_snapshot!("which", "dummy", "--tool=dummy@1.0.1");
     }

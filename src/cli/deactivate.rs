@@ -51,9 +51,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::config::Config;
     use crate::env;
+    use crate::test::reset;
 
     #[test]
     fn test_deactivate() {
+        reset();
         let _config = Config::try_get().unwrap(); // hack: prevents error parsing __MISE_DIFF
         let err = assert_cli_err!("deactivate");
         assert_snapshot!(err);

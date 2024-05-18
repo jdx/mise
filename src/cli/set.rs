@@ -128,6 +128,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::path::PathBuf;
 
+    use crate::test::reset;
     use crate::{env, file};
 
     fn remove_config_file(filename: &str) -> PathBuf {
@@ -138,6 +139,7 @@ mod tests {
 
     #[test]
     fn test_show_env_vars() {
+        reset();
         assert_cli_snapshot!("env-vars");
     }
 

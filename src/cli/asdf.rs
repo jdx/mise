@@ -71,8 +71,11 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_fake_asdf_list() {
+        reset();
         assert_cli!("uninstall", "--all", "tiny");
         assert_cli!("install", "tiny@1", "tiny@2");
         assert_cli!("asdf", "install", "tiny");
@@ -85,6 +88,9 @@ mod tests {
 
     #[test]
     fn test_fake_asdf_other() {
+        reset();
+        assert_cli!("uninstall", "--all", "tiny");
+        assert_cli!("install", "tiny@3.1.0");
         assert_cli_snapshot!("asdf", "current", "tiny", @r###"
         3.1.0
         "###);
@@ -92,11 +98,13 @@ mod tests {
 
     #[test]
     fn test_fake_asdf_reshim() {
+        reset();
         assert_cli_snapshot!("asdf", "reshim");
     }
 
     #[test]
     fn test_fake_asdf_install() {
+        reset();
         // on alpine this shows a warning, use assert_cli! to just get stdout
         assert_snapshot!(assert_cli!("asdf", "install", "tiny"));
     }

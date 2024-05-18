@@ -235,11 +235,14 @@ impl Toolset {
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
                 .map(|x| x.into_iter().flatten().collect())
         })?;
+        trace!("install: resolving");
         if let Err(err) = self.resolve() {
             debug!("error resolving versions after install: {err:#}");
         }
+        trace!("install: reshimming");
         shims::reshim(self)?;
         runtime_symlinks::rebuild(config)?;
+        trace!("install: done");
         Ok(installed)
     }
 

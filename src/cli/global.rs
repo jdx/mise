@@ -76,10 +76,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use crate::{dirs, file};
 
     #[test]
     fn test_global() {
+        reset();
         let cf_path = dirs::HOME.join(".test-tool-versions");
         let orig = file::read_to_string(&cf_path).ok();
         let _ = file::remove_file(&cf_path);

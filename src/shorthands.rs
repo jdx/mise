@@ -50,12 +50,15 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::ops::Deref;
 
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_get_shorthands() {
+        reset();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
@@ -70,6 +73,7 @@ mod tests {
 
     #[test]
     fn test_get_shorthands_missing_file() {
+        reset();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

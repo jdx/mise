@@ -131,6 +131,5 @@ mod tests {
         assert_cli!("render-help");
         let readme = fs::read_to_string("docs/cli-reference.md").unwrap();
         assert!(readme.contains("# Commands"));
-        file::remove_file("docs/cli-reference.md").unwrap();
     }
 }

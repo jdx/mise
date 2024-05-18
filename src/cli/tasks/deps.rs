@@ -161,8 +161,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_tasks_deps_tree() {
+        reset();
         assert_cli_snapshot!("tasks", "deps", @r###"
         configtask
         filetask
@@ -176,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_tasks_deps_tree_args() {
+        reset();
         assert_cli_snapshot!("tasks", "deps", "filetask", "lint", "test", @r###"
         filetask
         ├── test
@@ -188,6 +192,7 @@ mod tests {
 
     #[test]
     fn test_tasks_deps_dot() {
+        reset();
         assert_cli_snapshot!("tasks", "deps", "--dot", @r###"
         digraph {
             0 [ label = "configtask"]

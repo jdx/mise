@@ -586,9 +586,11 @@ fn format_duration(dur: std::time::Duration) -> String {
 #[cfg(test)]
 mod tests {
     use crate::file;
+    use crate::test::reset;
 
     #[test]
     fn test_task_run() {
+        reset();
         file::remove_all("test-build-output.txt").unwrap();
         assert_cli_snapshot!(
             "r",

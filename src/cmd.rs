@@ -10,7 +10,9 @@ use std::thread;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
+#[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+#[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 
 use crate::config::{Config, Settings};
@@ -301,7 +303,9 @@ impl<'a> CmdLineRunner<'a> {
                 stdin.write_all(text.as_bytes()).unwrap();
             });
         }
+        #[cfg(not(any(test, target_os = "windows")))]
         let mut sighandle = None;
+        #[cfg(not(any(test, target_os = "windows")))]
         if self.pass_signals {
             let mut signals =
                 Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
@@ -313,9 +317,11 @@ impl<'a> CmdLineRunner<'a> {
                 }
             });
         }
+        #[cfg(not(any(test, target_os = "windows")))]
         let id = cp.id();
         thread::spawn(move || {
             let status = cp.wait().unwrap();
+            #[cfg(not(any(test, target_os = "windows")))]
             if let Some(sighandle) = sighandle {
                 sighandle.close();
             }
@@ -336,6 +342,7 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
                 }
+                #[cfg(not(any(test, target_os = "windows")))]
                 ChildProcessOutput::Signal(sig) => {
                     if sig != SIGINT {
                         cmd!("kill", format!("-{sig}"), id.to_string()).run()?;
@@ -430,6 +437,7 @@ enum ChildProcessOutput {
     Stdout(String),
     Stderr(String),
     ExitStatus(ExitStatus),
+    #[cfg(not(any(test, target_os = "windows")))]
     Signal(i32),
 }
 

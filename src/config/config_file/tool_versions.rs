@@ -208,11 +208,14 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::env;
+    use crate::test::reset;
 
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_parse() {
+        reset();
         let tv = ToolVersions::from_file(
             env::current_dir()
                 .unwrap()
@@ -229,6 +232,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_parse_comments() {
+        reset();
         let orig = indoc! {"
         # intro comment
         python 3.11.0 3.10.0 # some comment # more comment
@@ -243,6 +247,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_parse_colon() {
+        reset();
         let orig = indoc! {"
         ruby: 3.0.5
         "};
@@ -255,6 +260,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_parse_tera() {
+        reset();
         let orig = indoc! {"
         ruby {{'3.0.5'}}
         python {{exec(command='echo 3.11.0')}}
@@ -271,6 +277,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_from_toolset() {
+        reset();
         let orig = indoc! {"
         ruby: 3.0.5 3.1
         "};
