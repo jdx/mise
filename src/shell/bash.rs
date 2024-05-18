@@ -99,12 +99,14 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::replace_path;
+    use crate::test::{replace_path, reset};
+    use test_log::test;
 
     use super::*;
 
     #[test]
     fn test_activate() {
+        reset();
         let bash = Bash::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(bash.activate(exe, " --status".into()));
@@ -112,22 +114,26 @@ mod tests {
 
     #[test]
     fn test_set_env() {
+        reset();
         assert_snapshot!(Bash::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_prepend_env() {
+        reset();
         let bash = Bash::default();
         assert_snapshot!(replace_path(&bash.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]
     fn test_unset_env() {
+        reset();
         assert_snapshot!(Bash::default().unset_env("FOO"));
     }
 
     #[test]
     fn test_deactivate() {
+        reset();
         let deactivate = Bash::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }

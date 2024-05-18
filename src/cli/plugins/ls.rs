@@ -120,26 +120,32 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::cli::tests::grep;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn test_plugin_list() {
+        reset();
         assert_cli_snapshot!("plugin", "list");
     }
 
     #[test]
     fn test_plugin_list_urls() {
+        reset();
         let stdout = assert_cli!("plugin", "list", "--urls");
         assert!(stdout.contains("dummy"))
     }
 
     #[test]
     fn test_plugin_list_all() {
+        reset();
         let stdout = assert_cli!("plugin", "list", "--all", "--urls");
         assert_snapshot!(grep(stdout, "zephyr"));
     }
 
     #[test]
     fn test_plugin_refs() {
+        reset();
         let stdout = assert_cli!("plugin", "list", "--refs");
         assert!(stdout.contains("dummy"))
     }
