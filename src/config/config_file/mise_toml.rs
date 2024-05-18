@@ -897,12 +897,13 @@ mod tests {
         )
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
+        let dump = cf.dump().unwrap();
         let env = parse_env(file::read_to_string(&p).unwrap());
 
         assert_debug_snapshot!(env, @r###""foo=bar""###);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
-            assert_snapshot!(cf.dump().unwrap());
+            assert_snapshot!(dump);
             assert_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
@@ -1192,7 +1193,10 @@ mod tests {
     fn parse(s: String) -> MiseToml {
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(&p, s).unwrap();
-        MiseToml::from_file(&p).unwrap()
+        let cfg = MiseToml::from_file(&p).unwrap();
+        file::remove_file(&p).unwrap();
+
+        cfg
     }
 
     fn parse_env(toml: String) -> String {
