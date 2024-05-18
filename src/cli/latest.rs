@@ -66,35 +66,44 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+    use test_log::test;
+
     #[test]
     fn test_latest() {
+        reset();
         assert_cli_snapshot!("latest", "dummy@1");
     }
 
     #[test]
     fn test_latest_asdf_format() {
+        reset();
         assert_cli_snapshot!("latest", "dummy", "1");
     }
 
     #[test]
     fn test_latest_system() {
+        reset();
         let err = assert_cli_err!("latest", "dummy@system");
         assert_snapshot!(err);
     }
 
     #[test]
     fn test_latest_installed() {
+        reset();
         assert_cli_snapshot!("latest", "dummy");
     }
 
     #[test]
     fn test_latest_missing_plugin() {
+        reset();
         let stdout = assert_cli_err!("latest", "invalid_plugin");
         assert_snapshot!(stdout);
     }
 
     #[test]
     fn test_latest_alias() {
+        reset();
         let stdout = assert_cli!("latest", "tiny@lts");
         assert_str_eq!(stdout, "3.1.0");
     }

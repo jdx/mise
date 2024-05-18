@@ -72,6 +72,9 @@ fn init() {
 }
 
 pub fn reset() {
+    Config::reset();
+    forge::reset();
+    config_file::reset();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();
     env::remove_var("MISE_FAILURE");
     file::remove_all(&*dirs::TRUSTED_CONFIGS).unwrap();
