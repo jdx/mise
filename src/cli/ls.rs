@@ -383,9 +383,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::dirs;
     use crate::file::remove_all;
+    use crate::test::reset;
 
     #[test]
     fn test_ls() {
+        reset();
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("list", @r###"
@@ -422,6 +424,7 @@ mod tests {
 
     #[test]
     fn test_ls_current() {
+        reset();
         assert_cli_snapshot!("ls", "-c", @r###"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
@@ -430,6 +433,7 @@ mod tests {
 
     #[test]
     fn test_ls_json() {
+        reset();
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--json");
@@ -438,6 +442,7 @@ mod tests {
 
     #[test]
     fn test_ls_parseable() {
+        reset();
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--parseable", @r###"
@@ -455,18 +460,21 @@ mod tests {
 
     #[test]
     fn test_ls_missing() {
+        reset();
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--missing", @"");
     }
 
     #[test]
     fn test_ls_missing_plugin() {
+        reset();
         let err = assert_cli_err!("ls", "missing-plugin");
         assert_str_eq!(err.to_string(), r#"missing-plugin is not installed"#);
     }
 
     #[test]
     fn test_ls_prefix() {
+        reset();
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
     }

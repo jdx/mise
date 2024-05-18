@@ -216,10 +216,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use crate::{dirs, env, file};
 
     #[test]
     fn test_use_local() {
+        reset();
         let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
         file::write(&cf_path, "").unwrap();
 
@@ -250,6 +252,7 @@ mod tests {
 
     #[test]
     fn test_use_local_tool_versions() {
+        reset();
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
@@ -261,6 +264,7 @@ mod tests {
 
     #[test]
     fn test_use_global() {
+        reset();
         let cf_path = dirs::CONFIG.join("config.toml");
         let orig = file::read_to_string(&cf_path).unwrap();
 

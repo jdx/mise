@@ -93,10 +93,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::env;
 
     #[test]
     fn test_shell() {
+        reset();
         let err = assert_cli_err!("shell", "tiny@1.0.1");
         assert_snapshot!(err);
         env::set_var("__MISE_DIFF", "");

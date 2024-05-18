@@ -8,3 +8,6 @@ tasks.c1 = { run = "echo c1 && sleep 0.5 && echo", depends = ["b1"], hide = true
 
 [env]
 FOO=".mise.local.toml"
+
+[tasks."test:shuffle"]
+run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"

@@ -73,6 +73,8 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn test_hash_to_str() {
@@ -81,6 +83,7 @@ mod tests {
 
     #[test]
     fn test_hash_sha256() {
+        reset();
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_sha256(path).unwrap();
         assert_snapshot!(hash);

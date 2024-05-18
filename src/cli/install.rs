@@ -143,25 +143,30 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::dirs;
+    use crate::test::reset;
 
     #[test]
     fn test_install_force() {
+        reset();
         assert_cli!("install", "-f", "tiny");
     }
 
     #[test]
     fn test_install_asdf_style() {
+        reset();
         assert_cli!("install", "tiny", "2");
     }
 
     #[test]
     fn test_install_with_alias() {
+        reset();
         assert_cli!("install", "-f", "tiny@my/alias");
         assert_cli_snapshot!("where", "tiny@my/alias");
     }
 
     #[test]
     fn test_install_ref() {
+        reset();
         assert_cli!("install", "-f", "dummy@ref:master");
         assert_cli!("global", "dummy@ref:master");
         let output = assert_cli!("where", "dummy");
@@ -174,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_install_nothing() {
+        reset();
         // this doesn't do anything since dummy isn't specified
         assert_cli_snapshot!("install", "dummy");
     }

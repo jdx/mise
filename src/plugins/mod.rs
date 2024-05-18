@@ -51,9 +51,12 @@ pub fn list_external() -> ForgeList {
 mod tests {
     use super::*;
     use crate::forge::Forge;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn test_exact_match() {
+        reset();
         assert_cli!("plugin", "add", "tiny");
         let plugin = ExternalPlugin::new(String::from("tiny"));
         let version = plugin
@@ -67,6 +70,7 @@ mod tests {
 
     #[test]
     fn test_latest_stable() {
+        reset();
         let plugin = ExternalPlugin::new(String::from("dummy"));
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");

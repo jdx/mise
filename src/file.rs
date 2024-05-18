@@ -382,12 +382,14 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::ops::Deref;
 
     use super::*;
 
     #[test]
     fn test_find_up() {
+        reset();
         let path = &env::current_dir().unwrap();
         let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()

@@ -73,9 +73,11 @@ mod tests {
 
     use crate::cli::tests::grep;
     use crate::dirs;
+    use crate::test::reset;
 
     #[test]
     fn test_env() {
+        reset();
         let stdout = assert_cli!("env", "-s", "bash");
         assert!(stdout.contains(
             dirs::DATA
@@ -87,6 +89,7 @@ mod tests {
 
     #[test]
     fn test_env_with_runtime_arg() {
+        reset();
         assert_cli!("install", "tiny@3.0");
         let stdout = assert_cli!("env", "tiny@3.0", "-s", "bash");
 
@@ -100,6 +103,7 @@ mod tests {
 
     #[test]
     fn test_env_alias() {
+        reset();
         assert_cli!("plugin", "add", "tiny");
         assert_cli!("install", "tiny@my/alias");
         let stdout = assert_cli!("env", "tiny@my/alias", "-s", "bash");
@@ -113,12 +117,14 @@ mod tests {
 
     #[test]
     fn test_env_tiny() {
+        reset();
         let stdout = assert_cli!("env", "tiny@2", "tiny@1", "tiny@3", "-s", "bash");
         assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=2.1.0");
     }
 
     #[test]
     fn test_env_default_shell() {
+        reset();
         env::set_var("SHELL", "");
         let stdout = assert_cli!("env");
         assert!(stdout.contains("export PATH="));
@@ -126,6 +132,7 @@ mod tests {
 
     #[test]
     fn test_env_json() {
+        reset();
         assert_cli_snapshot!("env", "-J");
     }
 }

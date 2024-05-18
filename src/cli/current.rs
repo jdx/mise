@@ -114,10 +114,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::env;
+    use test_log::test;
 
     #[test]
     fn test_current() {
+        reset();
         assert_cli_snapshot!("current", @r###"
         tiny 3.1.0
         dummy ref:master
@@ -126,12 +129,14 @@ mod tests {
 
     #[test]
     fn test_current_with_runtimes() {
+        reset();
         assert_cli_snapshot!("current", "tiny", @"3.1.0");
     }
 
     #[test]
     fn test_current_missing() {
-        assert_cli!("uninstall", "dummy@1.0.1");
+        reset();
+        assert_cli!("uninstall", "--all", "dummy");
 
         env::set_var("MISE_DUMMY_VERSION", "1.1.0");
         assert_cli_snapshot!("current", @r###"

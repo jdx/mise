@@ -167,14 +167,19 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+    use test_log::test;
+
     #[test]
     fn test_plugin_install_invalid_url() {
+        reset();
         let err = assert_cli_err!("plugin", "add", "tiny*");
         assert_snapshot!(err, @"No repository found for plugin tiny*");
     }
 
     #[test]
     fn test_plugin_install_core_plugin() {
+        reset();
         let err = assert_cli_err!("plugin", "add", "node");
         assert_snapshot!(err, @"node is a core plugin and does not need to be installed");
     }

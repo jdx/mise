@@ -41,11 +41,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset_config;
+    use crate::test::reset;
 
     #[test]
     fn test_alias_get() {
-        reset_config();
+        reset();
         let stdout = assert_cli!("alias", "get", "tiny", "my/alias");
         assert_snapshot!(stdout, @r###"
         3.0
@@ -54,12 +54,14 @@ mod tests {
 
     #[test]
     fn test_alias_get_plugin_unknown() {
+        reset();
         let err = assert_cli_err!("alias", "get", "unknown", "unknown");
         assert_snapshot!(err, @"Unknown plugin: unknown");
     }
 
     #[test]
     fn test_alias_get_alias_unknown() {
+        reset();
         let err = assert_cli_err!("alias", "get", "tiny", "unknown");
         assert_snapshot!(err, @"Unknown alias: unknown");
     }

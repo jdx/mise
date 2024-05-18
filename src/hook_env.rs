@@ -166,12 +166,15 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::time::UNIX_EPOCH;
 
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_have_config_files_been_modified() {
+        reset();
         let files = BTreeSet::new();
         let watches = HookEnvWatches {
             files: BTreeMap::new(),
@@ -198,6 +201,7 @@ mod tests {
 
     #[test]
     fn test_serialize_watches_empty() {
+        reset();
         let watches = HookEnvWatches {
             files: BTreeMap::new(),
             env_var_hash: "".into(),
@@ -209,6 +213,7 @@ mod tests {
 
     #[test]
     fn test_serialize_watches() {
+        reset();
         let serialized = serialize_watches(&HookEnvWatches {
             files: BTreeMap::from([("foo".into(), UNIX_EPOCH)]),
             env_var_hash: "testing-123".into(),

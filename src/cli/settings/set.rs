@@ -107,11 +107,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 pub mod tests {
-    use crate::test::reset_config;
+    use crate::test::reset;
 
     #[test]
     fn test_settings_set() {
-        reset_config();
+        reset();
         assert_cli!("settings", "set", "legacy_version_file", "0");
         assert_cli!("settings", "set", "always_keep_download", "y");
         assert_cli!("settings", "set", "status.missing_tools", "never");
@@ -159,6 +159,6 @@ pub mod tests {
         show_env = false
         show_tools = false
         "###);
-        reset_config();
+        reset();
     }
 }
