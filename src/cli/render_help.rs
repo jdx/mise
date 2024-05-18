@@ -113,12 +113,15 @@ fn remove_trailing_spaces(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use std::fs;
 
     use crate::file;
+    use test_log::test;
 
     #[test]
     fn test_render_help() {
+        reset();
         file::create_dir_all("docs").unwrap();
         file::write(
             "docs/cli-reference.md",
@@ -131,5 +134,6 @@ mod tests {
         assert_cli!("render-help");
         let readme = fs::read_to_string("docs/cli-reference.md").unwrap();
         assert!(readme.contains("# Commands"));
+        file::remove_file("docs/cli-reference.md").unwrap();
     }
 }

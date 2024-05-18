@@ -84,9 +84,12 @@ impl FromIterator<PathBuf> for PathEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::reset;
+    use test_log::test;
 
     #[test]
     fn test_path_env() {
+        reset();
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",
@@ -113,6 +116,7 @@ mod tests {
 
     #[test]
     fn test_path_env_no_mise() {
+        reset();
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",
