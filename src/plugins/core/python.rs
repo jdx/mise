@@ -389,7 +389,7 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python_precompiled_arch {
         return arch.as_str();
     }
-    if cfg!(all(os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
