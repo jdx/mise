@@ -29,6 +29,7 @@ export default defineConfig({
       { text: 'How I Use mise', link: '/how-i-use-mise' },
       { text: 'IDE Integration', link: '/ide-integration' },
       { text: 'Paranoid', link: '/paranoid' },
+      { text: 'Registry', link: '/registry' },
       { text: 'Plugins', link: '/plugins' },
       { text: 'Team', link: '/team' },
       { text: 'Contributing', link: '/contributing' },
