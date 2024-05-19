@@ -523,12 +523,14 @@ editLink: false
 | pipectl | <https://github.com/pipe-cd/asdf-pipectl> |
 | pipelight | <https://github.com/kogeletey/asdf-pipelight> |
 | pipenv | <https://github.com/mise-plugins/mise-pipenv> |
+| pipx | <https://github.com/yozachar/asdf-pipx> |
 | pivnet | <https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf> |
 | pkl | <https://github.com/mise-plugins/asdf-pkl> |
 | please | <https://github.com/asdf-community/asdf-please> |
 | pluto | <https://github.com/FairwindsOps/asdf-pluto> |
 | pnpm | <https://github.com/jonathanmorley/asdf-pnpm> |
 | podman | <https://github.com/tvon/asdf-podman> |
+| poetry | <https://github.com/mise-plugins/mise-poetry> |
 | polaris | <https://github.com/particledecay/asdf-polaris> |
 | popeye | <https://github.com/nlamirault/asdf-popeye> |
 | postgres | <https://github.com/smashedtoatoms/asdf-postgres> |
@@ -667,6 +669,7 @@ editLink: false
 | temporal | <https://github.com/asdf-community/asdf-temporal> |
 | temporalite | <https://github.com/eko/asdf-temporalite> |
 | terradozer | <https://github.com/chessmango/asdf-terradozer> |
+| terraform | <https://github.com/asdf-community/asdf-hashicorp> |
 | terraform-docs | <https://github.com/looztra/asdf-terraform-docs> |
 | terraform-ls | <https://github.com/asdf-community/asdf-hashicorp> |
 | terraform-lsp | <https://github.com/bartlomiejdanek/asdf-terraform-lsp> |
