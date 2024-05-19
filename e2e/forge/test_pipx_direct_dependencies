@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-require_cmd "python"
+require_cmd python3
 
 # Create a system pipx that always fail and push it to the front of PATH
 cat >"$HOME/bin/pipx" <<'EOF'
