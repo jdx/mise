@@ -9,7 +9,7 @@ on:
   pull_request:
   push:
     tags: ["*"]
-    branches: ["generate"]
+    branches: ["trunk"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

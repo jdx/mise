@@ -959,6 +959,21 @@ Examples:
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
+## `mise registry`
+
+```text
+[experimental] List available tools
+
+Usage: registry
+
+Examples:
+
+    $ mise registry
+    node    core:node
+    poetry  asdf:mise-plugins/mise-poetry
+    ubi     cargo:ubi
+```
+
 ## `mise reshim`
 
 ```text

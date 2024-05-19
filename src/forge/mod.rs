@@ -1,3 +1,4 @@
+use crate::plugins::core;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -48,6 +49,7 @@ pub type ForgeList = Vec<AForge>;
 pub enum ForgeType {
     Asdf,
     Cargo,
+    Core,
     Go,
     Npm,
     Pipx,
@@ -89,6 +91,9 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
             match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
+                ForgeType::Core => {
+                    core::get(&fa.name).unwrap_or_else(|| panic!("Core tool not found {fa}"))
+                }
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
@@ -119,6 +124,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(name)),
+                ForgeType::Core => core::get(&fa.name).unwrap(),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
                 ForgeType::Go => Arc::new(go::GoForge::new(name)),
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(name)),

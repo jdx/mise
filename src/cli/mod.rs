@@ -34,6 +34,7 @@ mod ls_remote;
 mod outdated;
 mod plugins;
 mod prune;
+mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
 #[cfg(feature = "clap_mangen")]
@@ -89,6 +90,7 @@ pub enum Commands {
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
+    Registry(registry::Registry),
     Reshim(reshim::Reshim),
     Run(run::Run),
     SelfUpdate(self_update::SelfUpdate),
@@ -146,6 +148,7 @@ impl Commands {
             Self::Outdated(cmd) => cmd.run(),
             Self::Plugins(cmd) => cmd.run(),
             Self::Prune(cmd) => cmd.run(),
+            Self::Registry(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),
             Self::SelfUpdate(cmd) => cmd.run(),
@@ -271,7 +274,7 @@ pub mod tests {
             .split('\n')
             .find(|line| line.contains(pattern))
             .map(|line| line.to_string())
-            .unwrap()
+            .unwrap_or_else(|| panic!("pattern not found: {}", pattern))
             .trim()
             .replace(dirs::HOME.to_string_lossy().as_ref(), "~")
     }
