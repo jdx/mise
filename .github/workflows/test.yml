@@ -47,7 +47,8 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise settings set experimental true
-      - uses: actions/cache@v4
+      - name: cache mise
+        uses: actions/cache@v4
         with:
           key: mise-tools-${{ hashFiles('.mise.toml') }}
           restore-keys: mise-tools
@@ -78,7 +79,8 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      - name: cache mise
+        uses: actions/cache@v4
         with:
           key: mise-tools-${{ hashFiles('.mise.toml') }}
           restore-keys: mise-tools
