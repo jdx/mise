@@ -57,5 +57,5 @@ This makes installing CLIs with cargo _much_ faster by downloading precompiled b
 You can install it with mise:
 
 ```sh
-mise use -g cargo:cargo-binstall
+mise use -g cargo-binstall
 ```
