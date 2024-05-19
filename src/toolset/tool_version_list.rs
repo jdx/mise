@@ -1,4 +1,5 @@
 use crate::cli::args::ForgeArg;
+use crate::errors::Error;
 use crate::forge;
 use crate::toolset::tool_version_request::ToolRequest;
 use crate::toolset::{ToolSource, ToolVersion};
@@ -28,8 +29,12 @@ impl ToolVersionList {
             match tvr.resolve(plugin.as_ref(), latest_versions) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
-                    let source = self.source.to_string();
-                    bail!("failed to resolve version of {plugin} from {source}: {err:#}");
+                    return Err(Error::FailedToResolveVersion {
+                        tr: tvr.clone(),
+                        ts: self.source.clone(),
+                        source: err,
+                    }
+                    .into());
                 }
             }
         }
