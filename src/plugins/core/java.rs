@@ -400,11 +400,11 @@ fn os() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
+    if cfg!(target_arch = "x86_64") {
         "x86_64"
-    } else if cfg!(target_arch = "armv6l") || cfg!(target_arch = "armv7l") {
+    } else if cfg!(target_arch = "arm") {
         "arm32-vfp-hflt"
-    } else if cfg!(target_arch = "aarch64") || cfg!(target_arch = "arm64") {
+    } else if cfg!(target_arch = "aarch64") {
         "aarch64"
     } else {
         &ARCH
