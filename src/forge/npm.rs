@@ -43,8 +43,9 @@ impl Forge for NPMForge {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw =
-                    cmd_forge!(self, "npm", "view", self.name(), "dist-tags", "--json")?.read()?;
+                let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
                 let latest = match dist_tags["latest"] {
                     Value::String(ref s) => Some(s.clone()),

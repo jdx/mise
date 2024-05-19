@@ -31,11 +31,12 @@ impl Forge for GoForge {
         self.remote_version_cache
             .get_or_try_init(|| {
                 let mut mod_path = Some(self.name());
+                let env = self.dependency_env()?;
 
                 while let Some(cur_mod_path) = mod_path {
-                    let res =
-                        cmd_forge!(self, "go", "list", "-m", "-versions", "-json", cur_mod_path)?
-                            .read();
+                    let res = cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path)
+                        .full_env(&env)
+                        .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
                         if let Ok(mut mod_info) = res {

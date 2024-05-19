@@ -473,6 +473,19 @@ pub trait Forge: Debug + Send + Sync {
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.cache_path().join("incomplete")
     }
+
+    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+        let config = Config::get();
+        let dependencies = self
+            .get_all_dependencies(&ToolRequest::System(self.name().into()))?
+            .into_iter()
+            .collect();
+        ToolsetBuilder::new()
+            .with_tool_filter(dependencies)
+            .with_installed_only()
+            .build(&config)?
+            .full_env()
+    }
 }
 
 fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
