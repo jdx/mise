@@ -1,5 +1,28 @@
 # Changelog
 
+## [2024.5.18](https://github.com/jdx/mise/compare/v2024.5.17..v2024.5.18) - 2024-05-19
+
+### 🚀 Features
+
+- added plugin registry to docs by [@jdx](https://github.com/jdx) in [#2138](https://github.com/jdx/mise/pull/2138)
+- added registry command by [@jdx](https://github.com/jdx) in [#2147](https://github.com/jdx/mise/pull/2147)
+- pre-commit and github action generate commands by [@jdx](https://github.com/jdx) in [#2144](https://github.com/jdx/mise/pull/2144)
+
+### 🐛 Bug Fixes
+
+- raise error if resolve fails and is a CLI argument by [@jdx](https://github.com/jdx) in [#2136](https://github.com/jdx/mise/pull/2136)
+- clean up architectures for precompiled binaries by [@jdx](https://github.com/jdx) in [#2137](https://github.com/jdx/mise/pull/2137)
+- add target and other configs to cache key logic by [@jdx](https://github.com/jdx) in [#2141](https://github.com/jdx/mise/pull/2141)
+
+### 🚜 Refactor
+
+- remove cmd_forge by [@jdx](https://github.com/jdx) in [#2142](https://github.com/jdx/mise/pull/2142)
+
+### 🧪 Testing
+
+- separate nightly into its own job by [@jdx](https://github.com/jdx) in [#2145](https://github.com/jdx/mise/pull/2145)
+- lint in nightly job by [@jdx](https://github.com/jdx) in [b5a3d08](https://github.com/jdx/mise/commit/b5a3d0884655f884319b23924d06566d597a4abe)
+
 ## [2024.5.17](https://github.com/jdx/mise/compare/v2024.5.16..v2024.5.17) - 2024-05-18
 
 ### 🚀 Features

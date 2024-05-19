@@ -37,12 +37,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
-      - name: Install direnv
-        run: sudo apt-get update; sudo apt-get install direnv
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: cargo nextest run --all-features
+      - run: mise install
+      - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
@@ -50,11 +49,11 @@ jobs:
       - run: mise settings set experimental true
       - uses: actions/cache@v4
         with:
+          key: mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
       - run: mise install
       - run: mise run render
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
@@ -74,11 +73,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: nightly, components: rustfmt, rustflags: "" }
-      - run: sudo apt-get update; sudo apt-get install direnv
+        with:
+          { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          key: mise-tools-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+      - run: mise install
       - run: mise run test:shuffle
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         run: mise run lint-fix && git diff HEAD

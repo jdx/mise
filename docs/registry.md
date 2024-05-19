@@ -85,6 +85,7 @@ editLink: false
 | calendarsync | [asdf:FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync) |
 | calicoctl | [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
 | camunda-modeler | [asdf:barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler) |
+| cargo-binstall | [cargo:cargo-binstall](https://crates.io/crates/cargo-binstall) |
 | cargo-make | [asdf:mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make) |
 | carp | [asdf:susurri/asdf-carp](https://github.com/susurri/asdf-carp) |
 | carthage | [asdf:younke/asdf-carthage](https://github.com/younke/asdf-carthage) |

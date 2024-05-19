@@ -30,7 +30,7 @@ impl Forge for CargoForge {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
-        Ok(vec!["cargo".into(), "cargo-binstall".into(), "rust".into()])
+        Ok(vec!["cargo".into(), "rust".into()])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
