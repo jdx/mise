@@ -163,14 +163,11 @@ fn os() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
+    if cfg!(target_arch = "x86_64") {
         "x86_64"
-    } else if cfg!(target_arch = "i686") || cfg!(target_arch = "i386") || cfg!(target_arch = "386")
-    {
-        "i386"
-    } else if cfg!(target_arch = "aarch64") || cfg!(target_arch = "arm64") {
+    } else if cfg!(target_arch = "aarch64") {
         "aarch64"
-    } else if cfg!(target_arch = "armv7a") {
+    } else if cfg!(target_arch = "arm") {
         "armv7a"
     } else if cfg!(target_arch = "riscv64") {
         "riscv64"
