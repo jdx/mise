@@ -252,14 +252,11 @@ fn platform() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") || cfg!(target_arch = "amd64") {
+    if cfg!(target_arch = "x86_64") {
         "amd64"
-    } else if cfg!(target_arch = "i686") || cfg!(target_arch = "i386") || cfg!(target_arch = "386")
-    {
-        "386"
-    } else if cfg!(target_arch = "armv6l") || cfg!(target_arch = "armv7l") {
+    } else if cfg!(target_arch = "arm") {
         "armv6l"
-    } else if cfg!(target_arch = "aarch64") || cfg!(target_arch = "arm64") {
+    } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
         &ARCH
