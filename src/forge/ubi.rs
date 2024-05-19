@@ -82,7 +82,7 @@ impl UbiForge {
         let fa = ForgeArg::new(ForgeType::Ubi, &name);
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions.msgpack.z"),
+                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
             ),
             fa,
         }

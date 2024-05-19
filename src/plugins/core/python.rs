@@ -28,8 +28,10 @@ impl PythonPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new("python");
         Self {
-            precompiled_cache: CacheManager::new(core.fa.cache_path.join("precompiled.msgpack.z"))
-                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            precompiled_cache: CacheManager::new(
+                core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             core,
         }
     }

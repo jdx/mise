@@ -95,9 +95,11 @@ impl PIPXForge {
         let fa = ForgeArg::new(ForgeType::Pipx, &name);
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions.msgpack.z"),
+                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
             ),
-            latest_version_cache: CacheManager::new(fa.cache_path.join("latest_version.msgpack.z")),
+            latest_version_cache: CacheManager::new(
+                fa.cache_path.join("latest_version-$KEY.msgpack.z"),
+            ),
             fa,
         }
     }

@@ -1,19 +1,21 @@
 use std::cmp::min;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::build_time::built_info;
 use crate::file;
 use crate::file::{display_path, modified_duration};
+use crate::hash::hash_to_str;
 use crate::rand::random_string;
 
 #[derive(Debug, Clone)]
@@ -32,7 +34,12 @@ impl<T> CacheManager<T>
 where
     T: Serialize + DeserializeOwned,
 {
-    pub fn new(cache_file_path: PathBuf) -> Self {
+    pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
+        // "replace $KEY in path with key()
+        let cache_file_path = regex!(r#"\$KEY"#)
+            .replace_all(cache_file_path.as_ref().to_str().unwrap(), &*KEY)
+            .to_string()
+            .into();
         Self {
             cache_file_path,
             cache: Box::new(OnceCell::new()),
@@ -136,6 +143,19 @@ where
     }
 }
 
+static KEY: Lazy<String> = Lazy::new(|| {
+    let mut parts = vec![
+        built_info::FEATURES_STR,
+        //built_info::PKG_VERSION, # TODO: put this in for non-debug when we autoclean cache (#2139)
+        built_info::PROFILE,
+        built_info::TARGET,
+    ];
+    if cfg!(debug_assertions) {
+        parts.push(built_info::PKG_VERSION);
+    }
+    hash_to_str(&parts).chars().take(5).collect()
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,7 +163,7 @@ mod tests {
     #[test]
     fn test_cache() {
         // does not fail with invalid path
-        let cache = CacheManager::new("/invalid:path/to/cache".into());
+        let cache = CacheManager::new("/invalid:path/to/cache");
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);
