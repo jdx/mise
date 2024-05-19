@@ -35,9 +35,9 @@ impl JavaPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new("java");
         let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
+            format!("java_metadata_ga_{}_{}-$KEY.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
+            format!("java_metadata_ea_{}_{}-$KEY.msgpack.z", os(), arch());
         Self {
             java_metadata_ea_cache: CacheManager::new(
                 core.fa.cache_path.join(java_metadata_ea_cache_filename),
