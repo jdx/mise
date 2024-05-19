@@ -67,7 +67,9 @@ mod tests {
     #[test]
     fn test_git_pre_commit() {
         reset();
+        setup_git_repo();
         assert_cli_snapshot!("generate", "pre-commit", "--task=testing123");
+        cleanup();
     }
     #[test]
     fn test_git_pre_commit_write() {

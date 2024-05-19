@@ -93,7 +93,9 @@ mod tests {
     #[test]
     fn test_github_action() {
         reset();
+        setup_git_repo();
         assert_cli_snapshot!("generate", "github-action");
+        cleanup();
     }
     #[test]
     fn test_github_action_write() {
@@ -109,7 +111,7 @@ mod tests {
         let path = Git::get_root()
             .unwrap()
             .join(".github/workflows/testing123.yml");
-        let contents = file::read_to_string(&path).unwrap();
+        let contents = file::read_to_string(path).unwrap();
         assert_snapshot!(contents);
         cleanup();
     }
