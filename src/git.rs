@@ -197,6 +197,13 @@ impl Git {
     pub fn exists(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
+
+    pub fn get_root() -> eyre::Result<PathBuf> {
+        Ok(cmd!("git", "rev-parse", "--show-toplevel")
+            .read()?
+            .trim()
+            .into())
+    }
 }
 
 fn get_git_version() -> Result<String> {

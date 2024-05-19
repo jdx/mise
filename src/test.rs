@@ -6,7 +6,7 @@ use color_eyre::{Help, SectionExt};
 use crate::cli::Cli;
 use crate::config::{config_file, Config};
 use crate::output::tests::{STDERR, STDOUT};
-use crate::{dirs, env, file, forge};
+use crate::{cmd, dirs, env, file, forge};
 
 #[macro_export]
 macro_rules! assert_cli_snapshot {
@@ -129,6 +129,30 @@ pub fn reset() {
     let _ = file::remove_file(".test.mise.toml");
     assert_cli!("prune");
     assert_cli!("install");
+}
+
+pub fn setup_git_repo() {
+    cmd!("git", "init", "-b", "trunk").run().unwrap();
+    file::write("README.md", "# testing123").unwrap();
+    cmd!("git", "add", "README.md").run().unwrap();
+    cmd!(
+        "git",
+        "-c",
+        "user.name=ferris",
+        "-c",
+        "user.email=ferris@example.com",
+        "commit",
+        "-m",
+        "feat: add README"
+    )
+    .run()
+    .unwrap();
+}
+
+pub fn cleanup() {
+    let _ = file::remove_all(".github");
+    let _ = file::remove_all(".git");
+    let _ = file::remove_all("README.md");
 }
 
 pub fn replace_path(input: &str) -> String {
