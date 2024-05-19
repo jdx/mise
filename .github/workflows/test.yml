@@ -80,6 +80,14 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise run test:shuffle
+      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
+        run: mise run lint-fix && git diff HEAD
+      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
+        uses: EndBug/add-and-commit@v9
+        with:
+          push: true
+          author_name: mise[bot]
+          author_email: 123107610+mise-en-dev@users.noreply.github.com
 
   coverage:
     name: coverage-${{matrix.tranche}}
