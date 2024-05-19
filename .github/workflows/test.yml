@@ -33,9 +33,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: nightly, components: rustfmt }
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable, components: rustfmt, rustflags: "" }
+        with: { toolchain: stable, components: rustfmt }
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
@@ -45,8 +43,6 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: cargo nextest run --all-features
-      - run: mise run test:shuffle
-        env: { RUSTFLAGS: "" }
       - run: cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
@@ -71,6 +67,19 @@ jobs:
           author_email: 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
+
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: nightly, components: rustfmt, rustflags: "" }
+      - run: sudo apt-get update; sudo apt-get install direnv
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise run test:shuffle
 
   coverage:
     name: coverage-${{matrix.tranche}}
