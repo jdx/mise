@@ -3,6 +3,7 @@ source: src/cli/backends/ls.rs
 expression: output
 ---
 cargo
+core
 go
 npm
 pipx
