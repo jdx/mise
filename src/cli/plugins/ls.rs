@@ -3,13 +3,12 @@ use std::sync::Arc;
 
 use eyre::Result;
 use rayon::prelude::*;
-use tabled::settings::object::Columns;
-use tabled::settings::{Margin, Modify, Padding, Style};
-use tabled::Tabled;
+use tabled::{Table, Tabled};
 
 use crate::config::Config;
 use crate::plugins;
 use crate::plugins::{ExternalPlugin, PluginType};
+use crate::ui::table;
 
 /// List installed plugins
 ///
@@ -79,12 +78,8 @@ impl PluginsLs {
                     row
                 })
                 .collect::<Vec<_>>();
-            let mut table = tabled::Table::new(data);
-            table
-                .with(Style::empty())
-                .with(Margin::new(0, 0, 0, 0))
-                .with(Modify::new(Columns::first()).with(Padding::new(0, 1, 0, 0)))
-                .with(Modify::new(Columns::last()).with(Padding::zero()));
+            let mut table = Table::new(data);
+            table::default_style(&mut table, false);
             miseprintln!("{table}");
         } else {
             for tool in tools {

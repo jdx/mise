@@ -686,6 +686,15 @@ as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSI
     flag "--tools" help="Prune only unused versions of tools"
     arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" var=true
 }
+cmd "registry" help="[experimental] List available tools" {
+    after_long_help r"Examples:
+
+    $ mise registry
+    node    core:node
+    poetry  asdf:mise-plugins/mise-poetry
+    ubi     cargo:ubi
+"
+}
 cmd "reshim" help="rebuilds the shim farm" {
     long_help r#"rebuilds the shim farm
 

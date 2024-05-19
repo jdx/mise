@@ -52,6 +52,10 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
     plugins
 });
 
+pub fn get(name: &str) -> Option<Arc<dyn Forge>> {
+    CORE_PLUGINS.iter().find(|p| p.name() == name).cloned()
+}
+
 #[derive(Debug)]
 pub struct CorePlugin {
     pub fa: ForgeArg,

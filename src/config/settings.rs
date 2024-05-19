@@ -430,3 +430,7 @@ impl Display for Settings {
         }
     }
 }
+
+pub fn ensure_experimental(what: &str) -> Result<()> {
+    Settings::get().ensure_experimental(what)
+}

@@ -42,7 +42,7 @@ impl ForgeArg {
     pub fn new(forge_type: ForgeType, name: &str) -> Self {
         let name = unalias_forge(name).to_string();
         let id = match forge_type {
-            ForgeType::Asdf => name.clone(),
+            ForgeType::Asdf | ForgeType::Core => name.clone(),
             forge_type => format!("{}:{}", forge_type.as_ref(), name),
         };
         let pathname = regex!(r#"[/:]"#).replace_all(&id, "-").to_string();
@@ -109,12 +109,14 @@ mod tests {
         };
         let asdf = |s, id, name| t(s, id, name, ForgeType::Asdf);
         let cargo = |s, id, name| t(s, id, name, ForgeType::Cargo);
+        let core = |s, id, name| t(s, id, name, ForgeType::Core);
         let npm = |s, id, name| t(s, id, name, ForgeType::Npm);
 
-        asdf("asdf:node", "node", "node");
-        asdf("node", "node", "node");
+        asdf("asdf:poetry", "poetry", "poetry");
+        asdf("poetry", "poetry", "poetry");
         asdf("", "", "");
         cargo("cargo:eza", "cargo:eza", "eza");
+        core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
     }

@@ -29,7 +29,7 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
         table.with(Modify::new(Rows::first()).with(Format::content(header)));
     }
     table.with(Style::empty());
-    if console::user_attended() || cfg!(test) {
+    if console::user_attended() && !cfg!(test) {
         table.with(term_size_settings());
     }
     table
