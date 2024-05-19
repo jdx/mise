@@ -411,6 +411,67 @@ Examples:
     $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
+## `mise generate git-pre-commit [OPTIONS]`
+
+```text
+[experimental] Generate a git pre-commit hook
+
+This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
+when you commit changes to your repository.
+
+Usage: generate git-pre-commit [OPTIONS]
+
+Options:
+      --hook <HOOK>
+          Which hook to generate (saves to .git/hooks/$hook)
+
+          [default: pre-commit]
+
+  -t, --task <TASK>
+          The task to run when the pre-commit hook is triggered
+
+          [default: pre-commit]
+
+  -w, --write
+          write to .git/hooks/pre-commit and make it executable
+
+Examples:
+
+    $ mise generate git-pre-commit --write --task=pre-commit
+    $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
+```
+
+## `mise generate github-action [OPTIONS]`
+
+```text
+[experimental] Generate a Github Action workflow file
+
+This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+when you push changes to your repository.
+
+Usage: generate github-action [OPTIONS]
+
+Options:
+  -n, --name <NAME>
+          the name of the workflow to generate
+
+          [default: ci]
+
+  -t, --task <TASK>
+          The task to run when the workflow is triggered
+
+          [default: ci]
+
+  -w, --write
+          write to .github/workflows/$name.yml
+
+Examples:
+
+    $ mise generate github-action --write --task=ci
+    $ git commit -m "feat: add new feature"
+    $ git push # runs `mise run ci` on Github
+```
+
 ## `mise implode [OPTIONS]`
 
 ```text

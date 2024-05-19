@@ -337,6 +337,7 @@ editLink: false
 | jmespath | <https://github.com/skyzyx/asdf-jmespath> |
 | jmeter | <https://github.com/comdotlinux/asdf-jmeter> |
 | jnv | <https://github.com/raimon49/asdf-jnv> |
+| jq | <https://github.com/mise-plugins/asdf-jq> |
 | jqp | <https://gitlab.com/wt0f/asdf-jqp> |
 | jreleaser | <https://github.com/joschi/asdf-jreleaser> |
 | jsonnet | <https://github.com/Banno/asdf-jsonnet> |
@@ -606,7 +607,9 @@ editLink: false
 | serverless | <https://github.com/pdemagny/asdf-serverless> |
 | setup-envtest | <https://github.com/pmalek/mise-setup-envtest> |
 | shell2http | <https://github.com/ORCID/asdf-shell2http> |
+| shellcheck | <https://github.com/luizm/asdf-shellcheck> |
 | shellspec | <https://github.com/poikilotherm/asdf-shellspec> |
+| shfmt | <https://github.com/luizm/asdf-shfmt> |
 | shorebird | <https://github.com/valian-ca/asdf-shorebird> |
 | sinker | <https://github.com/elementalvoid/asdf-sinker> |
 | skaffold | <https://github.com/nklmilojevic/asdf-skaffold> |
@@ -692,6 +695,7 @@ editLink: false
 | thrift | <https://github.com/alisaifee/asdf-thrift> |
 | tilt | <https://github.com/eaceaser/asdf-tilt> |
 | timoni | <https://github.com/Smana/asdf-timoni> |
+| tiny | <https://github.com/mise-plugins/mise-tiny> |
 | tinytex | <https://github.com/Fbrisset/asdf-tinytex> |
 | titan | <https://github.com/gabitchov/asdf-titan> |
 | tlsg-cli | <https://github.com/0ghny/asdf-tlsgcli> |

@@ -20,6 +20,7 @@ mod doctor;
 mod env;
 pub mod exec;
 mod external;
+mod generate;
 mod global;
 mod hook_env;
 mod hook_not_found;
@@ -74,6 +75,7 @@ pub enum Commands {
     Doctor(doctor::Doctor),
     Env(env::Env),
     Exec(exec::Exec),
+    Generate(generate::Generate),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
@@ -130,6 +132,7 @@ impl Commands {
             Self::Doctor(cmd) => cmd.run(),
             Self::Env(cmd) => cmd.run(),
             Self::Exec(cmd) => cmd.run(),
+            Self::Generate(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run(),
             Self::HookEnv(cmd) => cmd.run(),
             Self::HookNotFound(cmd) => cmd.run(),
