@@ -65,7 +65,7 @@ impl CorePlugin {
         Self {
             name,
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions.msgpack.z"),
+                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             fa,

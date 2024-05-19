@@ -65,20 +65,22 @@ impl ExternalPlugin {
             script_man: build_script_man(&name, &plugin_path),
             cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions.msgpack.z"),
+                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-all")),
-            latest_stable_cache: CacheManager::new(fa.cache_path.join("latest_stable.msgpack.z"))
-                .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/latest-stable")),
-            alias_cache: CacheManager::new(fa.cache_path.join("aliases.msgpack.z"))
+            latest_stable_cache: CacheManager::new(
+                fa.cache_path.join("latest_stable-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_file(plugin_path.clone())
+            .with_fresh_file(plugin_path.join("bin/latest-stable")),
+            alias_cache: CacheManager::new(fa.cache_path.join("aliases-$KEY.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
             legacy_filename_cache: CacheManager::new(
-                fa.cache_path.join("legacy_filenames.msgpack.z"),
+                fa.cache_path.join("legacy_filenames-$KEY.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
