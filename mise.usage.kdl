@@ -306,6 +306,46 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[TOOL@VERSION]..." help="Tool(s) to start e.g.: node@20 python@3.10" var=true
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
+cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
+    cmd "git-pre-commit" help="[experimental] Generate a git pre-commit hook" {
+        alias "pre-commit" hide=true
+        long_help r"[experimental] Generate a git pre-commit hook
+
+This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
+when you commit changes to your repository."
+        after_long_help r#"Examples:
+
+    $ mise generate git-pre-commit --write --task=pre-commit
+    $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
+"#
+        flag "--hook" help="Which hook to generate (saves to .git/hooks/$hook)" {
+            arg "<HOOK>"
+        }
+        flag "-t --task" help="The task to run when the pre-commit hook is triggered" {
+            arg "<TASK>"
+        }
+        flag "-w --write" help="write to .git/hooks/pre-commit and make it executable"
+    }
+    cmd "github-action" help="[experimental] Generate a Github Action workflow file" {
+        long_help r"[experimental] Generate a Github Action workflow file
+
+This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+when you push changes to your repository."
+        after_long_help r#"Examples:
+
+    $ mise generate github-action --write --task=ci
+    $ git commit -m "feat: add new feature"
+    $ git push # runs `mise run ci` on Github
+"#
+        flag "-n --name" help="the name of the workflow to generate" {
+            arg "<NAME>"
+        }
+        flag "-t --task" help="The task to run when the workflow is triggered" {
+            arg "<TASK>"
+        }
+        flag "-w --write" help="write to .github/workflows/$name.yml"
+    }
+}
 cmd "global" hide=true help="Sets/gets the global tool version(s)" {
     alias "g" hide=true
     long_help r"Sets/gets the global tool version(s)
