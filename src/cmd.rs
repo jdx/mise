@@ -15,12 +15,10 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::env;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
-use crate::forge::Forge;
-use crate::toolset::{ToolRequest, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments, which may be
@@ -50,17 +48,6 @@ macro_rules! cmd {
             use std::ffi::OsString;
             let args: std::vec::Vec<OsString> = std::vec![$( Into::<OsString>::into($arg) ),*];
             $crate::cmd::cmd($program, args)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! cmd_forge {
-    ( $forge:expr, $program:expr $(, $arg:expr )* $(,)? ) => {
-        {
-            use std::ffi::OsString;
-            let args: std::vec::Vec<OsString> = std::vec![$( Into::<OsString>::into($arg) ),*];
-            $crate::cmd::cmd_forge($forge, $program, args)
         }
     };
 }
@@ -104,27 +91,6 @@ where
     debug!("$ {display_command}");
 
     duct::cmd(program, args)
-}
-
-/// run a command with mise env setup
-pub fn cmd_forge<T, U>(forge: &dyn Forge, program: T, args: U) -> eyre::Result<Expression>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-{
-    // TODO: move this into a generic forge method/macro (#2125)
-    let config = Config::get();
-    let dependencies = forge
-        .get_all_dependencies(&ToolRequest::System(forge.name().into()))?
-        .into_iter()
-        .collect();
-    let env = ToolsetBuilder::new()
-        .with_tool_filter(dependencies)
-        .with_installed_only()
-        .build(&config)?
-        .full_env()?;
-    Ok(cmd(program, args).full_env(env))
 }
 
 pub struct CmdLineRunner<'a> {
