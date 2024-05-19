@@ -16,5 +16,5 @@ cat >rustfmt.toml <<EOF
 unstable_features = true
 imports_granularity = "Module"
 EOF
-cargo +nightly fmt --all
+cargo fmt --all
 rm rustfmt.toml
