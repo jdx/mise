@@ -5,6 +5,7 @@ use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
+use crate::errors::Error;
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use crate::{config, env};
 
@@ -60,6 +61,9 @@ impl ToolsetBuilder {
         self.load_runtime_env(&mut toolset, env::vars().collect())?;
         self.load_runtime_args(&mut toolset)?;
         if let Err(err) = toolset.resolve() {
+            if Error::is_argument_err(&err) {
+                return Err(err);
+            }
             warn!("failed to resolve toolset: {err:#}");
         }
 
