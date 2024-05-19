@@ -6,6 +6,7 @@ use crate::plugins::core::CORE_PLUGINS;
 
 const _REGISTRY: &[(&str, &str)] = &[
     ("ubi", "cargo:ubi"),
+    ("cargo-binstall", "cargo:cargo-binstall"),
     // ("elixir", "asdf:mise-plugins/mise-elixir"),
 ];
 
