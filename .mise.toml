@@ -59,6 +59,10 @@ mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
 
+[tasks."render:registry"]
+depends = ["build"]
+run = "./scripts/render-registry.js"
+
 [tasks."render:mangen"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
