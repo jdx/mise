@@ -78,7 +78,7 @@ editLink: false
 | btrace | [asdf:joschi/asdf-btrace](https://github.com/joschi/asdf-btrace) |
 | buf | [asdf:truepay/asdf-buf](https://github.com/truepay/asdf-buf) |
 | buildpack | [asdf:johnlayton/asdf-buildpack](https://github.com/johnlayton/asdf-buildpack) |
-| bun | [core:bun](https://mise.jdx.dev/lang/core.html) |
+| bun | [core:bun](https://mise.jdx.dev/lang/bun.html) |
 | bundler | [asdf:jonathanmorley/asdf-bundler](https://github.com/jonathanmorley/asdf-bundler) |
 | cabal | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | caddy | [asdf:salasrod/asdf-caddy](https://github.com/salasrod/asdf-caddy) |
@@ -159,7 +159,7 @@ editLink: false
 | dbmate | [asdf:juusujanar/asdf-dbmate](https://github.com/juusujanar/asdf-dbmate) |
 | deck | [asdf:nutellinoit/asdf-deck](https://github.com/nutellinoit/asdf-deck) |
 | delta | [asdf:andweeb/asdf-delta](https://github.com/andweeb/asdf-delta) |
-| deno | [core:deno](https://mise.jdx.dev/lang/core.html) |
+| deno | [core:deno](https://mise.jdx.dev/lang/deno.html) |
 | dep | [asdf:paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) |
 | depot | [asdf:depot/asdf-depot](https://github.com/depot/asdf-depot) |
 | desk | [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
@@ -208,7 +208,7 @@ editLink: false
 | envcli | [asdf:zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli) |
 | envsubst | [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
 | ephemeral-postgres | [asdf:smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres) |
-| erlang | [core:erlang](https://mise.jdx.dev/lang/core.html) |
+| erlang | [core:erlang](https://mise.jdx.dev/lang/erlang.html) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
@@ -259,7 +259,7 @@ editLink: false
 | glen | [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
 | glooctl | [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
 | glow | [asdf:chessmango/asdf-glow](https://github.com/chessmango/asdf-glow) |
-| go | [core:go](https://mise.jdx.dev/lang/core.html) |
+| go | [core:go](https://mise.jdx.dev/lang/go.html) |
 | go-containerregistry | [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
 | go-getter | [asdf:ryodocx/asdf-go-getter](https://github.com/ryodocx/asdf-go-getter) |
 | go-jira | [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
@@ -333,7 +333,7 @@ editLink: false
 | io | [asdf:mracos/asdf-io](https://github.com/mracos/asdf-io) |
 | istioctl | [asdf:virtualstaticvoid/asdf-istioctl](https://github.com/virtualstaticvoid/asdf-istioctl) |
 | janet | [asdf:Jakski/asdf-janet](https://github.com/Jakski/asdf-janet) |
-| java | [core:java](https://mise.jdx.dev/lang/core.html) |
+| java | [core:java](https://mise.jdx.dev/lang/java.html) |
 | jb | [asdf:beardix/asdf-jb](https://github.com/beardix/asdf-jb) |
 | jbang | [asdf:jbangdev/jbang-asdf](https://github.com/jbangdev/jbang-asdf) |
 | jfrog-cli | [asdf:LozanoMatheus/asdf-jfrog-cli](https://github.com/LozanoMatheus/asdf-jfrog-cli) |
@@ -488,7 +488,7 @@ editLink: false
 | nfpm | [asdf:ORCID/asdf-nfpm](https://github.com/ORCID/asdf-nfpm) |
 | nim | [asdf:asdf-community/asdf-nim](https://github.com/asdf-community/asdf-nim) |
 | ninja | [asdf:asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) |
-| node | [core:node](https://mise.jdx.dev/lang/core.html) |
+| node | [core:node](https://mise.jdx.dev/lang/node.html) |
 | nomad | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | nomad-pack | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | notation | [asdf:bodgit/asdf-notation](https://github.com/bodgit/asdf-notation) |
@@ -560,7 +560,7 @@ editLink: false
 | purerl | [asdf:GoNZooo/asdf-purerl](https://github.com/GoNZooo/asdf-purerl) |
 | purescript | [asdf:jrrom/asdf-purescript](https://github.com/jrrom/asdf-purescript) |
 | purty | [asdf:nsaunders/asdf-purty](https://github.com/nsaunders/asdf-purty) |
-| python | [core:python](https://mise.jdx.dev/lang/core.html) |
+| python | [core:python](https://mise.jdx.dev/lang/python.html) |
 | qdns | [asdf:moritz-makandra/asdf-plugin-qdns](https://github.com/moritz-makandra/asdf-plugin-qdns) |
 | quarkus | [asdf:asdf-community/asdf-quarkus](https://github.com/asdf-community/asdf-quarkus) |
 | r | [asdf:asdf-community/asdf-r](https://github.com/asdf-community/asdf-r) |
@@ -589,7 +589,7 @@ editLink: false
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
 | rstash | [asdf:carlduevel/asdf-rstash](https://github.com/carlduevel/asdf-rstash) |
-| ruby | [core:ruby](https://mise.jdx.dev/lang/core.html) |
+| ruby | [core:ruby](https://mise.jdx.dev/lang/ruby.html) |
 | ruff | [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
 | rust | [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
 | rust-analyzer | [asdf:Xyven1/asdf-rust-analyzer](https://github.com/Xyven1/asdf-rust-analyzer) |
@@ -782,7 +782,7 @@ editLink: false
 | zbctl | [asdf:camunda-community-hub/asdf-zbctl](https://github.com/camunda-community-hub/asdf-zbctl) |
 | zellij | [asdf:chessmango/asdf-zellij](https://github.com/chessmango/asdf-zellij) |
 | zephyr | [asdf:nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr) |
-| zig | [core:zig](https://mise.jdx.dev/lang/core.html) |
+| zig | [core:zig](https://mise.jdx.dev/lang/zig.html) |
 | zigmod | [asdf:mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod) |
 | zola | [asdf:salasrod/asdf-zola](https://github.com/salasrod/asdf-zola) |
 | zoxide | [asdf:nyrst/asdf-zoxide](https://github.com/nyrst/asdf-zoxide) |
