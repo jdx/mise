@@ -4,6 +4,9 @@ TEST_ENV_VAR = 'test-123'
 [alias.tiny]
 "my/alias" = '3.0'
 
+[alias.dummy]
+m = "prefix:1"
+
 [tasks.configtask]
 run = 'echo "configtask:"'
 [tasks.lint]
