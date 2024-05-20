@@ -310,5 +310,6 @@ mod tests {
         assert_cli!("install");
         let result = panic::catch_unwind(test);
         assert!(result.is_ok());
+        assert_cli!("local", "tiny@3");
     }
 }
