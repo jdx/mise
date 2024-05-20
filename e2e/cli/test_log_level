@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 assert_contains "mise x dummy@latest --log-level debug -- dummy 2>&1" "[DEBUG]"
 assert_contains "mise x dummy@latest --log-level=debug -- dummy 2>&1" "[DEBUG]"

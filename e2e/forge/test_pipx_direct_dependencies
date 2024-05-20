@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 require_cmd python3
 
 # Create a system pipx that always fail and push it to the front of PATH

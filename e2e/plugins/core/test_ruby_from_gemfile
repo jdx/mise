@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 # Read ruby version from Gemfile
 
 cat >Gemfile <<EOF

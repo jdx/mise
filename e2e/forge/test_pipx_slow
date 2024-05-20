@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 require_cmd pipx
 
 assert_contains "mise x pipx:black@22.6.0 -- black --version" "22.6.0"

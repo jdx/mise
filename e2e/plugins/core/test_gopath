@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 echo "golang 1.20" >.tool-versions
 mkdir 21

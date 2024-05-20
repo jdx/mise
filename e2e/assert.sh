@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 # shellcheck source-path=SCRIPTDIR
 source "$TEST_ROOT/style.sh"

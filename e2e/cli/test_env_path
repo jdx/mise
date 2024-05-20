@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 mise use dummy@1.0.0
 assert_contains "mise env -s bash | grep PATH" "/installs/dummy/1.0.0/bin"
