@@ -20,7 +20,7 @@ mise use nodejs@20.1.0
 mise ls
 assert "mise x -- node --version" "v20.1.0"
 assert_contains "mise ls-remote nodejs" "20.1.0"
-#assert_contains "mise node nodebuild --version" "node-build "
+assert_contains "mise node nodebuild --version" "node-build "
 mise use --rm node
 
 # MISE_LEGACY_VERSION_FILE env var

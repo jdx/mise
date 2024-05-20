@@ -161,7 +161,7 @@ mod tests {
     use std::panic;
 
     use crate::cli::tests::grep;
-    use crate::test::reset;
+    use crate::test::{cleanup, reset};
     use crate::{dirs, forge};
 
     #[test]
@@ -311,5 +311,7 @@ mod tests {
         let result = panic::catch_unwind(test);
         assert!(result.is_ok());
         assert_cli!("local", "tiny@3");
+        reset();
+        cleanup();
     }
 }
