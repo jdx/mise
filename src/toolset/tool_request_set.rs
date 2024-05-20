@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
@@ -55,6 +55,19 @@ impl ToolRequestSet {
         let list = self.tools.entry(tr.forge().clone()).or_default();
         list.push(tr);
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&ForgeArg, &Vec<ToolRequest>, &ToolSource)> {
+        self.tools
+            .iter()
+            .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
+    }
+
+    pub fn filter_by_tool(&self, dependencies: &HashSet<ForgeArg>) -> Self {
+        self.iter()
+            .filter(|(fa, ..)| dependencies.contains(fa))
+            .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
+            .collect::<ToolRequestSet>()
+    }
 }
 
 impl Display for ToolRequestSet {
@@ -62,6 +75,21 @@ impl Display for ToolRequestSet {
         let versions = self.tools.values().flatten().join(" ");
         writeln!(f, "ToolRequestSet: {}", versions)?;
         Ok(())
+    }
+}
+
+impl FromIterator<(ForgeArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (ForgeArg, Vec<ToolRequest>, ToolSource)>,
+    {
+        let mut trs = ToolRequestSet::new();
+        for (_fa, tvr, source) in iter {
+            for tr in tvr {
+                trs.add_version(tr.clone(), &source);
+            }
+        }
+        trs
     }
 }
 
@@ -75,10 +103,6 @@ pub struct ToolRequestSetBuilder {
     default_to_latest: bool,
     /// tools which will be disabled
     disable_tools: Vec<ForgeArg>,
-    /// whitelist of tools to install
-    tool_filter: Option<BTreeSet<ForgeArg>>,
-    // /// only show tools which are already installed
-    // installed_only: bool,
 }
 
 impl ToolRequestSetBuilder {
@@ -128,7 +152,6 @@ impl ToolRequestSetBuilder {
 
     fn is_disabled(&self, fa: &ForgeArg) -> bool {
         self.disable_tools.contains(fa)
-            || self.tool_filter.as_ref().is_some_and(|tf| !tf.contains(fa))
     }
 
     fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {

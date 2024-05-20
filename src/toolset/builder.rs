@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use eyre::Result;
 use itertools::Itertools;
@@ -14,8 +14,6 @@ pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     global_only: bool,
     default_to_latest: bool,
-    tool_filter: Option<HashSet<ForgeArg>>,
-    installed_only: bool,
 }
 
 impl ToolsetBuilder {
@@ -38,23 +36,11 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn with_tool_filter(mut self, tool_filter: HashSet<ForgeArg>) -> Self {
-        self.tool_filter = Some(tool_filter);
-        self
-    }
-
-    pub fn with_installed_only(mut self) -> Self {
-        self.installed_only = true;
-        self
-    }
-
     pub fn build(self, config: &Config) -> Result<Toolset> {
         let start_ms = std::time::Instant::now();
         let settings = Settings::try_get()?;
         let mut toolset = Toolset {
             disable_tools: settings.disable_tools.iter().map(|s| s.into()).collect(),
-            tool_filter: self.tool_filter.clone(),
-            installed_only: self.installed_only,
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset)?;
