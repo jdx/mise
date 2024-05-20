@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
 export MISE_DEFAULT_CONFIG_FILENAME=.MISSING

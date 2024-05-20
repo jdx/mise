@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 # arrange
 export MISE_PYTHON_COMPILE=1

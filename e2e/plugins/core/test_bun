@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 cat <<EOF >.bun-version
 1.0.17

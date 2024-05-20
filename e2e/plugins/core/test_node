@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 export MISE_NODE_COREPACK=1
 export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"

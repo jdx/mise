@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 export PATH="$MISE_DATA_DIR/shims:$PATH"
 

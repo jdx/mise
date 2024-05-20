@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 unset GITHUB_TOKEN GITHUB_API_TOKEN
 

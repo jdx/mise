@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 # Install and build ruby using ruby-build
 
 export MISE_RUBY_INSTALL=0

@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 # arrange
 export POETRY_HOME="$HOME/.poetry"

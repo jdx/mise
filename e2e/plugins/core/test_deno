@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 if [[ "${MISE_DISABLE_TOOLS:-}" = *deno* ]]; then
   warn "Skipping deno tests"

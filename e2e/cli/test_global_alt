@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 assert_contains "MISE_GLOBAL_CONFIG_FILE=~/.mise.global.toml mise global dummy@latest" "~/.mise.global.toml"
 assert "cat ~/.mise.global.toml" '[tools]
