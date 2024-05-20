@@ -67,7 +67,6 @@ impl InstallOptions {
 pub struct Toolset {
     pub versions: IndexMap<ForgeArg, ToolVersionList>,
     pub source: Option<ToolSource>,
-    pub disable_tools: HashSet<ForgeArg>,
 }
 
 impl Toolset {
@@ -490,7 +489,9 @@ impl Toolset {
     }
 
     fn is_disabled(&self, fa: &ForgeArg) -> bool {
-        self.disable_tools.contains(fa)
+        let settings = Settings::get();
+        let fa = fa.to_string();
+        settings.disable_tools.iter().any(|s| s == &fa)
     }
 }
 
@@ -506,13 +507,11 @@ impl Display for Toolset {
 }
 
 impl From<ToolRequestSet> for Toolset {
-    fn from(mut trs: ToolRequestSet) -> Self {
-        let mut ts = Toolset {
-            source: trs.sources.pop_first().map(|(_, source)| source),
-            ..Default::default()
-        };
-        for (fa, versions) in trs.tools {
-            let mut tvl = ToolVersionList::new(fa.clone(), ts.source.as_ref().unwrap().clone());
+    fn from(trs: ToolRequestSet) -> Self {
+        let mut ts = Toolset::default();
+        for (fa, versions, source) in trs.into_iter() {
+            ts.source = Some(source.clone());
+            let mut tvl = ToolVersionList::new(fa.clone(), source);
             for tr in versions {
                 tvl.requests.push(tr);
             }

@@ -335,7 +335,7 @@ impl ConfigFile for MiseToml {
 
 impl Debug for MiseToml {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let tools = self.to_toolset().unwrap().to_string();
+        let tools = self.to_tool_request_set().unwrap().to_string();
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
@@ -877,7 +877,10 @@ mod tests {
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
         assert_debug_snapshot!(cf.plugins());
-        assert_snapshot!(replace_path(&format!("{:#?}", cf.to_toolset().unwrap())));
+        assert_snapshot!(replace_path(&format!(
+            "{:#?}",
+            cf.to_tool_request_set().unwrap()
+        )));
         assert_debug_snapshot!(cf.alias);
 
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
