@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 eval "$(mise activate bash)" && eval "$(mise hook-env)"
 install -m 0755 /dev/null "$TMPDIR/MISE_PATH_SAFETY_CHECK"

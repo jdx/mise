@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 cat <<EOF >.sdkmanrc
 java=17.0.2

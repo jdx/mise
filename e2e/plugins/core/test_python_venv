@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
 

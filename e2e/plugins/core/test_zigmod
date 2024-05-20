@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 eval "$(mise activate bash)" && eval "$(mise hook-env)"
 mise plugin install https://github.com/kachick/asdf-zigmod

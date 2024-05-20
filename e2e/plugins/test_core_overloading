@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 mise plugin i -f node https://github.com/mise-plugins/mise-tiny
 mise i node@latest

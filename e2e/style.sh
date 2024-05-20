@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 if [[ -n ${GITHUB_ACTION:-} ]]; then
   # Output Github action annotations

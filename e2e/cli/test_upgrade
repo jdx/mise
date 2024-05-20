@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 
 echo 'dummy 1' >.tool-versions
 mise install dummy@1.0.0
