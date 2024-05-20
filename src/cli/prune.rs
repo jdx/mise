@@ -76,10 +76,7 @@ impl Prune {
         }
 
         for cf in config.get_tracked_config_files()?.values() {
-            let mut ts = cf.to_toolset()?.clone();
-            if let Err(err) = ts.resolve() {
-                warn!("failed to resolve toolset from {cf}: {err:#}");
-            }
+            let ts = cf.to_tool_request_set()?;
             for (_, tv) in ts.list_current_versions() {
                 to_delete.remove(&tv.to_string());
             }

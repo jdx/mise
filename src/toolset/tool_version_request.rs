@@ -143,10 +143,10 @@ impl ToolRequest {
                 .unwrap_or_default()
                 .map(|v| forge.installs_path.join(version_sub(&v, sub.as_str()))),
             Self::Prefix { forge, prefix, .. } => match file::ls(&forge.installs_path) {
-                Ok(installs) => {
-                    let path = installs.iter().find(|p| p.starts_with(prefix));
-                    path.map(|p| forge.installs_path.join(p))
-                }
+                Ok(installs) => installs
+                    .iter()
+                    .find(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+                    .cloned(),
                 Err(_) => None,
             },
             Self::Path(_, path) => Some(path.clone()),

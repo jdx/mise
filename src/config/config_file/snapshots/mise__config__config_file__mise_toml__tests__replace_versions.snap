@@ -29,5 +29,4 @@ Toolset {
             "/tmp/.mise.toml",
         ),
     ),
-    disable_tools: {},
 }

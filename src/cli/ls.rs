@@ -13,10 +13,10 @@ use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
 use crate::config::Config;
-use crate::forge;
 use crate::forge::Forge;
-use crate::toolset::{ToolSource, ToolVersion, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table;
+use crate::{config, forge};
 
 /// List installed and active tool versions
 ///
@@ -178,9 +178,20 @@ impl Ls {
     }
 
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
-        let tsb = ToolsetBuilder::new().with_global_only(self.global);
+        let mut trs = config.get_tool_request_set()?.clone();
+        if self.global {
+            trs = trs
+                .iter()
+                .filter(|(.., ts)| match ts {
+                    ToolSource::MiseToml(p) => config::is_global_config(p),
+                    _ => false,
+                })
+                .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
+                .collect()
+        }
 
-        let ts = tsb.build(config)?;
+        let mut ts = Toolset::from(trs);
+        ts.resolve()?;
         let mut versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = ts
             .list_installed_versions()?
             .into_iter()
@@ -477,5 +488,11 @@ mod tests {
         reset();
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
+    }
+
+    #[test]
+    fn test_global() {
+        reset();
+        assert_cli_snapshot!("ls", "--global", @"");
     }
 }

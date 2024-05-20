@@ -5,5 +5,4 @@ expression: cf.to_toolset().unwrap()
 Toolset {
     versions: {},
     source: None,
-    disable_tools: {},
 }

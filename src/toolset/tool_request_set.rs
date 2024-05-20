@@ -6,8 +6,8 @@ use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::{Config, Settings};
+use crate::env;
 use crate::toolset::{ToolRequest, ToolSource};
-use crate::{config, env};
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
@@ -47,6 +47,17 @@ impl ToolRequestSet {
             .collect()
     }
 
+    pub fn list_plugins(&self) -> Vec<&ForgeArg> {
+        self.tools.keys().collect()
+    }
+
+    pub fn list_current_versions(&self) -> Vec<(&ForgeArg, &ToolRequest)> {
+        self.tools
+            .iter()
+            .map(|(fa, tvr)| (fa, tvr.last().unwrap()))
+            .collect()
+    }
+
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
         let fa = tr.forge();
         if !self.tools.contains_key(fa) {
@@ -62,9 +73,16 @@ impl ToolRequestSet {
             .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
     }
 
-    pub fn filter_by_tool(&self, dependencies: &HashSet<ForgeArg>) -> Self {
+    pub fn into_iter(self) -> impl Iterator<Item = (ForgeArg, Vec<ToolRequest>, ToolSource)> {
+        self.tools.into_iter().map(move |(fa, tvr)| {
+            let source = self.sources.get(&fa).unwrap().clone();
+            (fa, tvr, source)
+        })
+    }
+
+    pub fn filter_by_tool(&self, tools: &HashSet<ForgeArg>) -> Self {
         self.iter()
-            .filter(|(fa, ..)| dependencies.contains(fa))
+            .filter(|(fa, ..)| tools.contains(fa))
             .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }
@@ -97,8 +115,6 @@ impl FromIterator<(ForgeArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
 pub struct ToolRequestSetBuilder {
     /// cli tool args
     args: Vec<ToolArg>,
-    /// only use global config files
-    global_only: bool,
     /// default to latest version if no version is specified (for `mise x`)
     default_to_latest: bool,
     /// tools which will be disabled
@@ -124,19 +140,13 @@ impl ToolRequestSetBuilder {
     //     self
     // }
     //
-    // pub fn global_only(mut self) -> Self {
-    //     self.global_only = true;
-    //     self
-    // }
 
     pub fn build(&self) -> eyre::Result<ToolRequestSet> {
         let start_ms = std::time::Instant::now();
         let mut trs = ToolRequestSet::default();
         self.load_config_files(&mut trs)?;
-        if !self.global_only {
-            self.load_runtime_env(&mut trs)?;
-            self.load_runtime_args(&mut trs)?;
-        }
+        self.load_runtime_env(&mut trs)?;
+        self.load_runtime_args(&mut trs)?;
 
         let forges = trs.tools.keys().cloned().collect::<Vec<_>>();
         for fa in &forges {
@@ -157,9 +167,6 @@ impl ToolRequestSetBuilder {
     fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
         let config = Config::get();
         for cf in config.config_files.values().rev() {
-            if self.global_only && !config::is_global_config(cf.get_path()) {
-                return Ok(());
-            }
             merge(trs, cf.to_tool_request_set()?);
         }
         Ok(())
@@ -215,9 +222,8 @@ impl ToolRequestSetBuilder {
 
 fn merge(a: &mut ToolRequestSet, b: ToolRequestSet) {
     for (fa, versions) in b.tools {
-        a.tools.insert(fa, versions);
-    }
-    for (fa, source) in b.sources {
+        let source = b.sources[&fa].clone();
+        a.tools.insert(fa.clone(), versions);
         a.sources.insert(fa, source);
     }
 }
