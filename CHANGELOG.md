@@ -1,5 +1,28 @@
 # Changelog
 
+## [2024.5.19](https://github.com/jdx/mise/compare/v2024.5.18..v2024.5.19) - 2024-05-20
+
+### 🐛 Bug Fixes
+
+- allow plugins overriding core plugins by [@jdx](https://github.com/jdx) in [#2155](https://github.com/jdx/mise/pull/2155)
+
+### 🚜 Refactor
+
+- toolset -> toolrequestset by [@jdx](https://github.com/jdx) in [#2150](https://github.com/jdx/mise/pull/2150)
+- toolset -> toolrequestset by [@jdx](https://github.com/jdx) in [#2151](https://github.com/jdx/mise/pull/2151)
+
+### 📚 Documentation
+
+- fix core plugin registry urls by [@jdx](https://github.com/jdx) in [bb1556e](https://github.com/jdx/mise/commit/bb1556ee5a9c7806c28d9bf7472bd444ab70f35e)
+
+### 🧪 Testing
+
+- **(pipx)** use python3 instead of python by [@jdx](https://github.com/jdx) in [0ff52da](https://github.com/jdx/mise/commit/0ff52daf026d711d5001cc3af08caef0bdb4d163)
+- name cache steps by [@jdx](https://github.com/jdx) in [532fe90](https://github.com/jdx/mise/commit/532fe9032a4f61c2ffbf47d29713ee3900770b55)
+- fix lint-fix job by [@jdx](https://github.com/jdx) in [6439ca4](https://github.com/jdx/mise/commit/6439ca41820c240846686f9fbe6d67d24114934e)
+- reset config after local tests by [@jdx](https://github.com/jdx) in [29077af](https://github.com/jdx/mise/commit/29077af3a0d04ad004a054e16e7e85e411058be1)
+- fix implode running first when shuffled by [@jdx](https://github.com/jdx) in [7b07258](https://github.com/jdx/mise/commit/7b072589d46b4279574f99385f3515b6bd181bd5)
+
 ## [2024.5.18](https://github.com/jdx/mise/compare/v2024.5.17..v2024.5.18) - 2024-05-19
 
 ### 🚀 Features
