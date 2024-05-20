@@ -125,7 +125,7 @@ impl Install {
             return Ok(vec![]);
         }
         let mpr = MultiProgressReport::get();
-        let mut ts: Toolset = trs.clone().into();
+        let mut ts = Toolset::from(trs.clone());
         ts.install_versions(config, versions, &mpr, &self.install_opts())
     }
 }

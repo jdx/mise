@@ -4,15 +4,14 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
-use crate::config::{Config, Settings};
+use crate::config::Config;
+use crate::env;
 use crate::errors::Error;
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
-use crate::{config, env};
 
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
-    global_only: bool,
     default_to_latest: bool,
 }
 
@@ -26,26 +25,19 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn with_global_only(mut self, global_only: bool) -> Self {
-        self.global_only = global_only;
-        self
-    }
-
     pub fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
         self.default_to_latest = default_to_latest;
         self
     }
 
     pub fn build(self, config: &Config) -> Result<Toolset> {
-        let start_ms = std::time::Instant::now();
-        let settings = Settings::try_get()?;
         let mut toolset = Toolset {
-            disable_tools: settings.disable_tools.iter().map(|s| s.into()).collect(),
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset)?;
         self.load_runtime_env(&mut toolset, env::vars().collect())?;
         self.load_runtime_args(&mut toolset)?;
+        let start_ms = std::time::Instant::now();
         if let Err(err) = toolset.resolve() {
             if Error::is_argument_err(&err) {
                 return Err(err);
@@ -59,9 +51,6 @@ impl ToolsetBuilder {
 
     fn load_config_files(&self, config: &Config, ts: &mut Toolset) -> eyre::Result<()> {
         for cf in config.config_files.values().rev() {
-            if self.global_only && !config::is_global_config(cf.get_path()) {
-                return Ok(());
-            }
             ts.merge(cf.to_toolset()?);
         }
         Ok(())
@@ -72,9 +61,6 @@ impl ToolsetBuilder {
         ts: &mut Toolset,
         env: BTreeMap<String, String>,
     ) -> eyre::Result<()> {
-        if self.global_only {
-            return Ok(());
-        }
         for (k, v) in env {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
@@ -99,9 +85,6 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
-        if self.global_only {
-            return Ok(());
-        }
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {

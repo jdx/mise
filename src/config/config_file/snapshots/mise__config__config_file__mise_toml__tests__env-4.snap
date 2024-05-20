@@ -2,7 +2,8 @@
 source: src/config/config_file/mise_toml.rs
 expression: cf
 ---
-MiseToml(~/cwd/.test.mise.toml):  {
+MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: 
+ {
     min_version: "2024.1.1",
     env: [
         Val(

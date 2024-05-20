@@ -481,10 +481,11 @@ pub trait Forge: Debug + Send + Sync {
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
             .into_iter()
             .collect();
-        let ts: Toolset = config
+        let mut ts: Toolset = config
             .get_tool_request_set()?
             .filter_by_tool(&dependencies)
             .into();
+        ts.resolve()?;
         ts.full_env()
     }
 }
